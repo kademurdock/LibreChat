@@ -47,7 +47,7 @@ const overhear = require('./overhear');
 const { STRAYS } = require('./strays');
 const { driftTo: strayDrift } = require('./strays');
 
-const REVERIE_SEED_VERSION = 9;
+const REVERIE_SEED_VERSION = 10;
 
 /* ── THE WARDS ─────────────────────────────────────────────────────────────
  * District props carry the law tables (bible design: the engine never
@@ -530,6 +530,18 @@ const CITY_ROOMS = [
 ];
 
 /* ── ITEMS worth touching ── */
+/* Part 296: lift any ear line typed inside a food or job object up to the
+ * room, where every reader of `listenLine` looks for it. */
+for (const r of CITY_ROOMS) {
+  const p = r.props || {};
+  for (const k of ['food', 'job']) {
+    if (p[k] && p[k].listenLine) {
+      if (!p.listenLine) p.listenLine = p[k].listenLine;
+      delete p[k].listenLine;
+    }
+  }
+}
+
 const CITY_ITEMS = [
   { itemId: 'rev_slot', name: 'the brass petition slot', desc: 'Set into the Office door. It takes what you feed it and clears its throat politely. The Office never answers. Answers happen elsewhere — a mailbox, a chalked stoop, once the billboard. That is the bit.', location: { type: 'room', id: 'founders_office' }, portable: false },
   { itemId: 'rev_magazines', name: 'the waiting-room magazines', desc: 'Glossy, current, and dated from years that have not happened. The crossword answers next April’s puzzle.', location: { type: 'room', id: 'founders_office' }, portable: false },
@@ -1023,6 +1035,107 @@ const CENSUS = [
     ],
   },
 
+  /* ── PART 296: the keepers of five new places (life/venues.js) ─────────
+   * Checked against REVERIE_INDEX before writing: no first or family name
+   * here was spent. Every one has a family, a home, a schedule that moves,
+   * wants, a worry in the description, and at least two links into the web:
+   * Flo is Anselm's aunt, Teddy and Mabel are married, Roz bakes Pat's pies
+   * and trades with Ruth-Ann, Teddy buys parts from Royce, Mabel teaches
+   * Miss Reed's kids and takes Dr. Chike's patients, Anselm sells through
+   * Oleander and to Constance. */
+  {
+    id: 'flo', name: 'Flo Abernathy', aka: 'Flo',
+    desc: 'Flo sells tickets from the glass booth at the Bijou and runs the projector herself. She is seventy-one, wears her late husband’s gray cardigan, and can tell you the running time of any picture she has ever shown. Her nephew Anselm painted the lobby, all but the ceiling. She trades Pat two free passes a week for a pie. She lies awake some nights listening to the projector motor, afraid of the day it needs a part nobody makes.',
+    home: 'the_bijou', family: ['anselm'], knows: ['pat', 'dez'],
+    wants: ['a full house for the Saturday midnight show', 'one more year before the projector needs a part nobody makes'],
+    schedule: [
+      { from: 9, to: 11, room: 'pats_diner', doing: 'reading the paper over eggs' },
+      { from: 11, to: 24, room: 'the_bijou', doing: 'selling tickets' },
+      { from: 0, to: 9, room: 'the_bijou', doing: 'counting the till' },
+    ],
+    talk: [
+      '"Tonight’s picture runs ninety-four minutes. The cartoon before it runs seven, and it is the better of the two."',
+      '"Pat gets two passes a week and I get a pie. I have been winning that trade for twenty years."',
+      '"My nephew painted the lobby. Do not ask him about the ceiling. It has not been finished for four years."',
+      '"Back row is for couples. Front row is for people who like to be told things. Sit in the middle and you will be fine."',
+    ],
+    ambient: ['Flo tears a ticket in half and hands back the stub.', 'Flo taps the projector housing twice, the way you settle a horse.', 'Flo sweeps popcorn out from under row twelve.'],
+  },
+  {
+    id: 'teddy', name: 'Teddy Okafor', aka: 'Teddy',
+    desc: 'Teddy runs the Starlite Arcade with a screwdriver in his shirt pocket and a pinball high score he will not stop mentioning. He fixes the machines himself with parts Royce finds at the salvage yard. He married Mabel from the bathhouse, and they live upstairs over the arcade. Junie Tandy holds the skee-ball record, and he has made his peace with it, mostly. He worries the arcade is a place people outgrow.',
+    home: 'starlite_arcade', family: ['mabel'], knows: ['royce', 'junie'],
+    wants: ['get the dead pinball machine by the window working again', 'somebody to beat his pinball score, fair and square'],
+    schedule: [
+      { from: 10, to: 12, room: 'the_garages', doing: 'haggling with Royce over parts' },
+      { from: 12, to: 24, room: 'starlite_arcade', doing: 'fixing a flipper' },
+      { from: 0, to: 10, room: 'starlite_arcade', doing: 'upstairs, asleep' },
+    ],
+    talk: [
+      '"Machine by the window has been dead since spring. Royce says the part exists. Royce says a lot of things."',
+      '"The claw is not rigged. It is weak. There is a difference, and I will explain it for as long as you let me."',
+      '"Junie Tandy has the skee-ball record. She is eleven. I have made my peace with it."',
+      '"Mabel says I spend more time with these machines than with her. She is right. The machines need me more. Do not tell her I said that."',
+    ],
+    ambient: ['Teddy lies on his back under a pinball machine and says something to it.', 'Teddy counts a stack of tickets without looking at them.', 'Teddy taps the glass on the claw machine and nods like it answered him.'],
+  },
+  {
+    id: 'mabel', name: 'Mabel Oyelaran', aka: 'Mabel',
+    desc: 'Mabel runs the Sweetwater Bathhouse from a tall lifeguard chair. She swam at the state trials once and still swims forty laps before she opens. On Thursdays she teaches Miss Reed’s kids from the Children’s Office to swim, and Dr. Chike sends her the patients with bad backs. She is married to Teddy from the arcade and is the only person who can make him put the screwdriver down. She is afraid of the day a kid gets hurt in her water.',
+    home: 'starlite_arcade', family: ['teddy'], knows: ['reed', 'chike'],
+    wants: ['every kid in the city able to swim a length', 'Teddy to take one whole day off'],
+    schedule: [
+      { from: 6, to: 20, room: 'sweetwater_bathhouse', doing: 'watching the lanes from the tall chair' },
+      { from: 20, to: 23, room: 'starlite_arcade', doing: 'keeping Teddy company' },
+      { from: 23, to: 6, room: 'starlite_arcade', doing: 'upstairs, asleep' },
+    ],
+    talk: [
+      '"Shower first. I do not care who you are. The Founder showers first."',
+      '"Forty laps before I open, every morning. The water is the only thing in this city that does exactly what it is told."',
+      '"Dr. Chike sends me her patients with bad backs. The warm pool does what pills cannot. Do not tell her I said that."',
+      '"Thursday is lessons for Miss Reed’s kids. If you can swim a length, I could use another pair of eyes."',
+    ],
+    ambient: ['Mabel blows her whistle once, short, and a boy slows to a walk.', 'Mabel folds a stack of white towels into perfect squares.', 'Mabel climbs down from her chair and straightens a lane rope that did not need it.'],
+  },
+  {
+    id: 'roz', name: 'Roz Quintero', aka: 'Roz',
+    desc: 'Roz runs the Early Bird Bakery and has been up since four. She has flour on her forearms and a pencil behind one ear. She bakes Pat’s pies, which Pat does not advertise, and she trades Ruth-Ann bread for tomatoes and opinions. Her brother drives the bread van out past Long Acre. She worries about the old oven, which groans louder every winter.',
+    home: 'early_bird_bakery', family: [], knows: ['pat', 'ruthann'],
+    wants: ['a second oven before the holidays', 'Pat to say out loud that the pies are Roz’s'],
+    schedule: [
+      { from: 4, to: 14, room: 'early_bird_bakery', doing: 'pulling bread from the oven' },
+      { from: 14, to: 16, room: 'pats_diner', doing: 'delivering the pies' },
+      { from: 16, to: 19, room: 'ruth_anns_stoop', doing: 'trading bread for tomatoes' },
+      { from: 19, to: 4, room: 'early_bird_bakery', doing: 'asleep in the back room' },
+    ],
+    talk: [
+      '"Pat says the pies are hers. The pies are mine. Pat makes the coffee, and you have tasted the coffee."',
+      '"Cinnamon buns come out at six. At six fifteen they are gone. Plan accordingly."',
+      '"Ruth-Ann gives me tomatoes and tells me how to live. I give her bread and do not listen. It works."',
+      '"You want to learn to bake, be here at four. Nobody wants to learn to bake."',
+    ],
+    ambient: ['Roz slides a tray of rolls onto the cooling rack.', 'Roz writes BUNS: GONE on the chalkboard.', 'Roz knocks the flour off her hands against her apron.'],
+  },
+  {
+    id: 'anselm', name: 'Anselm Ruiz', aka: 'Anselm',
+    desc: 'Anselm runs the Easel, a painting studio and gallery on Fairlawn Avenue. He wears a paint-stiff shirt and reading glasses pushed up into his hair. He paints the bell tower every year, late bell and all. His aunt Flo runs the Bijou, and he painted its lobby. Oleander at the Mark Exchange values his work; Constance buys a painting every spring and never hangs it. He is afraid he will never finish the Bijou ceiling before his aunt stops asking.',
+    home: 'the_easel', family: ['flo'], knows: ['oleander', 'constance'],
+    wants: ['finish the Bijou ceiling before his aunt stops asking', 'a painting on the gallery wall by somebody who swore they could not paint'],
+    schedule: [
+      { from: 9, to: 17, room: 'the_easel', doing: 'painting by the window' },
+      { from: 17, to: 19, room: 'the_bijou', doing: 'working on the lobby ceiling' },
+      { from: 19, to: 22, room: 'dezs_bar', doing: 'sketching the crowd' },
+      { from: 22, to: 9, room: 'the_easel', doing: 'asleep in the loft' },
+    ],
+    talk: [
+      '"Everybody says they cannot paint. Then they paint. Then they say it is bad. It is not bad. It is theirs."',
+      '"I paint the bell tower every year. Every year the bell is late in the picture too. Accuracy matters."',
+      '"My aunt Flo wants the lobby ceiling finished. I want it finished. The ceiling has its own ideas."',
+      '"Mrs. Ledger-Pryce buys a painting every spring and puts it in a closet. I have decided this is a compliment."',
+    ],
+    ambient: ['Anselm steps back from his canvas, squints, and steps forward again.', 'Anselm rinses a brush and the water turns blue.', 'Anselm hangs a painting on the gallery wall and straightens it three times.'],
+  },
+
 ];
 
 const CENSUS_BY_ID = Object.fromEntries(CENSUS.map((c) => ['npc:' + c.id, c]));
@@ -1159,6 +1272,16 @@ async function carveReverie() {
   await require('./life/outdoors').seed();
   await require('./life/places').seed();
   await require('./life/authored').seed();
+  await require('./life/venues').seed();
+  /* Part 296: fourteen rooms (Pat's, Dez's, the docks, the Archive...) had
+   * their ear line typed INSIDE their food or job object, so "listen" and
+   * Notice surroundings never read it. The source is repaired below the room
+   * table; this lifts it on rooms already carved, only where none is set. */
+  for (const r of CITY_ROOMS) {
+    if (r.props && r.props.listenLine) {
+      await MooRoom.updateOne({ roomId: r.roomId, 'props.listenLine': { $exists: false } }, { $set: { 'props.listenLine': r.props.listenLine } });
+    }
+  }
   for (const i of CITY_ITEMS) {
     await MooItem.updateOne(
       { itemId: i.itemId },

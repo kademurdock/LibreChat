@@ -33,6 +33,11 @@ const residentClothes: { [id: string]: string } = {
   'npc:ines': 'reading glasses on a cord',
   'npc:dez': 'rolled-up sleeves and a silver watch',
   'npc:nell': 'soft cardigan with pushed-up sleeves',
+  'npc:flo': 'a gray cardigan and reading glasses',
+  'npc:teddy': 'a blue work shirt with a screwdriver in the pocket',
+  'npc:mabel': 'a red lifeguard jacket and a whistle on a cord',
+  'npc:roz': 'a flour-dusted apron',
+  'npc:anselm': 'a paint-stiff green shirt and glasses',
 };
 
 export function residentAppearance(id: string): ReverieAppearance | null {

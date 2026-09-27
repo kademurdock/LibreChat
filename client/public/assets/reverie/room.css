@@ -158,7 +158,7 @@
 .pocket-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
 .pocket-controls button { flex: 1 1 8rem; min-height: 48px; }
 @media (max-width: 700px) {
-  .world-shortcuts { position: sticky; top: 0; z-index: 8; background: var(--bg); padding: .4rem; border-bottom: 1px solid var(--line); }
+  .world-shortcuts { position: sticky; top: 0; z-index: 8; background: var(--paper, #f4f2ee); padding: .4rem; border-bottom: 1px solid var(--line); }
   .world-shortcuts a { flex: 1 1 auto; justify-content: center; }
   #choicesBox, #moveBox, #hudBox, #log, #cmdInput { scroll-margin-top: 8rem; }
 }

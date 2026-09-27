@@ -417,7 +417,8 @@ registry.register({
   async run(ctx) {
     const { ch, life } = ctx;
     const room = await ctx.room();
-    const isHome = life.home && life.home === ch.roomId;
+    /* Part 296: a bedroom built onto your place is home too */
+    const isHome = !!life.home && (life.home === ch.roomId || room?.props?.home?.parent === life.home);
     const bed = isHome ? await MooItem.findOne({ 'location.type': 'room', 'location.id': ch.roomId, 'props.furniture': 'bed' }).lean() : null;
     const safe = (room && room.props && room.props.sleepable) || isHome;
     if (!safe) return ctx.fail('Not a sleeping spot. Mercy never closes, the Kettle keeps its corner, the clinic has chairs, the truck stop booths have held worse — or rent a place of your own (listings).');
@@ -431,7 +432,7 @@ registry.register({
   },
   async buttons(ctx) {
     const room = await ctx.room();
-    const isHome = ctx.life.home && ctx.life.home === ctx.ch.roomId;
+    const isHome = !!ctx.life.home && (ctx.life.home === ctx.ch.roomId || room?.props?.home?.parent === ctx.life.home);
     return (room && room.props && room.props.sleepable) || isHome ? [{ label: 'Sleep', cmd: 'sleep', group: 'here' }] : [];
   },
 });
@@ -450,6 +451,12 @@ function careerSkill(jobName) {
   if (/garage|outboard|repair/.test(j)) return 'handy';
   if (/plot|garden|greenhouse/.test(j)) return 'garden';
   if (/clinic|mercy|children/.test(j)) return 'care';
+  /* Part 296: the new places */
+  if (/bakery|oven/.test(j)) return 'cooking';
+  if (/bijou|booth/.test(j)) return 'handy';
+  if (/bathhouse|towel/.test(j)) return 'fitness';
+  if (/easel|studio/.test(j)) return 'painting';
+  if (/starlite|prize/.test(j)) return 'hustle';
   return 'hustle';
 }
 
@@ -460,7 +467,7 @@ registry.register({
     const { ch, life } = ctx;
     const room = await ctx.room();
     const job = room && room.props && room.props.job;
-    if (!job) return ctx.fail('No work here. The docks, the Archive desk, Pat’s sink, Dez’s bar, the salvage scale, the garden plots, the fields, the orchard — work is where the verbs are. "careers" shows your standing.');
+    if (!job) return ctx.fail('No work here. The docks, the Archive desk, Pat’s sink, Dez’s bar, the salvage scale, the garden plots, the fields, the orchard, the bakery ovens, the Bijou booth, the bathhouse, the Starlite counter, the Easel — work is where the verbs are. "careers" shows your standing.');
     const t = todayKey();
     const workDay = (ch.attrs.workDay === t) ? (ch.attrs.workCount || 0) : 0;
     if (workDay >= 6) return ctx.fail(job.refusal || 'The work waves you off. Six shifts is a day. Tomorrow exists for a reason.');

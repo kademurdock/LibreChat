@@ -45,6 +45,9 @@ require('./places');
 require('./authored');
 require('./wardrobe');
 require('./drama');
+require('./wants');
+require('./venues');
+require('./build');
 require('./help');
 const view = require('./view');
 const lifeTick = require('./tick');
@@ -143,6 +146,9 @@ async function runTurn({ ch, userId, command, isWizard, live, isChild = false, r
   };
 
   let result;
+  /* where the turn began, for wants that care about arriving somewhere */
+  const start = { roomId: ch.roomId, district: null };
+  try { start.district = ((await ctx.room()) || {}).district || null; } catch (_) { /* a missing room is the verb's problem */ }
   try {
     /* THE WIZARD — a soul still being born answers questions, not verbs. */
     const creation = require('./creation');
@@ -166,6 +172,8 @@ async function runTurn({ ch, userId, command, isWizard, live, isChild = false, r
 
   /* AFTER-EFFECTS — needs and skills queued by the verb, or implied by kind. */
   try { await applyEffects(ctx, result); } catch (e) { logger.error('[life] effects failed:', e && e.message); }
+  /* WANTS AND LIFE GOALS (Part 296) — read what just happened, never change it */
+  try { ctx._room = null; await require('./wants').observe(ctx, result, start); } catch (e) { logger.error('[life] wants failed (non-fatal):', e && e.message); }
 
   /* DECORATE — the HUD, the buttons, the people, the compass. */
   if (typeof meanwhileItems !== 'undefined' && meanwhileItems.length) result.meanwhile = meanwhileItems;

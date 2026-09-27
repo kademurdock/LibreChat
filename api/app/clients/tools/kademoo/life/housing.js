@@ -54,8 +54,11 @@ async function myHome(ch) {
   return MooRoom.findOne({ roomId: hid }).lean();
 }
 async function homesOf(userId) {
-  return MooRoom.find({ $or: [{ 'props.home.owner': userId }, { 'props.home.tenants': userId }] }).lean();
+  /* Part 296: a room built onto a home is part of it, not a second home */
+  return MooRoom.find({ $or: [{ 'props.home.owner': userId }, { 'props.home.tenants': userId }], 'props.home.parent': { $exists: false } }).lean();
 }
+/** A home and every room built onto it, as one Mongo filter. */
+function familyOf(homeId) { return { $or: [{ roomId: homeId }, { 'props.home.parent': homeId }] }; }
 function hasKey(room, userId) {
   const h = room && room.props && room.props.home;
   return !!h && (h.owner === userId || (h.tenants || []).includes(userId) || (h.keys || []).includes(userId));
@@ -69,6 +72,14 @@ async function mayPass(ctx, room, dirKey, destId) {
 }
 async function mayEnter(ctx, dest) {
   const h = dest.props.home;
+  if (h.parent) {
+    /* A room somebody built onto their place (Part 296). Anybody already
+     * inside the home walks through; from outside, the front door decides. */
+    if (ctx.ch.roomId === h.parent || (await MooRoom.exists({ roomId: ctx.ch.roomId, 'props.home.parent': h.parent }))) return { ok: true };
+    const main = await MooRoom.findOne({ roomId: h.parent }).lean();
+    if (!main || !main.props || !main.props.home) return { ok: false, line: 'That room is part of somebody’s home.' };
+    return mayEnter(ctx, main);
+  }
   const me = ctx.userId;
   if (hasKey(dest, me)) return { ok: true };
   const ownerHome = await MooChar.findOne({ userId: h.owner, roomId: dest.roomId }).select('name').lean();
@@ -161,15 +172,20 @@ registry.register({
   help: { topic: 'home', usage: 'move out', blurb: 'Give a place back. Furniture comes with you.' },
   async run(ctx) {
     const { ch, life } = ctx;
-    const room = await ctx.room();
-    const h = room && room.props && room.props.home;
+    let room = await ctx.room();
+    let h = room && room.props && room.props.home;
+    /* standing in a room you built on? moving out means the whole place */
+    if (h && h.parent) { room = await MooRoom.findOne({ roomId: h.parent }).lean(); h = room && room.props && room.props.home; }
     if (!h || h.owner !== ch.userId) return ctx.fail('Stand inside your own place to move out of it.');
-    const furniture = await MooItem.find({ 'location.type': 'room', 'location.id': room.roomId }).lean();
+    const family = await MooRoom.find(familyOf(room.roomId)).select('roomId').lean();
+    const ids = family.map((r) => r.roomId);
+    const furniture = await MooItem.find({ 'location.type': 'room', 'location.id': { $in: ids } }).lean();
     for (const f of furniture) await MooItem.updateOne({ _id: f._id }, { $set: { location: { type: 'char', id: ch.userId }, portable: true } });
-    const others = await MooChar.find({ roomId: room.roomId, userId: { $ne: ch.userId } }).lean();
+    const others = await MooChar.find({ roomId: { $in: ids }, userId: { $ne: ch.userId } }).lean();
     for (const o of others) await MooChar.updateOne({ _id: o._id }, { $set: { roomId: room.exits.out || 'city_gate' } });
+    if (ch.roomId !== room.roomId) { await MooChar.updateOne({ _id: ch._id }, { $set: { roomId: room.roomId } }); ch.roomId = room.roomId; }
     await moveTo(ch, room.exits.out || 'city_gate', null, `${ch.name} comes out carrying everything they own.`);
-    await MooRoom.deleteOne({ roomId: room.roomId });
+    await MooRoom.deleteMany({ roomId: { $in: ids } });
     const rest = await homesOf(ch.userId);
     const next = rest.find((r) => r.props.home.owner === ch.userId);
     life.home = next ? next.roomId : null; life.homeName = next ? listingByKey(next.props.home.listing).name : null;
@@ -282,7 +298,7 @@ registry.register({
     if (!arg) return ctx.fail(`Your door is set to "${h.door || 'friends'}". Options: open (anyone), friends (people you like, when you are home), locked (keys only).`);
     const v = ['open', 'friends', 'locked'].find((x) => arg.startsWith(x));
     if (!v) return ctx.fail('open, friends, or locked.');
-    await MooRoom.updateOne({ roomId: room.roomId }, { $set: { 'props.home.door': v } });
+    await MooRoom.updateMany(familyOf(h.parent || room.roomId), { $set: { 'props.home.door': v } });
     ctx.say(`Door: ${v}.`);
     return ctx.ok({ kinds: [...ctx.kinds, 'door'] });
   },
@@ -305,7 +321,7 @@ registry.register({
     const here = await MooChar.find({ roomId: ch.roomId, userId: { $ne: ch.userId, $not: /^(stray|pet):/ } }).lean();
     const t = matchName(here, who);
     if (!t) return ctx.fail(`Nobody called "${who}" here to hand a key to. They have to be standing with you.`);
-    await MooRoom.updateOne({ roomId: life.home }, { $addToSet: { 'props.home.keys': t.userId } });
+    await MooRoom.updateMany(familyOf(life.home), { $addToSet: { 'props.home.keys': t.userId } });
     await tell(t.userId, `${ch.name} hands you a key to ${life.homeName}. "visit ${ch.name.split(' ')[0]}" gets you there any time.`, 'system', 'coin');
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} hands ${t.name} a key.`);
     await require('./relationships').adjust(ch.userId, t.userId, { friendship: 6 }, { names: { [ch.userId]: ch.name, [t.userId]: t.name } });
@@ -325,7 +341,7 @@ registry.register({
     const item = await findHeld(ch.userId, arg, { 'props.furniture': { $exists: true } });
     if (!item) return ctx.fail(`You carry no furniture called "${argRaw}". Hock’s Pawn and the Salvage Yard sell it.`);
     const already = await MooItem.findOne({ 'location.type': 'room', 'location.id': room.roomId, 'props.furniture': item.props.furniture }).lean();
-    if (already && !['plant', 'lamp', 'rug', 'chair'].includes(item.props.furniture)) return ctx.fail(`There is already ${already.name} here. Pack it up first (pack up ${already.name.replace(/^(a|an|the)\s+/, '')}).`);
+    if (already && !['plant', 'lamp', 'rug', 'chair', 'painting'].includes(item.props.furniture)) return ctx.fail(`There is already ${already.name} here. Pack it up first (pack up ${already.name.replace(/^(a|an|the)\s+/, '')}).`);
     await MooItem.updateOne({ _id: item._id }, { $set: { location: { type: 'room', id: room.roomId }, portable: false } });
     await emit(room.roomId, ch.userId, ch.name, 'emote', `${ch.name} sets up ${item.name}.`);
     ctx.need({ fun: 4 });
@@ -440,4 +456,4 @@ registry.register({
   },
 });
 
-module.exports = { LISTINGS, listingByKey, myHome, homesOf, hasKey, mayPass, mayEnter, furnitureHere, homeIdFor };
+module.exports = { LISTINGS, listingByKey, myHome, homesOf, hasKey, mayPass, mayEnter, furnitureHere, homeIdFor, familyOf };

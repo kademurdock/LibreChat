@@ -83,6 +83,7 @@ const TEMPER = {
   pat: 'gruff', merle: 'warm', dez: 'cool', ines: 'formal', ruthann: 'warm', littleray: 'cool', levi: 'warm', doc: 'gruff', hock: 'cool',
   boone: 'gruff', marsh: 'gruff', reed: 'formal', odessa: 'formal', wendell: 'formal', opal: 'warm', constance: 'formal', oleander: 'cool', pham: 'formal',
   cass: 'warm', chike: 'formal', marva: 'gruff', royce: 'cool', birdie: 'warm', emmett: 'gruff', junie: 'warm',
+  flo: 'warm', teddy: 'cool', mabel: 'formal', roz: 'gruff', anselm: 'warm',
 };
 const NO_ROMANCE = new Set(['junie', 'reed', 'pham', 'odessa', 'chike']); /* a kid, and the people whose job it is not */
 /* A TEMPERAMENT FOR ANYBODY (the Veil, Sep 21 2026).
@@ -434,7 +435,7 @@ socialVerb({
       const housing = require('./housing');
       const home = await housing.myHome(from) || (from.attrs.life && from.attrs.life.home ? await require('./ctx').MooRoom.findOne({ roomId: from.attrs.life.home }).lean() : null);
       if (!home) return ctx.fail(`${them} does not have a place anymore.`);
-      await require('./ctx').MooRoom.updateOne({ roomId: home.roomId }, { $addToSet: { 'props.home.tenants': ctx.userId } });
+      await require('./ctx').MooRoom.updateMany(housing.familyOf(home.roomId), { $addToSet: { 'props.home.tenants': ctx.userId } });
       const listing = housing.listingByKey(home.props.home.listing);
       await setAttrs(ctx.ch, { 'life.home': home.roomId, 'life.homeName': listing ? listing.name : 'home', home: home.roomId });
       ctx.life.home = home.roomId; ctx.life.homeName = listing ? listing.name : 'home';
@@ -540,7 +541,7 @@ socialVerb({
     await MooChar.updateMany({ userId: otherId }, { $set: { 'attrs.life.partnerName': null, 'attrs.life.partner': null, 'attrs.life.married': false } });
     await tell(otherId, `${ctx.ch.name} ends it with you. ${wasMarried ? 'The papers will come from the Courthouse.' : ''}`.trim(), 'system', 'err');
     /* move out of a shared home if it is theirs */
-    if (ctx.life.home) { const home = await require('./ctx').MooRoom.findOne({ roomId: ctx.life.home }).lean(); if (home && home.props.home.owner === otherId) { await require('./ctx').MooRoom.updateOne({ roomId: home.roomId }, { $pull: { 'props.home.tenants': ctx.userId } }); await setAttrs(ctx.ch, { 'life.home': null, 'life.homeName': null, home: null }); ctx.life.home = null; ctx.life.homeName = null; ctx.say('You pack a bag. Their place is not yours anymore; the Kettle keeps a corner.'); } }
+    if (ctx.life.home) { const home = await require('./ctx').MooRoom.findOne({ roomId: ctx.life.home }).lean(); if (home && home.props.home.owner === otherId) { await require('./ctx').MooRoom.updateMany(require('./housing').familyOf(home.roomId), { $pull: { 'props.home.tenants': ctx.userId } }); await setAttrs(ctx.ch, { 'life.home': null, 'life.homeName': null, home: null }); ctx.life.home = null; ctx.life.homeName = null; ctx.say('You pack a bag. Their place is not yours anymore; the Kettle keeps a corner.'); } }
     await emit(ctx.ch.roomId, ctx.userId, ctx.ch.name, 'emote', `${ctx.ch.name} looks like somebody who just ended something.`);
     await require('./drama').rumor(ctx, `${ctx.ch.name} and ${otherName} ${wasMarried ? 'split up' : 'broke up'}`, 'love', 5);
     ctx.need({ fun: -20, company: -15 });

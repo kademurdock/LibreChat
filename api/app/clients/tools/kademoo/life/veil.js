@@ -127,6 +127,7 @@ const CITIZEN_PRONOUNS = {
   constance: 'she', oleander: 'he', pham: 'she', littleray: 'he', cass: 'they',
   chike: 'he', marva: 'she', royce: 'he', birdie: 'she', emmett: 'he',
   junie: 'she',
+  flo: 'she', teddy: 'he', mabel: 'she', roz: 'she', anselm: 'he',
 };
 
 /** What the city calls this citizen. Accepts 'nell' or 'npc:nell'. */

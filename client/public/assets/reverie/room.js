@@ -253,7 +253,11 @@
   }
   var stage = null,
     failed = false,
-    motion = true;
+    motion = true,
+    nameTagsOn = true;
+  try {
+    nameTagsOn = localStorage.getItem('reverie_names') !== 'off';
+  } catch (e) {}
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   function syncStage() {
     var host = $('reverieIllustration');
@@ -294,6 +298,7 @@
         return;
       }
     }
+    if (stage.nameTags !== nameTagsOn) stage.nameTags = nameTagsOn;
     stage.update(latest.room, latest.hud);
     stage.setMotion(motion && !reduced.matches);
   }
@@ -407,6 +412,22 @@
           localStorage.setItem('reverie_picture', hidden ? 'on' : 'off');
         } catch (e) {}
       };
+      var names = $('namesToggle');
+      if (names) {
+        var paintNames = function () {
+          names.setAttribute('aria-pressed', String(nameTagsOn));
+          names.textContent = 'Name tags: ' + (nameTagsOn ? 'on' : 'off');
+        };
+        paintNames();
+        names.onclick = function () {
+          nameTagsOn = !nameTagsOn;
+          paintNames();
+          if (stage && stage.setNameTags) stage.setNameTags(nameTagsOn);
+          try {
+            localStorage.setItem('reverie_names', nameTagsOn ? 'on' : 'off');
+          } catch (e) {}
+        };
+      }
       $('readingToggle').onclick = function () {
         var on = document.body.classList.toggle('easy-reading');
         this.setAttribute('aria-pressed', String(on));
@@ -421,6 +442,24 @@
       } catch (e) {}
     },
     render: render,
+    /* Part 296: speech bubbles and name tags. Decoration only; the log is
+     * the record and it already said every word. */
+    speech: function (e) {
+      if (!stage || !e || !e.actor || !stage.speak) return;
+      var t = String(e.text || ''),
+        who = String(e.actor);
+      if (e.kind === 'say' || e.kind === 'speak' || e.kind === 'whisper') {
+        var quoted = /["“]([^"”]{1,400})["”]/.exec(t);
+        if (quoted) stage.speak(who, quoted[1], 'say');
+      } else if (e.kind === 'emote' || e.kind === 'pose') {
+        var action = t.indexOf(who) === 0 ? t.slice(who.length).trim() : '';
+        if (action && action.length < 120 && !/["“]/.test(action)) stage.speak(who, action.replace(/[.!]+$/, ''), 'emote');
+      }
+    },
+    nameTags: function (on) {
+      nameTagsOn = !!on;
+      if (stage && stage.setNameTags) stage.setNameTags(nameTagsOn);
+    },
     result: function (result) {
       if (result.mode && result.mode !== 'play') {
         latest = null;

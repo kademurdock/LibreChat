@@ -93,6 +93,12 @@ async function seedSounds() {
       the_archive: 'amb.archive.quiet',
       ferry_dock_hook: 'amb.ferry.quiet',
       gully_laundry: 'amb.laundry.quiet',
+      /* Part 296: the five new places */
+      the_bijou: 'amb.bijou.room',
+      starlite_arcade: 'amb.arcade.room',
+      early_bird_bakery: 'amb.bakery.room',
+      sweetwater_bathhouse: 'amb.bathhouse.pool',
+      the_easel: 'amb.easel.room',
     };
     for (const [scopeId, eventId] of Object.entries(rooms)) {
       if (LIFE_SOUNDS[eventId])

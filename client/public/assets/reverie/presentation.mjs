@@ -4,7 +4,10 @@ export function sceneModel(room, hud = {}) {
   const senses = room.sensory || {};
   const nature = !!senses.nature;
   const water = !!senses.water || /pier|dock|breakwater|pilings|houseboat/.test(id);
-  const type = id === 'reed_pavilion' ? 'pavilion' : id === 'net_loft' ? 'netloft' : room.home
+  /* Part 296: five new places draw their own rooms, and a yard built onto a
+   * home is a yard. The server names the scene; the ids are the fallback. */
+  const venue = VENUE_SCENES[id] || (SCENE_TYPES.has(room.scene) ? room.scene : null);
+  const type = venue ? venue : id === 'reed_pavilion' ? 'pavilion' : id === 'net_loft' ? 'netloft' : room.home && room.home.roomType === 'yard' ? 'yard' : room.home
     ? 'home'
     : id === 'alder_camp'
       ? 'camp'
@@ -43,6 +46,9 @@ export function sceneModel(room, hud = {}) {
     outdoor: !!room.outdoor,
     washhouse: type === 'laundry' ? { benchStage: Math.max(0, Math.min(3, Number(room.washhouse?.benchStage) || 0)) } : null,
     furniture: (room.furniture || []).slice(0, 24),
+    style: room.style ? { walls: String(room.style.walls || ''), wallHex: String(room.style.wallHex || ''), floor: String(room.style.floor || ''), floorKind: String(room.style.floorKind || '') } : null,
+    roomType: room.home ? room.home.roomType || 'main' : null,
+    paintings: (room.paintings || []).slice(0, 12).map((p) => ({ title: String(p.title || ''), painter: String(p.painter || ''), medium: String(p.medium || '') })),
     people: [
       {
         id: hud.characterId || 'self',
@@ -64,8 +70,17 @@ export function sceneModel(room, hud = {}) {
   };
 }
 
+const VENUE_SCENES = { the_bijou: 'theater', starlite_arcade: 'arcade', early_bird_bakery: 'bakery', sweetwater_bathhouse: 'pool', the_easel: 'studio' };
+const SCENE_TYPES = new Set(['theater', 'arcade', 'bakery', 'pool', 'studio']);
+
 export function describePicture(model) {
   const settings = {
+    theater: 'a cutaway movie house with sloping rows of red seats, gold curtains, a popcorn machine, and a big glowing screen',
+    arcade: 'a cutaway arcade with dark blue carpet dotted with little planets, glowing pinball machines, a glass claw machine full of plush animals, and two skee-ball lanes',
+    bakery: 'a cutaway bakery with a brick oven glowing orange, glass cases of bread and cinnamon buns, a counter with a register, and a chalkboard',
+    pool: 'a cutaway bathhouse with a long blue-green pool and lane ropes, a tall lifeguard chair, a bubbling hot tub, and a cedar sauna door',
+    studio: 'a cutaway painting studio with easels, a long paint-spattered table, tall windows, and a gallery wall of framed paintings',
+    yard: 'a small fenced yard with grass, a clothesline, and a young tree',
     pavilion: 'a roofed riverside platform with open sides, facing benches, reeds, and a framed estuary painting',
     netloft: 'a wooden public sitting room with broad river windows, rope coils, a worktable, and an estuary painting',
     home: 'a cutaway home with an open front, wooden floorboards, and a window',
@@ -84,6 +99,12 @@ export function describePicture(model) {
     workshop: 'a cutaway workshop with a tool board, a workbench, stacked tires, and a rolling stool',
     interior: 'a cutaway room with a wooden floor and warm wall lights',
   };
+  const styled = model.style && (model.style.walls || model.style.floor)
+    ? ` ${model.style.walls ? `The walls are painted ${model.style.walls}` : 'The walls keep their plain color'}${model.style.floor ? `, and the floor is ${model.style.floor}` : ''}.`
+    : '';
+  const hung = model.paintings && model.paintings.length
+    ? ` Framed paintings hang on the wall: ${model.paintings.map((p) => `${p.title}${p.painter ? ` by ${p.painter}` : ''}`).join('; ')}.`
+    : '';
   const furniture =
     model.type === 'home'
       ? model.furniture.length
@@ -109,6 +130,8 @@ export function describePicture(model) {
       ? ` ${model.totalPeople - 12} more occupants remain listed in Here with you.`
       : '') +
     furniture +
+    styled +
+    hung +
     (model.washhouse ? (model.washhouse.benchStage === 3 ? ' The window bench has been repaired and stands steady.' : ' The window bench is awaiting repairs; a small tool tray sits beside it.') : '') +
     (['diner', 'interior', 'library'].includes(model.type)
       ? ' A framed painting shows an imagined riverside town, a stone bridge, and apricot clouds reflected in teal water.'
@@ -195,6 +218,8 @@ export function figurePosition(model, person, index) {
       gathering: true,
     };
   }
+  const spot = venueSpot(model, person, index);
+  if (spot) return spot;
   const activity = publicActivity(person);
   const station = activityStation(model.type, activity);
   if (station && !person.self) {
@@ -229,8 +254,50 @@ export function figurePosition(model, person, index) {
   };
 }
 
+/* Part 296 — where people are in the five new places. The keeper of a place
+ * is recognised by what the room says they are doing (the same public line
+ * everybody reads), never by who they are, so a player behind the counter
+ * would stand there too. */
+const KEEPER_SPOTS = {
+  theater: { re: /ticket|till|booth|projector/, x: -4.25, z: -1.95, rotation: 0 },
+  arcade: { re: /flipper|fixing|counter|ticket|machine/, x: -3.2, z: 2.05, rotation: Math.PI },
+  pool: { re: /lanes|tall chair|lifeguard|whistle|towel/, x: 4.2, z: -2.2, y: 1.58, rotation: -Math.PI / 2 },
+  bakery: { re: /oven|bread|bak|register|pies/, x: -3.2, z: -2.35, rotation: Math.PI },
+  studio: { re: /paint|canvas|window|ceiling/, x: -3.35, z: 0.85, rotation: -0.9 },
+};
+const SEATS = [];
+for (const row of [1, 2, 0, 3]) for (const seat of [3, 2, 4, 1, 5, 0, 6]) SEATS.push({ x: -2.3 + seat * 0.95 + (row % 2) * 0.2, z: -1.3 + row * 1.25 + 0.06, y: 0.06 + row * 0.1 });
+const VENUE_POINTS = {
+  arcade: [[-3.8, -2.3, Math.PI], [-2.3, -2.3, Math.PI], [-0.8, -2.3, Math.PI], [3.6, -1.75, Math.PI], [0.6, 2.95, Math.PI], [2.1, 2.95, Math.PI], [-1.8, 2.2, Math.PI], [1.4, -0.5, 0.4]],
+  bakery: [[0.2, 0.15, Math.PI], [1.2, 0.2, Math.PI], [2.2, 0.15, Math.PI], [3.1, 0.35, Math.PI], [0.4, 3.2, 0.3], [-1.6, 1.6, -0.4]],
+  studio: [[2.6, -0.45, Math.PI - 0.3], [3.8, 1.95, Math.PI - 0.5], [-1.2, 2.75, Math.PI], [-0.2, 2.7, Math.PI], [0.9, -2.9, Math.PI], [2.4, 3.2, 0.3]],
+  pool: [[-3.6, 2.7, 0.3], [-2.2, 2.9, 0.1], [-0.6, 2.9, 0], [1, 2.9, -0.1], [2.4, 3.1, -0.3], [-4.3, 0.2, Math.PI / 2], [4.3, 0.6, -Math.PI / 2]],
+};
+function venueSpot(model, person, index) {
+  const type = model.type;
+  const keeper = KEEPER_SPOTS[type];
+  const tag = String(person.tag || '').toLowerCase();
+  if (keeper && !person.self && keeper.re.test(tag)) return { x: keeper.x, z: keeper.z, y: keeper.y || 0, rotation: keeper.rotation, gathering: false };
+  if (type === 'theater') {
+    const s = SEATS[index % SEATS.length];
+    return { x: s.x, z: s.z, y: s.y, rotation: Math.PI, gathering: false, seated: true };
+  }
+  if (type === 'pool' && /swim|lap|paddl|float|cannonball|dripping/.test(tag)) {
+    return { x: -2.4 + (index % 5) * 1.2, z: -1.95 + (index % 3) * 1.4, y: -0.38, rotation: Math.PI / 2, gathering: false, swimming: true };
+  }
+  const points = VENUE_POINTS[type];
+  if (!points) return null;
+  const [x, z, rotation] = points[index % points.length];
+  const lap = Math.floor(index / points.length) * 0.5;
+  return { x: x + lap, z: z + lap, rotation, gathering: false };
+}
+
 export function furnitureKind(name) {
   const n = String(name).toLowerCase();
+  if (/^a painting:/.test(n)) return 'painting';
+  for (const [needle, kind] of [['lava lamp', 'lavalamp'], ['fish tank', 'fishtank'], ['bunk', 'bunk'], ['television', 'tv'], ['scratching post', 'post'], ['telescope', 'telescope'], ['jukebox', 'jukebox'], ['hammock', 'hammock'], ['easel', 'easel'], ['shower', 'shower']]) {
+    if (n.includes(needle)) return kind;
+  }
   for (const kind of [
     'bed',
     'sofa',

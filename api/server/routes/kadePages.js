@@ -3466,7 +3466,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=204">
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=296">
 <style>
   /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
    * Two audiences, one page. For a screen reader: a single live log that says
@@ -3604,6 +3604,11 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   .meter .bar i.low { background: #d98c2b; } .meter .bar i.bad { background: var(--danger); }
   .meter .word { color: var(--muted); font-size: .85rem; text-align: right; }
   .mood { font-size: 1.05rem; margin: .2rem 0 .5rem; }
+  .wants { margin-top: .7rem; padding-top: .6rem; border-top: 1px solid var(--line); }
+  .wants h3 { margin-bottom: .2rem; }
+  .chip.want { background: color-mix(in srgb, #d6ae54 14%, var(--card)); border-color: color-mix(in srgb, #d6ae54 55%, var(--line)); }
+  .chip.want.done { opacity: .62; text-decoration: line-through; }
+  #goalLine { margin: .45rem 0 0; font-size: .92rem; }
   .kv { display: flex; flex-wrap: wrap; gap: .4rem .9rem; font-size: .92rem; color: var(--muted); margin-top: .5rem; }
   .kv b { color: var(--ink); font-weight: 600; }
 
@@ -3649,7 +3654,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       </div>
     </section>
 
-    <nav class="section pocket-controls" aria-label="Quick world actions">
+    <nav class="section pocket-controls" id="pocketBox" aria-label="Quick world actions">
+      <button type="button" class="chip" data-quick="wants">My wants</button>
       <button type="button" class="chip" data-quick="orient">Where am I?</button>
       <button type="button" class="chip" data-quick="places">Find a place</button>
       <button type="button" class="chip" data-quick="waterfront">River walk</button>
@@ -3736,6 +3742,11 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <h3>You</h3>
       <div class="mood" id="mood">—</div>
       <div class="meters" id="meters"></div>
+      <div class="wants" id="wantsBox" hidden>
+        <h3 id="wantsTitle">Today you want</h3>
+        <div class="chips" id="wantsList" role="group" aria-labelledby="wantsTitle"></div>
+        <p class="muted" id="goalLine"></p>
+      </div>
       <div class="kv" id="kv"></div>
       <div class="chips" id="selfActs" style="margin-top:.6rem"></div>
     </div>
@@ -3751,16 +3762,16 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <div class="toolbar">
         <button type="button" class="chip" id="verboseToggle" aria-pressed="true">Read the room on every move: on</button>
         <button type="button" class="chip" id="liveToggle" aria-pressed="true">Hear the room live: on</button>
-        <button type="button" class="chip" id="testSound">Test sound</button><button type="button" class="chip" id="illustrationToggle" aria-pressed="true">Room picture: on</button><button type="button" class="chip" id="motionToggle" aria-pressed="true">World motion: on</button><button type="button" class="chip" id="describePicture">Describe the picture</button><button type="button" class="chip" id="readingToggle" aria-pressed="false">Roomy text: off</button>
+        <button type="button" class="chip" id="testSound">Test sound</button><button type="button" class="chip" id="illustrationToggle" aria-pressed="true">Room picture: on</button><button type="button" class="chip" id="motionToggle" aria-pressed="true">World motion: on</button><button type="button" class="chip" id="namesToggle" aria-pressed="true">Name tags: on</button><button type="button" class="chip" id="describePicture">Describe the picture</button><button type="button" class="chip" id="readingToggle" aria-pressed="false">Roomy text: off</button>
       </div>
       <p class="muted" style="font-size:.85rem;margin:.5rem 0 0">Everything on this page is a button or a line of text. Typing works everywhere buttons do. Numbers pick from a list. "help" any time; "what" says what you can do right here.</p>
     </details>
   </div>
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
-<script src="/assets/reverie/exploration.js?v=204"></script>
-<script src="/assets/reverie/room.js?v=204"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=204"></script>
+<script src="/assets/reverie/exploration.js?v=296"></script>
+<script src="/assets/reverie/room.js?v=296"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=296"></script>
 <script>
 (function(){
   'use strict';
@@ -3828,7 +3839,34 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     'ui.coin.gain': function(){ tone(1200,.05,0,'square',.06); tone(1600,.08,.06,'square',.05); tone(2000,.1,.13,'square',.04); },
     'ui.roundtime.end': function(){ tone(520,.04,0,'sine',.05); tone(780,.05,.05,'sine',.05); },
     'social.sit': function(){ noiseBurst(.16, 600, .04); tone(140,.08,.08,'triangle',.05); },
-    'social.stand': function(){ tone(140,.06,0,'triangle',.05); noiseBurst(.14, 700, .035, .05); }
+    'social.stand': function(){ tone(140,.06,0,'triangle',.05); noiseBurst(.14, 700, .035, .05); },
+    /* Part 296 */
+    'ui.want.done': function(){ tone(784,.09,0,'sine',.08); tone(988,.09,.1,'sine',.08); tone(1175,.18,.2,'sine',.08); },
+    'ui.goal.done': function(){ [523,659,784,1047,1319].forEach(function(f,i){ tone(f,.16,i*.11,'triangle',.08); }); tone(1047,.5,.62,'sine',.06); },
+    'ui.reward': function(){ [1200,1500,1800,2250].forEach(function(f,i){ tone(f,.07,i*.06,'sine',.05); }); },
+    'game.pinball.start': function(){ tone(660,.06,0,'square',.05); tone(880,.06,.08,'square',.05); tone(1320,.1,.16,'square',.05); },
+    'game.pinball.bumper': function(){ [0,.12,.2,.34].forEach(function(t,i){ tone(1400 + i*120,.05,t,'square',.045); }); },
+    'game.pinball.drain': function(){ tone(440,.12,0,'sawtooth',.04); tone(330,.12,.12,'sawtooth',.04); tone(220,.25,.24,'sawtooth',.04); },
+    'game.pinball.jackpot': function(){ for (var i = 0; i < 8; i++) tone(880 + (i % 4) * 220, .07, i * .07, 'square', .05); },
+    'game.skeeball.roll': function(){ noiseBurst(.7, 350, .06); tone(520,.08,.72,'triangle',.06); },
+    'game.tickets': function(){ for (var i = 0; i < 6; i++) noiseBurst(.03, 3000, .03, i * .06); },
+    'game.claw.motor': function(){ tone(95,.9,0,'sawtooth',.03); tone(101,.9,0,'sawtooth',.02); },
+    'game.claw.win': function(){ tone(784,.1,0,'square',.05); tone(1047,.1,.1,'square',.05); tone(1568,.25,.2,'square',.05); },
+    'game.claw.drop': function(){ tone(392,.14,0,'triangle',.05); tone(311,.22,.14,'triangle',.05); },
+    'cer.bijou.projector': function(){ for (var i = 0; i < 10; i++) noiseBurst(.02, 2500, .03, i * .09); tone(60,.9,0,'sine',.03); },
+    'obj.oven.door': function(){ tone(150,.25,0,'sawtooth',.03); noiseBurst(.2, 900, .03, .1); },
+    'obj.water.laps': function(){ for (var i = 0; i < 4; i++) noiseBurst(.18, 700, .045, i * .35); },
+    'obj.water.splash.big': function(){ noiseBurst(.6, 600, .09); noiseBurst(.4, 1800, .05, .1); },
+    'obj.water.bubbles': function(){ for (var i = 0; i < 7; i++) tone(300 + Math.random() * 500, .05, i * .09, 'sine', .03); },
+    'obj.sauna.steam': function(){ noiseBurst(.9, 4000, .05); },
+    'obj.brush.stroke': function(){ noiseBurst(.25, 1400, .04); noiseBurst(.25, 1200, .035, .3); },
+    'obj.charcoal.scratch': function(){ for (var i = 0; i < 5; i++) noiseBurst(.06, 3200, .03, i * .08); },
+    'work.hammer.build': function(){ [0,.3,.6,1.1,1.4].forEach(function(t){ tone(180,.06,t,'square',.08); noiseBurst(.05, 1800, .05, t); }); },
+    'obj.paint.roller': function(){ noiseBurst(.8, 500, .05); },
+    'obj.jukebox.play': function(){ noiseBurst(.15, 2200, .03); [392,494,587,784].forEach(function(f,i){ tone(f,.18,.25 + i*.2,'triangle',.05); }); },
+    'obj.telescope.turn': function(){ noiseBurst(.2, 2600, .025); tone(1760,.2,.2,'sine',.02); },
+    'obj.hammock.creak': function(){ tone(210,.3,0,'sawtooth',.02); tone(190,.3,.5,'sawtooth',.02); },
+    'obj.lamp.hum': function(){ tone(60,.8,0,'sine',.03); tone(120,.8,0,'sine',.015); }
   };
   var CACHE = {}, LAST_PLAY = {};
   function fileFor(kind){ return MANIFEST.event[kind] || LOCAL[kind] || null; }
@@ -4110,6 +4148,26 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (h.marks && h.marks.length) kv.push('<span>Marks: <b>' + esc(h.marks.join(', ')) + '</b></span>');
     kv.push('<span>' + esc(h.weatherLine || '') + '</span>');
     $('kv').innerHTML = kv.join('');
+    renderWants(h);
+  }
+  /* Part 296 — today's wants and the life goal. Each open want is a button
+   * that explains itself and offers to walk you there; done ones stay listed,
+   * struck through, until the day turns. */
+  function renderWants(h){
+    var box = $('wantsBox');
+    if (!h || !h.wants) { box.hidden = true; return; }
+    box.hidden = false;
+    var open = h.wants.filter(function(w){ return !w.done; }).length;
+    $('wantsTitle').textContent = open ? 'Today you want (' + (h.satisfaction || 0) + ' satisfaction)' : 'Every want done today (' + (h.satisfaction || 0) + ' satisfaction)';
+    syncButtons($('wantsList'), h.wants.map(function(w){ return Object.assign({ key: w.id + (w.done ? ':done' : '') }, w); }), 'want', function(b, w){
+      b.className = 'chip want' + (w.done ? ' done' : '');
+      b.textContent = (w.done ? 'Done: ' : '') + w.text + ' · ' + w.pts;
+      b.setAttribute('aria-label', (w.done ? 'Done. ' : 'Want: ') + w.text + ', ' + w.pts + ' satisfaction.' + (w.done ? '' : ' Tap to hear how.'));
+      b.disabled = !!w.done;
+      b.onclick = function(){ if (!w.done) send('want ' + w.id); };
+    });
+    var g = h.goal;
+    $('goalLine').textContent = g ? (g.done ? 'Life goal, ' + g.aspiration + ': every step done. Say "aspiration" to pick a new one.' : 'Life goal, ' + g.aspiration + ', step ' + g.step + ' of ' + g.of + ': ' + g.next + '.') : 'No life goal chosen yet. Say "aspiration" to pick one.';
   }
   function renderChoices(choices, freeText, step){
     var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.menu !== JSON.stringify(choices || []);
@@ -4126,7 +4184,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   function setMode(mode){
     var creating = mode === 'create';
     $('explorationPanel').hidden = creating || !lastRoom;
-    ['moveBox', 'actBox', 'hudBox', 'hereBox'].forEach(function(id){ $(id).classList.toggle('hidden', creating); });
+    ['moveBox', 'actBox', 'hudBox', 'hereBox', 'pocketBox'].forEach(function(id){ var el = $(id); if (el) el.classList.toggle('hidden', creating); });
     if (creating) { $('s-name').textContent = 'Becoming somebody'; $('s-desc').textContent = 'Answer the questions — tap, type, or say them. "back" goes back, "help" explains.'; $('s-ward').textContent = 'Reverie'; }
   }
 
@@ -4140,6 +4198,12 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       d.meanwhile.forEach(function(m){ addLine(m.text, 'live'); });
     }
     lines.forEach(function(l){ addLine(l, /flickered|does not know|lost track/.test(l) && !d.ok ? 'err' : (mode === 'create' && l === lines[lines.length - 1] && d.choices ? 'prompt' : 'world')); });
+    if (mode === 'play' && window.ReverieRoom && window.ReverieRoom.speech) lines.forEach(function(l){
+      var mine = /^You (say|ask|exclaim|speak)[^:"“]*:\\s*["“](.+)["”]\\s*$/.exec(l);
+      if (mine && d.hud) { window.ReverieRoom.speech({ actor: d.hud.name, text: '"' + mine[2] + '"', kind: 'say' }); return; }
+      var theirs = /^([A-Z][\\w’'.-]*(?: [A-Z][\\w’'.-]*){0,3}): ["“](.+)["”]\\s*$/.exec(l);
+      if (theirs) window.ReverieRoom.speech({ actor: theirs[1], text: '"' + theirs[2] + '"', kind: 'say' });
+    });
     if (d.room) renderRoom(d.room, d.hud, !d.orientationRead && (settings.verbose || d.born || !lastRoom || d.room.roomId !== lastRoom.roomId));
     else if (d.here && lastRoom && d.here.roomId !== lastRoom.roomId) refreshHere(false);
     if (d.hud) renderHud(d.hud);
@@ -4278,6 +4342,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       if (lastRoom && e.roomId && e.roomId !== lastRoom.roomId && e.roomId.indexOf('whisper:') !== 0) return;
       addLine(e.text, e.kind === 'system' ? 'system live' : 'live');
       playKind(e.sound || e.kind);
+      if (window.ReverieRoom && window.ReverieRoom.speech && e.roomId && e.roomId.indexOf('whisper:') !== 0) window.ReverieRoom.speech({ actor: e.actor, text: e.text, kind: e.kind });
       if (e.kind === 'pose' || e.kind === 'emote' || e.kind === 'enter' || e.kind === 'leave' || e.kind === 'hangout' || /moves off|comes through|heads out|arrives|comes in|let in/.test(e.text)) moved = true;
     });
     while (seenSeqs.size > 200) seenSeqs.delete(seenSeqs.values().next().value);

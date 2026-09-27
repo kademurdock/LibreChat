@@ -87,6 +87,12 @@ const TOPIC_PATTERNS = {
   work: /\b(job|jobs|work|working|hire|hiring|shift|boss|union|wage|wages|fired|quit)\b/i,
   music: /\b(song|songs|music|radio|station|band|play|playing|sing|singing|record|dance)\b/i,
   death: /\b(dead|death|died|dying|funeral|grave|bury|buried|ghost|gone|passed)\b/i,
+  /* Part 296: five new places, five new things somebody can be asked about */
+  movies: /\b(movies?|films?|pictures? show|cinema|theaters?|theatres?|popcorn|matinee|bijou|projector)\b/i,
+  games: /\b(arcade|pinball|skee[- ]?ball|claw|tickets?|high scores?|prizes?)\b/i,
+  swimming: /\b(swim|swimming|swims|pool|laps?|sauna|hot tub|lifeguard|bathhouse)\b/i,
+  baking: /\b(bread|bake[sd]?|baking|baker|bakery|buns?|rolls|cake|pastr(y|ies)|oven|dough|flour|cinnamon|pies)\b/i,
+  art: /\b(paint|painted|painting|paintings|art|artist|drawing|sketch\w*|canvas|gallery|brush(es)?|easel)\b/i,
 };
 
 /* NOT ALL TOPICS ARE WORTH THE SAME. `directions` fires on the word "where",
@@ -421,6 +427,62 @@ const VOICES = {
  * For citizens with no VOICES entry, and for topics nobody in the room owns.
  * Kept small and plain ON PURPOSE: a generic line should read as somebody
  * being unremarkable, not as the game reaching for something. */
+/* Part 296 — the keepers of the five new places. Same rules as everybody
+ * above: they answer what they would know, and say "no idea" their own way. */
+Object.assign(VOICES, {
+  flo: {
+    knows: ['movies', 'neighbors', 'food'],
+    greet: ['"One for the picture? Or just here for the popcorn. Both are allowed."', '"Come in out of the street. The picture starts when I say it does."'],
+    answers: {
+      movies: ['"Tonight’s bill is on the board. If you like a monster, the second one. If you like to cry, bring a handkerchief."', '"Every picture is better on a screen this size. I will not be taking questions on that."'],
+      neighbors: ['"Half this city had its first kiss in my back row. I know which half. I will take it to my grave."'],
+      food: ['"Popcorn with real butter. Not the yellow stuff. I have standards and a cardiologist."'],
+    },
+    shrug: ['"If it was not on a screen, I probably missed it."', '"Ask my nephew. He knows things that are not pictures."'],
+  },
+  teddy: {
+    knows: ['games', 'machines', 'money'],
+    greet: ['"Quarters are in the change machine. It is honest. Mostly."', '"Hey. You any good at pinball? Everybody says yes."'],
+    answers: {
+      games: ['"Pinball is physics and nerve. The claw is patience. Skee-ball is Junie Tandy, and nobody else."', '"The pinball high score is mine. I would like that on the record."'],
+      machines: ['"Anything with a coin slot, I can fix. Anything with feelings, ask Mabel."'],
+      money: ['"Tickets are not money. Do not try to pay Pat in tickets. I have heard how that goes."'],
+    },
+    shrug: ['"No idea. Ask me about flippers."', '"Not my department. My department is anything that goes ding."'],
+  },
+  mabel: {
+    knows: ['swimming', 'kids', 'health'],
+    greet: ['"Shower first, then the pool."', '"Walk. Do not run. Welcome."'],
+    answers: {
+      swimming: ['"Laps in the long lanes, cannonballs in the deep end, the sauna if your shoulders hurt. In that order, if you want my advice."', '"The water here is warm in winter and cool in summer, and nobody believes me until they get in."'],
+      kids: ['"Every child in this city should be able to swim a length. I am working through the list."'],
+      health: ['"A warm pool fixes more backs than anybody likes to admit. Dr. Chike admits it. Quietly."'],
+    },
+    shrug: ['"That is a dry-land question. I am mostly a wet-land person."', '"Ask Teddy. He will not know either, but he will enjoy guessing."'],
+  },
+  roz: {
+    knows: ['baking', 'food', 'neighbors', 'work'],
+    greet: ['"Bell rang, so hello. What do you want."', '"Door. In or out, you are letting the heat go."'],
+    answers: {
+      baking: ['"Flour, water, salt, yeast, and not talking. That is the whole secret."', '"Cinnamon buns at six. Rye on Tuesdays. The pies go to Pat at two, and Pat takes the credit by five past."'],
+      food: ['"Eat something warm. Cold bread is for ducks."'],
+      neighbors: ['"Ruth-Ann trades me tomatoes for bread and tells me how to live. The tomatoes are worth it."'],
+      work: ['"You want a shift, be here before the sun. The ovens do not wait and neither do I."'],
+    },
+    shrug: ['"No idea. I have been in a kitchen since four."', '"Ask somebody who keeps normal hours."'],
+  },
+  anselm: {
+    knows: ['art', 'movies', 'money'],
+    greet: ['"Come in, come in. Mind the canvas. All of them are wet."', '"Ah, a person. Do you want to paint, or watch me fail to?"'],
+    answers: {
+      art: ['"Paint what you know, then paint what you do not. The second one is always better."', '"Everybody draws a house as a box with a triangle on top. Draw the house you grew up in instead. Nobody else can."'],
+      movies: ['"My aunt runs the Bijou. I painted the lobby. Look up at the ceiling and tell me it is finished. You cannot."'],
+      money: ['"Oleander says a painting is worth what somebody will pay. Oleander has never painted anything."'],
+    },
+    shrug: ['"I would not know. I have been staring at one blue for an hour."', '"Ask my aunt. She has seen every picture ever made."'],
+  },
+});
+
 const GENERIC = {
   greet: ['nods.', 'lifts a hand.', 'says something back that amounts to hello.', 'glances up, then back down.'],
   courtesy: ['"Sure."', '"Any time."', '"Don\'t mention it."', 'waves it off.'],
@@ -467,10 +529,38 @@ function pickUnheard(pool, heard, rng = Math.random) {
  * @param {object} opts     { heard: [hashes], rng }
  * @returns {{ line, topic, hash } | null}   null means this one stays quiet
  */
+/* ── THE CLOCK ON A GREETING (Part 296) ─────────────────────────────────────
+ * Marva said "Morning. Pole's in the barrel." at half past eight at night,
+ * and Odessa's "Evening." fired at breakfast. A person never gets the hour
+ * of their own hello wrong, so a line that USES a time of day as a salutation
+ * only stays in the pool while that time is true. Lines that merely mention
+ * a time ("before the sun's all the way up") are untouched. */
+const SALUTE = /(^|["“.!?]\s*)(good\s+)?(morning|afternoon|evening|night)\s*[.!,]/i;
+function centralHour() {
+  try {
+    return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date()), 10) % 24;
+  } catch (_) { return new Date().getHours(); }
+}
+function fitsHour(line, hour) {
+  const m = SALUTE.exec(String(line || ''));
+  if (!m) return true;
+  const word = m[3].toLowerCase();
+  if (word === 'morning') return hour >= 4 && hour < 12;
+  if (word === 'afternoon') return hour >= 12 && hour < 17;
+  if (word === 'evening') return hour >= 16 && hour < 24;
+  return hour >= 20 || hour < 4; /* "night" as a greeting is a goodbye, late */
+}
+function timely(pool, hour) {
+  if (!pool) return pool;
+  return pool.filter((line) => fitsHour(line, hour));
+}
+
 function overhearReply(npc, utterance, opts = {}) {
   const rng = opts.rng || Math.random;
   const heard = opts.heard || [];
-  const v = VOICES[npc.id] || null;
+  const hour = Number.isInteger(opts.hour) ? opts.hour : centralHour();
+  const base = VOICES[npc.id] || null;
+  const v = base ? { ...base, greet: timely(base.greet, hour) } : null;
   const kind = kindOf(utterance);
   const topics = topicsIn(utterance);
   const mine = v ? topics.filter((t) => v.knows.includes(t)) : [];
@@ -567,5 +657,5 @@ function measureRates(runs = 400) {
 module.exports = {
   TOPIC_PATTERNS, TOPIC_WEIGHT, weightOf, topicsIn, kindOf, ANSWER_RATE, VOICES, GENERIC,
   hashLine, pickUnheard, overhearReply, chooseResponder, rememberLine,
-  MEMORY_PER_NPC, measureRates,
+  MEMORY_PER_NPC, measureRates, fitsHour, timely,
 };

@@ -68,9 +68,12 @@ async function describeRoom(ctx) {
     const owner = home.ownerName || 'somebody';
     const mine = home.owner === ch.userId || (home.tenants || []).includes(ch.userId);
     desc += mine ? ' This is your place.' : ` This is ${owner}’s place.`;
+    const build = require('./build');
+    const style = build.styleLine(room.props.style);
+    if (style) desc += ' ' + style;
     if (furniture.length)
-      desc += ' Furnished with ' + furniture.map((f) => f.name).join(', ') + '.';
-    else desc += ' Bare floors — nothing in it yet.';
+      desc += (' Furnished with ' + furniture.map((f) => f.name).join(', ') + '. ' + build.feelLine(furniture.length)).trimEnd();
+    else desc += room.props.style && room.props.style.floor ? ' Nothing in it yet.' : ' Bare floors — nothing in it yet.';
   }
   if (vehicles.length)
     desc +=
@@ -109,8 +112,17 @@ async function describeRoom(ctx) {
           owner: home.owner,
           ownerName: home.ownerName,
           mine: home.owner === ch.userId || (home.tenants || []).includes(ch.userId),
+          roomType: home.roomType || null,
         }
       : null,
+    /* Part 296: what the picture needs to draw a painted room, a new venue
+     * and the paintings on a wall. The words above already carry all of it. */
+    style: (room.props && room.props.style) || null,
+    scene: (room.props && room.props.scene) || null,
+    paintings: items
+      .filter((i) => i.props && i.props.painting)
+      .slice(0, 16)
+      .map((i) => ({ title: i.props.painting.title, painter: i.props.painting.painter, medium: i.props.painting.medium })),
   };
 }
 
@@ -274,9 +286,14 @@ async function hud(ctx) {
     .filter((s) => s.level > 0)
     .sort((a, b) => b.level - a.level)
     .slice(0, 3);
+  let wants = null;
+  try { wants = await require('./wants').hudOf(ctx); } catch (_) { /* the wants panel never breaks a turn */ }
   return {
     name: ch.name,
     characterId: ch.userId,
+    wants: wants ? wants.wants : null,
+    satisfaction: wants ? wants.satisfaction : null,
+    goal: wants ? wants.goal : null,
     appearance: require('@librechat/api').reverieAppearance(ch.attrs),
     pronouns: (ch.attrs && ch.attrs.pronouns) || 'they',
     coin: coinOf(ch),

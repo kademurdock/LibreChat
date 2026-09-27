@@ -10,7 +10,7 @@ import {
   activityPose,
   residentFace,
   walkPose,
-} from './presentation.mjs?v=204';
+} from './presentation.mjs?v=296';
 
 const COLORS = {
   wood: 0xa37750,
@@ -40,6 +40,11 @@ export class Stage {
     this.materials = new Map();
     this.animated = [];
     this.figures = [];
+    this.textures = [];
+    this.disposables = [];
+    this.bubbles = [];
+    this.bubbleSprites = [];
+    this.nameTags = true;
     this.running = false;
     this.motion = true;
     this.visible = true;
@@ -320,6 +325,8 @@ export class Stage {
       this.lamp(-1.3, -3.3);
       return;
     }
+    if (type === 'yard') { this.yard(); return; }
+    if (['theater', 'arcade', 'bakery', 'pool', 'studio'].includes(type)) { this.venue(); return; }
     if (type === 'town') this.town();
     else this.interior();
   }
@@ -456,12 +463,15 @@ export class Stage {
     } else if (this.model.type === 'laundry') {
       this.box(0xb7c8b7, 0, 0.07, 0, 11, 0.1, 9);
       for (let i = 0; i < 40; i++) this.box(0xa9bca9, -5 + (i * 2.71) % 10, 0.125, -4 + (i * 1.37) % 8, .045, .005, .065);
+    } else if (this.model.type === 'home' && this.model.style?.floorKind && this.model.style.floorKind !== 'planks') {
+      this.floor(this.model.style.floorKind, this.model.style.floor);
     } else {
       for (let i = 0; i < 27; i++)
         this.box(i % 3 ? 0xc4a27b : 0xb4916d, 0, 0.07, -4.35 + i * 0.335, 11, 0.1, 0.31);
     }
-    this.box(0x87a39a, 0, 1.5, -4.5, 11, 3, 0.16);
-    this.box(0xb6c5ac, -5.5, 1.5, 0, 0.16, 3, 9);
+    const wall = this.model.type === 'home' && this.model.style?.wallHex ? this.hexColor(this.model.style.wallHex) : null;
+    this.box(wall ? wall.back : 0x87a39a, 0, 1.5, -4.5, 11, 3, 0.16);
+    this.box(wall ? wall.side : 0xb6c5ac, -5.5, 1.5, 0, 0.16, 3, 9);
     this.box(COLORS.cream, 0, 0.19, -4.38, 11, 0.23, 0.1);
     this.box(COLORS.cream, -5.38, 0.19, 0, 0.1, 0.23, 9);
     this.box(COLORS.cream, -1.2, 1.95, -4.36, 2.4, 1.65, 0.12);
@@ -486,10 +496,13 @@ export class Stage {
         [-3.8, 2.7],
         [3.3, 2.7],
       ];
-      this.model.furniture.forEach((name, i) => {
+      const pieces = this.model.furniture.filter((name) => furnitureKind(name) !== 'painting');
+      pieces.forEach((name, i) => {
         const pos = positions[i % 8];
         this.furniture(furnitureKind(name), pos[0] + Math.floor(i / 8) * 0.35, pos[1], i);
       });
+      this.model.furniture.filter((name) => furnitureKind(name) === 'painting').slice(0, 5)
+        .forEach((name, i) => this.hangPainting(String(name).replace(/^a painting:\s*/i, ''), 1.2 + i * 1.05, 2.1, -4.36, i));
     } else if (diner) {
       this.box(0x8c6556, -3.55, 0.6, -1.35, 1.2, 1.2, 5.4);
       this.box(COLORS.cream, -3.55, 1.24, -1.35, 1.42, 0.13, 5.65);
@@ -647,6 +660,79 @@ export class Stage {
       }
       return;
     }
+    if (kind === 'easel') {
+      for (const [dx, rz] of [[-0.28, 0.12], [0.28, -0.12]]) { const leg = this.box(COLORS.edge, dx, 0.8, 0, 0.06, 1.6, 0.06, g); leg.rotation.z = rz; }
+      const back = this.box(COLORS.edge, 0, 0.75, -0.3, 0.06, 1.5, 0.06, g); back.rotation.x = -0.3;
+      this.box(COLORS.cream, 0, 1.15, 0.05, 0.8, 0.62, 0.04, g);
+      this.box([0xc46457, 0x537fc3, 0xe5c363, 0x719b84][seed % 4], 0, 1.15, 0.075, 0.5, 0.36, 0.01, g);
+      return;
+    }
+    if (kind === 'telescope') {
+      for (const a of [0, 2.1, 4.2]) { const leg = this.box(COLORS.ink, Math.sin(a) * 0.22, 0.45, Math.cos(a) * 0.22, 0.05, 0.95, 0.05, g); leg.rotation.x = Math.cos(a) * 0.25; leg.rotation.z = -Math.sin(a) * 0.25; }
+      const tube = this.mesh('cylinder', COLORS.brass, [0, 1.05, 0], [0.11, 1.1, 0.11], g); tube.rotation.x = -0.9;
+      return;
+    }
+    if (kind === 'jukebox') {
+      this.box(0x7a3b3b, 0, 0.75, 0, 1.0, 1.5, 0.6, g);
+      const arch = this.mesh('cylinder', 0xffc76b, [0, 1.5, 0.05], [0.5, 0.6, 0.12], g, true); arch.rotation.x = Math.PI / 2;
+      this.box(0x9ad0d8, 0, 0.95, 0.31, 0.7, 0.35, 0.02, g);
+      const lights = [0xff7a8a, 0x8ae0ff, 0xfff08a].map((c, i) => this.mesh('sphere', c, [-0.3 + i * 0.3, 0.45, 0.31], [0.06, 0.06, 0.03], g, true));
+      this.animated.push((t) => lights.forEach((l, i) => { l.visible = Math.sin(t * 3 + i * 2) > -0.4; }));
+      return;
+    }
+    if (kind === 'fishtank') {
+      this.box(COLORS.wood, 0, 0.35, 0, 1.3, 0.7, 0.6, g);
+      const glass = new T.Mesh(shapes.box, new T.MeshStandardMaterial({ color: 0x7fc4d4, transparent: true, opacity: 0.45, roughness: 0.1 }));
+      glass.position.set(0, 1.05, 0); glass.scale.set(1.25, 0.7, 0.55); g.add(glass); this.disposables.push(glass.material);
+      for (let i = 0; i < 4; i++) {
+        const fish = this.mesh('leaf', [0xff9f45, 0xffd84a, 0x9fd0ff, 0xff7a8a][i], [0, 1.0 + i * 0.09, 0], [0.09, 0.05, 0.05], g);
+        this.animated.push((t) => { fish.position.x = Math.sin(t * (0.6 + i * 0.17) + i) * 0.45; fish.position.z = Math.cos(t * 0.4 + i) * 0.12; fish.rotation.y = Math.cos(t * (0.6 + i * 0.17) + i) > 0 ? 0 : Math.PI; });
+      }
+      return;
+    }
+    if (kind === 'hammock') {
+      for (const dx of [-1.1, 1.1]) this.box(COLORS.edge, dx, 0.8, 0, 0.1, 1.6, 0.1, g);
+      const cloth = this.mesh('sphere', 0xd98f6b, [0, 0.72, 0], [1.05, 0.18, 0.42], g);
+      this.animated.push((t) => { cloth.rotation.x = Math.sin(t * 0.9) * 0.08; });
+      return;
+    }
+    if (kind === 'lavalamp') {
+      this.mesh('cone', COLORS.ink, [0, 0.15, 0], [0.16, 0.3, 0.16], g);
+      this.mesh('cylinder', 0xffa15a, [0, 0.55, 0], [0.11, 0.55, 0.11], g, true);
+      const blob = this.mesh('sphere', 0xff4f4f, [0, 0.45, 0], [0.07, 0.09, 0.07], g, true);
+      this.animated.push((t) => { blob.position.y = 0.42 + (Math.sin(t * 0.5) + 1) * 0.16; });
+      const light = new T.PointLight(0xff7a4a, this.model.dark ? 3 : 0.8, 3); light.position.set(0, 0.7, 0); g.add(light);
+      return;
+    }
+    if (kind === 'tv') {
+      this.box(COLORS.wood, 0, 0.3, 0, 1.1, 0.6, 0.55, g);
+      this.box(COLORS.ink, 0, 0.95, 0, 0.95, 0.7, 0.5, g);
+      const screen = this.mesh('box', 0x8fd6c8, [0, 0.95, 0.26], [0.78, 0.55, 0.02], g, true);
+      this.animated.push((t) => { screen.material.emissiveIntensity = 1.1 + Math.sin(t * 7) * 0.25; });
+      return;
+    }
+    if (kind === 'shower') {
+      this.box(0xe8eef0, 0, 0.05, 0, 1.2, 0.1, 1.2, g);
+      const glass = new T.Mesh(shapes.box, new T.MeshStandardMaterial({ color: 0xcfe8ef, transparent: true, opacity: 0.35, roughness: 0.1 }));
+      glass.position.set(0, 1.1, 0.58); glass.scale.set(1.2, 2.1, 0.04); g.add(glass); this.disposables.push(glass.material);
+      this.mesh('cylinder', 0xb7c0c4, [0, 2.1, -0.4], [0.12, 0.05, 0.12], g);
+      return;
+    }
+    if (kind === 'bunk') {
+      for (const y of [0, 1.05]) {
+        this.box(COLORS.edge, 0, 0.3 + y, 0, 1.3, 0.25, 2.2, g);
+        this.box(COLORS.cream, 0, 0.48 + y, 0, 1.25, 0.14, 2.1, g);
+        this.box(y ? 0xc46457 : 0x537fc3, 0, 0.57 + y, 0.3, 1.27, 0.1, 1.4, g);
+      }
+      for (const dx of [-0.62, 0.62]) for (const dz of [-1.05, 1.05]) this.box(COLORS.edge, dx, 0.9, dz, 0.08, 1.8, 0.08, g);
+      return;
+    }
+    if (kind === 'post') {
+      this.box(0xc9b28a, 0, 0.06, 0, 0.7, 0.12, 0.7, g);
+      this.mesh('cylinder', 0xd8c7a0, [0, 0.6, 0], [0.12, 1.1, 0.12], g);
+      this.box(0xc9b28a, 0, 1.18, 0, 0.55, 0.08, 0.55, g);
+      return;
+    }
     if (kind === 'radio') {
       this.box(COLORS.wood, 0, 0.37, 0, 0.95, 0.65, 0.48, g);
       this.box(COLORS.ink, -0.2, 0.38, 0.26, 0.37, 0.43, 0.03, g);
@@ -675,13 +761,14 @@ export class Stage {
     const position = figurePosition(this.model, person, index);
     const { x, z } = position;
     const look = figureAppearance(person);
-    const g = this.group(x, 0, z);
+    const g = this.group(x, position.y || 0, z);
     g.userData.interaction = person.self ? { command: 'wardrobe' } : { personId: person.id };
     if (['stray', 'pet'].includes(person.kind)) {
       this.mesh('leaf', 0xb98968, [0, 0.22, 0], [0.28, 0.22, 0.5], g);
       this.mesh('sphere', 0xb98968, [0, 0.43, 0.37], [0.19, 0.19, 0.19], g);
       for (const dx of [-0.1, 0.1])
         this.mesh('cone', 0x7e614e, [dx, 0.63, 0.37], [0.09, 0.16, 0.08], g);
+      this.nameTag(person, g, null);
       const tail=this.mesh('cylinder',0xb98968,[0,.37,-.5],[.045,.55,.045],g);tail.rotation.x=.8;
       this.animated.push(t=>{tail.rotation.z=Math.sin(t*2+seed)*.25;g.position.y=Math.sin(t*1.8+seed)*.007;});
       return;
@@ -787,8 +874,24 @@ export class Stage {
     g.rotation.y = position.rotation;
     const previous = this.previousFigures?.get(person.id);
     const from = previous || (this.entering ? { x: x - 0.65, z: z + 0.4 } : { x, z });
+    this.nameTag(person, g, look);
+    if (position.swimming) {
+      /* a swimmer is waist-deep: a ring of ripples at the waterline says so */
+      const wake = this.mesh('ring', 0xe6fbff, [0, 0.59 / look.height, 0], [0.5 / look.width, 0.5, 1], g, true);
+      wake.rotation.x = -Math.PI / 2;
+      wake.castShadow = false;
+      this.animated.push((t) => { const k = 1 + ((t * 0.8 + seed % 7) % 1) * 0.6; wake.scale.set(0.5 * k / look.width, 0.5 * k, 1); });
+    }
+    if (person.self) {
+      const ring = this.mesh('ring', 0xffd27a, [0, 0.05, 0], [0.42 / look.width, 0.42 / scale, 1], g, true);
+      ring.rotation.x = -Math.PI / 2;
+      ring.castShadow = false;
+      this.animated.push((t) => { ring.material.emissiveIntensity = 1.1 + Math.sin(t * 2.2) * 0.35; });
+    }
     const figure = {
       id: person.id,
+      name: person.name,
+      self: !!person.self,
       g,
       body,
       head,
@@ -833,6 +936,356 @@ export class Stage {
       brows.forEach((brow, i) => { brow.rotation.z = face.brow * (i === 0 ? 1 : -1); });
       mouth.scale.y = .013 + face.mouth * .012;
       corners.forEach(corner => { corner.position.y = -.095 + face.smile * .018; });
+    });
+  }
+
+  hexColor(css) {
+    const c = new T.Color();
+    try { c.setStyle(css); } catch (_) { c.setHex(0x87a39a); }
+    const side = c.clone().offsetHSL(0, 0, 0.08);
+    return { back: c.getHex(), side: side.getHex() };
+  }
+
+  floor(kind, words) {
+    if (kind === 'checker') {
+      const dark = /black/.test(words || '') ? 0x2f3336 : /blue/.test(words || '') ? 0x5f7fa8 : /red/.test(words || '') ? 0xa4553f : 0x758c86;
+      for (let i = 0; i < 11; i++) for (let j = 0; j < 9; j++) this.box((i + j) % 2 ? dark : 0xeee0c5, -5 + i, 0.055, -4 + j, 0.98, 0.08, 0.98);
+      return;
+    }
+    if (kind === 'carpet') { this.box(/blue/.test(words || '') ? 0x4f6f9a : /green/.test(words || '') ? 0x5f8a66 : /red|rose|pink/.test(words || '') ? 0xa25d61 : 0x8f7c6c, 0, 0.07, 0, 11, 0.1, 9); return; }
+    if (kind === 'stone') { for (let i = 0; i < 9; i++) for (let j = 0; j < 7; j++) this.box((i * 3 + j) % 4 ? 0x9a9e98 : 0x878b86, -4.9 + i * 1.23, 0.06, -3.9 + j * 1.3, 1.17, 0.09, 1.24); return; }
+    if (kind === 'tile') { for (let i = 0; i < 16; i++) for (let j = 0; j < 13; j++) this.box(/black|dark/.test(words || '') ? 0x3a3f42 : /blue/.test(words || '') ? 0xa9c6dc : 0xe9ecea, -5.15 + i * 0.69, 0.055, -4.15 + j * 0.69, 0.66, 0.08, 0.66); return; }
+    if (kind === 'grass') { this.box(0x88a86f, 0, 0.06, 0, 11, 0.1, 9); return; }
+    for (let i = 0; i < 27; i++) this.box(i % 3 ? 0xc4a27b : 0xb4916d, 0, 0.07, -4.35 + i * 0.335, 11, 0.1, 0.31);
+  }
+
+  /** A small abstract painting whose colors and shapes come from its own title. */
+  paintingTexture(title, seed = 0) {
+    const t = String(title || '').toLowerCase();
+    const h = hash(t + seed);
+    const surface = document.createElement('canvas');
+    surface.width = 96; surface.height = 72;
+    const ctx = surface.getContext('2d');
+    const night = /night|moon|star|dark|midnight|evening/.test(t);
+    const water = /sea|river|water|lake|ferry|boat|harbor|harbour|pier|creek|rain|pool|ocean/.test(t);
+    const green = /garden|tree|orchard|apple|field|park|forest|woods|grass|leaf|flower/.test(t);
+    const warm = /sun|fire|kitchen|pie|bread|autumn|fall|sunset|morning|bakery|gold/.test(t);
+    const hues = [h % 360, (h >> 8) % 360, (h >> 16) % 360];
+    ctx.fillStyle = night ? '#1f2d4a' : warm ? '#f2b36b' : `hsl(${hues[0]}, 45%, 72%)`;
+    ctx.fillRect(0, 0, 96, 72);
+    ctx.fillStyle = water ? '#3f7fa0' : green ? '#5f8f55' : `hsl(${hues[1]}, 40%, ${night ? 25 : 48}%)`;
+    ctx.fillRect(0, 44 + (h % 8), 96, 30);
+    ctx.fillStyle = night ? '#f5eec8' : warm ? '#fff2b0' : `hsl(${hues[2]}, 70%, 65%)`;
+    ctx.beginPath(); ctx.arc(20 + (h % 56), 18 + ((h >> 5) % 12), 7 + (h % 5), 0, Math.PI * 2); ctx.fill();
+    if (/cat|dog|bird|heron|duck|fish|horse|cow|raccoon|owl/.test(t)) {
+      ctx.fillStyle = '#3b2f2a'; ctx.beginPath(); ctx.ellipse(48, 50, 13, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(60, 42, 6, 0, Math.PI * 2); ctx.fill();
+    } else if (/house|home|church|tower|bell|diner|shop|street|city/.test(t)) {
+      ctx.fillStyle = `hsl(${hues[2]}, 35%, 40%)`; ctx.fillRect(34, 30, 26, 22); ctx.beginPath(); ctx.moveTo(31, 31); ctx.lineTo(47, 18); ctx.lineTo(63, 31); ctx.fill();
+      ctx.fillStyle = night ? '#ffd27a' : '#e9f3f5'; ctx.fillRect(40, 36, 5, 5); ctx.fillRect(50, 36, 5, 5);
+    } else if (/face|portrait|mother|father|grand|friend|woman|man|girl|boy|people|me|self/.test(t)) {
+      ctx.fillStyle = '#d7a47f'; ctx.beginPath(); ctx.ellipse(48, 38, 12, 15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3b2f2a'; ctx.beginPath(); ctx.ellipse(48, 27, 13, 7, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      for (let i = 0; i < 5; i++) { ctx.fillStyle = `hsla(${(hues[i % 3] + i * 40) % 360}, 60%, 55%, .8)`; ctx.fillRect((h >> i) % 80, 20 + ((h >> (i + 3)) % 40), 8 + i * 3, 4 + (i % 3) * 3); }
+    }
+    const tex = new T.CanvasTexture(surface);
+    tex.colorSpace = T.SRGBColorSpace;
+    this.textures.push(tex);
+    return tex;
+  }
+
+  hangPainting(title, x, y, z, seed = 0, facing = 0, scale = 1) {
+    const g = this.group(x, y, z, facing);
+    this.box(COLORS.brass, 0, 0, 0, 0.9 * scale, 0.72 * scale, 0.06, g);
+    const mat = new T.MeshStandardMaterial({ map: this.paintingTexture(title, seed), roughness: 0.9 });
+    this.disposables.push(mat);
+    const art = new T.Mesh(shapes.box, mat);
+    art.position.set(0, 0, 0.035);
+    art.scale.set(0.8 * scale, 0.62 * scale, 0.01);
+    g.add(art);
+    return g;
+  }
+
+  venueShell(floorColor, backWall, sideWall) {
+    this.box(floorColor, 0, 0.07, 0, 11, 0.1, 9);
+    this.box(backWall, 0, 1.5, -4.5, 11, 3, 0.16);
+    this.box(sideWall, -5.5, 1.5, 0, 0.16, 3, 9);
+    this.box(COLORS.cream, 0, 0.19, -4.38, 11, 0.23, 0.1);
+    this.box(COLORS.cream, -5.38, 0.19, 0, 0.1, 0.23, 9);
+  }
+
+  venue() {
+    const type = this.model.type;
+    if (type === 'theater') {
+      this.venueShell(0x5a2f3a, 0x3d2a35, 0x4a3240);
+      for (let i = 0; i < 22; i++) this.mesh('sphere', 0xc9a35e, [-5 + (i * 2.37) % 10, 0.125, -3.8 + (i * 1.61) % 8], [0.05, 0.01, 0.05]);
+      const screen = this.mesh('box', 0xe8e4d4, [0.6, 1.75, -4.33], [6.2, 2.1, 0.05], this.world, true);
+      const tones = [0xe8e4d4, 0xbfd6e8, 0xf0d9b8, 0xd8e8c8];
+      this.animated.push((t) => { screen.material.emissiveIntensity = 0.75 + Math.sin(t * 9) * 0.06 + Math.sin(t * 2.3) * 0.1; });
+      let beat = 0;
+      this.animated.push((t) => { const k = Math.floor(t / 4) % tones.length; if (k !== beat) { beat = k; screen.material.emissive.setHex(tones[k]); } });
+      for (const side of [-1, 1]) for (let f = 0; f < 5; f++) this.mesh('cylinder', 0xb38a2e, [0.6 + side * (3.25 + f * 0.13), 1.55, -4.2], [0.09, 3, 0.09]);
+      this.box(0x6b1f2a, 0.6, 3.05, -4.2, 7.2, 0.35, 0.2);
+      for (let row = 0; row < 4; row++) for (let seat = 0; seat < 7; seat++) {
+        const x = -2.3 + seat * 0.95 + (row % 2) * 0.2, z = -1.3 + row * 1.25, y = row * 0.1;
+        this.box(0x9e2f3a, x, 0.4 + y, z, 0.75, 0.22, 0.6);
+        this.box(0xb8404c, x, 0.8 + y, z + 0.28, 0.75, 0.62, 0.12);
+      }
+      this.box(0x8c6b3f, -4.3, 0.75, -3.1, 1.3, 1.5, 1.0);
+      const glass = new T.Mesh(shapes.box, new T.MeshStandardMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.55 }));
+      glass.position.set(-4.3, 1.85, -3.1); glass.scale.set(1.1, 0.7, 0.8); this.world.add(glass); this.disposables.push(glass.material);
+      for (let i = 0; i < 12; i++) this.mesh('sphere', 0xfff6d6, [-4.65 + (i % 4) * 0.22, 1.6 + Math.floor(i / 4) * 0.12, -3.3 + (i % 3) * 0.2], [0.07, 0.07, 0.07]);
+      const glow = new T.PointLight(0xdfe8ff, 5, 9, 1.6);
+      glow.position.set(0.6, 1.8, -2.8);
+      this.world.add(glow);
+      return;
+    }
+    if (type === 'arcade') {
+      this.venueShell(0x1f2d55, 0x2b2350, 0x33295c);
+      for (let i = 0; i < 40; i++) this.mesh('sphere', [0xffd27a, 0x8ae0ff, 0xff9ad0][i % 3], [-5 + (i * 2.71) % 10, 0.125, -4 + (i * 1.37) % 8], [0.06, 0.01, 0.06]);
+      const glows = [0xff8a3d, 0x5fe08a, 0x8ab8ff];
+      for (let m = 0; m < 3; m++) {
+        const x = -3.8 + m * 1.5;
+        this.box(0x3a3f55, x, 0.55, -3.3, 0.9, 0.9, 1.7);
+        const top = this.box(0x5d6b8f, x, 1.05, -3.3, 0.85, 0.08, 1.6); top.rotation.x = -0.12;
+        const back = this.mesh('box', glows[m], [x, 1.75, -4.05], [0.95, 1.1, 0.16], this.world, true);
+        this.animated.push((t) => { back.material.emissiveIntensity = 1.1 + Math.sin(t * 5 + m * 2) * 0.45; });
+        const ball = this.mesh('sphere', 0xdfe6ea, [x, 1.13, -3.3], [0.05, 0.05, 0.05]);
+        this.animated.push((t) => { ball.position.x = x + Math.sin(t * 3.1 + m) * 0.3; ball.position.z = -3.3 + Math.sin(t * 2.3 + m * 2) * 0.6; });
+      }
+      const cx = 3.6, cz = -2.8;
+      this.box(0xd84a5a, cx, 0.5, cz, 1.3, 1.0, 1.3);
+      const glass = new T.Mesh(shapes.box, new T.MeshStandardMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.28, roughness: 0.05 }));
+      glass.position.set(cx, 1.55, cz); glass.scale.set(1.25, 1.1, 1.25); this.world.add(glass); this.disposables.push(glass.material);
+      for (let i = 0; i < 14; i++) this.mesh('sphere', [0xff9ad0, 0xffd27a, 0x8ae0ff, 0x9fe08a, 0xc9a0ff][i % 5], [cx - 0.4 + (i % 4) * 0.27, 1.12 + Math.floor(i / 5) * 0.12, cz - 0.4 + (i % 3) * 0.33], [0.14, 0.14, 0.14]);
+      this.box(0xd84a5a, cx, 2.15, cz, 1.35, 0.12, 1.35);
+      const claw = this.mesh('cone', 0xc0c6cc, [cx, 1.85, cz], [0.14, 0.22, 0.14]);
+      claw.rotation.x = Math.PI;
+      this.animated.push((t) => { claw.position.x = cx + Math.sin(t * 0.7) * 0.35; claw.position.y = 1.85 - Math.max(0, Math.sin(t * 0.9)) * 0.35; });
+      for (let lane = 0; lane < 2; lane++) {
+        const x = 0.6 + lane * 1.5;
+        const ramp = this.box(0xa77b4f, x, 0.45, 0.9, 1.1, 0.12, 3.4); ramp.rotation.x = -0.18;
+        this.box(0x2c3a5a, x, 1.2, -0.95, 1.2, 1.5, 0.3);
+        for (let r = 0; r < 3; r++) { const ring = this.mesh('ring', [0xffd27a, 0xff8a3d, 0x5fe08a][r], [x, 1.0 + r * 0.24, -0.78], [0.18 + r * 0.05, 0.18 + r * 0.05, 1], this.world, true); ring.castShadow = false; }
+      }
+      this.box(0x6b4b8f, -3.2, 0.55, 2.8, 3.2, 1.1, 0.8);
+      this.box(0xe8d8b0, -3.2, 1.13, 2.8, 3.3, 0.08, 0.9);
+      for (let i = 0; i < 6; i++) this.mesh('sphere', [0xff9ad0, 0x8ae0ff, 0xffd27a][i % 3], [-4.4 + i * 0.48, 1.35, 2.8], [0.16, 0.18, 0.16]);
+      const glow = new T.PointLight(0x9a7aff, 4, 10, 1.5); glow.position.set(0, 2.6, 0); this.world.add(glow);
+      return;
+    }
+    if (type === 'bakery') {
+      this.venueShell(0xd8c7a6, 0xe7d3b0, 0xd9c29c);
+      for (let i = 0; i < 11; i++) for (let j = 0; j < 9; j++) if ((i + j) % 2) this.box(0xc9b48f, -5 + i, 0.125, -4 + j, 0.98, 0.01, 0.98);
+      this.box(0xa4553f, -3.2, 1.3, -3.7, 2.6, 2.6, 1.2);
+      this.box(0x8e4632, -3.2, 2.7, -3.7, 2.8, 0.2, 1.35);
+      const mouth = this.mesh('box', 0xff8a3d, [-3.2, 0.95, -3.08], [1.2, 0.75, 0.04], this.world, true);
+      this.animated.push((t) => { mouth.material.emissiveIntensity = 1.3 + Math.sin(t * 2.2) * 0.3 + Math.sin(t * 7.1) * 0.08; });
+      const heat = new T.PointLight(0xff9a4a, this.model.dark ? 6 : 2.5, 5); heat.position.set(-3.2, 1, -2.6); this.world.add(heat);
+      this.box(COLORS.wood, 1.4, 0.6, -1.2, 5.2, 1.2, 0.9);
+      const glass = new T.Mesh(shapes.box, new T.MeshStandardMaterial({ color: 0xe8f4f6, transparent: true, opacity: 0.35, roughness: 0.05 }));
+      glass.position.set(1.4, 1.5, -1.2); glass.scale.set(5.1, 0.6, 0.85); this.world.add(glass); this.disposables.push(glass.material);
+      for (let i = 0; i < 16; i++) this.mesh(i % 3 ? 'sphere' : 'leaf', [0xd9a25e, 0xc7853f, 0xeccb8f][i % 3], [-0.9 + (i % 8) * 0.62, 1.32, -1.35 + Math.floor(i / 8) * 0.3], [0.2, 0.1, 0.16]);
+      this.box(0x3b4a45, 2.2, 1.95, -4.35, 2.0, 1.2, 0.06);
+      this.box(COLORS.cream, 2.2, 2.3, -4.31, 1.5, 0.05, 0.01); this.box(COLORS.cream, 2.0, 2.0, -4.31, 1.1, 0.05, 0.01); this.box(COLORS.cream, 2.3, 1.7, -4.31, 1.3, 0.05, 0.01);
+      for (let s = 0; s < 3; s++) { this.box(COLORS.edge, 4.5, 0.5 + s * 0.6, -2.5, 0.9, 0.06, 1.6); for (let b = 0; b < 3; b++) this.mesh('leaf', 0xc7853f, [4.5, 0.62 + s * 0.6, -3 + b * 0.5], [0.3, 0.12, 0.18]); }
+      this.box(0x5b6f68, 3.2, 1.35, -1.2, 0.5, 0.3, 0.4);
+      this.table(0.4, 2.2);
+      return;
+    }
+    if (type === 'pool') {
+      this.venueShell(0xdde7e6, 0xbcd9dd, 0xc8e2e4);
+      for (let i = 0; i < 16; i++) this.box(0xcfdcdb, -5.15 + i * 0.69, 0.125, 0, 0.02, 0.01, 9);
+      this.box(0x2f6f86, 0.2, 0.08, -0.4, 6.4, 0.16, 5.2);
+      const water = this.mesh('box', 0x4fb3c8, [0.2, 0.18, -0.4], [6.2, 0.04, 5.0], this.world, true);
+      water.castShadow = false;
+      this.animated.push((t) => { water.material.emissiveIntensity = 0.45 + Math.sin(t * 1.3) * 0.08; });
+      for (let r = 0; r < 3; r++) for (let b = 0; b < 14; b++) {
+        const buoy = this.mesh('sphere', b % 2 ? 0xffffff : 0xd84a5a, [-2.7 + b * 0.45, 0.24, -1.9 + r * 1.4], [0.07, 0.05, 0.07]);
+        this.animated.push((t) => { buoy.position.y = 0.24 + Math.sin(t * 2 + b * 0.7 + r) * 0.015; });
+      }
+      for (let i = 0; i < 10; i++) {
+        const h = hash('ripple' + i);
+        const ripple = this.mesh('ring', 0xbfeaf2, [-2.6 + (h % 560) / 100, 0.22, -2.7 + ((h >> 10) % 460) / 100], [0.28, 0.28, 1]);
+        ripple.rotation.x = -Math.PI / 2; ripple.castShadow = false;
+        this.animated.push((t) => { const s = 0.2 + ((t * 0.35 + i * 0.17) % 1) * 0.5; ripple.scale.set(s, s, 1); });
+      }
+      this.box(COLORS.cream, 4.2, 1.5, -2.2, 0.8, 0.12, 0.7);
+      for (const dx of [-0.35, 0.35]) for (const dz of [-0.3, 0.3]) this.box(0xd8d0bd, 4.2 + dx, 0.75, -2.2 + dz, 0.08, 1.5, 0.08);
+      this.box(0xd84a5a, 4.2, 1.85, -2.45, 0.8, 0.55, 0.1);
+      this.mesh('cylinder', 0xc9b28a, [3.9, 0.3, 2.6], [0.95, 0.6, 0.95]);
+      const tub = this.mesh('cylinder', 0x6fd0de, [3.9, 0.6, 2.6], [0.85, 0.05, 0.85], this.world, true);
+      tub.castShadow = false;
+      for (let i = 0; i < 8; i++) {
+        const bubble = this.mesh('sphere', 0xeaffff, [3.9 + Math.cos(i) * 0.5, 0.65, 2.6 + Math.sin(i) * 0.5], [0.05, 0.05, 0.05]);
+        this.animated.push((t) => { bubble.position.y = 0.62 + ((t * 0.8 + i * 0.13) % 1) * 0.12; });
+      }
+      this.box(0xa4704a, -4.2, 1.2, -3.6, 1.6, 2.4, 1.3);
+      this.box(0x8e5d3c, -4.2, 1.0, -2.93, 0.7, 1.9, 0.06);
+      const steam = [0, 1, 2].map((i) => this.mesh('sphere', 0xf4f4f4, [-4.2 + i * 0.2, 2.5, -2.9], [0.14, 0.14, 0.14]));
+      this.animated.push((t) => steam.forEach((s, i) => { s.position.y = 2.4 + ((t * 0.3 + i * 0.33) % 1) * 0.8; s.scale.setScalar(0.1 + ((t * 0.3 + i * 0.33) % 1) * 0.12); }));
+      for (let i = 0; i < 4; i++) this.box([0xffffff, 0xd8e8f0, 0xf4dfba][i % 3], -4.6, 0.3 + i * 0.13, 2.2, 0.7, 0.12, 0.5);
+      return;
+    }
+    if (type === 'studio') {
+      this.venueShell(0xb99873, 0xe9e2d2, 0xdcd3bf);
+      for (let i = 0; i < 26; i++) this.mesh('sphere', [0xc46457, 0x537fc3, 0xe5c363, 0x719b84, 0x9974d4][i % 5], [-5 + (i * 3.1) % 10, 0.125, -4 + (i * 2.3) % 8], [0.08 + (i % 3) * 0.03, 0.01, 0.06]);
+      for (const x of [-4.1, -2.3]) { this.box(0xcfe6ee, x, 1.9, -4.38, 1.4, 2.0, 0.04); this.box(COLORS.cream, x, 1.9, -4.35, 0.06, 2.0, 0.05); }
+      const wall = this.model.paintings || [];
+      const titles = wall.length ? wall.map((p) => p.title) : ['the bell tower, late again', 'a pear on a blue cloth', 'the river at night', 'a portrait of a stranger'];
+      titles.slice(0, 6).forEach((title, i) => this.hangPainting(title, 0.4 + (i % 3) * 1.4, 2.35 - Math.floor(i / 3) * 0.95, -4.36, i));
+      this.box(COLORS.wood, -1.2, 0.8, 1.8, 3.2, 0.12, 1.0);
+      for (const dx of [-1.4, 1.4]) for (const dz of [-0.4, 0.4]) this.box(COLORS.edge, -1.2 + dx, 0.38, 1.8 + dz, 0.09, 0.76, 0.09);
+      for (let i = 0; i < 6; i++) { this.mesh('cylinder', 0xd8eef2, [-2.4 + i * 0.45, 0.98, 1.8], [0.1, 0.24, 0.1]); this.mesh('cylinder', COLORS.edge, [-2.4 + i * 0.45, 1.2, 1.8], [0.015, 0.34, 0.015]); }
+      [[-3.9, 0.2], [2.6, -1.2], [3.8, 1.2]].forEach(([x, z], i) => this.furniture('easel', x, z, i + 1, 0.3 - i * 0.25));
+      return;
+    }
+  }
+
+  yard() {
+    this.box(0x6e7b76, 0, -0.46, 0, 11, 0.78, 9);
+    this.box(0x88a86f, 0, -0.03, 0, 11, 0.13, 9);
+    for (let i = 0; i < 12; i++) { this.box(0xe8e0cc, -5.3 + i * 0.95, 0.55, -4.3, 0.12, 1.1, 0.08); }
+    this.box(0xe8e0cc, 0, 0.85, -4.3, 11, 0.08, 0.06); this.box(0xe8e0cc, 0, 0.35, -4.3, 11, 0.08, 0.06);
+    for (let i = 0; i < 10; i++) { this.box(0xe8e0cc, -5.4, 0.55, -4 + i * 0.9, 0.08, 1.1, 0.12); }
+    this.tree(3.6, -2.8, 1.0, 2);
+    for (const x of [-3.5, 0.5]) this.box(COLORS.edge, x, 1.1, -1.5, 0.08, 2.2, 0.08);
+    this.box(COLORS.cream, -1.5, 2.05, -1.5, 4.0, 0.02, 0.02);
+    [0xc46457, 0x537fc3, 0xf4dfba].forEach((c, i) => { const cloth = this.box(c, -2.6 + i * 1.1, 1.75, -1.5, 0.55, 0.6, 0.02); this.animated.push((t) => { cloth.rotation.x = Math.sin(t * 1.4 + i) * 0.12; }); });
+    for (let i = 0; i < 9; i++) this.mesh('sphere', [0xe9cf96, 0xe9b5a5, 0xe9ead0][i % 3], [-4.5 + (i * 1.13) % 9, 0.15, 2.5 + (i % 3) * 0.5], [0.06, 0.08, 0.06]);
+    this.model.furniture.forEach((name, i) => this.furniture(furnitureKind(name), -2.5 + (i % 4) * 1.8, 1.5 + Math.floor(i / 4) * 1.4, i));
+  }
+
+  /* ── WHO IS TALKING (Part 296) ─────────────────────────────────────────
+   * A sighted player could not tell who spoke: the log said it, the picture
+   * did not. A speech bubble rises over the figure that said it and fades.
+   * Pure decoration: the canvas is aria-hidden and every word is already in
+   * the log, which is the real record for everybody. */
+  labelTexture(text, { bubble = false, gold = false } = {}) {
+    const words = String(text || '').replace(/\s+/g, ' ').trim();
+    const surface = document.createElement('canvas');
+    const ctx = surface.getContext('2d');
+    const font = bubble ? '26px sans-serif' : 'bold 24px sans-serif';
+    ctx.font = font;
+    const lines = [];
+    if (bubble) {
+      let line = '';
+      for (const w of words.split(' ')) {
+        const next = line ? line + ' ' + w : w;
+        if (ctx.measureText(next).width > 330 && line) { lines.push(line); line = w; } else line = next;
+        if (lines.length === 3) break;
+      }
+      if (lines.length < 3 && line) lines.push(line);
+      if (lines.join(' ').length < words.length) lines[lines.length - 1] = lines[lines.length - 1].replace(/\s*\S*$/, '') + '…';
+    } else lines.push(words.slice(0, 18));
+    const width = Math.ceil(Math.max(...lines.map((l) => ctx.measureText(l).width)) + 36);
+    const height = lines.length * 32 + (bubble ? 34 : 14);
+    surface.width = width; surface.height = height;
+    ctx.font = font;
+    ctx.fillStyle = bubble ? 'rgba(255,252,240,0.96)' : gold ? 'rgba(92,64,12,0.86)' : 'rgba(22,30,34,0.78)';
+    const r = 14, h = bubble ? height - 14 : height;
+    ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(width - r, 0); ctx.quadraticCurveTo(width, 0, width, r); ctx.lineTo(width, h - r); ctx.quadraticCurveTo(width, h, width - r, h);
+    if (bubble) { ctx.lineTo(width / 2 + 12, h); ctx.lineTo(width / 2, height); ctx.lineTo(width / 2 - 12, h); }
+    ctx.lineTo(r, h); ctx.quadraticCurveTo(0, h, 0, h - r); ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0); ctx.fill();
+    if (bubble) { ctx.strokeStyle = 'rgba(60,70,70,0.35)'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.fillStyle = bubble ? '#1d2528' : gold ? '#ffe7a8' : '#f4f1e8';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    lines.forEach((l, i) => ctx.fillText(l, width / 2, 20 + i * 32 + (bubble ? 2 : -3)));
+    const tex = new T.CanvasTexture(surface);
+    tex.colorSpace = T.SRGBColorSpace;
+    return { tex, aspect: width / height, lines: lines.length };
+  }
+
+  figureFor(who) {
+    const w = String(who || '').toLowerCase().trim();
+    if (!w) return null;
+    if (w === 'self' || w === 'you') return this.figures.find((f) => f.self) || null;
+    return this.figures.find((f) => String(f.name || '').toLowerCase() === w)
+      || this.figures.find((f) => String(f.name || '').toLowerCase().split(' ')[0] === w.split(' ')[0])
+      || null;
+  }
+
+  speak(who, text, kind = 'say') {
+    if (!this.model || this.disposed) return;
+    const figure = this.figureFor(who);
+    if (!figure) return;
+    const clean = String(text || '').replace(/^[^:"“]*(says|asks|exclaims|whispers)[^:"“]*[:,]?\s*/i, '').replace(/^["“]|["”]$/g, '').trim();
+    if (!clean) return;
+    const seconds = Math.min(9, 3.8 + clean.length * 0.045);
+    this.bubbles = (this.bubbles || []).filter((b) => b.id !== figure.id);
+    this.bubbles.push({ id: figure.id, name: figure.name, text: kind === 'emote' ? `(${clean})` : clean, until: performance.now() + seconds * 1000, total: seconds * 1000 });
+    this.drawBubbles();
+    if (!this.running) { this.render(); clearTimeout(this.bubbleTimer); this.bubbleTimer = setTimeout(() => { this.bubbles = []; this.drawBubbles(); this.render(); }, seconds * 1000); }
+  }
+
+  drawBubbles() {
+    (this.bubbleSprites || []).forEach((s) => { this.world.remove(s); s.material.map.dispose(); s.material.dispose(); });
+    this.bubbleSprites = [];
+    const now = performance.now();
+    this.bubbles = (this.bubbles || []).filter((b) => b.until > now);
+    for (const b of this.bubbles) {
+      const figure = this.figures.find((f) => f.id === b.id);
+      if (!figure) continue;
+      const label = this.labelTexture(b.text, { bubble: true });
+      const sprite = new T.Sprite(new T.SpriteMaterial({ map: label.tex, depthTest: false, transparent: true }));
+      const height = 0.42 + label.lines * 0.3;
+      sprite.scale.set(height * label.aspect, height, 1);
+      sprite.renderOrder = 5;
+      sprite.userData.bubble = b;
+      sprite.userData.figure = figure;
+      this.world.add(sprite);
+      this.bubbleSprites.push(sprite);
+      this.placeBubble(sprite, now);
+    }
+  }
+
+  placeBubble(sprite, now = performance.now()) {
+    const f = sprite.userData.figure, b = sprite.userData.bubble;
+    const scaleY = f.g.scale.y || 1;
+    sprite.position.set(f.g.position.x, 2.35 * scaleY + sprite.scale.y / 2, f.g.position.z);
+    const left = b.until - now;
+    sprite.material.opacity = Math.max(0, Math.min(1, left / 600));
+    sprite.visible = left > 0;
+  }
+
+  nameTag(person, g, look) {
+    if (!this.nameTags) return;
+    const first = String(person.name || '').split(' ')[0];
+    if (!first) return;
+    const label = this.labelTexture(first, { gold: !!person.self });
+    const sprite = new T.Sprite(new T.SpriteMaterial({ map: label.tex, depthTest: false, transparent: true, opacity: 0.92 }));
+    const animal = ['stray', 'pet'].includes(person.kind);
+    const height = 0.38;
+    sprite.scale.set(height * label.aspect / (look ? look.width : 1), height / (look ? look.height : 1), 1);
+    sprite.position.set(0, animal ? 0.95 : 1.95, 0);
+    sprite.renderOrder = 4;
+    sprite.userData.nameTag = true;
+    g.add(sprite);
+  }
+
+  setNameTags(on) {
+    this.nameTags = !!on;
+    this.key = null;
+    if (this.lastRoom) this.update(this.lastRoom.room, this.lastRoom.hud);
+  }
+
+  sparkle(big = false) {
+    const figure = this.figures.find((f) => f.self);
+    if (!figure || !this.motion) return;
+    const born = this.time;
+    const pieces = [];
+    for (let i = 0; i < (big ? 14 : 8); i++) {
+      const star = this.mesh('sphere', [0xffd27a, 0xfff2b0, 0x8ae0ff][i % 3], [0, 0, 0], [0.06, 0.06, 0.06], this.world, true);
+      star.castShadow = false;
+      pieces.push({ star, a: (i / (big ? 14 : 8)) * Math.PI * 2 });
+    }
+    this.animated.push((t) => {
+      const age = t - born;
+      pieces.forEach(({ star, a }) => {
+        const r = 0.3 + age * (big ? 0.9 : 0.6);
+        star.position.set(figure.g.position.x + Math.cos(a + age) * r, 1.6 + age * 0.9, figure.g.position.z + Math.sin(a + age) * r);
+        star.visible = age < 1.6;
+      });
     });
   }
 
@@ -893,6 +1346,9 @@ export class Stage {
     this.exitMarkers();
     if (model.hangout) this.gathering();
     model.people.forEach((p, i) => this.avatar(p, i));
+    this.lastRoom = { room, hud };
+    this.drawBubbles();
+    this.animated.push(() => { (this.bubbleSprites || []).forEach((s) => this.placeBubble(s)); });
     this.weather();
     this.render();
     this.host.classList.add('has-stage');
@@ -966,6 +1422,8 @@ export class Stage {
         : (kinds || []).some((k) => /^move/.test(k))
           ? 'walk'
           : '';
+    if ((kinds || []).includes('ui.goal.done')) this.sparkle(true);
+    else if ((kinds || []).includes('ui.want.done')) this.sparkle(false);
     const figure = this.figures.find((f) => f.index === 0);
     if (figure && action) {
       figure.action = action;
@@ -1029,10 +1487,16 @@ export class Stage {
   }
 
   clearWorld() {
+    (this.textures || []).forEach((t) => t.dispose());
+    (this.disposables || []).forEach((m) => m.dispose());
+    (this.bubbleSprites || []).forEach((s) => { s.material.map.dispose(); s.material.dispose(); });
+    this.bubbleSprites = [];
+    this.textures = [];
+    this.disposables = [];
     this.animated = [];
     this.figures = [];
     this.world.traverse((obj) => {
-      if (obj.userData.exitSign) {
+      if (obj.userData.exitSign || obj.userData.nameTag) {
         obj.material.map.dispose();
         obj.material.dispose();
       }

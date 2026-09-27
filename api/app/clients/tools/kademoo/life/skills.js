@@ -16,6 +16,7 @@ const SKILLS = {
   fitness:  { name: 'Fitness',  titles: ['winded', 'climbs the Stairs', 'climbs them twice', 'lifts crates', 'runs the Ring Road', 'the Union Hall steps are easy', 'holds your own', 'nobody starts with you', 'the docks want you', 'built like Merle'] },
   hustle:   { name: 'Hustle',   titles: ['gets hustled', 'knows a guy', 'haggles', 'gets a deal', 'reads a room', 'the Parlor pays out', 'Hock respects you', 'Little Ray nods', 'the corner’s quiet about you', 'you own the dice'] },
   learning: { name: 'Learning', titles: ['skims', 'reads the sign', 'reads a chapter', 'reads a shelf', 'Ines saves you a seat', 'knows the chronicle', 'knows the Archive', 'wins every argument at Levi’s', 'knows who is buried where', 'the Archive asks you'] },
+  painting: { name: 'Painting', titles: ['makes a mess', 'stays in the lines', 'a steady hand', 'catches the light', 'a real eye', 'the gallery takes notice', 'people ask to buy', 'a show at the Easel', 'Anselm asks your advice', 'hangs in the Archive'] },
   care:     { name: 'Care',     titles: ['means well', 'shows up', 'holds a hand', 'sits up with somebody', 'the clinic knows you', 'Doc hands you gloves', 'the person people call', 'raised somebody right', 'the whole block leans on you', 'Ruth-Ann’s equal'] },
 };
 const LEVEL_XP = [10, 25, 50, 90, 140, 210, 300, 420, 580, 800]; // xp needed to REACH level 1..10 (index = level-1)
