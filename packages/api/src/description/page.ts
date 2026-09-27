@@ -294,6 +294,8 @@ export const descriptionBrowserScript: string = String.raw`
   function length(seconds){var n=Math.round(seconds||0),h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=n%60;var parts=[];if(h)parts.push(plural(h,'hour','hours'));if(m)parts.push(plural(m,'minute','minutes'));if(s||!parts.length)parts.push(plural(s,'second','seconds'));return parts.join(' ');}
   function clock(seconds){var n=Math.max(0,Math.floor(seconds||0)),h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=('0'+n%60).slice(-2);return h?h+':'+('0'+m).slice(-2)+':'+s:m+':'+s;}
   function money(value){return '$'+Number(value||0).toFixed(2);}
+  /** Money as it is said: 9 cents, under 1 cent, $1.24. */
+  function cents(value){var v=Number(value)||0;if(v<=0)return '0 cents';if(v<0.005)return 'under 1 cent';if(v<0.995){var n=Math.round(v*100);return n+(n===1?' cent':' cents');}return money(v);}
   function when(value){if(!value)return '';var d=new Date(value);return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});}
   function voiceName(voice){var name=String(voice||'').split('·').pop().trim();return name?name.charAt(0).toUpperCase()+name.slice(1):'the narrator';}
   function pause(ms){return new Promise(function(resolve){var id=setTimeout(finish,ms);function finish(){clearTimeout(id);if(nudge===finish)nudge=null;resolve();}nudge=finish;});}
@@ -765,10 +767,27 @@ export const descriptionBrowserScript: string = String.raw`
     else if(job)text=job.costUSD?'Processing cost for this video so far: '+money(job.costUSD)+'.':'';
     if($('estimate').textContent!==text)$('estimate').textContent=text;
   }
-  function costLine(j){
-    if(!working(j)||j.state==='checking'||j.state==='importing')return j.costUSD?'Processing cost for this video so far: '+money(j.costUSD)+'.':'';
-    return 'This run so far: '+money(j.runCostUSD)+(j.estimatedUSD?' of about '+money(j.estimatedUSD):'')+(j.setAsideUSD?' ('+money(j.setAsideUSD)+' set aside)':'')+'.'+(j.costUSD?' All versions of this video: '+money(j.costUSD)+'.':'')+' Work already sent to a service may still be charged if you cancel.';
+  /** What this run has spent, settled only: a server before Sep 27 2026 sends runCostUSD alone. */
+  function spentOf(j){return typeof j.spentUSD==='number'?j.spentUSD:Number(j.runCostUSD)||0;}
+  /** All versions, said only when earlier runs cost something too. */
+  function allVersions(j){var total=Number(j.costUSD)||0;return total-spentOf(j)>=0.005?' All versions of this video: '+cents(total)+'.':'';}
+  /** The reserve held for requests in progress: never spent, and said apart from what is. */
+  function heldText(j){var held=Number(j.heldUSD)||0,n=Number(j.heldLooks)||0;if(held<0.005)return '';return ' '+cents(held)+' set aside for '+(n>1?'the '+n+' looks':n===1?'the look':'the work')+' in progress; you only pay what it really costs.';}
+  /** A finished or stopped run's parts, and what was included at no charge. */
+  function partsText(j){
+    var paid=[],free=[],voicePaid=false;
+    (j.costParts||[]).forEach(function(p){if(!p||typeof p.label!=='string')return;if(p.included){free.push(p.label.toLowerCase()+(Number(p.usd)>=0.005?' ('+cents(p.usd)+', paid by the platform)':''));return;}if(p.part==='voice')voicePaid=true;paid.push((paid.length?p.label.charAt(0).toLowerCase()+p.label.slice(1):p.label)+': '+cents(p.usd));});
+    if(!voicePaid)free.push('narration');
+    var list=free.length>2?free.slice(0,-1).join(', ')+' and '+free[free.length-1]:free.join(' and ');
+    return (paid.length?' '+paid.join('; ')+'.':'')+' '+list.charAt(0).toUpperCase()+list.slice(1)+(free.length>1?' are':' is')+' included.';
   }
+  function costLine(j){
+    if(working(j)&&j.state!=='checking'&&j.state!=='importing')return 'Spent so far '+cents(spentOf(j))+(j.estimatedUSD?', of about '+cents(j.estimatedUSD):'')+'.'+heldText(j)+(typeof j.approvedUSD==='number'&&j.approvedUSD>0?' It asks before spending more than '+cents(j.approvedUSD)+'.':'')+allVersions(j)+' Work already sent to a service may still be charged if you cancel.';
+    if(Array.isArray(j.costParts)&&j.settings&&['done','failed','cancelled'].indexOf(j.state)>=0){var spent=spentOf(j);return (j.state==='done'?'This run cost ':'The stopped run cost ')+(spent>0?cents(spent):'nothing')+(j.estimatedUSD?', of about '+cents(j.estimatedUSD)+' quoted':'')+'.'+partsText(j)+allVersions(j);}
+    return j.costUSD?'Processing cost for this video so far: '+money(j.costUSD)+'.':'';
+  }
+  /** Said once when a run finishes; the parts stay under the progress bar. */
+  function costSaid(j){return Array.isArray(j.costParts)?' It cost '+(spentOf(j)>0?cents(spentOf(j)):'nothing')+'.':'';}
   function setNote(id,text){var box=$(id);box.hidden=!text;if(box.textContent!==text)box.textContent=text;}
   function renderSpendNotes(){
     var e=estimates.resume,resumable=!!(job&&job.resumable),over=resumable&&!!job.overQuote,z=over?raiseTo():0;
@@ -976,7 +995,7 @@ export const descriptionBrowserScript: string = String.raw`
     else if(previous!==job.state){
       if(rehearsed){var ending=rehearsalLine(rehearsed);if(ending)say(ending,true);}
       else if(job.state==='ready')say('Video checked. Choose the narration, then Create described copy.'+(tooLong()?' It is longer than one run can describe, so choose the part to describe.':''),true);
-      else if(job.state==='done'){renderDraftNote();var newest=latestCopy()||{};say(newest.rehearsal?'Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.':job.preview?'Preview ready. Listen, then choose Describe the rest, or change the settings and try the preview again.':pendingSwitch?'Version '+pendingSwitch+' is ready. Press Switch to version '+pendingSwitch+' to hear it.':'Your described copy is ready.',true);}
+      else if(job.state==='done'){renderDraftNote();var newest=latestCopy()||{};say(newest.rehearsal?'Rehearsal finished. Every step ran with a test tone and no paid services. Listen to check the player.':job.preview?'Preview ready.'+costSaid(job)+' Listen, then choose Describe the rest, or change the settings and try the preview again.':pendingSwitch?'Version '+pendingSwitch+' is ready.'+costSaid(job)+' Press Switch to version '+pendingSwitch+' to hear it.':'Your described copy is ready.'+costSaid(job),true);}
       else if(job.state==='failed')say(stoppedLine(job),true);
       else if(job.state==='cancelled'){say('Cancelled. Finished sections are kept, so you can continue later.',true);land('job-title',$('cancel'));}
       else if(job.state==='running')progressSpeech(job);

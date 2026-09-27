@@ -3094,6 +3094,12 @@ test('Part 295: a person is quoted, held and charged twice the real price, and g
     near(stored.runCost, spent, 'the run counted real dollars');
     near(done.runCostUSD, 2 * spent, 'and shows them at her price');
     near(done.costUSD, 2 * stored.costUSD, 'for the whole video too');
+    near(done.spentUSD, 2 * spent, 'spent, by its plain name');
+    near(done.costParts.reduce((sum, item) => sum + item.usd, 0), done.spentUSD, 'the parts add up to what she spent');
+    for (const item of done.costParts) near(item.usd, 2 * stored.runParts[item.part], `${item.part} at her price`);
+    await Jobs.updateOne({ _id: id }, { $set: { 'runIncluded.dialogue': 0.004 } });
+    const included = (await call('get', `/jobs/${id}`, owner).set('x-role', 'user').expect(200)).body.costParts.at(-1);
+    assert.deepEqual(included, { part: 'dialogue', label: 'Dialogue timing', usd: 0, included: true }, 'work the platform paid for is included, at no price, for her');
     near(await billing.available(owner), 10 - 2 * spent, 'she paid twice what it cost and got the rest of her hold back');
 
     sampleCost = 0.003;
@@ -3258,6 +3264,10 @@ test('Part 295: the administrator is quoted and booked at real cost, and nothing
     const spent = booked.reduce((sum, item) => sum + item.costUSD, 0);
     near(done.runCostUSD, spent, 'her run shows its real cost');
     assert.deepEqual([done.estimatedUSD, done.approvedUSD], [quote.estimateUSD, quote.approvedUSD]);
+    near(done.costParts.reduce((sum, item) => sum + item.usd, 0), spent, 'and its parts at real cost');
+    await Jobs.updateOne({ _id: id }, { $set: { 'runIncluded.dialogue': 0.004 } });
+    const included = (await call('get', `/jobs/${id}`, owner).expect(200)).body.costParts.at(-1);
+    assert.deepEqual(included, { part: 'dialogue', label: 'Dialogue timing', usd: 0.004, included: true }, 'the administrator sees what included work really cost the platform');
     assert.equal(await credits(), 5e6, 'and nothing was taken');
   } finally {
     overbill = 0;
@@ -3286,6 +3296,15 @@ test('a restart that cuts off a paid request does not charge its reserve, and th
     const running = doomed.tick();
     await inFlight;
     const holding = await Jobs.findById(id).lean();
+    const shown = (await call('get', `/jobs/${id}`, 'restart-owner').expect(200)).body;
+    assert.deepEqual(
+      [shown.spentUSD, shown.runCostUSD, shown.costUSD],
+      [0, 0, 0],
+      'a look in flight is not shown as spent, under its new name or the names the iPhone 2.2 build reads',
+    );
+    assert.equal(shown.heldUSD, 0.35, 'its reserve is shown apart, as held');
+    assert.equal(shown.heldLooks, 1);
+    assert.deepEqual(shown.costParts, []);
     await doomed.close();
     await running;
     assert.ok(Math.abs(holding.runCost - 0.35) < 1e-9, 'the reserve is held while the request is out');
@@ -3303,6 +3322,8 @@ test('a restart that cuts off a paid request does not charge its reserve, and th
     assert.equal(cut.settled, 0);
     assert.ok(Math.abs(holding.runPending - 0.35) < 1e-9, 'while it was out it was recorded as in flight');
     assert.equal(requeued.runPending, 0);
+    const waiting = (await call('get', `/jobs/${id}`, 'restart-owner').expect(200)).body;
+    assert.deepEqual([waiting.heldUSD, waiting.heldLooks], [0, 0], 'nothing is held once the cut-off request is dropped');
     overbill = 1;
     const done = await settle(id, ['done', 'failed'], 'restart-owner');
     assert.equal(done.state, 'done', done.error);
@@ -3409,6 +3430,11 @@ test('a failed look request is booked at its recorded or expected cost, never it
     );
     const job = await Jobs.findById(id).lean();
     assert.ok(Math.abs(job.spend.uncertain - 0.03) < 1e-9, `spend.uncertain ${job.spend.uncertain}`);
+    assert.deepEqual(
+      done.costParts.map((item) => [item.part, item.usd]),
+      [['looks', 0.1], ['failedTries', 0.042]],
+      'the tries that failed are their own part of the breakdown',
+    );
     const total = booked.reduce((sum, item) => sum + item.costUSD, 0);
     assert.ok(Math.abs(done.runCostUSD - total) < 1e-6, `charged ${done.runCostUSD}, booked ${total}`);
     assert.ok(done.runCostUSD <= approved);
@@ -3483,6 +3509,19 @@ test('a look that skipped its thinking is looked at once more inside her approva
     assert.deepEqual(booked.map((item) => item.costUSD), [0.02, 0.02], 'both looks booked at what they cost');
     const job = await Jobs.findById(id).lean();
     assert.ok(Math.abs(job.spend.vision - 0.04) < 1e-9, `spend.vision ${job.spend.vision}`);
+    assert.deepEqual(
+      done.costParts,
+      [
+        { part: 'looks', label: 'Looks', usd: 0.02 },
+        { part: 'secondLooks', label: 'Second looks at rushed parts', usd: 0.02 },
+      ],
+      'the finished run says what the second look cost apart from the first',
+    );
+    assert.equal(done.spentUSD, 0.04);
+    assert.deepEqual([done.heldUSD, done.heldLooks], [0, 0]);
+    const [cost] = logged(logsBefore, 'dv.cost');
+    assert.deepEqual(cost, { event: 'dv.cost', id, usd: 0.04, parts: 'look 0.02 second 0.02' });
+    assert.ok(`[described-video] ${JSON.stringify(cost)}`.length <= 150, 'the server log keeps the whole line');
     const engine = logged(logsBefore, 'dv.engine').map((entry) => entry.message);
     assert.ok(engine.some((text) => /the look skipped its thinking \(0 reasoning tokens\); looking once more\.$/.test(text)), engine.join('\n'));
     assert.ok(engine.some((text) => /the second look reasoned 5000 tokens, the first 0; the second is kept\.$/.test(text)), engine.join('\n'));
@@ -3746,6 +3785,7 @@ test('free dialogue: Deepgram is logged for the operator, never quoted, charged 
     assert.ok(paid.price.breakdown.dialogue > 0);
     assert.deepEqual(paid.booked.map((item) => item.kind), ['transcription']);
     assert.ok(Math.abs(paid.done.runCostUSD - 0.0026) < 1e-9, 'without the flag she pays for 30 s of dialogue timing');
+    assert.deepEqual(paid.done.costParts, [{ part: 'dialogue', label: 'Dialogue timing', usd: 0.0026 }]);
     assert.equal(await held(), 1);
     await Budgets.deleteMany({});
 
@@ -3762,6 +3802,8 @@ test('free dialogue: Deepgram is logged for the operator, never quoted, charged 
     assert.ok(free.price.estimateUSD <= paid.price.estimateUSD);
     assert.equal(free.done.runCostUSD, 0, 'she is not charged');
     assert.equal(free.done.costUSD, 0);
+    assert.deepEqual(free.done.costParts, [{ part: 'dialogue', label: 'Dialogue timing', usd: 0, included: true }], 'and it is shown as included');
+    assert.ok(Math.abs(free.stored.runIncluded.dialogue - 0.0026) < 1e-9, 'its real cost is kept for the administrator');
     assert.equal(free.stored.spend?.transcription ?? 0, 0);
     assert.deepEqual(free.booked.map((item) => item.kind), ['transcription-included'], 'the operator still sees it');
     assert.ok(Math.abs(free.booked[0].costUSD - 0.0026) < 1e-9);

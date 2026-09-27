@@ -5,6 +5,7 @@ import type {
   Analysis,
   Chapter,
   Continuity,
+  CostPart,
   Cue,
   FailureClass,
   Interval,
@@ -825,15 +826,22 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         } else {
           /** What this look's failed tries were booked at, which its finished calls leave out. */
           let failedUSD = 0;
+          /** The part of the run this look pays for, in the breakdown she is shown. */
+          const part: CostPart = survey ? 'firstLook' : scale > 1 ? 'closeLooks' : 'looks';
           const tallied: Meter = (kind, reserve, action) =>
-            meter(kind, reserve, async () => {
-              try {
-                return await action();
-              } catch (error) {
-                failedUSD += failedCharge(error, reserve, signal.aborted);
-                throw error;
-              }
-            });
+            meter(
+              kind,
+              reserve,
+              async () => {
+                try {
+                  return await action();
+                } catch (error) {
+                  failedUSD += failedCharge(error, reserve, signal.aborted);
+                  throw error;
+                }
+              },
+              part,
+            );
           result = finish(await providers.analyze(input, signal, tallied), '');
           if (!survey) result = await lookAgain(i, input, result, finish, failedUSD);
         }
@@ -959,7 +967,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const gated: Meter = async (kind, reserve, action) => {
       stoppedAt = short();
       if (stoppedAt !== undefined) throw new Halt('A second look would pass the approved maximum.');
-      await meter(kind, reserve, action);
+      await meter(kind, reserve, action, 'secondLooks');
     };
     let second: Analysis;
     try {

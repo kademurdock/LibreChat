@@ -297,13 +297,31 @@ export type Plan = {
 /** Soundtrack gain, narration loudness (LUFS, stereo) and the gain under narration. */
 export type Levels = { gain: number; narration: number; duck: number };
 /**
+ * The part of a run a paid request belongs to, for the cost breakdown a person is shown
+ * (router.ts `costParts`): the whole-film first look ("learning who is who"), the look at each
+ * section, a close look at it, a second look after a rushed one, dialogue timing and the voice.
+ * A failed try the provider may bill is booked as `failedTries` by the meter, whatever its part.
+ */
+export type CostPart =
+  | 'firstLook'
+  | 'looks'
+  | 'closeLooks'
+  | 'secondLooks'
+  | 'failedTries'
+  | 'dialogue'
+  | 'voice'
+  | 'other';
+/**
  * Runs one paid request while `reserveUSD` is held. The action says what it cost; `uncertain`
  * marks a cost the provider never reported (an expected one), which is booked apart as uncertain.
+ * `part` says which part of the run it pays for (the engine names its looks; without it a look
+ * is booked as `looks`, transcription as `dialogue` and speech as `voice`).
  */
 export type Meter = (
   kind: 'vision' | 'transcription' | 'speech',
   reserveUSD: number,
   action: () => Promise<{ costUSD: number; uncertain?: boolean }>,
+  part?: CostPart,
 ) => Promise<void>;
 export type Progress = (stage: string, progress: number) => Promise<void>;
 export type Report = {

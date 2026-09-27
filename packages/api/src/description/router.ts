@@ -30,6 +30,7 @@ import type {
   Analysis,
   Chapter,
   Continuity,
+  CostPart,
   Interval,
   Meter,
   Plan,
@@ -219,6 +220,8 @@ type Hooks = {
 type Part = { number: number; etag: string; bytes: number; hash: string };
 type SourcePrivacy = { shared: boolean; grownUpsOnly: boolean; ownerIsActor: boolean };
 type Spend = { vision?: number; speech?: number; transcription?: number; uncertain?: number };
+/** Real dollars by the part of the run they paid for (`CostPart`). */
+type RunParts = Partial<Record<CostPart, number>>;
 type Job = {
   _id: string;
   owner: string;
@@ -249,6 +252,15 @@ type Job = {
    * the next claim or release takes it off, so a dead run's reserves are never charged.
    */
   runPending?: number;
+  /** How many looks (vision requests) are in flight, so the page can say what is held for. */
+  runLooks?: number;
+  /** What the current run's settled requests cost, real dollars, by the part they paid for. */
+  runParts?: RunParts;
+  /**
+   * Work the platform paid for and never charged this run (dialogue timing from its own
+   * Deepgram credit), real dollars by part: shown to the administrator, "included" to others.
+   */
+  runIncluded?: RunParts;
   runKind?: RunKind;
   /** How the latest rehearsal ended, so the page can say so when the video is ready again. */
   lastRehearsal?: { outcome: RehearsalOutcome; version: number; at: Date };
@@ -337,6 +349,16 @@ const run = {
   factor: Number,
   platform: Boolean,
 };
+const runPartsSchema = {
+  firstLook: Number,
+  looks: Number,
+  closeLooks: Number,
+  secondLooks: Number,
+  failedTries: Number,
+  dialogue: Number,
+  voice: Number,
+  other: Number,
+};
 const jobSchema = new mongoose.Schema<Job>(
   {
     _id: String,
@@ -361,6 +383,9 @@ const jobSchema = new mongoose.Schema<Job>(
     costUSD: Number,
     runCost: Number,
     runPending: Number,
+    runLooks: Number,
+    runParts: runPartsSchema,
+    runIncluded: runPartsSchema,
     runKind: String,
     lastRehearsal: { outcome: String, version: Number, at: Date },
     runEstimateUSD: Number,
@@ -504,6 +529,78 @@ const wholeCents = (usd: number): number => Math.floor(usd * 100 + 1e-6) / 100;
 /** What a run has truly spent: its running total less the reserves of requests that never settled. */
 const settledCost = (job: Pick<Job, 'runCost' | 'runPending'>): number =>
   Math.max(0, (job.runCost ?? 0) - (job.runPending ?? 0));
+/**
+ * A run's cost parts in the order the website and the iPhone list them, with their names, and
+ * the short names the `dv.cost` log line uses (the server log cuts a line at 150 characters).
+ */
+const costPartNames: readonly (readonly [CostPart, string, string])[] = [
+  ['firstLook', 'Learning who is who', 'first'],
+  ['looks', 'Looks', 'look'],
+  ['closeLooks', 'Closer looks', 'close'],
+  ['secondLooks', 'Second looks at rushed parts', 'second'],
+  ['failedTries', 'Tries that failed', 'failed'],
+  ['dialogue', 'Dialogue timing', 'dialogue'],
+  ['voice', 'Narration voice', 'voice'],
+  ['other', 'Other processing', 'other'],
+];
+/** The part a metered request is booked to: the engine's name for a look, otherwise by its kind. */
+const partFor = (kind: Parameters<Meter>[0], part?: CostPart): CostPart =>
+  part && costPartNames.some(([name]) => name === part)
+    ? part
+    : kind === 'transcription'
+      ? 'dialogue'
+      : kind === 'speech'
+        ? 'voice'
+        : 'looks';
+/** One line of a run's cost breakdown, at the owner's price. */
+type CostLine = { part: CostPart; label: string; usd: number; included?: boolean };
+const partsTotal = (parts: RunParts | undefined): number =>
+  Object.values(parts ?? {}).reduce((sum: number, usd) => sum + Math.max(0, Number(usd) || 0), 0);
+/**
+ * What the run's settled requests cost, part by part, at the owner's price (`factor`); the parts
+ * add up to what the run has spent. Money a run booked before its parts were kept (a run begun
+ * before Sep 27 2026) is "Other processing". Work the platform paid for and never charged
+ * (dialogue timing from its own credit) follows, marked included: at its real cost for the
+ * administrator (`platform`), at nothing for anyone else.
+ */
+function costLines(
+  job: Pick<Job, 'runParts' | 'runIncluded'>,
+  spentUSD: number,
+  factor: number,
+  platform: boolean,
+): CostLine[] {
+  const round = (usd: number) => Math.round(usd * factor * 10000) / 10000;
+  const paid: RunParts = { ...(job.runParts ?? {}) };
+  const rest = spentUSD - partsTotal(paid);
+  if (rest > 0.00005) paid.other = Math.max(0, Number(paid.other) || 0) + rest;
+  const lines: CostLine[] = [];
+  for (const [part, label] of costPartNames) {
+    const usd = Math.max(0, Number(paid[part]) || 0);
+    if (round(usd) > 0) lines.push({ part, label, usd: round(usd) });
+  }
+  for (const [part, label] of costPartNames) {
+    const usd = Math.max(0, Number(job.runIncluded?.[part]) || 0);
+    if (usd > 0)
+      lines.push({
+        part,
+        label,
+        usd: platform ? Math.round(usd * 10000) / 10000 : 0,
+        included: true,
+      });
+  }
+  return lines;
+}
+/** The `dv.cost` log line's parts: "close 0.0612 second 0.115 dialogue 0.022 incl". */
+function partsText(job: Pick<Job, 'runParts' | 'runIncluded'>): string {
+  const text = (parts: RunParts | undefined, tag: string) =>
+    costPartNames
+      .filter(([part]) => (Number(parts?.[part]) || 0) > 0)
+      .map(
+        ([part, , short]) =>
+          `${short} ${Math.round((Number(parts?.[part]) || 0) * 10000) / 10000}${tag}`,
+      );
+  return [...text(job.runParts, ''), ...text(job.runIncluded, ' incl')].join(' ');
+}
 /** Dialogue timing (Deepgram) paid from the platform's credit: logged, never quoted or charged. */
 const freeDialogue = () => process.env.KADE_DESCRIPTION_FREE_DIALOGUE === '1';
 const money = (usd: number): string => `$${usd.toFixed(2)}`;
@@ -1597,14 +1694,23 @@ export function createDescriptionRouter(hooks: Hooks): {
     const latest = latestCopy(job);
     const stopped = ['failed', 'cancelled'].includes(job.state);
     const library = job.source === 'library' ? job.sourcePrivacy : undefined;
-    /** A stopped run's unsettled reserves were never charged, so they are not shown as spent. */
-    const orphaned = busy.includes(job.state) ? 0 : Math.max(0, job.runPending ?? 0);
+    /**
+     * Spent means settled (Sep 27 2026). A request in flight holds its worst-case reserve (a
+     * close look of a 75 s section about $0.38, its second look about $0.56) until it settles at
+     * what it really cost, often a tenth of that; counted as spent, the running figure jumped to
+     * 40 cents and back. The reserve is `heldUSD` while the run works; a stopped run's unsettled
+     * reserves were never charged, so they are shown nowhere.
+     */
+    const working = busy.includes(job.state);
+    const pending = Math.max(0, job.runPending ?? 0);
+    const runSpent = Math.max(0, (job.runCost ?? 0) - pending);
     /**
      * Part 295: the owner sees her own price, the one her latest run was reserved at (her set-aside
      * is already in it). A video that also had runs from before Part 295 shows them at it too.
      */
     const factor = runFactor(job.reservation);
     const priced = (usd: number | undefined) => (usd === undefined ? usd : atPrice(usd, factor));
+    const shown = (usd: number) => Math.round(Math.max(0, usd) * factor * 10000) / 10000;
     return {
       id: job._id,
       name: job.name,
@@ -1617,8 +1723,20 @@ export function createDescriptionRouter(hooks: Hooks): {
       etaSeconds: eta(job),
       error: job.error,
       settings: job.settings,
-      costUSD: Math.round(Math.max(0, (job.costUSD || 0) - orphaned) * factor * 10000) / 10000,
-      runCostUSD: Math.round(Math.max(0, (job.runCost ?? 0) - orphaned) * factor * 10000) / 10000,
+      /** Everything every run of this video has spent, settled only. */
+      costUSD: shown((job.costUSD || 0) - pending),
+      /** What this run has spent, settled only (the name the iPhone 2.2 build reads). */
+      runCostUSD: shown(runSpent),
+      /** The same, by its plain name. */
+      spentUSD: shown(runSpent),
+      /**
+       * Held right now for requests in progress, not spent: each settles at what it really
+       * costs, and only that is charged. `heldLooks` of them are looks.
+       */
+      heldUSD: working ? shown(pending) : 0,
+      heldLooks: working ? Math.max(0, Math.round(job.runLooks ?? 0)) : 0,
+      /** What this run's settled requests cost, part by part; they add up to `spentUSD`. */
+      costParts: costLines(job, runSpent, factor, !!job.reservation?.platform),
       setAsideUSD: (job.reservation?.cents ?? 0) / 100,
       estimatedUSD: priced(job.runEstimateUSD),
       approvedUSD: priced(job.approvedUSD),
@@ -2464,6 +2582,9 @@ export function createDescriptionRouter(hooks: Hooks): {
       reservation,
       runCost: 0,
       runPending: undefined,
+      runLooks: undefined,
+      runParts: undefined,
+      runIncluded: undefined,
       /** A dead run's unsettled reserves leave the video's total when its next run starts. */
       costUSD: Math.max(0, (claimed.costUSD ?? 0) - (claimed.runPending ?? 0)),
       runKind: launch.kind,
@@ -4264,7 +4385,13 @@ export function createDescriptionRouter(hooks: Hooks): {
      * a dead worker left unsettled (`runPending`) were never charged: they are dropped here.
      */
     const orphaned = Math.max(0, job.runPending ?? 0);
-    const spend = { usd: settledCost(job), pending: 0 };
+    /** `looks` counts the looks among the requests in flight, for the page's held line. */
+    const spend = { usd: settledCost(job), pending: 0, looks: 0 };
+    /** This run's settled costs by part, as stored, for the `dv.cost` line when it finishes. */
+    const booked: Required<Pick<Job, 'runParts' | 'runIncluded'>> = {
+      runParts: { ...(job.runParts ?? {}) },
+      runIncluded: { ...(job.runIncluded ?? {}) },
+    };
     job.costUSD = Math.max(0, (job.costUSD ?? 0) - orphaned);
     const rehearsal = job.runKind === 'rehearsal';
     let notice: (() => void) | undefined;
@@ -4300,6 +4427,7 @@ export function createDescriptionRouter(hooks: Hooks): {
               error: '',
               runCost: spend.usd,
               runPending: 0,
+              runLooks: 0,
               costUSD: job.costUSD,
             },
           },
@@ -4394,16 +4522,33 @@ export function createDescriptionRouter(hooks: Hooks): {
           rowsUSD += charge;
           return charge;
         };
-        const settleCost = (kindKey: keyof Spend, reserve: number, actual: number) =>
+        /** Settles one request: its reserve leaves the held money and what it cost joins its part. */
+        const settleCost = (
+          kindKey: keyof Spend,
+          reserve: number,
+          actual: number,
+          part: CostPart,
+          look: boolean,
+        ) =>
           account(async () => {
             spend.usd = Math.max(0, spend.usd - reserve + actual);
             spend.pending = Math.max(0, spend.pending - reserve);
+            if (look) spend.looks = Math.max(0, spend.looks - 1);
+            if (actual > 0) booked.runParts[part] = (booked.runParts[part] ?? 0) + actual;
             job.costUSD = Math.max(0, job.costUSD - reserve + actual);
             await Jobs.updateOne(
               { _id: job._id, worker },
               {
-                $set: { runCost: spend.usd, runPending: spend.pending, costUSD: job.costUSD },
-                $inc: { [`spend.${kindKey}`]: actual },
+                $set: {
+                  runCost: spend.usd,
+                  runPending: spend.pending,
+                  runLooks: spend.looks,
+                  costUSD: job.costUSD,
+                },
+                $inc: {
+                  [`spend.${kindKey}`]: actual,
+                  ...(actual > 0 ? { [`runParts.${part}`]: actual } : {}),
+                },
               },
             );
           });
@@ -4412,7 +4557,7 @@ export function createDescriptionRouter(hooks: Hooks): {
          * never counted against her approval. Logged, and booked as `transcription-included`
          * at list price so the operator can watch how much credit is used.
          */
-        const includedMeter: Meter = async (kind, reserve, action) => {
+        const includedMeter: Meter = async (kind, reserve, action, part) => {
           signal.throwIfAborted();
           if (!Number.isFinite(reserve) || reserve < 0)
             throw new Halt('A cost estimate was invalid.');
@@ -4439,6 +4584,14 @@ export function createDescriptionRouter(hooks: Hooks): {
               costUSD: Math.round(result.costUSD * 1e6) / 1e6,
             }),
           );
+          if (result.costUSD > 0) {
+            const included = partFor(kind, part);
+            booked.runIncluded[included] = (booked.runIncluded[included] ?? 0) + result.costUSD;
+            await Jobs.updateOne(
+              { _id: job._id, worker },
+              { $inc: { [`runIncluded.${included}`]: result.costUSD } },
+            ).catch((error: Error) => hooks.log('description included cost: ' + error.message));
+          }
           await hooks
             .usage(job.owner, job._id, `${kind}-included`, result.costUSD, 0)
             .catch((error: Error) => hooks.log('description usage: ' + error.message));
@@ -4448,9 +4601,11 @@ export function createDescriptionRouter(hooks: Hooks): {
          * further paid request starts. A reserve is only a provider's worst case, so requests in
          * flight may still hold more of the day (up to one run's limit) until they settle.
          */
-        const paidMeter: Meter = async (kind, reserve, action) => {
+        const paidMeter: Meter = async (kind, reserve, action, named) => {
           if (kind === 'transcription' && freeDialogue())
-            return includedMeter(kind, reserve, action);
+            return includedMeter(kind, reserve, action, named);
+          const part = partFor(kind, named);
+          const look = kind === 'vision';
           await account(async () => {
             signal.throwIfAborted();
             if (!Number.isFinite(reserve) || reserve < 0)
@@ -4469,13 +4624,26 @@ export function createDescriptionRouter(hooks: Hooks): {
               );
             spend.usd += reserve;
             spend.pending += reserve;
+            if (look) spend.looks++;
             job.costUSD += reserve;
             const saved = await Jobs.updateOne(
               { _id: job._id, worker, cancelRequested: false },
-              { $set: { runCost: spend.usd, runPending: spend.pending, costUSD: job.costUSD } },
+              {
+                $set: {
+                  runCost: spend.usd,
+                  runPending: spend.pending,
+                  runLooks: spend.looks,
+                  costUSD: job.costUSD,
+                },
+              },
             );
-            if (!saved.matchedCount)
+            if (!saved.matchedCount) {
+              spend.usd -= reserve;
+              spend.pending -= reserve;
+              if (look) spend.looks--;
+              job.costUSD -= reserve;
               throw new Halt('Processing stopped before the next paid request.');
+            }
           });
           let result: { costUSD: number; uncertain?: boolean };
           try {
@@ -4519,7 +4687,8 @@ export function createDescriptionRouter(hooks: Hooks): {
               actual = reserve;
               settledBy = 'reserve';
             }
-            await settleCost(uncertain ? 'uncertain' : kind, reserve, actual);
+            /** A failed try the provider may bill is its own part of the breakdown. */
+            await settleCost(uncertain ? 'uncertain' : kind, reserve, actual, 'failedTries', look);
             if (actual > 0)
               await hooks
                 .usage(
@@ -4553,7 +4722,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           }
           /** A cost the provider never reported (an expected one) is booked apart as uncertain. */
           const guessed = result.uncertain === true;
-          await settleCost(guessed ? 'uncertain' : kind, reserve, result.costUSD);
+          await settleCost(guessed ? 'uncertain' : kind, reserve, result.costUSD, part, look);
           await hooks
             .usage(
               job.owner,
@@ -4727,6 +4896,9 @@ export function createDescriptionRouter(hooks: Hooks): {
             uploadedBytes,
           }),
         );
+        /* Short enough that the server log's 150-character cut keeps the figures. */
+        if (!rehearsal)
+          hooks.log(line('dv.cost', { id: job._id, usd: runUSD, parts: partsText(booked) }));
         const name = copyName(job, settings.range);
         const extras = [
           report.failedSections.length

@@ -2535,10 +2535,71 @@ test('a running version shows this run’s cost against this run’s estimate, a
   const server = makeServer();
   const running = server.add(doneJob({ name: 'Film', state: 'running', stage: 'Watching section 3 of 20', progress: 15, costUSD: 3.23, runCostUSD: 0.21, estimatedUSD: 0.79, setAsideUSD: 0.92 }));
   const env = await boot({ server, search: '?id=' + running.id });
-  const line = 'This run so far: $0.21 of about $0.79 ($0.92 set aside). All versions of this video: $3.23. Work already sent to a service may still be charged if you cancel.';
+  const line = 'Spent so far 21 cents, of about 79 cents. All versions of this video: $3.23. Work already sent to a service may still be charged if you cancel.';
   assert.equal(env.$('cost').textContent, line);
   assert.equal(env.$('estimate').textContent, line);
   assert.equal(env.$('results').hidden, false, 'the earlier copy stays playable while the new version runs');
+});
+
+test('cost clarity: the look in progress is held apart from what is spent, and ticking numbers are never announced', async () => {
+  const server = makeServer();
+  const running = server.add(jobOf({
+    name: 'Road Runner', state: 'running', settings: standardSettings, stage: 'Watching section 2 of 3', progress: 40,
+    costUSD: 0.09, runCostUSD: 0.09, spentUSD: 0.09, heldUSD: 0.04, heldLooks: 1, estimatedUSD: 0.18, approvedUSD: 0.37, setAsideUSD: 0.37, costParts: [],
+  }));
+  const env = await boot({ server, search: '?id=' + running.id });
+  const { $ } = env;
+  assert.equal($('cost').textContent, 'Spent so far 9 cents, of about 18 cents. 4 cents set aside for the look in progress; you only pay what it really costs. It asks before spending more than 37 cents. Work already sent to a service may still be charged if you cancel.');
+  assert.equal($('cost').getAttribute('aria-live'), null, 'the cost line is read on demand, never announced');
+  assert.equal($('cost').getAttribute('role'), null);
+  const said = env.status();
+  Object.assign(running, { spentUSD: 0.11, runCostUSD: 0.11, costUSD: 0.11, heldUSD: 0.61, heldLooks: 2 });
+  await env.timers.advance(5000);
+  assert.match($('cost').textContent, /^Spent so far 11 cents, of about 18 cents\. 61 cents set aside for the 2 looks in progress; you only pay what it really costs\./);
+  Object.assign(running, { spentUSD: 0.13, runCostUSD: 0.13, costUSD: 0.13, heldUSD: 0.0005, heldLooks: 0 });
+  await env.timers.advance(5000);
+  assert.match($('cost').textContent, /^Spent so far 13 cents, of about 18 cents\. It asks before/, 'a held voice under a cent is not said');
+  assert.equal(env.status(), said, 'nothing about money was announced while the numbers moved');
+});
+
+test('cost clarity: a finished run lists its parts once, and the ready notice says the total', async () => {
+  const server = makeServer();
+  const running = server.add(jobOf({
+    name: 'Road Runner', state: 'running', settings: standardSettings, stage: 'Watching section 3 of 3', progress: 90,
+    costUSD: 0.12, runCostUSD: 0.12, spentUSD: 0.12, heldUSD: 0.42, heldLooks: 1, estimatedUSD: 0.18, approvedUSD: 0.37, costParts: [],
+  }));
+  const env = await boot({ server, search: '?id=' + running.id });
+  const { $ } = env;
+  Object.assign(running, {
+    state: 'done', progress: 100, stage: 'Done', spentUSD: 0.1712, runCostUSD: 0.1712, costUSD: 0.1712, heldUSD: 0, heldLooks: 0,
+    copies: [{ version: 1, settings: standardSettings, count: 82, outputSeconds: 253 }],
+    costParts: [
+      { part: 'closeLooks', label: 'Closer looks', usd: 0.0562 },
+      { part: 'secondLooks', label: 'Second looks at rushed parts', usd: 0.115 },
+      { part: 'dialogue', label: 'Dialogue timing', usd: 0.022, included: true },
+    ],
+  });
+  await env.timers.advance(5000);
+  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Closer looks: 6 cents; second looks at rushed parts: 12 cents. Dialogue timing (2 cents, paid by the platform) and narration are included.');
+  assert.equal(env.status(), 'Your described copy is ready. It cost 17 cents.');
+});
+
+test('cost clarity: someone else’s finished run shows included work at no price, and an older server keeps its words', async () => {
+  const server = makeServer();
+  const mine = server.add(doneJob({
+    name: 'Cartoon', spentUSD: 0.34, runCostUSD: 0.34, costUSD: 0.5, estimatedUSD: 0.36,
+    costParts: [
+      { part: 'looks', label: 'Looks', usd: 0.3 },
+      { part: 'failedTries', label: 'Tries that failed', usd: 0.04 },
+      { part: 'dialogue', label: 'Dialogue timing', usd: 0, included: true },
+    ],
+  }));
+  const older = server.add(doneJob({ name: 'Old one', costUSD: 0.2, runCostUSD: 0.2 }));
+  const env = await boot({ server, search: '?id=' + mine.id });
+  const { $ } = env;
+  assert.equal($('cost').textContent, 'This run cost 34 cents, of about 36 cents quoted. Looks: 30 cents; tries that failed: 4 cents. Dialogue timing and narration are included. All versions of this video: 50 cents.');
+  await env.open(older);
+  assert.equal($('cost').textContent, 'Processing cost for this video so far: $0.20.');
 });
 
 test('when the file links fail, the buttons still update and polling carries on', async () => {

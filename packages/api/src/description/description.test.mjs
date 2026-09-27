@@ -901,14 +901,14 @@ function thinking(f, counts, cuesFor = (n) => [{ ...cue, text: `Look ${n}: a red
   };
   return { backend, looks };
 }
-/** A meter that books what each paid request cost, as the router's ledger does. */
+/** A meter that books what each paid request cost, and the part it paid for, as the router's ledger does. */
 function ledger() {
   const charges = [];
   return {
     charges,
-    meter: async (kind, reserve, action) => {
+    meter: async (kind, reserve, action, part) => {
       const { costUSD } = await action();
-      charges.push({ kind, reserve, costUSD });
+      charges.push({ kind, reserve, costUSD, part });
     },
   };
 }
@@ -921,7 +921,7 @@ function approval(approvedUSD) {
   let spent = 0;
   return {
     charges,
-    meter: async (kind, reserve, action) => {
+    meter: async (kind, reserve, action, part) => {
       spent += reserve;
       let costUSD;
       try {
@@ -931,7 +931,7 @@ function approval(approvedUSD) {
         throw error;
       }
       spent += costUSD - reserve;
-      charges.push({ kind, reserve, costUSD });
+      charges.push({ kind, reserve, costUSD, part });
     },
     approvedRoom: () => Math.max(0, approvedUSD - spent),
   };
@@ -955,6 +955,11 @@ test('re-look: a look that skipped its thinking is looked at once more, both are
     charges.map((item) => [item.kind, item.costUSD]),
     [['vision', 0.029], ['vision', 0.052]],
     'both looks went through the meter at what they cost',
+  );
+  assert.deepEqual(
+    charges.map((item) => item.part),
+    ['looks', 'secondLooks'],
+    'each is booked to its own part of the cost breakdown she is shown',
   );
   const record = kept.records[0].analysis;
   assert.deepEqual(
@@ -1250,6 +1255,7 @@ test('re-look: a Pluto-sized close look against a $0.34 approval gets its second
     [[0.4, 0.029], [0.4, 0.052]],
     'each call reserved more than her whole approval, and each was charged what it cost',
   );
+  assert.deepEqual(her.charges.map((item) => item.part), ['closeLooks', 'secondLooks'], 'a close look and its second look, each in its part');
   const section = kept.records[0];
   const seconds = section.end - section.start;
   assert.ok(seconds > 77, `one Pluto-sized section: ${seconds} s`);
@@ -1460,7 +1466,8 @@ test('whole-film first look checkpoints, resumes, and finishes before any narrat
     voiced = 0;
   const backend = providers(f.voice, [], [cue]);
   const analyze = backend.analyze;
-  backend.analyze = async (look) => {
+  backend.analyze = async (look, _signal, meter) => {
+    await meter('vision', 0.01, async () => ({ costUSD: 0.01 }));
     if (look.brief.survey) {
       surveys++;
       assert.equal(voiced, 0);
@@ -1494,12 +1501,15 @@ test('whole-film first look checkpoints, resumes, and finishes before any narrat
   );
   assert.equal(keeper.saved.firstLook.through, 1);
   fail = false;
+  const { charges, meter } = ledger();
   const result = await run(f, [], [], {
     settings: { ...settings, firstLook: true },
     keeper,
     providers: backend,
+    meter,
   });
   assert.equal(surveys, 3, 'the first completed survey section was not repeated');
+  assert.deepEqual(charges.map((item) => item.part), ['firstLook', 'looks', 'looks'], 'the survey is booked as learning who is who');
   assert.ok(result.report.descriptions.length > 0);
 });
 
