@@ -204,31 +204,44 @@ export const myVoiceSources: { song: string; vocal: string } = {
 };
 export const myVoiceAutoOptions: { off: string; on: string } = { off: 'Off', on: 'On' };
 export const myVoiceExtractors: ReadonlyArray<{ key: string; label: string }> = [
-  { key: 'bs_roformer', label: 'BS-RoFormer (the first test)' },
+  { key: 'hyperace', label: 'BS-RoFormer HyperACE v2' },
+  { key: 'bs_roformer', label: 'BS-RoFormer ep 317 (the first test)' },
   { key: 'melband_kim', label: 'Mel-RoFormer Kim' },
   { key: 'melband_becruily', label: 'Mel-RoFormer becruily (slower the first time)' },
   { key: 'demucs', label: 'Demucs' },
 ];
+/** The worker's lead vs backing models (voice_request.LEAD_MODELS). Not a screen choice: MY_VOICE_DEFAULTS can switch it. */
+const LEAD_MODELS = ['frazer', 'aufr33'] as const;
 
 export type MyVoiceOptions = {
   extractor: string;
   lead_split: boolean;
+  lead_model: string;
   dereverb: boolean;
+  soft_s: boolean;
   index_rate: number;
   protect: number;
   rms_mix_rate: number;
 };
+/* The round 2 chain (Sep 27 2026, voice-persona RUNBOOK section 17), measured with Whisper against the lyrics on the three
+ * songs with the most backing singers: HyperACE v2 vocals and the frazer & becruily lead split with no dereverb took the lead
+ * that reaches RVC from 105 missing words of 591 to 4, and her voice from 322 words right to 494 (the weird words); the
+ * input's own S hiss above ~4 kHz (soft_s) matched the original singer's S level within 0.1 dB and its texture (the slightly
+ * robotic S). Protect at 0.2 or 0.5 changed nothing measurable. Round 1's chain: MY_VOICE_DEFAULTS
+ * {"extractor":"bs_roformer","lead_model":"aufr33","dereverb":true,"soft_s":false}. */
 const DEFAULTS: MyVoiceOptions = {
-  extractor: 'bs_roformer',
+  extractor: 'hyperace',
   lead_split: true,
-  dereverb: true,
+  lead_model: 'frazer',
+  dereverb: false,
+  soft_s: true,
   index_rate: 0.5,
   protect: 0.33,
   rms_mix_rate: 0.25,
 };
 const RANGES = { index_rate: [0, 1], protect: [0, 0.5], rms_mix_rate: [0, 1] } as const;
 
-/** Today's chain, or MY_VOICE_DEFAULTS (JSON, any of the keys above) once her listening picks another. Bad values are ignored. */
+/** The round 2 chain, or MY_VOICE_DEFAULTS (JSON, any of the keys above) once her listening picks another. Bad values are ignored. */
 export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOptions {
   const out: MyVoiceOptions = { ...DEFAULTS };
   let said: Record<string, unknown> = {};
@@ -241,7 +254,12 @@ export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOp
   }
   if (typeof said.extractor === 'string' && myVoiceExtractors.some((e) => e.key === said.extractor))
     out.extractor = said.extractor;
-  for (const flag of ['lead_split', 'dereverb'] as const)
+  if (
+    typeof said.lead_model === 'string' &&
+    (LEAD_MODELS as readonly string[]).includes(said.lead_model)
+  )
+    out.lead_model = said.lead_model;
+  for (const flag of ['lead_split', 'dereverb', 'soft_s'] as const)
     if (typeof said[flag] === 'boolean') out[flag] = said[flag] as boolean;
   for (const [key, [low, high]] of Object.entries(RANGES) as Array<
     [keyof typeof RANGES, readonly [number, number]]
@@ -290,12 +308,12 @@ function flagChoice(value: unknown, fallback: boolean, label: string): boolean {
 function extractorChoice(value: unknown, fallback: string): string {
   if (value == null || value === '') return fallback;
   const said = words(value);
-  const found = myVoiceExtractors.find(
-    (e) =>
-      e.key === said ||
-      words(e.label) === said ||
-      words(e.label).split(/[\s(]+/)[0] === said.split(/[\s(]+/)[0],
-  );
+  /* The exact key or label first. A first word alone ("demucs") counts only when one extractor starts with it: two labels
+   * share "bs-roformer" and two share "mel-roformer", and a first-word match used to turn becruily into Kim. */
+  const first = (text: string) => text.split(/[\s(]+/)[0];
+  const exact = myVoiceExtractors.find((e) => e.key === said || words(e.label) === said);
+  const byFirst = myVoiceExtractors.filter((e) => first(words(e.label)) === first(said));
+  const found = exact || (byFirst.length === 1 ? byFirst[0] : undefined);
   if (!found) throw new Error('Under Vocal extractor, choose one of the listed extractors.');
   return found.key;
 }
@@ -358,19 +376,16 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
         defaults.lead_split,
         'Split the lead from the backing vocals',
       ),
+      lead_model: defaults.lead_model,
       dereverb: flagChoice(body.dereverb, defaults.dereverb, 'Take the room off the voice first'),
+      soft_s: flagChoice(body.soft_s, defaults.soft_s, 'Softer S sounds'),
       index_rate: numberChoice(
         body.index_rate,
         defaults.index_rate,
         'index_rate',
         'Voice likeness',
       ),
-      protect: numberChoice(
-        body.protect,
-        defaults.protect,
-        'protect',
-        'Protect breaths and S sounds',
-      ),
+      protect: numberChoice(body.protect, defaults.protect, 'protect', 'Protect breaths'),
       rms_mix_rate: numberChoice(
         body.rms_mix_rate,
         defaults.rms_mix_rate,
@@ -417,8 +432,10 @@ export function myVoicePrepare(
 function workerOptions(options: MyVoiceOptions): MyVoiceWorkerInput['options'] {
   return {
     ...options,
-    fallback: options.extractor === 'demucs' ? 'none' : 'demucs',
-    room: true,
+    /* Round 1's BS-RoFormer backs up every other extractor (and Demucs backs it up), so one extractor's failure never
+     * ends the job. */
+    fallback: options.extractor === 'bs_roformer' ? 'demucs' : 'bs_roformer',
+    room: true, // used only when dereverb took a room off: a matching one goes back on
     f0_method: 'rmvpe',
   };
 }
@@ -458,6 +475,7 @@ export type MyVoiceProjectOptions = {
   extractor: string;
   lead_split: boolean;
   dereverb: boolean;
+  soft_s: boolean;
   index_rate: number;
   protect: number;
   rms_mix_rate: number;
@@ -471,6 +489,7 @@ export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
       .label,
     lead_split: options.lead_split,
     dereverb: options.dereverb,
+    soft_s: options.soft_s !== false,
     index_rate: options.index_rate,
     protect: options.protect,
     rms_mix_rate: options.rms_mix_rate,
@@ -573,6 +592,8 @@ export type MyVoiceGuideSetting = {
   min?: number;
   max?: number;
   step?: number;
+  /** Shown inside the page's one collapsed "More settings" group (Part 296), never hidden. */
+  advanced?: boolean;
 };
 export type MyVoiceGuideEngine = {
   name: string;
@@ -590,6 +611,8 @@ export type MyVoiceGuideEngine = {
   ui: {
     render: string;
     select: string;
+    /** Said once when a library take has just been attached to sing. */
+    fromTake: string;
     needClip: string;
     useTake: string;
     vocal: string;
@@ -619,10 +642,12 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
     ],
     howToWrite: [
       'Import the recording under Recording to sing. A whole song as an MP3 fits, up to twenty megabytes and six minutes.',
-      'Under What is in the file, choose Song with music when there is a band or a backing track: the singing is split from the music, sung again in your voice, and put back in the same kind of room. Choose Just a vocal for singing with nothing else in it, such as a dry vocal you exported.',
-      'Leave Pitch empty for automatic: the melody stays where it is and moves one octave only when the song sits outside your range. Or type semitones; twelve is one octave.',
-      'If some words come out strange, the split between the voice and the music is the usual cause. Try another Vocal extractor, or turn off Split the lead from the backing vocals so every voice is sung together.',
-      'If S sounds or breaths come out robotic, lower Protect breaths and S sounds a little, to 0.2 or so.',
+      'Under What is in the file, choose Song with music when there is a band or a backing track: the singing is split from the music, the lead singer is sung again in your voice, and it is put back. Choose Just a vocal for singing with nothing else in it, such as a dry vocal you exported.',
+      'Pitch is automatic: the melody stays where it is and moves one octave only when the song sits outside your range. To move it yourself, type semitones under More settings; twelve is one octave.',
+      'If some words still come out strange, the split between the voice and the music is the usual cause. Under More settings, try another Vocal extractor. Some of it can also be how the original was sung.',
+      d.soft_s
+        ? 'Softer S sounds is on: the S, SH, T and F hiss comes from the original singer, which takes the robotic edge off. Turn it off under More settings to hear every sound from your voice model.'
+        : 'If S sounds come out a little robotic, turn on Softer S sounds under More settings: the S, SH, T and F hiss then comes from the original singer.',
       'You get two files: the song in your voice, and your voice on its own.',
     ],
     settings: [
@@ -641,6 +666,8 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         options: [myVoiceSources.song, myVoiceSources.vocal],
         default: myVoiceSources.song,
       },
+      /* Part 296 (her ask: the booth was cluttered): the recording and what is in it stay in view; every knob below sits in
+       * the one collapsed More settings group, at the defaults the round 2 test measured. */
       {
         key: 'pitch',
         label: 'Pitch (semitones)',
@@ -649,28 +676,40 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         min: -24,
         max: 24,
         step: 1,
+        advanced: true,
       },
       {
         key: 'extractor',
         label: 'Vocal extractor',
-        hint: 'What splits the singing from the music. If words come out strange, try another one. Demucs is the usual backup when the first cannot split a song.',
+        hint: 'What splits the singing from the music. BS-RoFormer HyperACE v2 kept the most words in tests. If words come out strange, try another one. When the chosen one cannot split a song, the BS-RoFormer from the first test takes over.',
         kind: 'choice',
         options: myVoiceExtractors.map((e) => e.label),
         default: extractor.label,
+        advanced: true,
       },
       {
         key: 'lead_split',
         label: 'Split the lead from the backing vocals',
-        hint: 'On: only the lead singer is sung again and the backing vocals stay as they were. Off: every voice is sung together in your voice; try Off if words go missing.',
+        hint: 'On: only the lead singer is sung again in your voice, and the backing vocals stay as they were. Off: every voice is sung together in your voice, and harmonies can wobble.',
         kind: 'toggle',
         default: d.lead_split,
+        advanced: true,
+      },
+      {
+        key: 'soft_s',
+        label: 'Softer S sounds',
+        hint: 'On: the S, SH, T and F hiss comes from the original singer instead of being rebuilt by your voice model, which is what makes S sounds a little robotic. That hiss carries almost nothing of who is singing, so the voice stays yours. Off: every sound comes from your voice model.',
+        kind: 'toggle',
+        default: d.soft_s,
+        advanced: true,
       },
       {
         key: 'dereverb',
         label: 'Take the room off the voice first',
-        hint: 'On: the echo is taken off before your voice sings it, and a matching room is put back after. Off: the voice is sung with its echo and no room is added.',
+        hint: 'Off: the voice is sung with its echo, which kept the most words in tests. On: the echo is taken off before your voice sings it, and a matching room is put back after.',
         kind: 'toggle',
         default: d.dereverb,
+        advanced: true,
       },
       {
         key: 'index_rate',
@@ -681,16 +720,18 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         max: 1,
         step: 0.05,
         default: d.index_rate,
+        advanced: true,
       },
       {
         key: 'protect',
-        label: 'Protect breaths and S sounds',
-        hint: 'Lower keeps more of the original S, T and breath sounds, which stops them turning robotic but sounds a little less like you. 0.5 turns this off.',
+        label: 'Protect breaths',
+        hint: 'How much of the original breath and consonant sound is kept. 0.2 and 0.5 sounded the same as 0.33 in tests; for robotic S sounds use Softer S sounds instead. 0.5 turns this off.',
         kind: 'range',
         min: 0,
         max: 0.5,
         step: 0.01,
         default: d.protect,
+        advanced: true,
       },
       {
         key: 'rms_mix_rate',
@@ -701,6 +742,7 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         max: 1,
         step: 0.05,
         default: d.rms_mix_rate,
+        advanced: true,
       },
     ],
     flow: 'upload',
@@ -709,6 +751,8 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       render: 'Sing it in my voice',
       select:
         'Sing it in my voice. Import a song or a vocal, choose what is in the file, then choose Sing it in my voice.',
+      fromTake:
+        'The take is attached to sing. Check What is in the file, then choose Sing it in my voice. The original is kept.',
       needClip: 'Import the recording to sing first, under Recording to sing.',
       useTake: 'Sing this take in my voice',
       vocal: 'Download my voice on its own',
@@ -873,6 +917,9 @@ export type MyVoiceFollowUpHooks = {
   failed?: (row: MyVoiceFollowUp) => Promise<void>;
   /** Once, when every version of one YuE2 request has finished. */
   notify?: (row: MyVoiceFollowUp, done: number, total: number) => Promise<void>;
+  /** True while the YuE2 request a version came from can still finish takes (so more versions may be queued): the one
+   * notification waits for it. Without this hook, the versions queued so far are the whole request. */
+  batchOpen?: (row: MyVoiceFollowUp) => Promise<boolean>;
   log?: (line: string) => void;
 };
 export type MyVoiceQueue = {
@@ -968,6 +1015,9 @@ export function createMyVoiceFollowUps(
     if (!hooks.notify) return;
     const batch = await Rows.find({ batchId: row.batchId, user: row.user }).lean();
     if (batch.some((r) => ACTIVE.includes(r.state)) || batch.some((r) => r.notified)) return;
+    /* A YuE2 request's takes can finish minutes apart. Without this, the first take's version could be announced as the
+     * whole batch ("1 of 1") and the later ones never. advance() comes back to a settled batch once its request ends. */
+    if (hooks.batchOpen && (await hooks.batchOpen(view(row)).catch(() => false))) return;
     const claim = await Rows.updateMany(
       { batchId: row.batchId, user: row.user, notified: { $ne: true } },
       { $set: { notified: true } },
@@ -1043,6 +1093,21 @@ export function createMyVoiceFollowUps(
         .select('id')
         .lean();
       for (const row of rows) await step(row.id).catch(() => undefined);
+      /* Settled batches not yet announced (their YuE2 request was still running when the last version finished). */
+      if (hooks.notify && hooks.batchOpen) {
+        const settled = await Rows.find({
+          state: { $nin: ACTIVE },
+          notified: { $ne: true },
+          createdAt: { $gt: new Date(Date.now() - 2 * 86400000) },
+        }).lean();
+        const seen = new Set<string>();
+        for (const row of settled) {
+          const key = `${row.user}|${row.batchId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          await finishBatch(row).catch(() => undefined);
+        }
+      }
     } catch {
       /* the database is away; the rows stay durable until it is back */
     } finally {

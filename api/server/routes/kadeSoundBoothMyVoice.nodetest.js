@@ -74,9 +74,11 @@ test('a render body becomes a voice job; her choices are read in the words the s
     source: 'song',
     pitch: 'auto',
     options: {
-      extractor: 'bs_roformer',
+      extractor: 'hyperace',
       lead_split: true,
-      dereverb: true,
+      lead_model: 'frazer',
+      dereverb: false,
+      soft_s: true,
       index_rate: 0.5,
       protect: 0.33,
       rms_mix_rate: 0.25,
@@ -91,7 +93,8 @@ test('a render body becomes a voice job; her choices are read in the words the s
       pitch: '-12',
       extractor: 'Mel-RoFormer Kim',
       lead_split: false,
-      dereverb: 'off',
+      dereverb: 'on',
+      soft_s: 'off',
       index_rate: 0.3,
       protect: 0.2,
       rms_mix_rate: 1,
@@ -105,7 +108,9 @@ test('a render body becomes a voice job; her choices are read in the words the s
     options: {
       extractor: 'melband_kim',
       lead_split: false,
-      dereverb: false,
+      lead_model: 'frazer',
+      dereverb: true,
+      soft_s: false,
       index_rate: 0.3,
       protect: 0.2,
       rms_mix_rate: 1,
@@ -115,6 +120,20 @@ test('a render body becomes a voice job; her choices are read in the words the s
     voice.myVoiceInput({ reference_voice_url: url, extractor: 'demucs', pitch: '' }, ON).voice
       .options.extractor,
     'demucs',
+  );
+  /* Every extractor by its own label: two labels start "BS-RoFormer" and two "Mel-RoFormer", and a first-word match used to
+   * send becruily to Kim. */
+  for (const e of voice.myVoiceExtractors)
+    assert.equal(
+      voice.myVoiceInput({ reference_voice_url: url, extractor: e.label }, ON).voice.options
+        .extractor,
+      e.key,
+      e.label,
+    );
+  assert.throws(
+    () => voice.myVoiceInput({ reference_voice_url: url, extractor: 'BS-RoFormer' }, ON),
+    /listed extractors/,
+    'a first word two extractors share names neither',
   );
   for (const [body, words] of [
     [{}, /Recording to sing/],
@@ -126,6 +145,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
     [{ reference_voice_url: url, extractor: 'magic' }, /listed extractors/],
     [{ reference_voice_url: url, protect: 0.9 }, /from 0 to 0.5/],
     [{ reference_voice_url: url, lead_split: 'maybe' }, /on or off/],
+    [{ reference_voice_url: url, soft_s: 'sometimes' }, /Softer S sounds, choose on or off/],
   ])
     assert.throws(() => voice.myVoiceInput(body, ON), words, JSON.stringify(body));
 });
@@ -139,16 +159,41 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
       lead_split: false,
       index_rate: 7,
       extractor2: 'x',
+      lead_model: 'magic',
+      soft_s: 'no',
     }),
   };
   assert.deepEqual(voice.myVoiceDefaults(env), {
     extractor: 'melband_kim',
     lead_split: false,
-    dereverb: true,
+    lead_model: 'frazer',
+    dereverb: false,
+    soft_s: true,
     index_rate: 0.5,
     protect: 0.2,
     rms_mix_rate: 0.25,
   });
+  /* Round 1's chain, if her listening prefers it: one setting on Railway. */
+  const round1 = {
+    ...ON,
+    MY_VOICE_DEFAULTS: JSON.stringify({
+      extractor: 'bs_roformer',
+      lead_model: 'aufr33',
+      dereverb: true,
+      soft_s: false,
+    }),
+  };
+  assert.deepEqual(
+    (({ extractor, lead_model, dereverb, soft_s }) => ({
+      extractor,
+      lead_model,
+      dereverb,
+      soft_s,
+    }))(voice.myVoiceDefaults(round1)),
+    { extractor: 'bs_roformer', lead_model: 'aufr33', dereverb: true, soft_s: false },
+  );
+  assert.match(voice.myVoiceGuideEngine(round1).howToWrite.join(' '), /turn on Softer S sounds/);
+  assert.match(voice.myVoiceGuideEngine(ON).howToWrite.join(' '), /Softer S sounds is on/);
   assert.equal(
     voice.myVoiceGuideEngine(env).settings.find((s) => s.key === 'extractor').default,
     'Mel-RoFormer Kim',
@@ -184,28 +229,35 @@ test('the owner check adds her model and the recording length; the worker gets e
     index_sha256: ENTRY.index_sha256,
     voice_range: ENTRY.range,
     options: {
-      extractor: 'bs_roformer',
+      extractor: 'hyperace',
       lead_split: true,
-      dereverb: true,
+      lead_model: 'frazer',
+      dereverb: false,
+      soft_s: true,
       index_rate: 0.5,
       protect: 0.33,
       rms_mix_rate: 0.25,
-      fallback: 'demucs',
+      fallback: 'bs_roformer',
       room: true,
       f0_method: 'rmvpe',
     },
   });
-  const demucs = await prepare(
+  const round1 = await prepare(
     OWNER,
-    voice.myVoiceInput({ reference_voice_url: url, extractor: 'Demucs' }, ON),
+    voice.myVoiceInput({ reference_voice_url: url, extractor: 'bs_roformer' }, ON),
   );
-  assert.equal(voice.myVoiceWorkerInput(demucs).options.fallback, 'none', 'never its own fallback');
+  assert.equal(
+    voice.myVoiceWorkerInput(round1).options.fallback,
+    'demucs',
+    'never its own fallback',
+  );
   const opts = voice.myVoiceProjectOptions(ready);
   assert.deepEqual(opts, {
     voice_source: 'Song with music',
-    extractor: 'BS-RoFormer (the first test)',
+    extractor: 'BS-RoFormer HyperACE v2',
     lead_split: true,
-    dereverb: true,
+    dereverb: false,
+    soft_s: true,
     index_rate: 0.5,
     protect: 0.33,
     rms_mix_rate: 0.25,
@@ -283,12 +335,21 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
       'pitch',
       'extractor',
       'lead_split',
+      'soft_s',
       'dereverb',
       'index_rate',
       'protect',
       'rms_mix_rate',
     ],
   );
+  assert.deepEqual(
+    engine.settings.filter((s) => !s.advanced).map((s) => s.key),
+    ['reference_voice_url', 'voice_source'],
+    'the recording and what is in it stay in view; the rest waits in More settings',
+  );
+  assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, true);
+  assert.equal(engine.settings.find((s) => s.key === 'dereverb').default, false);
+  assert.match(engine.ui.fromTake, /attached/);
   assert.deepEqual(engine.settings[1].options, ['Song with music', 'Just a vocal']);
   assert.deepEqual(voice.myVoiceYueSetting.options, ['Off', 'On']);
   assert.equal(guide.engines.yue2.settings.length, 3, 'the shared guide is never changed');
@@ -404,4 +465,44 @@ test('the library offers her the take sung again, and the voice-only file, from 
     /state\.clips=\[\{url:take\.url, name:project\.title/,
     'the listening MP3, which fits the length check',
   );
+});
+
+test('the upload engine on the page: one sentence when a take is sent, focus that lands, no writing row, no second pass', () => {
+  /* Focus goes to something that exists: the script box elsewhere, the recording picker (or the button) on an upload engine. */
+  const focusIn = (engine, pickerDisabled) => {
+    const got = [];
+    const ctx = {
+      state: { engine, guide: { engines: { myvoice: { flow: 'upload' }, yue2: {} } } },
+      document: {
+        getElementById: (id) => ({ focus: () => got.push(id) }),
+        querySelector: () => ({ disabled: pickerDisabled, focus: () => got.push('picker') }),
+      },
+    };
+    vm.runInNewContext(
+      [pageFunction('isUpload'), pageFunction('focusWork'), 'focusWork();'].join('\n'),
+      ctx,
+    );
+    return got;
+  };
+  assert.deepEqual(focusIn('yue2', false), ['script']);
+  assert.deepEqual(focusIn('myvoice', false), ['picker']);
+  assert.deepEqual(
+    focusIn('myvoice', true),
+    ['btnRender'],
+    'a full picker is disabled: the button instead',
+  );
+  /* A library take sent to it: setEngine stays quiet and the handler says the one sentence, that the take is attached. */
+  assert.match(script, /if\(!ue \|\| !setEngine\(ue, true\)\) return;/);
+  assert.match(pageFunction('setEngine'), /if\(!quiet\) say\(uploadUi\(e\)\.select\|\|g\.name\)/);
+  assert.match(
+    script,
+    /say\(uploadUi\(ue\)\.fromTake\|\|uploadUi\(ue\)\.select\|\|''\); document\.getElementById\('btnRender'\)\.focus\(\)/,
+  );
+  /* The quick-writing row was shown again two lines after being hidden. */
+  assert.match(
+    pageFunction('applyWorkflow'),
+    /getElementById\('quickWriting'\)\.hidden=effects\|\|upload;/,
+  );
+  /* A version already in her voice is not offered to be sung in her voice again. */
+  assert.match(script, /\(ue && !t\.voiceOf && \(state\.guide\.engines\[ue\]\.takesFrom/);
 });

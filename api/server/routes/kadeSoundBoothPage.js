@@ -219,6 +219,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function isUpload(e){ var g=state.guide&&state.guide.engines[e||state.engine]; return !!(g && g.flow==='upload'); }
     function uploadEngine(){ var ks=Object.keys((state.guide&&state.guide.engines)||{}).filter(function(k){ return isUpload(k); }); return ks[0]||null; }
     function uploadUi(e){ var g=state.guide.engines[e||state.engine]||{}; return g.ui||{}; }
+    function focusWork(){ if(!isUpload()){ document.getElementById('script').focus(); return; } var pick=document.querySelector('#settings input[type=file]'); (pick && !pick.disabled ? pick : document.getElementById('btnRender')).focus(); }
     function invalidateQuote(){ state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
     app.addEventListener('change', invalidateQuote);
@@ -266,7 +267,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function saveDraft(){
       drafts[state.engine]={title:document.getElementById('trackTitle').value,mode:state.mode,input:state.input,text:document.getElementById('text').value,script:document.getElementById('script').value,mood:document.getElementById('mood').value,readback:document.getElementById('readback').textContent,values:Object.assign({},state.values),clips:state.clips.slice(),importError:state.importError,projectId:state.projectId,voiceSeed:state.voiceSeed,rerollVoice:state.rerollVoice,lastXml:state.lastXml};
     }
-    function setEngine(e){
+    function setEngine(e, quiet){
       if(busy()){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
       if(e!==state.engine){
         saveDraft();
@@ -284,7 +285,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('btnPreview').hidden = (e !== 'scenema');
       document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
       invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
-      if(isUpload(e)){ document.getElementById('settingsDrawer').open=true; say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
+      if(isUpload(e)){ document.getElementById('settingsDrawer').open=true; if(!quiet) say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
       say(g.name+'. '+(e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='yue2'?'Describe the style, add lyrics, then choose Make music.':e==='stable'?'Describe your sounds, then choose Generate sounds.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
     }
     function updateRenderControls(){
@@ -327,7 +328,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('btnScriptFile').textContent=music?'Download music direction as text':'Download this script as text';
       document.getElementById('starterLabel').textContent=effects?'A sound starting point':music?'A music starting point':scene?'A scene starting point':'A performance starting point';
       if(state.engine==='yue2')document.getElementById('scriptHint').textContent='Describe the style and singing voice. Lyrics and any song to cover go in song settings; Write my song idea drafts the direction and the lyrics.';
-      document.getElementById('quickWriting').hidden=effects;document.getElementById('quickWritingHint').hidden=effects;
+      document.getElementById('quickWriting').hidden=effects||upload;document.getElementById('quickWritingHint').hidden=effects||upload;
       if(effects)document.getElementById('scriptHint').textContent='Describe the main sound, then quieter layers and the space around them. Say no speech or music if you want neither.';
       if(upload){
         document.getElementById('editorLegend').textContent=g.name;
@@ -928,7 +929,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.vocalUrl ? ' · <a href="'+esc(t.vocalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocal) || 'Download the voice on its own')+'</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
                    (t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '') +
                    (t.voiceNote ? '<p class="hint">' + esc(t.voiceNote) + '</p>' : '') +
-                   (ue && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
+                   (ue && !t.voiceOf && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
                    (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
           (upload ? '' : '<details><summary>'+(p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>') +
@@ -972,14 +973,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var project=ps.filter(function(p){return p.id===button.dataset.takeProject;})[0];
         var take=project && project.takes[Number(button.dataset.take)];
         if(take && button.dataset.use==='upload'){
-          var ue=uploadEngine(); if(!ue || !setEngine(ue)) return;
+          var ue=uploadEngine(); if(!ue || !setEngine(ue, true)) return;
           var first=(state.guide.engines[ue].settings||[]).filter(function(x){ return x.kind==='choice'; })[0];
           state.projectId=null; state.values={}; if(first) state.values[first.key]=first.default;
           document.getElementById('trackTitle').value=(project.title+' (in my voice)').slice(0,80);
           /* The listening MP3, not the WAV master: the booth checks a recording's length by reading it, up to twenty megabytes. */
           state.importError=''; state.clips=[{url:take.url, name:project.title, seconds:take.seconds||null}];
           invalidateQuote(); renderSettings(); quoteUpload();
-          say(uploadUi(ue).select||''); document.getElementById('btnRender').focus(); return;
+          say(uploadUi(ue).fromTake||uploadUi(ue).select||''); document.getElementById('btnRender').focus(); return;
         }
         var covering=button.dataset.use==='cover';
         if(!take || !setEngine(covering?'yue2':'scenema'))return;
@@ -1010,9 +1011,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           }
           /* Part 296: a saved score sits in More settings, so the group opens to show it. */
           if(state.guide.engines[p.engine].settings.some(function(s){ var v=state.values[s.key]; return s.advanced && s.kind==='text' && typeof v==='string' && v.trim(); })) moreOpen[p.engine]=true;
-          invalidateQuote(); renderSettings();
-          say('Opened "' + p.title + '". Change what you like, then generate another take.');
-          document.getElementById('script').focus();
+          invalidateQuote(); renderSettings(); if(isUpload() && state.clips.length) quoteUpload();
+          say('Opened "' + p.title + '". Change what you like, then '+(isUpload() ? 'choose '+(uploadUi().render||'Render') : 'generate another take')+'.');
+          focusWork();
         };
       });
       var listen = ps.filter(function(p){ return p.state === 'queued' || p.state === 'running'; })[0];
@@ -1031,7 +1032,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';
       document.getElementById('readback').textContent='';state.lastXml='';showCode('');invalidateQuote();renderSettings();applyWorkflow();
       say(starter?'Starting '+starter.title+'. The starting point is ready to edit. Nothing has been generated.':'New blank project.');
-      document.getElementById('script').focus();
+      focusWork();
     }
     document.getElementById('btnStarter').onclick=function(){var s=starters.find(function(s){return s.id===document.getElementById('starter').value;});if(s)newProject(s);};
     document.getElementById('btnBlank').onclick=function(){newProject(null);};

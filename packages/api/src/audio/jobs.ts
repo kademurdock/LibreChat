@@ -157,6 +157,7 @@ export type InputBody = {
   extractor?: string;
   lead_split?: boolean | string;
   dereverb?: boolean | string;
+  soft_s?: boolean | string;
   index_rate?: number;
   protect?: number;
   rms_mix_rate?: number;

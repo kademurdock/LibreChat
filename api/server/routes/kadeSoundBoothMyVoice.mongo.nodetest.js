@@ -120,6 +120,7 @@ test('Sing it in my voice through the real booth', async (t) => {
   const notified = [];
   let clipSeconds = 181.2;
   const api = {
+    ...yue, // every YuE2 export the booth reads (yueSavedOptions, yueStyleAccess, ...), so kade's own additions keep working
     ...voice,
     createYueRouter: yue.createYueRouter,
     yueConfigured: yue.yueConfigured,
@@ -364,13 +365,15 @@ test('Sing it in my voice through the real booth', async (t) => {
         index_sha256: ENTRY.index_sha256,
         voice_range: ENTRY.range,
         options: {
-          extractor: 'bs_roformer',
+          extractor: 'hyperace',
           lead_split: true,
-          dereverb: true,
+          lead_model: 'frazer',
+          dereverb: false,
+          soft_s: true,
           index_rate: 0.5,
           protect: 0.33,
           rms_mix_rate: 0.25,
-          fallback: 'demucs',
+          fallback: 'bs_roformer',
           room: true,
           f0_method: 'rmvpe',
         },
@@ -505,13 +508,15 @@ test('Sing it in my voice through the real booth', async (t) => {
         index_sha256: ENTRY.index_sha256,
         voice_range: ENTRY.range,
         options: {
-          extractor: 'bs_roformer',
+          extractor: 'hyperace',
           lead_split: true,
-          dereverb: true,
+          lead_model: 'frazer',
+          dereverb: false,
+          soft_s: true,
           index_rate: 0.5,
           protect: 0.33,
           rms_mix_rate: 0.25,
-          fallback: 'demucs',
+          fallback: 'bs_roformer',
           room: true,
           f0_method: 'rmvpe',
         },
@@ -640,6 +645,63 @@ test('Sing it in my voice through the real booth', async (t) => {
         title: 'z',
       });
       assert.deepEqual(none, { queued: false, reason: 'no voice model' });
+    },
+  );
+
+  await t.test(
+    'takes that finish minutes apart: one notification, after the last version, counting them all',
+    async () => {
+      /* The first take's version used to finish while the second take was still rendering, and was announced as the whole
+       * batch ("1 of 1"); the second was never announced. The notification now waits for the YuE2 request itself. */
+      const YueJobs = mongoose.models.KadeYueJob;
+      await YueJobs.create({
+        id: 'yue_b2',
+        user: OWNER,
+        state: 'running',
+        active: true,
+        input: {},
+        createdAt: new Date(),
+      });
+      const title = 'Two takes, minutes apart';
+      const take = async (n) => {
+        const asset = await Asset.create({
+          user: OWNER,
+          service: 'runpod_yue2',
+          kind: 'audio',
+          url: `https://assets.test/yue2/b2${n}/master.mp3`,
+          metadata: {},
+        });
+        return followUps.queue({
+          user: OWNER,
+          projectId: yueMine.projectId,
+          sourceAssetId: String(asset._id),
+          sourceJobId: `yue_b2_${n}`,
+          audioKey: `yue2/b2${n}/master.wav`,
+          title,
+        });
+      };
+      const toldAbout = () => notified.filter((n) => n[1] === `${title}, in your voice`);
+      Object.assign(rp.voiceep, {
+        status: 'COMPLETED',
+        executionTime: 90000,
+        output: {
+          url: 'https://assets.test/voice/b2/mix.mp3',
+          duration_s: 150,
+          gpu: 'NVIDIA GeForce RTX 4090',
+          features: ['song'],
+        },
+      });
+      assert.equal((await take(1)).queued, true);
+      await followUps.advance();
+      assert.equal(toldAbout().length, 0, 'the request is still rendering its second take');
+      assert.equal((await take(2)).queued, true);
+      await followUps.advance();
+      assert.equal(toldAbout().length, 0, 'both versions done, but the request has not ended yet');
+      await YueJobs.updateOne({ id: 'yue_b2' }, { $set: { state: 'done', active: false } });
+      await followUps.advance();
+      await followUps.advance();
+      assert.equal(toldAbout().length, 1, 'said once');
+      assert.deepEqual(toldAbout()[0].slice(2, 5), [2, 2, false], 'counting both versions');
     },
   );
 

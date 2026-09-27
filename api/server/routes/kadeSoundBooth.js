@@ -109,10 +109,14 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
  * table with a consent record) sees or reaches any of it. myVoiceOwner answers null for everyone else, and while
  * MY_VOICE_ENABLED is off. The YuE2 choice below is cleared on the server for an account without a model; the engine's own
  * router lets such a request fall through as an unknown engine; the guide, the upload lane and /health add nothing for them. */
+/* Without the voice module (a test harness with its own @librechat/api stand-ins) the feature is simply off: nothing is
+ * mounted, every owner check answers null, and the booth still loads. */
+const MY_VOICE_READY = [findMyVoiceModel, createMyVoiceFollowUps, createMyVoiceRouter, withMyVoiceGuide].every((f) => typeof f === 'function');
 function myVoiceOwner(userId) {
-  return findMyVoiceModel(String(userId || ''));
+  return MY_VOICE_READY ? findMyVoiceModel(String(userId || '')) : Promise.resolve(null);
 }
-const myVoiceFollowUps = createMyVoiceFollowUps({
+const MY_VOICE_OFF = { queue: async () => ({ queued: false, reason: 'off' }), advance: async () => undefined, stop: () => undefined };
+const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps({
   find: myVoiceOwner,
   /* A finished voice version: its own take, beside the one it was made from, in the same project. Idempotent: the asset is
    * keyed by the follow-up's id and the project only gains it (and its cost) once. */
@@ -136,6 +140,13 @@ const myVoiceFollowUps = createMyVoiceFollowUps({
   notify: async (row, done, total) => {
     const receipt = await notifyMusic(row.user, `${row.title}, in your voice`, done, total, done < total);
     logger.info(`[soundbooth/myvoice] notification batch=${row.batchId} done=${done}/${total} accepted=${receipt.accepted}`);
+  },
+  /* The one notification waits while the YuE2 request can still finish takes (its batch id is the YuE2 job's id). */
+  batchOpen: async (row) => {
+    const Jobs = mongoose.models.KadeYueJob;
+    if (!Jobs) return false;
+    const job = await Jobs.findOne({ id: row.batchId, user: row.user }).select('state').lean();
+    return !!job && ['submitting', 'queued', 'running', 'saving'].includes(job.state);
   },
   log: (line) => logger.info(line),
 });
@@ -247,7 +258,7 @@ router.use(createEffectsRouter({
 /* Sing it in my voice, the engine: she imports a song or a dry vocal and gets it back in her voice. Mounted before the main
  * /render, which would otherwise read the unknown engine as AuK; for an account with no voice model the request falls through
  * to it exactly as any unknown engine does. */
-router.use(createMyVoiceRouter({
+if (MY_VOICE_READY) router.use(createMyVoiceRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
   find: myVoiceOwner,
@@ -3190,7 +3201,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * GET /api/kade/features answers. */
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
-    guide: withMyVoiceGuide(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice),
+    guide: (MY_VOICE_READY ? withMyVoiceGuide : (g) => g)(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
