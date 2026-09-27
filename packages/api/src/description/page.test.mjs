@@ -2549,13 +2549,13 @@ test('cost clarity: the look in progress is held apart from what is spent, and t
   }));
   const env = await boot({ server, search: '?id=' + running.id });
   const { $ } = env;
-  assert.equal($('cost').textContent, 'Spent so far 9 cents, of about 18 cents. 4 cents set aside for the look in progress; you only pay what it really costs. It asks before spending more than 37 cents. Work already sent to a service may still be charged if you cancel.');
+  assert.equal($('cost').textContent, 'Spent so far 9 cents, of about 18 cents. The look in progress can cost at most 4 cents; you pay only what it really costs. It asks before spending more than 37 cents. Work already sent to a service may still be charged if you cancel.');
   assert.equal($('cost').getAttribute('aria-live'), null, 'the cost line is read on demand, never announced');
   assert.equal($('cost').getAttribute('role'), null);
   const said = env.status();
   Object.assign(running, { spentUSD: 0.11, runCostUSD: 0.11, costUSD: 0.11, heldUSD: 0.61, heldLooks: 2 });
   await env.timers.advance(5000);
-  assert.match($('cost').textContent, /^Spent so far 11 cents, of about 18 cents\. 61 cents set aside for the 2 looks in progress; you only pay what it really costs\./);
+  assert.match($('cost').textContent, /^Spent so far 11 cents, of about 18 cents\. The 2 looks in progress can cost at most 61 cents together; you pay only what they really cost\./);
   Object.assign(running, { spentUSD: 0.13, runCostUSD: 0.13, costUSD: 0.13, heldUSD: 0.0005, heldLooks: 0 });
   await env.timers.advance(5000);
   assert.match($('cost').textContent, /^Spent so far 13 cents, of about 18 cents\. It asks before/, 'a held voice under a cent is not said');
@@ -2580,7 +2580,7 @@ test('cost clarity: a finished run lists its parts once, and the ready notice sa
     ],
   });
   await env.timers.advance(5000);
-  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Closer looks: 6 cents; second looks at rushed parts: 12 cents. Dialogue timing (2 cents, paid by the platform) and narration are included.');
+  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Closer looks: 6 cents; second looks at rushed parts: 11 cents. Dialogue timing (2 cents, paid by the platform) and narration are included.', 'the parts said add up to the total said (5.6 and 11.5 cents make 17)');
   assert.equal(env.status(), 'Your described copy is ready. It cost 17 cents.');
 });
 
@@ -2595,11 +2595,27 @@ test('cost clarity: someone else’s finished run shows included work at no pric
     ],
   }));
   const older = server.add(doneJob({ name: 'Old one', costUSD: 0.2, runCostUSD: 0.2 }));
+  const unkept = server.add(doneJob({
+    name: 'Before parts', spentUSD: 0.1712, runCostUSD: 0.1712, costUSD: 0.1712, estimatedUSD: 0.18,
+    costParts: [{ part: 'other', label: 'Other processing', usd: 0.1712 }],
+  }));
+  const dear = server.add(doneJob({
+    name: 'Long one', spentUSD: 1.233, runCostUSD: 1.233, costUSD: 1.233, estimatedUSD: 1.1,
+    costParts: [
+      { part: 'closeLooks', label: 'Closer looks', usd: 0.4149 },
+      { part: 'secondLooks', label: 'Second looks at rushed parts', usd: 0.8151 },
+      { part: 'failedTries', label: 'Tries that failed', usd: 0.003 },
+    ],
+  }));
   const env = await boot({ server, search: '?id=' + mine.id });
   const { $ } = env;
   assert.equal($('cost').textContent, 'This run cost 34 cents, of about 36 cents quoted. Looks: 30 cents; tries that failed: 4 cents. Dialogue timing and narration are included. All versions of this video: 50 cents.');
   await env.open(older);
   assert.equal($('cost').textContent, 'Processing cost for this video so far: $0.20.');
+  await env.open(unkept);
+  assert.equal($('cost').textContent, 'This run cost 17 cents, of about 18 cents quoted. Narration is included.', 'a run from before its parts were kept is not broken down as other processing');
+  await env.open(dear);
+  assert.equal($('cost').textContent, 'This run cost $1.23, of about $1.10 quoted. Closer looks: 41 cents; second looks at rushed parts: 82 cents; tries that failed: under 1 cent. Narration is included.', 'whole cents that add up to $1.23');
 });
 
 test('when the file links fail, the buttons still update and polling carries on', async () => {

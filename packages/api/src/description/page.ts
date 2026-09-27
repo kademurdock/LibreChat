@@ -294,8 +294,21 @@ export const descriptionBrowserScript: string = String.raw`
   function length(seconds){var n=Math.round(seconds||0),h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=n%60;var parts=[];if(h)parts.push(plural(h,'hour','hours'));if(m)parts.push(plural(m,'minute','minutes'));if(s||!parts.length)parts.push(plural(s,'second','seconds'));return parts.join(' ');}
   function clock(seconds){var n=Math.max(0,Math.floor(seconds||0)),h=Math.floor(n/3600),m=Math.floor(n%3600/60),s=('0'+n%60).slice(-2);return h?h+':'+('0'+m).slice(-2)+':'+s:m+':'+s;}
   function money(value){return '$'+Number(value||0).toFixed(2);}
+  /** Whole cents as they are said: 9 cents, $1.24, and under 1 cent for an amount that rounds to none. */
+  function centsSaid(n,value){if(n>=100)return '$'+(n/100).toFixed(2);if(n>0)return n+(n===1?' cent':' cents');return (Number(value)||0)>0?'under 1 cent':'0 cents';}
   /** Money as it is said: 9 cents, under 1 cent, $1.24. */
-  function cents(value){var v=Number(value)||0;if(v<=0)return '0 cents';if(v<0.005)return 'under 1 cent';if(v<0.995){var n=Math.round(v*100);return n+(n===1?' cent':' cents');}return money(v);}
+  function cents(value){var v=Math.max(0,Number(value)||0);return centsSaid(Math.round(v*100),v);}
+  /**
+   * Whole cents for each part, adding up to the whole cents of the total they make: each is rounded
+   * down and the cents left over go to the largest remainders, so the parts said add up to the sum
+   * said (17 cents from 5.6 and 11.5 is 6 and 11, not 6 and 12).
+   */
+  function shares(values,total){
+    var raw=values.map(function(v){return Math.max(0,Number(v)||0)*100;}),out=raw.map(function(v){return Math.floor(v+1e-6);});
+    var left=Math.round(Math.max(0,Number(total)||0)*100)-out.reduce(function(a,b){return a+b;},0);
+    raw.map(function(v,i){return i;}).sort(function(a,b){return (raw[b]-out[b])-(raw[a]-out[a])||a-b;}).forEach(function(i){if(left>0){out[i]++;left--;}});
+    return out;
+  }
   function when(value){if(!value)return '';var d=new Date(value);return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});}
   function voiceName(voice){var name=String(voice||'').split('·').pop().trim();return name?name.charAt(0).toUpperCase()+name.slice(1):'the narrator';}
   function pause(ms){return new Promise(function(resolve){var id=setTimeout(finish,ms);function finish(){clearTimeout(id);if(nudge===finish)nudge=null;resolve();}nudge=finish;});}
@@ -771,15 +784,25 @@ export const descriptionBrowserScript: string = String.raw`
   function spentOf(j){return typeof j.spentUSD==='number'?j.spentUSD:Number(j.runCostUSD)||0;}
   /** All versions, said only when earlier runs cost something too. */
   function allVersions(j){var total=Number(j.costUSD)||0;return total-spentOf(j)>=0.005?' All versions of this video: '+cents(total)+'.':'';}
-  /** The reserve held for requests in progress: never spent, and said apart from what is. */
-  function heldText(j){var held=Number(j.heldUSD)||0,n=Number(j.heldLooks)||0;if(held<0.005)return '';return ' '+cents(held)+' set aside for '+(n>1?'the '+n+' looks':n===1?'the look':'the work')+' in progress; you only pay what it really costs.';}
-  /** A finished or stopped run's parts, and what was included at no charge. */
+  /**
+   * The reserve held for requests in progress: never spent, and said apart from what is, as the
+   * most they can cost. Not "set aside", which on this page is the money held from the balance.
+   */
+  function heldText(j){var held=Number(j.heldUSD)||0,n=Number(j.heldLooks)||0;if(held<0.005)return '';return n>1?' The '+n+' looks in progress can cost at most '+cents(held)+' together; you pay only what they really cost.':' The '+(n===1?'look':'work')+' in progress can cost at most '+cents(held)+'; you pay only what it really costs.';}
+  /**
+   * A finished or stopped run's parts, in whole cents that add up to the total said, and what was
+   * included at no charge. A run from before its parts were kept has one part, other: it is not
+   * broken down.
+   */
   function partsText(j){
     var paid=[],free=[],voicePaid=false;
-    (j.costParts||[]).forEach(function(p){if(!p||typeof p.label!=='string')return;if(p.included){free.push(p.label.toLowerCase()+(Number(p.usd)>=0.005?' ('+cents(p.usd)+', paid by the platform)':''));return;}if(p.part==='voice')voicePaid=true;paid.push((paid.length?p.label.charAt(0).toLowerCase()+p.label.slice(1):p.label)+': '+cents(p.usd));});
+    (j.costParts||[]).forEach(function(p){if(!p||typeof p.label!=='string')return;if(p.included){free.push(p.label.toLowerCase()+(Number(p.usd)>=0.005?' ('+cents(p.usd)+', paid by the platform)':''));return;}if(p.part==='voice')voicePaid=true;paid.push(p);});
+    if(paid.length===1&&paid[0].part==='other')paid=[];
+    var whole=shares(paid.map(function(p){return p.usd;}),spentOf(j));
+    var said=paid.map(function(p,i){return (i?p.label.charAt(0).toLowerCase()+p.label.slice(1):p.label)+': '+centsSaid(whole[i],p.usd);});
     if(!voicePaid)free.push('narration');
     var list=free.length>2?free.slice(0,-1).join(', ')+' and '+free[free.length-1]:free.join(' and ');
-    return (paid.length?' '+paid.join('; ')+'.':'')+' '+list.charAt(0).toUpperCase()+list.slice(1)+(free.length>1?' are':' is')+' included.';
+    return (said.length?' '+said.join('; ')+'.':'')+' '+list.charAt(0).toUpperCase()+list.slice(1)+(free.length>1?' are':' is')+' included.';
   }
   function costLine(j){
     if(working(j)&&j.state!=='checking'&&j.state!=='importing')return 'Spent so far '+cents(spentOf(j))+(j.estimatedUSD?', of about '+cents(j.estimatedUSD):'')+'.'+heldText(j)+(typeof j.approvedUSD==='number'&&j.approvedUSD>0?' It asks before spending more than '+cents(j.approvedUSD)+'.':'')+allVersions(j)+' Work already sent to a service may still be charged if you cancel.';
