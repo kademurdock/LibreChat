@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueCoverSettings, yueCoverOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -94,7 +94,7 @@ router.use(createYueRouter({
   validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
   project: async (user, input, sourceText) => {
     const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance }, state: 'queued' });
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input) }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -119,7 +119,9 @@ router.use(createYueRouter({
         model: 'm-a-p/YuE2-3B', prompt: job.input.style, description: title,
         costUSD: job.costUSD || 0, metadata: { title, seed: job.input.seed, weirdness: job.input.weirdness, steps: job.input.steps, guidance: job.input.guidance, jobId: job.id, projectId: job.projectId, via: 'sound-booth',
           wavUrl: job.output.wav_url, seconds: Math.round(job.output.duration_s || 0), lyrics: job.input.lyrics,
-          scoreKey: job.output.score_key, scoreUrl, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional' } },
+          scoreKey: job.output.score_key, scoreUrl, truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional',
+          /* Part 295: instrumental, cover mode, the card it ran on and a short note, from a worker that reports them. */
+          ...yueTakeFacts(job.output, job.input) } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
   },
@@ -1256,6 +1258,8 @@ async function takesFor(projects, userId, paid = false) {
       description: d.description || '',
       seconds: (d.metadata && (d.metadata.seconds || d.metadata.durationS)) || null,
       costUSD: paid && typeof d.chargedUSD === 'number' ? d.chargedUSD : d.costUSD || 0,
+      /* Part 295: a YuE2 take's short note (chords not heard, words that may not fit the tune). */
+      note: d.metadata?.takeNote || '',
       createdAt: d.createdAt,
     });
   }
@@ -1281,7 +1285,7 @@ function projectView(p, factor = 1) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'yue2' ? 'YuE2 — a song made on the sleeping music GPU' : p.engine === 'lyria'
+    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
@@ -2927,6 +2931,15 @@ router.use(require('./kadeSoundBoothLink').createReferenceLinkRouter({
   features: boothFeatures,
   logger,
 }));
+/** Part 295: YuE2's Singing or instrumental and Keep the original chords choices, and the score
+ * hint that points a recording at them, only while YUE_COVERS_V2 is on (packages/api music/yue.ts). */
+function withYueCovers(guide) {
+  const yue = guide && guide.engines && guide.engines.yue2;
+  if (!yue || !Array.isArray(yue.settings)) return guide;
+  const settings = yueCoverSettings(yue.settings);
+  if (settings === yue.settings) return guide;
+  return { ...guide, engines: { ...guide.engines, yue2: { ...yue, settings } } };
+}
 /** The person's Family feature pack map (packages/api family/pack.ts familyFeatures). */
 function boothFeatures(user) {
   return require('@librechat/api').familyFeatures(user);
@@ -3035,7 +3048,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * (kadeSoundBoothLink.js guideFor). `features` is the same map
      * GET /api/kade/features answers. */
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
-    guide: require('./kadeSoundBoothLink').guideFor(guidePriced(GUIDE, priceFactor(req.user)), req.user, boothFeatures),
+    guide: require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
@@ -3055,5 +3068,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { priceFactor, guidePriced, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
+module.exports._internals = { priceFactor, guidePriced, withYueCovers, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, kidsStyleRefusal, verseCount };
 

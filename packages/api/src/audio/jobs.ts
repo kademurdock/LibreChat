@@ -19,9 +19,21 @@ export type Input = {
   band?: string;
   lora_key?: string;
   lora_scale?: number;
+  /* Part 295 YuE2 worker fields, sent only behind YUE_COVERS_V2 (music/yue.ts). */
+  instrumental?: boolean;
+  keep_harmony?: boolean;
+  match_score_tempo?: boolean;
+  length_guard?: boolean;
   seed: number;
 };
-type Output = {
+type LyricFitRow = {
+  score_section?: string | null;
+  lyrics_section?: string | null;
+  sung_notes?: number | null;
+  syllables?: number | null;
+  fit?: string;
+};
+export type Output = {
   url?: string;
   wav_url?: string;
   duration_s?: number;
@@ -31,6 +43,13 @@ type Output = {
   score_key?: string;
   queue_ms?: number;
   execution_ms?: number;
+  /* Part 295 YuE2 worker report; an older worker sends none of these, and `features` says which exist. */
+  gpu?: string | null;
+  features?: string[];
+  cover_mode?: string | null;
+  instrumental?: boolean;
+  lyric_fit?: { sections?: LyricFitRow[]; same_order?: boolean } | null;
+  worker_notes?: string[];
 };
 export type Provider = {
   id?: string;
@@ -99,6 +118,8 @@ export type Config = {
   cancel: (take: Take) => Promise<void>;
   working: string;
   stopping: string;
+  /** A short sentence about one finished take, said when the batch is done; '' for none. */
+  takeNote?: (output: Output, input: Input) => string;
 };
 export type InputBody = {
   soundModel?: string;
@@ -116,7 +137,23 @@ export type InputBody = {
   seed?: number;
   reference_voice_url?: string;
   referenceExpected?: boolean;
+  singing?: string | boolean;
+  keep_chords?: string | boolean;
 };
+/** Each finished take's note, said once when every finished take has the same one. */
+function sayTakeNotes(takes: Take[], input: Input, note?: Config['takeNote']): string {
+  if (!note) return '';
+  const finished = takes
+    .map((take, index) => ({ number: index + 1, output: take.state === 'done' ? take.output : undefined }))
+    .filter((take) => take.output);
+  const said = finished
+    .map((take) => ({ number: take.number, text: take.output ? note(take.output, input).trim() : '' }))
+    .filter((take) => take.text);
+  if (!said.length) return '';
+  const distinct = new Set(said.map((take) => take.text));
+  if (distinct.size === 1 && said.length === finished.length) return ` ${said[0].text}`;
+  return ` ${said.map((take) => `Take ${take.number}: ${take.text}`).join(' ')}`;
+}
 const takeSchema = new mongoose.Schema<Take>(
   {
     id: String,
@@ -469,7 +506,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
       const progress = `${completed} of ${takes.length} takes ready.`;
       let spoken = job.error || 'Stopped. Completed takes are kept.';
       if (state === 'done')
-        spoken = `${progress} Open your library to compare them.${takes.some((take) => take.output?.truncated) ? ' A take reached a generation limit and may end early.' : ''}`;
+        spoken = `${progress} Open your library to compare them.${takes.some((take) => take.output?.truncated) ? ' A take reached a generation limit and may end early.' : ''}${sayTakeNotes(takes, job.input, config.takeNote)}`;
       if (['queued', 'running'].includes(state))
         spoken = `${progress} ${config.working} You can leave this screen; a notification will open the Sound Booth when the batch finishes.`;
       return res.json({

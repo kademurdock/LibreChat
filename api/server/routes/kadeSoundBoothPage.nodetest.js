@@ -194,3 +194,33 @@ test('the paste splitter the server runs is spliced into the page, byte for byte
   assert.equal(ctx.out.tags, 'pop-punk, 172 BPM');
   assert.equal(ctx.out.negative, 'no autotune');
 });
+
+/* Part 295: Singing or instrumental (YUE_COVERS_V2). An instrumental renders with no words;
+ * a sung YuE2 song, or a server without the choice, still asks for them. */
+test('YuE2: an instrumental renders with no words, a sung song still asks for them', async () => {
+  const run = async (sent) => {
+    const ctx = {
+      state: { writing: false, engine: 'yue2' }, said: [], rendered: 0,
+      referenceReady: () => true, collect: () => sent,
+      say: (words) => ctx.said.push(words),
+      document: { getElementById: () => ({ focus() {} }) },
+    };
+    ctx.doRender = () => { ctx.rendered++; };
+    vm.runInNewContext(pageFunction('confirmRender') + '\nthis.confirmRender = confirmRender;', ctx);
+    await ctx.confirmRender(false);
+    return ctx;
+  };
+  const instrumental = await run({ lyrics: undefined, singing: 'Instrumental, no singing' });
+  assert.equal(instrumental.rendered, 1);
+  assert.deepEqual(instrumental.said, []);
+  for (const sent of [{ singing: 'Sung, with my lyrics' }, {}]) {
+    const sung = await run(sent);
+    assert.equal(sung.rendered, 0);
+    assert.match(sung.said[0], /Add the words to sing/);
+  }
+  assert.equal((await run({ lyrics: 'la', singing: 'Sung, with my lyrics' })).rendered, 1);
+});
+
+test('YuE2: a take note from the worker is shown under its take', () => {
+  assert.ok(html.includes(`(t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '')`));
+});

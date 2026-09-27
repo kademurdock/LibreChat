@@ -32,9 +32,11 @@ const { KadeSoundBoothProject: Project } = require('../../models/kadeSoundBoothP
  * real, which is exactly the check being proven. */
 const FAKE_MP3 = Buffer.alloc(4096, 7).toString('base64');
 
-function loadBooth({ saved, usage, assets }) {
+/* `api` adds to or replaces the @librechat/api stand-ins; `requires` replaces a whole module. */
+function loadBooth({ saved, usage, assets, api: extraApi = {}, requires = {} }) {
   const module = { exports: {} };
   const localRequire = (name) => {
+    if (Object.prototype.hasOwnProperty.call(requires, name)) return requires[name];
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '@librechat/api') {
       const api = {
@@ -61,9 +63,15 @@ function loadBooth({ saved, usage, assets }) {
         yueStyles: {},
         yueStylesEnabled: () => false,
         yueCost: 'test price',
+        /* Part 295 YuE2 covers: the flag-off behaviour (a carry to YuE2 reads the reason line). */
+        yueCoverSettings: (settings) => settings,
+        yueCoverOptions: () => ({}),
+        yueProjectWhy: () => 'YuE2 — a song made on the sleeping music GPU',
+        yueTakeFacts: () => ({}),
         effectsGuide: { name: 'Stable Audio', settings: [], howToWrite: [] },
         effectsConfigured: () => false,
         notifyMusic: async () => ({ accepted: false }),
+        ...extraApi,
       };
       return new Proxy(api, {
         get(target, key) {
@@ -300,6 +308,89 @@ test('a 60-line song fits: the brief cap measures the description, the words hav
 });
 
 /* ---------------- the render lane, against a stub Google ------------------ */
+/* Part 295: YuE2 covers and instrumentals (YUE_COVERS_V2), through the real yue.ts helpers. */
+function realYue() {
+  const ts = require('typescript');
+  const Module = require('node:module');
+  const compile = (mod, filename) => mod._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText, filename);
+  require.extensions['.ts'] = compile;
+  const filename = path.resolve(__dirname, '../../../packages/api/src/music/yue.ts');
+  const mod = new Module(filename, module);
+  mod.filename = filename;
+  mod.paths = module.paths;
+  compile(mod, filename);
+  return mod.exports;
+}
+
+test('Part 295: YuE2 covers reach the guide, the saved project, the take and the library row', async () => {
+  const yue = realYue();
+  const hooks = {}, created = [], assetWrites = [];
+  const booth = loadBooth({
+    saved: [], usage: [], assets: [],
+    api: {
+      yueCoverSettings: yue.yueCoverSettings, yueCoverOptions: yue.yueCoverOptions,
+      yueProjectWhy: yue.yueProjectWhy, yueTakeFacts: yue.yueTakeFacts,
+      yueStylesEnabled: yue.yueStylesEnabled, yueStyles: yue.yueStyles, yueCost: yue.yueCost,
+      getNewS3URL: async (u) => u,
+      createYueRouter: (given) => { Object.assign(hooks, given); return express.Router(); },
+    },
+    requires: {
+      '~/models/kadeSoundBoothProject': {
+        KadeSoundBoothProject: {
+          create: async (doc) => { created.push(doc); return { _id: 'project' + created.length }; },
+          findOne: () => ({ select: () => ({ lean: async () => ({ title: 'Home Again' }) }) }),
+          updateOne: async () => ({}),
+        },
+      },
+      '~/models/kadeAsset': {
+        logKadeAsset: async () => ({}),
+        KadeAsset: { findOneAndUpdate: async (_query, update) => { assetWrites.push(update); return { _id: 'asset' + assetWrites.length }; } },
+      },
+    },
+  });
+  const { withYueCovers, GUIDE, projectView } = booth.exports._internals;
+  const before = process.env.YUE_COVERS_V2;
+  try {
+    delete process.env.YUE_COVERS_V2;
+    assert.equal(withYueCovers(GUIDE), GUIDE, 'flag off: the guide is exactly as before');
+    assert.equal(projectView({ engine: 'yue2', options: { lyrics: 'la' } }).why, 'YuE2 — a song made on the sleeping music GPU');
+    await hooks.project('u1', yue.yueInput({ script: 'Jazz trio', lyrics: 'Words', reference_voice_url: 'https://assets.test/a.wav' }), '');
+    assert.equal('singing' in created[0].options, false, 'flag off: nothing new is saved');
+
+    process.env.YUE_COVERS_V2 = '1';
+    const cot = GUIDE.engines.yue2.settings.find((s) => s.key === 'cot').hint;
+    const guide = withYueCovers(GUIDE);
+    const keys = guide.engines.yue2.settings.map((s) => s.key);
+    assert.deepEqual(Array.from(keys.slice(0, 4)), ['singing', 'lyrics', 'reference_voice_url', 'keep_chords']);
+    assert.match(guide.engines.yue2.settings.find((s) => s.key === 'cot').hint, /For a recording, use Keep the original chords instead\./);
+    assert.equal(GUIDE.engines.yue2.settings.find((s) => s.key === 'cot').hint, cot, 'the shared guide is never changed');
+    assert.equal(guide.engines.lyria, GUIDE.engines.lyria);
+
+    const input = yue.yueInput({ script: 'Jazz trio', lyrics: '[Chorus]\nWords', reference_voice_url: 'https://assets.test/a.wav', singing: 'Instrumental, no singing' });
+    await hooks.project('u1', input, '');
+    assert.equal(created[1].options.singing, 'Instrumental, no singing');
+    assert.equal(created[1].options.keep_chords, 'Yes: sound closer to the original song');
+    assert.equal(projectView({ engine: 'yue2', options: created[1].options }).why, 'YuE2 — an instrumental made on the sleeping music GPU, a cover keeping the original chords');
+
+    const job = { id: 'yue_1', user: 'u1', projectId: 'project2', input, costUSD: 0.02634,
+      output: { url: 'https://assets.test/take.mp3', wav_url: 'https://assets.test/take.wav', duration_s: 70, features: ['chord-check', 'lyric-fit'], gpu: 'NVIDIA GeForce RTX 5090', cover_mode: 'melody', instrumental: true } };
+    await hooks.complete(job);
+    const meta = assetWrites[0].$setOnInsert.metadata;
+    assert.equal(meta.gpu, 'NVIDIA GeForce RTX 5090');
+    assert.equal(meta.coverMode, 'melody');
+    assert.equal(meta.instrumental, true);
+    assert.equal(meta.takeNote, 'No chords were heard in the recording, so the cover used its melody with a new accompaniment.');
+    assert.equal(assetWrites[0].$setOnInsert.costUSD, 0.02634);
+    await hooks.complete({ ...job, id: 'yue_2', output: { url: 'https://assets.test/old.mp3', duration_s: 70 } });
+    const old = assetWrites[1].$setOnInsert.metadata;
+    assert.deepEqual(['gpu', 'coverMode', 'instrumental', 'takeNote'].filter((k) => k in old), [], 'an older worker adds nothing');
+  } finally {
+    if (before === undefined) delete process.env.YUE_COVERS_V2; else process.env.YUE_COVERS_V2 = before;
+  }
+});
+
 test('the music lane: real store, stub Google, every branch that can cost money', async (t) => {
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
