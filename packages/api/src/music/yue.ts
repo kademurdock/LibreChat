@@ -496,27 +496,36 @@ function stoppedAt(output: Output): string {
 }
 /**
  * The length part of a take note. A cover sped up to fit YuE2's six minutes says so, with any BPM
- * Music direction named. A take the worker reports `truncated` (YuE2 had not finished when it
- * reached its length limit, so the take stops abruptly) says so for EVERY YuE2 take, sped up or
- * not and from any worker, which has always reported it: a sped take that was still cut never
- * says "to fit". '' parts for anything else.
+ * Music direction named. A take the worker reports `truncated` says so for EVERY YuE2 take, sped
+ * up or not and from any worker, which has always reported it, and a sped take that was still cut
+ * never says "to fit". The worker reports YuE2's two limits apart (`truncation_flags`, from every
+ * worker since Sep 17): the song itself (semantic) reaching its length limit stops the take dead,
+ * but when only the score YuE2 wrote for a new song (abc) ran out of room, the song ended by
+ * itself and may only end early, so that one is said as a "may". A cut without the flags is taken
+ * as the song's. '' parts for anything else.
  */
 function lengthNotes(output: Output, input: Input): string[] {
   const percent = tempoPercent(output, input);
   const cut = output.truncated === true;
+  const flags = output.truncation_flags;
+  const scoreOnly = cut && !!flags && flags.abc === true && flags.semantic === false;
+  const stopped = cut && !scoreOnly;
   const at = stoppedAt(output);
   const notes: string[] = [];
   if (percent !== undefined) {
     notes.push(
-      cut
+      stopped
         ? `Sped up ${percent}%, but YuE2 still ran longer than the song, so this take stops at ${at || 'six minutes'}.`
-        : `Sped up ${percent}% to fit YuE2's six-minute limit, in the same key.`,
+        : cut
+          ? `Sped up ${percent}%, in the same key.`
+          : `Sped up ${percent}% to fit YuE2's six-minute limit, in the same key.`,
     );
     notes.push(...bpmNotes(output.tempo_fit));
-  } else if (cut)
+  } else if (stopped)
     notes.push(
       `YuE2 had not finished when it reached its length limit, so this take stops abruptly${at ? ` at ${at}` : ''}.`,
     );
+  if (scoreOnly) notes.push("YuE2 ran out of room writing this song's score, so this take may end early.");
   if (cut) notes.push('Try another take.');
   return notes;
 }

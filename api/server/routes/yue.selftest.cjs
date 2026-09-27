@@ -505,6 +505,20 @@ async function fitTempo(post, base, sentInputs, provider) {
     assert.equal(yueTakeNote({ features: ['keep-harmony'], truncated: true, duration_s: 360 }, { ...newSong, my_voice: true }),
         cut + ' A version in your voice follows a few minutes after each take, beside it in this project.');
     for (const text of [cut, cutSped]) assert.doesNotMatch(text, /Kade/);
+    // YuE2 reports its two limits apart. Only the song itself reaching its limit stops a take dead;
+    // when only the score YuE2 wrote for a new song ran out of room (a take seen on Sep 20: 5:49,
+    // abc cut at 4,096 tokens, semantic ended by itself), the song may only end early.
+    const scoreCut = "YuE2 ran out of room writing this song's score, so this take may end early. Try another take.";
+    const scoreFlags = { abc: true, semantic: false };
+    assert.equal(yueTakeNote({ features: ['keep-harmony'], truncated: true, truncation_flags: scoreFlags, duration_s: 348.84 }, newSong), scoreCut);
+    assert.equal(yueTakeNote({ truncated: true, truncation_flags: scoreFlags, duration_s: 348.84 }, newSong), scoreCut, 'an older worker');
+    assert.deepEqual(yueTakeFacts({ truncated: true, truncation_flags: scoreFlags, duration_s: 348.84 }, newSong), { takeNote: scoreCut });
+    for (const flags of [{ abc: false, semantic: true }, { abc: true, semantic: true }, {}, null, { abc: false, semantic: false }])
+        assert.equal(yueTakeNote({ features: ['keep-harmony'], truncated: true, truncation_flags: flags, duration_s: 360 }, newSong), cut, JSON.stringify(flags));
+    assert.equal(yueTakeNote({ features: ['keep-harmony'], truncated: false, truncation_flags: { abc: false, semantic: false }, duration_s: 200 }, newSong), '');
+    const spedScoreCut = yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: fit5, truncated: true, truncation_flags: scoreFlags, duration_s: 340 }, covered);
+    assert.equal(spedScoreCut, 'Sped up 5%, in the same key. ' + scoreCut, 'a sped take cut anywhere never says "to fit"');
+    assert.doesNotMatch(scoreCut + spedScoreCut, /to fit|abruptly|Kade/);
 
     // Lyric sync stays off: fit by tempo never brings a lyric sync field, and with those flags off no
     // lyric sync note or fact is said or kept, whatever a newer worker reports.
@@ -549,8 +563,9 @@ async function fitTempo(post, base, sentInputs, provider) {
         res = await fetch(base + '/status/' + cutJob.jobId, { headers: { 'x-test-user': 'g' } });
         const cutDone = await res.json();
         assert.equal(cutDone.state, 'done');
-        assert.equal(cutDone.spoken, '2 of 2 takes ready. Open your library to compare them. ' + cutSped);
-        assert.doesNotMatch(cutDone.spoken, /generation limit|to fit/);
+        // One note for both takes speaks of each take, never "this take".
+        assert.equal(cutDone.spoken, '2 of 2 takes ready. Open your library to compare them. ' + cutSped.replace('this take', 'each take'));
+        assert.doesNotMatch(cutDone.spoken, /generation limit|to fit|this take/);
     } finally {
         for (const [key, value] of [['YUE_FIT_TEMPO', saved.fit], ['YUE_COVERS_V2', saved.covers]]) {
             if (value === undefined) delete process.env[key]; else process.env[key] = value;

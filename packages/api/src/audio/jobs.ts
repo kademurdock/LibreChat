@@ -91,6 +91,8 @@ export type Output = {
   duration_s?: number;
   bytes?: number;
   truncated?: boolean;
+  /* Which YuE2 limit a truncated take reached: its written score (abc) or the song itself (semantic). */
+  truncation_flags?: { abc?: boolean; semantic?: boolean } | null;
   error?: string;
   score_key?: string;
   queue_ms?: number;
@@ -219,7 +221,8 @@ export type InputBody = {
   protect?: number;
   rms_mix_rate?: number;
 };
-/** Each finished take's note, said once when every finished take has the same one. */
+/** Each finished take's note, said once when every finished take has the same one. Said once for
+ * several takes, a note about "this take" (a YuE2 take cut at its length limit) speaks of each take. */
 function sayTakeNotes(takes: Take[], input: Input, note?: Config['takeNote']): string {
   if (!note) return '';
   const finished = takes
@@ -230,7 +233,8 @@ function sayTakeNotes(takes: Take[], input: Input, note?: Config['takeNote']): s
     .filter((take) => take.text);
   if (!said.length) return '';
   const distinct = new Set(said.map((take) => take.text));
-  if (distinct.size === 1 && said.length === finished.length) return ` ${said[0].text}`;
+  if (distinct.size === 1 && said.length === finished.length)
+    return ` ${finished.length > 1 ? said[0].text.replace(/\bthis take\b/g, 'each take') : said[0].text}`;
   return ` ${said.map((take) => `Take ${take.number}: ${take.text}`).join(' ')}`;
 }
 const takeSchema = new mongoose.Schema<Take>(
