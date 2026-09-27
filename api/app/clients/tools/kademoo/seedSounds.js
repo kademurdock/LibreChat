@@ -12,6 +12,11 @@ const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { logger } = require('@librechat/data-schemas');
 const LIFE_SOUNDS = require('./lifeSounds.json');
+/* Part 298: old sounds the blind check rejected, re-made on fal. Each entry
+ * moves the rows that still point at the old file ({scopeType, scopeId, was,
+ * url}); `was` is the old file's path, so a row somebody pointed elsewhere by
+ * hand is left alone. */
+const REMADE_298 = require('./remade298.json');
 
 const SOUNDS_TO_SEED = [
   // Room chord — 1-8 people present
@@ -99,6 +104,33 @@ async function seedSounds() {
       early_bird_bakery: 'amb.bakery.room',
       sweetwater_bathhouse: 'amb.bathhouse.pool',
       the_easel: 'amb.easel.room',
+      /* Part 298: rooms that only had their ward's bed get a tone of their own.
+       * A tone plays at 60% over the ward bed (30% indoors), so each one holds
+       * only what is inside the room. Seeded only when its file passed. */
+      the_kettle: 'amb.kettle.room',
+      dezs_bar: 'amb.dezs.room',
+      mercy_hospital: 'amb.mercy.room',
+      fish_market: 'amb.fishmarket.room',
+      bowling_lanes: 'amb.lanes.room',
+      game_parlor: 'amb.parlor.room',
+      corner_store: 'amb.cornerstore.room',
+      the_clinic: 'amb.clinic.room',
+      levis_chairs: 'amb.barber.room',
+      taco_window: 'amb.taco.room',
+      the_bank: 'amb.bank.room',
+      the_truck_stop: 'amb.truckstop.room',
+      the_lake_dock: 'amb.lakedock.room',
+      wishing_fountain: 'amb.fountain.room',
+      the_greenhouse: 'amb.greenhouse.room',
+      the_breakwater: 'amb.breakwater.room',
+      coldpipe_alley: 'amb.coldpipe.room',
+      the_courthouse: 'amb.courthouse.room',
+      bureau_small_complaints: 'amb.bureau.room',
+      pawn_hocks: 'amb.pawn.room',
+      the_salon: 'amb.salon.room',
+      the_cider_press: 'amb.ciderpress.room',
+      city_gate: 'amb.gate.room',
+      mark_exchange: 'amb.exchange.room',
     };
     for (const [scopeId, eventId] of Object.entries(rooms)) {
       if (LIFE_SOUNDS[eventId])
@@ -123,6 +155,16 @@ async function seedSounds() {
       moved += r.modifiedCount || 0;
     }
     if (moved) logger.info(`[seed] moved ${moved} sound rows to their Part 297 recordings`);
+    let remade = 0;
+    for (const r of REMADE_298) {
+      const was = r.was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const res = await MooSound.updateOne(
+        { scopeType: r.scopeType, scopeId: r.scopeId, url: { $regex: was } },
+        { $set: { url: r.url } },
+      );
+      remade += res.modifiedCount || 0;
+    }
+    if (remade) logger.info(`[seed] moved ${remade} sound rows to their Part 298 recordings`);
 
     const existing = await MooSound.find({ scopeType: 'event' }).lean();
     const existingIds = new Set(existing.map((r) => r.scopeId));

@@ -1403,6 +1403,20 @@ async function carveReverie() {
 /* ── THE TICK (throttled; the world breathes between commands) ───────────── */
 let lastTickAt = 0;
 let lastWeatherKind = null;
+/* Part 298: the sky has a voice. Thunder and the fog horns were recorded in
+ * August and nothing ever played them; rain arriving and leaving is new. The
+ * event keeps kind 'system' (the text is the same notice as before) and names
+ * its sound, which the client plays in place of the system blip. */
+const STORM_THUNDER_CHANCE = 0.1;
+const THUNDER_LINES = ['Thunder rolls somewhere past the river.', 'Thunder, closer than you would like.', 'The sky grumbles and keeps grumbling.', 'Thunder walks across the rooftops.'];
+function weatherSound(kind, was, district) {
+  /* rain arriving has no take that passed yet; the rain bed itself starts */
+  if (kind === 'rain') return null;
+  if (kind === 'storm') return 'wx.thunder.far';
+  if (kind === 'fog') return ['hook', 'sweetwater'].includes(district) ? 'wx.fog.horn' : 'wx.fog.horn.far';
+  if (['rain', 'storm'].includes(was)) return 'wx.rain.stop';
+  return null;
+}
 let lastHornDate = null;
 let ambientCursor = 0;
 const _lastAmbient = {};  /* Veil dedup: last ambient line per NPC */
@@ -1559,11 +1573,22 @@ async function tickWorld() {
     const w = weatherNow();
     if (lastWeatherKind === null) lastWeatherKind = w.kind;
     else if (w.kind !== lastWeatherKind) {
+      const was = lastWeatherKind;
       lastWeatherKind = w.kind;
-      const outdoor = await MooRoom.find({ roomId: { $in: rooms }, 'props.outdoor': true }).select('roomId').lean();
+      const outdoor = await MooRoom.find({ roomId: { $in: rooms }, 'props.outdoor': true }).select('roomId district').lean();
       for (const r of outdoor) {
         const seq = await nextSeq();
-        await MooEvent.create({ seq, roomId: r.roomId, actorUserId: null, actorName: 'the sky', kind: 'system', text: `The weather turns. ${w.line}`, at: new Date() });
+        const sound = weatherSound(w.kind, was, r.district);
+        await MooEvent.create({ seq, roomId: r.roomId, actorUserId: null, actorName: 'the sky', kind: 'system', text: `The weather turns. ${w.line}`, ...(sound ? { sound } : {}), at: new Date() });
+      }
+    } else if (w.kind === 'storm' && Math.random() < STORM_THUNDER_CHANCE) {
+      /* Part 298: a storm keeps talking while it lasts, outdoors. */
+      const outdoor = await MooRoom.find({ roomId: { $in: rooms }, 'props.outdoor': true }).select('roomId').lean();
+      const line = THUNDER_LINES[Math.floor(Math.random() * THUNDER_LINES.length)];
+      const sound = Math.random() < 0.3 ? 'wx.thunder.near.crack' : 'wx.thunder.far';
+      for (const r of outdoor) {
+        const seq = await nextSeq();
+        await MooEvent.create({ seq, roomId: r.roomId, actorUserId: null, actorName: 'the sky', kind: 'system', text: line, sound, at: new Date() });
       }
     }
     /* 3 — the night freight, once a night, heard everywhere someone is.
@@ -1778,4 +1803,4 @@ async function tickWorld() {
   }
 }
 
-module.exports = { carveReverie, tickWorld, weatherNow, npcDoingNow, npcTalkLine, CENSUS, CENSUS_BY_ID, WARDS, REVERIE_SEED_VERSION };
+module.exports = { carveReverie, tickWorld, weatherNow, weatherSound, npcDoingNow, npcTalkLine, CENSUS, CENSUS_BY_ID, WARDS, REVERIE_SEED_VERSION };

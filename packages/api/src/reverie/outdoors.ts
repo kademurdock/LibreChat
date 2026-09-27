@@ -34,17 +34,22 @@ export function reverieSenses(
   if (/diner|hospital|clinic|store|salon/.test(id)) surface = 'linoleum';
   if (/stairs|garages|salvage/.test(id)) surface = 'metal.stair';
   if (/pier|dock|pilings|boardwalk/.test(id) || p.home) surface = 'wood.interior';
+  /* Part 298: the ring road is blacktop; the bandshell lawn, the treehouse
+   * row and the airfield's strip are grass, not cobbles. */
+  if (id === 'ring_road') surface = 'asphalt.dry';
+  if (/bandshell|treehouse|airfield/.test(id)) surface = 'grass.dry';
   if (p.surface) surface = p.surface;
   if (wet && p.outdoor) {
     if (['dirt.packed', 'grass.dry'].includes(surface)) surface = 'mud.shallow';
-    else if (surface === 'cobble') surface = 'asphalt.wet';
+    else if (['cobble', 'asphalt.dry'].includes(surface)) surface = 'asphalt.wet';
   }
   let ambience: string | null = null;
   if (nature) ambience = dark ? 'amb.woods.night' : 'amb.woods.day';
   if (id === 'reedbank_creek') ambience = 'amb.creek.bank';
   if (id === 'alder_camp') ambience = 'amb.camp.fire';
   if (/archive|records/.test(id)) ambience = 'amb.archive.quiet';
-  if (/diner|kettle/.test(id)) ambience = 'amb.diner.quiet';
+  /* Part 298: the Kettle has a cafe tone of its own now, over its ward */
+  if (/diner/.test(id)) ambience = 'amb.diner.quiet';
   if (p.home) ambience = 'amb.home.quiet';
   if (id === 'gully_laundry') ambience = 'amb.laundry.quiet';
   if (p.sound) ambience = p.sound;
@@ -57,6 +62,7 @@ export function reverieSenses(
     'dirt.packed': 'Firm earth, with loose leaves along the edge.',
     'mud.shallow': 'The wet ground gives softly beneath your feet.',
     'asphalt.wet': 'A thin film of rain splashes underfoot.',
+    'asphalt.dry': 'Flat blacktop, a little grit under your soles.',
     cobble: 'Uneven stone presses through your soles.',
   };
   return {

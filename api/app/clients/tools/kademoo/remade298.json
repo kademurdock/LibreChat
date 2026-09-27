@@ -1,0 +1,116 @@
+[
+  {
+    "scopeType": "district",
+    "scopeId": "bellward",
+    "was": "/reverie-sounds/amb.bellward.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.bellward.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "amb.diner.quiet",
+    "was": "/assets/sounds/reverie/life/work.diner.grill.loop.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.diner.quiet.m4a"
+  },
+  {
+    "scopeType": "room",
+    "scopeId": "pats_diner",
+    "was": "/assets/sounds/reverie/life/work.diner.grill.loop.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.diner.quiet.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "amb.home.quiet",
+    "was": "/assets/sounds/reverie/world153/amb.home.quiet.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.home.quiet.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "amb.laundry.quiet",
+    "was": "/assets/sounds/reverie/life172/amb.laundry.quiet.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.laundry.quiet.m4a"
+  },
+  {
+    "scopeType": "room",
+    "scopeId": "gully_laundry",
+    "was": "/assets/sounds/reverie/life172/amb.laundry.quiet.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.laundry.quiet.m4a"
+  },
+  {
+    "scopeType": "district",
+    "scopeId": "millrace",
+    "was": "/reverie-sounds/amb.millrace.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.millrace.m4a"
+  },
+  {
+    "scopeType": "district",
+    "scopeId": "sweetwater",
+    "was": "/reverie-sounds/amb.sweetwater.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.sweetwater.m4a"
+  },
+  {
+    "scopeType": "district",
+    "scopeId": "tanglefoot",
+    "was": "/reverie-sounds/amb.tanglefoot.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/amb.tanglefoot.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "bowl.strike",
+    "was": "/assets/sounds/reverie/life172/bowl.strike.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/bowl.strike.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "move.step.carpet",
+    "was": "/assets/sounds/reverie/world153/move.step.carpet.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.carpet.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "move.step.dirt.packed",
+    "was": "/assets/sounds/reverie/life/move.step.dirt.packed.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.dirt.packed.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "move.step.mud.shallow",
+    "was": "/assets/sounds/reverie/life/move.step.mud.shallow.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.mud.shallow.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "move.step.wood.interior",
+    "was": "/assets/sounds/reverie/world153/move.step.wood.interior.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.wood.interior.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "obj.ceramic.plates.stack",
+    "was": "/assets/sounds/reverie/life/obj.ceramic.plates.stack.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/obj.ceramic.plates.stack.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "social.hug",
+    "was": "/reverie-sounds/social.hug.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/social.hug.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "vio.gun.shot.distant",
+    "was": "/reverie-sounds/vio.gun.shot.distant.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/vio.gun.shot.distant.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "vio.gun.shot.ward",
+    "was": "/reverie-sounds/vio.gun.shot.ward.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/vio.gun.shot.ward.m4a"
+  },
+  {
+    "scopeType": "event",
+    "scopeId": "work.records.drawer.open",
+    "was": "/assets/sounds/reverie/life/work.records.drawer.open.m4a",
+    "url": "https://kademurdock.com/assets/sounds/reverie/places298/work.records.drawer.open.m4a"
+  }
+]

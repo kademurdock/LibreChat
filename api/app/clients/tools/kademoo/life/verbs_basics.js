@@ -371,6 +371,7 @@ registry.register({
 });
 
 /* ── EAT ──────────────────────────────────────────────────────────────── */
+const POURS = { dezs_bar: 'obj.bottle.pour', gravewalk_teahouse: 'obj.water.pour.glass', the_kettle: 'obj.water.pour.glass' };
 registry.register({
   name: 'eat', aliases: ['order', 'dine', 'drink'],
   help: { topic: 'needs', usage: 'eat · eat <food you carry> · order', blurb: 'Eat where food is sold, or eat something from your pockets.' },
@@ -382,7 +383,7 @@ registry.register({
       await MooItem.deleteOne({ _id: food._id });
       const f = food.props.food;
       ctx.need({ fed: f.feed || 25, fun: f.fun || 3 });
-      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} eats ${food.name}.`);
+      await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} eats ${food.name}.`, 'eat');
       ctx.say(`You eat ${food.name}. ${f.line || 'Good. Simple.'}`);
       return ctx.ok({ kinds: [...ctx.kinds, 'eat'] });
     }
@@ -398,9 +399,11 @@ registry.register({
     if (price) await payCoin(ch, price);
     await setAttrs(ch, { lastMeal: Date.now() });
     ctx.need({ fed: 45, fun: 4, company: 3 });
-    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} settles in to eat.`);
+    /* Part 298: a bar pours and a tea house pours; everywhere else, a plate */
+    const sound = POURS[ch.roomId] || 'eat';
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} settles in to eat.`, sound);
     ctx.say(`You eat: ${food.menu}. ${price ? '$' + price + ', well spent.' : 'No charge. Arguing about that has been tried.'}`);
-    return ctx.ok({ kinds: [...ctx.kinds, 'eat'] });
+    return ctx.ok({ kinds: [...ctx.kinds, sound] });
   },
   async buttons(ctx) {
     const room = await ctx.room();
@@ -460,6 +463,24 @@ function careerSkill(jobName) {
   return 'hustle';
 }
 
+/* Part 298: every job used to sound like a coin. Now the work is heard first
+ * (by you and by the room), then the pay. Only jobs whose sound passed the
+ * blind check are listed; the dock, salvage, grounds, field, press, towel and
+ * prize-counter takes did not pass yet, so those shifts keep the coin alone. */
+const WORK_SOUNDS = [
+  [/archive|desk|record/, 'work.records.drawer.open'],
+  [/sink/, 'work.dishes.sink'],
+  [/bar|dez/, 'obj.bottle.pour'],
+  [/bakery|oven/, 'obj.oven.door'],
+  [/bijou|booth/, 'cer.bijou.projector'],
+  [/easel|studio/, 'obj.brush.stroke'],
+];
+function workSound(jobName) {
+  const j = String(jobName || '').toLowerCase();
+  const hit = WORK_SOUNDS.find(([re]) => re.test(j));
+  return hit ? hit[1] : null;
+}
+
 registry.register({
   name: 'work', aliases: ['shift', 'clock in'],
   help: { topic: 'money', usage: 'work', blurb: 'Work a shift where there is work. Shifts add up to promotions.' },
@@ -480,7 +501,8 @@ registry.register({
     careers[job.name] = c;
     await setAttrs(ch, { workDay: t, workCount: workDay + 1, 'life.careers': careers }, { coin: wage });
     life.careers = careers;
-    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} works a shift at ${job.name}.`);
+    const workKind = workSound(job.name);
+    await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} works a shift at ${job.name}.`, workKind || undefined);
     await setBusy(ch, 10, 'working');
     ctx.need({ fed: -6, rested: -8, clean: -6, fun: -3, company: 4 });
     ctx.learn(careerSkill(job.name), 3);
@@ -490,7 +512,7 @@ registry.register({
       await require('./drama').rumor(ctx, `${ch.name} got moved up at ${job.name}`, 'work', 2);
       ctx.kind('levelup');
     }
-    return ctx.ok({ kinds: [...ctx.kinds, 'coin'] });
+    return ctx.ok({ kinds: [...ctx.kinds, ...(workKind ? [workKind] : []), 'coin'] });
   },
   async buttons(ctx) {
     const room = await ctx.room();
