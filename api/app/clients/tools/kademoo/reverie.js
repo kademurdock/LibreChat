@@ -1484,6 +1484,24 @@ const _cityClockFired = new Set();
  * a city with nobody connected at all this function is never called in the
  * first place. Nothing about the cost of a quiet city changes. */
 const TICK_LIVELY_MS = 20 * 1000;
+/* THE PULSE OF A ROOM (Part 296, Sep 26 2026). The first person ever to play
+ * Reverie, Amber A, sat four minutes in Mercy and six in Pat's with five
+ * citizens around her, and the director answered "nobody" on every single
+ * tick, because its question tells Jev to prefer nobody over anything that
+ * reads as unprompted, and in a room where nobody is prompting that is always.
+ * The live log said `said=silence` twenty times running.
+ *
+ * Silence stays Jev's to choose; what changes is how long it can last. Right
+ * after something happens in a room, the room gets a breath of quiet and the
+ * director is not even asked. Once a room has gone a full minute with nothing
+ * in it, a chosen silence no longer stands and one of the people there does
+ * a small, authored thing (a gesture, never words, the same path the city
+ * used before Jev). A living room has somebody doing something about once a
+ * minute; a dead one is the thing Kade called a tree falling with nobody to
+ * hear it. The distinction between `answered` and silence inside directRoom
+ * is untouched. */
+const ROOM_BREATH_MS = 15 * 1000;
+const ROOM_QUIET_LIMIT_MS = 60 * 1000;
 const TICK_QUIET_MS = 45 * 1000;
 let lastTickLively = false;
 
@@ -1636,6 +1654,13 @@ async function tickWorld() {
     for (const roomId of rooms) {
       const hereNpcs = allHereNpcs.filter((n) => n.roomId === roomId);
       if (!hereNpcs.length) continue;
+      let quietMs = Infinity;
+      try {
+        const last = await MooEvent.findOne({ roomId }).sort({ seq: -1 }).select('at').lean();
+        if (last && last.at) quietMs = Date.now() - new Date(last.at).getTime();
+      } catch (_) { /* unknown quiet reads as long quiet */ }
+      if (quietMs < ROOM_BREATH_MS) continue;
+      const overdue = quietMs >= ROOM_QUIET_LIMIT_MS;
 
       let directed = null;
       if (director && typeof director.directRoom === 'function') {
@@ -1707,7 +1732,8 @@ async function tickWorld() {
           directed = null;
         }
       }
-      if (directed === 'silence') continue;
+      if (directed === 'silence' && !overdue) continue;
+      if (directed === 'silence') directed = null; /* a minute of nothing: the pulse below */
 
       if (directed && typeof directed === 'object') {
         _lastAmbient[directed.id] = directed.line;
@@ -1734,7 +1760,7 @@ async function tickWorld() {
       /* The coin was 0.3, which with a 45 second tick meant a room answered
        * about once every two and a half minutes. Raised with the timer above,
        * for the same reason and at the same cost, which is none. */
-      if (Math.random() >= 0.45) continue;
+      if (!overdue && Math.random() >= 0.45) continue;
       const npc = hereNpcs[ambientCursor++ % hereNpcs.length];
       const def = CENSUS_BY_ID[npc.userId];
       if (def && def.ambient && def.ambient.length) {

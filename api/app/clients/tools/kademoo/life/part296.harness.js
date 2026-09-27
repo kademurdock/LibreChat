@@ -195,6 +195,50 @@ async function main() {
     check(r.ok && !(await MooRoom.countDocuments({ roomId: new RegExp('^' + home) })), 'moving out removes the home and every room built onto it');
     check((await MooItem.countDocuments({ 'location.id': 'p296-a', 'props.furniture': 'bed' })) === 1, 'the furniture from the built rooms comes along');
 
+    /* the pulse of a room: a director that always answers "nobody" can no
+     * longer hold a room silent for more than a minute */
+    const { MooEvent, nextSeq } = require('~/models/kadeMoo');
+    const reverie = require('../reverie');
+    const judges = path.resolve(__dirname, '../../../../../server/services/kadeJevJudges.js');
+    const realJudges = require.cache[judges];
+    let asked = 0;
+    let watch = null;
+    require.cache[judges] = { id: judges, filename: judges, loaded: true, exports: { directRoom: async (scene) => { if (scene && scene.place === watch) asked++; return { answered: true, pick: null, fresh: false, costUSD: 0 }; } } };
+    const realNow = Date.now;
+    let shift = 0;
+    Date.now = () => realNow() + shift;
+    try {
+      shift += 120000;
+      await MooChar.updateMany({ userId: { $in: ['p296-b', 'p296-new'] } }, { $set: { lastActiveAt: new Date(realNow() - 3600000) } });
+      await reverie.tickWorld();
+      const citizen = await MooChar.findOne({ userId: /^npc:/, roomId: { $nin: [null, 'city_gate'] } }).lean();
+      watch = citizen.roomId;
+      await MooChar.updateOne({ userId: 'p296-a', active: true }, { $set: { roomId: citizen.roomId, lastActiveAt: new Date(Date.now()) } });
+      await MooEvent.create({ seq: await nextSeq(), roomId: citizen.roomId, actorUserId: 'p296-a', actorName: 'Wanda Tester', kind: 'say', text: 'Wanda Tester: "hello"', at: new Date(Date.now()) });
+      let mark = (await MooEvent.findOne({}).sort({ seq: -1 }).lean()).seq;
+      shift += 60000; asked = 0;
+      await MooEvent.create({ seq: await nextSeq(), roomId: citizen.roomId, actorUserId: 'p296-a', actorName: 'Wanda Tester', kind: 'emote', text: 'Wanda Tester looks around.', at: new Date(Date.now() - 2000) });
+      mark = (await MooEvent.findOne({}).sort({ seq: -1 }).lean()).seq;
+      await reverie.tickWorld();
+      const breath = await MooEvent.countDocuments({ roomId: citizen.roomId, seq: { $gt: mark }, actorUserId: /^npc:/, kind: 'emote' });
+      check(breath === 0 && asked === 0, 'right after something happens, the room takes a breath and the director is not asked');
+      shift += 60000; asked = 0;
+      await MooEvent.create({ seq: await nextSeq(), roomId: citizen.roomId, actorUserId: 'p296-a', actorName: 'Wanda Tester', kind: 'emote', text: 'Wanda Tester sits still.', at: new Date(Date.now() - 30000) });
+      mark = (await MooEvent.findOne({}).sort({ seq: -1 }).lean()).seq;
+      await reverie.tickWorld();
+      const chosen = await MooEvent.countDocuments({ roomId: citizen.roomId, seq: { $gt: mark }, actorUserId: /^npc:/, kind: 'emote' });
+      check(asked >= 1 && chosen === 0, 'half a minute of quiet: the director is asked, and its silence stands');
+      shift += 60000; asked = 0;
+      await MooEvent.create({ seq: await nextSeq(), roomId: citizen.roomId, actorUserId: 'p296-a', actorName: 'Wanda Tester', kind: 'emote', text: 'Wanda Tester waits.', at: new Date(Date.now() - 75000) });
+      mark = (await MooEvent.findOne({}).sort({ seq: -1 }).lean()).seq;
+      await reverie.tickWorld();
+      const pulse = await MooEvent.find({ roomId: citizen.roomId, seq: { $gt: mark }, actorUserId: /^npc:/, kind: 'emote' }).lean();
+      check(pulse.length >= 1, `a minute of quiet: somebody there does something anyway (${pulse.map((e) => e.text).join(' / ')})`);
+    } finally {
+      Date.now = realNow;
+      if (realJudges) require.cache[judges] = realJudges; else delete require.cache[judges];
+    }
+
     console.log(`Part 296: ${checks} checks passed.`);
   } finally {
     await mongoose.disconnect();
