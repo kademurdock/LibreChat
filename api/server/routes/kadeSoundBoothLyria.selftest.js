@@ -69,6 +69,9 @@ function loadBooth({ saved, usage, assets, api: extraApi = {}, requires = {} }) 
         yueSavedOptions: (options) => options,
         yueProjectWhy: () => 'YuE2 — a song made on the sleeping music GPU',
         yueTakeFacts: () => ({}),
+        /* Fit by tempo (YUE_FIT_TEMPO): the flag-off behaviour. */
+        musicCoverLengthGuide: (yue) => yue,
+        musicReferenceSpeedNote: () => '',
         effectsGuide: { name: 'Stable Audio', settings: [], howToWrite: [] },
         effectsConfigured: () => false,
         notifyMusic: async () => ({ accepted: false }),

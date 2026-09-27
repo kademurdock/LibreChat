@@ -40,7 +40,8 @@ function musicLyrics() {
   compiled._compile(source, filename);
   return compiled.exports;
 }
-const { musicReferenceError } = musicLyrics();
+const lyricsModule = musicLyrics();
+const { musicReferenceError, musicReferenceSpeedNote } = lyricsModule;
 
 /* ---------- the /reference region of kadeSoundBooth.js, with fakes ---------- */
 const booth = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
@@ -56,6 +57,7 @@ function loadRoutes(fakes) {
     REF_EXT: { 'audio/mpeg': 'mp3' },
     ENGINE_REF_FORMATS: { seed: { exts: ['wav', 'mp3', 'm4a', 'ogg'], say: 'x' }, scenema: { exts: ['mp3'], say: 'x' } },
     musicReferenceError,
+    musicReferenceSpeedNote,
     saveBufferToS3: fakes.saveBufferToS3,
     registerMusicReference: fakes.registerMusicReference,
     logger: fakes.logger,
@@ -145,6 +147,8 @@ function world(overrides = {}) {
 }
 
 const plain = (value) => JSON.parse(JSON.stringify(value)); // objects made inside the vm have its prototypes
+
+/* The fit-by-tempo tests sit at the end of the file (they need boothGuide and cover). */
 
 test('same shape: a YouTube link answers exactly like a file import, plus the title and length', async () => {
   const w = world();
@@ -568,4 +572,117 @@ test('six-minute edge: listed at 6:00 is refused before any download; listed at 
   assert.match(res.body.spoken, /^Covering Just Under Six, 6 minutes, from YouTube\./);
   assert.equal(w.stored.length, 1);
   assert.equal(w.registered[0][2], res.body.seconds);
+});
+
+/* Fit by tempo (Sep 27 2026): with YUE_FIT_TEMPO=1 a cover can be up to 6:40, because the YuE2
+ * worker sings a song over six minutes a little faster to fit instead of cutting it. With the flag
+ * unset every test above holds unchanged. */
+function withFlag(env, run) {
+  const keys = ['YUE_FIT_TEMPO', 'YUE_FIT_TEMPO_MAX_SECONDS'];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) {
+    if (env[key] === undefined) delete process.env[key];
+    else process.env[key] = env[key];
+  }
+  const restore = () => {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  };
+  try {
+    const result = run();
+    if (result && typeof result.then === 'function') return result.finally(restore);
+    restore();
+    return result;
+  } catch (error) {
+    restore();
+    throw error;
+  }
+}
+const FIT = { YUE_FIT_TEMPO: '1' };
+
+test('fit by tempo: the limit, its words and the booth and the link agree on it', () => {
+  const { musicReferenceMaxSeconds, musicReferenceSpeedNote } = lyricsModule;
+  // Flag off: today's six minutes, today's sentence, no speed note.
+  assert.equal(musicReferenceError(360, {}), undefined);
+  assert.equal(musicReferenceError(390, {}), 'This recording is 6 minutes 30 seconds long. Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.');
+  assert.equal(musicReferenceSpeedNote(380, {}), '');
+  // Flag on: up to 6:40, and past it a sentence that says why.
+  assert.equal(musicReferenceError(390, FIT), undefined);
+  assert.equal(musicReferenceError(400, FIT), undefined);
+  assert.equal(musicReferenceError(430, FIT), 'This recording is 7 minutes 10 seconds long. Covers can be up to 6 minutes 40 seconds: a song over six minutes is sped up a little to fit, and past 6 minutes 40 seconds that would be too much. Import a shorter recording or an excerpt; your original will not be trimmed automatically.');
+  assert.match(musicReferenceError(0, FIT), /could not be read/);
+  // The estimate said on import: from the recording's own length, against the worker's 352 s.
+  assert.equal(musicReferenceSpeedNote(380, FIT), 'YuE2 sings up to six minutes, so this cover will be sped up about 8%, in the same key.');
+  assert.equal(musicReferenceSpeedNote(353, FIT), 'YuE2 sings up to six minutes, so this cover will be sped up about 1%, in the same key.');
+  assert.equal(musicReferenceSpeedNote(400, FIT), 'YuE2 sings up to six minutes, so this cover will be sped up about 14%, in the same key.');
+  for (const seconds of [352, 200, 430, null, NaN]) assert.equal(musicReferenceSpeedNote(seconds, FIT), '', String(seconds));
+  // The booth's limit and the link's are one rule (a lower setting is allowed; never above 400 s).
+  const envs = [{}, FIT, { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: '390' }, { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: '500' },
+    { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: '300' }, { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: 'abc' },
+    { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: '' }, { YUE_FIT_TEMPO: '0', YUE_FIT_TEMPO_MAX_SECONDS: '390' }];
+  assert.deepEqual(envs.map((env) => musicReferenceMaxSeconds(env)), [360, 400, 390, 400, 360, 400, 400, 360]);
+  for (const env of envs) assert.equal(link.coverMaxSeconds(env), musicReferenceMaxSeconds(env), JSON.stringify(env));
+  assert.match(musicReferenceError(395, { ...FIT, YUE_FIT_TEMPO_MAX_SECONDS: '390' }), /Covers can be up to 6 minutes 30 seconds:/);
+  // A too-long link says the longer limit.
+  assert.equal(link.linkWords({ kind: 'too-long', seconds: 433.1 }, { id: 'u1' }, 'youtube', 400),
+    'This YouTube video is 7 minutes 13 seconds long, and covers from YouTube must be shorter than 6 minutes 40 seconds (a song over six minutes is sped up a little to fit, and no further). Choose a shorter video, or download the song and import an excerpt as a file; nothing is trimmed automatically.');
+  assert.equal(link.linkWords({ kind: 'too-long', seconds: 433.1 }, { id: 'u1' }, 'youtube', 360),
+    link.linkWords({ kind: 'too-long', seconds: 433.1 }, { id: 'u1' }), 'flag off: the same words as before');
+});
+
+test('fit by tempo: an import over six minutes comes in and says it will be sped up; past 6:40 it is refused before storage', async () => {
+  await withFlag(FIT, async () => {
+    const w = world({ env: FIT });
+    w.seconds = 380;
+    const file = await w.file();
+    assert.equal(file.statusCode, 200, file.body.error);
+    assert.match(file.body.spoken, /^Clip imported, 380 seconds\. YuE2 sings up to six minutes, so this cover will be sped up about 8%, in the same key\. The full original is kept\./);
+    const viaLink = await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+    assert.equal(viaLink.statusCode, 200);
+    assert.match(viaLink.body.spoken, /^Covering Sunny Day \(Official Audio\), 6 minutes 20 seconds, from YouTube\. YuE2 sings up to six minutes, so this cover will be sped up about 8%/);
+    assert.equal(w.downloads[0].options.maxSeconds, 400, 'the downloader is held to 6:40');
+    assert.equal(w.stored.length, 2);
+    w.seconds = 430;
+    const long = await w.file();
+    assert.equal(long.statusCode, 400);
+    assert.match(long.body.error, /^This recording is 7 minutes 10 seconds long\. Covers can be up to 6 minutes 40 seconds:/);
+    assert.equal(w.stored.length, 2, 'nothing more was stored');
+    const refused = world({ env: FIT, download: async () => { throw new FakeYouTubeError('too-long', 433.1); } });
+    const said = await refused.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+    assert.equal(said.statusCode, 400);
+    assert.match(said.body.error, /must be shorter than 6 minutes 40 seconds \(a song over six minutes is sped up a little to fit, and no further\)\./);
+    // A short song says nothing new.
+    w.seconds = 192.4;
+    assert.match((await w.file()).body.spoken, /^Clip imported, 192\.4 seconds\. The full original is kept\./);
+  });
+  // Flag off: an import over six minutes is refused as before, and the downloader keeps six minutes.
+  await withFlag({}, async () => {
+    const w = world();
+    w.seconds = 380;
+    const file = await w.file();
+    assert.equal(file.statusCode, 400);
+    assert.match(file.body.error, /Covers support up to 6 minutes\./);
+    w.seconds = 192.4;
+    await w.link({ engine: 'yue2', url: 'https://youtu.be/dQw4w9WgXcQ' });
+    assert.equal(w.downloads[0].options.maxSeconds, 360);
+  });
+});
+
+test('fit by tempo: the guide says 6 minutes 40 seconds and why, only while the flag is on', () => {
+  const GUIDE = boothGuide();
+  const before = JSON.stringify(GUIDE);
+  const yue = GUIDE.engines.yue2;
+  assert.equal(lyricsModule.musicCoverLengthGuide(yue, {}), yue, 'flag off: the same guide');
+  const fitted = lyricsModule.musicCoverLengthGuide(yue, FIT);
+  assert.match(cover({ engines: { yue2: fitted } }).hint, /^Import one song, up to 6 minutes 40 seconds\. A song over six minutes is sped up a little to fit, in the same key\. You can also paste a media link/);
+  assert.ok(fitted.howToWrite.some((line) => line.startsWith('For a cover, import one source recording up to 6 minutes 40 seconds. A song over six minutes is sped up a little to fit, in the same key. The worker transcribes its melody')));
+  assert.equal(JSON.stringify(GUIDE), before, 'the shared guide is never changed');
+  // The link field: 6:40 and why with the flag, exactly as before without it.
+  const family = cover(link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), FIT)).link;
+  assert.equal(family.maxSeconds, 400);
+  assert.match(family.hint, /^One song or video, shorter than 6 minutes 40 seconds \(a song over six minutes is sped up a little to fit, in the same key\), from YouTube/);
+  assert.deepEqual(cover(link.guideFor(GUIDE, { id: 'u1' }, () => ({ mediaLinks: true }), {})).link, { ...link.LINK_FIELD, available: true });
+  assert.equal(link.linkField({}), link.LINK_FIELD);
 });

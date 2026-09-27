@@ -99,6 +99,8 @@ async function main() {
         console.log('YuE2 covers (Part 295): flag-off requests unchanged, cover and instrumental fields, trained-style refusal, saved choices, guide choices, score chords on Keep the original chords with old cot requests unchanged (Part 296), price per card, take notes said once passed.');
         await lyricSync(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
         console.log('YuE2 lyric sync: flags off unchanged, fit and measure fields only for sung covers with words, take notes and facts from the timing report, kept sections, score touch-up, meter note, name-paired rows and no spoken fit score passed.');
+        await fitTempo(post, base, sentInputs, (next) => { state = next.state; extraOutput = next.output || {}; });
+        console.log('YuE2 fit by tempo: flag off unchanged, fit_tempo only for covers of a recording, take note and facts from the tempo_fit report, said once passed.');
     }
     finally {
         server.close();
@@ -406,6 +408,89 @@ async function lyricSync(post, base, sentInputs, provider) {
         assert.equal(done.spoken, '2 of 2 takes ready. Open your library to compare them. ' + note);
     } finally {
         for (const [key, value] of [['YUE_FIT_LYRICS', saved.fit], ['YUE_MEASURE_FIT', saved.measure], ['YUE_COVERS_V2', saved.covers]]) {
+            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
+    }
+}
+/* Fit by tempo (YUE_FIT_TEMPO=1, worker feature fit-tempo): a cover of a recording asks the worker
+ * to sing a song too long for six minutes a little faster instead of cutting it. The lyrics are invented. */
+async function fitTempo(post, base, sentInputs, provider) {
+    const assert = strict_1.default;
+    const { yueInput, yueTakeNote, yueTakeFacts, yueFitTempoEnabled } = yue_1;
+    const LEGACY_KEYS = ['style', 'title', 'count', 'weirdness', 'steps', 'guidance', 'lyrics', 'abc', 'reference_voice_url', 'cot', 'band', 'lora_key', 'lora_scale', 'seed'];
+    const COVER_KEYS = ['keep_harmony', 'match_score_tempo', 'length_guard'];
+    const recording = 'https://assets.test/source.wav';
+    const lyrics = '[Verse]\nSalt on the window\n[Chorus]\nRoll the long road home';
+    const body = { script: 'Country duo', lyrics, seed: 9, reference_voice_url: recording };
+    const FIT = { YUE_FIT_TEMPO: '1' };
+    assert.equal(yueFitTempoEnabled({}), false); assert.equal(yueFitTempoEnabled(FIT), true);
+    assert.equal(yueFitTempoEnabled({ YUE_FIT_TEMPO: 'true' }), false);
+
+    // Flag off (or anything but 1): exactly today's requests.
+    for (const env of [{}, { YUE_FIT_TEMPO: 'true' }, { YUE_FIT_TEMPO: '0', YUE_COVERS_V2: '1' }]) {
+        assert.equal('fit_tempo' in yueInput(body, env), false, JSON.stringify(env));
+    }
+    // Flag on: a cover of a recording asks for it, sung or instrumental; nothing else changes.
+    assert.deepEqual(Object.keys(yueInput(body, FIT)), [...LEGACY_KEYS, 'fit_tempo']);
+    const covered = yueInput(body, { ...FIT, YUE_COVERS_V2: '1' });
+    assert.deepEqual(Object.keys(covered), [...LEGACY_KEYS, ...COVER_KEYS, 'fit_tempo']);
+    assert.equal(covered.fit_tempo, true);
+    const { fit_tempo: _fit, ...rest } = covered;
+    assert.deepEqual(rest, yueInput(body, { YUE_COVERS_V2: '1' }));
+    const instrumental = yueInput({ ...body, lyrics: '', singing: 'Instrumental, no singing' }, { ...FIT, YUE_COVERS_V2: '1' });
+    assert.equal(instrumental.fit_tempo, true); assert.equal(instrumental.instrumental, true);
+    const all = yueInput(body, { ...FIT, YUE_COVERS_V2: '1', YUE_FIT_LYRICS: '1', YUE_MEASURE_FIT: '1', YUE_SCORE_TOUCHUP: '1' });
+    assert.deepEqual(Object.keys(all).slice(-4), ['fit_lyrics', 'measure_fit', 'fit_score_touchup', 'fit_tempo']);
+    // Never for a new song or a pasted score (the worker could, but the booth asks only for covers).
+    for (const other of [{ script: 'Country duo', lyrics, seed: 9 }, { script: 'Country duo', lyrics, seed: 9, abc: 'X:1' }]) {
+        assert.equal('fit_tempo' in yueInput(other, { ...FIT, YUE_COVERS_V2: '1' }), false, JSON.stringify(other));
+    }
+
+    // The take note: the percentage, in the same key, and a BPM Music direction named said once.
+    const features = ['keep-harmony', 'instrumental', 'lyric-fit', 'chord-check', 'fit-tempo'];
+    const fit = { applied: true, factor: 1.0814, percent: 8, from_bpm: 86, to_bpm: 93, score_seconds_before: 380.5,
+        score_seconds_after: 351.9, limit_seconds: 360, fit_seconds: 352, source_seconds: 378.2, style_bpm: [] };
+    const said = "Sped up 8% to fit YuE2's six-minute limit, in the same key.";
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: fit }, covered), said);
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: { ...fit, style_bpm: [[86, 93], [86, 93]] } }, covered),
+        said + " Music direction's 86 BPM was sung as 93 BPM to match.");
+    assert.equal(yueTakeNote({ features, cover_mode: 'melody', tempo_fit: fit }, covered),
+        said + ' No chords were heard in the recording, so the cover used its melody with a new accompaniment.');
+    for (const [output, why] of [
+        [{ features, cover_mode: 'harmony', tempo_fit: { ...fit, applied: false, percent: 0 } }, 'it fit already'],
+        [{ features, cover_mode: 'harmony', tempo_fit: { applied: false, reason: 'score unreadable' } }, 'unreadable score'],
+        [{ features: features.slice(0, 4), cover_mode: 'harmony', tempo_fit: fit }, 'an older worker'],
+        [{ features, cover_mode: 'harmony', tempo_fit: { ...fit, percent: 25 } }, 'out of range'],
+        [{ features, cover_mode: 'harmony', tempo_fit: { ...fit, percent: 'eight' } }, 'not a number'],
+        [{ features, cover_mode: 'harmony', tempo_fit: null }, 'no report'],
+    ]) assert.equal(yueTakeNote(output, covered), '', why);
+    assert.equal(yueTakeNote({ features, cover_mode: 'harmony', tempo_fit: fit }, yueInput(body, { YUE_COVERS_V2: '1' })), '',
+        'not asked for, never said');
+    assert.deepEqual(yueTakeFacts({ features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, tempo_fit: fit }, covered),
+        { instrumental: false, coverMode: 'harmony', gpu: 'NVIDIA A40', takeNote: said, tempoFit: { percent: 8, fromBpm: 86, toBpm: 93 } });
+    assert.equal('tempoFit' in yueTakeFacts({ features, tempo_fit: { ...fit, applied: false } }, covered), false);
+    assert.doesNotMatch(said, /Kade/);
+
+    // Through the router: fit_tempo reaches RunPod beside the cover fields, and the note is said once.
+    const saved = { fit: process.env.YUE_FIT_TEMPO, covers: process.env.YUE_COVERS_V2 };
+    Object.assign(process.env, { YUE_FIT_TEMPO: '1', YUE_COVERS_V2: '1' });
+    try {
+        provider({ state: 'IN_QUEUE' });
+        const sentBefore = sentInputs.length;
+        let res = await post('/render', { engine: 'yue2', script: 'Country duo', lyrics, reference_voice_url: recording, count: 2 }, 'f');
+        assert.equal(res.status, 200);
+        const job = await res.json();
+        assert.equal(sentInputs.length, sentBefore + 2);
+        for (const input of sentInputs.slice(sentBefore)) {
+            assert.equal(input.fit_tempo, true); assert.equal(input.length_guard, true); assert.equal(input.keep_harmony, true);
+        }
+        provider({ state: 'COMPLETED', output: { features, gpu: 'NVIDIA A40', cover_mode: 'harmony', instrumental: false, tempo_fit: fit } });
+        res = await fetch(base + '/status/' + job.jobId, { headers: { 'x-test-user': 'f' } });
+        const done = await res.json();
+        assert.equal(done.state, 'done');
+        assert.equal(done.spoken, '2 of 2 takes ready. Open your library to compare them. ' + said);
+    } finally {
+        for (const [key, value] of [['YUE_FIT_TEMPO', saved.fit], ['YUE_COVERS_V2', saved.covers]]) {
             if (value === undefined) delete process.env[key]; else process.env[key] = value;
         }
     }

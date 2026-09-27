@@ -34,6 +34,8 @@ export type Input = {
   measure_fit?: boolean;
   /* A/B only, behind YUE_SCORE_TOUCHUP with YUE_FIT_LYRICS (music/yue.ts). */
   fit_score_touchup?: boolean;
+  /* Fit by tempo, sent only for a cover of a recording behind YUE_FIT_TEMPO (music/yue.ts). */
+  fit_tempo?: boolean;
   seed: number;
 };
 type LyricFitRow = {
@@ -63,6 +65,21 @@ type LyricSyncReport = {
   repeats?: Array<{ section?: string | null; instances?: number[]; source?: number; fitted?: boolean }>;
   score_touchup?: { applied?: boolean; ties?: number; folds?: number; places?: unknown[] } | null;
 };
+type TempoFitReport = {
+  applied?: boolean;
+  reason?: string;
+  factor?: number;
+  percent?: number;
+  from_bpm?: number;
+  to_bpm?: number;
+  score_seconds_before?: number;
+  score_seconds_after?: number;
+  limit_seconds?: number;
+  fit_seconds?: number;
+  source_seconds?: number | null;
+  /* Each BPM Music direction named, [as written, as sung]. */
+  style_bpm?: number[][];
+};
 export type Output = {
   url?: string;
   wav_url?: string;
@@ -88,6 +105,8 @@ export type Output = {
   lyrics_used?: string;
   /* Worker feature meter-check: the style names a meter the score contradicts. */
   meter_check?: { style_meter?: string; score_meter?: string } | null;
+  /* Worker feature fit-tempo: a score too long for six minutes sung faster to fit (its Q: line only). */
+  tempo_fit?: TempoFitReport | null;
 };
 export type Provider = {
   id?: string;

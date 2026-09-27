@@ -158,6 +158,10 @@ export {
   validateMusicReference,
   musicReferenceError,
   musicReferenceSeconds,
+  musicReferenceMaxSeconds,
+  musicReferenceSpeedNote,
+  musicCoverLengthGuide,
+  musicFitTempoEnabled,
 } from './music/lyrics';
 /* Sep 27 2026: Sing it in my voice, a personal feature for accounts with a registered voice model. */
 export {

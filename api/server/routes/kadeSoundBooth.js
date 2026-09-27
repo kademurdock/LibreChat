@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -3000,6 +3000,7 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
   let outExt = ext;
   let clipSeconds = null;
   let clipAdvice = '';
+  let speedNote = '';
   try {
     const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
     const norm = engine === 'seed' ? await normalizeReferenceClip(buffer, ext) : null;
@@ -3021,6 +3022,9 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
     const said = musicReferenceError(clipSeconds);
     const error = said && engine === 'myvoice' ? said.replace('Covers support', 'Sing it in my voice takes recordings') : said;
     if (error) return { status: 400, body: { error } };
+    /* Fit by tempo (YUE_FIT_TEMPO=1): a recording over about 5:52 is sung a little faster to fit
+     * YuE2's six minutes. Said now, before any GPU time is spent; '' with the flag off. */
+    if (engine === 'yue2') speedNote = musicReferenceSpeedNote(clipSeconds);
   }
   const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
   const url = await saveBufferToS3({
@@ -3050,7 +3054,7 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
       /* Her ask: "have a play button to check your sample." The URL comes back
        * so the screen can play the thing that is actually attached — the
        * difference between believing a clone is set up and hearing that it is. */
-      spoken: `${heard}. ${clipAdvice} Play it to check it before generating.`.replace(/\s+/g, ' '),
+      spoken: `${heard}. ${speedNote ? `${speedNote} ` : ''}${clipAdvice} Play it to check it before generating.`.replace(/\s+/g, ' '),
       ...(source ? { source: { site: source.site, title: source.title, seconds: source.seconds, link: source.link } } : {}),
     },
   };
@@ -3071,13 +3075,17 @@ router.use(require('./kadeSoundBoothLink').createReferenceLinkRouter({
 }));
 /** Part 295: YuE2's Singing or instrumental and Keep the original chords choices, only while
  * YUE_COVERS_V2 is on (packages/api music/yue.ts). Part 296: Keep the original chords then also
- * decides an ABC score's chords, so the separate score choice (`cot`) is left out. */
+ * decides an ABC score's chords, so the separate score choice (`cot`) is left out.
+ * Fit by tempo: while YUE_FIT_TEMPO=1 the cover hint and how-to say 6 minutes 40 seconds and that a
+ * song over six minutes is sped up a little to fit (packages/api music/lyrics.ts). */
 function withYueCovers(guide) {
   const yue = guide && guide.engines && guide.engines.yue2;
   if (!yue || !Array.isArray(yue.settings)) return guide;
   const settings = yueCoverSettings(yue.settings);
-  if (settings === yue.settings) return guide;
-  return { ...guide, engines: { ...guide.engines, yue2: { ...yue, settings } } };
+  const covered = settings === yue.settings ? yue : { ...yue, settings };
+  const lengthed = musicCoverLengthGuide(covered);
+  if (lengthed === yue) return guide;
+  return { ...guide, engines: { ...guide.engines, yue2: lengthed } };
 }
 /** The person's Family feature pack map (packages/api family/pack.ts familyFeatures). */
 function boothFeatures(user) {

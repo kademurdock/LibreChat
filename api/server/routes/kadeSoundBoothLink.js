@@ -39,11 +39,27 @@
  *
  * Kill switch: KADE_SOUNDBOOTH_YT_LINKS=0 takes the field away and refuses it
  * for everyone.
+ *
+ * Fit by tempo (Sep 27 2026): with YUE_FIT_TEMPO=1 the limit is 6:40 (400 s,
+ * or YUE_FIT_TEMPO_MAX_SECONDS between 360 and 400), because the YuE2 worker
+ * sings a song over six minutes a little faster to fit instead of cutting it.
+ * coverMaxSeconds is packages/api music/lyrics.ts musicReferenceMaxSeconds
+ * (the tests hold them equal); every check, the download filter and the MP3
+ * cut follow it. With the flag unset everything here is exactly as before.
  * ========================================================================== */
 const express = require('express');
 
 const LINK_PATH = '/api/kade/sound-booth/reference/link';
 const COVER_MAX_SECONDS = 360; // musicReferenceError's six minutes
+const FIT_MAX_SECONDS = 400; // with YUE_FIT_TEMPO=1: 6:40, sped up about 15% at most
+
+/** The longest cover a link may bring in: six minutes, or up to 6:40 with YUE_FIT_TEMPO=1. */
+function coverMaxSeconds(env = process.env) {
+  if (env.YUE_FIT_TEMPO !== '1') return COVER_MAX_SECONDS;
+  const said = Number(env.YUE_FIT_TEMPO_MAX_SECONDS);
+  if (!env.YUE_FIT_TEMPO_MAX_SECONDS || !Number.isFinite(said)) return FIT_MAX_SECONDS;
+  return Math.min(FIT_MAX_SECONDS, Math.max(COVER_MAX_SECONDS, Math.floor(said)));
+}
 const COVER_MAX_BYTES = 20 * 1024 * 1024; // the file import's own cap
 const DEADLINE_MS = Number(process.env.KADE_SOUNDBOOTH_LINK_DEADLINE_MS || 95000);
 const LINK_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_LINK_CAP || 20);
@@ -195,14 +211,16 @@ function thing(site) {
 /**
  * The words for a failed import, in the booth's voice (never the describer's). A song listed at
  * exactly six minutes is refused too (YouTube's whole seconds may hide a fraction more), so the
- * limit is said as "shorter than", never "up to". `site` is the link's site (YouTube by default).
+ * limit is said as "shorter than", never "up to". `site` is the link's site (YouTube by default);
+ * `maxSeconds` the limit it was held to (coverMaxSeconds).
  */
-function linkWords(error, user, site = 'youtube') {
+function linkWords(error, user, site = 'youtube', maxSeconds = COVER_MAX_SECONDS) {
   const kind = error && error.kind;
   if (kind === 'too-long') {
     const from = site === 'youtube' ? 'YouTube' : 'a link';
     const shorter = site === 'youtube' ? 'video' : 'song';
-    return `${thing(site)} is ${spokenMinutes(error.seconds)} long, and covers from ${from} must be shorter than 6 minutes. Choose a shorter ${shorter}, or download the song and import an excerpt as a file; nothing is trimmed automatically.`;
+    const sped = maxSeconds > COVER_MAX_SECONDS ? ' (a song over six minutes is sped up a little to fit, and no further)' : '';
+    return `${thing(site)} is ${spokenMinutes(error.seconds)} long, and covers from ${from} must be shorter than ${spokenMinutes(maxSeconds)}${sped}. Choose a shorter ${shorter}, or download the song and import an excerpt as a file; nothing is trimmed automatically.`;
   }
   if (kind === 'age' && isChildAccount(user)) return site === 'youtube' ? WORDS['age-child'] : CHILD_AGE;
   if (LINK_WORDS[kind]) return LINK_WORDS[kind];
@@ -247,6 +265,19 @@ const LINK_FIELD = {
   path: LINK_PATH,
   maxSeconds: COVER_MAX_SECONDS,
 };
+/** LINK_FIELD as it stands under `env`: with YUE_FIT_TEMPO=1, the longer limit and why. */
+function linkField(env = process.env) {
+  const maxSeconds = coverMaxSeconds(env);
+  if (maxSeconds === COVER_MAX_SECONDS) return LINK_FIELD;
+  return {
+    ...LINK_FIELD,
+    hint: LINK_FIELD.hint.replace(
+      'One song or video, shorter than six minutes,',
+      `One song or video, shorter than ${spokenMinutes(maxSeconds)} (a song over six minutes is sped up a little to fit, in the same key),`,
+    ),
+    maxSeconds,
+  };
+}
 
 /**
  * The guide for THIS person. The YuE2 cover field carries `link` (label, hint, button, path,
@@ -266,7 +297,7 @@ function guideFor(guide, user, features, env = process.env) {
     if (setting.key !== 'reference_voice_url') return setting;
     const hint = available ? setting.hint : String(setting.hint || '').replace(LINK_HINT_SENTENCE, '');
     if (!switchedOn) return { ...setting, hint };
-    if (available) return { ...setting, hint, link: { ...LINK_FIELD, available: true } };
+    if (available) return { ...setting, hint, link: { ...linkField(env), available: true } };
     /* Review of Sep 25: never `link` with available:false, which a client reading only `link`
      * would show as a live field that answers 403 on every press. */
     const { site, label, button } = LINK_FIELD;
@@ -330,9 +361,10 @@ async function handleReferenceLink(req, res, deps, state) {
     if (!res.writableEnded) stop.abort(new Error('the person left'));
   };
   res.on('close', hangUp);
+  const maxSeconds = coverMaxSeconds(env);
   try {
     const got = await api.mediaAudio(link, {
-      maxSeconds: COVER_MAX_SECONDS,
+      maxSeconds,
       maxBytes: COVER_MAX_BYTES,
       /* The server's signed-in YouTube account must never carry a child past
        * YouTube's own age gate, and no site's age-restricted item comes in on
@@ -356,7 +388,7 @@ async function handleReferenceLink(req, res, deps, state) {
     const kind = (error && error.kind) || 'failed';
     logger.warn(`[soundbooth/reference] link FAILED user=${userId} video=${link.id} kind=${kind} ${Date.now() - started}ms: ${String((error && error.message) || error).replace(/\s+/g, ' ').slice(0, 300)}`);
     if (res.writableEnded || res.destroyed) return undefined;
-    return res.status(linkStatus(error)).json({ error: linkWords(error, req.user, link.site), kind });
+    return res.status(linkStatus(error)).json({ error: linkWords(error, req.user, link.site, maxSeconds), kind });
   } finally {
     clearTimeout(timer);
     res.removeListener('close', hangUp);
@@ -370,6 +402,8 @@ module.exports = {
   guideFor,
   linkImportAvailable,
   linkWords,
+  linkField,
+  coverMaxSeconds,
   linkStatus,
   siteLabel,
   spokenMinutes,

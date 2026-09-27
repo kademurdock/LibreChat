@@ -318,12 +318,98 @@ export function lyricsWarning(model: string | undefined): string {
   return 'Draft lyrics from the backup transcriber, so they have no section tags. Add tags such as [Verse] and [Chorus] yourself. Singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating.';
 }
 
-export function musicReferenceError(seconds: number | null | undefined): string | undefined {
+/* Fit by tempo (worker feature fit-tempo), behind YUE_FIT_TEMPO=1. YuE2 sings up to six minutes
+ * (9,000 sound tokens). With the flag on, a cover recording up to YUE_FIT_TEMPO_MAX_SECONDS (400 s,
+ * 6:40, by default and at most: the worker takes up to 402 s) is accepted, and the worker sings a
+ * song whose score runs past 352 s a little faster to fit: its score's tempo line only, so the same
+ * notes in the same key, about 15% at most for a 6:40 song and never more than 20%. Anything longer
+ * is refused here, before anything is stored or any GPU wakes. With the flag unset every limit and
+ * sentence is exactly as before. The live worker must run an image listing fit-tempo first, and
+ * the booth sends fit_tempo only then (music/yue.ts yueFitTempoEnabled reads the same flag). */
+const COVER_SECONDS = 360;
+/** The worker's FIT_SECONDS: a sped score runs at most this long. */
+const FIT_SECONDS = 352;
+const FIT_MAX_SECONDS = 400;
+export function musicFitTempoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.YUE_FIT_TEMPO === '1';
+}
+/** The longest cover recording the booth accepts: 360 s, or up to 400 s with YUE_FIT_TEMPO=1. */
+export function musicReferenceMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  if (!musicFitTempoEnabled(env)) return COVER_SECONDS;
+  const said = Number(env.YUE_FIT_TEMPO_MAX_SECONDS);
+  if (!env.YUE_FIT_TEMPO_MAX_SECONDS || !Number.isFinite(said)) return FIT_MAX_SECONDS;
+  return Math.min(FIT_MAX_SECONDS, Math.max(COVER_SECONDS, Math.floor(said)));
+}
+/** "6 minutes 40 seconds", "6 minutes". */
+function coverLength(seconds: number): string {
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m} minute${m === 1 ? '' : 's'}${s ? ` ${s} second${s === 1 ? '' : 's'}` : ''}`;
+}
+
+export function musicReferenceError(
+  seconds: number | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0)
     return 'The recording could not be read. Import a readable audio file before generating.';
-  if (seconds <= 360) return;
+  const max = musicReferenceMaxSeconds(env);
+  if (seconds <= max) return;
   const rounded = Math.round(seconds);
-  return `This recording is ${Math.floor(rounded / 60)} minutes ${rounded % 60} seconds long. Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
+  const length = `This recording is ${Math.floor(rounded / 60)} minutes ${rounded % 60} seconds long.`;
+  if (max <= COVER_SECONDS)
+    return `${length} Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
+  return `${length} Covers can be up to ${coverLength(max)}: a song over six minutes is sped up a little to fit, and past ${coverLength(max)} that would be too much. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
+}
+
+/**
+ * With YUE_FIT_TEMPO=1, the sentence said when a cover recording lands that will be sped up to
+ * fit, before any GPU time is spent: an estimate from the recording's own length (the take's
+ * note gives the exact figure, from its score). '' when nothing will be sped up.
+ */
+export function musicReferenceSpeedNote(
+  seconds: number | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (!musicFitTempoEnabled(env) || typeof seconds !== 'number' || !Number.isFinite(seconds))
+    return '';
+  if (seconds <= FIT_SECONDS || seconds > musicReferenceMaxSeconds(env)) return '';
+  const percent = Math.max(1, Math.ceil((seconds / FIT_SECONDS - 1) * 100 - 1e-9));
+  return `YuE2 sings up to six minutes, so this cover will be sped up about ${percent}%, in the same key.`;
+}
+
+const COVER_HINT_TODAY = 'Import one song, up to six minutes.';
+const COVER_HOWTO_TODAY = 'For a cover, import one source recording up to six minutes.';
+/**
+ * The YuE2 guide with its cover length said the fit-by-tempo way while YUE_FIT_TEMPO=1: the
+ * recording field's hint and the how-to line. The same object back when the flag is off.
+ */
+export function musicCoverLengthGuide<
+  T extends { settings?: Array<{ key: string; hint?: string }>; howToWrite?: string[] },
+>(yue: T, env: NodeJS.ProcessEnv = process.env): T {
+  if (!musicFitTempoEnabled(env) || !yue) return yue;
+  const max = coverLength(musicReferenceMaxSeconds(env));
+  const sped = 'A song over six minutes is sped up a little to fit, in the same key.';
+  return {
+    ...yue,
+    ...(Array.isArray(yue.howToWrite)
+      ? {
+          howToWrite: yue.howToWrite.map((line) =>
+            line.replace(COVER_HOWTO_TODAY, `For a cover, import one source recording up to ${max}. ${sped}`),
+          ),
+        }
+      : {}),
+    ...(Array.isArray(yue.settings)
+      ? {
+          settings: yue.settings.map((setting) =>
+            setting.key === 'reference_voice_url' && typeof setting.hint === 'string'
+              ? { ...setting, hint: setting.hint.replace(COVER_HINT_TODAY, `Import one song, up to ${max}. ${sped}`) }
+              : setting,
+          ),
+        }
+      : {}),
+  };
 }
 
 async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'savedSources'>) {

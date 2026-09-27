@@ -38,6 +38,7 @@ console.log('Reference validation passed: missing expected references stop befor
     REF_EXT: { 'audio/mpeg': 'mp3' }, ENGINE_REF_FORMATS: { seed: { exts: ['mp3'] }, scenema: { exts: ['mp3'] } },
     require: (name) => (name === './kadeSoundBoothLink' ? { createReferenceLinkRouter: () => null } : { durationOf: async () => duration }),
     musicReferenceError: compiled.exports.musicReferenceError,
+    musicReferenceSpeedNote: compiled.exports.musicReferenceSpeedNote,
     saveBufferToS3: async ({ buffer }) => { assert.equal(buffer, audio); stores++; return 'https://assets.test/reference.mp3'; },
     registerMusicReference: async (_user, _url, seconds) => { registeredSeconds = seconds; },
     logger: { warn() {}, info() {}, error() {} },

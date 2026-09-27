@@ -134,6 +134,14 @@ export function yueMeasureFitEnabled(env: NodeJS.ProcessEnv = process.env): bool
 export function yueScoreTouchupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.YUE_SCORE_TOUCHUP === '1';
 }
+/** YUE_FIT_TEMPO=1 (worker feature fit-tempo): a cover of a recording asks the worker to sing a
+ * song too long for YuE2's six minutes a little faster to fit instead of cutting it: its score's
+ * tempo line only, so the same notes in the same key, never more than 20% faster. music/lyrics.ts
+ * reads the same flag for the longer import limit (musicReferenceMaxSeconds, 6:40). With it unset
+ * every request is exactly as before; an older worker would refuse a recording over six minutes. */
+export function yueFitTempoEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.YUE_FIT_TEMPO === '1';
+}
 const TAG_LINE = /^\s*\[[^\]\n]+\]\s*$/;
 /** Whether lyrics hold any word to sing outside [section] tag lines. */
 function hasSungWords(lyrics: string): boolean {
@@ -296,6 +304,7 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
     ...(covers ? coverFields(body, instrumental, keepChords, recording) : {}),
     ...syncFields((body.lyrics || '').trim(), recording, instrumental, env),
+    ...(recording && yueFitTempoEnabled(env) ? { fit_tempo: true } : {}),
     ...(myVoice ? { my_voice: true } : {}),
   };
 }
@@ -445,6 +454,28 @@ function syncNotes(sync: NonNullable<Output['lyric_sync']>, input: Input): strin
   return notes;
 }
 
+/** A cover sped up to fit YuE2's six minutes (worker feature fit-tempo), in words; '' otherwise.
+ * A BPM named in Music direction was sped up by the same amount, so it is said too. */
+function tempoNote(output: Output, input: Input): string {
+  const fit = output.tempo_fit;
+  if (input.fit_tempo !== true || !output.features?.includes('fit-tempo') || !fit || fit.applied !== true)
+    return '';
+  const percent = fit.percent;
+  if (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 1 || percent > 20) return '';
+  const notes = [`Sped up ${Math.round(percent)}% to fit YuE2's six-minute limit, in the same key.`];
+  const said = new Set<string>();
+  for (const pair of Array.isArray(fit.style_bpm) ? fit.style_bpm : []) {
+    if (!Array.isArray(pair) || pair.length !== 2) continue;
+    const [was, now] = pair;
+    if (typeof was !== 'number' || typeof now !== 'number' || !Number.isFinite(was) || !Number.isFinite(now))
+      continue;
+    if (said.has(`${was}>${now}`)) continue;
+    said.add(`${was}>${now}`);
+    notes.push(`Music direction's ${was} BPM was sung as ${now} BPM to match.`);
+  }
+  return notes.join(' ');
+}
+
 const METER_SAID = /^(?:\d{1,2}\/\d{1,2}|waltz)$/;
 /** A style that names a meter the score contradicts (worker feature meter-check). */
 function meterNote(output: Output): string {
@@ -460,6 +491,8 @@ function meterNote(output: Output): string {
 export function yueTakeNote(output: Output | undefined, input: Input): string {
   if (!output || !Array.isArray(output.features)) return '';
   const notes: string[] = [];
+  const tempo = tempoNote(output, input);
+  if (tempo) notes.push(tempo);
   if (
     input.keep_harmony === true &&
     input.reference_voice_url &&
@@ -515,6 +548,8 @@ export type YueTakeFacts = {
   /** Lyric sync: the lines YuE2 actually sang, when the worker re-broke them. */
   lyricsUsed?: string;
   fitScore?: number;
+  /** Fit by tempo: how much faster the take was sung than the recording's own tempo. */
+  tempoFit?: { percent: number; fromBpm?: number; toBpm?: number };
 };
 /** What the asset keeps about a finished take; nothing for a worker older than Part 295. */
 export function yueTakeFacts(output: Output | undefined, input: Input): YueTakeFacts {
@@ -529,6 +564,12 @@ export function yueTakeFacts(output: Output | undefined, input: Input): YueTakeF
     if (output.lyric_sync.lyrics_fitted && typeof output.lyrics_used === 'string')
       facts.lyricsUsed = output.lyrics_used;
     if (typeof output.lyric_sync.fit_score === 'number') facts.fitScore = output.lyric_sync.fit_score;
+  }
+  const fit = output.tempo_fit;
+  if (tempoNote(output, input) && fit && typeof fit.percent === 'number') {
+    facts.tempoFit = { percent: Math.round(fit.percent) };
+    if (typeof fit.from_bpm === 'number') facts.tempoFit.fromBpm = fit.from_bpm;
+    if (typeof fit.to_bpm === 'number') facts.tempoFit.toBpm = fit.to_bpm;
   }
   return facts;
 }
