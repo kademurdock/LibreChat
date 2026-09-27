@@ -2051,12 +2051,14 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       if (!secret) return res.status(503).json({ error: 'The render lane is not configured here.' });
       let r;
       let previewInfo = null;
+      /* Declared outside the try: the preview's estimate below reads it after the start call
+       * (Sep 27 2026: "promptToSend is not defined" failed a preview after the job was sent). */
+      let promptToSend = script;
       try {
         /* A preview performs one fixed sample line in the described voice,
          * not her whole script — the point is to hear the ACTOR for a penny.
          * The voice= attribute is lifted off her script so what she previews
          * is exactly what the full render will use. */
-        let promptToSend = script;
         if (preview) {
           /* Part 122.1, her report: "that sounded nothing like my description,
            * and it just said some weird sample sentence." Both true, and both
