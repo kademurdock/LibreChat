@@ -913,8 +913,8 @@ test('Part 296: the chorus gate finds a hook sung over and over and passes a cho
   assert.match(flagsOf(chorusOf(['I want you gone', 'Pack the van and move along', 'I sing it louder every song', 'I want you gone, yeah', 'Yeah, you are gone'])).join('|'), /3 of its lines end on the word "gone"/);
   /* Chants live where the map puts them. */
   for (const tag of ['Post-Chorus', 'Drop', 'Outro', 'Intro']) assert.deepEqual(lyricRepeatIssues(chorusOf(['Come get your truck', 'Come get your truck', 'Come get your truck', 'Come get your truck'], tag), ''), [], tag);
-  /* Her brief asked for the chant. */
-  assert.deepEqual(lyricRepeatIssues(collapsed, 'a repetitive chant about getting fired').filter(i => i.problems.some(p => /hook/.test(p))), []);
+  /* Her brief asked for the chant: the chorus is left alone whole (review: its end words used to still send it to the rewrite). */
+  assert.deepEqual(lyricRepeatIssues(collapsed, 'a repetitive chant about getting fired'), []);
   /* A chorus sung three times is one entry naming its three passes; a changed last chorus is its own entry. */
   const song = `Pop.\nLyrics:\n[Verse 1]\nWe parked the Buick by the levee gate\n[Chorus]\nFired on my birthday\nFired on my birthday\nThey took the paper crown right off my head\nFired on my birthday\n[Verse 2]\nMama had a cake with the candles out\n[Chorus]\nFired on my birthday\nFired on my birthday\nThey took the paper crown right off my head\nFired on my birthday\n[Final Chorus]\nFired on my birthday\nFired on my birthday\nI took the paper crown and I kept the change\nFired on my birthday\n\nREADBACK: x`;
   const issues = lyricRepeatIssues(song, '');
@@ -951,8 +951,11 @@ test('Part 296: the desk draws one chorus shape in code and says it in words, ne
   assert.deepEqual(Object.keys(counts).sort(), Object.keys(CHORUS_SHAPES).sort(), 'asking again can draw every shape');
   assert.ok(Math.max(...Object.values(counts)) < 300, JSON.stringify(counts));
   assert.equal(chorusShapeFor(brief, 'x', SECTION_MAPS.storyRefrain), null, 'the story song has a refrain line, not a chorus');
-  for (const b of ['a song with no chorus about my truck', 'a repetitive chant for the football game', 'a call and response gospel song', ''])
+  for (const b of ['a song with no chorus about my truck', 'a repetitive chant for the football game', 'a call and response gospel song', 'a sea shanty about my leaky kayak', 'a chorus that is nothing but the hook over and over', 'I want it catchy and repetitive', 'honky tonk song, the chorus goes: Last call, last call, the jukebox ate my dollar, last call', ''])
     assert.equal(chorusShapeFor(b, 'x'), null, b);
+  /* Review: asking NOT to repeat, or a story that only mentions repeating, keeps the fix on. */
+  for (const b of ["breakup song with the hook you thought I'd take you back", "breakup song, and please don't repeat the hook over and over this time", 'country song, no repetitive chorus', 'a pop song that is not too repetitive', 'catchy but less repetitive than last time', 'a song about my toddler who repeats everything I say', 'a song about a guy who calls me over and over', 'a song about being stuck in a time loop at work'])
+    assert.ok(chorusShapeFor(b, 'x'), b);
   assert.equal(chorusShapeNote(null), '');
   for (const shape of Object.values(CHORUS_SHAPES)) {
     const note = chorusShapeNote(shape, SECTION_MAPS.threeVerses);
@@ -989,6 +992,36 @@ test('Part 296: the desk notes and the audit say the four-to-eight count is for 
   const withShape = lyricAuditRequest(draft, [], 'Add a [Verse 3].', issues);
   assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. REPEATS, measured by the desk\./); assert.match(withShape, /\n10\. THE ENDING\./);
   assert.ok(ask.endsWith(draft));
+  /* Review: the audit never sees the idea, so a chant the idea asked for is said in gate 2 instead of cut to two. */
+  const chant = lyricAuditRequest(draft, [], null, [], 'a repetitive chant for my softball team');
+  assert.match(chant, /2\. The hook\. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise\. The idea asked for this repetition \(a chant, or a chorus it spelled out itself\), so the chorus sings its hook as often as the idea does\. If the best line/);
+  assert.doesNotMatch(chant, /never more/);
+  assert.match(lyricAuditRequest(draft, [], null, [], 'honky tonk song, the chorus goes: Last call, last call, the jukebox ate my dollar, last call'), /The idea asked for this repetition/);
+  assert.match(lyricAuditRequest(draft, [], null, [], "breakup song, don't repeat the hook over and over"), /once or twice in each chorus, never more/);
+  assert.match(musicWritingCraft, /An idea that itself asks for a chant or for repetition gets what it asks for\./);
+});
+
+test('Part 296 review: a chorus written into her own idea is hers; a section flagged for its end words is told which lines, and never told to keep them', () => {
+  const song = chorusOf(["You thought I'd take you back?", "You thought I'd take you back?", "I ain't cutting you slack, you thought I'd take you back", "You thought I'd take you back?"]);
+  const hers = "Write a song with this chorus: You thought I'd take you back? You thought I'd take you back? I ain't cutting you slack, you thought I'd take you back. You thought I'd take you back?";
+  assert.deepEqual(lyricRepeatIssues(song, hers), [], 'her chorus as she wrote it');
+  /* Naming the hook once leaves how often to sing it to the desk. */
+  assert.match(flagsOf(song, "a breakup song with the hook you thought I'd take you back").join('|'), /the hook "You thought I'd take you back" is sung 4 times in one chorus/);
+  /* A line her brief sings twice is hers; one it does not is still counted. */
+  const twice = chorusOf(['Go lose my number', 'Hand me the keys', 'Hand me the keys', 'I changed the lock on the mailbox', 'Go lose my number']);
+  assert.match(flagsOf(twice, 'girl group song').join('|'), /besides the hook, "Hand me the keys" is sung more than once/);
+  assert.deepEqual(lyricRepeatIssues(twice, 'girl group song, the chorus goes: hand me the keys, hand me the keys'), []);
+  /* Outside a chorus the lines that share an end word are quoted, and the rewrite changes those words on the same rhyme sound. */
+  const bridge = 'Pop.\nLyrics:\n[Bridge]\nYou swore you would be back in a minute\nThe dog sat by the door for a minute\nThe engine ran the whole tank dry in a minute\n\nREADBACK: x';
+  const issues = lyricRepeatIssues(bridge, '');
+  assert.deepEqual(issues[0].problems, ['3 of its lines end on the word "minute" ("You swore you would be back in a minute", "The dog sat by the door for a minute", "The engine ran the whole tank dry in a minute")']);
+  const ask = lyricRepeatRequest(bridge, issues);
+  assert.match(ask, /Rewrite only the lines named: lines that open the same way get new openings, a line that stacks a list becomes one plain thought, and a word that ends too many lines gives way to other words on the same rhyme sound\. Keep what each line says, its rhyme sound and its length\./);
+  assert.doesNotMatch(ask, /last word where you can/);
+  assert.match(lyricAuditRequest(bridge, [], null, issues), /a word that ends too many lines gives way to other words on the same rhyme sound/);
+  /* The new instructions do not do what they ban. */
+  const told = [ask.match(/Rewrite only the lines named: [^.]*\./)[0], lyricAuditRequest(bridge, [], null, issues).match(/Lines that open the same way [^.]*\./)[0]];
+  for (const sentence of told) assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${sentence}\n\nREADBACK: x`, ''), [], sentence);
 });
 
 /* A song with a collapsed chorus sung twice, a final chorus that changed one line, and a verse whose
@@ -1146,6 +1179,13 @@ test('Part 296: the route tells the writer the chorus shape, hands the audit wha
   assert.equal(booth.requests.length, 2);
   assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/); assert.doesNotMatch(booth.requests[1].messages[1].content, /REPEATS/);
   assert.equal(booth.ledger[0].metadata.repeats, undefined); assert.equal(booth.ledger[0].metadata.chorusShape, undefined);
+  /* Review: an idea that asks for the chant gets it: no chorus shape, the chorus is not sent to the rewrite, and the audit is told. */
+  booth = loadBooth({ reply: () => draft, api });
+  out = await booth.call('post/script', { user: { id: 'repeat-chant' }, body: { ...body, text: 'a repetitive chant about luck' } });
+  assert.equal(booth.requests.length, 2, 'draft and audit, no rewrite');
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/);
+  assert.match(booth.requests[1].messages[1].content, /The idea asked for this repetition/); assert.doesNotMatch(booth.requests[1].messages[1].content, /REPEATS/);
+  assert.deepEqual({ ...booth.ledger[0].metadata.repeats }, { draft: 0, left: 0, rewrite: undefined });
   /* Her own words are never measured or rewritten, and get no chorus shape. */
   booth = loadBooth({ reply: () => draft, api });
   out = await booth.call('post/script', { user: { id: 'repeat-5' }, body: { ...body, lyrics: chorus.join('\n') } });

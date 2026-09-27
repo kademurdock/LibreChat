@@ -1761,7 +1761,7 @@ async function scriptHandler(req, res) {
         const fixed = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft),
+          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text),
           maxTokens: writingSettings.maxTokens,
           /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
           reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
