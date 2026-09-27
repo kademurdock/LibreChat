@@ -241,6 +241,9 @@ test('Part 296: common settings on top, rarely changed ones in More settings, sh
   assert.match(pure.GUIDE.engines.seed.where, /fal/);
   assert.match(pure.GUIDE.engines.lyria.howToWrite.join(' '), /Always say how long/);
   assert.match(pure.GUIDE.engines.seed.settings.find((s) => s.key === 'audio_urls').hint, /under thirty seconds/);
+  /* A setting that moved into More settings is still named where the mistake would happen. */
+  assert.match(pure.GUIDE.engines.scenema.howToWrite.join(' '), /adds or removes words, set Target seconds for edit/);
+  assert.match(pure.GUIDE.engines.seed.howToWrite.join(' '), /turn on Multilingual for any language but English/);
   assert.match(pure.GUIDE.engines.yue2.settings.find((s) => s.key === 'reference_voice_url').hint, /^Import one song, up to six minutes\. Or paste a media link\./);
 });
 

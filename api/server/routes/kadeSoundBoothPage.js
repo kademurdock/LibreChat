@@ -149,7 +149,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
         <label id="quickDraftWrap" hidden><input type="checkbox" id="quickDraft"> Quick song draft: about a minute and a half instead of five, less polished</label>
       </div>
-      <p class="hint" id="quickWritingHint">Neither button makes audio. For songs, Surprise me costs a fraction of a cent; otherwise it is free.</p>
+      <p class="hint" id="quickWritingHint">Neither button makes audio. A draft uses the writing model; Surprise me costs a fraction of a cent for songs and nothing otherwise.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">

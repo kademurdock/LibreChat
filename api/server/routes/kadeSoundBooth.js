@@ -906,7 +906,7 @@ const GUIDE = {
       howToWrite: [
         'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
         'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
-        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones; Replace one word with another.',
+        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones; Replace one word with another. If the edit changes speed or adds or removes words, set Target seconds for edit.',
         'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
       /* Part 296: `advanced` settings sit in one collapsed "More settings" group on both screens. */
@@ -979,7 +979,7 @@ const GUIDE = {
         'Each line: the name, the voice in parentheses, how they say it, a colon, then the words. Emma (teenage, soft, shy) lowers her voice: “I still haven’t finished.”',
         'Write long, and spell sounds out: a door "slap", a zipper "zzzip". Whatever you leave out, it decides.',
         'Describe music by mood, not genre: "soft piano that swells".',
-        'Write in the language the lines are spoken in. Imported clips are @Audio1 to @Audio3: "the actor is @Audio1".',
+        'Write in the language the lines are spoken in, and turn on Multilingual for any language but English. Imported clips are @Audio1 to @Audio3: "the actor is @Audio1".',
       ],
       settings: [
         { key: 'voice', label: 'Preset voice', hint: 'A built-in voice for a single narrator. Leave it off when you describe the voices or import clips.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },

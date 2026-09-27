@@ -244,4 +244,7 @@ test('each engine is announced by what it does', () => {
   assert.match(html, /e==='yue2'\?'Describe the style, add lyrics, then choose Make music\.'/);
   assert.match(html, /e==='stable'\?'Describe your sounds, then choose Generate sounds\.'/);
   assert.doesNotMatch(html, /other engines show a price confirmation/, 'no confirmation step is promised');
+  /* A draft is not free for a member, so the writing hint never reads as if it were. */
+  assert.match(html, /id="quickWritingHint">Neither button makes audio\. A draft uses the writing model; Surprise me costs a fraction of a cent for songs and nothing otherwise\.</);
+  assert.doesNotMatch(html, /otherwise it is free/);
 });
