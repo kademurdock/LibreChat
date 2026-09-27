@@ -33,7 +33,8 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     title: { type: String, default: 'Untitled' },
-    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2', 'stable'], default: 'scenema', index: true },
+    /** 'myvoice' (Sep 27 2026): Sing it in my voice, only ever on the rows of an account with a voice model. */
+    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2', 'stable', 'myvoice'], default: 'scenema', index: true },
     /** 'easy' or 'advanced' -- which side of the screen she was on. Kept so the
      * app can reopen a project in the mode it was written in. */
     mode: { type: String, enum: ['easy', 'advanced'], default: 'easy' },
@@ -100,6 +101,9 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
     },
     lastError: { type: String },
     costUSD: { type: Number, default: 0 },
+    /** Sep 27 2026: what a YuE2 project's automatic versions in her voice cost, kept apart because the YuE2 job rewrites
+     * costUSD with its own takes' total on every step. Shown added together. */
+    voiceCostUSD: { type: Number, default: 0 },
     lastRenderAt: { type: Date },
   },
   { timestamps: true },

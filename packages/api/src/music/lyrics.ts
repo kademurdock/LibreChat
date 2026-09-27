@@ -265,6 +265,20 @@ function identity(url: string): string {
     throw new Error('Use an imported recording.');
   return parsed.origin + parsed.pathname;
 }
+/** Sing it in my voice: an imported recording's length in seconds (for the cost estimate), when the account owns it. */
+export async function musicReferenceSeconds(
+  user: string,
+  url: string,
+): Promise<number | undefined> {
+  try {
+    const reference = await References.findOne({ user, key: identity(url) })
+      .select('seconds')
+      .lean();
+    return typeof reference?.seconds === 'number' ? reference.seconds : undefined;
+  } catch {
+    return undefined;
+  }
+}
 export async function registerMusicReference(
   user: string,
   url: string,

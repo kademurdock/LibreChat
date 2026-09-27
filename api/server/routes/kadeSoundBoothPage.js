@@ -212,8 +212,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function post(path, body){ return request(path,body||{}); }
     function get(path){ return request(path); }
-    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
+    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; if(isUpload()) return uploadUi().render||'Render'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
     function busy(){ return state.rendering || state.jobId || state.writing || state.importing; }
+    /* Sep 27 2026: an engine whose guide entry says flow 'upload' has no script: the imported recording is the input. Only an
+     * account the server gives one to ever has it (Sing it in my voice), and its words come from its guide entry. */
+    function isUpload(e){ var g=state.guide&&state.guide.engines[e||state.engine]; return !!(g && g.flow==='upload'); }
+    function uploadEngine(){ var ks=Object.keys((state.guide&&state.guide.engines)||{}).filter(function(k){ return isUpload(k); }); return ks[0]||null; }
+    function uploadUi(e){ var g=state.guide.engines[e||state.engine]||{}; return g.ui||{}; }
     function invalidateQuote(){ state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
     app.addEventListener('change', invalidateQuote);
@@ -227,7 +232,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     /* ---- engine cards + chooser, from the guide ---- */
     var engBox = document.getElementById('engines');
-    ['scenema','lyria','yue2','stable','seed'].forEach(function(k){
+    var engineOrder=['scenema','lyria','yue2','stable','seed'];
+    Object.keys(state.guide.engines).forEach(function(k){ if(engineOrder.indexOf(k)<0) engineOrder.push(k); });
+    engineOrder.forEach(function(k){
       var g = state.guide.engines[k];if(!g)return;
       var b = document.createElement('button');
       b.type='button'; b.className='engcard'; b.setAttribute('aria-pressed', k===state.engine); b.dataset.engine=k;
@@ -240,7 +247,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     document.querySelector('#chooser summary').textContent = ch.question;
     document.getElementById('chooserAnswer').textContent = ch.answer;
     var ENG_NAME = { seed:'Seed Audio', scenema:'AuK HQ', lyria:'Lyria', yue2:'YuE2', stable:'Stable Audio' };
-    document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(ENG_NAME[r.pick]||r.pick)+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
+    document.getElementById('chooserRules').innerHTML = ch.rules.map(function(r){ return '<li><strong>'+(ENG_NAME[r.pick]||(state.guide.engines[r.pick]||{}).name||r.pick)+'</strong> when '+esc(r.when)+'.</li>'; }).join('');
 
     document.getElementById('btnSuggest').onclick = async function(){
       if(busy())return;
@@ -272,11 +279,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('btnUndoWriting').hidden=!writingUndo || writingUndo.engine!==e;
       Array.prototype.forEach.call(engBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
       var g = state.guide.engines[e];
-      document.querySelector('#howto summary').textContent = 'How to write for ' + g.name;
+      document.querySelector('#howto summary').textContent = (isUpload(e) ? 'How to use ' : 'How to write for ') + g.name;
       document.getElementById('howtoList').innerHTML = g.howToWrite.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('');
       document.getElementById('btnPreview').hidden = (e !== 'scenema');
       document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
       invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
+      if(isUpload(e)){ document.getElementById('settingsDrawer').open=true; say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
       say(g.name+'. '+(e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='yue2'?'Describe the style, add lyrics, then choose Make music.':e==='stable'?'Describe your sounds, then choose Generate sounds.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
     }
     function updateRenderControls(){
@@ -291,7 +299,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function applyWorkflow(){
       updateRenderControls();
-      var music=(state.engine==='lyria'||state.engine==='yue2'), scene=state.engine==='seed', effects=state.engine==='stable';
+      var music=(state.engine==='lyria'||state.engine==='yue2'), scene=state.engine==='seed', effects=state.engine==='stable', upload=isUpload();
       var g=state.guide.engines[state.engine];
       document.getElementById('renderHint').textContent=g.cost + ' Generation starts with one press.';
       document.getElementById('btnRender').setAttribute('aria-describedby','renderHint');
@@ -304,10 +312,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('renderActions').before(document.getElementById('settingsDrawer'));
       document.querySelector('#settingsDrawer summary').textContent=effects?'Sound settings':music?'Lyrics and song settings':scene?'Voices, references, and scene settings':'Voice, reference recording, and performance settings';
       document.getElementById('btnDraft').textContent=state.engine==='yue2'?'Write my song idea':music?'Shape my music idea':'Write a script from this';
-      document.getElementById('writingDrawer').hidden=music||effects;
-      document.getElementById('writingPanel').hidden=music||effects;
-      document.getElementById('modePanel').hidden=music||effects;
-      document.getElementById('moodPanel').hidden=music||effects;
+      document.getElementById('writingDrawer').hidden=music||effects||upload;
+      document.getElementById('writingPanel').hidden=music||effects||upload;
+      document.getElementById('modePanel').hidden=music||effects||upload;
+      document.getElementById('moodPanel').hidden=music||effects||upload;
+      ['editorLabel','script','quickWriting','quickWritingHint','readback','btnScriptFile','starterDrawer'].forEach(function(id){ document.getElementById(id).hidden=upload; });
+      if(upload) document.getElementById('codeBox').hidden=true;
       document.getElementById('writingLegend').textContent=scene?'Build your scene':'Prepare the performance';
       document.getElementById('settingsLegend').textContent=effects?'Sound options':music?'Song options':scene?'Voices and scene sound':'Voice and performance';
       document.getElementById('editorLegend').textContent=effects?'Describe your sounds':music?'Describe your music':scene?'Scene script':'Performance script';
@@ -319,6 +329,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.engine==='yue2')document.getElementById('scriptHint').textContent='Describe the style and singing voice. Lyrics and any song to cover go in song settings; Write my song idea drafts the direction and the lyrics.';
       document.getElementById('quickWriting').hidden=effects;document.getElementById('quickWritingHint').hidden=effects;
       if(effects)document.getElementById('scriptHint').textContent='Describe the main sound, then quieter layers and the space around them. Say no speech or music if you want neither.';
+      if(upload){
+        document.getElementById('editorLegend').textContent=g.name;
+        document.getElementById('scriptHint').textContent=g.tagline;
+        document.querySelector('#settingsDrawer summary').textContent=(g.settings[0]&&g.settings[0].label||'Recording')+' and settings';
+        document.getElementById('settingsLegend').textContent=g.name;
+      }
       var select=document.getElementById('starter'), selected=select.value;
       select.innerHTML='<option value="">Choose a starting point</option>';
       (state.guide.starters||[]).filter(function(x){return x.engine===state.engine;}).forEach(function(x){var o=document.createElement('option');o.value=x.id;o.textContent=x.title;select.appendChild(o);});
@@ -395,10 +411,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
            * application/ogg as often as audio/ogg, so a wildcard filter can
            * hide the file she is trying to pick. And each clip gets a PLAYER,
            * her ask: hearing what is attached is the only way to know. */
-          var accept = (state.engine==='seed'||state.engine==='yue2') ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
+          var accept = isUpload() ? '.wav,.mp3,.m4a,.ogg,.flac,audio/*' : (state.engine==='seed'||state.engine==='yue2') ? '.wav,.mp3,.m4a,.ogg,audio/*' : '.wav,.mp3,.m4a,audio/*';
           var list = state.clips.slice(0, s.max).map(function(c,i){
             var covering = state.engine==='yue2' && s.max===1;
-            return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':covering?'Covering: ':'')+esc(c.name)+(covering&&c.seconds?' ('+clock(c.seconds)+')':'')+
+            return '<li>'+(s.max>1?'@Audio'+(i+1)+': ':covering?'Covering: ':isUpload()?(uploadUi().clip||''):'')+esc(c.name)+((covering||isUpload())&&c.seconds?' ('+clock(c.seconds)+')':'')+
               '<audio controls preload="none" aria-label="Play the imported clip, '+esc(c.name)+'"><source src="'+esc(c.url)+'"></audio>'+
               '<button type="button" class="act quiet" data-rmclip="'+i+'">Remove '+esc(c.name)+'</button></li>';
           }).join('');
@@ -442,7 +458,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Handlers over the whole panel: a setting may sit in More settings. */
       Array.prototype.forEach.call(panel.querySelectorAll('[data-key]'), function(el){
         if(state.transcribing && el.dataset.key==='lyrics')el.disabled=true;
-        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} };
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'){renderSettings();document.getElementById('set_instrumental').focus();} if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
       });
       Array.prototype.forEach.call(panel.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -485,7 +501,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         state.clips.push({url:j.url, name:j.name||file.name, seconds:j.seconds||null});
         say((j.spoken||'Clip imported.') + (state.engine==='seed' ? ' It is @Audio'+state.clips.length+'.' : ''));
       } catch(e){state.importError=e.message||'Could not import that clip.';say(state.importError,true);}
-      finally {state.importing=false;invalidateQuote();renderSettings();}
+      finally {state.importing=false;invalidateQuote();renderSettings();if(isUpload()&&state.clips.length&&!state.importError)quoteUpload();}
+    }
+    /* The price for this recording, asked of the server (the same estimate the render answers with) and shown by the button
+     * before anything is spent. Nothing is said aloud, so it never talks over the import's own sentence. */
+    async function quoteUpload(){
+      if(!isUpload() || !state.clips.length) return;
+      var engine=state.engine, revision=state.quoteRevision, body=collect(); body.estimateOnly=true;
+      var r=await post('/api/kade/sound-booth/render', body);
+      if(state.engine!==engine || state.quoteRevision!==revision) return;
+      if(r.ok && r.data && r.data.estimate && r.data.estimate.spoken) document.getElementById('renderHint').textContent=r.data.estimate.spoken+' Generation starts with one press.';
     }
 
     /* Part 293: a media link (YouTube and other sites, or a direct audio file)
@@ -550,9 +575,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='number'||s.kind==='range'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });
-      if((state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='stable') && !b.gender) b.gender = 'female';
+      if((state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='stable'&&!isUpload()) && !b.gender) b.gender = 'female';
       if((state.engine==='lyria'||state.engine==='yue2') && b.instrumental){delete b.lyrics;delete b.keep_lyrics;}
-      var mood = document.getElementById('mood').value; if(mood && (state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='stable')) b.mood = mood;
+      var mood = document.getElementById('mood').value; if(mood && (state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='stable'&&!isUpload())) b.mood = mood;
       /* Lyria clones nothing, so a clip left over from another engine must not
        * ride along with a music render. */
       if(state.clips.length && state.engine!=='lyria'){ b.referenceExpected=true; if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
@@ -760,14 +785,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
-      if(!script && !preview && b.auk_task!=='edit'){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
+      if(!script && !preview && b.auk_task!=='edit' && !isUpload()){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
       /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
        * how I sound."), different again from the two on the server, so what a
        * preview performed depended on which path fired. The server builds the
        * sample from her script now; the page sends an empty speak tag carrying
        * only the voice, and lets it decide. */
-      b.script = script || ('<speak voice="'+(b.voice_description||'A warm, clear adult voice.').replace(/"/g,'&quot;')+'" gender="'+(b.gender||'female')+'"></speak>');
+      b.script = isUpload() ? undefined : script || ('<speak voice="'+(b.voice_description||'A warm, clear adult voice.').replace(/"/g,'&quot;')+'" gender="'+(b.gender||'female')+'"></speak>');
       b.sourceText = document.getElementById('text').value;
       b.readback = document.getElementById('readback').textContent;
       if(preview) b.preview = true;
@@ -800,6 +825,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.writing || !referenceReady())return;
       /* Part 295: an instrumental needs no words (Singing or instrumental, when the server offers it). */
       var sent=collect();
+      if(isUpload() && !state.clips.length){ document.getElementById('settingsDrawer').open=true; var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say(uploadUi().needClip||'Import a recording first.',true); return; }
       if(state.engine==='yue2' && !sent.lyrics && String(sent.singing||'').trim().toLowerCase().indexOf('instrumental')!==0){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
       return doRender(preview);
     }
@@ -888,21 +914,24 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!ps.length){ box.innerHTML = '<p class="muted">Nothing here yet.</p>'; return; }
       box.innerHTML = ps.map(function(p){
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
-        var engine = p.engine === 'stable' ? 'Stable Audio' : p.engine === 'yue2' ? 'YuE2' : p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
+        var upload = isUpload(p.engine), ue = uploadEngine(), eg = state.guide.engines[p.engine] || {};
+        var engine = upload ? eg.name : p.engine === 'stable' ? 'Stable Audio' : p.engine === 'yue2' ? 'YuE2' : p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
-          '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents'+(p.engine==='yue2'?' of execution; startup and idle are extra':'') : '') + '</p>' +
+          '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents'+((p.engine==='yue2'||upload)?' of execution; startup and idle are extra':'') : '') + '</p>' +
           (p.lastError ? '<p role="note">'+esc(p.lastError)+'</p>' : '') +
           (p.readback ? '<p>' + esc(p.readback) + '</p>' : '') +
           (p.sungLyrics ? '<details><summary>Words it sang</summary><pre class="script">' + esc(p.sungLyrics) + '</pre></details>' : '') +
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
-                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.vocalUrl ? ' · <a href="'+esc(t.vocalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocal) || 'Download the voice on its own')+'</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
                    (t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '') +
-                   (p.engine==='stable' ? '' : (p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
+                   (t.voiceNote ? '<p class="hint">' + esc(t.voiceNote) + '</p>' : '') +
+                   (ue && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
+                   (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
-          '<details><summary>'+(p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>' +
+          (upload ? '' : '<details><summary>'+(p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>') +
           ((p.carryTo||[]).length ?
             '<fieldset class="carry"><legend>Try this on another engine</legend>' +
             '<p class="hint">Your lyrics, their section tags, the words you typed, the seed and any recording you imported come across exactly, for free. This one stays exactly as it is.</p>' +
@@ -942,6 +971,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(busy()){say('Finish the current operation first.',true);return;}
         var project=ps.filter(function(p){return p.id===button.dataset.takeProject;})[0];
         var take=project && project.takes[Number(button.dataset.take)];
+        if(take && button.dataset.use==='upload'){
+          var ue=uploadEngine(); if(!ue || !setEngine(ue)) return;
+          var first=(state.guide.engines[ue].settings||[]).filter(function(x){ return x.kind==='choice'; })[0];
+          state.projectId=null; state.values={}; if(first) state.values[first.key]=first.default;
+          document.getElementById('trackTitle').value=(project.title+' (in my voice)').slice(0,80);
+          /* The listening MP3, not the WAV master: the booth checks a recording's length by reading it, up to twenty megabytes. */
+          state.importError=''; state.clips=[{url:take.url, name:project.title, seconds:take.seconds||null}];
+          invalidateQuote(); renderSettings(); quoteUpload();
+          say(uploadUi(ue).select||''); document.getElementById('btnRender').focus(); return;
+        }
         var covering=button.dataset.use==='cover';
         if(!take || !setEngine(covering?'yue2':'scenema'))return;
         state.projectId=null; state.values.auk_task=button.dataset.use;

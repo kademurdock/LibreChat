@@ -201,7 +201,7 @@ test('YuE2: an instrumental renders with no words, a sung song still asks for th
   const run = async (sent) => {
     const ctx = {
       state: { writing: false, engine: 'yue2' }, said: [], rendered: 0,
-      referenceReady: () => true, collect: () => sent,
+      referenceReady: () => true, collect: () => sent, isUpload: () => false,
       say: (words) => ctx.said.push(words),
       document: { getElementById: () => ({ focus() {} }) },
     };

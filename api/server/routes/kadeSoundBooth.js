@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -104,13 +104,55 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
  * clean lyrics ... I hate assumptions like that on an uncensored platform." The Kids style is a
  * sound, not an audience: its lyrics follow the account like every other song (the child account
  * and the App Review seat stay clean through kadeSongAudience), so there is no render refusal. */
+/* ============== Sing it in my voice (Sep 27 2026; packages/api music/myVoice.ts) ==============
+ * A personal feature: only an account with a voice model registered for its user id (MY_VOICE_MODELS, or the KadeVoiceModel
+ * table with a consent record) sees or reaches any of it. myVoiceOwner answers null for everyone else, and while
+ * MY_VOICE_ENABLED is off. The YuE2 choice below is cleared on the server for an account without a model; the engine's own
+ * router lets such a request fall through as an unknown engine; the guide, the upload lane and /health add nothing for them. */
+function myVoiceOwner(userId) {
+  return findMyVoiceModel(String(userId || ''));
+}
+const myVoiceFollowUps = createMyVoiceFollowUps({
+  find: myVoiceOwner,
+  /* A finished voice version: its own take, beside the one it was made from, in the same project. Idempotent: the asset is
+   * keyed by the follow-up's id and the project only gains it (and its cost) once. */
+  complete: async (row) => {
+    const title = `${row.title} (in my voice)`.slice(0, 120);
+    const out = row.output || {};
+    const asset = await KadeAsset.findOneAndUpdate({ user: row.user, service: 'runpod_myvoice', 'metadata.jobId': row.id }, {
+      $setOnInsert: { user: row.user, service: 'runpod_myvoice', kind: 'audio', url: out.url, model: 'RVC v2 voice model',
+        prompt: 'Sing it in my voice', description: title, costUSD: row.costUSD || 0,
+        metadata: { title, jobId: row.id, projectId: row.projectId, via: 'sound-booth', voiceOf: row.sourceAssetId,
+          wavUrl: out.wav_url, vocalUrl: out.vocal_url, vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0),
+          gpu: out.gpu, takeNote: myVoiceTakeNote(out), costScope: 'execution estimate; startup and idle are additional' } },
+    }, { upsert: true, new: true });
+    await KadeSoundBoothProject.updateOne({ _id: row.projectId, user: row.user, assets: { $ne: String(asset._id) } },
+      { $push: { assets: String(asset._id) }, $inc: { voiceCostUSD: row.costUSD || 0 } });
+    await KadeAsset.updateOne({ _id: row.sourceAssetId, user: row.user }, { $set: { 'metadata.myVoice': { state: 'done', assetId: String(asset._id) } } });
+  },
+  failed: async (row) => {
+    await KadeAsset.updateOne({ _id: row.sourceAssetId, user: row.user }, { $set: { 'metadata.myVoice': { state: 'failed', error: row.error || '' } } });
+  },
+  notify: async (row, done, total) => {
+    const receipt = await notifyMusic(row.user, `${row.title}, in your voice`, done, total, done < total);
+    logger.info(`[soundbooth/myvoice] notification batch=${row.batchId} done=${done}/${total} accepted=${receipt.accepted}`);
+  },
+  log: (line) => logger.info(line),
+});
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
   validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
+  /* Sing it in my voice: the automatic choice only stands for an account with a voice model; anyone else's is dropped quietly. */
+  prepare: async (user, input) => {
+    if (!input.my_voice) return input;
+    if (await myVoiceOwner(user)) return input;
+    const { my_voice: _dropped, ...rest } = input;
+    return rest;
+  },
   project: async (user, input, sourceText) => {
     const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input) }, state: 'queued' });
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input), ...(input.my_voice ? { my_voice: myVoiceAutoOptions.on } : {}) }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -140,6 +182,18 @@ router.use(createYueRouter({
           ...yueTakeFacts(job.output, job.input) } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
+    /* Sing it in my voice, automatic: a version of this take in the owner's voice. It never holds up or fails the take itself;
+     * a take saved twice after a crash is queued once (the follow-up is unique per source take). */
+    if (job.input.my_voice === true) {
+      try {
+        const queued = await myVoiceFollowUps.queue({ user: job.user, projectId: job.projectId, sourceAssetId: String(asset._id),
+          sourceJobId: job.id, audioKey: job.output.wav_key, title });
+        if (queued.queued) await KadeAsset.updateOne({ _id: asset._id, user: job.user }, { $set: { 'metadata.myVoice': { state: 'queued' } } });
+        logger.info(`[soundbooth/myvoice] take=${job.id} queued=${queued.queued}${queued.reason ? ` reason=${queued.reason}` : ''}`);
+      } catch (error) {
+        logger.warn('[soundbooth/myvoice] could not queue a voice version: ' + (error && error.message));
+      }
+    }
   },
 }));
 
@@ -186,6 +240,48 @@ router.use(createEffectsRouter({
     job.output.url = asset.url;
     job.output.wav_url = asset.metadata.wavUrl;
     job.output.duration_s = asset.metadata.seconds;
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
+  },
+}));
+
+/* Sing it in my voice, the engine: she imports a song or a dry vocal and gets it back in her voice. Mounted before the main
+ * /render, which would otherwise read the unknown engine as AuK; for an account with no voice model the request falls through
+ * to it exactly as any unknown engine does. */
+router.use(createMyVoiceRouter({
+  auth: requireJwtAuth,
+  user: req => String(req.user.id),
+  find: myVoiceOwner,
+  seconds: (user, url) => musicReferenceSeconds(user, url),
+  validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
+  project: async (user, input, sourceText) => {
+    const p = await KadeSoundBoothProject.create({ user, engine: 'myvoice', title: input.title, script: input.style,
+      sourceText: sourceText.slice(0, 8000), options: myVoiceProjectOptions(input), state: 'queued' });
+    return String(p._id);
+  },
+  update: async job => {
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, {
+      $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
+        lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
+    });
+  },
+  notify: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const completed = (job.takes || []).filter(take => take.state === 'done').length;
+    const receipt = await notifyMusic(job.user, project?.title || job.input.title || 'Your song', completed, job.takes?.length || 1, job.state !== 'done');
+    logger.info(`[soundbooth/myvoice] notification job=${job.id} accepted=${receipt.accepted} deferred=${receipt.deferred === true} blocked=${receipt.blocked || 'none'}`);
+    return receipt;
+  },
+  complete: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const title = project?.title || job.input.title;
+    const out = job.output || {};
+    const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_myvoice', 'metadata.jobId': job.id }, {
+      $setOnInsert: { user: job.user, service: 'runpod_myvoice', kind: 'audio', url: out.url, model: 'RVC v2 voice model',
+        prompt: job.input.style, description: title, costUSD: job.costUSD || 0,
+        metadata: { title, jobId: job.id, projectId: job.projectId, via: 'sound-booth', wavUrl: out.wav_url, vocalUrl: out.vocal_url,
+          vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0), gpu: out.gpu, takeNote: myVoiceTakeNote(out),
+          voiceSource: job.input.voice && job.input.voice.source, costScope: 'execution estimate; startup and idle are additional' } },
+    }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
   },
 }));
@@ -1098,7 +1194,7 @@ function priceFactor(user) {
     return 1;
   }
 }
-const KADE_PAYS_ENGINES = ['yue2', 'stable'];
+const KADE_PAYS_ENGINES = ['yue2', 'stable', 'myvoice'];
 const isKade = (user) => String((user && user.role) || '').toUpperCase() === 'ADMIN';
 const priced = (usd, factor) => Math.round(usd * (factor || 1) * 1000) / 1000;
 
@@ -1275,6 +1371,12 @@ async function takesFor(projects, userId, paid = false) {
       /* Part 295: a YuE2 take's short note (chords not heard, words that may not fit the tune). */
       note: d.metadata?.takeNote || '',
       createdAt: d.createdAt,
+      /* Sep 27 2026, Sing it in my voice: the converted voice on its own, the take a version was made from, and on a source
+       * take a word about its automatic version. Only ever on the owner's own takes, and only when there is something to say. */
+      ...(d.metadata?.vocalUrl ? { vocalUrl: await freshAssetUrl(d.metadata.vocalUrl) } : {}),
+      ...(d.metadata?.voiceOf ? { voiceOf: d.metadata.voiceOf } : {}),
+      ...(d.metadata?.myVoice?.state === 'queued' ? { voiceNote: 'A version in your voice is being made.' }
+        : d.metadata?.myVoice?.state === 'failed' ? { voiceNote: `The version in your voice did not finish. ${d.metadata.myVoice.error || ''}`.trim() } : {}),
     });
   }
   return map;
@@ -1299,7 +1401,7 @@ function projectView(p, factor = 1) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'lyria'
+    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'myvoice' ? myVoiceProjectWhy(p.options) : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
@@ -1319,7 +1421,8 @@ function projectView(p, factor = 1) {
     assets: p.assets || [],
     state: p.state,
     lastError: p.lastError || null,
-    costUSD: priced(p.costUSD || 0, paid),
+    /* Sep 27 2026: a YuE2 project's versions in her voice are paid apart from its takes (voiceCostUSD) and counted here. */
+    costUSD: priced((p.costUSD || 0) + (p.voiceCostUSD || 0), paid),
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     lastRenderAt: p.lastRenderAt || null,
@@ -2827,12 +2930,16 @@ const REF_EXT = {
 const ENGINE_REF_FORMATS = {
   scenema: { exts: ['wav', 'mp3', 'm4a'], say: 'a WAV, an MP3, or an M4A voice memo' },
   seed: { exts: ['wav', 'mp3', 'm4a', 'ogg'], say: 'a WAV, an MP3, an M4A voice memo, or an OGG' },
+  /* Sing it in my voice decodes anything ffmpeg reads; these are the everyday ones. */
+  myvoice: { exts: ['wav', 'mp3', 'm4a', 'ogg', 'flac'], say: 'a WAV, an MP3, an M4A, an OGG or a FLAC' },
 };
 
 router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, res) => {
   try {
     const f = req.file;
-    const engine = ['seed', 'yue2'].includes((req.body || {}).engine) ? req.body.engine : 'scenema';
+    /* Sing it in my voice: an owner's recording to sing. For anyone else the word is unknown and reads as AuK, as before. */
+    const asked = (req.body || {}).engine;
+    const engine = asked === 'myvoice' && (await myVoiceOwner(req.user.id)) ? 'myvoice' : ['seed', 'yue2'].includes(asked) ? asked : 'scenema';
     const allowed = ENGINE_REF_FORMATS[engine === 'yue2' ? 'seed' : engine];
     if (!f || !f.buffer || !f.buffer.length) {
       /* Logged, because a REFUSED upload used to leave no trace at all — the
@@ -2845,14 +2952,16 @@ router.post('/reference', requireJwtAuth, refUpload.single('clip'), async (req, 
     const nameExt = String(f.originalname || '').toLowerCase().split('.').pop();
     /* Trust the EXTENSION as much as the mime type: browsers type .ogg as
      * video/ogg or application/ogg, and some send an empty type entirely. */
-    const ext = REF_EXT[mime] || (Object.values(REF_EXT).includes(nameExt) ? nameExt : null);
+    /* FLAC is known only on the owner's Sing it in my voice lane, so nobody else's refusal can mention another engine taking it. */
+    const flac = engine === 'myvoice' && (mime === 'audio/flac' || mime === 'audio/x-flac' || nameExt === 'flac') ? 'flac' : null;
+    const ext = REF_EXT[mime] || (Object.values(REF_EXT).includes(nameExt) ? nameExt : null) || flac;
     if (!ext || !allowed.exts.includes(ext)) {
       logger.warn(
         `[soundbooth/reference] REFUSED user=${req.user.id} engine=${engine} name=${String(f.originalname || '?').slice(0, 60)} mime=${mime || '(none)'} ext=${nameExt || '(none)'}`,
       );
       return res.status(400).json({
         error:
-          `${engine === 'seed' ? 'Seed Audio' : 'AuK'} can't read that kind of file. It needs ${allowed.say}.` +
+          `${engine === 'seed' ? 'Seed Audio' : engine === 'myvoice' ? 'Sing it in my voice' : 'AuK'} can't read that kind of file. It needs ${allowed.say}.` +
           (ext && !allowed.exts.includes(ext) ? ` An ${ext.toUpperCase()} works for the other engine, but not this one.` : ''),
         accepted: allowed.exts,
       });
@@ -2883,9 +2992,9 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
   try {
     const { normalizeReferenceClip, durationOf } = require('./kadeSoundBoothStitch');
     const norm = engine === 'seed' ? await normalizeReferenceClip(buffer, ext) : null;
-    if (engine === 'scenema' || engine === 'yue2') {
+    if (engine === 'scenema' || engine === 'yue2' || engine === 'myvoice') {
       clipSeconds = await durationOf(buffer);
-      clipAdvice = engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
+      clipAdvice = engine === 'myvoice' ? 'The original is kept as it is. Choose what is in the file, then Sing it in my voice.' : engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
     }
     if (norm && norm.buffer && norm.buffer.length > 1000) {
       outBuffer = norm.buffer;
@@ -2897,8 +3006,9 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
     logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
     clipAdvice = 'I could not convert it to a studio WAV, so the original file is attached as-is.';
   }
-  if (engine === 'yue2') {
-    const error = musicReferenceError(clipSeconds);
+  if (engine === 'yue2' || engine === 'myvoice') {
+    const said = musicReferenceError(clipSeconds);
+    const error = said && engine === 'myvoice' ? said.replace('Covers support', 'Sing it in my voice takes recordings') : said;
     if (error) return { status: 400, body: { error } };
   }
   const fileName = `soundbooth-ref-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${outExt}`;
@@ -3070,6 +3180,8 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
 });
 
 router.get('/health', requireJwtAuth, async (req, res) => {
+  /* Sing it in my voice: null for every account without a voice model, and then nothing below mentions it. */
+  const myVoice = await myVoiceOwner(req.user.id);
   return res.json({
     /* Part 293: per person. The YuE2 cover field carries `link` only with the
      * Family feature pack; everyone else gets `lockedLink`, shown greyed out
@@ -3078,7 +3190,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * GET /api/kade/features answers. */
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
-    guide: withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user),
+    guide: withMyVoiceGuide(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
@@ -3086,6 +3198,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
       stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice, models: effectsVariants },
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: priced(LYRIA_USD_PER_SONG, priceFactor(req.user)), model: LYRIA_MODEL },
+      ...(myVoice ? { myvoice: { configured: true, queued: true, model: 'RVC v2' } } : {}),
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     lyricWritingPersona: 'Lyric',
@@ -3098,5 +3211,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

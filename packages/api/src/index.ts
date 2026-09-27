@@ -157,7 +157,26 @@ export {
   transcribeMusicLyrics,
   validateMusicReference,
   musicReferenceError,
+  musicReferenceSeconds,
 } from './music/lyrics';
+/* Sep 27 2026: Sing it in my voice, a personal feature for accounts with a registered voice model. */
+export {
+  myVoiceEngine,
+  myVoiceEnabled,
+  findMyVoiceModel,
+  registerMyVoiceModel,
+  parseMyVoiceModels,
+  myVoiceAutoOptions,
+  myVoiceSources,
+  withMyVoiceGuide,
+  createMyVoiceRouter,
+  createMyVoiceFollowUps,
+  myVoiceTakeNote,
+  myVoiceTakeCost,
+  myVoiceProjectOptions,
+  myVoiceProjectWhy,
+} from './music/myVoice';
+export type { MyVoiceModel, MyVoiceFollowUp } from './music/myVoice';
 
 export {
   createEffectsRouter,

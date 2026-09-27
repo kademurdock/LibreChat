@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import express from 'express';
 import mongoose from 'mongoose';
 import type { Request, Response, RequestHandler, Router } from 'express';
+import type { MyVoiceJob } from '../music/myVoice';
 
 export type Input = {
   duration?: number;
@@ -24,6 +25,10 @@ export type Input = {
   keep_harmony?: boolean;
   match_score_tempo?: boolean;
   length_guard?: boolean;
+  /* Sing it in my voice (music/myVoice.ts): YuE2's automatic choice, and a voice job's own fields. Both are set or cleared on
+   * the server by the owner check (Hooks.prepare), never trusted from the client alone. */
+  my_voice?: boolean;
+  voice?: MyVoiceJob;
   seed: number;
 };
 type LyricFitRow = {
@@ -50,6 +55,9 @@ export type Output = {
   instrumental?: boolean;
   lyric_fit?: { sections?: LyricFitRow[]; same_order?: boolean } | null;
   worker_notes?: string[];
+  /* The voice worker's extra files (music/myVoice.ts MyVoiceOutput). */
+  vocal_url?: string;
+  vocal_wav_url?: string;
 };
 export type Provider = {
   id?: string;
@@ -104,6 +112,9 @@ export type Hooks = {
   update: (job: Job) => Promise<void>;
   complete: (job: Job) => Promise<void>;
   notify?: (job: Job) => Promise<Notification>;
+  /** Runs after parse and the reference check, before the estimate: can refuse (throw, said as a 400) or complete the input with
+   * what only the server knows, such as the account's voice model. */
+  prepare?: (user: string, input: Input) => Promise<Input>;
 };
 export type Config = {
   engine: string;
@@ -139,6 +150,16 @@ export type InputBody = {
   referenceExpected?: boolean;
   singing?: string | boolean;
   keep_chords?: string | boolean;
+  /* Sing it in my voice: YuE2's automatic choice, and the voice engine's own settings. */
+  my_voice?: string | boolean;
+  voice_source?: string;
+  pitch?: number | string;
+  extractor?: string;
+  lead_split?: boolean | string;
+  dereverb?: boolean | string;
+  index_rate?: number;
+  protect?: number;
+  rms_mix_rate?: number;
 };
 /** Each finished take's note, said once when every finished take has the same one. */
 function sayTakeNotes(takes: Take[], input: Input, note?: Config['takeNote']): string {
@@ -384,6 +405,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
             hooks.user(req),
             input.reference_voice_url,
           );
+        if (hooks.prepare) input = await hooks.prepare(hooks.user(req), input);
       } catch (error) {
         return res
           .status(400)

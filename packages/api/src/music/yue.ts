@@ -226,6 +226,10 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
           ? body.cot === 'full'
           : yueKeepChordsChoice(body.keep_chords, env)
         : undefined;
+  /* Sing it in my voice (music/myVoice.ts): "On" asks for a version of every take in the owner's voice. Only set when chosen,
+   * so every other request is exactly as before; the booth's owner check clears it for an account with no voice model, and
+   * it never reaches the music worker (createYueRouter's submit leaves it out). */
+  const myVoice = body.my_voice === true || String(body.my_voice ?? '').trim().toLowerCase() === 'on';
   return {
     style: trained ? `${trained.lead} ${body.script.trim()}`.slice(0, 3000) : body.script.trim(),
     title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
@@ -251,6 +255,7 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     lora_scale: trained?.scale,
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
     ...(covers ? coverFields(body, instrumental, keepChords, recording) : {}),
+    ...(myVoice ? { my_voice: true } : {}),
   };
 }
 
@@ -358,6 +363,8 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
     if (rows.length > 2)
       notes.push(`Words in ${rows.length - 2} more section${rows.length === 3 ? '' : 's'} may not fit their tune either.`);
   }
+  if (input.my_voice === true)
+    notes.push('A version in your voice follows a few minutes after each take, beside it in this project.');
   return notes.join(' ');
 }
 
@@ -452,7 +459,7 @@ export function createYueRouter(hooks: Hooks): Router {
     estimate: (input) => ({
       spoken: `${input.count} take${input.count === 1 ? '' : 's'}. ${yueCost}`,
     }),
-    submit: (input) =>
+    submit: ({ my_voice: _myVoice, ...input }) =>
       provider('run', { input, policy: { executionTimeout: 1200000, ttl: 7200000 } }),
     status: async (take) => {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
