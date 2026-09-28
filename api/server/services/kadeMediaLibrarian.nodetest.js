@@ -727,7 +727,7 @@ test('Full TV: an episode code and a show name, 15 to 65 minutes, filed Show the
   assert.strictEqual(fullTo(video('Rugrats (1991) Full Episode', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Other episodes');
   assert.strictEqual(fullTo(video('Nickelodeon Rugrats S01E01', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 1', 'a channel name before the show is not the show');
   assert.strictEqual(fullTo(video('ER S03E10', INTAKE, { seconds: 44 * MIN })), 'Video/Full TV/ER/Season 3', 'an hour drama without its adverts');
-  assert.strictEqual(fullTo(video('Rugrats S01E01', INTAKE, { seconds: 70 * MIN })), null, 'longer than an episode');
+  assert.strictEqual(fullTo(video('Rugrats S01E01', INTAKE, { seconds: 70 * MIN })), 'Video/Full TV/Rugrats/Season 1', 'Part 297: a coded episode up to 100 minutes (two or three parts in one file)');
   assert.strictEqual(fullTo(video('[S12.E08] Christmas Guy', INTAKE, { seconds: 22 * MIN })), null, "no show named: today's rules");
   assert.strictEqual(fullTo(video("Full Episode: Hey Arnold! - Arnold's Christmas", INTAKE, { seconds: 22 * MIN })), null, 'no code and no known show');
   const d = L.decide(fresh('Rugrats S02E05 - Chuckie vs the Potty', 'Video/Channels/Nickelodeon/1990s', 23 * MIN), {});
@@ -940,6 +940,14 @@ test('Part 297: file names that put the code first, or write it as three digits 
   assert.strictEqual(fullTo(video('006. As Told By Ginger - Ep06- Dare I, Darren', GINGER, { seconds: 22 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes');
   assert.strictEqual(fullTo(video('12 - Rugrats - S02E05', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 2');
   assert.strictEqual(fullTo(video('2 Broke Girls - S01E01 - Pilot', INTAKE, { seconds: 22 * MIN })), 'Video/Full TV/2 Broke Girls/Season 1', 'a number that is part of the name stays');
+  // the same upload's last two: an episode whose name starts with a number, and three parts in one 69-minute file
+  assert.strictEqual(fullTo(video('056. As Told By Ginger - Ep 56 - 10 Chairs', GINGER, { seconds: 23 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes', 'a range counts upward: not episodes 56 to 10');
+  assert.strictEqual(fullTo(video('057. As Told By Ginger - Ep 57 - The Wedding Frame', GINGER, { seconds: 69 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes', 'a coded episode up to 100 minutes');
+  assert.strictEqual(fullTo(video('S04e17-18.Drake___Josh-(Really_Big_Shrimp)', INTAKE, { seconds: 48 * MIN })), 'Video/Full TV/Drake & Josh/Season 4', 'two episodes in a row are one double episode');
+  assert.strictEqual(fullTo(video('Rugrats S01E01-E03', INTAKE, { seconds: 69 * MIN })), null, 'three episodes are still a pile');
+  assert.strictEqual(fullTo(video('Rugrats Episodes 4-9 (1992)', INTAKE, { seconds: 60 * MIN })), null);
+  assert.strictEqual(fullTo(video('Rugrats S01E13 & S02E01', INTAKE, { seconds: 46 * MIN })), null, 'two seasons in one file');
+  assert.strictEqual(fullTo(video('Rugrats S02E05', INTAKE, { seconds: 110 * MIN })), null, 'over 100 minutes the title alone does not say');
   const soaps = { knownShows: new Map([['all my children', 'All My Children']]) };
   assert.deepStrictEqual(L.fullQuestions(video('All My Children (11-16-1994)  Partial', INTAKE, { seconds: 41 * MIN }), soaps), {}, 'a partial recording is not a whole episode');
   assert.ok(L.fullQuestions(video('All My Children (11-16-1994)', INTAKE, { seconds: 41 * MIN }), soaps).episode, 'a show her TV Shows shelf knows can be asked about');

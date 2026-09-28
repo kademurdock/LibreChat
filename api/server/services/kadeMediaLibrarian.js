@@ -789,6 +789,9 @@ const FULL_LEN = {
   episode: 15 * 60,
   episodeByJev: 18 * 60,
   episodeMax: 65 * 60,
+  /* Part 297: a title with an episode code and a show can be a two- or three-part episode in one file
+   * (As Told By Ginger "The Wedding Frame", 69 minutes). Jev's episode question keeps the 65. */
+  episodeTitled: 100 * 60,
   herTvFolder: 5 * 60,
 };
 /** A film by its own plain words. */
@@ -823,9 +826,7 @@ const NOT_WHOLE_MORE = new RegExp([
   '(?:full[\\s._-]*(?:length[\\s._-]*)?(?:movie|film|feature|episode)|feature film)[\\s._\\-–:(\\[]*(?:part|pt\\.?)\\s*\\d+',
   '[([]\\s*\\d{1,2}\\s*(?:of|\\/)\\s*\\d{1,2}\\s*[)\\]]',
   '\\b(?:tape|disc|disk|reel|vol(?:ume)?\\.?)\\s*\\d+\\s*(?:of|\\/)\\s*\\d+',
-  // a pile: "S01E01-E03", "Episodes 1-3", "3 episodes", "Top 10 Episodes of", "Best of"
-  '\\bS\\d{1,2}[\\s._-]?E\\d{1,3}\\s*(?:[-–&+]|to\\b|and\\b)\\s*(?:S\\d{1,2}[\\s._-]?)?E?\\d{1,3}\\b',
-  '\\b(?:episodes?|eps?\\.?)\\s*#?\\d{1,3}\\s*(?:[-–&+]|to\\b|and\\b)\\s*\\d{1,3}\\b',
+  // a pile: "3 episodes", "Top 10 Episodes of", "Best of" (episode ranges are read by episodeRange below)
   '\\b(?:\\d+|two|three|four|five|six|seven|eight|nine|ten|twelve|several|all|every|multiple)\\s+(?:full\\s+)?(?:episodes|movies|films)\\b',
   '\\bepisodes of\\b', '\\btop \\d+\\b', '\\bbest of\\b', '\\bfunniest\\b', '\\bmoments\\b',
   // an event, not a programme
@@ -861,10 +862,28 @@ function fullEligible(item) {
   if (!TV_FOLDER.test(p) && !MOVIES_FOLDER.test(p) && (NOT_FULL_SHELF.test(p) || NOT_FULL_CATEGORY.has(String(item.category || '')))) return false;
   return zone === 'intake' || item._fresh === true;
 }
+/* A pile of episodes by its range ("S01E01-E03", "Episodes 1-3"). Part 297 (Sep 28 2026): a range counts upward,
+ * so "Ep 56 - 10 Chairs" is episode 56 of As Told By Ginger, not episodes 56 to 10; and two episodes in a row in one
+ * file ("S04e17-18 ... Really Big Shrimp") are one double-length programme, not a pile. */
+const EPISODE_RANGES = [
+  /\bS(\d{1,2})[\s._-]?E(\d{1,3})\s*(?:[-–&+]|to\b|and\b)\s*(?:S(\d{1,2})[\s._-]?)?E?(\d{1,3})\b/gi,
+  /\b(?:episodes?|eps?\.?)\s*#?(\d{1,3})\s*(?:[-–&+]|to\b|and\b)\s*(\d{1,3})\b/gi,
+];
+function episodeRange(title) {
+  const t = String(title || '');
+  for (const re of EPISODE_RANGES) {
+    re.lastIndex = 0;
+    for (let m = re.exec(t); m; m = re.exec(t)) {
+      const [first, last, otherSeason] = m.length > 3 ? [+m[2], +m[4], m[3] && +m[3] !== +m[1]] : [+m[1], +m[2], false];
+      if (otherSeason || last > first + 1) return true;
+    }
+  }
+  return false;
+}
 /** A piece, a pile, or a recording of a channel: today's rules keep it. */
 function notWhole(title) {
   const t = String(title || '');
-  if (NOT_WHOLE.test(t) || NOT_WHOLE_MORE.test(t) || CHANNEL_RECORDING.test(t) || BREAK_WORDS.test(t) || CHANNEL_SURFING.test(t)) return true;
+  if (NOT_WHOLE.test(t) || NOT_WHOLE_MORE.test(t) || episodeRange(t) || CHANNEL_RECORDING.test(t) || BREAK_WORDS.test(t) || CHANNEL_SURFING.test(t)) return true;
   if (blockOf(t)) return true;
   return !!(networkOf(t) && AIRED.test(t));
 }
@@ -1076,7 +1095,7 @@ function fullShelfFact(item, deps = {}) {
   if (secs >= FULL_LEN.movie && !sign && !FILM_WORD_NOT.test(t) && (FILM_WORD.test(t) || item.category === 'movie' || /^(?:movie|film|feature)$/i.test(metaType))) {
     return { to: filmPath(item), why: 'a whole film: film length and a film word' };
   }
-  if (sign && !NEWS.test(t) && secs >= FULL_LEN.episode && secs <= FULL_LEN.episodeMax) {
+  if (sign && !NEWS.test(t) && secs >= FULL_LEN.episode && secs <= FULL_LEN.episodeTitled) {
     const show = showFor(item, deps);
     if (show) return { to: fullTvPath(show, sign.season, deps), why: 'a whole episode: its title says so' };
   }
