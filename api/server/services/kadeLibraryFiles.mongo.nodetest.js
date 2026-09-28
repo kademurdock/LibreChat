@@ -766,3 +766,40 @@ test("the storage keeper's daily report counts Library files no row lists, and r
     Module._load = load;
   }
 });
+
+test('Part 296: new uploads that are whole episodes go to Full TV by the sweep, in the spelling her shelves already use, undoably', async () => {
+  const librarian = require('./kadeMediaLibrarian');
+  const sweep = loadSweep(librarian);
+  const prev = process.env.KADE_MEDIA_SWEEP;
+  delete process.env.KADE_MEDIA_SWEEP;
+  try {
+    const read = { v: 2, at: new Date('2026-09-26T12:00:00Z'), zone: 'filed', from: 'x', why: '', confidence: 0 };
+    await KadeBook.create({ owner: KADE, kind: 'video', state: 'ready', title: 'Family Guy S09E01', path: 'Video/Full TV/Family Guy/Season 9', meta: { jevFiling: read } });
+    await KadeBook.create({ owner: KADE, kind: 'audio', state: 'ready', title: 'Chuckie vs the Potty', path: 'Audio/Described Movies & TV/TV/Rugrats/Rugrats Season 2', meta: { jevFiling: read } });
+    const intake = 'Videos/Needs Filing/Archive Intake';
+    const upload = (title, path, seconds) => KadeBook.create({ owner: KADE, kind: 'video', state: 'ready', title, path, tracks: [{ title, key: `k/${title}`, bytes: 1, seconds }] });
+    const fg = await upload("family guy S09E02 Peter's Daughter", 'Video/Channels/FOX/2010s', 1320);
+    const rug = await upload('rugrats - Season 2 Episode 5', intake, 1380);
+    const sc1 = await upload("Schitt's Creek S01E01", intake, 1320);
+    const sc2 = await upload("schitt's creek S01E02", intake, 1320);
+    const pass = await sweep.sweepOnce({ limit: 10 });
+    assert.strictEqual(pass.moved, 4, JSON.stringify(pass));
+    assert.strictEqual(pass.costUSD, 0, 'a rule costs nothing');
+    const at = async (doc) => KadeBook.findById(doc._id).lean();
+    const a = await at(fg);
+    assert.strictEqual(a.path, 'Video/Full TV/Family Guy/Season 9', "Full TV's own spelling");
+    assert.strictEqual(a.category, 'tv');
+    assert.strictEqual(a.meta.jevFiling.from, 'Video/Channels/FOX/2010s', 'undoable');
+    assert.strictEqual(a.meta.jevFiling.why, 'a whole episode: its title says so');
+    assert.strictEqual((await at(rug)).path, 'Video/Full TV/Rugrats/Season 2', 'the show her described audio TV side knows');
+    assert.strictEqual((await at(sc1)).path, "Video/Full TV/Schitt's Creek/Season 1");
+    assert.strictEqual((await at(sc2)).path, "Video/Full TV/Schitt's Creek/Season 1", 'two spellings in one pass make one show folder');
+    const undone = await sweep.undo('2026-09-01T00:00:00Z');
+    assert.strictEqual(undone.restored, 4);
+    assert.strictEqual((await at(fg)).path, 'Video/Channels/FOX/2010s');
+    assert.strictEqual((await at(fg)).category, 'tv');
+  } finally {
+    if (prev === undefined) delete process.env.KADE_MEDIA_SWEEP;
+    else process.env.KADE_MEDIA_SWEEP = prev;
+  }
+});

@@ -37,6 +37,9 @@
  *     repeat check never drops it; a display name right after its own parent's
  *     replaces it ("Described audio TV", not "Described audio movies and TV,
  *     Described audio TV").
+ *   - Her whole programmes come first under Videos (Part 296): "Full movies", then
+ *     "Full TV episodes" (Videos/Full Movies and Videos/Full TV), before the other
+ *     shelves in name order (kadeReadingRoomLabels.js shelfRank).
  *
  * Node shape: { id, name, path, count, direct, shelves, flat, children }
  *   id       the real path, or "#..." for a gathered (virtual) row; unique within `roots`
@@ -138,7 +141,12 @@ function compareNames(a, b) {
   return tailRank(x) - tailRank(y) || collator.compare(x, y) || (x < y ? -1 : x > y ? 1 : 0);
 }
 
-const sortNodes = (nodes) => nodes.sort((a, b) => compareNames(a.name, b.name));
+/** The shelf order: a shelf ranked first (Full movies, Full TV episodes) before the rest in name order. */
+function compareShelves(a, b) {
+  return labels.shelfRank(a.path) - labels.shelfRank(b.path) || compareNames(a.name, b.name);
+}
+
+const sortNodes = (nodes) => nodes.sort(compareShelves);
 
 /** Where an item sits below the shelf it was listed from, as words ("Bumpers, 1990s"); '' when on it. */
 function subShelf(at, itemPath) {
@@ -376,11 +384,13 @@ module.exports = {
   tidyName,
   joinNames,
   compareNames,
+  compareShelves,
   subShelf,
   crumbs,
   folderName,
   typeLabel: labels.typeLabel,
   shelfName: labels.shelfName,
+  shelfRank: labels.shelfRank,
   cached,
   remember,
   forget,

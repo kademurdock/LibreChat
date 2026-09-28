@@ -21,6 +21,12 @@
  * EVERYTHING HERE IS DISPLAY ONLY. No item is moved, renamed or re-categorised:
  * `category` and `path` go out exactly as stored, and a shelf is still opened by
  * its real path.
+ *
+ * Part 296, later the same day, her words: "Yes I want a full movies shelf and tv
+ * eps". Two real shelves under Videos, filed by the media librarian: Full Movies
+ * reads "Full movies" and Full TV reads "Full TV episodes", both at the top of
+ * Videos (shelfRank), and every video on them is a "Full movie" or a "Full TV
+ * episode" whatever its length says.
  * -------------------------------------------------------------------------- */
 
 /** Her described shelf (the display path; the librarian files described audio here). */
@@ -38,6 +44,9 @@ const DESCRIBER_NOTE = /\bAudio-described copy made by Kade-AI\b/i;
  */
 const VIDEO_DESCRIBED = /\baudio[\s-]?described\b|[([]\s*described\s*[)\]]|[-–:]\s*described\s*$|\bdescribed (?:version|video|audio|copy)\b|\bwith (?:audio )?descriptions?\b|\/Described Movies & TV(?:\/|$)/i;
 const TRAILERS = /\/Trailers & Previews(?:\/|$)/i;
+/** Her two whole-programme shelves under Videos (Part 296); the shelf says it, whatever the length. */
+const FULL_MOVIES_SHELF = /^Videos?\/Full Movies(?:\/|$)/i;
+const FULL_TV_SHELF = /^Videos?\/Full TV(?:\/|$)/i;
 const FEATURE_FILMS = /\/Feature Films(?:\/|$)/i;
 const COMMERCIAL_BREAK = /\/Commercial Breaks(?:\/|$)|\b(?:commercial|ad)\s+breaks?\b|\bcommercial blocks?\b/i;
 /**
@@ -100,6 +109,8 @@ function typeLabel(item) {
 }
 
 function videoWord(category, path, title, seconds) {
+  if (FULL_TV_SHELF.test(path)) return 'Full TV episode';
+  if (FULL_MOVIES_SHELF.test(path)) return 'Full movie';
   if (category === 'movie') {
     if (TRAILERS.test(path)) return 'Movie trailer';
     return seconds >= FULL_MOVIE_SECONDS ? 'Full movie' : 'Movie clip';
@@ -125,6 +136,8 @@ const SHELF_NAMES = new Map([
   ['audio/movies', 'Movie audio'],
   ['audio/television', 'TV audio'],
   ['videos/movies & studios', 'Movie trailers and studio clips'],
+  ['videos/full movies', 'Full movies'],
+  ['videos/full tv', 'Full TV episodes'],
 ]);
 
 /** The display name of a shelf at this real path, or null when it reads under its own name. */
@@ -132,4 +145,16 @@ function shelfName(path) {
   return SHELF_NAMES.get(String(path == null ? '' : path).toLowerCase()) || null;
 }
 
-module.exports = { typeLabel, shelfName, SHELF_NAMES, FULL_MOVIE_SECONDS };
+/**
+ * Where a shelf sorts before the others at its level: Full movies, then Full TV episodes, at the top of
+ * Videos (her whole programmes first); every other shelf 0, in name order. A row that skips down a chain
+ * ("Full TV episodes, Rugrats") keeps its shelf's place.
+ */
+function shelfRank(path) {
+  const p = String(path == null ? '' : path);
+  if (FULL_MOVIES_SHELF.test(p)) return -2;
+  if (FULL_TV_SHELF.test(p)) return -1;
+  return 0;
+}
+
+module.exports = { typeLabel, shelfName, shelfRank, SHELF_NAMES, FULL_MOVIE_SECONDS };

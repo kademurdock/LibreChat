@@ -58,7 +58,7 @@ const INTAKE_RE = /(?:^|\/)(?:Needs Filing|Archive Intake|Found Media|Broadcast 
 const forgetShelfTree = () => {
   try { require('./kadeReadingRoomTree').forget(); } catch (_) { /* the tree is optional here */ }
 };
-const FIELDS = '_id kind title author path originalPath description meta tags createdAt tracks.bytes owner fileCheck.state fileCheck.of';
+const FIELDS = '_id kind title author path originalPath description meta tags category createdAt tracks.bytes tracks.seconds owner fileCheck.state fileCheck.of';
 const UNREAD = { 'meta.jevFiling': { $exists: false }, 'meta.jevFilingTries': { $not: { $gte: 3 } } };
 /* Part 295, the second look: read by an older librarian, still in intake, never moved by it (no `to`, so
  * neither filed nor undone). Reading it writes the current version, so it is looked at once per version. */
@@ -112,6 +112,21 @@ async function deps(items = []) {
       out.describedShelves = librarian.shelfIndex(shelf, planned);
     } catch (_) {}
   }
+  /* Part 296: Full TV's shows and seasons as spelled, and the shows her described audio TV side knows, so a
+   * new episode joins "Family guy" on both sides and two spellings in one pass make one show folder. One read
+   * each, only when the batch holds a video that could be a whole film or episode. */
+  if (items.some((i) => librarian.mightBeFull(i))) {
+    try {
+      const [full, described] = await Promise.all([
+        KadeBook.distinct('path', { kind: 'video', path: /^Videos?\/Full TV\// }),
+        KadeBook.distinct('path', { kind: 'audio', path: /^Audio\/Described Movies & TV\/TV\// }),
+      ]);
+      out.knownShows = librarian.knownShows(described, full);
+      const first = { knownShows: out.knownShows, fullShelves: librarian.fullIndex(full) };
+      const planned = items.map((i) => librarian.fullShelfFact(i, first)).filter((d) => d && d.to.startsWith(librarian.FULL_TV + '/')).map((d) => d.to);
+      out.fullShelves = librarian.fullIndex(full, planned);
+    } catch (_) {}
+  }
   return out;
 }
 
@@ -163,7 +178,7 @@ async function sweepOnce({ limit = BATCH(), userId = null } = {}) {
     if (!items.length) return (lastPass = { ran: true, read: 0, at: new Date() });
     const byId = new Map(items.map((i) => [String(i._id), i]));
     const kept = await keptCopies(items);
-    const { decisions, costUSD } = await librarian.fileMedia(items.map((i) => ({ ...i, bytes: bytesOf(i) })), { deps: await deps(items) });
+    const { decisions, costUSD } = await librarian.fileMedia(items.map((i) => ({ ...i, bytes: bytesOf(i), seconds: librarian.secondsOf(i) })), { deps: await deps(items) });
     spent.usd += costUSD;
     const ops = [];
     const tally = { read: items.length, moved: 0, proposed: 0, flagged: 0, guessed: 0, again: 0, errors: 0, byShelf: {} };
@@ -271,7 +286,7 @@ function mount(router, { requireJwtAuth, isAdmin, express }) {
     if (spentToday() >= DAILY_USD()) return res.status(429).json({ error: 'The librarian has reached today\'s limit. Manual folder correction still works.' });
     running = true;
     try {
-      const items = await KadeBook.find({ _id: { $in: ids }, state: 'ready', kind: { $in: ['video', 'audio'] }, $or: [{ shared: true }, { owner: req.user.id }] }, FIELDS + ' category').lean();
+      const items = await KadeBook.find({ _id: { $in: ids }, state: 'ready', kind: { $in: ['video', 'audio'] }, $or: [{ shared: true }, { owner: req.user.id }] }, FIELDS).lean();
       const rules = await deps(items);
       const result = await previewLibraryFolders(items, { zoneOf: librarian.zoneOf, categoryOf: librarian.categoryOf, fileMedia: (batch) => librarian.fileMedia(batch, { deps: rules }) });
       spent.usd += result.costUSD;

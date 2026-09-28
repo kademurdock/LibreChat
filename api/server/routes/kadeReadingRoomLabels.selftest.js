@@ -191,3 +191,25 @@ test('the web row never says "described" twice, and a shelf is announced by its 
   assert.match(page, /if \(b\.described && !\/described\/i\.test\(kind\)\) donor \+= ' · described';/);
   assert.match(page, /say\(\(named && named\.length \? named\.map\(function\(c\)\{ return c\.name; \}\)\.join\(', '\) : \(archivePath \|\| 'The archive'\)\)/);
 });
+
+test('Part 296: her Full movies and Full TV episodes shelves say what every video on them is, whatever its length', () => {
+  assert.equal(video('tv', 'Videos/Full TV/Rugrats/Season 2', { title: 'Rugrats S02E05', seconds: 1380 }), 'Full TV episode');
+  assert.equal(video('tv', 'Videos/Full TV/Looney Tunes/Season 1', { title: 'Fast and Furry-ous', seconds: 420 }), 'Full TV episode', 'a cartoon short from her TV folder');
+  assert.equal(video('tv', 'Videos/Full TV/Rugrats/Other episodes', { seconds: 0 }), 'Full TV episode', 'no length yet');
+  assert.equal(video('movie', 'Videos/Full Movies/1980s', { title: 'Millennium (1989, VHS) Full Movie', seconds: 6650 }), 'Full movie');
+  assert.equal(video('movie', 'Videos/Full Movies/Undated', { seconds: 0 }), 'Full movie', 'the shelf says so even before a length is known');
+  assert.equal(video('vhs', 'Videos/Full Movies/1960s', { title: 'Code Name Alpha aka Red Dragon (1965, VHS)', seconds: 5184 }), 'Full movie', 'a tape moved before its category changed');
+  assert.equal(video('tv', 'Videos/Full TV/Arthur/Season 1', { title: 'Arthur S01E01 (Described)' }), 'Described full TV episode');
+  assert.equal(video('movie', 'Videos/Full Movies/1990s', { title: 'The Lion King (1994) audio described' }), 'Described full movie');
+  // only the shelves at the top of Videos: a folder of the same name somewhere else is not them
+  assert.equal(video('tv', 'Videos/Channels/Nickelodeon/Full TV'), 'TV recording');
+  assert.equal(L.shelfName('Videos/Full Movies'), 'Full movies');
+  assert.equal(L.shelfName('Videos/Full TV'), 'Full TV episodes');
+  assert.equal(L.shelfName('Videos/Full TV/Rugrats'), null);
+  assert.equal(L.shelfRank('Videos/Full Movies'), -2);
+  assert.equal(L.shelfRank('Videos/Full TV'), -1);
+  assert.equal(L.shelfRank('Videos/Full TV/Rugrats'), -1, 'a row that skips down a chain keeps its shelf\'s place');
+  assert.equal(L.shelfRank('Videos/Channels'), 0);
+  assert.equal(L.shelfRank('Audio/Full TV'), 0);
+  assert.equal(L.shelfRank(undefined), 0);
+});

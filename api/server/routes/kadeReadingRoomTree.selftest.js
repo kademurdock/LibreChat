@@ -491,3 +491,45 @@ test('GET /archive names the described shelves for every app, 2.2.1 included, an
   assert.equal(out.body.crumbs[1].name, 'Described audio movies and TV');
   assert.equal(out.body.path, 'Audio/Described Movies & TV');
 });
+
+test('Part 296: Full movies, then Full TV episodes, at the top of Videos, read under their display names', () => {
+  const tree = T.buildTree(rows({
+    'Videos/Channels/Nickelodeon/1990s': 30,
+    'Videos/Commercials/Toys & Video Games/1990s': 40,
+    'Videos/Full Movies/1980s': 1,
+    'Videos/Full Movies/2000s': 2,
+    'Videos/Full TV/Rugrats/Season 1': 13,
+    'Videos/Full TV/Rugrats/Season 2': 13,
+    'Videos/Full TV/Arthur/Season 1': 26,
+    'Videos/Ads/1990s': 22,
+    'Videos/Needs Filing/Archive Intake': 3,
+  }));
+  const videos = tree.roots[0];
+  assert.deepEqual(names(videos), ['Full movies', 'Full TV episodes', 'Ads, 1990s', 'Channels, Nickelodeon, 1990s', 'Commercials, Toys & Video Games, 1990s', 'Not filed yet']);
+  const movies = byId(tree, 'Videos/Full Movies');
+  assert.equal(movies.path, 'Videos/Full Movies', 'the real shelf opens');
+  assert.equal(movies.flat, true, 'a small shelf is listed whole');
+  const tv = byId(tree, 'Videos/Full TV');
+  assert.deepEqual(names(tv), ['Arthur, Season 1', 'Rugrats'], 'Show, then Season');
+  assert.deepEqual(names(byId(tree, 'Videos/Full TV/Rugrats')), ['Season 1', 'Season 2']);
+  // one show only: the chain reads both names and still sorts first
+  const one = T.buildTree(rows({ 'Videos/Full TV/Rugrats/Season 1': 30, 'Videos/Ads/1990s': 30 }));
+  assert.deepEqual(names(one.roots[0]), ['Full TV episodes, Rugrats, Season 1', 'Ads, 1990s']);
+  assert.deepEqual(T.crumbs('Videos/Full TV/Rugrats'), [{ name: 'Videos', path: 'Videos' }, { name: 'Full TV episodes', path: 'Videos/Full TV' }, { name: 'Rugrats', path: 'Videos/Full TV/Rugrats' }]);
+});
+
+test('Part 296: GET /archive lists Full movies and Full TV episodes first under Videos, for every app, and opens the real shelves', async () => {
+  const r = libraryRoutes({ folders: [{ _id: 'Ads', count: 22 }, { _id: 'Full TV', count: 52 }, { _id: 'Channels', count: 30 }, { _id: 'Full Movies', count: 5 }, { _id: 'Movies & Studios', count: 548 }], total: 0 });
+  const out = await r.get('/archive', { path: 'Videos' });
+  assert.deepEqual(out.body.folders, [
+    { name: 'Full movies', count: 5, path: 'Videos/Full Movies' },
+    { name: 'Full TV episodes', count: 52, path: 'Videos/Full TV' },
+    { name: 'Ads', count: 22, path: 'Videos/Ads' },
+    { name: 'Channels', count: 30, path: 'Videos/Channels' },
+    { name: 'Movie trailers and studio clips', count: 548, path: 'Videos/Movies & Studios' },
+  ]);
+  const inside = libraryRoutes({ folders: [{ _id: 'Rugrats', count: 26 }, { _id: 'Arthur', count: 26 }], total: 0 });
+  const shows = await inside.get('/archive', { path: 'Videos/Full TV' });
+  assert.deepEqual(shows.body.folders.map((f) => f.name), ['Arthur', 'Rugrats']);
+  assert.equal(shows.body.crumbs[1].name, 'Full TV episodes');
+});

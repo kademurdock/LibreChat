@@ -654,3 +654,188 @@ test('local to another area: skipped from downloads at 0.85, flagged on new arri
   assert.ok(flags.includes('Space review: local to another area (0.93).'), flags);
   assert.strictEqual(L.questionsFor({ kind: 'video', title: 'KY3 news open 1996', path: 'Videos/Needs Filing/Archive Intake' }).elsewhere, undefined);
 });
+
+/* ── Part 296: Full Movies and Full TV (her words, Sep 27: "Yes I want a full movies shelf and tv eps") ── */
+const MIN = 60;
+const INTAKE = 'Videos/Needs Filing/Archive Intake';
+const fresh = (title, path, seconds, extra = {}) => video(title, path, { seconds, _fresh: true, ...extra });
+const fullTo = (item, deps = {}) => (L.fullShelfFact(item, deps) || {}).to || null;
+
+test('Full Movies: a new upload whose title says it is a whole film, by decade (her five VHS feature films as they would arrive)', () => {
+  assert.strictEqual(fullTo(fresh('Millennium (1989, VHS) Full Movie', 'Video/Home Video (VHS)/1980s', 6650)), 'Video/Full Movies/1980s');
+  assert.strictEqual(fullTo(fresh('Straight Out of Compton (2000, VHS) Full Movie', 'Video/Home Video (VHS)/2000s', 4804)), 'Video/Full Movies/2000s');
+  assert.strictEqual(fullTo(fresh('Hello, Fools! (1996, VHS) Russian, Very Rare, No English Subs, Full Feature Film', 'Video/Home Video (VHS)/1990s', 6729)), 'Video/Full Movies/1990s');
+  assert.strictEqual(fullTo(fresh('Code Name Alpha aka Red Dragon (1965, VHS)', 'Video/Home Video (VHS)/Feature Films/1960s', 5184)), 'Video/Full Movies/1960s', 'the Feature Films shelf says so');
+  assert.strictEqual(fullTo(fresh('Lost in Dinosaur World (1993, VHS)', 'Video/Home Video (VHS)/Feature Films/1990s', 1646)), null, 'a 27-minute tape is not a feature film');
+  const d = L.decide(fresh('Millennium (1989, VHS) Full Movie', 'Video/Home Video (VHS)/1980s', 6650), {});
+  assert.strictEqual(d.to, 'Video/Full Movies/1980s');
+  assert.strictEqual(d.why, 'a whole film: its title says so');
+  assert.strictEqual(L.questionsFor(fresh('Millennium (1989, VHS) Full Movie', 'Video/Home Video (VHS)/1980s', 6650)), null, 'Jev is never asked about a rule');
+  assert.strictEqual(L.categoryOf('Video/Full Movies/1980s', 'video'), 'movie');
+  assert.strictEqual(L.categoryOf('Videos/Full TV/Rugrats/Season 2', 'video'), 'tv');
+});
+
+test('Full Movies: 40 minutes with plain film words, an hour with plainer ones; the release year sets the decade', () => {
+  assert.strictEqual(fullTo(video('The Night Stalker (1972 TV movie)', INTAKE, { seconds: 74 * MIN })), 'Video/Full Movies/1970s');
+  assert.strictEqual(fullTo(video('Halloweentown (1998) Disney Channel Original Movie', INTAKE, { seconds: 84 * MIN })), 'Video/Full Movies/1990s');
+  assert.strictEqual(fullTo(video('The Rugrats Movie (1998)', INTAKE, { seconds: 80 * MIN })), 'Video/Full Movies/1990s');
+  assert.strictEqual(fullTo(video('Winnie the Pooh movie night', INTAKE, { seconds: 50 * MIN })), null, 'under an hour, "movie" alone is not enough');
+  assert.strictEqual(fullTo(video('Pinocchio (1940 film)', INTAKE, { seconds: 50 * MIN })), 'Video/Full Movies/1940s', 'at 40 minutes the plain words do it');
+  assert.strictEqual(fullTo(video('Some Title', INTAKE, { seconds: 95 * MIN, category: 'movie' })), 'Video/Full Movies/Undated', 'the movie category at film length');
+  assert.strictEqual(fullTo(fresh('A film', 'Video/Channels/Other Channels/1980s', 95 * MIN)), 'Video/Full Movies/1980s', 'no year in the title: the shelf decade');
+});
+
+test('Full Movies and Full TV never take a channel recording, a pile, a piece, a short, an old shelf item or anything from her part of the country', () => {
+  // channel recordings stay on the channel (her channel and block rules)
+  assert.strictEqual(fullTo(fresh('Embassy (1985) ABC Sunday Night Movie with Original Commercials', 'Video/Channels/ABC/1980s', 120 * MIN)), null);
+  assert.deepStrictEqual(L.fullQuestions(fresh('Embassy (1985) ABC Sunday Night Movie with Original Commercials', 'Video/Channels/ABC/1980s', 120 * MIN)), {});
+  assert.strictEqual(fullTo(video('SNICK full episode 1995 Clarissa Explains It All S01E01', INTAKE, { seconds: 25 * MIN })), null, 'a programming block named');
+  assert.strictEqual(fullTo(video('Rugrats S02E05 with commercials', INTAKE, { seconds: 30 * MIN })), null);
+  assert.strictEqual(fullTo(video('Rugrats S02E05 aired on Nickelodeon 1993', INTAKE, { seconds: 30 * MIN })), null, 'a network and "aired"');
+  assert.strictEqual(fullTo(video('Cartoon Network marathon Dexter Season 1', INTAKE, { seconds: 60 * MIN })), null);
+  // piles and pieces
+  assert.strictEqual(fullTo(video('Disney VHS Trailers Compilation (Full Movie Previews)', INTAKE, { seconds: 70 * MIN })), null);
+  assert.strictEqual(fullTo(video('Titanic (1997) behind the scenes feature film special', INTAKE, { seconds: 45 * MIN })), null);
+  assert.strictEqual(fullTo(video('Millennium (1989) Full Movie Part 1 of 3', INTAKE, { seconds: 45 * MIN })), null);
+  assert.strictEqual(fullTo(video('Rugrats S01E01 intro', INTAKE, { seconds: 1 * MIN })), null);
+  assert.strictEqual(fullTo(video("Rugrats S01E01 Tommy's First Birthday", INTAKE, { seconds: 11 * MIN })), null, "under 15 minutes: today's rules");
+  assert.strictEqual(fullTo(video('Rugrats S01E01', INTAKE, { seconds: 0 })), null, 'no length, no title rule');
+  // an item already on a shelf is never re-read for this (the audit pass applies its moves)
+  assert.strictEqual(fullTo(video('Millennium (1989, VHS) Full Movie', 'Video/Home Video (VHS)/1980s', { seconds: 6650 })), null);
+  assert.strictEqual(L.decide(video('Millennium (1989, VHS) Full Movie', 'Video/Home Video (VHS)/1980s', { seconds: 6650 }), {}).to, null);
+  assert.strictEqual(fullTo(fresh('Rugrats S02E05', 'Video/Full TV/Rugrats/Season Two', 23 * MIN)), null, 'already on a Full shelf: stays where it was put');
+  // her part of the country comes first
+  assert.strictEqual(fullTo(fresh('The Saint Louis Cardinals The Movie (1985)', 'Video/Missouri/St. Louis (Local)', 60 * MIN)), null, 'her Missouri shelves are never moved from');
+  assert.strictEqual(fullTo(video('The Saint Louis Cardinals The Movie (1985)', INTAKE, { seconds: 60 * MIN })), null, 'naming St. Louis');
+  assert.strictEqual(fullTo(video('Ozarks Today S01E03 (KY3)', INTAKE, { seconds: 28 * MIN })), null, "a local show's episode");
+  assert.deepStrictEqual(L.fullQuestions(video('KOLR 10 Springfield Christmas special full movie', INTAKE, { seconds: 70 * MIN })), {});
+  assert.strictEqual(fullTo(video('Tommy', 'Video/Needs Filing/TV/Ozarks Today/Season 1', { seconds: 28 * MIN })), null, 'even in her TV folder');
+  const local = L.decide(video('Ozarks Today S01E03 (KY3)', INTAKE, { seconds: 28 * MIN }), {
+    kind: { choice: 'Episode or clip of a TV programme', confidence: 0.9 }, episode: { noul: 0.99 }, recorded: { noul: 0.9 }, madefor: { noul: 0.9 }, local: { noul: 0.9 },
+    area: { choice: 'Springfield and the Ozarks', confidence: 0.9 }, localKind: { choice: 'Around the Ozarks', confidence: 0.9 },
+  });
+  assert.ok(local.to.startsWith('Video/Ozarks (Springfield Area)'), 'a full local episode goes to her Ozarks shelves');
+});
+
+test('Full TV: an episode code and a show name, 15 to 65 minutes, filed Show then Season', () => {
+  assert.strictEqual(fullTo(fresh('Rugrats S02E05 - Chuckie vs the Potty', 'Video/Channels/Nickelodeon/1990s', 23 * MIN)), 'Video/Full TV/Rugrats/Season 2');
+  assert.strictEqual(fullTo(video('The Big Bang Theory - Season 2 Episode 3 - The Barbarian Sublimation', INTAKE, { seconds: 21 * MIN })), 'Video/Full TV/The Big Bang Theory/Season 2');
+  assert.strictEqual(fullTo(video('Family.Guy.S09E01.720p', INTAKE, { seconds: 22 * MIN })), 'Video/Full TV/Family Guy/Season 9', 'a dotted file name');
+  assert.strictEqual(fullTo(video("1995 Hey Arnold! 1x02 Arnold's Christmas", INTAKE, { seconds: 22 * MIN })), 'Video/Full TV/Hey Arnold!/Season 1');
+  assert.strictEqual(fullTo(video("Doug S00E01 Doug's Christmas Story", INTAKE, { seconds: 24 * MIN })), 'Video/Full TV/Doug/Specials');
+  assert.strictEqual(fullTo(video('Arthur Episode 12', INTAKE, { seconds: 25 * MIN })), 'Video/Full TV/Arthur/Other episodes', 'no season');
+  assert.strictEqual(fullTo(video('Rugrats (1991) Full Episode', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Other episodes');
+  assert.strictEqual(fullTo(video('Nickelodeon Rugrats S01E01', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 1', 'a channel name before the show is not the show');
+  assert.strictEqual(fullTo(video('ER S03E10', INTAKE, { seconds: 44 * MIN })), 'Video/Full TV/ER/Season 3', 'an hour drama without its adverts');
+  assert.strictEqual(fullTo(video('Rugrats S01E01', INTAKE, { seconds: 70 * MIN })), null, 'longer than an episode');
+  assert.strictEqual(fullTo(video('[S12.E08] Christmas Guy', INTAKE, { seconds: 22 * MIN })), null, "no show named: today's rules");
+  assert.strictEqual(fullTo(video("Full Episode: Hey Arnold! - Arnold's Christmas", INTAKE, { seconds: 22 * MIN })), null, 'no code and no known show');
+  const d = L.decide(fresh('Rugrats S02E05 - Chuckie vs the Potty', 'Video/Channels/Nickelodeon/1990s', 23 * MIN), {});
+  assert.strictEqual(d.why, 'a whole episode: its title says so');
+  assert.strictEqual(d.confidence, 1);
+});
+
+test('Full TV: shows her described audio TV side knows, and the spellings Full TV already has', () => {
+  const knownShows = L.knownShows([
+    'Audio/Described Movies & TV/TV/Family guy/Family Guy Season 9 not described',
+    'Audio/Described Movies & TV/TV/Insecure Season 1',
+    'Audio/Described Movies & TV/TV/Assorted (One-Offs)',
+    'Audio/Described Movies & TV/TV/Hey Arnold!/Season 1',
+  ], ["Video/Full TV/Schitt's Creek/Season 1"]);
+  assert.deepStrictEqual([...knownShows.values()].sort(), ['Family guy', 'Hey Arnold!', 'Insecure', "Schitt's Creek"]);
+  const fullShelves = L.fullIndex(["Video/Full TV/Schitt's Creek/Season 1", 'Video/Full TV/Family Guy/Family Guy Season 9']);
+  const deps = { knownShows, fullShelves };
+  assert.strictEqual(fullTo(video('schitts creek S01E02', INTAKE, { seconds: 22 * MIN }), deps), "Video/Full TV/Schitt's Creek/Season 1", "Full TV's spelling wins");
+  assert.strictEqual(fullTo(video('Family Guy S09E03 Excellence in Broadcasting', INTAKE, { seconds: 22 * MIN }), deps), 'Video/Full TV/Family Guy/Family Guy Season 9', 'a season folder of hers keeps its words');
+  assert.strictEqual(fullTo(video('Insecure Season 1 Episode 1', INTAKE, { seconds: 30 * MIN }), deps), 'Video/Full TV/Insecure/Season 1', 'the described side names the show');
+  assert.strictEqual(fullTo(video("Full Episode: Hey Arnold! - Arnold's Christmas", INTAKE, { seconds: 22 * MIN }), deps), 'Video/Full TV/Hey Arnold!/Other episodes');
+  // no code: Jev is asked whether it is one whole episode, only when the show can be named
+  const bare = video("Hey Arnold! - Arnold's Christmas", INTAKE, { seconds: 22 * MIN });
+  assert.strictEqual(fullTo(bare, deps), null);
+  assert.ok(L.questionsFor(bare, deps).episode);
+  assert.strictEqual(L.questionsFor(bare, {}).episode, undefined, 'no show name, no question');
+  const yes = L.decide(bare, { kind: { choice: 'Episode or clip of a TV programme', confidence: 0.9 }, episode: { noul: 0.93 } }, deps);
+  assert.strictEqual(yes.to, 'Video/Full TV/Hey Arnold!/Other episodes');
+  assert.strictEqual(yes.why, 'a whole episode (Jev)');
+  const unsure = L.decide(bare, { kind: { choice: 'Episode or clip of a TV programme', confidence: 0.9 }, episode: { noul: 0.6 } }, deps);
+  assert.ok(!String(unsure.to || '').includes('Full TV'), "unsure: today's rules");
+  const short = L.decide(video("Hey Arnold! - Arnold's Christmas", INTAKE, { seconds: 10 * MIN }), { kind: { choice: 'Episode or clip of a TV programme', confidence: 0.9 }, episode: { noul: 0.99 } }, deps);
+  assert.strictEqual(short.to, 'Video/TV Shows/Assorted (One-Offs)/Undated', 'too short whatever Jev says');
+});
+
+test('Full TV and Full Movies from her own folders, word for word, the way her described MP3s were filed', () => {
+  assert.strictEqual(fullTo(video("Tommy's First Birthday", 'Video/Needs Filing/TV/Rugrats/Season 1', { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 1');
+  assert.strictEqual(fullTo(video('Episode 1', 'Videos/Needs Filing/TV/Insecure Season 1', { seconds: 30 * MIN })), 'Video/Full TV/Insecure/Insecure Season 1', 'a bare season folder joins its show (the depth rule)');
+  assert.strictEqual(fullTo(video('Fast and Furry-ous', 'Video/Needs Filing/TV/Looney Tunes/Season 1', { seconds: 7 * MIN })), 'Video/Full TV/Looney Tunes/Season 1', 'a cartoon short is still an episode');
+  assert.strictEqual(fullTo(video('Theme', 'Video/Needs Filing/TV/Looney Tunes/Season 1', { seconds: 1 * MIN })), null, "under 5 minutes: today's rules");
+  assert.strictEqual(fullTo(video("Tommy's First Birthday", 'Video/Needs Filing/TV/Rugrats/Season 1', {})), 'Video/Full TV/Rugrats/Season 1', 'no length yet: her folder says so');
+  assert.strictEqual(fullTo(video('Rugrats S03E02', 'Video/Needs Filing/TV', { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 3', 'straight in her TV folder: the show from the title');
+  assert.strictEqual(fullTo(video('Some special', 'Video/Needs Filing/TV', { seconds: 23 * MIN })), 'Video/Full TV/Assorted (One-Offs)');
+  const index = L.fullIndex(['Video/Full TV/Rugrats/season 1']);
+  assert.strictEqual(fullTo(video('x', 'Video/Needs Filing/TV/rugrats/Season 1', { seconds: 23 * MIN }), { fullShelves: index }), 'Video/Full TV/Rugrats/season 1', "the shelf's spelling when only the case differs");
+  assert.strictEqual(fullTo(video('Frozen', 'Video/Needs Filing/Movies/Frozen (2013)', { seconds: 102 * MIN })), 'Video/Full Movies/2010s');
+  assert.strictEqual(fullTo(video('Frozen trailer', 'Video/Needs Filing/Movies', { seconds: 2 * MIN })), null, "under 40 minutes in her Movies folder: today's rules");
+  assert.strictEqual(fullTo(video('Frozen soundtrack', 'Video/Needs Filing/Movies', { seconds: 90 * MIN })), null, 'a soundtrack is music');
+  assert.strictEqual(L.decide(video("Tommy's First Birthday", 'Video/Needs Filing/TV/Rugrats/Season 1', { seconds: 23 * MIN }), {}).why, 'her TV folder: a whole episode');
+});
+
+test('Jev for a long video with no words of its own: one whole feature film at an hour, a feature-film tape at 40 minutes', () => {
+  const barbell = video('Captain Barbell (VHS, 2003)', INTAKE, { seconds: 7453 });
+  assert.strictEqual(fullTo(barbell), null);
+  assert.ok(L.questionsFor(barbell).film, 'asked');
+  assert.strictEqual(L.questionsFor(video('Captain Barbell (VHS, 2003)', INTAKE, { seconds: 30 * MIN })).film, undefined, 'under an hour, not asked');
+  const yes = L.decide(barbell, { kind: { choice: 'Something else', confidence: 0.5 }, film: { noul: 0.91 } });
+  assert.strictEqual(yes.to, 'Video/Full Movies/2000s');
+  assert.strictEqual(yes.why, 'a whole film (Jev)');
+  assert.ok(!String(L.decide(barbell, { kind: { choice: 'Special-interest or instructional tape', confidence: 0.8 }, film: { noul: 0.5 } }).to).includes('Full Movies'));
+  // a tape the tape question calls a feature film, new on the VHS shelf
+  const tape = fresh('Rare Kung Fu Tape (VHS, 1994)', 'Video/Home Video (VHS)/1990s', 50 * MIN);
+  const q = L.questionsFor(tape);
+  assert.ok(q.tape && !q.film, 'the tape question, no film question under an hour');
+  assert.strictEqual(L.decide(tape, { kind: { choice: 'Something else', confidence: 0.5 }, tape: { choice: 'Feature Films', confidence: 0.8 } }).to, 'Video/Full Movies/1990s');
+  const old = video('Rare Kung Fu Tape (VHS, 1994)', 'Video/Home Video (VHS)/1990s', { seconds: 50 * MIN });
+  assert.strictEqual(L.decide(old, { kind: { choice: 'Something else', confidence: 0.5 }, tape: { choice: 'Feature Films', confidence: 0.8 } }).to, 'Video/Home Video (VHS)/Feature Films/1990s', "an old shelf item keeps today's rule");
+  assert.strictEqual(L.lengthWords(7453), '2 hours 4 minutes');
+  assert.strictEqual(L.lengthWords(22 * MIN), '22 minutes');
+  assert.strictEqual(L.lengthWords(60 * MIN), '1 hour');
+});
+
+test("the whole-film question reads the video's length; other questions read the state as before", async () => {
+  const states = [];
+  const ask = async (state) => {
+    states.push(state);
+    return { answers: { kind: { choice: 'Something else', confidence: 0.5 }, film: { noul: 0.95 }, elsewhere: { noul: 0.1 } }, usage: { input_tokens: 10 } };
+  };
+  const { decisions } = await L.fileMedia([
+    video('Captain Barbell (VHS, 2003)', INTAKE, { tracks: [{ seconds: 7453 }] }),
+    video('Zest soap commercial 1985', INTAKE, { tracks: [{ seconds: 30 }] }),
+  ], { ask, concurrency: 1 });
+  assert.strictEqual(states[0].length, '2 hours 4 minutes', 'the length comes from the tracks when the item has no total');
+  assert.strictEqual(states[1].length, undefined);
+  assert.strictEqual(decisions.find((x) => /Barbell/.test(x.item.title)).to, 'Video/Full Movies/2000s');
+  assert.ok(!String(decisions.find((x) => /Zest/.test(x.item.title)).to).includes('Full'));
+});
+
+test('Full TV names the show the way her downloaded titles write it (from the Sep 26 catalog copy)', () => {
+  const at = (title, minutes) => fullTo(video(title, INTAKE, { seconds: minutes * MIN }));
+  assert.strictEqual(at('Another World (1986) - NBC - Full Episode', 43), 'Video/Full TV/Another World/Other episodes');
+  assert.strictEqual(at('CNET Central (1997) Digital Volunteers; Failed Web Companies ｜ Full Episode', 22), 'Video/Full TV/CNET Central/Other episodes');
+  assert.strictEqual(at('Extreme Dodgeball (2004 GSN Show) Episode 1 (Rough Cut Version)', 21), 'Video/Full TV/Extreme Dodgeball/Other episodes');
+  assert.strictEqual(at('SportsCenter ｜ 03-18-1995 ｜ Michael Jordan Returns Full Episode', 23), 'Video/Full TV/SportsCenter/Other episodes');
+  assert.strictEqual(at("Herman's Head Season 1 Episode 25 ＂Twisted Sister＂", 29), "Video/Full TV/Herman's Head/Season 1");
+  assert.strictEqual(at('Tough Crowd with Colin Quinn - Episode 143： Jim Norton, Jeff Cesario', 30), 'Video/Full TV/Tough Crowd with Colin Quinn/Other episodes');
+  assert.strictEqual(at('Zoom ｜ S3E302 ｜ PBS Kids', 28), null, 'a programming block named: the channel keeps it');
+  assert.strictEqual(fullTo(fresh('Captain Barbell (VHS, 2003)', 'Video/Home Video (VHS)/Feature Films/2000s', 7453)), 'Video/Full Movies/2000s');
+  assert.strictEqual(L.fullShelfFact(fresh('Captain Barbell (VHS, 2003)', 'Video/Home Video (VHS)/Feature Films/2000s', 7453)).why, 'a whole film: the Feature Films shelf');
+});
+
+test("a short show name her shelves know never swallows a longer one: the described side's Star is not Star Trek", () => {
+  const knownShows = new Map([['star', 'Star'], ['family guy', 'Family guy']]);
+  const deps = { knownShows };
+  const at = (title) => video(title, INTAKE, { seconds: 45 * MIN });
+  assert.strictEqual(fullTo(at('Star Trek S01E01 The Man Trap'), deps), 'Video/Full TV/Star Trek/Season 1');
+  assert.strictEqual(L.showFor(at('Star Trek - The Menagerie'), deps), null, 'no code and not a known show: nothing to name');
+  assert.deepStrictEqual(L.fullQuestions(at('Star Trek - The Menagerie'), deps), {});
+  assert.strictEqual(L.showFor(at('Star - Pilot'), deps), 'Star');
+  assert.strictEqual(fullTo(at('Family Guy S09E01'), deps), 'Video/Full TV/Family guy/Season 9', 'the spelling her described side uses');
+});

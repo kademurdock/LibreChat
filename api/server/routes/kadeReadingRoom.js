@@ -1449,7 +1449,8 @@ router.get('/archive', requireJwtAuth, async (req, res) => {
     // Part 296: a shelf whose real name misleads reads under its display name (the described MP3 shelf is
     // "Described audio movies and TV"); `path` is still the real shelf, which every client opens by.
     for (const f of folders) f.name = shelfTree.folderName(prefix + f._id, f._id);
-    folders.sort((a, b) => shelfTree.compareNames(shelfTree.tidyName(a.name), shelfTree.tidyName(b.name)));
+    // Part 296: Full movies, then Full TV episodes, at the top of Videos; the rest in reading order.
+    folders.sort((a, b) => shelfTree.compareShelves({ path: prefix + a._id, name: shelfTree.tidyName(a.name) }, { path: prefix + b._id, name: shelfTree.tidyName(b.name) }));
     const progress = items.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: items.map((i) => i._id) } }).lean() : [];
     const pb = {}; for (const pr of progress) pb[String(pr.book)] = pr;
     const listed = items.map((b) => (deep ? { ...summary(b, pb[String(b._id)]), sub: shelfTree.subShelf(at, b.path) } : summary(b, pb[String(b._id)])));
