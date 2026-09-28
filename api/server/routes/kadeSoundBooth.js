@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -128,7 +128,7 @@ const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps
         prompt: 'Sing it in my voice', description: title, costUSD: row.costUSD || 0,
         metadata: { title, jobId: row.id, projectId: row.projectId, via: 'sound-booth', voiceOf: row.sourceAssetId,
           wavUrl: out.wav_url, vocalUrl: out.vocal_url, vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0),
-          ...(out.vocal_fx_url ? { vocalFxUrl: out.vocal_fx_url, vocalFxWavUrl: out.vocal_fx_wav_url } : {}),
+          ...myVoiceEffectLinks(out),
           gpu: out.gpu, takeNote: myVoiceTakeNote(out), costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: row.projectId, user: row.user, assets: { $ne: String(asset._id) } },
@@ -293,8 +293,9 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
         prompt: job.input.style, description: title, costUSD: job.costUSD || 0,
         metadata: { title, jobId: job.id, projectId: job.projectId, via: 'sound-booth', wavUrl: out.wav_url, vocalUrl: out.vocal_url,
           vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0), gpu: out.gpu, takeNote: myVoiceTakeNote(out, job.input),
-          /* A vocal effect: the voice with it, beside the dry voice (vocalUrl), which is always kept. */
-          ...(out.vocal_fx_url ? { vocalFxUrl: out.vocal_fx_url, vocalFxWavUrl: out.vocal_fx_wav_url } : {}),
+          /* A vocal effect: the voice with it, beside the dry voice (vocalUrl), which is always kept; in vocal mode the take
+           * itself is the voice with the effect, so no second link to the same file. */
+          ...myVoiceEffectLinks(out),
           voiceSource: job.input.voice && job.input.voice.source, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });

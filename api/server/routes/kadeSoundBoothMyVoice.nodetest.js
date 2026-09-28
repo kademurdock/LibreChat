@@ -356,6 +356,27 @@ test('vocal effects: a main choice in her words; None sends the worker nothing n
   assert.ok(withFx.costUSD > plain.costUSD);
 });
 
+test('the voice with its effect is a take link only when it is a file of its own', () => {
+  const song = {
+    url: 'https://a.test/voice/x/mix.mp3',
+    key: 'voice/x/mix.mp3',
+    vocal_fx_url: 'https://a.test/voice/x/vocal_fx.mp3',
+    vocal_fx_key: 'voice/x/vocal_fx.mp3',
+    vocal_fx_wav_url: 'https://a.test/voice/x/vocal_fx.wav',
+  };
+  assert.deepEqual(voice.myVoiceEffectLinks(song), {
+    vocalFxUrl: 'https://a.test/voice/x/vocal_fx.mp3',
+    vocalFxWavUrl: 'https://a.test/voice/x/vocal_fx.wav',
+  });
+  /* Just a vocal: the take itself is the voice with the effect. */
+  assert.deepEqual(
+    voice.myVoiceEffectLinks({ ...song, url: song.vocal_fx_url, key: song.vocal_fx_key }),
+    {},
+  );
+  assert.deepEqual(voice.myVoiceEffectLinks({ url: song.url, key: song.key }), {}, 'no effect');
+  assert.deepEqual(voice.myVoiceEffectLinks(undefined), {});
+});
+
 test('the take note says the vocal effect, and says so when a worker from before effects left the voice dry', () => {
   const echo = voice.myVoiceTakeNote({
     pitch: { shift: 0 },

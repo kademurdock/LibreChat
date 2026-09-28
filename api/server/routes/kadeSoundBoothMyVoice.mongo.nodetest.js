@@ -488,10 +488,12 @@ test('Sing it in my voice through the real booth', async (t) => {
         executionTime: 100000,
         output: {
           url: 'https://assets.test/voice/e1/mix.mp3',
+          key: 'voice/e1/mix.mp3',
           wav_url: 'https://assets.test/voice/e1/mix.wav',
           vocal_url: 'https://assets.test/voice/e1/vocal.mp3',
           vocal_wav_url: 'https://assets.test/voice/e1/vocal.wav',
           vocal_fx_url: 'https://assets.test/voice/e1/vocal_fx.mp3',
+          vocal_fx_key: 'voice/e1/vocal_fx.mp3',
           vocal_fx_wav_url: 'https://assets.test/voice/e1/vocal_fx.wav',
           vocal_fx: { preset: 'echo', label: 'Echo', tempo_bpm: 84.9, tempo_source: 'detected', delay_ms: 530 },
           duration_s: 181.2,
@@ -511,6 +513,52 @@ test('Sing it in my voice through the real booth', async (t) => {
       assert.equal(p.takes[0].vocalUrl, 'https://assets.test/voice/e1/vocal.mp3', 'the dry voice, always kept');
       assert.equal(p.takes[0].vocalFxUrl, 'https://assets.test/voice/e1/vocal_fx.mp3');
       assert.match(p.takes[0].note, /Vocal effect: Echo/);
+
+      /* Just a vocal with an effect: the take itself is the voice with the effect (the worker's key is vocal_fx.mp3), so the
+       * take offers no second link to that same file; the dry voice is still beside it. */
+      Object.assign(rp.voiceep, { status: 'IN_QUEUE', output: undefined });
+      const v = await call('/render', {
+        user: OWNER,
+        role: 'ADMIN',
+        body: {
+          engine: 'myvoice',
+          reference_voice_url: url,
+          voice_source: 'Just a vocal',
+          vocal_fx: 'Plate reverb',
+          title: 'Plate vocal',
+        },
+      });
+      assert.equal(v.status, 200, JSON.stringify(v.data));
+      assert.equal(rp.voiceep.runs.at(-1).mode, 'vocal');
+      assert.equal(rp.voiceep.runs.at(-1).vocal_fx, 'plate');
+      Object.assign(rp.voiceep, {
+        status: 'COMPLETED',
+        executionTime: 60000,
+        output: {
+          url: 'https://assets.test/voice/e2/vocal_fx.mp3',
+          key: 'voice/e2/vocal_fx.mp3',
+          wav_url: 'https://assets.test/voice/e2/vocal_fx.wav',
+          vocal_url: 'https://assets.test/voice/e2/vocal.mp3',
+          vocal_wav_url: 'https://assets.test/voice/e2/vocal.wav',
+          vocal_fx_url: 'https://assets.test/voice/e2/vocal_fx.mp3',
+          vocal_fx_key: 'voice/e2/vocal_fx.mp3',
+          vocal_fx_wav_url: 'https://assets.test/voice/e2/vocal_fx.wav',
+          vocal_fx: { preset: 'plate', label: 'Plate reverb', reverb_s: 2 },
+          duration_s: 95,
+          gpu: 'NVIDIA GeForce RTX 4090',
+          pitch: { shift: 0, source: 'auto' },
+          worker_notes: [],
+          features: ['vocal', 'vocal-fx'],
+        },
+      });
+      const vs = await call('/status/' + v.data.jobId, { user: OWNER, role: 'ADMIN' });
+      assert.equal(vs.data.state, 'done', JSON.stringify(vs.data));
+      const vp = (await call('/projects', { user: OWNER, role: 'ADMIN' })).data.projects.find(
+        (x) => x.id === v.data.projectId,
+      );
+      assert.equal(vp.takes[0].vocalUrl, 'https://assets.test/voice/e2/vocal.mp3', 'the dry voice, always kept');
+      assert.equal(vp.takes[0].vocalFxUrl, undefined, 'the take is already the voice with the effect');
+      assert.match(vp.takes[0].note, /Vocal effect: Plate reverb\./);
     },
   );
 

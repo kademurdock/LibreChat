@@ -176,6 +176,7 @@ export {
   createMyVoiceRouter,
   createMyVoiceFollowUps,
   myVoiceTakeNote,
+  myVoiceEffectLinks,
   myVoiceTakeCost,
   myVoiceProjectOptions,
   myVoiceProjectWhy,

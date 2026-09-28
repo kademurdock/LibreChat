@@ -597,7 +597,8 @@ export type MyVoiceOutput = Output & {
   vocal_key?: string;
   vocal_wav_url?: string;
   vocal_wav_key?: string;
-  /* With a vocal effect: the voice with the effect (the dry one above is always kept), and what the worker did. */
+  /* With a vocal effect: the voice with the effect (the dry one above is always kept), and what the worker did. In vocal
+   * mode the take itself is the voice with the effect, so vocal_fx_key is key. */
   vocal_fx_url?: string;
   vocal_fx_key?: string;
   vocal_fx_wav_url?: string;
@@ -611,6 +612,16 @@ export type MyVoiceOutput = Output & {
   } | null;
   pitch?: { shift?: number; source?: string; why?: string; share_above_top?: number } | null;
 };
+/** The take's link to the voice with its effect, beside the dry voice: only when it is a file of its own. In vocal mode the
+ * take itself is the voice with the effect (the worker's key and vocal_fx_key are the same file), and a second link to it
+ * would only be one more line for VoiceOver to read. */
+export function myVoiceEffectLinks(
+  output: MyVoiceOutput | undefined,
+): { vocalFxUrl?: string; vocalFxWavUrl?: string } {
+  if (!output?.vocal_fx_url) return {};
+  if (output.vocal_fx_key && output.vocal_fx_key === output.key) return {};
+  return { vocalFxUrl: output.vocal_fx_url, vocalFxWavUrl: output.vocal_fx_wav_url };
+}
 /** The vocal effect in a sentence: what went on the voice, and the tempo an echo followed. Empty for none. */
 function effectNote(output: MyVoiceOutput, input?: Pick<Input, 'voice'>): string {
   const fx = output.vocal_fx;
@@ -734,8 +745,8 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       d.soft_s
         ? 'Softer S sounds is on: the S, SH, T and F hiss comes from the original singer, which takes the robotic edge off. Turn it off under More settings to hear every sound from your voice model.'
         : 'If S sounds come out a little robotic, turn on Softer S sounds under More settings: the S, SH, T and F hiss then comes from the original singer.',
-      'Vocal effects puts studio reverb or echo on your voice in the song: Studio polish evens and brightens it, Plate reverb and Hall reverb add a room, Slapback is one quick repeat, Echo repeats in time with the song, and Dreamy is a wide wash of echo and reverb. None keeps it dry.',
-      'You get two files: the song in your voice, and your voice on its own, always dry, ready for a DAW. With a vocal effect you also get your voice with the effect.',
+      'Vocal effects puts studio reverb or echo on your voice: Studio polish evens and brightens it, Plate reverb and Hall reverb add a room, Slapback is one quick repeat, Echo repeats in time with the song, and Dreamy is a wide wash of echo and reverb. None keeps it dry.',
+      'You get two files: the song in your voice, and your voice on its own, always dry, ready for a DAW. With a vocal effect on a song you also get your voice with the effect; with just a vocal, the take itself is your voice with the effect.',
     ],
     settings: [
       {
@@ -757,7 +768,7 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       {
         key: 'vocal_fx',
         label: 'Vocal effects',
-        hint: "Studio effects on your voice in the song. Echo follows the song's beat. Your dry voice is always kept as its own download.",
+        hint: "Studio reverb or echo on your voice. Echo follows the song's beat. Your dry voice is always kept as its own download.",
         kind: 'choice',
         options: myVoiceEffects.map((e) => e.label),
         default: effect.label,
