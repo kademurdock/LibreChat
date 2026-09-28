@@ -295,18 +295,22 @@ export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
  * your hands to yourself"), the idioms where keep means hold to (your word, the faith, your
  * cool), anyone keeping a thing themselves ("I keep it by my chair", "to keep it on the
  * road"), need to + a verb ("she don't need to see"), a thing nobody needed with nothing after
- * it ("a coat I didn't need"), and take + a thing with no going away after it ("take the
- * wheel"). When in doubt it flags: a false alarm costs one rewritten line. Jev gets no veto
- * over these (see the route): it judges whether a line is stock, and these lines are often
- * concrete (a tip jar, the keys), which is exactly why the list could not see them. A phrase
- * from her own brief, or the same move asked for in it, is hers and is never flagged. */
+ * it ("a coat I didn't need"), take + a thing with no going away after it ("take the wheel";
+ * it or them alone, "take it", and two things handed over in one line still count), and a
+ * line that carries on the singer's own sentence above it ("I'll park it where it sat / And
+ * keep the keys"). When in doubt it flags: a false alarm costs one rewritten line. Jev gets no
+ * veto over these (see the route): it judges whether a line is stock, and these lines are
+ * often concrete (a tip jar, the keys), which is exactly why the list could not see them. A
+ * phrase from her own brief (through the thing itself), or the same move asked for in it, is
+ * hers and is never flagged; a note to the writer (keep it upbeat, keep the chorus short,
+ * don't need a bridge) is not asking for the move. */
 export const KISS_OFF_TELL =
   'the stock kiss-off: telling them to keep, have or take back their things, or saying what the singer does not need';
 
 const KISS_LEAD =
   String.raw`(?:(?:and|but|so|or|just|now|well|oh|then|hey|yeah|fine|okay|ok|please|baby|babe|honey|darlin'?|darling|girl|boy|go on(?: and)?|go ahead(?: and)?|you know what|(?:[a-z']+ )?(?:said|says|told [a-z']+|tell [a-z']+))\s+)*`;
 const KISS_HAND_BACK = new RegExp(
-  String.raw`^${KISS_LEAD}(?:(you|ya|y'all|you all)\s+(?:(can|could|may|might as well|may as well|should|just|go on and|go ahead and|better|oughta|can just|could just|can go ahead and)\s+)?)?(keep|have|take)\s+(.+)$`,
+  String.raw`^(${KISS_LEAD})(?:(you|ya|y'all|you all)\s+(?:(can|could|may|might as well|may as well|should|just|go on and|go ahead and|better|oughta|can just|could just|can go ahead and)\s+)?)?(keep|have|take)\s+(.+)$`,
 );
 const NEED_NOT = String.raw`(?:don't|dont|do not|ain't|aint|didn't|didnt|did not|never|no longer)\s+(?:(?:even|really|ever|never|sure|much|just|actually|honestly|truly)\s+)?need(?:ed|s)?`;
 const NEED_I = new RegExp(String.raw`\b(?:i|we)\s+(?:(?:sure|really|just|still|even|honestly|surely)\s+)?${NEED_NOT}\b\s*(\S*)`);
@@ -320,7 +324,7 @@ const WHO_NEEDS_NOT_A_THING = new Set(['to', 'me', 'us', 'help']);
 const KISS_PRONOUNS = new Set(['it', 'them', "'em", 'em', 'that', 'this', 'him', 'her', 'everything', 'those', 'these', 'all']);
 const KISS_DETS = new Set(['your', "yo'", 'yo', 'the', 'all', 'every', 'whatever', 'his', 'her', 'their', 'those', 'these', 'this', 'that']);
 /* Words that may close a hand-back after a pronoun: "you can keep it all", "keep it for all I care". */
-const KISS_TAIL = new Set(['all', 'too', 'then', 'now', 'baby', 'babe', 'boy', 'girl', 'honey', "darlin'", 'darlin', 'darling', 'anyway', 'anyhow', 'forever', 'for', 'good', 'i', 'care', 'yourself', 'yours']);
+const KISS_TAIL = new Set(['all', 'both', 'too', 'then', 'now', 'baby', 'babe', 'boy', 'girl', 'honey', "darlin'", 'darlin', 'darling', 'anyway', 'anyhow', 'forever', 'for', 'good', 'i', 'care', 'yourself', 'yours']);
 const NP_SKIP = new Set(['of', 'the', 'your', "yo'", 'that', 'those', 'these', 'this', 'his', 'her', 'their', 'damn']);
 const NP_STOP = new Set(['and', 'or', 'but', 'i', "i'm", "i'll", "i've", "i'd", "'cause", 'cause', 'cuz', "'cuz", 'because', 'so', 'too', 'then', 'baby', 'babe', 'honey', 'girl', 'boy', "darlin'", "'til", 'till', 'until', 'while', 'you', 'we', 'now']);
 /* keep + a word that says how or where it is kept is an instruction, not a hand-back. */
@@ -332,11 +336,37 @@ const KEEP_IDIOMS = new Set('word promise promises vow vows cool head balance pa
 const ING_NOUNS = new Set('thing string spring wedding ceiling building feeling darling earring sibling sling swing bling offering everything nothing something anything clothing painting drawing morning evening bedding ending meeting blessing pudding stuffing filling awning lightning icing frosting topping dressing stocking sapling duckling herring sterling savings'.split(' '));
 const KEEP_DONE = new Set('swept set done paid known hid shown sworn'.split(' '));
 const ED_NOUNS = new Set('speed steed greed creed breed tweed hundred'.split(' '));
-/* take + a thing is a hand-back only when the thing is sent away with them. */
+/* take + a thing is a hand-back only when the thing is sent away with them, when it is it or
+ * them with nothing after, or when the line hands two things over. */
 const TAKE_GO = new Set('go leave get git run walk split scram beat move roll head hit drive ride shove stick bounce disappear vanish'.split(' '));
-const TAKE_IDIOMS = new Set('time hand word shot chance turn seat place medicine advice cue lead pick bow aim breath step stand wheel'.split(' '));
+const TAKE_IDIOMS = new Set('time hand word shot chance turn seat place medicine advice cue lead pick bow aim breath step stand wheel long high low back short scenic stairs stage mic floor spotlight reins heat fall blame bait cake hit call road exit'.split(' '));
+const TAKE_BARE = new Set(['it', 'them', "'em", 'em', 'everything']);
+/* The words before the thing needed, so a phrase reaches the thing itself. */
+const THING_DETS = new Set(['a', 'an', 'the', 'your', "yo'", 'yo', 'his', 'her', 'their', 'my', 'no', 'any', 'some', 'of', 'nobody', "nobody's"]);
+/* A line that carries on the singer's own sentence from the line above: "I'll drive it once
+ * around and park it where it sat / And keep the keys forever after that" is the singer keeping
+ * them. Only a subject whose verb can take "and keep" after it (I, we, they, anyone's 'll or
+ * 'd, gonna); "I'm leavin' / and keep the ring" is still an order. */
+const GOES_ON = /^(?:(?:and|but|so|then|now|well|oh|yeah)\s+)*(?:i|we|they|(?:i|we|they|he|she)'(?:ll|d)|i'ma|imma|(?:i'm|we're|they're|he's|she's) (?:gonna|gon'?|fixin'? to|finna|about to|going to))(?:\s|$)/;
 
 type KissOff = { family: string; phrase: string };
+
+/** The clauses of one line, lower case, apostrophes straightened, punctuation gone. */
+const kissClauses = (line: string): string[] =>
+  line
+    .replace(/[’‘`]/g, "'")
+    .toLowerCase()
+    .split(/[,;:!?.()"“”…]+|\s[—–-]+\s|[—–]/)
+    .map((c) => c.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+/** From a need to the thing needed ("don't need your cousin's boat" -> "don't need your cousin's"). */
+const throughThing = (clause: string, from: number): string => {
+  const words = clause.slice(from).trim().split(' ');
+  let k = words.findIndex((w) => /^need/.test(w)) + 1;
+  while (k > 0 && k < words.length && THING_DETS.has(words[k])) k += 1;
+  return words.slice(0, k + 1).join(' ');
+};
 
 /** The hand-back after its verb: `rest` is what follows keep, have or take; `offered` when
  *  it follows you can (you could, you might as well...). */
@@ -348,6 +378,10 @@ function handBack(verb: string, rest: string[], offered = false): string | null 
   const going = (w: string): boolean => /[a-z]{2,}(?:ing|in')$/.test(w) && !ING_NOUNS.has(w);
   if (verb === 'keep' && offered && (going(first) || (first === 'on' && going(after[0] || '')))) return `keep ${first}`;
   if (verb === 'take') {
+    /* Seen in the fix's first songs: "Go on and take it", "Take it, I think two years is
+     * enough". It or them with nothing after is the hand-over; "take it back", "take it slow"
+     * and "take it or leave it" go on, and are not. */
+    if (TAKE_BARE.has(first) && after.every((w) => KISS_TAIL.has(w))) return `take ${first}`;
     const pronoun = KISS_PRONOUNS.has(first);
     if (!pronoun && !KISS_DETS.has(first)) return null;
     let i = 0;
@@ -374,54 +408,103 @@ function handBack(verb: string, rest: string[], offered = false): string | null 
   return `${verb} ${first} ${np[0]}`;
 }
 
-/** Is this one sung line a stock kiss-off? Reads it a clause at a time. */
-function kissOff(line: string): KissOff | null {
-  const clauses = line
-    .replace(/[’‘`]/g, "'")
-    .toLowerCase()
-    .split(/[,;:!?.()"“”…]+|\s[—–-]+\s|[—–]/)
-    .map((c) => c.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-  for (const clause of clauses) {
+/** Is this one sung line a stock kiss-off? Reads it a clause at a time; `previous` is the sung
+ *  line above it in the same section. */
+function kissOff(line: string, previous = ''): KissOff | null {
+  const clauses = kissClauses(line);
+  const above = /[.!?]["”')]*\s*$/.test(previous) ? '' : kissClauses(previous).pop() || '';
+  const carriesOn = GOES_ON.test(above);
+  let takes: string[] = [];
+  for (const [n, clause] of clauses.entries()) {
     const hand = KISS_HAND_BACK.exec(clause);
     if (hand) {
-      const [, you, modal, verb, rest] = hand;
+      const [, lead, you, modal, verb, rest] = hand;
       /* Advice (you should keep the receipt) is not a hand-back, and "have" is one only
-       * when offered: you can have it. */
+       * when offered (you can have it) or said bare with it or them ("Have it, I got a place
+       * to be"). */
       const advice = !!modal && /^(?:should|better|oughta)$/.test(modal);
       const offered = !!you && !!modal && !advice && modal !== 'just';
-      if (!advice && (verb !== 'have' || offered)) {
-        const phrase = handBack(verb, rest.split(' '), offered);
-        if (phrase) return { family: verb === 'take' ? 'take' : 'keep', phrase };
+      const bareHave = verb === 'have' && !you && !modal;
+      const carried = n === 0 && !you && carriesOn && /^(?:(?:and|then|or)\s+)+$/.test(lead);
+      if (!advice && !carried && (verb !== 'have' || offered || bareHave)) {
+        const words = rest.split(' ');
+        const phrase = handBack(verb, words, offered);
+        if (phrase && (!bareHave || phrase.split(' ').length === 2)) return { family: verb === 'take' ? 'take' : 'keep', phrase };
+        /* A run of things handed over, each with take: "take the car, take the cable". */
+        if (verb === 'take' && KISS_DETS.has(words[0])) {
+          let i = 1;
+          while (i < words.length && NP_SKIP.has(words[i])) i += 1;
+          if (words[i] && !TAKE_IDIOMS.has(words[i]) && !NP_STOP.has(words[i])) takes = [...takes, `take ${words[0]} ${words[i]}`];
+        }
       }
     }
     for (const pattern of [NEED_I, NEED_BARE]) {
       const hit = pattern.exec(clause);
-      if (hit && !NEED_NOT_A_THING.has(hit[1])) return { family: 'need', phrase: hit[0].trim() };
+      if (hit && !NEED_NOT_A_THING.has(hit[1])) return { family: 'need', phrase: throughThing(clause, hit.index) };
     }
     const nobody = NEED_NOBODY.exec(clause);
     if (nobody) return { family: 'need', phrase: nobody[0].trim() };
     const who = WHO_NEEDS.exec(clause);
-    if (who && !WHO_NEEDS_NOT_A_THING.has(who[1])) return { family: 'need', phrase: `who needs ${who[1]}` };
+    if (who && !WHO_NEEDS_NOT_A_THING.has(who[1])) return { family: 'need', phrase: throughThing(clause, clause.indexOf('who needs')) };
   }
-  return null;
+  return takes.length >= 2 ? { family: 'take', phrase: takes[0] } : null;
 }
 
-/* The same move asked for in her brief: its head words, not just after a no, not, don't,
- * never, without, avoid, stop, skip or hate a few words before. */
-const KISS_IN_BRIEF: Record<string, RegExp> = {
-  keep: /\b(?:keep|can have) (?:your|the|it|all|them|'em|his|her|their|that|those|this|every|him)\b/gi,
-  take: /\btake (?:your|the|it|all|them|'em|his|her|their|that|those|this|him)\b/gi,
-  need: /\b(?:(?:don't|dont|do not|ain't|aint|didn't|didnt|did not|never|no longer)\s+(?:\w+\s+)?need(?:ed|s)?|who needs)\b/gi,
-};
+/* The same move asked for in her brief, read with the same rules as a sung line: keep, have or
+ * take offered or ordered (he can keep the house, tell him to take his gnomes and go, she gets
+ * to keep the dog), or someone doing without (I don't need him, who needs a man), and not
+ * after a no, not, never, without, avoid, stop, skip, hate or ban a few words before. A note to
+ * the writer about the song itself is not the move (keep it upbeat, keep the chorus short,
+ * take it slow, don't need a bridge, I don't need it to rhyme). */
+const SONG_PARTS = new Set('song songs chorus choruses verse verses bridge bridges hook hooks intro outro tempo beat beats rhythm lyric lyrics word words language line lines tone vibe vibes mood energy pace rhyme rhymes rhyming melody melodies vocals vocal length story theme groove bpm key drums bass guitar piano part parts ending title listener listeners audience minute minutes swearing cussing cursing profanity style genre'.split(' '));
+const OFFERED_BY = new Set(['you', 'ya', "y'all", 'he', 'she', 'they']);
+const OFFER_VERBS = new Set(['can', 'could', 'may', 'gets', 'get']);
+const TOLD_BY = new Set(['tell', 'tells', 'telling', 'told']);
+const BRIEF_LEADS = new Set('and but so just now well oh then hey yeah fine okay ok please'.split(' '));
+const NEED_NEGATED = new Set(["don't", 'dont', "ain't", 'aint', "didn't", 'didnt', 'never', "doesn't", 'doesnt', "won't", 'wont']);
+const NEED_SOFT = new Set('even really ever never sure much just actually honestly truly'.split(' '));
+const BRIEF_NEGATIONS = new Set(['no', 'not', "don't", 'dont', 'never', 'without', 'avoid', 'stop', 'skip', 'hate', 'ban', 'less', 'fewer', 'none']);
+
+/** Her brief asks for the move at word i: its family and the word where the move starts. */
+function briefMoveAt(words: string[], i: number): { family: string; start: number } | null {
+  const word = words[i];
+  const partAhead = (from: number): boolean => words.slice(from, from + 4).some((w) => SONG_PARTS.has(w));
+  if (word === 'keep' || word === 'have' || word === 'take') {
+    const j = words[i - 1] === 'to' ? i - 2 : i - 1;
+    let start = -1;
+    let offered = false;
+    if (OFFER_VERBS.has(words[j] || '') && OFFERED_BY.has(words[j - 1] || '')) [start, offered] = [j - 1, true];
+    else if (j >= 1 && TOLD_BY.has(words[j - 1])) [start, offered] = [j - 1, true];
+    else if (words.slice(0, i).every((w) => BRIEF_LEADS.has(w))) start = 0;
+    if (start === -1 || (word === 'have' && !offered)) return null;
+    return handBack(word, words.slice(i + 1), offered) && !partAhead(i + 1) ? { family: word === 'take' ? 'take' : 'keep', start } : null;
+  }
+  if (!/^need(?:s|ed)?$/.test(word)) return null;
+  const j = !NEED_NEGATED.has(words[i - 1] || '') && NEED_SOFT.has(words[i - 1] || '') ? i - 2 : i - 1;
+  let start = -1;
+  if (NEED_NEGATED.has(words[j] || '')) start = j;
+  else if (words[j] === 'not' && ['do', 'does', 'did'].includes(words[j - 1] || '')) start = j - 1;
+  else if (words[j] === 'longer' && words[j - 1] === 'no') start = j - 1;
+  else if (word === 'needs' && words[i - 1] === 'who' && words.slice(0, i - 1).every((w) => BRIEF_LEADS.has(w)) && !WHO_NEEDS_NOT_A_THING.has(words[i + 1] || '')) start = i - 1;
+  const next = words[i + 1] || '';
+  if (start === -1 || NEED_NOT_A_THING.has(next) || partAhead(i + 1) || (next === 'it' && words[i + 2] === 'to')) return null;
+  return { family: 'need', start };
+}
+
+const bareWords = (text: string): string => sayable(text).split(' ').map(bare).join(' ');
 const briefKissOffs = (brief: string): Set<string> => {
-  const text = String(brief || '').replace(/[’‘`]/g, "'");
   const asked = new Set<string>();
-  for (const [family, pattern] of Object.entries(KISS_IN_BRIEF))
-    for (const hit of text.matchAll(pattern)) {
-      const before = text.slice(Math.max(0, (hit.index || 0) - 25), hit.index || 0);
-      if (!/\b(?:no|not|don't|never|without|avoid|stop|skip|hate|ban)\b[^.!?;\n]*$/i.test(before)) asked.add(family);
+  for (const sentence of String(brief || '').replace(/[’‘`]/g, "'").toLowerCase().split(/[.!?;\n]+/)) {
+    const before: string[] = [];
+    for (const clause of sentence.split(/[,:()…]+|\s[—–-]+\s|[—–]/)) {
+      const words = clause.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').map(bare).filter(Boolean);
+      for (let i = 0; i < words.length; i++) {
+        const move = briefMoveAt(words, i);
+        if (move && !before.concat(words.slice(0, move.start)).slice(-6).some((w) => BRIEF_NEGATIONS.has(w))) asked.add(move.family);
+      }
+      before.push(...words);
     }
+  }
   return asked;
 };
 
@@ -429,12 +512,20 @@ const briefKissOffs = (brief: string): Set<string> => {
  *  Supplied lyrics never reach this; a phrase or the same move from her brief is hers. */
 export function lyricKissOffTells(script: string, brief = ''): LyricTell[] {
   const asked = briefKissOffs(brief);
-  const said = sayable(brief);
+  const said = ` ${bareWords(brief)} `;
   const found: LyricTell[] = [];
-  for (const { line } of sungLines(script)) {
+  let above = { line: '', pass: -1 };
+  for (const { line, pass } of sungLines(script)) {
+    const previous = above.pass === pass ? above.line : '';
+    above = { line, pass };
     if (found.some((t) => t.line === line)) continue;
-    const hit = kissOff(line);
-    if (!hit || asked.has(hit.family) || (said && ` ${said} `.includes(` ${sayable(hit.phrase)} `))) continue;
+    const hit = kissOff(line, previous);
+    if (!hit || asked.has(hit.family)) continue;
+    /* Her own phrase counts through the thing itself: "keep it" or "don't need a" alone would
+     * let any line through behind her "keep it upbeat" or "I don't need a bridge". */
+    const phrase = bareWords(hit.phrase).split(' ');
+    const last = phrase[phrase.length - 1];
+    if (phrase.length >= 3 && !KISS_PRONOUNS.has(last) && !THING_DETS.has(last) && said.includes(` ${phrase.join(' ')} `)) continue;
     found.push({ line, tell: KISS_OFF_TELL });
   }
   return found;

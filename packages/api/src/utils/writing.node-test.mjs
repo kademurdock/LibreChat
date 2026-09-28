@@ -1337,3 +1337,46 @@ test('Part 296 follow-up: the route flags kiss-offs past a Jev veto, the audit r
   assert.equal(booth.requests.length, 1);
   assert.equal(booth.ledger[0].metadata.kissOffs, undefined);
 });
+
+/* Part 296 follow-up review: what the review found on the 600 stored desk texts and in how a brief
+ * is read. Every lyric below is invented for these tests. */
+test('Part 296 follow-up review: a note to the writer in her idea does not switch the kiss-off scan off', () => {
+  const writerNotes = [
+    ['You can keep the recliner', 'breakup song, keep it upbeat'], ['You can keep the recliner', 'country breakup song, keep the chorus short'],
+    ['You can keep the recliner', 'breakup song, keep the tempo fast'], ['You can keep the recliner', 'breakup song, keep your language clean'],
+    ['You can keep the recliner', 'a song about trying to keep the farm'], ['Take your lawn gnomes and go', 'breakup song, take it slow at first'],
+    ["I don't need your pity", "breakup song, I don't need it to rhyme perfectly"], ["I don't need your pity", "sad song, don't need a bridge"],
+    ["I don't need your pity", 'a song for anybody who needs a ride home'],
+    /* Her phrase counts through the thing itself: "keep it" or "don't need a" alone is not hers. */
+    ['Baby, you can keep it', 'breakup song, keep it upbeat'], ["I don't need a DJ", "dance song, I don't need a bridge"],
+  ];
+  for (const [line, brief] of writerNotes) assert.deepEqual(kissFlags(line, brief), [KISS_OFF_TELL], `${line} | ${brief}`);
+  const asked = [
+    ['Take your lawn gnomes and go', 'breakup song where she tells him to take his lawn gnomes and go'],
+    ['You can keep the recliner', 'divorce song, she gets to keep the house'], ['Baby, you can keep it', 'she tells him he can keep it all'],
+    ["We don't need the lights", 'love song, I never needed him anyway'], ["I don't need a DJ", "dance song called I Don't Need a DJ"],
+    ['Who needs a husband with a bass boat', 'who needs a man, a girls night song'],
+  ];
+  for (const [line, brief] of asked) assert.deepEqual(kissFlags(line, brief), [], `${line} | ${brief}`);
+});
+
+test('Part 296 follow-up review: the singer carrying on a sentence keeps the thing; it or them handed over, bare have and a run of takes are the kiss-off', () => {
+  const song = (...lines) => 'x\nLyrics:\n[Verse 1]\n' + lines.join('\n') + '\n\nREADBACK: x';
+  /* Seen on a grief song: the singer's own sentence runs on, so the singer keeps the keys. */
+  assert.deepEqual(lyricKissOffTells(song("I'll drive it round the square one time for him", 'And keep the keys and his old fishing hat')), []);
+  assert.deepEqual(lyricKissOffTells(song("We'll sell the boat to Randy's cousin Ted", 'And keep the trailer for the hay instead')), []);
+  /* Still an order: the sentence above ended, or its verb cannot take "and keep" after it, or it is in another section. */
+  assert.equal(lyricKissOffTells(song("I'll drive it round the square one time for him.", 'And keep the keys and his old fishing hat')).length, 1);
+  assert.equal(lyricKissOffTells(song("I'm leavin' on the Greyhound bus tonight", 'And keep the ring, I never liked the stone')).length, 1);
+  assert.equal(lyricKissOffTells('x\nLyrics:\n[Verse 1]\nI\'ll drive it once around and park it by the shed\n\n[Chorus]\nAnd keep the keys and his old fishing hat\n\nREADBACK: x').length, 1);
+  const kissOffs = [
+    'Go on and take it, give it to your mama', 'Take it, I figure six years is plenty', 'Have it, I got a bus to catch', "Have 'em both, I'm headed to Branson",
+    'Take the boat, take the camper, take the dog', 'Fine, take them all',
+  ];
+  for (const line of kissOffs) assert.deepEqual(kissFlags(line), [KISS_OFF_TELL], line);
+  const plainSpeech = [
+    'Take it slow, we got all night', "Take it or leave it, that's the price", 'Take it easy on the gravel', 'Have it your way, Darrell', 'Have a good night, Randy',
+    'Take the high road, take the long way home', 'Take your time, take your turn', 'Take my hand, take my name', "Take it all back, you know you lied", 'Have them call me after five',
+  ];
+  for (const line of plainSpeech) assert.deepEqual(kissFlags(line), [], line);
+});
