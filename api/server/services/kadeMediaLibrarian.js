@@ -891,11 +891,16 @@ function showKey(name) {
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/^the /, '');
 }
 const LEADING_YEAR = /^\s*[[(]?\s*(?:19|20)\d\d\s*[\])]?\s*[-–:,]?\s*/;
+/** Part 297: a collection's running number, "007. " or "12 - ", never a name like "9-1-1" or "24". */
+const RUNNING_NUMBER = /^\s*\d{1,4}\s*[.)\]:]\s+|^\s*\d{1,4}\s+[-–—]\s+/;
 /** The show a title names before its episode code ("Rugrats - Season 2 Episode 5" -> "Rugrats"), or null. */
 function showFromTitle(title, sign) {
   let s = String(title || '').slice(0, sign ? sign.at : 0);
   if (!/\s/.test(s.trim())) s = s.replace(/[._]+/g, ' '); // a file name: Family.Guy.S01E01
   s = s.replace(LEADING_YEAR, '').replace(/\bfull[\s._-]+episodes?\b[\s:-]*/gi, ' ');
+  // Part 297: a running number before the show ("007. As Told By Ginger - Ep07 - ..."), when a name is left after it
+  const unnumbered = s.replace(RUNNING_NUMBER, '');
+  if (/[A-Za-z]{2}/.test(unnumbered.split(/\s[-–—|]\s/)[0])) s = unnumbered;
   // "Show - episode" and a downloaded title's full-width bar ("SportsCenter ｜ 03-18-1995 ｜ ..."): the show comes first
   s = s.split(/\s[-–—|]\s|\s*｜\s*/)[0];
   // "Another World (1986) - NBC", "CNET Central (1997) Digital Volunteers", "Extreme Dodgeball (2004 GSN Show)",

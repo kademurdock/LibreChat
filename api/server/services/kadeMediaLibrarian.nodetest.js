@@ -934,6 +934,12 @@ test('Part 297: file names that put the code first, or write it as three digits 
   assert.strictEqual(L.uploadShow('Family.Guy.Complete.Series.720p'), 'Family Guy');
   assert.strictEqual(L.uploadShow('Rugrats (1991-2004) Complete'), 'Rugrats');
   assert.strictEqual(L.uploadShow('[COMPLETE]'), null);
+  // her As Told By Ginger upload, the same afternoon: a running number before the show made 7 show folders
+  const GINGER = 'Video/Needs Filing/As Told By Ginger - Entire series in ENGLISH no subtitles';
+  assert.strictEqual(fullTo(video('007. As Told By Ginger - Ep07 - Hello Stranger', GINGER, { seconds: 22 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes');
+  assert.strictEqual(fullTo(video('006. As Told By Ginger - Ep06- Dare I, Darren', GINGER, { seconds: 22 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes');
+  assert.strictEqual(fullTo(video('12 - Rugrats - S02E05', INTAKE, { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 2');
+  assert.strictEqual(fullTo(video('2 Broke Girls - S01E01 - Pilot', INTAKE, { seconds: 22 * MIN })), 'Video/Full TV/2 Broke Girls/Season 1', 'a number that is part of the name stays');
   const soaps = { knownShows: new Map([['all my children', 'All My Children']]) };
   assert.deepStrictEqual(L.fullQuestions(video('All My Children (11-16-1994)  Partial', INTAKE, { seconds: 41 * MIN }), soaps), {}, 'a partial recording is not a whole episode');
   assert.ok(L.fullQuestions(video('All My Children (11-16-1994)', INTAKE, { seconds: 41 * MIN }), soaps).episode, 'a show her TV Shows shelf knows can be asked about');
