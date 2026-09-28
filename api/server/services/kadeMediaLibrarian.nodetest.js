@@ -900,3 +900,41 @@ test('Part 296 review: a film files under its release year, not a number in its 
   assert.strictEqual(dec('A film', 'Video/Channels/Other Channels/1980s'), '1980s');
   assert.strictEqual(L.showFromTitle('Local 4 (Detroit, 1992) S01E01', L.episodeSign('Local 4 (Detroit, 1992) S01E01')), 'Local 4', 'brackets holding a year end the show');
 });
+
+test('Part 297: a downloaded collection files by its own season and Movies folders (her Drake & Josh upload, Sep 28)', () => {
+  const COLL = 'Video/Needs Filing/[NICKELODEON] DRAKE AND JOSH [COMPLETE][VERIFIED-VIDZ]';
+  const knownShows = L.knownShows([], [], ['Video/TV Shows/Drake & Josh/Promos & Previews/2000s', 'Video/TV Shows/Assorted (One-Offs)/Undated', 'Video/TV Shows/Game Shows/1990s', 'Video/TV Shows/Program Lineups/1990s']);
+  assert.deepStrictEqual([...knownShows.values()], ['Drake & Josh'], 'show folders of TV Shows, never its catch-alls');
+  const deps = { knownShows };
+  const ep = (title, folder, minutes) => fullTo(video(title, `${COLL}/${folder}`, { seconds: minutes * MIN }), deps);
+  assert.strictEqual(ep('S02e01.Drake___Josh-(The_Bet)', 'S2', 23), 'Video/Full TV/Drake & Josh/Season 2');
+  assert.strictEqual(ep('Drake.and.josh.101.pilot', 'S1', 24), 'Video/Full TV/Drake & Josh/Season 1');
+  assert.strictEqual(ep('S04e17-18.Drake___Josh-(Really_Big_Shrimp)', 'S4', 48), 'Video/Full TV/Drake & Josh/Season 4', 'a double episode in a season folder');
+  assert.strictEqual(ep('Drake & Josh promo', 'S1', 1), null, "under 5 minutes: today's rules");
+  assert.strictEqual(fullTo(video('S02e01.Drake___Josh-(The_Bet)', `${COLL}/S2`, {})), 'Video/Full TV/Drake and Josh/Season 2', 'no known show: the folder, in title case');
+  assert.strictEqual(fullTo(video('Merry_Christmas__Drake___Josh', `${COLL}/MOVIES`, { seconds: 87 * MIN })), 'Video/Full Movies/Undated');
+  assert.strictEqual(fullTo(video('Drake_And_Josh_Go_Hollywood', `${COLL}/MOVIES`, { seconds: 73 * MIN })), 'Video/Full Movies/Undated');
+  assert.strictEqual(fullTo(video('Movie trailer', `${COLL}/MOVIES`, { seconds: 2 * MIN })), null, 'under 40 minutes');
+  assert.strictEqual(fullTo(video('Rugrats S01E01', 'Video/Needs Filing/Season 1', { seconds: 23 * MIN })), 'Video/Full TV/Rugrats/Season 1', 'a season folder straight in Needs Filing names no show: the title does');
+  assert.strictEqual(L.decide(video('S02e02.Drake___Josh-(Guitar)', `${COLL}/S2`, { seconds: 23 * MIN }), {}, deps).why, 'a season folder in the upload: a whole episode');
+  assert.strictEqual(fullTo(video('Ozarks Life episode', 'Video/Needs Filing/KY3 Ozarks Life/Season 1', { seconds: 25 * MIN })), null, 'her part of the country comes first');
+});
+
+test('Part 297: file names that put the code first, or write it as three digits after a show her shelves know', () => {
+  const deps = { knownShows: new Map([['drake and josh', 'Drake & Josh'], ['family guy', 'Family guy']]) };
+  const at = (title, d = deps) => fullTo(video(title, INTAKE, { seconds: 23 * MIN }), d);
+  assert.strictEqual(at('S02e01.Drake___Josh-(The_Bet)'), 'Video/Full TV/Drake & Josh/Season 2');
+  assert.strictEqual(at('S02e09.Drake_and_Josh-(Drivers_License)', {}), 'Video/Full TV/Drake and Josh/Season 2', 'the name after the code');
+  assert.strictEqual(at('S03E04 - Family Guy - Fish Out of Water'), 'Video/Full TV/Family guy/Season 3');
+  assert.strictEqual(at('Drake.and.josh.101.pilot'), 'Video/Full TV/Drake & Josh/Season 1');
+  assert.strictEqual(at('Drake.and.josh.101.pilot', {}), null, 'three digits only after a known show');
+  assert.strictEqual(at('Room.101.Episode', {}), null);
+  assert.strictEqual(at('Blink.182.Live.2001', deps), null);
+  assert.strictEqual(L.uploadShow('[NICKELODEON] DRAKE AND JOSH [COMPLETE][VERIFIED-VIDZ]'), 'Drake and Josh');
+  assert.strictEqual(L.uploadShow('Family.Guy.Complete.Series.720p'), 'Family Guy');
+  assert.strictEqual(L.uploadShow('Rugrats (1991-2004) Complete'), 'Rugrats');
+  assert.strictEqual(L.uploadShow('[COMPLETE]'), null);
+  const soaps = { knownShows: new Map([['all my children', 'All My Children']]) };
+  assert.deepStrictEqual(L.fullQuestions(video('All My Children (11-16-1994)  Partial', INTAKE, { seconds: 41 * MIN }), soaps), {}, 'a partial recording is not a whole episode');
+  assert.ok(L.fullQuestions(video('All My Children (11-16-1994)', INTAKE, { seconds: 41 * MIN }), soaps).episode, 'a show her TV Shows shelf knows can be asked about');
+});

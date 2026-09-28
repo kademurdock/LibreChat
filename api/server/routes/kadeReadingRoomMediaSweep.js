@@ -117,11 +117,13 @@ async function deps(items = []) {
    * each, only when the batch holds a video that could be a whole film or episode. */
   if (items.some((i) => librarian.mightBeFull(i))) {
     try {
-      const [full, described] = await Promise.all([
+      const [full, described, shows] = await Promise.all([
         KadeBook.distinct('path', { kind: 'video', path: /^Videos?\/Full TV\// }),
         KadeBook.distinct('path', { kind: 'audio', path: /^Audio\/Described Movies & TV\/TV\// }),
+        // Part 297: the show folders her clips already sit in name a new upload's shows too
+        KadeBook.distinct('path', { kind: 'video', path: /^Videos?\/TV Shows\// }),
       ]);
-      out.knownShows = librarian.knownShows(described, full);
+      out.knownShows = librarian.knownShows(described, full, shows);
       const first = { knownShows: out.knownShows, fullShelves: librarian.fullIndex(full) };
       const planned = items.map((i) => librarian.fullShelfFact(i, first)).filter((d) => d && d.to.startsWith(librarian.FULL_TV + '/')).map((d) => d.to);
       out.fullShelves = librarian.fullIndex(full, planned);

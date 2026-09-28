@@ -367,6 +367,26 @@ function stlFact(item) {
  * trees (Family Guy Season 12: 7 filed, 14 waiting) becomes one folder again. */
 const TV_FOLDER = /(?:^|\/)Needs Filing\/(?:TV|TV Shows|Television)(?:\/(.+))?$/i;
 const MOVIES_FOLDER = /(?:^|\/)Needs Filing\/(?:Movies|Films?)(?:\/(.+))?$/i;
+/* Part 297 (Sep 28 2026), her Drake & Josh upload. A downloaded collection keeps its own folders
+ * ("Needs Filing/[NICKELODEON] DRAKE AND JOSH [COMPLETE][VERIFIED-VIDZ]/S2", ".../MOVIES") and its file names
+ * put the code first ("S02e01.Drake___Josh-(The_Bet)") or write it as three digits ("Drake.and.josh.101.pilot").
+ * None of that was read, so 50 whole episodes went to TV Shows/Assorted (One-Offs) and one TV movie with them.
+ * A season folder inside an upload's folder is a fact like her TV folder (the folder above it names the show),
+ * and a Movies folder inside one is her Movies folder. */
+const UPLOAD_SEASON = /(?:^|\/)Needs Filing\/(?:[^/]+\/)*?([^/]+)\/(?:S|Season|Series)[\s._-]*0*(\d{1,2})$/i;
+const UPLOAD_MOVIES = /(?:^|\/)Needs Filing\/(?:[^/]+\/)+(?:Movies|Films?|Feature Films)$/i;
+const UPLOAD_NOISE = /\b(?:the\s+)?complete(?:\s+series)?\b|\b(?:all\s+)?seasons?\s*\d+(?:\s*[-–]\s*\d+)?\b|\b(?:dvd|bd|web|hdtv)[\s-]?rip\b|\b(?:480|720|1080|2160)p\b|\bx26[45]\b|\bxvid\b|\bdivx\b/gi;
+const SMALL_WORD = /^(?:a|an|and|as|at|but|by|for|in|of|on|or|the|to|vs)$/;
+/** The show an upload's folder names: its tags ("[NICKELODEON]", "[COMPLETE]") and rip words dropped, and a
+ * shouted name ("DRAKE AND JOSH") put in title case. null when nothing is left. */
+function uploadShow(folder) {
+  let s = String(folder || '').replace(/\[[^\]]*\]|\{[^}]*\}/g, ' ').replace(/\([^)]*(?:\b(?:19|20)\d\d\b|complete|rip|\d{3,4}p)[^)]*\)/gi, ' ');
+  if (!/\s/.test(s.trim())) s = s.replace(/[._]+/g, ' ');
+  s = s.replace(UPLOAD_NOISE, ' ').replace(/\s+/g, ' ').replace(/^[\s\-–—:|,]+|[\s\-–—:|,]+$/g, '').trim();
+  if (s.length < 2 || !/[A-Za-z]/.test(s)) return null;
+  if (s === s.toUpperCase()) s = s.toLowerCase().split(' ').map((w, i) => (i && SMALL_WORD.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+  return s;
+}
 const SOUNDTRACK = /\b(?:soundtracks?|OST)\b/i;
 const DESCRIBED_ROOT = 'Audio/Described Movies & TV';
 
@@ -797,6 +817,8 @@ const NOT_WHOLE_MORE = new RegExp([
   '\\bradio (?:shows?|broadcasts?|programs?|programmes?|dramas?|serials?)\\b', '\\bairchecks?\\b',
   // somebody's own tape
   '\\bhome[\\s-]*movies?\\b',
+  // Part 297: a recording that says it is not all there
+  '\\bpartial\\b', '\\bincomplete\\b',
   // a piece: "Full Movie Part 2", "(1/2)", "Tape 1 of 3"
   '(?:full[\\s._-]*(?:length[\\s._-]*)?(?:movie|film|feature|episode)|feature film)[\\s._\\-–:(\\[]*(?:part|pt\\.?)\\s*\\d+',
   '[([]\\s*\\d{1,2}\\s*(?:of|\\/)\\s*\\d{1,2}\\s*[)\\]]',
@@ -900,8 +922,11 @@ function knownShowAtStart(title, known) {
 /**
  * The show names her shelves know: the described audio TV side's show folders (a bare season folder
  * gives its show) and Full TV's own. `describedPaths` / `fullPaths` are item paths; Full TV's spelling wins.
+ * Part 297: the show folders of Videos/TV Shows too (`showPaths`), after the other two, so "DRAKE AND JOSH"
+ * and "Drake___Josh" are the "Drake & Josh" her clips are already filed under.
  */
-function knownShows(describedPaths = [], fullPaths = []) {
+const NOT_A_SHOW_FOLDER = /^(?:assorted\b.*|game shows|program lineups)$/i;
+function knownShows(describedPaths = [], fullPaths = [], showPaths = []) {
   const out = new Map();
   const add = (seg) => {
     const name = showOf(seg) || seg;
@@ -915,6 +940,10 @@ function knownShows(describedPaths = [], fullPaths = []) {
   for (const p of [...(describedPaths || [])].map(String).sort()) {
     const m = /^Audio\/Described Movies & TV\/TV\/([^/]+)/i.exec(p);
     if (m) add(m[1]);
+  }
+  for (const p of [...(showPaths || [])].map(String).sort()) {
+    const m = /^Videos?\/TV Shows\/([^/]+)/i.exec(p);
+    if (m && !NOT_A_SHOW_FOLDER.test(m[1])) add(m[1]);
   }
   return out;
 }
@@ -942,9 +971,29 @@ function seasonNumber(folder) {
 }
 /** The show an item is an episode of, spelled as Full TV already spells it; null when it cannot be named. */
 const FULL_EPISODE_LEAD = /^\s*full[\s._-]+episodes?\s*[:\-–—|]?\s*/i;
+/** Part 297: a file name that puts the code first names the show after it ("S02e01.Drake___Josh-(The_Bet)",
+ * three underscores being a file name's "&"); up to the episode's own name in brackets or after a dash. */
+const CODE_FIRST = /^(?:S\d{1,2}[\s._-]?E\d{1,3}(?:[-–]E?\d{1,3})?|\d{1,2}x\d{2,3}|Season[\s._-]*\d{1,2}(?:[\s._-]*(?:Episode|Ep\.?)[\s._-]*\d{1,3})?)(?=[\s._-])/i;
+function showAfterCode(title) {
+  const m = CODE_FIRST.exec(String(title || '').replace(LEADING_YEAR, ''));
+  if (!m) return null;
+  let s = String(title || '').replace(LEADING_YEAR, '').slice(m[0].length);
+  if (!/\s/.test(s.trim())) s = s.replace(/_{3}/g, ' & ').replace(/[._]+/g, ' ');
+  s = s.replace(/^[\s\-–—:|,]+/, '').split(/\s*-\s*[([]|\s[-–—|]\s|\s*[([｜]/)[0].replace(/^[\s\-–—:|,._]+|[\s\-–—:|,._]+$/g, '').replace(/\s+/g, ' ').trim();
+  return s.length >= 2 && /[A-Za-z]/.test(s) ? s : null;
+}
+/** Part 297: a dotted file name with a three-digit code after a show her shelves know ("Drake.and.josh.101.pilot"
+ * is season 1). Only a known show: "Room.101" and "Blink.182" are not episodes. { show, season } or null. */
+function dottedEpisode(title, known) {
+  const t = String(title || '');
+  if (/\s/.test(t.trim()) || !known || !known.size) return null;
+  const m = /^(.+?)[._](\d)(\d{2})(?=[._]|$)/.exec(t);
+  const show = m && known.get(showKey(m[1].replace(/_{3}/g, ' & ').replace(/[._]+/g, ' ')));
+  return show ? { show, season: parseInt(m[2], 10) } : null;
+}
 function showFor(item, deps = {}) {
   const t = String(item.title || '').replace(FULL_EPISODE_LEAD, '');
-  const fromTitle = showFromTitle(t, episodeSign(t));
+  const fromTitle = showFromTitle(t, episodeSign(t)) || showAfterCode(t);
   const known = deps.knownShows;
   // the name before an episode code, in the spelling her shelves know it by; with no code, a known show named first
   const name = fromTitle ? (known && known.get(showKey(fromTitle))) || fromTitle : knownShowAtStart(t, known);
@@ -1006,6 +1055,14 @@ function fullShelfFact(item, deps = {}) {
   if (tv && (!secs || secs >= FULL_LEN.herTvFolder)) return { to: herTvPath(tv[1], item, deps), why: 'her TV folder: a whole episode' };
   const movies = !music && MOVIES_FOLDER.exec(p);
   if (movies && (!secs || secs >= FULL_LEN.movieStrong)) return { to: filmPath(item), why: 'her Movies folder: a whole film' };
+  // Part 297: a downloaded collection's own season and Movies folders, read like hers
+  const season = !music && !tv && !movies && UPLOAD_SEASON.exec(p);
+  if (season && (!secs || secs >= FULL_LEN.herTvFolder)) {
+    const named = uploadShow(season[1]);
+    const show = named && ((deps.knownShows && deps.knownShows.get(showKey(named))) || named);
+    if (show) return { to: fullTvPath(show, parseInt(season[2], 10), deps), why: "a season folder in the upload: a whole episode" };
+  }
+  if (!music && !tv && !movies && UPLOAD_MOVIES.test(p) && (!secs || secs >= FULL_LEN.movieStrong)) return { to: filmPath(item), why: 'a Movies folder in the upload: a whole film' };
   if (!secs || notWhole(t)) return null;
   const metaType = String((item.meta || {}).type || '');
   if (secs >= FULL_LEN.movieStrong && FILM_STRONG.test(t)) return { to: filmPath(item), why: 'a whole film: its title says so' };
@@ -1018,11 +1075,14 @@ function fullShelfFact(item, deps = {}) {
     const show = showFor(item, deps);
     if (show) return { to: fullTvPath(show, sign.season, deps), why: 'a whole episode: its title says so' };
   }
+  const dotted = !sign && secs >= FULL_LEN.episode && secs <= FULL_LEN.episodeMax && dottedEpisode(t, deps.knownShows);
+  if (dotted) return { to: fullTvPath(dotted.show, dotted.season, deps), why: 'a whole episode: its file name says so' };
   return null;
 }
 /** Whether a pass should read the Full shelves' spellings for this item (cheap, before any read). */
 function mightBeFull(item) {
-  return !!item && item.kind === 'video' && fullEligible(item) && (secondsOf(item) >= FULL_LEN.herTvFolder || TV_FOLDER.test(String(item.path || '')) || MOVIES_FOLDER.test(String(item.path || '')));
+  const p = String((item && item.path) || '');
+  return !!item && item.kind === 'video' && fullEligible(item) && (secondsOf(item) >= FULL_LEN.herTvFolder || TV_FOLDER.test(p) || MOVIES_FOLDER.test(p) || UPLOAD_SEASON.test(p) || UPLOAD_MOVIES.test(p));
 }
 
 const FILM_Q = {
@@ -1558,4 +1618,5 @@ module.exports = {
   stlFact, stLouis, areaByRule, missouriText, LOCATION_DOUBT_NOTE, GUESS_NOTE, MALFORMED,
   FULL_MOVIES, FULL_TV, FULL_LEN, fullShelfFact, fullShelfJudged, fullQuestions, fullEligible, mightBeFull, notWhole, episodeSign, NEWS, NOT_FULL_SHELF,
   showFromTitle, showFor, knownShows, fullIndex, fullTvPath, filmDecade, secondsOf, lengthWords, FILM_Q, EPISODE_Q,
+  uploadShow, showAfterCode, dottedEpisode,
 };
