@@ -839,3 +839,64 @@ test("a short show name her shelves know never swallows a longer one: the descri
   assert.strictEqual(L.showFor(at('Star - Pilot'), deps), 'Star');
   assert.strictEqual(fullTo(at('Family Guy S09E01'), deps), 'Video/Full TV/Family guy/Season 9', 'the spelling her described side uses');
 });
+
+test('Part 296 review: news, commercials, music, radio, events, pieces and piles never reach a Full shelf', () => {
+  const at = (title, minutes, path = INTAKE, extra = {}) => fullTo(video(title, path, { seconds: minutes * MIN, ...extra }));
+  const asked = (title, minutes, path = INTAKE, extra = {}) => Object.keys(L.fullQuestions(video(title, path, { seconds: minutes * MIN, ...extra }), { knownShows: new Map([['friends', 'Friends']]) }));
+  // local news of anywhere, and national news, is never a Full TV episode (her channel and local-first rules keep it)
+  assert.strictEqual(at('NBC Nightly News - Full Episode (1995)', 30), null);
+  assert.strictEqual(at('Local 4 News at 11 (Detroit, 1992) Full Episode', 30), null, "another city's local news");
+  assert.strictEqual(at('Channel 2 Action News Season 1 Episode 4', 30), null);
+  assert.strictEqual(at('WGN News at Nine (1994) Full Episode', 30), null);
+  assert.strictEqual(at('KY3 News at 10 - Full Episode', 30), null, 'her own local news: local first');
+  assert.deepStrictEqual(asked('Friends News Special', 22), [], 'no whole-episode question about news either');
+  assert.strictEqual(at('Broadcast News (1987) Full Movie', 133), 'Video/Full Movies/1980s', 'a film is not read for the news word');
+  // commercials and paid programming, and anything already filed as a commercial, PSA, music or radio
+  assert.strictEqual(at('George Foreman Grill Paid Programming Episode 3 (1996)', 28), null);
+  assert.strictEqual(at('80s Toy Commercials Vol 1 Full Episode', 30), null);
+  assert.strictEqual(fullTo(fresh('Rugrats S02E05 (1993)', 'Video/Commercials/Toys & Video Games/1990s', 23 * MIN)), null, 'a new upload filed as a commercial stays one');
+  assert.strictEqual(fullTo(fresh('Home Alone (1990) Full Movie', 'Video/Commercials/Toys & Video Games/1990s', 100 * MIN)), null);
+  assert.deepStrictEqual(L.fullQuestions(fresh('Your Joint Benefits with Andrew Lessman HSN', 'Video/Commercials/Infomercials & Paid Programming/Undated', 84 * MIN)), {});
+  assert.strictEqual(fullTo(fresh('Eminem In Concert (2001) Full Movie', 'Video/Music/Eminem/2000s', 90 * MIN)), null);
+  assert.strictEqual(fullTo(fresh('Howard Stern Radio Show Episode 12', 'Video/Radio/Airchecks & Broadcasts/1990s', 40 * MIN)), null);
+  assert.strictEqual(at('Some Title (1990) Full Movie', 95, INTAKE, { category: 'commercials' }), null, 'the commercials category');
+  assert.strictEqual(fullTo(video('Tommy', 'Video/Needs Filing/TV/Music/Season 1', { seconds: 23 * MIN })), 'Video/Full TV/Music/Season 1', 'her own TV folder is read first');
+  assert.strictEqual(at('Show Promo Full Episode S01E01', 20, 'Videos/Advertising/Show Promos (Review)'), null);
+  // film music, concerts, radio, home movies
+  assert.strictEqual(at('Jaws - Original Film Score (1975)', 45), null);
+  assert.strictEqual(at('Star Wars Music from the Motion Picture (1977)', 75), null);
+  assert.strictEqual(at('Home Movie 1987 Christmas at Grandmas', 70), null);
+  assert.deepStrictEqual(asked('Home Movie 1987 Christmas at Grandmas', 70), [], 'not even asked');
+  // pieces and piles
+  assert.strictEqual(at('The Burning Bed (1984) Full Movie Part 1', 50), null);
+  assert.strictEqual(at('The Burning Bed (1984) Full Movie (1/2)', 50), null);
+  assert.deepStrictEqual(asked('Ericksonian Hypnosis (1986, VHS) Tape 1 of 3', 107), []);
+  assert.strictEqual(at('Rugrats S01E01-E03', 60), null);
+  assert.strictEqual(at('Rugrats Episodes 1-2', 23), null);
+  assert.strictEqual(at('Top 10 Episodes of Friends Season 1', 30), null);
+  assert.strictEqual(at('3 Full Episodes of Arthur Season 2', 60), null);
+  // events, games and specials
+  assert.strictEqual(at('Oscars 1995 (Academy Awards) Full Show Episode 67', 60), null);
+  assert.strictEqual(at('NBA Finals 1998 Game 6 Full Episode', 60), null);
+  assert.strictEqual(at('Sundance Film Festival 1995 coverage', 70), null, 'a plain film word is not enough for a festival');
+  assert.strictEqual(at('Bob Hope Christmas Special starring Brooke Shields (1984)', 70), null);
+  assert.strictEqual(at('Saturday Night Live starring Steve Martin (1978)', 90), null, '"starring" is not a film word');
+  assert.strictEqual(at('Bell Telephone training film (1962)', 62), null);
+  // what should still go does
+  assert.strictEqual(at('The Tonight Show Starring Johnny Carson (1985) Full Episode', 60), 'Video/Full TV/The Tonight Show Starring Johnny Carson/Other episodes', 'an episode code wins over a film word');
+  assert.strictEqual(at('Friends Season 1 Episode 1 The Pilot', 22), 'Video/Full TV/Friends/Season 1');
+  assert.strictEqual(at('The Score (2001) Full Movie', 124), 'Video/Full Movies/2000s');
+  assert.strictEqual(at('ABC Sunday Night Movie: The Day After (1983)', 120), 'Video/Full Movies/1980s');
+});
+
+test('Part 296 review: a film files under its release year, not a number in its name', () => {
+  const dec = (title, path = INTAKE) => L.filmDecade({ title, path });
+  assert.strictEqual(dec('2001: A Space Odyssey (1968) Full Movie'), '1960s');
+  assert.strictEqual(dec('1941 (1979) Full Movie'), '1970s');
+  assert.strictEqual(dec('2001 A Space Odyssey 1968 Full Movie'), '1960s', 'no brackets: the year after the name');
+  assert.strictEqual(dec('1941 Full Movie'), '1940s', 'the only year');
+  assert.strictEqual(dec('Captain Barbell (VHS, 2003)'), '2000s');
+  assert.strictEqual(dec('Hello, Fools! (1996, VHS) Russian, Very Rare, No English Subs, Full Feature Film'), '1990s');
+  assert.strictEqual(dec('A film', 'Video/Channels/Other Channels/1980s'), '1980s');
+  assert.strictEqual(L.showFromTitle('Local 4 (Detroit, 1992) S01E01', L.episodeSign('Local 4 (Detroit, 1992) S01E01')), 'Local 4', 'brackets holding a year end the show');
+});

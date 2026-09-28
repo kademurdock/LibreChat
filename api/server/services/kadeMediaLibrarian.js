@@ -746,6 +746,19 @@ function areaText(item) {
  * its title, description or folder, is never taken to a Full shelf. A full episode of a local show
  * goes where local items always go (the Ozarks kinds: Around the Ozarks, Local News...) or waits for
  * her with its "unsure if local" note. An item already on a Full shelf stays where it was put.
+ *
+ * REVIEW, the same night. A probe of made-up titles found wrong moves, now closed: a film score, "Music
+ * from the Motion Picture", a home movie, "Full Movie Part 1" and "(1/2)", a film festival, a Christmas
+ * special "starring" someone and "The Tonight Show Starring Johnny Carson" all went to Full Movies;
+ * "NBC Nightly News - Full Episode", another city's "Action News Season 1 Episode 4", paid programming,
+ * a radio show, "Top 10 Episodes of Friends", an awards show and a game "Full Episode" all went to Full
+ * TV; and a new upload already filed as a commercial, music or radio was taken too. So: NOT_WHOLE_MORE
+ * (scores, concerts, radio, home movies, pieces, piles, events, paid programming, games), NEWS (never a
+ * Full TV episode; films are not read for it), a plain film word needs no episode code and no show or
+ * event word (FILM_WORD_NOT, and "starring" is no longer one), and NOT_FULL_SHELF / NOT_FULL_CATEGORY
+ * keep a commercial, PSA, music, radio, home-movie, trailer, tape-opening, station-ID or lineup shelf
+ * item where it is (her own TV and Movies folders are read first). "2001: A Space Odyssey (1968)" files
+ * under the 1960s (the bracketed year, not the first number).
  * -------------------------------------------------------------------------- */
 const FULL_MOVIES = 'Video/Full Movies';
 const FULL_TV = 'Video/Full TV';
@@ -760,8 +773,11 @@ const FULL_LEN = {
 };
 /** A film by its own plain words. */
 const FILM_STRONG = /\bfull[\s._-]*(?:length[\s._-]*)?(?:movie|film|feature)\b|\bfeature[\s._-]*(?:length|film|presentation)\b|\((?:(?:19|20)\d\d\s+)?(?:tv\s+)?(?:film|movie)\)|\b(?:tv|television|made[\s-]*for[\s-]*(?:tv|television)|original|telefilm)[\s-]*(?:movie|film)\b|\bmotion picture\b/i;
-/** A film by a plainer word: an hour or more is needed with it. */
-const FILM_WORD = /\b(?:movie|film|directed by|starring)\b/i;
+/** A film by a plainer word: an hour or more is needed with it, and no episode code. ("Starring" is a talk show's
+ * name as often as a film's: "The Tonight Show Starring Johnny Carson".) */
+const FILM_WORD = /\b(?:movie|film|directed by)\b/i;
+/** A plain film word that does not make a feature film: a show, a special, an event, a training or home film. */
+const FILM_WORD_NOT = /\b(?:show|specials?|live|festival|awards?|pageants?|telethons?|parades?|ceremon(?:y|ies)|documentar(?:y|ies)|(?:educational|industrial|training|instructional|safety|promotional|sales|corporate|school|student|short|home|nature|travel|amateur)\s+(?:films?|movies?))\b/i;
 /** Episode codes (a FORMAT, read by rule). Each gives its season; "Episode 12" and "full episode" give none. */
 const EPISODE_SIGNS = [
   [/\bS(\d{1,2})[\s._-]?E\d{1,3}\b/i, 1],
@@ -772,6 +788,39 @@ const EPISODE_SIGNS = [
 ];
 /** Not a whole film or episode: a piece of one, something about one, or a pile of them. */
 const NOT_WHOLE = /\b(?:trailers?|teasers?|previews?|promos?|promotional|coming soon|sneak peeks?|bumpers?|intros?|openings?|closings?|credits|theme songs?|title sequence|clips?|scenes?|behind the scenes|making of|featurettes?|bloopers?|outtakes?|deleted|highlights?|recaps?|reviews?|reactions?|commentary|compilations?|collections?|montages?|blocks?|soundtracks?|OST|ytp|parody|fan[ -]?made|recreat\w*|mock|excerpts?|segments?|interviews?|red carpet|station ids?|logos?|test pattern|(?:part|pt\.?)\s*\d+\s*(?:of|\/)\s*\d+)\b/i;
+/* Review (Sep 27): more that is not one whole programme. Each was a wrong move in a probe of made-up titles. */
+const NOT_WHOLE_MORE = new RegExp([
+  // the music of a film ("Jaws - Original Film Score", "Music from the Motion Picture"), a concert, a music video
+  '\\b(?:film|movie|original|motion picture)\\s+scores?\\b', '\\bmusic from\\b', '\\balbums?\\b',
+  '\\bin concert\\b', '\\bconcerts?\\b', '\\bmusic videos?\\b', '\\bkaraoke\\b', '\\bsing[- ]?alongs?\\b',
+  // radio is not television
+  '\\bradio (?:shows?|broadcasts?|programs?|programmes?|dramas?|serials?)\\b', '\\bairchecks?\\b',
+  // somebody's own tape
+  '\\bhome[\\s-]*movies?\\b',
+  // a piece: "Full Movie Part 2", "(1/2)", "Tape 1 of 3"
+  '(?:full[\\s._-]*(?:length[\\s._-]*)?(?:movie|film|feature|episode)|feature film)[\\s._\\-–:(\\[]*(?:part|pt\\.?)\\s*\\d+',
+  '[([]\\s*\\d{1,2}\\s*(?:of|\\/)\\s*\\d{1,2}\\s*[)\\]]',
+  '\\b(?:tape|disc|disk|reel|vol(?:ume)?\\.?)\\s*\\d+\\s*(?:of|\\/)\\s*\\d+',
+  // a pile: "S01E01-E03", "Episodes 1-3", "3 episodes", "Top 10 Episodes of", "Best of"
+  '\\bS\\d{1,2}[\\s._-]?E\\d{1,3}\\s*(?:[-–&+]|to\\b|and\\b)\\s*(?:S\\d{1,2}[\\s._-]?)?E?\\d{1,3}\\b',
+  '\\b(?:episodes?|eps?\\.?)\\s*#?\\d{1,3}\\s*(?:[-–&+]|to\\b|and\\b)\\s*\\d{1,3}\\b',
+  '\\b(?:\\d+|two|three|four|five|six|seven|eight|nine|ten|twelve|several|all|every|multiple)\\s+(?:full\\s+)?(?:episodes|movies|films)\\b',
+  '\\bepisodes of\\b', '\\btop \\d+\\b', '\\bbest of\\b', '\\bfunniest\\b', '\\bmoments\\b',
+  // an event, not a programme
+  '\\bawards?\\b', '\\bpageants?\\b', '\\btelethons?\\b', '\\bparades?\\b', '\\bceremon(?:y|ies)\\b', '\\bgraduations?\\b',
+  '\\bsermons?\\b', '\\bconventions?\\b', '\\bconferences?\\b', '\\blectures?\\b', '\\bseminars?\\b',
+  // a paid programme, and a game broadcast
+  '\\bpaid programm(?:e|ing)\\b', '\\bfull game\\b', '\\bgame \\d+\\b',
+  '\\b(?:nfl|nba|nhl|mlb|ncaa|wnba|super bowl|world series|stanley cup|playoffs?)\\b',
+].join('|'), 'i');
+/** A newscast is never a Full TV episode ("NBC Nightly News - Full Episode", another city's "Action News Season 1
+ * Episode 4"): her channel rules and the local-first rules keep news. Films are not read for it ("Broadcast News"). */
+const NEWS = /\bnews(?:casts?|cent(?:er|re)|watch|breaks?|hour)?\b|\bweather (?:reports?|forecasts?)\b/i;
+/** Review: a video already filed as a commercial, a PSA, music, radio, a home movie, a trailer, a tape opening, a
+ * station ID or a lineup stays one, and the Advertising intake folder holds adverts. Her own TV and Movies folders
+ * are read before this. */
+const NOT_FULL_SHELF = /(?:^|\/)(?:Commercials|Radio Commercials|Political Ads|PSAs|Commercial Breaks|Infomercials[^/]*|Radio|Music|Home Movies|Trailers & Previews|Openings & Previews|Movies & Studios|Station IDs[^/]*|Program Lineups|Advertising)(?:\/|$)/i;
+const NOT_FULL_CATEGORY = new Set(['commercials', 'psa', 'radio', 'music', 'cassette']);
 /** A recording of a channel, which her channel and programming-block rules keep on the channel. */
 const CHANNEL_RECORDING = /\b(?:with|w\/)\s*(?:the\s+|its\s+)?(?:original\s+|all\s+|some\s+)?(?:commercials|ads|adverts|bumpers|promos)\b|\boriginal (?:commercials|ads|broadcast|airing|air date)\b|\b(?:commercials?|adverts?|advertisements?|infomercials?)\b|\b(?:off[- ]air|as aired|as broadcast|broadcast recording|recorded (?:off|from)|live feed|full broadcast|marathon)\b|\b(?:vhs|tv|home|television)\s+recordings?\b|\bsign[- ]?(?:off|on)\b/i;
 const AIRED = /\b(?:aired|airing|broadcast|telecast|recorded)\b/i;
@@ -785,13 +834,15 @@ function secondsOf(item) {
 function fullEligible(item) {
   if (!item || item.kind !== 'video') return false;
   const zone = zoneOf(item);
-  if (zone === 'local' || ON_FULL_SHELF.test(String(item.path || ''))) return false;
+  const p = String(item.path || '');
+  if (zone === 'local' || ON_FULL_SHELF.test(p)) return false;
+  if (!TV_FOLDER.test(p) && !MOVIES_FOLDER.test(p) && (NOT_FULL_SHELF.test(p) || NOT_FULL_CATEGORY.has(String(item.category || '')))) return false;
   return zone === 'intake' || item._fresh === true;
 }
 /** A piece, a pile, or a recording of a channel: today's rules keep it. */
 function notWhole(title) {
   const t = String(title || '');
-  if (NOT_WHOLE.test(t) || CHANNEL_RECORDING.test(t) || BREAK_WORDS.test(t) || CHANNEL_SURFING.test(t)) return true;
+  if (NOT_WHOLE.test(t) || NOT_WHOLE_MORE.test(t) || CHANNEL_RECORDING.test(t) || BREAK_WORDS.test(t) || CHANNEL_SURFING.test(t)) return true;
   if (blockOf(t)) return true;
   return !!(networkOf(t) && AIRED.test(t));
 }
@@ -825,8 +876,9 @@ function showFromTitle(title, sign) {
   s = s.replace(LEADING_YEAR, '').replace(/\bfull[\s._-]+episodes?\b[\s:-]*/gi, ' ');
   // "Show - episode" and a downloaded title's full-width bar ("SportsCenter ｜ 03-18-1995 ｜ ..."): the show comes first
   s = s.split(/\s[-–—|]\s|\s*｜\s*/)[0];
-  // "Another World (1986) - NBC", "CNET Central (1997) Digital Volunteers", "Extreme Dodgeball (2004 GSN Show)": the year ends the show
-  s = s.replace(/\s*[[(]\s*(?:19|20)\d\d\b[^)\]]*[\])].*$/, '').replace(/[\s\-–—:|,([]+$/, '').replace(/^[\s\-–—:|,)\]]+/, '');
+  // "Another World (1986) - NBC", "CNET Central (1997) Digital Volunteers", "Extreme Dodgeball (2004 GSN Show)",
+  // "Local 4 (Detroit, 1992)": brackets holding a year end the show
+  s = s.replace(/\s*[[(][^)\]]*\b(?:19|20)\d\d\b[^)\]]*[\])].*$/, '').replace(/[\s\-–—:|,([]+$/, '').replace(/^[\s\-–—:|,)\]]+/, '');
   for (const [re] of NETWORKS) {
     const lead = new RegExp('^(?:the\\s+)?(?:' + re.source + ')\\s+(?=\\S)', 'i');
     if (lead.test(s)) { s = s.replace(lead, ''); break; }
@@ -925,10 +977,16 @@ function herTvPath(rest, item, deps = {}) {
   }
   return `${FULL_TV}/${segs.join('/')}`;
 }
-/** A film's decade: the year in its title first (the release), then its shelf, then its folder. */
+/** A film's decade: the year in its title first (the release), then its shelf, then its folder. The release year
+ * is one in brackets ("2001: A Space Odyssey (1968)"), else the first year that is not the title's own name
+ * ("1941 1979 Full Movie"), else the only one ("1941"). */
 function filmDecade(item) {
-  const y = String(item.title || '').match(/\b(19[2-9]\d|20[0-2]\d)\b/);
-  if (y) return y[1].slice(0, 3) + '0s';
+  const t = String(item.title || '');
+  const bracketed = /[([][^)\]]*?\b(19[2-9]\d|20[0-2]\d)\b/.exec(t);
+  const years = [...t.matchAll(/\b(?:19[2-9]\d|20[0-2]\d)\b/g)];
+  const lead = years.length > 1 && !/\w/.test(t.slice(0, years[0].index));
+  const y = bracketed ? bracketed[1] : years.length ? years[lead ? 1 : 0][0] : null;
+  if (y) return y.slice(0, 3) + '0s';
   const dec = decadeOf(item);
   if (dec !== 'Undated') return dec;
   const py = String(item.path || '').match(/\b(19[2-9]\d|20[0-2]\d)\b/);
@@ -952,10 +1010,12 @@ function fullShelfFact(item, deps = {}) {
   const metaType = String((item.meta || {}).type || '');
   if (secs >= FULL_LEN.movieStrong && FILM_STRONG.test(t)) return { to: filmPath(item), why: 'a whole film: its title says so' };
   if (secs >= FULL_LEN.movieStrong && /\/Feature Films(?:\/|$)/i.test(p)) return { to: filmPath(item), why: 'a whole film: the Feature Films shelf' };
-  if (secs >= FULL_LEN.movie && (FILM_WORD.test(t) || item.category === 'movie' || /^(?:movie|film|feature)$/i.test(metaType))) return { to: filmPath(item), why: 'a whole film: film length and a film word' };
-  if (secs >= FULL_LEN.episode && secs <= FULL_LEN.episodeMax) {
-    const sign = episodeSign(t);
-    const show = sign && showFor(item, deps);
+  const sign = episodeSign(t);
+  if (secs >= FULL_LEN.movie && !sign && !FILM_WORD_NOT.test(t) && (FILM_WORD.test(t) || item.category === 'movie' || /^(?:movie|film|feature)$/i.test(metaType))) {
+    return { to: filmPath(item), why: 'a whole film: film length and a film word' };
+  }
+  if (sign && !NEWS.test(t) && secs >= FULL_LEN.episode && secs <= FULL_LEN.episodeMax) {
+    const show = showFor(item, deps);
     if (show) return { to: fullTvPath(show, sign.season, deps), why: 'a whole episode: its title says so' };
   }
   return null;
@@ -983,7 +1043,7 @@ function fullQuestions(item, deps = {}) {
   const secs = secondsOf(item);
   const q = {};
   if (secs >= FULL_LEN.movie) q.film = FILM_Q;
-  if (secs >= FULL_LEN.episodeByJev && secs <= FULL_LEN.episodeMax && showFor(item, deps)) q.episode = EPISODE_Q;
+  if (secs >= FULL_LEN.episodeByJev && secs <= FULL_LEN.episodeMax && !NEWS.test(String(item.title || '')) && showFor(item, deps)) q.episode = EPISODE_Q;
   return q;
 }
 /** How long a video runs, in words, for the state Jev reads with those questions. */
@@ -1003,7 +1063,7 @@ function fullShelfJudged(item, a, deps = {}, k = knobs()) {
   const tape = choiceOf(a, 'tape');
   if (tape.choice === 'Feature Films' && tape.confidence >= k.tape && secs >= FULL_LEN.movieStrong) return { to: filmPath(item), why: 'a whole film: a feature film tape (Jev)', confidence: tape.confidence };
   const episode = noulOf(a, 'episode');
-  if (episode !== null && episode >= k.episode && secs >= FULL_LEN.episodeByJev && secs <= FULL_LEN.episodeMax) {
+  if (episode !== null && episode >= k.episode && secs >= FULL_LEN.episodeByJev && secs <= FULL_LEN.episodeMax && !NEWS.test(String(item.title || ''))) {
     const show = showFor(item, deps);
     const sign = episodeSign(item.title);
     if (show) return { to: fullTvPath(show, sign ? sign.season : null, deps), why: 'a whole episode (Jev)', confidence: episode };
@@ -1496,6 +1556,6 @@ module.exports = {
   HOME_Q, ELSEWHERE_Q, AR_OZARKS_RE, ourArea, wantState, wantQuestions, wantVerdict, judgeWanted, fullSportsGame,
   shelfIndex, describedPath, audioShelf, AUDIO_INTAKE_KIND_Q, AUDIO_INTAKE_KIND_CRITERIA, MUSIC_KIND_Q, MUSIC_KIND_CRITERIA, reviewNote, withoutGuess,
   stlFact, stLouis, areaByRule, missouriText, LOCATION_DOUBT_NOTE, GUESS_NOTE, MALFORMED,
-  FULL_MOVIES, FULL_TV, FULL_LEN, fullShelfFact, fullShelfJudged, fullQuestions, fullEligible, mightBeFull, notWhole, episodeSign,
+  FULL_MOVIES, FULL_TV, FULL_LEN, fullShelfFact, fullShelfJudged, fullQuestions, fullEligible, mightBeFull, notWhole, episodeSign, NEWS, NOT_FULL_SHELF,
   showFromTitle, showFor, knownShows, fullIndex, fullTvPath, filmDecade, secondsOf, lengthWords, FILM_Q, EPISODE_Q,
 };
