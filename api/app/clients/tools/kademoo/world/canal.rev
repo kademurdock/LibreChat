@@ -1,85 +1,85 @@
 # A public loop off the Millrace, with a second way out through the Garden Plots.
 Place foundry_court in millrace.
 Name: Foundry Court
-Description: The old foundry yard has become a little public square. Brick arches shelter a noticeboard, a drinking fountain, and a long table of donated timber. The workshop is north. East follows the canal; northeast returns to the Millrace. Broad level paths connect every doorway. The board explains a six-stop walk and three free projects, with supplies provided.
+Description: This was once the yard of a metal factory. Now it is a public square. Under the brick arches are a noticeboard, a drinking fountain, and a table of spare wood. Wide, flat paths lead to every door. The Repair Hall is north. The canal path is east. Northeast takes you back to Millrace. The board lists a walk with six stops and three free things to make.
 Outside: yes
 Ground: cobble
-Smell: Warm brick, sawdust, and the cool mineral smell of canal water.
+Smell: Warm brick, sawdust, and cool canal water.
 Listen: Water runs beyond the east rail. Through the workshop doorway come brushes on wood and light taps at a bench.
 Doings: Open the town guide, follow the Canal trail, or start a project in the Repair Hall.
 Northeast: millrace_channel
 North: repair_hall
 East: canal_towpath
-Action: read the foundry board | Read the foundry board | The board shows how water powered the mills and how their empty buildings became shared workshops. A raised line follows the canal from the court to the garden. Your notebook records the first stop. | page | traces the canal route on the foundry noticeboard.
+Action: read the foundry board | Read the foundry board | Water once turned the wheels that ran the mills. People now share the old buildings as workshops. A raised line on the board shows the canal path from this square to the garden. You can follow it by touch. This first stop is saved in your notebook. | page | follows the canal path on the foundry noticeboard.
 
 Place repair_hall in millrace.
 Name: the Repair Hall
-Description: A former machine shop has wide doors, high brick windows, and sturdy benches at different heights. Hand tools hang in labeled outlines. A tray holds pre-cut timber for a bird shelter: choose a shape, smooth the edges, then assemble it. No tools or money are needed from home. South returns to Foundry Court; southeast opens onto the towpath.
+Description: This old machine shop has wide doors and high windows. The work benches come in different heights. Each tool hangs beside a label and an outline of its shape. A tray holds wood for a bird shelter. The pieces are already cut. You can choose a shape, smooth the edges, and put it together. Tools and supplies are free. South leads to Foundry Court. Southeast leads to the canal path.
 Outside: no
 Ground: wood.interior
 Ambience: amb.netloft.room
-Smell: Cedar shavings, linseed oil, and clean cotton work aprons.
+Smell: Fresh wood shavings, wood oil, and clean cotton aprons.
 Listen: Sandpaper brushes wood. Someone taps a small joint into place across the hall.
 Doings: Make a bird shelter, inspect the tools, or invite a friend to work alongside you.
 South: foundry_court
 Southeast: canal_towpath
-Action: inspect the tool wall | Inspect the tool wall | Each tool has a raised outline and a plain label. The timber is already cut; a clamp keeps it still while you work. You learn how the benches make room for different ways of working. Your notebook records the Repair Hall. | page | explores the labeled tool wall in the Repair Hall.
+Action: inspect the tool wall | Inspect the tool wall | You can feel each tool's shape in the raised outline beside it. The label names the tool. The wood is already cut. A clamp holds it still while you work. You can choose a bench at a height that suits you. The Repair Hall is saved in your notebook. | page | explores the labeled tool wall in the Repair Hall.
 
 Place canal_towpath in millrace.
 Name: the Canal Towpath
-Description: A wide brick path follows the narrow old mill channel. A continuous rail separates the walk from the water. West leads to Foundry Court, northwest to the Repair Hall, and east to the Lock Garden. Marks on the coping show how high the water used to run. Benches break the walk into easy stretches.
+Description: A wide brick path follows the canal. This narrow waterway once carried water to the mills. A rail runs along the path to keep people away from the edge. Marks in the stone wall show old water levels. Benches give you places to rest. West leads to Foundry Court. Northwest leads to the Repair Hall. East leads to the Lock Garden.
 Outside: yes
 Ground: cobble
 Water: canal
 Ambience: amb.canal.water
 Smell: Wet brick, river moss, and leaves drying on the path.
-Listen: A steady stream slides along the wall. Water falls over a low sill farther east.
+Listen: A steady stream slides along the wall. Water falls over a low stone ledge farther east.
 Doings: Read the water marks, sit with somebody, or follow the rail to the Lock Garden.
 West: foundry_court
 Northwest: repair_hall
 East: lock_garden
-Action: read the water marks | Read the water marks | You follow three horizontal grooves in the coping: low water, working water, and the old flood line. The middle groove led water toward the mill wheels. You add a rubbing and a written description to your notebook. | page | makes a rubbing of the canal water marks.
+Action: read the water marks | Read the water marks | You find three lines cut into the stone wall. The lowest marks low water. The middle shows the level used to run the mill wheels. The highest marks an old flood. You lay paper over the lines and rub a pencil across it to copy their shapes. The copy and a short note go into your notebook. | page | copies the canal water marks into a notebook.
 
 Place lock_garden in sweetwater.
 Name: the Lock Garden
-Description: The old lock is a sheltered water garden now. Water spills across a shallow stone sill into a reed bed. The lock machinery is fenced off, but a safe table holds a small working model. West returns along the towpath. North goes under the Glass Canopy; east follows a gently rising path to the overlook.
+Description: A lock is a space between gates that raises or lowers boats with water. This old lock is now a water garden. Water spills over a low stone ledge into tall plants called reeds. A fence keeps the old machines out of reach. A table holds a small model lock you can use. West goes back along the canal path. North leads to the Glass Canopy. East follows a gentle slope to the Canal Overlook.
 Outside: yes
 Ground: cobble
 Water: canal
 Ambience: amb.canal.water
 Smell: Water mint, wet stone, and the muddy sweetness of reeds.
-Listen: Close water spills over the sill; reed stems rattle softly beyond it.
+Listen: Water spills over the ledge nearby. The tall reeds rustle beyond it.
 Doings: Try the model lock, examine the reed bed, or take the level path to the Glass Canopy.
 West: canal_towpath
 North: glass_canopy
 East: canal_overlook
-Action: examine the reed bed | Examine the reed bed | A sign explains that the roots slow the water and catch sediment. You compare a rough reed stem with a smooth mint leaf at the accessible planter. The water is clearest downstream of the roots. Your notebook records what the garden does. | hangout.page | examines the reed-bed planter beside the old lock.
+Action: examine the reed bed | Examine the reed bed | The reed roots slow the water and catch bits of dirt. The water is clearer after it passes through them. A low planter puts the plants within reach. You feel a rough reed stem, then a smooth mint leaf. Your notebook saves how the garden helps clean the water. | hangout.page | examines the plants beside the old lock.
 
 Place glass_canopy in sweetwater.
 Name: the Glass Canopy
-Description: A light iron-and-glass roof shelters potting benches around a broad, level aisle. Vents stand open above trays of seedlings. Labels can be read or traced by hand. Pots, compost, and herb cuttings are free to use here. South returns to the Lock Garden; west reaches the Garden Plots and the rest of Sweetwater Park.
+Description: An iron frame holds a glass roof over the plant tables. The path between them is wide and flat. Open panels in the roof let fresh air reach the young plants. You can read the labels or feel their raised words. Pots, rich soil, and small herb plants are free to use. South leads to the Lock Garden. West leads to the Garden Plots and Sweetwater Park.
 Outside: no
 Ground: linoleum
 Ambience: amb.reeds.breeze
-Smell: Damp compost, mint, and green tomato stems.
+Smell: Damp soil, mint, and green tomato stems.
 Listen: Leaves stir beneath the open vents. A watering can pours into a tray at the far bench.
 Doings: Grow an herb cutting, compare the herb labels, or meet a friend at the potting table.
 South: lock_garden
 West: garden_plots
-Action: compare the herbs | Compare the herbs | Mint has a cool scent and a square stem. Rosemary is resinous, with narrow firm leaves. Lemon balm smells of citrus when a leaf is gently rubbed. You write all three differences in your notebook; sight is only one way to tell them apart. | hangout.page | compares the herb labels and scents beneath the canopy.
+Action: compare the herbs | Compare the herbs | Mint has a cool smell and a square stem. Rosemary smells a little like pine. Its leaves are narrow and firm. Lemon balm smells like lemon when you gently rub a leaf. You can tell these herbs apart by touch and smell as well as sight. All three go into your notebook. | hangout.page | compares the herb labels and smells beneath the glass roof.
 
 Place canal_overlook in sweetwater.
 Name: the Canal Overlook
-Description: A gently sloping path ends at a broad terrace above the lock. The continuous rail meets a raised model of the canal, mills, and river. The terrace has backed benches and enough turning room beside them. West is the only way out, returning to the Lock Garden. From here the route you just walked makes sense as a whole.
+Description: A gentle slope leads to a wide stone rest area above the lock. A rail runs around its edge. Beside it is a model of the canal, mills, and river, with shapes you can feel. The benches have backs. There is room to turn beside them. West is the only way out. It takes you back to the Lock Garden. The model helps you understand how all the places on your walk fit together.
 Outside: yes
 Ground: cobble
 Water: canal
 Ambience: amb.reeds.breeze
-Smell: Open river air and thyme growing between the terrace stones.
+Smell: Fresh river air and herbs growing between the stones.
 Listen: Water below, leaves behind you, and the distant working hum of Millrace.
-Doings: Trace the canal model, read your notebook, or rest on the terrace.
+Doings: Follow the canal model by touch, read your notebook, or rest on a bench.
 West: lock_garden
-Action: trace the canal model | Trace the canal model | Your hand follows water from the river, through the lock, past the mill sites, and back downstream. The court, workshop, towpath, garden, and canopy each have a distinct marker. You record how they connect: one waterway, with a different purpose at every stop. | page | traces the raised canal model at the overlook.
+Action: trace the canal model | Trace the canal model | Your hand follows the water from the river, through the lock, and past the old mills. Each stop on your walk has its own shape on the model. You find the square, workshop, path, garden, and glass roof. Your notebook saves how they connect. The same water once ran machines. Now it feeds plants and gives the town a place to rest. | page | follows the raised canal model by touch.
 
 Link millrace_channel southwest to foundry_court.
 Link garden_plots east to glass_canopy.

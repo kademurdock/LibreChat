@@ -52,31 +52,31 @@ export const CANAL_STOPS = [
     id: 'foundry_court',
     name: 'Foundry Court',
     command: 'read the foundry board',
-    note: 'The mills used canal water for power; the empty buildings became shared workshops.',
+    note: 'Water turned the mill wheels. People now share the old buildings as workshops.',
   },
   {
     id: 'repair_hall',
     name: 'the Repair Hall',
     command: 'inspect the tool wall',
-    note: 'Raised tool outlines, pre-cut timber, and different bench heights make room for different ways of working.',
+    note: 'You can feel the tool labels and shapes. The wood is already cut. Benches come in different heights.',
   },
   {
     id: 'canal_towpath',
     name: 'the Canal Towpath',
     command: 'read the water marks',
-    note: 'Three grooves mark low water, working water, and the old flood line.',
+    note: 'Three lines in the wall show low water, the level used by the mills, and an old flood.',
   },
   {
     id: 'lock_garden',
     name: 'the Lock Garden',
     command: 'examine the reed bed',
-    note: 'Reed roots slow the water and catch sediment before it runs downstream.',
+    note: 'The roots of the tall reeds slow the water and catch dirt as it flows past.',
   },
   {
     id: 'glass_canopy',
     name: 'the Glass Canopy',
     command: 'compare the herbs',
-    note: 'Mint has a square stem; rosemary has firm narrow leaves; lemon balm smells of citrus.',
+    note: 'Mint has a square stem. Rosemary has firm, narrow leaves. Lemon balm smells like lemon.',
   },
   {
     id: 'canal_overlook',
@@ -87,10 +87,13 @@ export const CANAL_STOPS = [
 ] as const;
 
 export const GUIDE_WARDS: Record<string, { name: string; description: string }> = {
-  gate: { name: 'the Threshold', description: 'Arrive, find your bearings, and enter the city.' },
+  gate: {
+    name: 'the Threshold',
+    description: 'Start here, learn where you are, and enter the city.',
+  },
   bellward: {
     name: 'Bellward',
-    description: 'Civic stonework, the records office, and the Archive.',
+    description: 'Stone public buildings, the records office, and the Archive.',
   },
   hook: {
     name: 'the Hook',
@@ -114,7 +117,7 @@ export const GUIDE_WARDS: Record<string, { name: string; description: string }> 
   },
   fairlawn: {
     name: 'Fairlawn',
-    description: 'Tree-lined residential streets and the Easel painting studio.',
+    description: 'Homes along streets shaded by trees, and the Easel painting studio.',
   },
   longacre: { name: 'Long Acre', description: 'Fields, orchard paths, woodland, and a campfire.' },
   gravewalk: {
@@ -219,7 +222,7 @@ const ACTIVITIES = [
     room: 'lock_garden',
     category: 'make',
     title: 'Work the model lock',
-    detail: 'Learn the water levels in three untimed steps. Free.',
+    detail: 'Learn how water lifts a boat in three steps. No time limit. Free.',
   },
   {
     room: 'gully_laundry',
@@ -231,7 +234,7 @@ const ACTIVITIES = [
     room: 'net_loft',
     category: 'people',
     title: 'Meet by the river',
-    detail: 'A sheltered public sitting room for knots, conversation, and gatherings.',
+    detail: 'An indoor place to sit, tie knots, and talk with other people.',
   },
   {
     room: 'pats_diner',
@@ -249,7 +252,7 @@ const ACTIVITIES = [
     room: 'the_bijou',
     category: 'play',
     title: 'See what’s at the movies',
-    detail: 'Read the bill freely; buying a ticket spends game money.',
+    detail: 'Check which movies are showing for free. Tickets cost game money.',
   },
   {
     room: 'the_easel',
@@ -261,13 +264,14 @@ const ACTIVITIES = [
     room: 'alder_trail',
     category: 'nature',
     title: 'Explore the woods',
-    detail: 'Wildlife, written photographs, and a field journal; no reaction test.',
+    detail:
+      'Find animals and save notes about them. Take a photo described in words. No need to act fast.',
   },
   {
     room: 'alder_camp',
     category: 'rest',
     title: 'Rest by the fire',
-    detail: 'A free place to recover comfort or share a story.',
+    detail: 'A free place to rest or share a story.',
   },
   {
     room: 'reed_pavilion',
@@ -279,7 +283,7 @@ const ACTIVITIES = [
     room: 'sweetwater_bathhouse',
     category: 'play',
     title: 'Visit the bathhouse',
-    detail: 'Swimming, sauna, and soaking; the venue explains its entry price.',
+    detail: 'Swim, sit in a hot room, or soak in a pool. Check the entry price there.',
   },
 ] as const;
 const CATEGORIES: Record<string, string> = {
@@ -309,7 +313,7 @@ export const CANAL_PROJECTS: Record<string, Project> = {
       {
         prompt:
           'Choose a shape for your pre-cut bird shelter. Both shapes work; this is your design.',
-        choices: ['A little gabled house', 'An open-front shelter'],
+        choices: ['A little house with a pointed roof', 'An open-front shelter'],
         results: [
           'You lay out a peaked roof and four small cedar walls.',
           'You lay out an open front, a broad roof, and a sheltered back.',
@@ -317,8 +321,9 @@ export const CANAL_PROJECTS: Record<string, Project> = {
         sound: 'hangout.page',
       },
       {
-        prompt: 'The pieces are clamped at the bench. Smooth them before assembly.',
-        choices: ['Sand with the grain', 'Round the entrance edges'],
+        prompt:
+          'A clamp holds the wood still on the bench. Smooth it before putting the pieces together.',
+        choices: ['Sand along the lines in the wood', 'Round the entrance edges'],
         results: [
           'Long strokes take the roughness out of the boards.',
           'You work around the entrance until every edge feels smooth.',
@@ -326,21 +331,22 @@ export const CANAL_PROJECTS: Record<string, Project> = {
         sound: 'obj.brush.stroke',
       },
       {
-        prompt: 'The joints are ready. Choose a finish for the outside.',
+        prompt: 'The pieces are ready to fit together. Choose how the outside will look.',
         choices: ['Leave the cedar natural', 'Brush on a blue outer roof'],
         results: [
-          'The cedar grain stays visible beneath the little roof.',
-          'You brush a blue roof while keeping the inside untreated.',
+          'The natural lines in the wood show beneath the little roof.',
+          'You paint the roof blue. The inside stays bare wood.',
         ],
         sound: 'work.hammer.build',
       },
     ],
-    title: (variant) => (variant === '1' ? 'an open-front bird shelter' : 'a gabled bird shelter'),
+    title: (variant) =>
+      variant === '1' ? 'an open-front bird shelter' : 'a bird shelter with a pointed roof',
     description:
-      'A cedar bird shelter you assembled at the Repair Hall. Its smooth edges and sturdy joints are your own work.',
+      'A wooden bird shelter you made at the Repair Hall. You smoothed the edges and joined the pieces.',
     finishes: [
-      'The outside shows the natural cedar grain.',
-      'The roof is painted blue; the inside is untreated cedar.',
+      'The outside shows the natural lines in the wood.',
+      'The roof is painted blue. The inside is bare wood.',
     ],
   },
   herbs: {
@@ -349,21 +355,22 @@ export const CANAL_PROJECTS: Record<string, Project> = {
     location: 'the Glass Canopy',
     steps: [
       {
-        prompt: 'Choose a rooted cutting from the nursery tray.',
+        prompt:
+          'Choose a small piece of an herb plant that has grown its own roots. This is called a cutting.',
         choices: ['Mint', 'Rosemary', 'Lemon balm'],
         results: [
           'The mint cutting has fine white roots beneath its square stem.',
-          'The rosemary cutting smells resinous, even before you touch a leaf.',
-          'The lemon balm has soft leaves with a citrus scent.',
+          'The rosemary smells a little like pine, even before you touch a leaf.',
+          'The lemon balm has soft leaves that smell like lemon.',
         ],
         sound: 'hangout.page',
       },
       {
         prompt: 'Prepare the pot so the roots have room and water can drain.',
-        choices: ['Loosen the compost with a scoop', 'Crumble the compost by hand'],
+        choices: ['Loosen the soil with a scoop', 'Crumble the soil by hand'],
         results: [
-          'You loosen the compost and check the drainage hole.',
-          'You feel out the clumps, break them apart, and check the drainage hole.',
+          'You loosen the rich soil. A hole in the bottom of the pot lets extra water out.',
+          'You feel the lumps of soil and break them apart. You check the hole that lets extra water out.',
         ],
         sound: 'hangout.page',
       },
@@ -382,11 +389,8 @@ export const CANAL_PROJECTS: Record<string, Project> = {
         Number(variant)
       ] || 'a potted herb cutting',
     description:
-      'A rooted herb cutting you potted beneath the Glass Canopy, with loose compost, drainage, and a label.',
-    finishes: [
-      'Its raised label can be read by touch.',
-      'Its written label identifies the herb clearly.',
-    ],
+      'A small herb plant you put in a pot under the Glass Canopy. Its roots sit in loose, rich soil. The pot has a label and a hole to let extra water out.',
+    finishes: ['Its raised label can be read by touch.', 'Its written label names the herb.'],
   },
   lock: {
     name: 'Work the model lock',
@@ -395,22 +399,22 @@ export const CANAL_PROJECTS: Record<string, Project> = {
     steps: [
       {
         prompt:
-          'A toy boat waits on the lower side. The chamber is at the lower water level. Let the boat enter.',
+          'A lock lifts boats using water. Its middle space sits between two gates. A toy boat waits outside the lower gate. The water on both sides of that gate is at the same level. Let the boat in.',
         choices: ['Open the lower gate'],
-        results: ['The toy boat floats into the chamber at the same water level.'],
+        results: ['The toy boat floats into the space between the gates.'],
         sound: 'splash',
       },
       {
         prompt: 'The boat is inside. The upper water is higher. Prepare to raise the boat.',
-        choices: ['Close the lower gate, then open the small fill valve'],
+        choices: ['Close the lower gate, then turn on the small water tap'],
         results: ['Water enters slowly. The boat rises with it, staying level.'],
         sound: 'obj.water.pour.glass',
       },
       {
-        prompt: 'The chamber and upper canal are now level.',
-        choices: ['Close the valve and open the upper gate'],
+        prompt: 'The water around the boat has reached the same height as the upper canal.',
+        choices: ['Turn off the water tap and open the upper gate'],
         results: [
-          'The toy boat glides out onto the upper canal. Matching the levels is what makes the gates safe to open.',
+          'The toy boat floats out onto the upper canal. The gate opens safely because the water is at the same height on both sides.',
         ],
         sound: 'splash',
       },
@@ -437,7 +441,7 @@ function routeView(rooms: GuideRoom[], origin: string, target: GuideRoom): Guide
   if (!path)
     return success(
       [
-        `There is no open public walking route to ${target.name} from here. An exit may be locked, or this place may need another form of travel.`,
+        `You cannot walk to ${target.name} from here right now. A door may be locked. You may need to travel another way.`,
       ],
       [{ label: 'Town guide', cmd: 'town' }],
     );
@@ -527,7 +531,7 @@ export async function runReverieGuide(
     const next = CANAL_STOPS.find((stop) => !state.notes?.[stop.id]);
     const lines = [
       `Canal notebook: ${done.length} of ${CANAL_STOPS.length} stops recorded.`,
-      'A free walk from Millrace through the old canal to Sweetwater. Visit in any order. Read or examine the feature at each stop to save its entry; simply arriving does not finish it. Your place is saved when you leave.',
+      'This free walk follows the old canal from Millrace to Sweetwater. Visit the stops in any order. At each stop, choose its reading or exploring action to add a note. Walking into the place alone does not add one. Your notes are saved when you leave.',
       ...done.map((stop) => `${stop.name}: ${stop.note}`),
       ...(done.length === CANAL_STOPS.length
         ? [
@@ -560,7 +564,7 @@ export async function runReverieGuide(
   if (command === 'projects')
     return success(
       [
-        'Three free projects. Supplies are provided; no timer, skill level, or money is required. Each step is saved. Finished pieces go into your inventory.',
+        'Choose from three free projects. Tools and supplies are here for you. Take as long as you like. No skill level or money is needed. Each step is saved. You keep what you make. Find it in Inventory, the list of things you carry.',
       ],
       Object.entries(CANAL_PROJECTS).map(([id, p]) => ({
         label: `${p.name} — ${p.location}${state.projects?.[id]?.finished ? ' (finished)' : ''}`,
