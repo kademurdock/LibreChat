@@ -82,6 +82,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
       index_rate: 0.5,
       protect: 0.33,
       rms_mix_rate: 0.25,
+      vocal_fx: 'none',
     },
   });
   assert.equal(job.title, 'Sung in my voice');
@@ -114,6 +115,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
       index_rate: 0.3,
       protect: 0.2,
       rms_mix_rate: 1,
+      vocal_fx: 'none',
     },
   });
   assert.equal(
@@ -146,6 +148,10 @@ test('a render body becomes a voice job; her choices are read in the words the s
     [{ reference_voice_url: url, protect: 0.9 }, /from 0 to 0.5/],
     [{ reference_voice_url: url, lead_split: 'maybe' }, /on or off/],
     [{ reference_voice_url: url, soft_s: 'sometimes' }, /Softer S sounds, choose on or off/],
+    [
+      { reference_voice_url: url, vocal_fx: 'cathedral' },
+      /Under Vocal effects, choose one of the listed/,
+    ],
   ])
     assert.throws(() => voice.myVoiceInput(body, ON), words, JSON.stringify(body));
 });
@@ -172,6 +178,7 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     index_rate: 0.5,
     protect: 0.2,
     rms_mix_rate: 0.25,
+    vocal_fx: 'none',
   });
   /* Round 1's chain, if her listening prefers it: one setting on Railway. */
   const round1 = {
@@ -261,6 +268,7 @@ test('the owner check adds her model and the recording length; the worker gets e
     index_rate: 0.5,
     protect: 0.33,
     rms_mix_rate: 0.25,
+    vocal_fx: 'None',
     reference_voice_url: url,
     pitch: 12,
   });
@@ -269,6 +277,131 @@ test('the owner check adds her model and the recording length; the worker gets e
     voice.myVoiceProjectWhy({ voice_source: 'Just a vocal' }),
     'Sung in my voice — a vocal on its own',
   );
+});
+
+test('vocal effects: a main choice in her words; None sends the worker nothing new, an effect is one top-level field', async () => {
+  const url = 'https://assets.test/audios/u/song.mp3';
+  assert.deepEqual(
+    voice.myVoiceEffects.map((e) => e.label),
+    ['None', 'Studio polish', 'Plate reverb', 'Hall reverb', 'Slapback', 'Echo', 'Dreamy'],
+  );
+  /* Every effect by its label, its key and its first word (the worker's preset names: voice_request.VOCAL_FX). */
+  for (const e of voice.myVoiceEffects)
+    for (const said of [e.label, e.key, e.label.split(' ')[0].toLowerCase()])
+      assert.equal(
+        voice.myVoiceInput({ reference_voice_url: url, vocal_fx: said }, ON).voice.options.vocal_fx,
+        e.key,
+        said,
+      );
+  assert.deepEqual(
+    voice.myVoiceEffects.map((e) => e.key),
+    ['none', 'studio', 'plate', 'hall', 'slapback', 'echo', 'dreamy'],
+  );
+  const prepare = voice.myVoicePrepare(
+    async () => voice.parseMyVoiceModels(ON.MY_VOICE_MODELS)[OWNER],
+  );
+  const none = voice.myVoiceWorkerInput(
+    await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url, vocal_fx: 'None' }, ON)),
+  );
+  assert.equal('vocal_fx' in none, false, 'None: the worker request is exactly as before');
+  assert.equal('vocal_fx' in none.options, false);
+  const echo = voice.myVoiceWorkerInput(
+    await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url, vocal_fx: 'Echo' }, ON)),
+  );
+  assert.equal(echo.vocal_fx, 'echo');
+  assert.equal('vocal_fx' in echo.options, false, 'the effect is not one of the chain options');
+  assert.deepEqual(echo.options, none.options);
+  /* A job saved before effects existed has no vocal_fx at all: nothing is sent, and the project says None. */
+  const old = await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url }, ON));
+  delete old.voice.options.vocal_fx;
+  assert.equal('vocal_fx' in voice.myVoiceWorkerInput(old), false);
+  assert.equal(voice.myVoiceProjectOptions(old).vocal_fx, 'None');
+  assert.equal(
+    voice.myVoiceProjectOptions(
+      voice.myVoiceInput({ reference_voice_url: url, vocal_fx: 'Plate reverb' }, ON),
+    ).vocal_fx,
+    'Plate reverb',
+    'Open in the booth restores it',
+  );
+  /* The guide: in view, not in More settings, a short plain hint, None by default; MY_VOICE_DEFAULTS may move the default. */
+  const setting = voice.myVoiceGuideEngine(ON).settings.find((s) => s.key === 'vocal_fx');
+  assert.equal(setting.label, 'Vocal effects');
+  assert.equal(setting.kind, 'choice');
+  assert.equal(setting.advanced, undefined);
+  assert.equal(setting.default, 'None');
+  assert.deepEqual(
+    setting.options,
+    voice.myVoiceEffects.map((e) => e.label),
+  );
+  assert.match(setting.hint, /dry voice is always kept/);
+  assert.ok(setting.hint.length < 160, 'short');
+  assert.equal(voice.myVoiceGuideEngine(ON).ui.vocalFx, 'Download my voice with the effect');
+  const plate = { ...ON, MY_VOICE_DEFAULTS: JSON.stringify({ vocal_fx: 'plate' }) };
+  assert.equal(voice.myVoiceDefaults(plate).vocal_fx, 'plate');
+  assert.equal(
+    voice.myVoiceGuideEngine(plate).settings.find((s) => s.key === 'vocal_fx').default,
+    'Plate reverb',
+  );
+  assert.equal(
+    voice.myVoiceDefaults({ ...ON, MY_VOICE_DEFAULTS: JSON.stringify({ vocal_fx: 'cathedral' }) })
+      .vocal_fx,
+    'none',
+  );
+  /* The estimate counts the effect's work; without one it is the same as before. */
+  const plain = voice.myVoiceEstimate({ voice: { source: 'song', seconds: 180 } });
+  const withFx = voice.myVoiceEstimate({
+    voice: { source: 'song', seconds: 180, options: { vocal_fx: 'dreamy' } },
+  });
+  assert.equal(withFx.costUSD, Math.round((45 + 0.45 * 180 + 0.06 * 180) * 0.000306 * 1000) / 1000);
+  assert.ok(withFx.costUSD > plain.costUSD);
+});
+
+test('the take note says the vocal effect, and says so when a worker from before effects left the voice dry', () => {
+  const echo = voice.myVoiceTakeNote({
+    pitch: { shift: 0 },
+    features: ['song', 'vocal-fx'],
+    vocal_fx: {
+      preset: 'echo',
+      label: 'Echo',
+      tempo_bpm: 84.9,
+      tempo_source: 'detected',
+      delay_ms: 530,
+    },
+  });
+  assert.equal(
+    echo,
+    'Sung in your voice. Vocal effect: Echo, its repeats in time with the song at about 85 beats a minute.',
+  );
+  assert.match(
+    voice.myVoiceTakeNote({
+      vocal_fx: {
+        preset: 'dreamy',
+        label: 'Dreamy',
+        tempo_bpm: 120,
+        tempo_source: 'assumed',
+        delay_ms: 500,
+      },
+    }),
+    /Vocal effect: Dreamy, its repeats at 120 beats a minute because the recording has no clear beat\./,
+  );
+  assert.match(
+    voice.myVoiceTakeNote({ vocal_fx: { preset: 'slapback', label: 'Slapback', delay_ms: 110 } }),
+    /Vocal effect: Slapback\.$/,
+  );
+  assert.match(
+    voice.myVoiceTakeNote({ vocal_fx: { preset: 'plate', label: 'Plate reverb' } }),
+    /Vocal effect: Plate reverb\.$/,
+  );
+  const asked = { voice: { options: { vocal_fx: 'hall' } } };
+  assert.match(
+    voice.myVoiceTakeNote({ features: ['song'] }, asked),
+    /no vocal effects yet, so your voice is dry in this version\./,
+  );
+  assert.equal(
+    voice.myVoiceTakeNote({ features: ['song'] }, { voice: { options: { vocal_fx: 'none' } } }),
+    'Sung in your voice.',
+  );
+  assert.equal(voice.myVoiceTakeNote({ features: ['song'] }), 'Sung in your voice.');
 });
 
 test('money: said before, measured after, at the rate of the card that ran it', () => {
@@ -332,6 +465,7 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
     [
       'reference_voice_url',
       'voice_source',
+      'vocal_fx',
       'pitch',
       'extractor',
       'lead_split',
@@ -344,8 +478,8 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
   );
   assert.deepEqual(
     engine.settings.filter((s) => !s.advanced).map((s) => s.key),
-    ['reference_voice_url', 'voice_source'],
-    'the recording and what is in it stay in view; the rest waits in More settings',
+    ['reference_voice_url', 'voice_source', 'vocal_fx'],
+    'the recording, what is in it and the vocal effect stay in view; the rest waits in More settings',
   );
   assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, true);
   assert.equal(engine.settings.find((s) => s.key === 'dereverb').default, false);
@@ -459,6 +593,11 @@ test('an upload engine asks for its recording instead of a script, then renders 
 test('the library offers her the take sung again, and the voice-only file, from the guide’s words', () => {
   assert.match(script, /data-use="upload">'\+esc\(uploadUi\(ue\)\.useTake\|\|'Use this take'\)/);
   assert.match(script, /t\.vocalUrl \? ' · <a href="'\+esc\(t\.vocalUrl\)\+'" download/);
+  /* With a vocal effect, the voice with it beside the dry one, in the guide's words. */
+  assert.match(
+    script,
+    /t\.vocalFxUrl \? ' · <a href="'\+esc\(t\.vocalFxUrl\)\+'" download target="_blank" rel="noreferrer">'\+esc\(\(ue && uploadUi\(ue\)\.vocalFx\) \|\| 'Download the voice with its effect'\)/,
+  );
   assert.match(script, /t\.voiceNote \? '<p class="hint">' \+ esc\(t\.voiceNote\) \+ '<\/p>'/);
   assert.match(
     script,

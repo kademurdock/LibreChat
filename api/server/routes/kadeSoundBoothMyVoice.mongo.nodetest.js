@@ -470,6 +470,50 @@ test('Sing it in my voice through the real booth', async (t) => {
     },
   );
 
+  await t.test(
+    'a vocal effect: the worker gets vocal_fx, the take keeps her dry voice and adds the effected one, and the note says it',
+    async () => {
+      Object.assign(rp.voiceep, { status: 'IN_QUEUE', output: undefined });
+      const r = await call('/render', {
+        user: OWNER,
+        role: 'ADMIN',
+        body: { engine: 'myvoice', reference_voice_url: url, vocal_fx: 'Echo', title: 'Echo song' },
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      const sent = rp.voiceep.runs.at(-1);
+      assert.equal(sent.vocal_fx, 'echo');
+      assert.equal('vocal_fx' in sent.options, false);
+      Object.assign(rp.voiceep, {
+        status: 'COMPLETED',
+        executionTime: 100000,
+        output: {
+          url: 'https://assets.test/voice/e1/mix.mp3',
+          wav_url: 'https://assets.test/voice/e1/mix.wav',
+          vocal_url: 'https://assets.test/voice/e1/vocal.mp3',
+          vocal_wav_url: 'https://assets.test/voice/e1/vocal.wav',
+          vocal_fx_url: 'https://assets.test/voice/e1/vocal_fx.mp3',
+          vocal_fx_wav_url: 'https://assets.test/voice/e1/vocal_fx.wav',
+          vocal_fx: { preset: 'echo', label: 'Echo', tempo_bpm: 84.9, tempo_source: 'detected', delay_ms: 530 },
+          duration_s: 181.2,
+          gpu: 'NVIDIA GeForce RTX 4090',
+          pitch: { shift: 0, source: 'auto' },
+          worker_notes: [],
+          features: ['song', 'vocal-fx'],
+        },
+      });
+      const s = await call('/status/' + r.data.jobId, { user: OWNER, role: 'ADMIN' });
+      assert.equal(s.data.state, 'done', JSON.stringify(s.data));
+      assert.match(s.data.spoken, /Vocal effect: Echo, its repeats in time with the song at about 85 beats a minute\./);
+      const p = (await call('/projects', { user: OWNER, role: 'ADMIN' })).data.projects.find(
+        (x) => x.id === r.data.projectId,
+      );
+      assert.equal(p.options.vocal_fx, 'Echo', 'Open in the booth restores it');
+      assert.equal(p.takes[0].vocalUrl, 'https://assets.test/voice/e1/vocal.mp3', 'the dry voice, always kept');
+      assert.equal(p.takes[0].vocalFxUrl, 'https://assets.test/voice/e1/vocal_fx.mp3');
+      assert.match(p.takes[0].note, /Vocal effect: Echo/);
+    },
+  );
+
   let yueTheirs, yueMine;
   await t.test(
     'YuE2 with the choice on: dropped for anyone else, kept for her, never sent to the music worker',

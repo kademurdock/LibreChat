@@ -128,6 +128,7 @@ const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps
         prompt: 'Sing it in my voice', description: title, costUSD: row.costUSD || 0,
         metadata: { title, jobId: row.id, projectId: row.projectId, via: 'sound-booth', voiceOf: row.sourceAssetId,
           wavUrl: out.wav_url, vocalUrl: out.vocal_url, vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0),
+          ...(out.vocal_fx_url ? { vocalFxUrl: out.vocal_fx_url, vocalFxWavUrl: out.vocal_fx_wav_url } : {}),
           gpu: out.gpu, takeNote: myVoiceTakeNote(out), costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: row.projectId, user: row.user, assets: { $ne: String(asset._id) } },
@@ -291,7 +292,9 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
       $setOnInsert: { user: job.user, service: 'runpod_myvoice', kind: 'audio', url: out.url, model: 'RVC v2 voice model',
         prompt: job.input.style, description: title, costUSD: job.costUSD || 0,
         metadata: { title, jobId: job.id, projectId: job.projectId, via: 'sound-booth', wavUrl: out.wav_url, vocalUrl: out.vocal_url,
-          vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0), gpu: out.gpu, takeNote: myVoiceTakeNote(out),
+          vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0), gpu: out.gpu, takeNote: myVoiceTakeNote(out, job.input),
+          /* A vocal effect: the voice with it, beside the dry voice (vocalUrl), which is always kept. */
+          ...(out.vocal_fx_url ? { vocalFxUrl: out.vocal_fx_url, vocalFxWavUrl: out.vocal_fx_wav_url } : {}),
           voiceSource: job.input.voice && job.input.voice.source, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
@@ -1386,6 +1389,7 @@ async function takesFor(projects, userId, paid = false) {
       /* Sep 27 2026, Sing it in my voice: the converted voice on its own, the take a version was made from, and on a source
        * take a word about its automatic version. Only ever on the owner's own takes, and only when there is something to say. */
       ...(d.metadata?.vocalUrl ? { vocalUrl: await freshAssetUrl(d.metadata.vocalUrl) } : {}),
+      ...(d.metadata?.vocalFxUrl ? { vocalFxUrl: await freshAssetUrl(d.metadata.vocalFxUrl) } : {}),
       ...(d.metadata?.voiceOf ? { voiceOf: d.metadata.voiceOf } : {}),
       ...(d.metadata?.myVoice?.state === 'queued' ? { voiceNote: 'A version in your voice is being made.' }
         : d.metadata?.myVoice?.state === 'failed' ? { voiceNote: `The version in your voice did not finish. ${d.metadata.myVoice.error || ''}`.trim() } : {}),

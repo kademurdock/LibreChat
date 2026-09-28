@@ -210,6 +210,19 @@ export const myVoiceExtractors: ReadonlyArray<{ key: string; label: string }> = 
   { key: 'melband_becruily', label: 'Mel-RoFormer becruily (slower the first time)' },
   { key: 'demucs', label: 'Demucs' },
 ];
+/* Vocal effects (Sep 27 2026), her words: "adding some reverb/delay/echo type effects to put on my voice if I want it, like
+ * optional ... I can always take dry vocals into a daw". The worker's vocal_fx presets (voice/vocalfx.py): studio polish on
+ * the converted lead plus a space, matched to the dry lead's loudness. None sends nothing, so the worker's output is exactly
+ * what it was; the dry voice on its own is always kept, and an effect adds the voice with the effect as a third file. */
+export const myVoiceEffects: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'none', label: 'None' },
+  { key: 'studio', label: 'Studio polish' },
+  { key: 'plate', label: 'Plate reverb' },
+  { key: 'hall', label: 'Hall reverb' },
+  { key: 'slapback', label: 'Slapback' },
+  { key: 'echo', label: 'Echo' },
+  { key: 'dreamy', label: 'Dreamy' },
+];
 /** The worker's lead vs backing models (voice_request.LEAD_MODELS). Not a screen choice: MY_VOICE_DEFAULTS can switch it. */
 const LEAD_MODELS = ['frazer', 'aufr33'] as const;
 
@@ -222,6 +235,8 @@ export type MyVoiceOptions = {
   index_rate: number;
   protect: number;
   rms_mix_rate: number;
+  /** A myVoiceEffects key; 'none' (or missing, on a job saved before effects existed) sends nothing to the worker. */
+  vocal_fx: string;
 };
 /* The round 2 chain (Sep 27 2026, voice-persona RUNBOOK section 17), measured with Whisper against the lyrics on the three
  * songs with the most backing singers: HyperACE v2 vocals and the frazer & becruily lead split with no dereverb took the lead
@@ -238,6 +253,7 @@ const DEFAULTS: MyVoiceOptions = {
   index_rate: 0.5,
   protect: 0.33,
   rms_mix_rate: 0.25,
+  vocal_fx: 'none',
 };
 const RANGES = { index_rate: [0, 1], protect: [0, 0.5], rms_mix_rate: [0, 1] } as const;
 
@@ -261,6 +277,8 @@ export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOp
     out.lead_model = said.lead_model;
   for (const flag of ['lead_split', 'dereverb', 'soft_s'] as const)
     if (typeof said[flag] === 'boolean') out[flag] = said[flag] as boolean;
+  if (typeof said.vocal_fx === 'string' && myVoiceEffects.some((e) => e.key === said.vocal_fx))
+    out.vocal_fx = said.vocal_fx;
   for (const [key, [low, high]] of Object.entries(RANGES) as Array<
     [keyof typeof RANGES, readonly [number, number]]
   >) {
@@ -317,6 +335,16 @@ function extractorChoice(value: unknown, fallback: string): string {
   if (!found) throw new Error('Under Vocal extractor, choose one of the listed extractors.');
   return found.key;
 }
+function effectChoice(value: unknown, fallback: string): string {
+  if (value == null || value === '') return fallback;
+  const said = words(value);
+  /* The key or the label; every label's first word is its own (Studio, Plate, Hall...), so "plate" is Plate reverb. */
+  const found = myVoiceEffects.find(
+    (e) => e.key === said || words(e.label) === said || words(e.label).split(' ')[0] === said,
+  );
+  if (!found) throw new Error('Under Vocal effects, choose one of the listed effects, or None.');
+  return found.key;
+}
 function numberChoice(
   value: unknown,
   fallback: number,
@@ -344,7 +372,13 @@ export type MyVoiceWorkerInput = {
   index_sha256?: string;
   pitch: 'auto' | number;
   voice_range?: MyVoiceRange;
-  options: MyVoiceOptions & { fallback: string; room: boolean; f0_method: string };
+  options: Omit<MyVoiceOptions, 'vocal_fx'> & {
+    fallback: string;
+    room: boolean;
+    f0_method: string;
+  };
+  /** Sent only for an effect; a worker from before effects ignores it (the take note then says the voice stayed dry). */
+  vocal_fx?: string;
 };
 /** What the booth keeps on a voice job's input: her choices from the client, and the model the server looked up. */
 export type MyVoiceJob = {
@@ -392,6 +426,7 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
         'rms_mix_rate',
         'Loudness follows',
       ),
+      vocal_fx: effectChoice(body.vocal_fx, defaults.vocal_fx),
     },
   };
   const title = body.title?.trim() || 'Sung in my voice';
@@ -429,7 +464,7 @@ export function myVoicePrepare(
   };
 }
 
-function workerOptions(options: MyVoiceOptions): MyVoiceWorkerInput['options'] {
+function workerOptions(options: Omit<MyVoiceOptions, 'vocal_fx'>): MyVoiceWorkerInput['options'] {
   return {
     ...options,
     /* Round 1's BS-RoFormer backs up every other extractor (and Demucs backs it up), so one extractor's failure never
@@ -444,11 +479,13 @@ function withModel(
   model: NonNullable<MyVoiceJob['model']>,
   options: MyVoiceOptions,
 ): MyVoiceWorkerInput {
+  const { vocal_fx, ...chain } = options;
   const out: MyVoiceWorkerInput = {
     ...base,
     model_key: model.model_key,
-    options: workerOptions(options),
+    options: workerOptions(chain),
   };
+  if (vocal_fx && vocal_fx !== 'none') out.vocal_fx = vocal_fx;
   if (model.model_sha256) out.model_sha256 = model.model_sha256;
   if (model.index_key) out.index_key = model.index_key;
   if (model.index_sha256) out.index_sha256 = model.index_sha256;
@@ -479,6 +516,7 @@ export type MyVoiceProjectOptions = {
   index_rate: number;
   protect: number;
   rms_mix_rate: number;
+  vocal_fx: string;
 };
 export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
   const voice = input.voice;
@@ -493,6 +531,7 @@ export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
     index_rate: options.index_rate,
     protect: options.protect,
     rms_mix_rate: options.rms_mix_rate,
+    vocal_fx: (myVoiceEffects.find((e) => e.key === options.vocal_fx) || myVoiceEffects[0]).label,
   };
   if (input.reference_voice_url) out.reference_voice_url = input.reference_voice_url;
   if (typeof voice?.pitch === 'number') out.pitch = voice.pitch;
@@ -509,10 +548,15 @@ export function myVoiceProjectWhy(options?: { voice_source?: string }): string {
 
 /** RunPod flex price per second for the voice worker's usual card (RTX 4090, the YuE2 table's row). */
 const USUAL_USD_PER_SECOND = 0.000306;
-/** GPU seconds of a job, measured on the Sep 27 pod: separation ~15 s a model with its load, RVC ~35 s with its load. */
-export function myVoiceGpuSeconds(mode: 'song' | 'vocal', audioSeconds?: number): number {
+/** GPU seconds of a job, measured on the Sep 27 pod: separation ~15 s a model with its load, RVC ~35 s with its load. A vocal
+ * effect adds its CPU work while the card waits: 4 to 11 s for a three-minute song on the PC, so ~0.06 s a second of audio. */
+export function myVoiceGpuSeconds(
+  mode: 'song' | 'vocal',
+  audioSeconds?: number,
+  effect?: boolean,
+): number {
   const length = typeof audioSeconds === 'number' && audioSeconds > 0 ? audioSeconds : 240;
-  return mode === 'song' ? 45 + 0.45 * length : 30 + 0.2 * length;
+  return (mode === 'song' ? 45 + 0.45 * length : 30 + 0.2 * length) + (effect ? 0.06 * length : 0);
 }
 /** What a finished job cost: billed seconds at the rate of the card that ran it (the YuE2 price table). */
 export function myVoiceTakeCost(executionMs: number | undefined, gpu?: string | null): number {
@@ -533,8 +577,10 @@ export const myVoiceCost =
 export function myVoiceEstimate(input: Input): { spoken: string; costUSD: number } {
   const voice = input.voice;
   const mode = voice?.source || 'song';
+  const effect = !!voice?.options?.vocal_fx && voice.options.vocal_fx !== 'none';
   const costUSD =
-    Math.round(myVoiceGpuSeconds(mode, voice?.seconds) * USUAL_USD_PER_SECOND * 1000) / 1000;
+    Math.round(myVoiceGpuSeconds(mode, voice?.seconds, effect) * USUAL_USD_PER_SECOND * 1000) /
+    1000;
   const length = voice?.seconds ? 'for a recording this long' : 'for a song of about four minutes';
   return {
     costUSD,
@@ -551,10 +597,45 @@ export type MyVoiceOutput = Output & {
   vocal_key?: string;
   vocal_wav_url?: string;
   vocal_wav_key?: string;
+  /* With a vocal effect: the voice with the effect (the dry one above is always kept), and what the worker did. */
+  vocal_fx_url?: string;
+  vocal_fx_key?: string;
+  vocal_fx_wav_url?: string;
+  vocal_fx_wav_key?: string;
+  vocal_fx?: {
+    preset?: string;
+    label?: string;
+    tempo_bpm?: number | null;
+    tempo_source?: string | null;
+    delay_ms?: number | null;
+  } | null;
   pitch?: { shift?: number; source?: string; why?: string; share_above_top?: number } | null;
 };
-/** A finished voice job in a sentence or three: the octave, anything the worker had to work around, and what it cost. */
-export function myVoiceTakeNote(output: MyVoiceOutput | undefined): string {
+/** The vocal effect in a sentence: what went on the voice, and the tempo an echo followed. Empty for none. */
+function effectNote(output: MyVoiceOutput, input?: Pick<Input, 'voice'>): string {
+  const fx = output.vocal_fx;
+  const asked = input?.voice?.options?.vocal_fx;
+  if (!fx || !fx.label) {
+    /* She chose an effect and a worker from before effects sang it dry: say so, so the dry sound is not a mystery. */
+    if (asked && asked !== 'none' && !(output.features || []).includes('vocal-fx'))
+      return 'The voice worker has no vocal effects yet, so your voice is dry in this version.';
+    return '';
+  }
+  if (typeof fx.delay_ms === 'number' && fx.delay_ms > 0 && fx.preset !== 'slapback') {
+    const bpm = typeof fx.tempo_bpm === 'number' ? Math.round(fx.tempo_bpm) : 120;
+    return fx.tempo_source === 'detected'
+      ? `Vocal effect: ${fx.label}, its repeats in time with the song at about ${bpm} beats a minute.`
+      : `Vocal effect: ${fx.label}, its repeats at ${bpm} beats a minute because the recording has no clear beat.`;
+  }
+  return `Vocal effect: ${fx.label}.`;
+}
+
+/** A finished voice job in a sentence or three: the octave, the vocal effect, anything the worker had to work around, and what
+ * it cost. input (the job's own) lets it say when an effect was asked for and the worker could not add one. */
+export function myVoiceTakeNote(
+  output: MyVoiceOutput | undefined,
+  input?: Pick<Input, 'voice'>,
+): string {
   if (!output) return '';
   const notes: string[] = ['Sung in your voice.'];
   const shift = output.pitch?.shift;
@@ -566,6 +647,8 @@ export function myVoiceTakeNote(output: MyVoiceOutput | undefined): string {
     );
   else if (typeof output.pitch?.share_above_top === 'number' && output.pitch.share_above_top >= 0.1)
     notes.push('Some high notes sit above your usual top, so listen to those.');
+  const effect = effectNote(output, input);
+  if (effect) notes.push(effect);
   for (const note of (output.worker_notes || []).slice(0, 3))
     if (typeof note === 'string') notes.push(note);
   if (typeof output.execution_ms === 'number') {
@@ -616,6 +699,8 @@ export type MyVoiceGuideEngine = {
     needClip: string;
     useTake: string;
     vocal: string;
+    /** The voice with its vocal effect, offered beside the dry one when an effect was used. */
+    vocalFx: string;
     clip: string;
   };
 };
@@ -624,6 +709,7 @@ export type MyVoiceGuideEngine = {
 export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoiceGuideEngine {
   const d = myVoiceDefaults(env);
   const extractor = myVoiceExtractors.find((e) => e.key === d.extractor) || myVoiceExtractors[0];
+  const effect = myVoiceEffects.find((e) => e.key === d.vocal_fx) || myVoiceEffects[0];
   return {
     name: 'Sing it in my voice',
     tagline: 'Import a song or a vocal and hear it sung in your own voice.',
@@ -648,7 +734,8 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       d.soft_s
         ? 'Softer S sounds is on: the S, SH, T and F hiss comes from the original singer, which takes the robotic edge off. Turn it off under More settings to hear every sound from your voice model.'
         : 'If S sounds come out a little robotic, turn on Softer S sounds under More settings: the S, SH, T and F hiss then comes from the original singer.',
-      'You get two files: the song in your voice, and your voice on its own.',
+      'Vocal effects puts studio reverb or echo on your voice in the song: Studio polish evens and brightens it, Plate reverb and Hall reverb add a room, Slapback is one quick repeat, Echo repeats in time with the song, and Dreamy is a wide wash of echo and reverb. None keeps it dry.',
+      'You get two files: the song in your voice, and your voice on its own, always dry, ready for a DAW. With a vocal effect you also get your voice with the effect.',
     ],
     settings: [
       {
@@ -665,6 +752,15 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         kind: 'choice',
         options: [myVoiceSources.song, myVoiceSources.vocal],
         default: myVoiceSources.song,
+      },
+      /* A main choice, in view with the recording (her ask: effects if she wants them). */
+      {
+        key: 'vocal_fx',
+        label: 'Vocal effects',
+        hint: "Studio effects on your voice in the song. Echo follows the song's beat. Your dry voice is always kept as its own download.",
+        kind: 'choice',
+        options: myVoiceEffects.map((e) => e.label),
+        default: effect.label,
       },
       /* Part 296 (her ask: the booth was cluttered): the recording and what is in it stay in view; every knob below sits in
        * the one collapsed More settings group, at the defaults the round 2 test measured. */
@@ -756,6 +852,7 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       needClip: 'Import the recording to sing first, under Recording to sing.',
       useTake: 'Sing this take in my voice',
       vocal: 'Download my voice on its own',
+      vocalFx: 'Download my voice with the effect',
       clip: 'Singing: ',
     },
   };
@@ -864,7 +961,7 @@ export function createMyVoiceRouter(hooks: MyVoiceRouterHooks): Router {
         working:
           'Your voice version is being made. It usually takes two to four minutes, longer if the voice worker has to wake up.',
         stopping: 'Stop requested. GPU time already used is still billed.',
-        takeNote: (output) => myVoiceTakeNote(output),
+        takeNote: (output, input) => myVoiceTakeNote(output, input),
       },
     ),
   );
