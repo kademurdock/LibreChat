@@ -919,7 +919,7 @@ You already picked your side
 
 [Chorus]
 Now they know
-Ain't bring a crowd, ain't need the rope
+Ain't bring a crowd, they lift the rope
 Jokes all gone, now you raise a toast
 Wasn't sayin' much but now they know
 (Yeah, yeah)

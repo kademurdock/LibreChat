@@ -93,6 +93,7 @@ export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outra
   5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
   6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
   7. NO LISTS OF LINES THAT OPEN THE SAME WAY. Three lines in a row that open with the same word or words, or one line that stacks three clauses on the same opening word, is the list she hears as machine writing (her words, Sep 27 2026: "very ai"), and her own system already bans lists that only repeat. Say the thing once, as a sentence, and spend the other lines on what happens. One word repeated for pressure, once in a song, or a chant in a post-chorus, is not this.
+  8. NO STOCK KISS-OFF. Her ear on the first songs after the chorus fix (Sep 27 2026): nearly the only machine tell left in them was the kiss-off that tells the other person to keep their things, or offers the things up or sends them off with them, and the line about what the singer does not need. One of those lines is a tell and a run of them is a list. A breakup, a quitting song or a brag still gets its kiss-off: make it something only this singer would say to this person, an action, a fact about the two of them or a comeback.
 - WRITE IT LIKE A PERSON WROTE IT. From the songwriting prompt she uses elsewhere; these hold alongside the rules above.
   - Trust the listener. When a line lands, move on. Never explain a joke. Never follow a sad line with one saying how sad the singer is. No lesson at the end and no inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, a fight can stay unresolved, and the singer can still want the person they shouldn't.
   - Give the singer a personality: opinions, bad habits, pettiness, contradictions, wants, and a way of talking you would recognise across a room. They do not have to be the good guy. Songs are not HR training videos.
@@ -131,6 +132,7 @@ const audienceNote = (audience: SongAudience | undefined): string =>
  * there are any, hand the writer the exact lines to replace. High precision on
  * purpose; a false alarm costs one rewritten line, a miss costs her trust. A
  * term the person used in their own brief is theirs and is never flagged. */
+const NEED_PIVOT = '"I don\'t need X, I need Y"';
 const LYRIC_TELLS: [string, RegExp][] = [
   ['a named weekday', /\b(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b/i],
   ['a stock clock time', /\b(?:two|three|four|2|3|4)\s?a\.?\s?m\b\.?|\bmidnight\b|\bgolden hour\b/i],
@@ -170,7 +172,7 @@ const LYRIC_TELLS: [string, RegExp][] = [
   ["the desk's own filler", /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i],
   ['a worn image word', /\bdemons\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|(?<!\b(?:radio|police|scanner|cb|ham|fm|am|shortwave|short-wave|emergency|fire|weather)\s)\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|(?<!\bthe\s)\belectric\b(?!['’]s\b)(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|compan(?:y|ies)|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter|pump|light|blue|cart|bike|scooter|motor|mower|train|wire|line|pole|shock|heat|oven|range|dryer|avenue|eel|kettle|toothbrush|smoker|grill|saw|truck|boat)(?:e?s)?\b)|(?<=\bthe\s)electric(?=\s+(?:feeling|touch|spark|sparks|charge|current|air|night|energy|love|kiss|pulse|thrill|rush|chemistry|glow|buzz|tension|connection|moment|vibes?)\b)/i],
   ['a worn image word', /(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)(?<![A-Z][A-Za-z'’]*\s)\bHollow(?:ness)?\b|(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)\b(?:hollow(?:ness)?|HOLLOW(?:NESS)?)\b|(?<=\b[Aa]\s)(?:hollow|Hollow|HOLLOW)\b(?!['’]s\b|\s+(?:by|in|on|at|past|near|under|behind|below|beyond|where|down|up|off|out|over|beside|between|to|from|with)\b|\s*[,.;:!?)—–-]|\s*$)/],
-  ['"I don\'t need X, I need Y"', /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
+  [NEED_PIVOT, /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
 ];
 
 export type LyricTell = { line: string; tell: string };
@@ -274,6 +276,170 @@ export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
   return found;
 }
 
+/* Part 296 follow-up (Sep 27 2026). Her ear on the first songs after the chorus fix: "really
+ * one of the only ai tells I could find in them was keep your... keep your this, keep your
+ * that, I don't need blah blah blah... I feel like we should break those patterns specific".
+ * Measured on the 73 desk songs stored that day: 12 carried one, 20 lines in all (the R&B
+ * breakup brief 5 of 6 times, the car-wash quitting song 4 of 7: "You can keep the tip jar and
+ * the keys", "So keep the two bucks and the chair", "Keep the ring"), and after the audit the
+ * same 12 songs still did. Two kinds of line, each read one clause at a time:
+ *  - THE HAND-BACK: the other person told to keep, have or take away their things, said as an
+ *    order ("Keep the key", "So keep your little fine") or with you can / you could ("You
+ *    can have the whole street"), including "you can keep it", "you can keep standin' there"
+ *    and "take it and go".
+ *  - THE CAN-DO-WITHOUT: I or we do not need something ("We don't need the lights"), the
+ *    same with no subject at the start of a clause ("Don't need your pity"), anyone at all
+ *    who needs no one or nothing ("She ain't needed help from nobody"), and who needs it.
+ * Left alone where plain speech uses the same words: keep + an -ing word ("You keep askin'"),
+ * keep with a word that says how or where ("Keep your wheels down", "Keep it goin'", "keep
+ * your hands to yourself"), the idioms where keep means hold to (your word, the faith, your
+ * cool), anyone keeping a thing themselves ("I keep it by my chair", "to keep it on the
+ * road"), need to + a verb ("she don't need to see"), a thing nobody needed with nothing after
+ * it ("a coat I didn't need"), and take + a thing with no going away after it ("take the
+ * wheel"). When in doubt it flags: a false alarm costs one rewritten line. Jev gets no veto
+ * over these (see the route): it judges whether a line is stock, and these lines are often
+ * concrete (a tip jar, the keys), which is exactly why the list could not see them. A phrase
+ * from her own brief, or the same move asked for in it, is hers and is never flagged. */
+export const KISS_OFF_TELL =
+  'the stock kiss-off: telling them to keep, have or take back their things, or saying what the singer does not need';
+
+const KISS_LEAD =
+  String.raw`(?:(?:and|but|so|or|just|now|well|oh|then|hey|yeah|fine|okay|ok|please|baby|babe|honey|darlin'?|darling|girl|boy|go on(?: and)?|go ahead(?: and)?|you know what|(?:[a-z']+ )?(?:said|says|told [a-z']+|tell [a-z']+))\s+)*`;
+const KISS_HAND_BACK = new RegExp(
+  String.raw`^${KISS_LEAD}(?:(you|ya|y'all|you all)\s+(?:(can|could|may|might as well|may as well|should|just|go on and|go ahead and|better|oughta|can just|could just|can go ahead and)\s+)?)?(keep|have|take)\s+(.+)$`,
+);
+const NEED_NOT = String.raw`(?:don't|dont|do not|ain't|aint|didn't|didnt|did not|never|no longer)\s+(?:(?:even|really|ever|never|sure|much|just|actually|honestly|truly)\s+)?need(?:ed|s)?`;
+const NEED_I = new RegExp(String.raw`\b(?:i|we)\s+(?:(?:sure|really|just|still|even|honestly|surely)\s+)?${NEED_NOT}\b\s*(\S*)`);
+const NEED_BARE = new RegExp(String.raw`^${KISS_LEAD}${NEED_NOT}\b\s*(\S*)`);
+const NEED_NOBODY = new RegExp(String.raw`\b${NEED_NOT}\b(?!\s+to\b).*\b(?:no|nobody|nobody's|no one|nothin'?|nothing|none)\b`);
+const WHO_NEEDS = new RegExp(String.raw`^${KISS_LEAD}who needs\s+(\S+)`);
+/* What may follow need without it being a thing needed: need to + a verb, or a new clause
+ * (a hat I didn't need and a pair of boots). */
+const NEED_NOT_A_THING = new Set("to from when if since until till 'til before after because 'cause cause cuz 'cuz and or but so then anyway anyhow at in on for with by of".split(' ').concat(''));
+const WHO_NEEDS_NOT_A_THING = new Set(['to', 'me', 'us', 'help']);
+const KISS_PRONOUNS = new Set(['it', 'them', "'em", 'em', 'that', 'this', 'him', 'her', 'everything', 'those', 'these', 'all']);
+const KISS_DETS = new Set(['your', "yo'", 'yo', 'the', 'all', 'every', 'whatever', 'his', 'her', 'their', 'those', 'these', 'this', 'that']);
+/* Words that may close a hand-back after a pronoun: "you can keep it all", "keep it for all I care". */
+const KISS_TAIL = new Set(['all', 'too', 'then', 'now', 'baby', 'babe', 'boy', 'girl', 'honey', "darlin'", 'darlin', 'darling', 'anyway', 'anyhow', 'forever', 'for', 'good', 'i', 'care', 'yourself', 'yours']);
+const NP_SKIP = new Set(['of', 'the', 'your', "yo'", 'that', 'those', 'these', 'this', 'his', 'her', 'their', 'damn']);
+const NP_STOP = new Set(['and', 'or', 'but', 'i', "i'm", "i'll", "i've", "i'd", "'cause", 'cause', 'cuz', "'cuz", 'because', 'so', 'too', 'then', 'baby', 'babe', 'honey', 'girl', 'boy', "darlin'", "'til", 'till', 'until', 'while', 'you', 'we', 'now']);
+/* keep + a word that says how or where it is kept is an instruction, not a hand-back. */
+const KEEP_HOW = new Set(
+  "down up on off in out inside outside indoors shut open closed locked low high away back to from between close closer tight clean crossed steady still warm safe straight cool calm quiet together dry busy alive awake lit level where here there near at under over around 'round round handy ready hidden happy fed honest humble hungry sharp full fresh cold hot sweet simple light real right loose free short long neat tidy strong".split(' '),
+);
+/* keep where it means hold to, not hold on to a thing. */
+const KEEP_IDIOMS = new Set('word promise promises vow vows cool head balance pace faith peace beat time tempo score count track watch distance company composure wits nerve calm shape spirits chin guard lid grip footing seat place'.split(' '));
+const ING_NOUNS = new Set('thing string spring wedding ceiling building feeling darling earring sibling sling swing bling offering everything nothing something anything clothing painting drawing morning evening bedding ending meeting blessing pudding stuffing filling awning lightning icing frosting topping dressing stocking sapling duckling herring sterling savings'.split(' '));
+const KEEP_DONE = new Set('swept set done paid known hid shown sworn'.split(' '));
+const ED_NOUNS = new Set('speed steed greed creed breed tweed hundred'.split(' '));
+/* take + a thing is a hand-back only when the thing is sent away with them. */
+const TAKE_GO = new Set('go leave get git run walk split scram beat move roll head hit drive ride shove stick bounce disappear vanish'.split(' '));
+const TAKE_IDIOMS = new Set('time hand word shot chance turn seat place medicine advice cue lead pick bow aim breath step stand wheel'.split(' '));
+
+type KissOff = { family: string; phrase: string };
+
+/** The hand-back after its verb: `rest` is what follows keep, have or take; `offered` when
+ *  it follows you can (you could, you might as well...). */
+function handBack(verb: string, rest: string[], offered = false): string | null {
+  const [first, ...after] = rest;
+  if (!first) return null;
+  /* Seen in the first fresh song on this desk: "You can keep standin' there". Offered, keep
+   * + an -ing word is the same dismissal; said plainly (you keep askin') it is not. */
+  const going = (w: string): boolean => /[a-z]{2,}(?:ing|in')$/.test(w) && !ING_NOUNS.has(w);
+  if (verb === 'keep' && offered && (going(first) || (first === 'on' && going(after[0] || '')))) return `keep ${first}`;
+  if (verb === 'take') {
+    const pronoun = KISS_PRONOUNS.has(first);
+    if (!pronoun && !KISS_DETS.has(first)) return null;
+    let i = 0;
+    while (i < after.length && NP_SKIP.has(after[i])) i += 1;
+    if (!pronoun && TAKE_IDIOMS.has(after[i] || '')) return null;
+    const near = after.slice(0, 8);
+    const goes = near.some((w, j) => (w === 'and' && TAKE_GO.has(near[j + 1] || '')) || w === 'outta' || (w === 'with' && near[j + 1] === 'you') || (w === 'out' && near[j + 1] === 'of') || (!pronoun && ((w === 'back' && j === i + 1) || w === 'elsewhere')));
+    return goes ? `take ${first}` : null;
+  }
+  if (KISS_PRONOUNS.has(first) && after.every((w) => KISS_TAIL.has(w) || (verb === 'have' && w === 'back'))) return `${verb} ${first}`;
+  if (!KISS_DETS.has(first)) return null;
+  let i = 0;
+  while (i < after.length && NP_SKIP.has(after[i])) i += 1;
+  const np: string[] = [];
+  for (; i < after.length && np.length < 5 && !NP_STOP.has(after[i]); i++) np.push(after[i]);
+  if (!np.length) return null;
+  if (verb === 'keep') {
+    if (KEEP_IDIOMS.has(np[0])) return null;
+    /* "keep her safe", "keep that quiet": her, that and the like are the thing kept. */
+    if (KISS_PRONOUNS.has(first) && KEEP_HOW.has(np[0])) return null;
+    /* keep the engine running, the porch swept, the bills paid: how it is kept. */
+    if (np.slice(1).some((w) => KEEP_HOW.has(w) || KEEP_DONE.has(w) || going(w) || (/[a-z]{3,}ed$/.test(w) && !ED_NOUNS.has(w)))) return null;
+  }
+  return `${verb} ${first} ${np[0]}`;
+}
+
+/** Is this one sung line a stock kiss-off? Reads it a clause at a time. */
+function kissOff(line: string): KissOff | null {
+  const clauses = line
+    .replace(/[’‘`]/g, "'")
+    .toLowerCase()
+    .split(/[,;:!?.()"“”…]+|\s[—–-]+\s|[—–]/)
+    .map((c) => c.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  for (const clause of clauses) {
+    const hand = KISS_HAND_BACK.exec(clause);
+    if (hand) {
+      const [, you, modal, verb, rest] = hand;
+      /* Advice (you should keep the receipt) is not a hand-back, and "have" is one only
+       * when offered: you can have it. */
+      const advice = !!modal && /^(?:should|better|oughta)$/.test(modal);
+      const offered = !!you && !!modal && !advice && modal !== 'just';
+      if (!advice && (verb !== 'have' || offered)) {
+        const phrase = handBack(verb, rest.split(' '), offered);
+        if (phrase) return { family: verb === 'take' ? 'take' : 'keep', phrase };
+      }
+    }
+    for (const pattern of [NEED_I, NEED_BARE]) {
+      const hit = pattern.exec(clause);
+      if (hit && !NEED_NOT_A_THING.has(hit[1])) return { family: 'need', phrase: hit[0].trim() };
+    }
+    const nobody = NEED_NOBODY.exec(clause);
+    if (nobody) return { family: 'need', phrase: nobody[0].trim() };
+    const who = WHO_NEEDS.exec(clause);
+    if (who && !WHO_NEEDS_NOT_A_THING.has(who[1])) return { family: 'need', phrase: `who needs ${who[1]}` };
+  }
+  return null;
+}
+
+/* The same move asked for in her brief: its head words, not just after a no, not, don't,
+ * never, without, avoid, stop, skip or hate a few words before. */
+const KISS_IN_BRIEF: Record<string, RegExp> = {
+  keep: /\b(?:keep|can have) (?:your|the|it|all|them|'em|his|her|their|that|those|this|every|him)\b/gi,
+  take: /\btake (?:your|the|it|all|them|'em|his|her|their|that|those|this|him)\b/gi,
+  need: /\b(?:(?:don't|dont|do not|ain't|aint|didn't|didnt|did not|never|no longer)\s+(?:\w+\s+)?need(?:ed|s)?|who needs)\b/gi,
+};
+const briefKissOffs = (brief: string): Set<string> => {
+  const text = String(brief || '').replace(/[’‘`]/g, "'");
+  const asked = new Set<string>();
+  for (const [family, pattern] of Object.entries(KISS_IN_BRIEF))
+    for (const hit of text.matchAll(pattern)) {
+      const before = text.slice(Math.max(0, (hit.index || 0) - 25), hit.index || 0);
+      if (!/\b(?:no|not|don't|never|without|avoid|stop|skip|hate|ban)\b[^.!?;\n]*$/i.test(before)) asked.add(family);
+    }
+  return asked;
+};
+
+/** Part 296 follow-up: the sung lines that are a stock kiss-off, each distinct line once.
+ *  Supplied lyrics never reach this; a phrase or the same move from her brief is hers. */
+export function lyricKissOffTells(script: string, brief = ''): LyricTell[] {
+  const asked = briefKissOffs(brief);
+  const said = sayable(brief);
+  const found: LyricTell[] = [];
+  for (const { line } of sungLines(script)) {
+    if (found.some((t) => t.line === line)) continue;
+    const hit = kissOff(line);
+    if (!hit || asked.has(hit.family) || (said && ` ${said} `.includes(` ${sayable(hit.phrase)} `))) continue;
+    found.push({ line, tell: KISS_OFF_TELL });
+  }
+  return found;
+}
+
 /** The sung lines of a draft that lean on a stock tell. Looks only below the
  *  "Lyrics:" heading, skips section tags, and reports each distinct line once. */
 export function lyricTells(script: string, brief = ''): LyricTell[] {
@@ -282,6 +448,7 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
   const found: LyricTell[] = [];
   const seen = new Set<string>();
   const endings = new Map(lyricEndingTells(script, brief).map((t) => [t.line, t]));
+  const kissOffs = new Set(lyricKissOffTells(script, brief).map((t) => t.line));
   for (const raw of script.slice(at).split('\n').slice(1)) {
     const line = raw.trim();
     if (!line || /^\[[^\]]*\]$/.test(line) || /^READBACK:/i.test(line) || seen.has(line)) continue;
@@ -290,12 +457,18 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
       found.push({ line, tell: "copied from the writing system's own examples; write your own" });
       continue;
     }
-    for (const [tell, pattern] of LYRIC_TELLS) {
+    let tell = '';
+    for (const [name, pattern] of LYRIC_TELLS) {
       const hit = pattern.exec(line);
       if (!hit || brief.toLowerCase().includes(hit[0].toLowerCase())) continue;
+      tell = name;
+      break;
+    }
+    /* A kiss-off is named first: the fix is a new move, which takes a stock word out with it. */
+    if (kissOffs.has(line)) tell = tell && tell !== NEED_PIVOT ? `${KISS_OFF_TELL}, and ${tell}` : KISS_OFF_TELL;
+    if (tell) {
       seen.add(line);
       found.push({ line, tell });
-      break;
     }
     const ending = endings.get(line);
     if (ending && !seen.has(line)) {
@@ -1167,8 +1340,13 @@ export function lyricAuditRequest(script: string, tells: LyricTell[], shape: str
   const hookCount = briefWantsRepeats(brief) || briefRepeatsItself(brief)
     ? 'The idea asked for this repetition (a chant, or a chorus it spelled out itself), so the chorus sings its hook as often as the idea does.'
     : 'It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over. Every other chorus line says something the hook does not.';
+  /* Part 296 follow-up: a kiss-off line is fixed by a new move, not by new words for the same
+   * one, or the rewrite hands the same things back in other words. Named, never shown. */
+  const kissOffs = tells.some((t) => t.tell.startsWith(KISS_OFF_TELL))
+    ? '\nA line marked as the stock kiss-off needs a different move, not the same move in new words: nothing handed back or left behind for them in any wording, and no run of things the singer can do without. Give the singer something only this song has to do or say to this person instead: an action, a fact about the two of them, a joke or a comeback aimed at them.'
+    : '';
   const flagged = tells.length
-    ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}`
+    ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}${kissOffs}`
     : '';
   return `Think briefly: decide what fails, fix it, and write the song out. Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: keep the story, the hook and every line that already sings, and do not paraphrase a working song into a different one. The exception is gate 5: if the verses do not rhyme or do not hold a meter, rewriting their line endings throughout is the job, not a liberty.
 

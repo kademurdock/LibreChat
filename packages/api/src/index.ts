@@ -202,6 +202,8 @@ export {
   mergeRepairedLyrics,
   lyricShapeIssue,
   lyricEndingTells,
+  lyricKissOffTells,
+  KISS_OFF_TELL,
   songSectionMap,
   sectionMapNote,
   chorusShapeFor,

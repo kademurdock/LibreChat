@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
@@ -512,15 +512,16 @@ test('Part 293: the kill scan knows the rest of her ChatGPT ban list and leaves 
     ['Shimmering like gold', 'a worn image word'], ['Watch it all unfold', 'a worn image word'], ['The night is unfolding', 'a worn image word'], ["I don't want your validation", 'a worn image word'],
     ['Good vibrations only', 'a worn image word'], ["We're on the same frequency", 'a worn image word'], ['My heartbeat is a drum', 'a worn image word'], ['The room was electric', 'a worn image word'],
     ['Electric love', 'a worn image word'],
-    ["I don't need your money, I need your time", '"I don\'t need X, I need Y"'], ["I don't need a crown, I just want the keys", '"I don\'t need X, I need Y"'],
-    ["I ain't need no help, just need a ride", '"I don\'t need X, I need Y"'],
+    /* Part 296 follow-up: the can-do-without is now her named kiss-off, which takes these in. */
+    ["I don't need your money, I need your time", KISS_OFF_TELL], ["I don't need a crown, I just want the keys", KISS_OFF_TELL],
+    ["I ain't need no help, just need a ride", KISS_OFF_TELL], ["I don't need to win, I just need you", '"I don\'t need X, I need Y"'],
   ];
   for (const [line, tell] of tells) assert.deepEqual(flags(line), [tell], line);
   const plainSpeech = [
     'He plays electric guitar at the Legion', 'Paid the electric bill in quarters', 'The electric company cut us off', 'Doing the Electric Slide at the reunion',
     'She got the electric blanket and the good pillow', 'Down in the hollow past the church', 'I would do it again in a heartbeat', 'Unfold the lawn chair, sit a spell',
     'She unfolded the map on the hood', 'I found myself at the Waffle House at noon', "I'm enough of a fool to call", 'I survived three kids and a Buick',
-    "I don't need a medal, I don't need a prize", 'Chained the dog out by the shed', 'Sitting in the truck bed', 'He learned the hard way', 'Now they know',
+    'Chained the dog out by the shed', 'Sitting in the truck bed', 'He learned the hard way', 'Now they know',
   ];
   for (const line of plainSpeech) assert.deepEqual(flags(line), [], line);
   /* Part 293 review: her own register, which the first narrowing still hit. */
@@ -1236,4 +1237,103 @@ test('Part 296: the route tells the writer the chorus shape, hands the audit wha
   assert.equal(booth.requests.length, 1);
   assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/);
   assert.equal(booth.ledger[0].metadata.repeats, undefined);
+});
+
+/* ---------------- Part 296 follow-up (Sep 27 2026): the stock kiss-off ----------------
+ * Her words after the chorus fix went live: "really one of the only ai tells I could find in them was
+ * keep your... keep your this, keep your that, I don't need blah blah blah... I feel like we should
+ * break those patterns specific". Every lyric below is invented for these tests. */
+const kissFlags = (line, brief = '') => lyricKissOffTells('x\nLyrics:\n[Verse 1]\n' + line + '\n\nREADBACK: x', brief).map(t => t.tell);
+
+test('Part 296 follow-up: the kiss-off scan flags the hand-back and the can-do-without, and leaves plain speech alone', () => {
+  const kissOffs = [
+    'You can keep the bass boat and the dog', 'Keep your class ring, I got my own', 'So keep the casserole dish', 'Baby, you can keep it', 'Keep it all for all I care',
+    'Honey, you could have the recliner', 'You can have her, she likes your truck', 'I told him keep the lawnmower', 'Keep the change and the bad advice', "You can keep your mama's opinion",
+    'Take your lawn gnomes and go', 'Take the fruitcake back to your mama', 'Take it and git', 'Take your drama outta my driveway',
+    "I don't need your cousin's boat", "We don't need a DJ", "Don't need a map to find the Dairy Queen", "She don't need nobody's help", 'Who needs a husband with a bass boat',
+    "I sure don't even need the raise", "I ain't never needed you", 'We never needed much', "I don’t need your pity, Darrell",
+    "You can keep knockin' on the screen door", 'You could keep on calling, Darrell',
+  ];
+  for (const line of kissOffs) {
+    assert.deepEqual(kissFlags(line), [KISS_OFF_TELL], line);
+    assert.deepEqual(lyricTells('x\nLyrics:\n' + line).map(t => t.tell), [KISS_OFF_TELL], line);
+  }
+  const plainSpeech = [
+    'Keep your eyes on the gravel road', 'Keep your elbows off the table', 'Keep your voice down in church', 'Keep your hands to yourself at the fair', "Keep the engine runnin' by the bank",
+    'Keep the truck in second gear', 'Keep her warm till the sun comes up', "Keep it movin' down the line", 'Keep your word to the man', 'Keep the faith, sister', 'Keep the yard mowed for the realtor',
+    "You keep callin' after ten", 'I keep the jar of pennies by the sink', 'Mama keeps a pistol in her purse', 'Worked two jobs to keep the lights on', 'You should keep the receipt', "She'll keep the Buick",
+    'I need to see the doctor', "I don't need to hear it twice", "We don't need to talk about Randy", "A hat I didn't need and a pair of boots", 'For anybody who needs a ride to Branson',
+    'Take the long way past the Walmart', 'Take the back road through Mountain Home', 'Take your time with the gravy', 'Take my hand and hold on', 'Take it back, you lied about the dog',
+    "You don't need him, girl", 'I need you like the creek needs rain', "Keep on rollin' to Harrison", "You just keep talkin' at the Legion",
+  ];
+  for (const line of plainSpeech) assert.deepEqual(kissFlags(line), [], line);
+  /* Named first when a stock word rides in the same line: the new move takes the word out with it. */
+  assert.deepEqual(lyricTells('x\nLyrics:\nKeep your coffee, I got my own').map(t => t.tell), [`${KISS_OFF_TELL}, and coffee`]);
+  /* The music direction is never scanned. */
+  assert.deepEqual(lyricKissOffTells("Honky-tonk; the singer tells him he can keep the truck.\nLyrics:\n[Verse 1]\nI sold the boat to Randy's wife"), []);
+});
+
+test('Part 296 follow-up: a kiss-off from her own idea is hers; asking for a kiss-off song is not asking for the stock one', () => {
+  assert.deepEqual(kissFlags('You can keep the recliner', 'breakup song where she tells him he can keep the recliner'), [], 'her phrase');
+  assert.deepEqual(kissFlags("I don't need your truck", "a song called I Don't Need Your Truck"), [], 'her title');
+  assert.deepEqual(kissFlags("Baby I don't need your money", "country song, I don't need him anymore"), [], 'the same move asked for');
+  assert.deepEqual(kissFlags('You can keep the recliner', 'a kiss-off song for my ex'), [KISS_OFF_TELL]);
+  assert.deepEqual(kissFlags('You can keep the recliner', 'breakup song, no keep your stuff lines please'), [KISS_OFF_TELL], 'a mention she bans does not turn the scan off');
+  assert.deepEqual(kissFlags("I don't need your truck", "breakup song, never do the I don't need you thing"), [KISS_OFF_TELL]);
+  assert.deepEqual(kissFlags('You can keep the recliner', "breakup song, I don't need him anymore"), [KISS_OFF_TELL], 'asking for one move is not asking for the other');
+});
+
+test('Part 296 follow-up: the desk notes and the audit name the kiss-off in words and never demonstrate it', async () => {
+  const eight = musicWritingCraft.slice(musicWritingCraft.indexOf('8. NO STOCK KISS-OFF'), musicWritingCraft.indexOf('- WRITE IT LIKE A PERSON'));
+  assert.match(eight, /tells the other person to keep their things, or offers the things up or sends them off with them, and the line about what the singer does not need/);
+  assert.match(eight, /A breakup, a quitting song or a brag still gets its kiss-off/);
+  assert.doesNotMatch(eight, /["“”]/, 'no example lines and no templates to copy');
+  const song = 'Country.\nLyrics:\n[Verse 1]\nYou can keep the bass boat and the dog\nI sold the camper to a man from Joplin\n\nREADBACK: x';
+  const audit = lyricAuditRequest(song, lyricTells(song), null);
+  assert.match(audit, /1\. "You can keep the bass boat and the dog" -- the stock kiss-off/);
+  assert.match(audit, /A line marked as the stock kiss-off needs a different move, not the same move in new words/);
+  const other = song.replace('You can keep the bass boat and the dog', 'I drank a Tuesday');
+  assert.doesNotMatch(lyricAuditRequest(other, lyricTells(other), null), /stock kiss-off/, 'only when one is flagged');
+  /* What bans a shape must not do it: the scan and the repeat gate both read the note, the gate and the label clean. */
+  const at = audit.indexOf('A line marked as the stock kiss-off');
+  const gate = audit.slice(at, audit.indexOf('\n', at));
+  for (const text of [eight, gate, KISS_OFF_TELL]) {
+    const asSong = `x\nLyrics:\n[Verse 1]\n${text.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`;
+    assert.deepEqual(lyricKissOffTells(asSong), [], text.slice(0, 40));
+    assert.deepEqual(lyricRepeatIssues(asSong, ''), [], text.slice(0, 40));
+  }
+  /* Her worked examples no longer show the can-do-without (Example A's chorus did). */
+  const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
+  const examples = hitWritingSystem.slice(hitWritingSystem.indexOf('## APPENDIX C'));
+  assert.ok(examples.length > 1000);
+  assert.deepEqual(lyricKissOffTells(`x\nLyrics:\n${examples}`), []);
+  assert.match(examples, /Ain't bring a crowd, they lift the rope/);
+});
+
+test('Part 296 follow-up: the route flags kiss-offs past a Jev veto, the audit rewrites them, and the ledger counts them', async () => {
+  const verse = ['I found your fishing hat behind the seat', 'The dog still waits for you at half past five', 'You can keep the bass boat and the dog', "And I don't need your cousin's boat", 'I paid the phone bill with the jar of quarters', 'Your mama called and asked me how I was', 'I told her I was fine and meant it mostly', 'The yard looks better since I mowed it crooked'];
+  const draft = `Country with a steel guitar.\nLyrics:\n[Verse 1]\n${verse.join('\n')}\n\n[Chorus]\nI sold the camper\nI sold it for a song\nThe man from Joplin\nTowed it before dawn\n\nREADBACK: A country song about a breakup.`;
+  const fixed = draft.replace('You can keep the bass boat and the dog', 'I left your waders hanging in the barn').replace("And I don't need your cousin's boat", 'And changed the code on the garage');
+  const vetoAll = { lyricTellsJev: async () => ({ tells: [], asked: 20, costUSD: 0, scores: new Map() }), lyricTellsLog: () => {} };
+  const api = { lyricEndingTells, lyricKissOffTells };
+  const body = { engine: 'yue2', mode: 'write', text: 'a breakup song about my ex', patient: true };
+  let booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : fixed), api, jev: vetoAll });
+  let out = await booth.call('post/script', { user: { id: 'kiss-1' }, body });
+  assert.equal(out.code, 200);
+  const audit = booth.requests[1].messages[1].content;
+  assert.match(audit, /"You can keep the bass boat and the dog" -- the stock kiss-off/, 'Jev vetoed every flag; the kiss-off is still flagged');
+  assert.match(audit, /"And I don't need your cousin's boat" -- the stock kiss-off/);
+  assert.match(audit, /needs a different move/);
+  assert.doesNotMatch(out.body.script, /keep the bass boat|don't need your cousin/);
+  assert.ok(out.body.repairs.includes('rewrote 2 lines that leaned on stock images'), out.body.repairs.join(' | '));
+  assert.deepEqual({ ...booth.ledger[0].metadata.kissOffs }, { draft: 2, left: 0 });
+  /* An audit that leaves one: the better song is kept and the ledger says one got through. */
+  booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : draft.replace('You can keep the bass boat and the dog', 'I left your waders hanging in the barn')), api, jev: vetoAll });
+  out = await booth.call('post/script', { user: { id: 'kiss-2' }, body });
+  assert.deepEqual({ ...booth.ledger[0].metadata.kissOffs }, { draft: 2, left: 1 });
+  /* Her own words are never scanned. */
+  booth = loadBooth({ reply: () => draft, api, jev: vetoAll });
+  out = await booth.call('post/script', { user: { id: 'kiss-3' }, body: { ...body, lyrics: verse.join('\n') } });
+  assert.equal(booth.requests.length, 1);
+  assert.equal(booth.ledger[0].metadata.kissOffs, undefined);
 });

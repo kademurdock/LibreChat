@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -1738,6 +1738,15 @@ async function scriptHandler(req, res) {
       const flagged = new Set(tells.map((t) => t.line));
       tells = [...tells, ...lyricEndingTells(raw, text).filter((t) => !flagged.has(t.line))];
     }
+    /* Part 296 follow-up: her "keep your this, keep your that, I don't need blah blah blah". A
+     * kiss-off line is often concrete (a tip jar, the keys), which Jev reads as not stock, so
+     * no Jev veto can drop one either. Counted before and after for the log and the ledger. */
+    const kissOffsOf = (script) => (ownsLyrics && typeof lyricKissOffTells === 'function' ? lyricKissOffTells(script, text) : []);
+    const kissOffsInDraft = kissOffsOf(raw);
+    if (kissOffsInDraft.length) {
+      const flagged = new Set(tells.map((t) => t.line));
+      tells = [...tells, ...kissOffsInDraft.filter((t) => !flagged.has(t.line))];
+    }
     /* Part 293 review: a clean song is held to clean in code, not by the prompt alone (the hit
      * system in the same prompt says profanity is on by default). Every sung line the desk wrote
      * with a swear or sexual word joins the flagged lines, after Jev so no veto can drop it, and
@@ -1776,7 +1785,7 @@ async function scriptHandler(req, res) {
         const stillSwears = merged ? swearing(merged).length : swore;
         const remaining = merged ? lyricTells(merged, text).length + stillSwears : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text, sectionMap);
-        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} ${Date.now() - started}ms`);
+        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} kissoff ${kissOffsInDraft.length}->${merged ? kissOffsOf(merged).length : kissOffsInDraft.length} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} ${Date.now() - started}ms`);
         if (merged && remaining <= tells.length) {
           const versesBefore = verseCount(raw);
           const versesAfter = verseCount(merged);
@@ -1935,6 +1944,8 @@ async function scriptHandler(req, res) {
         chorusShape: chorusShape ? chorusShape.id : undefined,
         /* Part 296: sections that repeated in the draft, still repeat in what she gets, and what the rewrite did. */
         repeats: measuresRepeats ? { draft: repeatsInDraft.length, left: repeatsLeft.length, rewrite: repeatRewrite } : undefined,
+        /* Part 296 follow-up: stock kiss-off lines in the first draft and in what she gets. */
+        kissOffs: wantsWords && typeof lyricKissOffTells === 'function' ? { draft: kissOffsInDraft.length, left: kissOffsOf(raw).length } : undefined,
         model: writingSettings.model || MODEL,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
