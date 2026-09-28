@@ -48,6 +48,7 @@ require('./drama');
 require('./wants');
 require('./venues');
 require('./build');
+require('./guide');
 require('./help');
 const view = require('./view');
 const lifeTick = require('./tick');

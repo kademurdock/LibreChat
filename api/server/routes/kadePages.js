@@ -3466,7 +3466,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
  * hand Kade a file per kind and it replaces the synth voice of the world.
  * Deliberately its OWN surface — not an agent chat, not the platform's face:
  * a doorway page. Ambience per district, off by default, remembered. */
-const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=296">
+const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${SHARED_HEAD}<link rel="stylesheet" href="/assets/reverie/room.css?v=299">
 <style>
   /* ── REVERIE CLIENT (Sep 6 2026) ─────────────────────────────────────────
    * Two audiences, one page. For a screen reader: a single live log that says
@@ -3638,6 +3638,22 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 <nav class="world-shortcuts" aria-label="World shortcuts"><a href="#cmdInput">Command</a><a href="#moveBox">Move</a><a href="#hangoutPanel" onclick="var b=document.getElementById('hereActs').querySelector('button[data-key=&quot;hangout&quot;]');if(b)b.click();return false">Hangout</a><a href="#hudBox">Your status</a><a href="#log">World log</a><a href="/help/world">Help</a></nav>
 <main class="layout">
   <div class="col-left">
+    <section class="section" id="guidePanel" aria-labelledby="guideHeading" hidden>
+      <h2 id="guideHeading">Make a day of it</h2>
+      <p id="guideProgress">Find somewhere to go and something to do. Your progress is saved.</p>
+      <div class="chips" role="group" aria-label="Town guide and notebook">
+        <button type="button" class="chip" id="guideOpen" data-guide-command="town">Town guide</button>
+        <button type="button" class="chip" data-guide-command="canal trail">Free canal trail</button>
+        <button type="button" class="chip" data-guide-command="notebook">My notebook</button>
+        <button type="button" class="chip" id="savedRoute" data-guide-command="route" hidden>My walking route</button>
+      </div>
+      <section id="routePanel" aria-labelledby="routeTitle" hidden>
+        <h3 id="routeTitle" tabindex="-1">My walking route</h3>
+        <p id="routeSummary"></p>
+        <details><summary>Show the route</summary><p class="muted">Walking connections, in order. This is not a map to scale.</p><ol id="routeStops" aria-label="Walking route"></ol></details>
+        <div class="chips"><button type="button" class="chip" data-guide-command="walk route">Continue route one step</button><button type="button" class="chip" id="closeRoute">Put the route card away</button></div>
+      </section>
+    </section>
     <section class="scene" id="scene" data-ward="gate" data-dark="0" data-wx="clear" data-water="0" aria-live="off">
       <div class="art" aria-hidden="true"><div class="sun"></div><div class="sky2"></div><div class="skyline"></div><div class="water"></div><span class="lantern l1"></span><span class="lantern l2"></span><span class="lantern l3"></span><div class="wx"></div></div>
       <div id="reverieIllustration" aria-hidden="true"></div><span id="sceneCaption" aria-hidden="true"></span>
@@ -3756,6 +3772,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
       <div class="toolbar">
         <button type="button" class="chip" id="sfxToggle" aria-pressed="true">Sounds: on</button>
         <button type="button" class="chip" id="ambToggle" aria-pressed="true">Ambience: on</button>
+        <button type="button" class="chip" id="soundRetry" hidden>Resume sounds</button>
         <label>Sounds <input type="range" id="sfxVol" min="0" max="100" value="80" aria-label="Sound volume"></label>
         <label>Ambience <input type="range" id="ambVol" min="0" max="100" value="35" aria-label="Ambience volume"></label>
       </div>
@@ -3770,8 +3787,10 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
 <script src="/assets/reverie/exploration.js?v=296"></script>
+<script src="/assets/reverie/guide.js?v=299"></script>
+<script src="/assets/reverie/audio.js?v=299"></script>
 <script src="/assets/reverie/room.js?v=296"></script>
-<script type="module" src="/assets/reverie/stage.mjs?v=296"></script>
+<script type="module" src="/assets/reverie/stage.mjs?v=299"></script>
 <script>
 (function(){
   'use strict';
@@ -3796,7 +3815,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     fight: '/assets/sounds/battleship_boom.mp3', 'transit.cab': '/assets/sounds/call-connected.mp3', 'cer.fireworks.own': '/assets/sounds/win_fanfare.mp3', 'social.laugh': '/assets/sounds/bingo_pop.mp3'
   };
   var ALIAS = { 'transit.bike': 'move', 'transit.scooter': 'move', 'transit.car': 'move', furniture: 'take', eat: 'take', sleep: 'emote', cook: 'take', door: 'enter', radio: 'say', 'cer.bell.distant.ward': 'cer.bell.wronghour.single' };
-  var AC = null; function ac(){ if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (AC && AC.state === 'suspended') { AC.resume().catch(function(){}); } return AC; }
+  function ac(){ try { return window.ReverieAudio.context(); } catch (e) { return null; } }
   function tone(freq, dur, delay, type, gain){
     var ctx = ac(); if (!ctx) return;
     var o = ctx.createOscillator(), g = ctx.createGain();
@@ -3868,14 +3887,13 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     'obj.hammock.creak': function(){ tone(210,.3,0,'sawtooth',.02); tone(190,.3,.5,'sawtooth',.02); },
     'obj.lamp.hum': function(){ tone(60,.8,0,'sine',.03); tone(120,.8,0,'sine',.015); }
   };
-  var CACHE = {}, LAST_PLAY = {};
+  var LAST_PLAY = {};
   function fileFor(kind){ return MANIFEST.event[kind] || LOCAL[kind] || null; }
   function playUrl(url){
     try {
       /* Part 180: the same cue twice inside a third of a second is one cue */
       var now = Date.now(); if (LAST_PLAY[url] && now - LAST_PLAY[url] < 300) return; LAST_PLAY[url] = now;
-      var a = CACHE[url]; if (!a) { a = new Audio(url); a.preload = 'auto'; CACHE[url] = a; }
-      var c = a.cloneNode(); c.volume = settings.sfxVol; var p = c.play(); if (p && p.catch) p.catch(function(){});
+      window.ReverieAudio.play(url, settings.sfxVol, function(){ return settings.sfx && !document.hidden; });
     } catch (e) {}
   }
   function noiseBurst(dur, cutoff, gain, delay){
@@ -3960,8 +3978,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   /* ambience: bed (district) + tone (room), crossfaded */
   var amb = { bedUrl: null, bed: null, toneUrl: null, tone: null, weatherUrl: null, weather: null, drone: null };
   function fadeTo(a, target, ms, done){ if (!a) { if (done) done(); return; } clearInterval(a._fade); var start = a.volume, steps = 20, i = 0; a._fade = setInterval(function(){ i++; a.volume = Math.max(0, Math.min(1, start + (target - start) * (i / steps))); if (i >= steps) { clearInterval(a._fade); if (done) done(); } }, ms / steps); }
-  function startLoop(url, vol){ var a = new Audio(url); a.loop = true; a.volume = 0; var p = a.play(); if (p && p.catch) p.catch(function(){}); fadeTo(a, vol, 1400); return a; }
-  function resumeLoop(a){ if (!a || !a.paused) return; if (a.error) a.load(); var p = a.play(); if (p && p.catch) p.catch(function(){}); }
+  function startLoop(url, vol){ var a = window.ReverieAudio.loop(url, 0); fadeTo(a, vol, 1400); return a; }
+  function resumeLoop(a){ if (a && a.paused) a.play(); }
   function stopLoop(a){ if (!a) return; fadeTo(a, 0, 1000, function(){ try { a.pause(); } catch (e) {} }); }
   function drone(on){
     if (amb.drone) { try { amb.drone.g.gain.linearRampToValueAtTime(.0001, ac().currentTime + .6); amb.drone.o1.stop(ac().currentTime + .8); amb.drone.o2.stop(ac().currentTime + .8); } catch (e) {} amb.drone = null; }
@@ -3996,9 +4014,12 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   }
   if (window.ReverieRoom) window.ReverieRoom.init({ send: send, describe: function(text) { addLine(text, 'system'); }, compose: compose });
   if (window.ReverieExplore) window.ReverieExplore.init({ send: send, compose: compose });
+  if (window.ReverieGuide) window.ReverieGuide.init({ send: send });
   var unlocked = false;
-  function unlock(){ unlocked = true; ac(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
-  document.addEventListener('pointerdown', unlock); document.addEventListener('keydown', unlock);
+  function unlock(){ unlocked = true; window.ReverieAudio.unlock(); if (lastRoom) ambienceFor(lastRoom.roomId, lastRoom.district); }
+  window.ReverieAudio.onStatus(function(label){ $('soundRetry').hidden = !label; if (label) $('soundRetry').textContent = label; });
+  document.addEventListener('pointerdown', unlock); document.addEventListener('keydown', unlock); document.addEventListener('click', unlock);
+  $('soundRetry').addEventListener('click', unlock);
 
   /* ── LOG ─────────────────────────────────────────────────────────────── */
   /* Part 180 — SPEECH DISCIPLINE (her words: "sometimes voiceover interrupts
@@ -4059,6 +4080,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
   var DIRS = { n: 'north', s: 'south', e: 'east', w: 'west', ne: 'northeast', nw: 'northwest', se: 'southeast', sw: 'southwest', u: 'up', d: 'down', 'in': 'in', out: 'out' };
   var WATER_ROOMS = { the_pier: 1, pier_seven: 1, the_breakwater: 1, the_lake_dock: 1, ferry_dock_hook: 1, the_docks: 1, the_ferry_pilings: 1, hook_front_street: 1, sweetwater_park: 1 };
   function renderRoom(room, hud, announce){
+    if (window.ReverieGuide) window.ReverieGuide.room(room);
     lastRoom = room;
     if (window.ReverieRoom) window.ReverieRoom.render(room, hud);
     if (window.ReverieExplore) window.ReverieExplore.render(room);
@@ -4169,7 +4191,8 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     var g = h.goal;
     $('goalLine').textContent = g ? (g.done ? 'Life goal, ' + g.aspiration + ': every step done. Say "aspiration" to pick a new one.' : 'Life goal, ' + g.aspiration + ', step ' + g.step + ' of ' + g.of + ': ' + g.next + '.') : 'No life goal chosen yet. Say "aspiration" to pick one.';
   }
-  function renderChoices(choices, freeText, step){
+  function renderChoices(choices, freeText, step, title){
+    $('choicesTitle').textContent = title || 'Choose';
     var box = $('choicesBox'), list = $('choices'), hadFocus = list.contains(document.activeElement), changed = list.dataset.menu !== JSON.stringify(choices || []);
     list.dataset.step = step || '';
     list.dataset.menu = JSON.stringify(choices || []);
@@ -4210,13 +4233,14 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
     if (d.people && !d.room) renderPeople(d.people, (lastRoom && lastRoom.items) || [], (lastRoom && lastRoom.furniture) || []);
     if (d.exits && !d.room) renderExits(d.exits);
     if (d.actions) renderActions(d.actions);
-    renderChoices(d.choices, d.freeText, d.step);
+    renderChoices(d.choices, d.freeText, d.step, d.menuTitle);
     var kinds = Array.from(new Set((d.kinds || []).concat(d.sounds || [])));
     if (!d.ok && !kinds.length) kinds = ['err'];
     playKinds(kinds);
     if (d.radio) playRadio(d.radio);
     if (d.radioStop) stopRadio();
     if (window.ReverieRoom) window.ReverieRoom.result(d);
+    if (window.ReverieGuide) window.ReverieGuide.result(d);
     if (mode === 'play' && d.born) { $('m-live').textContent = live ? 'live' : 'quiet'; }
   }
 

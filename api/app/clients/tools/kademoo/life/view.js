@@ -291,6 +291,7 @@ async function hud(ctx) {
   return {
     name: ch.name,
     characterId: ch.userId,
+    guide: require('./guide').progress(ctx.life),
     wants: wants ? wants.wants : null,
     satisfaction: wants ? wants.satisfaction : null,
     goal: wants ? wants.goal : null,

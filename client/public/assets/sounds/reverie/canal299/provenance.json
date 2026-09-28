@@ -1,0 +1,94 @@
+[
+  {
+    "id": "amb.canal.water",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, Wide stereo outdoor field recording beside a flowing shallow river spillway. Continuous broad soft rushing water over worn stone, many overlapping tiny ripples making a steady airy wash. Open air, spacious riverbank. Constant texture throughout. No isolated dripping, no indoor plumbing, no voices, no music, no footsteps.",
+    "seed": 2080725000,
+    "master": "canal-stream__sa3m_165453.wav",
+    "edit": {
+      "source": "canal-stream.wav",
+      "gainDb": 4.67,
+      "durationSeconds": 30.0,
+      "cutStartSeconds": 10,
+      "crossfadeSeconds": 2
+    },
+    "sha256": "eca266268c3dd5ad99cae788e9892567d25413f3237cbe7e29e050b4bcb48b19",
+    "automatedBlindReviews": [
+      {
+        "guess": "A steady stream of water flowing and bubbling in a small creek or waterfall, with a rhythmic gurgling sound, recorded outdoors",
+        "alternatives": [
+          "A water fountain or garden bubbler",
+          "Water draining or being pumped through a pipe"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none",
+        "_ear": "gemini-3.5-flash",
+        "_file": "amb.canal.water.m4a"
+      },
+      {
+        "guess": "Continuous sound of a small stream or creek flowing over rocks, with gentle bubbling and splashing, recorded outdoors in a natural environment",
+        "alternatives": [
+          "A decorative backyard water fountain",
+          "Water flowing through a drainage ditch after rain"
+        ],
+        "events": 0,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none",
+        "_ear": "gemini-3.5-flash",
+        "_file": "amb.canal.water.m4a"
+      }
+    ],
+    "humanListeningVerified": false
+  },
+  {
+    "id": "move.step.grass.dry",
+    "model": "fal-ai/stable-audio-3/medium/text-to-audio",
+    "prompt": "TrackType: SFX, Clear continuous footsteps walking across soft dry grass at a slow regular walking pace. Thump swish thump swish, dull shoe impacts in earth with soft blades of grass brushing shoe leather, repeated slowly for the whole recording. Close microphone at ankle height, outdoor lawn with no other noises. No hard clicks, no cracks, no gravel, no sharp twigs, no splashing water, no mud, no voices or music.",
+    "seed": 551932540,
+    "master": "lawn-walk__sa3m_170705.wav",
+    "edit": {
+      "source": "lawn-pair.wav",
+      "gainDb": 4.58,
+      "durationSeconds": 3.3,
+      "cutStartSeconds": 10,
+      "crossfadeSeconds": 0
+    },
+    "sha256": "cdd34c6546e5902025447a0a040591d0b91e2d988bc8cdb236638f15667538a7",
+    "automatedBlindReviews": [
+      {
+        "guess": "Four slow footsteps walking on dry leaves and twigs on a forest floor, close-up recording",
+        "alternatives": [
+          "Crushing dry autumn leaves with hands",
+          "A small animal stepping through dry brush"
+        ],
+        "events": 4,
+        "music": false,
+        "voices": false,
+        "realism": 10,
+        "problems": "none",
+        "_ear": "gemini-3.5-flash",
+        "_file": "move.step.grass.dry.m4a"
+      },
+      {
+        "guess": "Slow footsteps walking on dry autumn leaves and twigs on the ground, recorded outdoors",
+        "alternatives": [
+          "Hands squeezing and crushing dry leaves",
+          "A small animal moving through dry undergrowth"
+        ],
+        "events": 4,
+        "music": false,
+        "voices": false,
+        "realism": 9,
+        "problems": "none",
+        "_ear": "gemini-3.5-flash",
+        "_file": "move.step.grass.dry.m4a"
+      }
+    ],
+    "humanListeningVerified": false
+  }
+]

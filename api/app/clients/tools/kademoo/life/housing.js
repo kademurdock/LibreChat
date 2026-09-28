@@ -11,6 +11,7 @@
  * Doors have a policy: open (anyone walks in), friends (people you like
  * can, when you are home), locked (keys only). Knocking always works. */
 const registry = require('./registry');
+const { reverieCanSwim } = require('@librechat/api');
 const {
   MooRoom, MooChar, MooItem, emit, tell, setAttrs, setBusy, moveTo, coinOf, payCoin, matchName, itemsHeld, itemsIn, findHeld, makeItem, plural, joinAnd, cap, slug,
 } = require('./ctx');
@@ -398,7 +399,7 @@ registry.register({
     if (sh) { ctx.need({ clean: 60, rested: 5 }); await setBusy(ch, 4, 'showering'); await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} disappears into the shower. Singing, faintly.`); ctx.say('Hot water, your own soap, your own towel. You come out scrubbed.'); return ctx.ok({ kinds: [...ctx.kinds, 'water'] }); }
     if (room.props && room.props.home) return ctx.fail('No shower here yet. Hock’s and the Salvage Yard sell them — or swim off the Pier.');
     if (room.roomId === 'mercy_hospital' || room.roomId === 'the_clinic') { ctx.need({ clean: 35 }); ctx.say('A nurse points at a door without looking up. Institutional soap. You come out cleaner and smelling like a hallway.'); return ctx.ok({ kinds: [...ctx.kinds, 'water'] }); }
-    if (room.props && (room.props.water || room.roomId === 'the_pier' || room.roomId === 'the_lake_dock' || room.roomId === 'the_breakwater')) return registry.get('swim').run(ctx, { arg: '' });
+    if (reverieCanSwim(room)) return registry.get('swim').run(ctx, { arg: '' });
     return ctx.fail('Nowhere to wash here. Home with a shower, Mercy’s hallway bath, or a swim off the Pier, the Lake Dock, or the Breakwater.');
   },
   buttons: async (ctx) => {
@@ -410,11 +411,12 @@ registry.register({
 registry.register({
   name: 'swim', aliases: ['take a swim', 'dip'],
   help: { topic: 'fun', usage: 'swim', blurb: 'Off the Pier, the Lake Dock, or the Breakwater. Cold, clean, and good for you.' },
-  when: async (ctx) => { const r = await ctx.room(); return !!(r && (r.props && r.props.water || ['the_pier', 'the_lake_dock', 'the_breakwater', 'pier_seven'].includes(r.roomId))); },
-  whyNot: () => 'No water to swim in here. The Pier, the Lake Dock, Pier Seven, the Breakwater.',
+  when: async (ctx) => reverieCanSwim(await ctx.room()),
+  whyNot: () => 'No swimming access here. Try the Pier, the Lake Dock, Pier Seven, or the Breakwater.',
   async run(ctx) {
     const { ch } = ctx;
     const room = await ctx.room();
+    if (!reverieCanSwim(room)) return ctx.fail('No swimming access here. The canal stays behind its railings.');
     const cold = require('../reverie').weatherNow().kind;
     await setBusy(ch, 8, 'swimming');
     await emit(ch.roomId, ch.userId, ch.name, 'emote', `${ch.name} jumps in. The splash reaches the boards.`);
@@ -423,7 +425,7 @@ registry.register({
     ctx.say(`You jump in. ${cold === 'snow' || cold === 'fog' ? 'It is cold enough to be a decision.' : 'Cold, then fine, then good.'} You haul out onto ${room.name} dripping and cleaner than you went in.`);
     return ctx.ok({ kinds: [...ctx.kinds, 'splash'] });
   },
-  buttons: async (ctx) => { const r = await ctx.room(); return (r && (r.props && r.props.water || ['the_pier', 'the_lake_dock', 'the_breakwater', 'pier_seven'].includes(r.roomId))) ? [{ label: 'Swim', cmd: 'swim', group: 'here' }] : []; },
+  buttons: async (ctx) => reverieCanSwim(await ctx.room()) ? [{ label: 'Swim', cmd: 'swim', group: 'here' }] : [],
 });
 registry.register({
   name: 'relax', aliases: ['couch', 'kick back', 'lounge'],

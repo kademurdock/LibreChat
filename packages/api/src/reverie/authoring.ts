@@ -150,7 +150,7 @@ export function compileReverie(source: string): AuthoredWorld {
       if (!/^amb\.[a-z0-9.]+$/.test(value)) fail('Ambience must name an amb. sound.');
       room.props.sound = value;
     } else if (key === 'water') {
-      if (!['river', 'harbor', 'lake'].includes(value)) fail('Unknown water type.');
+      if (!['river', 'harbor', 'lake', 'canal'].includes(value)) fail('Unknown water type.');
       room.props.water = value;
     } else if (key === 'action') {
       const pieces = value.split('|').map((piece) => piece.trim());

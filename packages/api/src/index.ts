@@ -85,7 +85,12 @@ export { compileReverie } from './reverie/authoring';
 export { runHangout, hangoutView, inviteHangout } from './reverie/hangouts';
 export { refreshReverieCast } from './reverie/cast';
 export { reverieAppearance, reverieWardrobe, residentAppearance } from './reverie/appearance';
-export { REVERIE_OUTDOORS, reverieSenses, outdoorEncounter } from './reverie/outdoors';
+export {
+  REVERIE_OUTDOORS,
+  reverieSenses,
+  reverieCanSwim,
+  outdoorEncounter,
+} from './reverie/outdoors';
 export { residentReply } from './reverie/conversation';
 export {
   GULLY_LAUNDRY,
@@ -114,6 +119,14 @@ export { publicHelp } from './web/help';
 
 export { deliverApprovalEmail, approvalEmailNotice } from './access/approval';
 export { reverieOrientation, resolveReverieWhisper } from './reverie/navigation';
+export {
+  runReverieGuide,
+  guideRoute,
+  guideMatches,
+  CANAL_STOPS,
+  CANAL_PROJECTS,
+  GUIDE_WARDS,
+} from './reverie/guide';
 export { parseDaisyAudio, readDaisyFile } from './library/daisy';
 export { libraryPath, libraryCategory, libraryPathExpression } from './library/shelves';
 export {

@@ -33,3 +33,11 @@ test('indoor scenery never describes outdoor weather effects',()=>{
  assert.doesNotMatch(describePicture(sceneModel({name:'Room',weather:'rain'})),/current rain/);
  assert.match(describePicture(sceneModel({name:'Path',outdoor:true,weather:'snow'})),/current snow/);
 });
+test('all canal destinations have scenery and plain descriptions',()=>{
+ for (const [roomId,type] of Object.entries({foundry_court:'foundry',repair_hall:'repairhall',canal_towpath:'towpath',lock_garden:'lockgarden',glass_canopy:'glasshouse',canal_overlook:'overlook'})) {
+  const model=sceneModel({roomId,name:roomId,district:'millrace'});
+  assert.equal(model.type,type);
+  assert.doesNotMatch(describePicture(model),/undefined/);
+ }
+ assert.notDeepEqual(sceneModel({roomId:'street',district:'millrace'}).architecture,sceneModel({roomId:'street',district:'fairlawn'}).architecture);
+});

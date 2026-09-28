@@ -11,6 +11,14 @@ export interface SensoryRoom {
   };
 }
 
+export function reverieCanSwim(room: SensoryRoom | null): boolean {
+  if (!room || room.props?.water === 'canal') return false;
+  return (
+    !!room.props?.water ||
+    ['the_pier', 'the_lake_dock', 'the_breakwater', 'pier_seven'].includes(room.roomId)
+  );
+}
+
 export function reverieSenses(
   room: SensoryRoom,
   weather = 'clear',
@@ -40,7 +48,8 @@ export function reverieSenses(
   if (/bandshell|treehouse|airfield/.test(id)) surface = 'grass.dry';
   if (p.surface) surface = p.surface;
   if (wet && p.outdoor) {
-    if (['dirt.packed', 'grass.dry'].includes(surface)) surface = 'mud.shallow';
+    if (surface === 'grass.dry') surface = 'grass.wet';
+    else if (surface === 'dirt.packed') surface = 'mud.shallow';
     else if (['cobble', 'asphalt.dry'].includes(surface)) surface = 'asphalt.wet';
   }
   let ambience: string | null = null;
@@ -59,6 +68,7 @@ export function reverieSenses(
     'metal.stair': 'Metal rings briefly beneath your feet.',
     linoleum: 'Your soles brush the smooth floor.',
     'grass.dry': 'Grass brushes your ankles.',
+    'grass.wet': 'Damp grass brushes your shoes; the lawn is firm beneath it.',
     'dirt.packed': 'Firm earth, with loose leaves along the edge.',
     'mud.shallow': 'The wet ground gives softly beneath your feet.',
     'asphalt.wet': 'A thin film of rain splashes underfoot.',
@@ -67,7 +77,7 @@ export function reverieSenses(
   };
   return {
     surface,
-    footstep: `move.step.${surface}`,
+    footstep: `move.step.${surface === 'grass.wet' ? 'grass.dry' : surface}`,
     ambience,
     nature: !!nature,
     water: p.water || null,

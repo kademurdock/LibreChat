@@ -195,7 +195,7 @@ async function handle(ctx) {
    * walk…) and the other one-word verbs used to arrive here as ANSWERS, so a
    * newcomer who tapped "Where am I?" was named Orient. A verb is never a
    * name; say what happened and ask again. */
-  if (/^(orient|orientation|places|waterfront|forecast|wardrobe|home|go home|hangout|notice|notice surroundings|skills|idea|wants|listings|recap|weather|explore|radio|rumors|gossip|shop|careers|relationships|family|who is here)$/.test(lower))
+  if (/^(town|town guide|guide|route|walk route|notebook|canal notebook|canal trail|projects|project|orient|orientation|places|waterfront|forecast|wardrobe|home|go home|hangout|notice|notice surroundings|skills|idea|wants|listings|recap|weather|explore|radio|rumors|gossip|shop|careers|relationships|family|who is here)$/.test(lower))
     return respond(['That button works once you are in the city. First, the city needs to know you.'], step);
   /* control words */
   if (lower === 'help' || lower === '?') return respond([HELP[step] || 'Answer with the number, the word, or say the whole thing. "back" goes a step back, "cancel" walks away.'], step);

@@ -98,6 +98,11 @@ async function seedSounds() {
       the_archive: 'amb.archive.quiet',
       ferry_dock_hook: 'amb.ferry.quiet',
       gully_laundry: 'amb.laundry.quiet',
+      repair_hall: 'amb.netloft.room',
+      canal_towpath: 'amb.canal.water',
+      lock_garden: 'amb.canal.water',
+      glass_canopy: 'amb.reeds.breeze',
+      canal_overlook: 'amb.reeds.breeze',
       /* Part 296: the five new places */
       the_bijou: 'amb.bijou.room',
       starlite_arcade: 'amb.arcade.room',
@@ -165,6 +170,11 @@ async function seedSounds() {
       remade += res.modifiedCount || 0;
     }
     if (remade) logger.info(`[seed] moved ${remade} sound rows to their Part 298 recordings`);
+
+    await MooSound.updateOne(
+      { scopeType: 'event', scopeId: 'move.step.grass.dry', url: 'https://kademurdock.com/assets/sounds/reverie/world153/move.step.grass.dry.m4a' },
+      { $set: { url: LIFE_SOUNDS['move.step.grass.dry'] } },
+    );
 
     const existing = await MooSound.find({ scopeType: 'event' }).lean();
     const existingIds = new Set(existing.map((r) => r.scopeId));

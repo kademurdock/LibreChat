@@ -1,6 +1,26 @@
 .scene .art {
   display: none;
 }
+#guidePanel {
+  margin: 0 0 1rem;
+  border-top: 4px solid #699d90;
+  background: var(--card);
+}
+#guidePanel h2 { font-size: 1.1rem; margin: 0 0 .35rem; }
+#guidePanel p { margin: .4rem 0 .8rem; line-height: 1.55; }
+#routePanel { margin-top: 1rem; border-top: 1px solid var(--line, #82958b); padding-top: .8rem; }
+#guidePanel[hidden], #routePanel[hidden] { display: none; }
+#guidePanel [hidden], #soundRetry[hidden] { display: none !important; }
+#routeStops { list-style: none; padding: 0 0 0 1.1rem; margin: 1rem .5rem; }
+#routeStops li { border-left: 3px solid #638f84; position: relative; padding: .65rem 0 .65rem 1.3rem; overflow-wrap: anywhere; }
+#routeStops li::before { content: ''; position: absolute; left: -.43rem; top: 1rem; width: .7rem; height: .7rem; background: var(--card); border: 2px solid #638f84; border-radius: 50%; }
+#routeStops li[aria-current] { font-weight: 750; }
+#routeStops li[aria-current]::before { background: #d49b54; border-color: #825925; }
+#routeStops li[aria-current]::after { content: ' · you are here'; }
+#routeStops li.passed { opacity: .7; }
+#guidePanel button { min-height: 44px; white-space: normal; text-align: left; }
+#guidePanel button:focus-visible, #routeTitle:focus-visible { outline: 3px solid #d29a4f; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { #routeStops * { transition: none; } }
 #scene .text {
   background: var(--card);
   color: var(--ink);

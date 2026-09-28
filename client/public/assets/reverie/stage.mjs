@@ -10,7 +10,7 @@ import {
   activityPose,
   residentFace,
   walkPose,
-} from './presentation.mjs?v=296';
+} from './presentation.mjs?v=299';
 
 const COLORS = {
   wood: 0xa37750,
@@ -257,6 +257,7 @@ export class Stage {
     const natural = ['woodland', 'creek', 'camp'].includes(type);
     this.box(natural ? 0x596d53 : 0x6e7b76, 0, -0.46, 0, 11, 0.78, 9);
     this.box(natural ? 0x8aa575 : 0xb6b8a3, 0, -0.03, 0, 11, 0.13, 9);
+    if (['foundry', 'repairhall', 'towpath', 'lockgarden', 'glasshouse', 'overlook'].includes(type)) { this.canal(); return; }
     if (natural) {
       for (let i = 0; i < 14; i++) {
         const x = Math.sin(i * 29) * 4.8,
@@ -329,6 +330,96 @@ export class Stage {
     if (['theater', 'arcade', 'bakery', 'pool', 'studio'].includes(type)) { this.venue(); return; }
     if (type === 'town') this.town();
     else this.interior();
+  }
+
+  canal() {
+    const type = this.model.type;
+    const brick = 0xa46751, stone = 0xb9b6a0, iron = 0x3d6463;
+    const interactive = (mesh, command) => { mesh.userData.interaction = { command }; return mesh; };
+    const pot = (x, y, z, size = .28) => {
+      this.mesh('cylinder', 0xba7958, [x, y, z], [size, size * 1.2, size]);
+      this.mesh('leaf', 0x608a4e, [x, y + size, z], [size * 1.25, size * 1.8, size * 1.25]);
+    };
+    if (type === 'foundry' || type === 'repairhall') {
+      this.box(brick, 0, 1.8, -4.15, 10.8, 3.6, .25);
+      this.box(0x90523f, -5.1, 1.8, -.8, .22, 3.6, 6.5);
+      for (let row = 0; row < 9; row++) for (let col = 0; col < 12; col++)
+        this.box(0xc08868, -5 + col * .87 + (row % 2) * .35, .25 + row * .38, -3.99, .8, .025, .02);
+      for (const x of [-3.3, 0, 3.3]) {
+        this.box(iron, x, 2.2, -3.9, 1.9, 2.1, .15);
+        this.box(this.model.dark ? 0xf4c888 : 0xa9ccc7, x, 2.2, -3.8, 1.7, 1.9, .04);
+        this.box(iron, x, 2.2, -3.74, .06, 1.9, .04);
+        this.box(iron, x, 2.2, -3.74, 1.7, .06, .04);
+      }
+      if (type === 'foundry') {
+        this.box(0x895443, -4.2, 2.45, -3, .9, 4.9, .9);
+        this.box(0x674b40, -4.2, 4.95, -3, 1.15, .2, 1.15);
+        this.table(2.7, -1.6); this.bench(2.7, -.3);
+        this.box(iron, -.8, .8, -1.9, .13, 1.6, .13);
+        interactive(this.box(0xe4d4ae, -.8, 1.65, -1.9, 2.2, 1.25, .14), 'read the foundry board');
+        for (let i = 0; i < 5; i++) this.box(0x748c84, -1.55, 2.02 - i * .18, -1.81, 1.3 + (i % 2) * .3, .035, .025);
+        this.lamp(4.4, 2.3); this.shrub(-4, 2.5, 1, true);
+      } else {
+        for (const [x, height] of [[-2.8, .8], [2.6, 1.12]]) {
+          interactive(this.box(COLORS.wood, x, height, -.6, 2.8, .2, 1.4), 'project shelter');
+          for (const dx of [-1.15, 1.15]) for (const dz of [-.5, .5]) this.box(iron, x + dx, height / 2, -.6 + dz, .12, height, .12);
+          for (let i = 0; i < 4; i++) this.box(0xd5b582, x - .8 + i * .4, height + .14, -.7, .24, .1, .7);
+        }
+        interactive(this.box(0xd3b98b, -2.9, 1.9, -3.6, 2.4, .9, .09), 'inspect the tool wall');
+        for (let i = 0; i < 6; i++) {
+          this.box(0x735d46, -3.8 + i * .36, 1.9, -3.5, .06, .5, .08);
+          this.box(iron, -3.8 + i * .36, 2.12, -3.48, .22, .1, .08);
+        }
+        this.bench(3, 2.7); this.lamp(4.6, -2.8);
+      }
+      return;
+    }
+    if (type === 'glasshouse') {
+      this.box(0xd2c9a8, 0, .08, 0, 10.7, .12, 8.8);
+      for (const x of [-4.4, 4.4]) for (const z of [-3.5, 0, 3.5]) this.box(iron, x, 1.65, z, .1, 3.3, .1);
+      for (const z of [-3.5, 0, 3.5]) {
+        const left = this.box(iron, -2.2, 3.62, z, 4.55, .08, .08); left.rotation.z = .16;
+        const right = this.box(iron, 2.2, 3.62, z, 4.55, .08, .08); right.rotation.z = -.16;
+      }
+      this.box(iron, 0, 3.98, 0, .1, .1, 7.1);
+      const glass = new T.MeshStandardMaterial({ color: 0xbadbd1, transparent: true, opacity: .19, roughness: .2, depthWrite: false, side: T.DoubleSide });
+      for (const x of [-2.2, 2.2]) {
+        const pane = new T.Mesh(shapes.box, glass); pane.position.set(x, 3.61, -1.8); pane.scale.set(4.4, .025, 3.3); pane.rotation.z = x < 0 ? .16 : -.16; this.world.add(pane);
+      }
+      this.disposables.push(glass);
+      for (const x of [-3.2, 3.2]) {
+        interactive(this.box(COLORS.wood, x, 1, 0, 1.8, .15, 6.8), 'project herbs');
+        for (let i = 0; i < 7; i++) { pot(x - .4, 1.24, -2.6 + i * .85); pot(x + .4, 1.24, -2.6 + i * .85, .22); }
+        for (const z of [-2.8, 2.8]) this.box(iron, x, .5, z, 1.5, 1, .15);
+      }
+      interactive(this.box(0xe5dcb8, 0, .95, -2.5, 1.6, .12, 1), 'compare the herbs');
+      this.bench(0, 2.8);
+      return;
+    }
+    this.water(-3.6, 0, 3, 8.8);
+    this.box(stone, -1.9, .24, 0, .3, .45, 8.8);
+    for (let i = 0; i < 8; i++) this.box(iron, -1.6, .7, -3.8 + i * 1.1, .07, 1.3, .07);
+    this.box(iron, -1.6, 1.27, 0, .07, .08, 8.7);
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 6; j++) this.box((i + j) % 2 ? stone : 0xc9b493, -1 + j, .12, -3.8 + i * 1.08, .95, .08, 1);
+    this.bench(3.6, 2.4); this.lamp(4.4, -2.8);
+    if (type === 'towpath') {
+      for (let i = 0; i < 3; i++) interactive(this.box(0xebd6a7, -1.68, .45 + i * .2, -.9, .07, .035, .9), 'read the water marks');
+      this.tree(4, -3, .8, 0);
+    } else if (type === 'lockgarden') {
+      for (const z of [-2.3, 2.3]) {
+        this.box(COLORS.edge, -3.6, .45, z, 2.9, .6, .15);
+        for (let i = 0; i < 8; i++) this.box(COLORS.wood, -4.85 + i * .36, .5, z + .1, .28, .7, .07);
+      }
+      for (let i = 0; i < 14; i++) this.mesh('cylinder', 0x829a5b, [-4.9 + (i % 2) * .18, .6, -3.8 + i * .5], [.03, 1.1, .03]);
+      this.table(2, -1.8);
+      interactive(this.box(COLORS.water, 2, 1.13, -1.8, 1.8, .1, .7), 'project lock');
+      interactive(this.box(0x819654, 3.7, .55, .2, 1.1, .7, 1.8), 'examine the reed bed');
+    } else {
+      interactive(this.box(stone, 1.1, .9, -1.8, 3.2, .24, 1.8), 'trace the canal model');
+      this.box(COLORS.water, 1, 1.05, -1.8, .38, .07, 1.6);
+      for (let i = 0; i < 6; i++) this.box(i % 2 ? brick : 0x709581, .25 + (i % 3) * .85, 1.2, -2.3 + Math.floor(i / 3) * .95, .5, .3, .4);
+      this.bench(1, 2.5); this.tree(4.2, -.3, .7, 1);
+    }
   }
 
   waterfront() {
@@ -410,7 +501,7 @@ export class Stage {
           1.02,
         );
       }
-    const facades = [0x648d89, 0xc79578, 0xb5b187];
+    const facades = this.model.architecture.colors;
     for (let i = 0; i < 3; i++) {
       const x = -3.5 + i * 3.5;
       this.box(facades[i], x, 1.65, -3.4, 3.1, 3.3, 1.75);
@@ -448,6 +539,28 @@ export class Stage {
     this.shrub(4.5, 2.7, 1, true);
     this.lamp(-4.8, -0.5);
     this.lamp(4.8, -0.5);
+    const detail = this.model.architecture.detail;
+    if (detail === 'mills') {
+      this.box(0x91583f, -4.6, 2.5, -3, .55, 5, .55);
+      for (let i = 0; i < 4; i++) { const roof = this.box(0x677c79, -2.4 + i * 1.7, 3.55, -3.4, 1.8, .16, 1.9); roof.rotation.z = .22; }
+    }
+    if (detail === 'clock') {
+      this.box(0xb9b29b, 0, 2.9, -3.4, 1.5, 5.8, 1.6);
+      this.mesh('sphere', 0xf2e4be, [0, 4.8, -2.55], [.53, .53, .025]);
+      this.box(0x405552, 0, 4.95, -2.5, .045, .35, .04);
+      this.box(0x405552, .14, 4.8, -2.5, .3, .045, .04);
+    }
+    if (['porches', 'fences', 'gardens'].includes(detail)) for (const x of [-3.5, 3.5]) {
+      if (detail === 'porches') this.box(COLORS.wood, x, .24, -1.45, 2.9, .4, 1.5);
+      for (let i = 0; i < 8; i++) this.box(0xe6d8b4, x - 1.2 + i * .34, .63, -1, .11, 1.05, .1);
+      this.box(0xe6d8b4, x, .83, -1, 2.8, .08, .1);
+      if (detail === 'gardens') for (let i = 0; i < 4; i++) this.shrub(x - 1 + i * .6, -.6, i, true);
+    }
+    if (detail === 'sheds' || detail === 'barns') for (const x of [-3.5, 0, 3.5]) {
+      for (const sign of [-1, 1]) { const roof = this.box(detail === 'barns' ? 0x85584b : 0x526c76, x + sign * .82, 3.72, -3.4, 1.85, .15, 2.1); roof.rotation.z = sign * -.28; }
+      this.box(COLORS.wood, x, 1.05, -2.3, 1.35, 2.1, .12);
+    }
+    if (detail === 'signs') for (const x of [-3.5, 0, 3.5]) this.mesh('box', 0xe6a36e, [x + 1.15, 2.9, -1.8], [.65, .35, .14], this.world, this.model.dark);
     if (/gate|threshold/.test(this.model.id)) {
       for (const x of [-1.15, 1.15]) this.box(0xd5c8b0, x, 1.55, -1.8, 0.4, 3.1, 0.5);
       this.box(0xd5c8b0, 0, 3, -1.8, 2.7, 0.42, 0.5);

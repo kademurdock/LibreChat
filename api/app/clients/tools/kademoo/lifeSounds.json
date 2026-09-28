@@ -18,7 +18,7 @@
   "move.step.wood.interior": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.wood.interior.m4a",
   "move.step.linoleum": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.linoleum.m4a",
   "move.step.carpet": "https://kademurdock.com/assets/sounds/reverie/places298/move.step.carpet.m4a",
-  "move.step.grass.dry": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.grass.dry.m4a",
+  "move.step.grass.dry": "https://kademurdock.com/assets/sounds/reverie/canal299/move.step.grass.dry.m4a",
   "move.step.metal.stair": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.metal.stair.m4a",
   "move.step.cobble": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.cobble.m4a",
   "move.step.asphalt.wet": "https://kademurdock.com/assets/sounds/reverie/world153/move.step.asphalt.wet.m4a",
@@ -94,5 +94,6 @@
   "vio.gun.shot.ward": "https://kademurdock.com/assets/sounds/reverie/places298/vio.gun.shot.ward.m4a",
   "work.cups.wash": "https://kademurdock.com/assets/sounds/reverie/places298/work.cups.wash.m4a",
   "work.dishes.sink": "https://kademurdock.com/assets/sounds/reverie/places298/work.dishes.sink.m4a",
-  "wx.rain.stop": "https://kademurdock.com/assets/sounds/reverie/places298/wx.rain.stop.m4a"
+  "wx.rain.stop": "https://kademurdock.com/assets/sounds/reverie/places298/wx.rain.stop.m4a",
+  "amb.canal.water": "https://kademurdock.com/assets/sounds/reverie/canal299/amb.canal.water.m4a"
 }

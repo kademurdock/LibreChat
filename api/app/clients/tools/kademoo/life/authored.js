@@ -1,11 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { compileReverie, reverieForecast } = require('@librechat/api');
+const { compileReverie, reverieForecast, CANAL_STOPS } = require('@librechat/api');
 const { register, get } = require('./registry');
 const { MooRoom, MooChar } = require('./ctx');
 
 const world = compileReverie(
-  fs.readFileSync(path.join(__dirname, '../world/waterfront.rev'), 'utf8'),
+  ['waterfront', 'canal']
+    .map((name) => fs.readFileSync(path.join(__dirname, `../world/${name}.rev`), 'utf8'))
+    .join('\n'),
 );
 
 async function seed() {
@@ -19,7 +21,7 @@ async function seed() {
     .select('roomId')
     .lean();
   if (existing.length !== required.size)
-    throw new Error('Waterfront has a missing connector room.');
+    throw new Error('Authored world has a missing connector room.');
   for (const room of world.places)
     await MooRoom.updateOne(
       { roomId: room.roomId },
@@ -45,6 +47,9 @@ for (const action of world.actions) {
         : [],
     async run(ctx) {
       const now = Date.now();
+      const stop = CANAL_STOPS.find(
+        (entry) => entry.id === action.roomId && entry.command === action.command,
+      );
       const claimed = await MooChar.updateOne(
         {
           _id: ctx.ch._id,
@@ -55,7 +60,12 @@ for (const action of world.actions) {
             { 'attrs.life.waterfrontAt': { $lte: now - 15000 } },
           ],
         },
-        { $set: { 'attrs.life.waterfrontAt': now } },
+        {
+          $set: {
+            'attrs.life.waterfrontAt': now,
+            ...(stop ? { [`attrs.life.guide.notes.${stop.id}`]: true } : {}),
+          },
+        },
       );
       if (!claimed.modifiedCount)
         return ctx.fail('Take a moment to enjoy being here before trying again.');
@@ -102,7 +112,9 @@ register({
       'Follow the river from the Hook ferry landing through Ropewalk and the Reed Pavilion to Sweetwater Park. The Net Loft is a sheltered place to gather along the way.',
     );
     return ctx.ok({
-      choices: world.places.map((room) => ({ label: room.name, cmd: `go to ${room.roomId}` })),
+      choices: world.places
+        .filter((room) => ['ropewalk', 'net_loft', 'reed_pavilion'].includes(room.roomId))
+        .map((room) => ({ label: room.name, cmd: `go to ${room.roomId}` })),
     });
   },
 });

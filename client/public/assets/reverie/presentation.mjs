@@ -1,4 +1,19 @@
 // Pure presentation rules shared by the renderer and its regression checks.
+export function wardArchitecture(district) {
+  const styles = {
+    gate: { colors: [0x9cae9a, 0xc4aa7c, 0x879f9a], detail: 'arch', description: 'pale stone arches and green gatehouses' },
+    bellward: { colors: [0xbcb7a1, 0xb8ad98, 0x939d9a], detail: 'clock', description: 'tall civic stone buildings and a square clock tower' },
+    hook: { colors: [0x647c88, 0x9c735b, 0x828d91], detail: 'sheds', description: 'weathered dock sheds, broad loading doors, and rope rails' },
+    tanglefoot: { colors: [0x815f78, 0xad725b, 0x6c8589], detail: 'signs', description: 'closely packed shops with striped awnings and glowing signs' },
+    patch: { colors: [0xc6a27c, 0x9bab91, 0xc28272], detail: 'porches', description: 'low timber houses with porches and shared front steps' },
+    millrace: { colors: [0xa2654c, 0x995f4c, 0x858778], detail: 'mills', description: 'red-brick mills with high windows, sawtooth rooflines, and a chimney' },
+    sweetwater: { colors: [0xc8d1b8, 0x85a99b, 0xb9c393], detail: 'gardens', description: 'light garden pavilions, planted borders, and green trellises' },
+    fairlawn: { colors: [0xd8c5a0, 0xb9c8b5, 0xc7b2a7], detail: 'fences', description: 'detached pastel houses, neat fences, and broad front gardens' },
+    longacre: { colors: [0xa97554, 0xb4a179, 0x82947a], detail: 'barns', description: 'low farm buildings with broad pitched roofs and a water tank' },
+    gravewalk: { colors: [0x8c9294, 0x747c83, 0xa3a49a], detail: 'arch', description: 'quiet stone walls and weathered arches' },
+  };
+  return styles[district] || styles.gate;
+}
 export function sceneModel(room, hud = {}) {
   const id = String(room.roomId || '');
   const senses = room.sensory || {};
@@ -39,6 +54,8 @@ export function sceneModel(room, hud = {}) {
   return {
     id,
     type,
+    district: String(room.district || 'gate'),
+    architecture: wardArchitecture(room.district),
     name: String(room.name || 'Reverie'),
     exits: (room.exitsDetail || []).map((exit) => ({ dir: exit.dir, label: exit.label, to: exit.to, locked: !!exit.locked, missing: !!exit.missing, returning: !!exit.returning })),
     dark: !!hud.dark,
@@ -70,11 +87,17 @@ export function sceneModel(room, hud = {}) {
   };
 }
 
-const VENUE_SCENES = { the_bijou: 'theater', starlite_arcade: 'arcade', early_bird_bakery: 'bakery', sweetwater_bathhouse: 'pool', the_easel: 'studio' };
+const VENUE_SCENES = { the_bijou: 'theater', starlite_arcade: 'arcade', early_bird_bakery: 'bakery', sweetwater_bathhouse: 'pool', the_easel: 'studio', foundry_court: 'foundry', repair_hall: 'repairhall', canal_towpath: 'towpath', lock_garden: 'lockgarden', glass_canopy: 'glasshouse', canal_overlook: 'overlook' };
 const SCENE_TYPES = new Set(['theater', 'arcade', 'bakery', 'pool', 'studio']);
 
 export function describePicture(model) {
   const settings = {
+    foundry: 'a brick foundry courtyard with a tall chimney, workshop windows, a timber table, and a raised noticeboard',
+    repairhall: 'a cutaway brick workshop with tall windows, two wooden workbenches at different heights, labeled hand tools, and a partly assembled bird shelter',
+    towpath: 'a long brick towpath beside a narrow blue-green mill channel, with a continuous rail, benches, and water-level markers',
+    lockgarden: 'a water garden in an old lock, with paired timber gates, reeds, a low sill, and a miniature lock on a public table',
+    glasshouse: 'an iron-and-glass canopy with open vents, long potting benches, terracotta pots, and rows of green herbs around a broad aisle',
+    overlook: 'a broad stone terrace with a raised canal model, backed benches, a continuous rail, and the waterway below',
     theater: 'a cutaway movie house with sloping rows of red seats, gold curtains, a popcorn machine, and a big glowing screen',
     arcade: 'a cutaway arcade with dark blue carpet dotted with little planets, glowing pinball machines, a glass claw machine full of plush animals, and two skee-ball lanes',
     bakery: 'a cutaway bakery with a brick oven glowing orange, glass cases of bread and cinnamon buns, a counter with a register, and a chalkboard',
@@ -88,7 +111,7 @@ export function describePicture(model) {
     creek: 'a winding blue-green creek, rounded stones, reeds, and layered trees',
     woodland: 'a curving earth path between layered trees, ferns, and small flowers',
     harbor: 'a wooden waterfront deck beside blue-green water, with mooring posts and a railing',
-    town: 'a cobbled square with colorful building fronts, planters, benches, and street lamps',
+    town: 'a cobbled street with ' + (model.architecture?.description || 'colorful building fronts') + ', planters, benches, and street lamps',
     diner: 'a cutaway diner with tiled floors, a counter, red stools, and booth seats',
     library: 'a cutaway reading room with tall bookshelves and a reading table',
     bar: 'a cutaway neighborhood bar with an amber counter, stools, bottle shelves, and a dartboard',
