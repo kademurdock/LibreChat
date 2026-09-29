@@ -14,6 +14,9 @@ import {
   providerDetail,
   providerProblem,
   realCost,
+  speechPerByte,
+  speechReserve,
+  synthesize,
   visionLimits,
   voices,
 } from './providers.ts';
@@ -1400,6 +1403,31 @@ test('providers: the voice list keeps old spellings and the fish.audio labels, a
     Date.now = realNow;
     fake.restore();
   }
+});
+
+/*
+ * Sep 29 2026: a re-voice or a correction is approved at $0.00, so a narration line that reserved a
+ * margin anyway met the over-quote stop on its first line. Free narration reserves nothing.
+ */
+test('providers: free narration reserves nothing against her approval; priced narration keeps its margin', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const { entries, meter } = ledger();
+  const fake = fakeAxios(async ({ url }) =>
+    url.endsWith('/voices.json')
+      ? { data: { voices: ['Voice 1'] } }
+      : { headers: { 'content-type': 'audio/wav' }, data: Buffer.alloc(200) },
+  );
+  try {
+    await synthesize('A woman waves.', 'Voice 1', 'session', join(scratch, 'free-line.wav'), 1, signal, meter);
+  } finally {
+    fake.restore();
+  }
+  assert.equal(speechPerByte, 0, 'narration is included');
+  assert.deepEqual(
+    entries.map(({ kind, reserve, costUSD }) => ({ kind, reserve, costUSD })),
+    [{ kind: 'speech', reserve: 0, costUSD: 0 }],
+  );
+  assert.ok(Math.abs(speechReserve(0.01) - 0.0105) < 1e-12, 'narration with a price still reserves it and a margin');
 });
 
 test('youtube: the size watch skips a file renamed or removed while it counts', async () => {

@@ -21,7 +21,7 @@ import { createDescriptionWallet } from './wallet.ts';
 import { command, decodeVoice, quietTextTracks } from './media.ts';
 import { sampleRate } from './mix.ts';
 import { quietSpot, rehearsalProviders } from './rehearsal.ts';
-import { transcribe } from './providers.ts';
+import { speechPerByte, speechReserve, transcribe } from './providers.ts';
 import {
   clip,
   cleanLabel,
@@ -88,6 +88,8 @@ let voicesDown = false;
 let realTranscribe = false;
 let simulateConcurrentCosts = false;
 let sampleCost = 0;
+/** When set, narration goes through the meter the way the real synthesize sends it (free today). */
+let meteredNarration = false;
 let beforeEngine = null;
 let librarySaveFails = false;
 /** When set, each look is billed this many times its $0.05 reserve. */
@@ -508,13 +510,21 @@ before(async () => {
           ),
         };
       },
-      synthesize: async (_text, _voice, _session, file, _speed, _signal, meter) => {
+      synthesize: async (text, _voice, _session, file, _speed, _signal, meter) => {
         calls.synthesize++;
         if (simulateConcurrentCosts || sampleCost) {
           await meter('speech', 0.3, async () => {
             await new Promise((resolve) => setTimeout(resolve, 75));
             await copyFile(voiceWav, file);
             return { costUSD: sampleCost || 0.01 };
+          });
+          return;
+        }
+        if (meteredNarration) {
+          const cost = Buffer.byteLength(text, 'utf8') * speechPerByte;
+          await meter('speech', speechReserve(cost), async () => {
+            await copyFile(voiceWav, file);
+            return { costUSD: cost };
           });
           return;
         }
@@ -3280,6 +3290,74 @@ test('Part 295: the administrator is quoted and booked at real cost, and nothing
     if (id) {
       await park(id);
       await call('delete', `/jobs/${id}`, owner).expect(200);
+    }
+  }
+});
+
+/*
+ * Sep 29 2026: narration is included, so a re-voice or a script correction is quoted and approved at
+ * $0.00. Its narration once reserved a 0.0005 margin, which met the over-quote stop on the first
+ * line: every one stopped at once, and with an empty balance it could never be continued.
+ */
+test('free narration: a re-voice and a correction approved at $0.00 finish, even from an empty balance', async () => {
+  meteredNarration = true;
+  const user = new mongoose.Types.ObjectId();
+  const owner = String(user);
+  const jobs = [];
+  try {
+    walletMode = true;
+    userFactor = 2;
+    await mongoose.connection.collection('users').insertOne({ _id: user, role: 'USER' });
+    await mongoose.connection.collection('balances').insertOne({ user, tokenCredits: 5e6 });
+    const id = await readyJob(owner, 'free-voice-00000001', 10);
+    jobs.push([id, owner]);
+    await call('post', `/jobs/${id}/start`, owner).set('x-role', 'user').send(settings).expect(202);
+    const done = await settle(id, ['done', 'failed'], owner);
+    assert.equal(done.state, 'done', done.error);
+    await mongoose.connection.collection('balances').updateOne({ user }, { $set: { tokenCredits: 0 } });
+
+    const flint = { ...done.settings, voice: 'clear woman · flint' };
+    const quote = (await call('post', `/jobs/${id}/estimate`, owner).set('x-role', 'user').send({ action: 'revoice', settings: flint }).expect(200)).body;
+    assert.equal(quote.estimateUSD, 0, 'narration is included');
+    assert.equal(quote.allowed, true, quote.reason);
+    const usageBefore = usageLog.length;
+    await call('post', `/jobs/${id}/revoice`, owner).set('x-role', 'user').send(flint).expect(202);
+    assert.equal((await Jobs.findById(id).lean()).approvedUSD, 0, 'approved at $0.00');
+    const revoiced = await settle(id, ['done', 'failed'], owner);
+    assert.equal(revoiced.state, 'done', revoiced.error);
+
+    const script = (await call('get', `/jobs/${id}/script`, owner).expect(200)).body;
+    const edit = { ...script.cues[0], text: 'A woman holds a blue folder.', shortText: 'A blue folder.', omit: false };
+    await call('post', `/jobs/${id}/revoice`, owner)
+      .set('x-role', 'user')
+      .send({ ...revoiced.settings, expectedVersion: script.version, edits: [edit] })
+      .expect(202);
+    const corrected = await settle(id, ['done', 'failed'], owner);
+    assert.equal(corrected.state, 'done', corrected.error);
+    const narration = usageLog.slice(usageBefore).filter((row) => row.job === id && row.kind === 'speech');
+    assert.ok(narration.length >= 2, 'the narration went through the paid meter');
+    assert.ok(narration.every((row) => row.costUSD === 0 && row.chargedUSD === 0), 'and cost her nothing');
+    assert.equal(await billing.available(owner), 0, 'nothing was held or taken');
+
+    /* The daily allowance (and the administrator's runs) approve a re-voice at $0.00 the same way. */
+    walletMode = false;
+    userFactor = 1;
+    const daily = await readyJob('free-voice-daily', 'free-voice-00000002', 10);
+    jobs.push([daily, 'free-voice-daily']);
+    await call('post', `/jobs/${daily}/start`, 'free-voice-daily').send(settings).expect(202);
+    const first = await settle(daily, ['done', 'failed'], 'free-voice-daily');
+    assert.equal(first.state, 'done', first.error);
+    await call('post', `/jobs/${daily}/revoice`, 'free-voice-daily').send({ ...first.settings, voice: 'clear woman · flint' }).expect(202);
+    assert.equal((await Jobs.findById(daily).lean()).approvedUSD, 0);
+    const again = await settle(daily, ['done', 'failed'], 'free-voice-daily');
+    assert.equal(again.state, 'done', again.error);
+  } finally {
+    meteredNarration = false;
+    userFactor = 1;
+    walletMode = false;
+    for (const [id, who] of jobs) {
+      await park(id);
+      await call('delete', `/jobs/${id}`, who).expect(200);
     }
   }
 });

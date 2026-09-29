@@ -62,6 +62,12 @@ export const keytermPerMinute = 0.0013;
 /** Subscription narration is included for users; metered visual analysis and transcription remain separate. */
 export const speechPerByte: number = 0;
 /**
+ * What one narration request reserves against her approval: its price and a small margin. Free
+ * narration reserves nothing (Sep 29 2026): a re-voice or a script correction is quoted and
+ * approved at $0.00, and the margin alone met the over-quote stop on its first line.
+ */
+export const speechReserve = (cost: number): number => (cost > 0 ? cost + 0.0005 : 0);
+/**
  * Delivery direction for fish.audio voices only, which read a leading [tag] as their style and
  * bill it as text, so it is counted with the spoken words. Inworld voices get none: the proxy
  * lifted it into Inworld's instruction field, and with it TTS-2 put unpunctuated pauses of up to
@@ -1523,7 +1529,7 @@ export async function synthesize(
     3,
     signal,
     () =>
-      meter('speech', cost + 0.0005, async () => {
+      meter('speech', speechReserve(cost), async () => {
         const response = await axios.post<ArrayBuffer>(
           `${voiceBase()}/v1/audio/speech`,
           {
