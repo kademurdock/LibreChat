@@ -2973,7 +2973,7 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
 </head><body>
 <a class="back" href="/login">&larr; Back to sign in</a>
 <h1>Request an account</h1>
-<p class="muted">Want to play or download Kade’s published recordings, or use the platform? Tell Kade a little about yourself below. She reviews requests before sending a signup code, which helps keep spam out. Published recordings are free once you have an account. Family Library access is separate, and a donation is never required.</p>
+<p class="muted">Want to play or download Kade’s published recordings, or use the platform? Tell Kade a little about yourself below. She reviews requests before approving account access, which helps keep spam out. Published recordings are free once you have an account. Family Library access is separate, and a donation is never required.</p>
 <p>Already have a code? <a href="/register">Create your account</a>. Already registered? <a href="/login">Sign in</a>.</p>
 <div id="status" class="status" role="status" aria-live="polite"></div>
 <form id="askForm">
