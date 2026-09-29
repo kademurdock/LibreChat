@@ -16,7 +16,10 @@ const db = require('~/models');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { getSpotter } = require('./kadeSpotter');
 
-const SPOTTER_TEXT_MODEL = process.env.KADE_SPOTTER_TEXT_MODEL || 'google/gemini-3.1-pro-preview';
+/* Part 304 (Sep 29 2026): was google/gemini-3.1-pro-preview, which is not in kade-config.yaml's
+ * agent model list, so every typed turn to a Spotter failed with illegal_model_request (Ziggy,
+ * Ambrosia, Cato, Pepper). Whatever this names must be in that list and must see images. */
+const SPOTTER_TEXT_MODEL = process.env.KADE_SPOTTER_TEXT_MODEL || 'google/gemini-3-flash-preview';
 
 function KadeSpotterModel() {
   return mongoose.models.KadeSpotter || mongoose.model('KadeSpotter');
