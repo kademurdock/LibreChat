@@ -4,7 +4,7 @@ The public front door is `/`. `/watch` lists only releases explicitly published 
 
 ## Publishing
 
-From Home, choose **Publish on my website** (`/publish`). Choose an original Library audio/video recording, add a public title and description, confirm that its complete file may be public, then publish. The resulting `/watch/<slug>` link works without an account. Taking a release down closes its page immediately and stops new signed links. Previously issued links expire within one hour. Removing or replacing the source file also closes the release.
+From Home, choose **Publish on my website** (`/publish`). Choose an original Library audio/video recording, add a public title and description, confirm that its complete file may be public, then publish. The resulting `/watch/<slug>` link works without an account. Taking a release down closes its page immediately and stops new signed links. Previously issued links expire within one hour. Removing or replacing the source file also closes the release. The release page's player asks for a fresh one-hour stream link, at the same place, when a long recording outlasts its link.
 
 ## Family feature pack
 
@@ -12,7 +12,7 @@ The admin dashboard (`/usage-dashboard`) and Library page use the same per-perso
 
 ## Watch and listen together
 
-Join a Clubhouse room, open **Choose from the library**, find shared audio or video, and choose a recording. It starts paused. The chooser controls play, pause, seeking, and stop for the room. Everyone's account must independently have access to the file; child restrictions still apply. A late arrival catches up to the room's position. After the host has been absent for 25 seconds another eligible listener can take over.
+Join a Clubhouse room, open **Choose from the library**, find shared audio or video, and choose a recording. It starts paused. The chooser controls play, pause, seeking, and stop for the room. Everyone's account must independently have access to the file; child restrictions still apply. A late arrival catches up to the room's position. After the host has been absent for 25 seconds another eligible listener can take over, or simply choose a new recording. If the room's recording is no longer open to that family member (unshared, replaced, or grown-ups-only for a child), **Take over playback** clears it so they can choose another. A recording with no stored length stops at the end of its file instead of starting again.
 
 **My library media volume** affects only your device. Hide the picture to listen without displaying video; this does not convert the file or reduce its download size. **Rejoin playback** starts listening if the browser requires a tap. Media streams straight from storage to each listener. It is not sent through anyone's microphone and is not part of the room recording. The existing conversation and jukebox recording behavior is unchanged.
 

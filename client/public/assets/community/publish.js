@@ -4,8 +4,8 @@
   const say = text => { $('status').textContent = text; };
   async function api(path, body, method) {
     const response = await fetch('/api/community/' + path, { method: method || (body ? 'POST' : 'GET'), headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Please try again.');
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || (response.status === 401 ? 'Please sign in again, then reload this page.' : 'Please try again.'));
     return result;
   }
   function button(text, action) { const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { say(e.message); } finally { b.disabled = false; } }; return b; }
@@ -43,7 +43,8 @@
     } catch (e) { say(e.message); } finally { $('publish').disabled = false; }
   };
   (async () => {
-    const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' }); const data = await response.json(); token = data.token;
+    // Sep 29 2026: signed out, the refresh answers 200 with plain text; send Kade to sign in instead of showing a JSON error.
+    const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' }); const data = response.ok ? await response.json().catch(() => null) : null; token = data && data.token;
     if (!token) { location.replace('/login?redirect_to=%2Fpublish'); return; }
     await releases(); $('manager').hidden = false; say('Your public releases are ready to manage.');
   })().catch(e => say(e.message));

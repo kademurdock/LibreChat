@@ -139,7 +139,17 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
       }
       const media = await permittedTrack(req, state.book, state.track);
       if (!media || media.track.key !== state.key) {
-        res.json({ active: false, unavailable: true, revision: state.revision, serverTime: now });
+        // Sep 29 2026: a family member can clear a recording they cannot open once its host has gone.
+        res.json({
+          active: false,
+          unavailable: true,
+          revision: state.revision,
+          serverTime: now,
+          canTakeControl:
+            familyLibraryMember(deps.actor(req)) &&
+            state.host !== uid(req) &&
+            now - state.heartbeat > leaseMs,
+        });
         return;
       }
       if (state.host === uid(req))
@@ -200,7 +210,9 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
       }
       const active = !!old?.book && old.expiresAt.getTime() > now;
       const hostAway = !active || now - old!.heartbeat > leaseMs;
-      if (active && old!.host !== uid(req) && !(input.action === 'take-control' && hostAway)) {
+      const takingOver = active && old!.host !== uid(req);
+      // Sep 29 2026: once the host has gone, choosing a new recording is the same as taking over and loading it.
+      if (takingOver && !(hostAway && ['take-control', 'load'].includes(input.action || ''))) {
         res
           .status(403)
           .json({ error: 'The person running the player controls playback for the room.' });
@@ -213,18 +225,24 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
       const bookId = input.action === 'load' ? String(input.book || '') : old!.book;
       const trackIndex = input.action === 'load' ? (input.track ?? 0) : old!.track;
       const media = await permittedTrack(req, bookId, trackIndex);
-      if (!media && input.action !== 'stop') {
+      // Sep 29 2026: taking over a recording that is gone, changed, or not open to this family member
+      // (a grown-ups-only film left to the children) clears the room instead of locking it for 12 hours.
+      const cleared =
+        input.action === 'take-control' &&
+        (!media || media.track.key !== old!.key) &&
+        familyLibraryMember(deps.actor(req));
+      if (!media && input.action !== 'stop' && !cleared) {
         res.status(404).json({ error: 'That shared recording is unavailable to your account.' });
         return;
       }
-      if (media && input.action !== 'load' && media.track.key !== old!.key) {
+      if (media && input.action !== 'load' && !cleared && media.track.key !== old!.key) {
         res.status(409).json({ error: 'This file changed. Choose it from the library again.' });
         return;
       }
-      const bounds = media ? trackBounds(media.track) : { begin: 0, end: null };
+      const bounds = media && !cleared ? trackBounds(media.track) : { begin: 0, end: null };
       let position = bounds.begin;
       if (input.action !== 'load') {
-        position = media ? playbackPosition(old!, now, media.track) : 0;
+        position = media && !cleared ? playbackPosition(old!, now, media.track) : 0;
       }
       if (input.action === 'seek') {
         if (
@@ -238,7 +256,7 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
         }
         position = input.position;
       }
-      const stopped = input.action === 'stop';
+      const stopped = input.action === 'stop' || cleared;
       let playing = input.action === 'play';
       if (input.action === 'seek') {
         playing = old!.playing;
@@ -264,7 +282,7 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
           {
             _id: roomId,
             revision: input.revision,
-            ...(input.action === 'take-control' ? { heartbeat: old.heartbeat } : {}),
+            ...(input.action === 'take-control' || takingOver ? { heartbeat: old.heartbeat } : {}),
           },
           state,
         );

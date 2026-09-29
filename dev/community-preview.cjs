@@ -21,7 +21,8 @@ const { createCommunityModels } = require('../packages/data-schemas/src/models/c
   app.use('/assets', express.static(path.join(root, 'client/public/assets')));
   app.get('/preview.mp4', (_req, res) => res.sendFile(path.join(__dirname, 'preview.mp4')));
   const actor = req => ({ 'Bearer guest': guest, 'Bearer reader': reader, 'Bearer host': host })[req.get('Authorization')];
-  app.post('/api/auth/refresh', (req, res) => req.get('Cookie')?.includes('previewSignedOut=1') ? res.sendStatus(401) : res.json({ token: 'reader' }));
+  // Signed out, the real refresh endpoint answers 200 with plain text (AuthController), not 401.
+  app.post('/api/auth/refresh', (req, res) => req.get('Cookie')?.includes('previewSignedOut=1') ? res.status(200).send('Refresh token not provided') : res.json({ token: 'reader' }));
   app.get('/preview/sign-out', (_req, res) => res.set('Set-Cookie', 'previewSignedOut=1; Path=/; SameSite=Lax').redirect('/watch/sample-release'));
   app.get('/preview/sign-in', (_req, res) => res.set('Set-Cookie', 'previewSignedOut=0; Path=/; SameSite=Lax').redirect('/watch/sample-release'));
   app.get('/request-access', (_req, res) => res.type('html').send(require('../api/server/routes/kadePages').requestAccessHtml));
