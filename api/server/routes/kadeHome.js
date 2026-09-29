@@ -30,9 +30,10 @@ const { SHARED_HEAD } = require('./kadePages');
  * label); `title` is the visible short text; `hint` is native's
  * accessibilityHint, rendered as visible small text AND aria-describedby so
  * sighted and screen-reader users get the same sentence. */
-function tile({ href, title, spoken, hint, icon, id }) {
+function tile({ href, title, spoken, hint, icon, id, hidden }) {
   const hid = `h-${id}`;
-  return `  <a class="hubitem" href="${href}" aria-label="${esc(spoken || title)}" aria-describedby="${hid}"><span class="hicon" aria-hidden="true">${icon}</span><span><strong>${esc(title)}</strong><small id="${hid}">${esc(hint)}</small></span></a>`;
+  const shown = hidden ? ` id="tile-${id}" style="display:none"` : '';
+  return `  <a class="hubitem" href="${href}"${shown} aria-label="${esc(spoken || title)}" aria-describedby="${hid}"><span class="hicon" aria-hidden="true">${icon}</span><span><strong>${esc(title)}</strong><small id="${hid}">${esc(hint)}</small></span></a>`;
 }
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -88,6 +89,12 @@ const TOOLS = [
   { id: 'wall', href: '/wall-of-fame', title: 'Wall of Fame', spoken: 'Wall of Fame', icon: '🏆',
     hint: 'Creations the whole family chose to share, newest first.' },
 ];
+
+/* Sep 29 2026: the family history (docs/FAMILY_HISTORY.md). Hidden until
+ * /api/kade/family-history/me says this account is family, so nobody else
+ * ever sees a door they cannot open. */
+const FAMILY_HISTORY = { id: 'familyhistory', href: '/family-history', title: 'Family history', spoken: 'Family history', icon: '🌳', hidden: true,
+  hint: 'The family tree, records, graves and stories, said from your own place in the family. Private to the family.' };
 
 const SETTINGS = [
   { id: 'settings', href: '/settings', title: 'Settings', spoken: 'Settings', icon: '⚙️',
@@ -206,7 +213,7 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
 <h2 id="sec-account">Your account</h2>
 <p class="acct" id="acctEmail" aria-live="polite">Checking who you are…</p>
 
-${section('Watch, listen, and meet', TOOLS.filter(item => ['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile))}
+${section('Watch, listen, and meet', [...TOOLS.filter(item => ['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile), tile(FAMILY_HISTORY)])}
 
 ${section('Create and explore', TOOLS.filter(item => !['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile))}
 
@@ -236,6 +243,9 @@ ${ADMIN.map(tile).join('\n')}
       if(u.role === 'ADMIN'){ document.getElementById('adminSec').style.display=''; document.getElementById('adminNav').style.display=''; }
     }
   }catch(e){}
+  apiGet('/api/kade/family-history/me', t).then(function(fh){ return fh.ok ? fh.json() : null; }).then(function(fj){
+    if(fj && fj.access){ document.getElementById('tile-familyhistory').style.display=''; }
+  }).catch(function(){});
   document.getElementById('signout').addEventListener('click', async function(){
     this.disabled = true; this.textContent = 'Signing out…';
     try{ await fetch('/api/auth/logout', {method:'POST', credentials:'include', headers:{'Authorization':'Bearer '+t}}); }catch(e){}

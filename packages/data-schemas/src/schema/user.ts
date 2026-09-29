@@ -161,6 +161,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     },
     /** Kade-AI (Sep 24 2026): the shared family library. Unset = the rule in packages/api library/access.ts; 'family' or 'none' is Kade's own choice. */
     kadeLibraryAccess: { type: String, enum: ['family', 'none'] },
+    /** Kade-AI (Sep 29 2026): the family tree person this account is (a tree id like "@I123@"), set only by the owner; the Family history is seen from that place (packages/api family/history.ts). */
+    kadeFamilyTreePerson: { type: String },
+    /** Kade-AI (Sep 29 2026): Family history access for an account with no tree person: 'guest' sees it from the owner's place; 'none' is the owner's no. */
+    kadeFamilyHistory: { type: String, enum: ['guest', 'none'] },
     /**
      * Kade-AI (Part 143, Sep 8 2026): ten digits somebody can sign in with
      * instead of an email address. Her words: "not everyone has both, one, or

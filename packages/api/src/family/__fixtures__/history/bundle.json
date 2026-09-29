@@ -1,0 +1,247 @@
+{
+  "version": "v1",
+  "generated": "2026-01-01T00:00:00",
+  "owner": "@I100@",
+  "counts": { "people": 18, "records": 3, "memorials": 2, "media": 5, "stories": 2, "anchors": 2 },
+  "anchors": ["@I100@", "@I200@"],
+  "people": {
+    "@I100@": {
+      "id": "@I100@", "name": "Ada Example", "label": "Ada Example (born 1990)", "sex": "F", "birthSurname": null,
+      "lifespan": "born 1990", "living": true, "virtual": false, "confidence": null,
+      "birth": { "date": null, "place": null }, "death": { "date": null, "place": null }, "burial": { "date": null, "place": null },
+      "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I200@", "kind": "birth" }, { "id": "@I201@", "kind": "birth" }],
+      "spouses": ["@I110@"], "children": ["@I120@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "you", "ownerGroup": "Owner"
+    },
+    "@I101@": {
+      "id": "@I101@", "name": "Jack Example", "label": "Jack Example (Living)", "sex": "M", "birthSurname": null,
+      "lifespan": "Living", "living": true, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [],
+      "facts": [
+        { "type": "RESI", "label": "Residence", "date": null, "year": null, "place": "Invented Town", "value": null, "note": null, "records": ["c2:r1", "c1:r1"] }
+      ],
+      "parents": [{ "id": "@I200@", "kind": "birth" }, { "id": "@I201@", "kind": "birth" }],
+      "spouses": [], "children": [], "records": [], "wrongRecords": { "c1:r2": "An invented mix-up." },
+      "memorials": [], "wrongMemorials": { "5003": "An invented mix-up." }, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "brother", "ownerGroup": "blood relative"
+    },
+    "@I102@": {
+      "id": "@I102@", "name": "Kit Example", "label": "Kit Example (1985-2019)", "sex": "M", "birthSurname": null,
+      "lifespan": "1985-2019", "living": false, "virtual": false, "confidence": null,
+      "birth": { "date": "1985", "place": "Invented Town" }, "death": { "date": "2019", "place": "Invented Town" }, "burial": {},
+      "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I200@", "kind": "birth" }],
+      "spouses": [], "children": [], "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "half brother", "ownerGroup": "blood relative"
+    },
+    "@I110@": {
+      "id": "@I110@", "name": "Lee Spouse", "label": "Lee Spouse (born 1989)", "sex": "M", "birthSurname": null,
+      "lifespan": "born 1989", "living": true, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": ["@I100@"], "children": ["@I120@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "husband", "ownerGroup": "by marriage"
+    },
+    "@I120@": {
+      "id": "@I120@", "name": "Max Example", "label": "Max Example (born 2015)", "sex": "M", "birthSurname": null,
+      "lifespan": "born 2015", "living": true, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I100@", "kind": "birth" }, { "id": "@I110@", "kind": "birth" }],
+      "spouses": [], "children": [], "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "son", "ownerGroup": "direct descendant"
+    },
+    "@I200@": {
+      "id": "@I200@", "name": "Ben Example", "label": "Ben Example (1960-2020)", "sex": "M", "birthSurname": null,
+      "lifespan": "1960-2020", "living": false, "virtual": false, "confidence": null,
+      "birth": { "date": "3 Mar 1960", "place": "Invented County" }, "death": { "date": "2020", "place": "Invented County" }, "burial": {},
+      "otherNames": [],
+      "facts": [
+        { "type": "BIRT", "label": "Birth", "date": "3 Mar 1960", "year": 1960, "place": "Invented County", "value": null, "note": null, "records": ["c2:r1", "c9:gone"] }
+      ],
+      "parents": [{ "id": "@I300@", "kind": "birth" }, { "id": "@I301@", "kind": "birth" }],
+      "spouses": ["@I201@"], "children": ["@I100@", "@I101@", "@I102@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": ["m-doc1"],
+      "notes": ["An invented note."], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "father", "ownerGroup": "direct ancestor"
+    },
+    "@I201@": {
+      "id": "@I201@", "name": "Cora Example", "label": "Cora Example (born 1962)", "sex": "F", "birthSurname": "Sample",
+      "lifespan": "born 1962", "living": true, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": ["Cora Sample"], "facts": [],
+      "parents": [{ "id": "@I302@", "kind": "birth" }, { "id": "@I303@", "kind": "birth" }],
+      "spouses": ["@I200@"], "children": ["@I100@", "@I101@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "mother", "ownerGroup": "direct ancestor"
+    },
+    "@I210@": {
+      "id": "@I210@", "name": "Ned Example", "label": "Ned Example (1958-2018)", "sex": "M", "birthSurname": null,
+      "lifespan": "1958-2018", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I300@", "kind": "birth" }, { "id": "@I301@", "kind": "birth" }],
+      "spouses": ["@I211@"], "children": [],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "uncle", "ownerGroup": "blood relative"
+    },
+    "@I211@": {
+      "id": "@I211@", "name": "Opal Example", "label": "Opal Example (1959-2021)", "sex": "F", "birthSurname": "Brook",
+      "lifespan": "1959-2021", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": ["@I210@"], "children": [],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "wife of your uncle", "ownerGroup": "by marriage"
+    },
+    "@I300@": {
+      "id": "@I300@", "name": "Dan Example", "label": "Dan Example (1930-1999)", "sex": "M", "birthSurname": null,
+      "lifespan": "1930-1999", "living": false, "virtual": false, "confidence": null,
+      "birth": { "date": "1930", "place": "Invented County" }, "death": { "date": "1999", "place": "Invented County" },
+      "burial": { "date": "1999", "place": "Invented Cemetery" },
+      "otherNames": ["Daniel Example"],
+      "facts": [
+        { "type": "BIRT", "label": "Birth", "date": "1930", "year": 1930, "place": "Invented County", "value": null, "note": null, "records": ["c1:r1"] },
+        { "type": "DEAT", "label": "Death", "date": "1999", "year": 1999, "place": "Invented County", "value": null, "note": null, "records": [] }
+      ],
+      "parents": [{ "id": "@I400@", "kind": "birth" }],
+      "spouses": ["@I301@"], "children": ["@I200@", "@I210@"],
+      "records": ["c1:r1", "c1:r2"],
+      "wrongRecords": { "c1:r2": "This census lists a different Dan Example, twenty years older." },
+      "memorials": ["5001"], "wrongMemorials": {}, "media": ["m-tree1", "m-rec1"],
+      "notes": [], "history": ["Invented history line."], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "grandfather", "ownerGroup": "direct ancestor"
+    },
+    "@I301@": {
+      "id": "@I301@", "name": "Eve Example", "label": "Eve Example (1932-2010)", "sex": "F", "birthSurname": "Oakley",
+      "lifespan": "1932-2010", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": ["@I300@"], "children": ["@I200@", "@I210@"],
+      "records": [], "wrongRecords": {}, "memorials": [],
+      "wrongMemorials": { "5003": "A different Eve Example, buried in another state." },
+      "media": [], "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "grandmother", "ownerGroup": "direct ancestor"
+    },
+    "@I302@": {
+      "id": "@I302@", "name": "Finn Sample", "label": "Finn Sample (1935-2001)", "sex": "M", "birthSurname": null,
+      "lifespan": "1935-2001", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I700@", "kind": "probable" }],
+      "spouses": ["@I303@"], "children": ["@I201@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "grandfather", "ownerGroup": "direct ancestor"
+    },
+    "@I303@": {
+      "id": "@I303@", "name": "Gail Sample", "label": "Gail Sample (1936-2015)", "sex": "F", "birthSurname": null,
+      "lifespan": "1936-2015", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": ["Gail Ríos"], "facts": [],
+      "parents": [], "spouses": ["@I302@"], "children": ["@I201@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "grandmother", "ownerGroup": "direct ancestor"
+    },
+    "@I400@": {
+      "id": "@I400@", "name": "Hugo Example", "label": "Hugo Example (1900-1970)", "sex": "M", "birthSurname": null,
+      "lifespan": "1900-1970", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [{ "id": "@I500@", "kind": "birth" }],
+      "spouses": [], "children": ["@I300@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "great-grandfather", "ownerGroup": "direct ancestor"
+    },
+    "@I500@": {
+      "id": "@I500@", "name": "Ivo Example", "label": "Ivo Example (1870-1940)", "sex": "M", "birthSurname": null,
+      "lifespan": "1870-1940", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": [], "children": ["@I400@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "2nd great-grandfather", "ownerGroup": "direct ancestor"
+    },
+    "@I700@": {
+      "id": "@I700@", "name": "Unknown Sample", "label": "Unknown Sample (about 1900)", "sex": "M", "birthSurname": null,
+      "lifespan": "about 1900", "living": false, "virtual": true, "confidence": "likely (research)",
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": [], "children": ["@I302@"],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": ["Research finding: not proven."], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "great-grandfather", "ownerGroup": "direct ancestor"
+    },
+    "@I800@": {
+      "id": "@I800@", "name": "Quinn Stranger", "label": "Quinn Stranger (1850-1900)", "sex": "U", "birthSurname": null,
+      "lifespan": "1850-1900", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": ["Quinn O'Brien-Stranger"], "facts": [],
+      "parents": [], "spouses": [], "children": [],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
+      "ownerRelation": "not connected", "ownerGroup": "not connected"
+    },
+    "@I900@": {
+      "id": "@I900@", "name": "Ben Example", "label": "Ben Example (1960-2020)", "sex": "M", "birthSurname": null,
+      "lifespan": "1960-2020", "living": false, "virtual": false, "confidence": null,
+      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "parents": [], "spouses": [], "children": [],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "notes": [], "history": [], "duplicateOf": "@I200@", "duplicateWhy": "Entered twice from two invented trees.", "conflict": null,
+      "ownerRelation": "duplicate entry", "ownerGroup": "duplicate entry"
+    }
+  },
+  "records": {
+    "c1:r1": {
+      "key": "c1:r1", "collection": "Invented Census 1940", "name": "Dan Example",
+      "fields": [["Name", "Dan Example"], ["Age", "10"]],
+      "tables": [[["Name", "Relation"], ["Hugo Example", "Head"], ["Dan Example", "Son"]]],
+      "citation": "Invented citation for tests.", "url": "https://example.com/records/c1-r1", "image": "m-rec1"
+    },
+    "c1:r2": {
+      "key": "c1:r2", "collection": "Invented Census 1940", "name": "Dan Example",
+      "fields": [["Name", "Dan Example"], ["Age", "30"]], "tables": [],
+      "citation": "Invented citation for tests.", "url": "https://example.com/records/c1-r2", "image": null
+    },
+    "c2:r1": {
+      "key": "c2:r1", "collection": "Invented Birth Index", "name": "Ben Example",
+      "fields": [["Name", "Ben Example"], ["Birth", "1960"]], "tables": [],
+      "citation": "Invented index entry.", "url": "https://example.com/records/c2-r1", "image": null
+    }
+  },
+  "memorials": {
+    "5001": {
+      "id": "5001", "name": "Dan Example", "birth_date": "1930", "birth_place": "Invented County",
+      "death_date": "1999", "death_place": "Invented County", "cemetery": "Invented Cemetery", "cemetery_place": "Invented County",
+      "plot": "Row 1", "inscription": "Rest easy", "bio": "An invented farmer.", "url": "https://example.com/memorial/5001",
+      "family": { "Parents": [{ "memorial_id": "5000", "name": "Hugo Example", "dates": null }] },
+      "photos": [{ "media": "m-grave1", "caption": "Headstone" }, { "media": null, "caption": "Not downloaded" }],
+      "family_notes": []
+    },
+    "5003": {
+      "id": "5003", "name": "Eve Example", "birth_date": "1840", "birth_place": "Elsewhere",
+      "death_date": "1900", "death_place": "Elsewhere", "cemetery": "Other Cemetery", "cemetery_place": "Elsewhere",
+      "plot": null, "inscription": null, "bio": "", "url": "https://example.com/memorial/5003",
+      "family": {}, "photos": [], "family_notes": []
+    }
+  },
+  "media": {
+    "m-tree1": { "id": "m-tree1", "kind": "tree", "file": "media/m-tree1.jpg", "caption": "Dan Example on an invented porch", "people": ["@I300@"], "bytes": 1000 },
+    "m-rec1": { "id": "m-rec1", "kind": "record", "file": "media/m-rec1.jpg", "caption": "Invented census page", "people": ["@I300@"], "bytes": 2000 },
+    "m-grave1": { "id": "m-grave1", "kind": "grave", "file": "media/m-grave1.jpg", "caption": "Headstone", "people": ["@I300@"], "bytes": 3000 },
+    "m-doc1": { "id": "m-doc1", "kind": "tree", "file": "media/m-doc1.pdf", "caption": "An invented certificate", "people": ["@I200@"], "bytes": 4000 },
+    "m-bad": { "id": "m-bad", "kind": "tree", "file": "../outside.jpg", "caption": "A path that leaves the media folder", "people": [], "bytes": 1 }
+  },
+  "findings": [
+    { "summary": "Finn Sample's father is probably the unnamed farmhand in an invented census.", "people": ["@I302@", "@I700@"] },
+    { "summary": "Ben and Ned Example share an invented DNA match.", "people": ["@I200@", "@I210@"] }
+  ],
+  "stories": [
+    { "slug": "the-farm", "title": "The farm on Example Road", "file": "stories/the-farm.md", "words": 14 },
+    { "slug": "escape", "title": "A path that leaves the version folder", "file": "../outside.md", "words": 1 }
+  ],
+  "sources": { "s1": { "title": "Invented source" } }
+}

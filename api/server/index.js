@@ -335,6 +335,8 @@ const startServer = async () => {
   app.use('/api/kade/titles', routes.kadeTitles);
   // Part 293 (Sep 25 2026): the Family feature pack map, per person.
   app.use('/api/kade/features', require('./routes/kadeFeatures'));
+  // Sep 29 2026: Family history, private to matched family (docs/FAMILY_HISTORY.md).
+  app.use('/api/kade/family-history', require('./routes/kadeFamilyHistory'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
@@ -387,6 +389,7 @@ const startServer = async () => {
   app.get('/parlor', routes.kadeParlor.page);
   app.get('/library', routes.kadeReadingRoom.page);
   app.get('/reading-room', routes.kadeReadingRoom.page); // the room's first name still works
+  app.get('/family-history', require('./routes/kadeFamilyHistoryPage').page); // Sep 29 2026, docs/FAMILY_HISTORY.md
   app.get('/lounge', routes.kadeLounge.page);
   // July 24 2026: the Lounge grew up into KADE'S CLUBHOUSE — /clubhouse is
   // the pretty front door; /lounge stays alive forever (native build 154's

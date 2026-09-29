@@ -295,6 +295,19 @@ export {
   FAMILY_PACK_STYLES_REFUSAL,
 } from './family/pack';
 export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
+/* Sep 29 2026: Family history, the owner's family research for matched family (docs/FAMILY_HISTORY.md). */
+export {
+  familyHistoryRouter,
+  familyHistoryViewer,
+  familyHistoryPrefix,
+  FAMILY_HISTORY_PRIVATE,
+} from './family/history';
+export type {
+  FamilyBundle,
+  FamilyHistoryAccount,
+  FamilyHistoryDependencies,
+  FamilyHistoryViewer,
+} from './family/history';
 
 export { createDescriptionRouter } from './description/router';
 export { describedVideoPage } from './description/page';

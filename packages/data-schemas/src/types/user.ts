@@ -35,6 +35,10 @@ export interface IUser extends Document {
   kadeAccountType?: 'adult' | 'child';
   /** Kade-AI: family library access Kade set for this account (unset = the default rule) */
   kadeLibraryAccess?: 'family' | 'none';
+  /** Kade-AI: the family tree person (a tree id like "@I123@") the owner matched this account to */
+  kadeFamilyTreePerson?: string;
+  /** Kade-AI: Family history access the owner set for an account with no tree person */
+  kadeFamilyHistory?: 'guest' | 'none';
   /** Kade-AI: ten digits that can be typed into the login box instead of an email. */
   kadePhone?: string;
   totpSecret?: string;
