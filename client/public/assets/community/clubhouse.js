@@ -19,6 +19,8 @@
       this.player.addEventListener('waiting', () => { if (this.state.active && this.state.playing) this.say('Buffering. You will catch up to the room when ready.'); });
       this.player.addEventListener('playing', () => { if (this.state.active) this.say('Playing: ' + this.state.title); });
       this.player.addEventListener('timeupdate', () => { if (this.state.active && this.state.end != null && this.player.currentTime >= this.state.end) this.player.pause(); });
+      // Sep 29 2026: a recording with no stored length (or a too-long one) keeps "playing" for the room past its real end; the controller pauses the room there.
+      this.player.addEventListener('ended', () => { if (!this.state.active) return; if (this.state.controlling && this.state.playing && (this.state.end ?? Infinity) > this.player.currentTime + 1) this.command('pause'); else this.say('Finished: ' + this.state.title); });
       this.player.addEventListener('error', () => { if (this.proof && this.mediaId) { this.urlAt = 0; this.player.pause(); this.say('This recording could not play. Try Rejoin playback.'); } });
       this.onVisibility = () => { if (!document.hidden && this.proof) this.poll(true); };
       document.addEventListener('visibilitychange', this.onVisibility);
@@ -30,10 +32,12 @@
       if (response.status === 401 && retry) {
         const refreshed = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
         if (generation !== this.generation) throw new Error('The room changed.');
-        this.authToken = (await refreshed.json()).token;
+        // Sep 29 2026: signed out, the refresh answers 200 with plain text rather than JSON.
+        this.authToken = (refreshed.ok && (await refreshed.json().catch(() => null))?.token) || '';
         if (this.authToken) return this.request(path, body, false);
       }
-      const data = await response.json(); if (!response.ok) throw new Error(data.error || 'The library could not answer.'); return data;
+      if (response.status === 401) throw new Error('Please sign in again to use the room player.');
+      const data = await response.json().catch(() => null); if (!response.ok || !data) throw new Error(data?.error || 'The library could not answer.'); return data;
     }
     start(proof) {
       this.stop(); this.proof = proof || ''; this.lastGood = Date.now();
@@ -88,7 +92,7 @@
         if (!state.active) {
           this.player.pause(); this.player.removeAttribute('src'); this.player.load(); this.mediaId = ''; this.urlAt = 0;
           this.$('now').textContent = 'Nothing selected.'; this.player.hidden = true;
-          this.say(state.unavailable ? 'This room’s recording is unavailable to your account. You can still join the conversation.' : 'Choose a recording from the shared library.');
+          this.say(state.unavailable ? 'This room’s recording is unavailable to your account. ' + (state.canTakeControl ? 'Use Take over playback to clear it and choose another.' : 'You can still join the conversation.') : 'Choose a recording from the shared library.');
         } else {
           const id = state.book + ':' + state.track;
           if (id !== this.mediaId && !state.url) { this.urlAt = 0; this.mediaId = ''; return; }
@@ -105,10 +109,13 @@
           this.sync();
           if (previous.revision !== state.revision || !previous.active) this.say((state.playing ? 'Playing: ' : 'Paused: ') + state.title);
         }
+        const focused = ['toggle', 'back', 'ahead', 'stop', 'take', 'join'].map(id => this.$(id)).find(control => control === document.activeElement);
         this.$('toggle').textContent = state.playing ? 'Pause for everyone' : 'Play for everyone';
         ['toggle', 'back', 'ahead', 'stop'].forEach(id => { this.$(id).disabled = !state.active || !state.controlling; });
-        this.$('take').hidden = !state.active || state.controlling || !state.canTakeControl;
+        this.$('take').hidden = !(state.active || state.unavailable) || state.controlling || !state.canTakeControl;
         this.$('join').hidden = !state.active;
+        // Sep 29 2026: Stop sharing and Take over playback disable or hide the button just pressed; keep focus in the player instead of dropping it.
+        if (focused && (focused.disabled || focused.hidden)) (this.$('toggle').disabled ? this.$('panel').querySelector('summary') : this.$('toggle')).focus();
       } catch (e) {
         if (generation === this.generation) {
           if (Date.now() - this.lastGood > 10000) this.player.pause();
@@ -118,9 +125,13 @@
     }
     sync() {
       if (!this.proof || !this.state.active || !this.player.readyState) return;
-      const target = Math.min(this.state.end ?? Infinity, this.target + (this.state.playing ? (performance.now() - this.targetAt) / 1000 : 0));
+      // Sep 29 2026: play() on a file that has ended starts it again from the top, so stop at the file's real end
+      // even when the room has no stored length (or a longer one) and keeps counting.
+      const duration = Number.isFinite(this.player.duration) ? this.player.duration : Infinity;
+      const target = Math.min(this.state.end ?? Infinity, duration, this.target + (this.state.playing ? (performance.now() - this.targetAt) / 1000 : 0));
+      const finished = target >= (this.state.end ?? Infinity) || target >= duration - (this.player.ended ? .8 : .25);
       if (Math.abs(this.player.currentTime - target) > .8 || (!this.state.playing && Math.abs(this.player.currentTime - target) > .15)) this.player.currentTime = target;
-      if (this.state.playing && (this.state.end == null || target < this.state.end)) {
+      if (this.state.playing && !finished) {
         this.player.play().catch(() => this.say('Press Rejoin playback to start listening on this device.'));
       } else this.player.pause();
     }

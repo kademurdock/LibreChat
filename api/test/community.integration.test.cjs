@@ -111,6 +111,44 @@ test('revoked access and changed files cannot keep issuing playback links', asyn
   assert.equal((await api('guest').get(endpoint + '?url=1')).body.active, false);
   await books.updateOne({ _id: ids.movie }, { $set: { 'tracks.0.key': 'movie.mp4' } });
 });
+test('a recording left to people who cannot open it can be cleared once its host has gone', async () => {
+  const room = user => api(user, 'room-b');
+  assert.equal((await room('host').post(endpoint, { action: 'load', revision: 0, book: ids.adult, track: 0 })).status, 200);
+  const live = (await room('child').get(endpoint)).body;
+  assert.equal(live.unavailable, true); assert.equal(live.canTakeControl, false);
+  for (const action of ['take-control', 'load']) assert.equal((await room('child').post(endpoint, { action, revision: 1, book: ids.movie, track: 0 })).status, 403);
+  await playback.updateOne({ _id: 'room-b' }, { $set: { heartbeat: Date.now() - 30000 } });
+  assert.equal((await room('outsider').get(endpoint)).body.canTakeControl, false);
+  assert.equal((await room('outsider').post(endpoint, { action: 'take-control', revision: 1 })).status, 404);
+  const away = (await room('child').get(endpoint)).body;
+  assert.equal(away.unavailable, true); assert.equal(away.canTakeControl, true);
+  assert.equal(away.title, undefined); assert.equal(away.book, undefined); assert.equal(away.url, undefined);
+  assert.equal((await room('child').post(endpoint, { action: 'take-control', revision: 1 })).status, 200);
+  const cleared = await playback.findById('room-b').lean();
+  assert.equal(cleared.book, ''); assert.equal(cleared.key, ''); assert.equal(cleared.playing, false); assert.equal(cleared.host, people.child.id);
+  assert.equal((await room('child').get(endpoint)).body.active, false);
+  assert.equal((await room('child').post(endpoint, { action: 'load', revision: 2, book: ids.adult, track: 0 })).status, 404);
+  assert.equal((await room('child').post(endpoint, { action: 'load', revision: 2, book: ids.movie, track: 0 })).status, 200);
+  assert.equal((await room('child').get(endpoint)).body.controlling, true);
+});
+test('after the host has gone a family member can choose a new recording, and a changed file no longer blocks takeover', async () => {
+  const room = user => api(user, 'room-b');
+  assert.equal((await room('guest').post(endpoint, { action: 'load', revision: 3, book: ids.movie, track: 0 })).status, 403);
+  await playback.updateOne({ _id: 'room-b' }, { $set: { heartbeat: Date.now() - 30000 } });
+  assert.equal((await room('outsider').post(endpoint, { action: 'load', revision: 3, book: ids.movie, track: 0 })).status, 404);
+  for (const action of ['stop', 'seek', 'play']) assert.equal((await room('guest').post(endpoint, { action, revision: 3, position: 10 })).status, 403);
+  assert.equal((await room('guest').post(endpoint, { action: 'load', revision: 3, book: ids.movie, track: 0 })).status, 200);
+  assert.equal((await room('guest').get(endpoint)).body.controlling, true);
+  await books.updateOne({ _id: ids.movie }, { $set: { 'tracks.0.key': 'replacement.mp4' } });
+  await playback.updateOne({ _id: 'room-b' }, { $set: { heartbeat: Date.now() - 30000 } });
+  try {
+    assert.equal((await room('child').get(endpoint)).body.canTakeControl, true);
+    assert.equal((await room('child').post(endpoint, { action: 'take-control', revision: 4 })).status, 200);
+    assert.equal((await room('child').get(endpoint)).body.active, false);
+  } finally {
+    await books.updateOne({ _id: ids.movie }, { $set: { 'tracks.0.key': 'movie.mp4' } });
+  }
+});
 test('publishing requires owner and explicit confirmation', async () => {
   const body = { book: ids.movie, track: 0, title: 'My release', description: 'A described story.' };
   assert.equal((await api('guest').post('/api/community/releases', { ...body, confirmPublic: true })).status, 403);
