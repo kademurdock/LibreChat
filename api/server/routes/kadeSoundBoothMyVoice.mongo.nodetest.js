@@ -722,6 +722,35 @@ test('Sing it in my voice through the real booth', async (t) => {
   );
 
   await t.test(
+    'renaming the project keeps "(in my voice)" on the version (Sep 29 2026: a rename used to name it like its take)',
+    async () => {
+      const rename = (title) =>
+        fetch(`${base}/projects/${yueMine.projectId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json', 'x-user': OWNER, 'x-role': 'ADMIN' },
+          body: JSON.stringify({ title }),
+        });
+      assert.equal((await rename('Rhodes at midnight')).status, 200);
+      const titles = async () =>
+        (await call('/projects', { user: OWNER, role: 'ADMIN' })).data.projects
+          .find((x) => x.id === yueMine.projectId)
+          .takes.map((take) => [take.voiceOf ? 'voice' : 'take', take.title]);
+      assert.deepEqual(await titles(), [
+        ['voice', 'Rhodes at midnight (in my voice)'],
+        ['take', 'Rhodes at midnight'],
+      ]);
+      const made = await Asset.findOne({ user: OWNER, 'metadata.voiceOf': { $exists: true } }).lean();
+      assert.equal(made.description, 'Rhodes at midnight (in my voice)');
+      // Renamed back, so the tests below see the project as it was.
+      assert.equal((await rename('Warm soul with a Rhodes')).status, 200);
+      assert.deepEqual(await titles(), [
+        ['voice', 'Warm soul with a Rhodes (in my voice)'],
+        ['take', 'Warm soul with a Rhodes'],
+      ]);
+    },
+  );
+
+  await t.test(
     'a take is queued once, and a lost submission is marked, said on its take, and never resent',
     async () => {
       const source = await Asset.findOne({ user: OWNER, service: 'runpod_yue2' }).lean();
@@ -785,6 +814,7 @@ test('Sing it in my voice through the real booth', async (t) => {
         createdAt: new Date(),
       });
       const title = 'Two takes, minutes apart';
+      const sources = [];
       const take = async (n) => {
         const asset = await Asset.create({
           user: OWNER,
@@ -793,6 +823,7 @@ test('Sing it in my voice through the real booth', async (t) => {
           url: `https://assets.test/yue2/b2${n}/master.mp3`,
           metadata: {},
         });
+        sources.push(String(asset._id));
         return followUps.queue({
           user: OWNER,
           projectId: yueMine.projectId,
@@ -824,6 +855,13 @@ test('Sing it in my voice through the real booth', async (t) => {
       await followUps.advance();
       assert.equal(toldAbout().length, 1, 'said once');
       assert.deepEqual(toldAbout()[0].slice(2, 5), [2, 2, false], 'counting both versions');
+      /* Sep 29 2026: a version is named after its project as it is when the version lands, not as it was when the take
+       * was queued, so a rename in between sticks. */
+      const versions = await Asset.find({ user: OWNER, 'metadata.voiceOf': { $in: sources } }).lean();
+      assert.deepEqual(
+        versions.map((v) => v.metadata.title),
+        ['Warm soul with a Rhodes (in my voice)', 'Warm soul with a Rhodes (in my voice)'],
+      );
     },
   );
 
