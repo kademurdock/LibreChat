@@ -945,6 +945,8 @@ test('Part 297: file names that put the code first, or write it as three digits 
   assert.strictEqual(fullTo(video('057. As Told By Ginger - Ep 57 - The Wedding Frame', GINGER, { seconds: 69 * MIN })), 'Video/Full TV/As Told By Ginger/Other episodes', 'a coded episode up to 100 minutes');
   assert.strictEqual(fullTo(video('S04e17-18.Drake___Josh-(Really_Big_Shrimp)', INTAKE, { seconds: 48 * MIN })), 'Video/Full TV/Drake & Josh/Season 4', 'two episodes in a row are one double episode');
   assert.strictEqual(fullTo(video('Rugrats S01E01-E03', INTAKE, { seconds: 69 * MIN })), null, 'three episodes are still a pile');
+  assert.strictEqual(fullTo(video('South Park S14E05 - 200', 'Video/Needs Filing/South Park/South Park Season 14', { seconds: 22 * MIN })), 'Video/Full TV/South Park/Season 14', 'an episode called "200" is not episodes 5 to 200');
+  assert.strictEqual(fullTo(video('South Park S14E06 - 201', INTAKE, { seconds: 22 * MIN })), 'Video/Full TV/South Park/Season 14');
   assert.strictEqual(fullTo(video('Rugrats Episodes 4-9 (1992)', INTAKE, { seconds: 60 * MIN })), null);
   assert.strictEqual(fullTo(video('Rugrats S01E13 & S02E01', INTAKE, { seconds: 46 * MIN })), null, 'two seasons in one file');
   assert.strictEqual(fullTo(video('Rugrats S02E05', INTAKE, { seconds: 110 * MIN })), null, 'over 100 minutes the title alone does not say');

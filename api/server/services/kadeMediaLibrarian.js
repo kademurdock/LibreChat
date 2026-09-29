@@ -875,7 +875,8 @@ function episodeRange(title) {
     re.lastIndex = 0;
     for (let m = re.exec(t); m; m = re.exec(t)) {
       const [first, last, otherSeason] = m.length > 3 ? [+m[2], +m[4], m[3] && +m[3] !== +m[1]] : [+m[1], +m[2], false];
-      if (otherSeason || last > first + 1) return true;
+      // a season's worth at most: "South Park S14E05 - 200" is the episode called "200", not episodes 5 to 200
+      if (otherSeason || (last > first + 1 && last - first <= 26)) return true;
     }
   }
   return false;
