@@ -525,6 +525,21 @@ test('YuE2: "On" asks for a version in her voice and never reaches the music wor
   assert.equal(yue.yueTakeNote({ features: [] }, yue.yueInput(base)), '');
 });
 
+test('YuE2: an instrumental never asks for a version in her voice (Sep 29 2026: it used to queue a paid one per take)', () => {
+  const COVERS = { YUE_COVERS_V2: '1' };
+  const base = { script: 'Banjo breakdown', lyrics: '[Intro]\n[Verse]', my_voice: 'On' };
+  for (const singing of ['Instrumental, no singing', 'instrumental', true]) {
+    const played = yue.yueInput({ ...base, singing }, COVERS);
+    assert.equal(played.instrumental, true);
+    assert.equal('my_voice' in played, false, String(singing));
+    assert.doesNotMatch(yue.yueTakeNote({ features: [] }, played), /in your voice/);
+  }
+  const sung = yue.yueInput({ ...base, lyrics: '[Verse]\nla la', singing: 'Sung, with my lyrics' }, COVERS);
+  assert.equal(sung.my_voice, true, 'a sung song keeps the choice');
+  // With the covers flag off there is no instrumental, so the choice stands as before.
+  assert.equal(yue.yueInput({ ...base, lyrics: '[Verse]\nla la', singing: 'Instrumental, no singing' }, {}).my_voice, true);
+});
+
 /* ---------- the page: a generic "upload" engine, named by the guide, never by the page ---------- */
 function buildPage() {
   const context = {

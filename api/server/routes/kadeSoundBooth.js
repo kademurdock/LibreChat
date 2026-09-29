@@ -116,12 +116,18 @@ function myVoiceOwner(userId) {
   return MY_VOICE_READY ? findMyVoiceModel(String(userId || '')) : Promise.resolve(null);
 }
 const MY_VOICE_OFF = { queue: async () => ({ queued: false, reason: 'off' }), advance: async () => undefined, stop: () => undefined };
+/* A version in her voice is named after its project with this ending, so it never reads exactly like the take it came from.
+ * Renaming the project (PATCH /projects/:id) keeps the ending on it. */
+const voiceVersionTitle = (title) => `${title} (in my voice)`.slice(0, 120);
 const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps({
   find: myVoiceOwner,
   /* A finished voice version: its own take, beside the one it was made from, in the same project. Idempotent: the asset is
    * keyed by the follow-up's id and the project only gains it (and its cost) once. */
   complete: async (row) => {
-    const title = `${row.title} (in my voice)`.slice(0, 120);
+    /* Sep 29 2026: the project's name as it is now, as a YuE2 take reads it, so a rename while the version was being made
+     * is not undone when it lands. */
+    const project = await KadeSoundBoothProject.findOne({ _id: row.projectId, user: row.user }).select('title').lean();
+    const title = voiceVersionTitle(project?.title || row.title);
     const out = row.output || {};
     const asset = await KadeAsset.findOneAndUpdate({ user: row.user, service: 'runpod_myvoice', 'metadata.jobId': row.id }, {
       $setOnInsert: { user: row.user, service: 'runpod_myvoice', kind: 'audio', url: out.url, model: 'RVC v2 voice model',
@@ -2860,7 +2866,13 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
     if (typeof b.script === 'string') p.script = b.script;
     if (typeof b.sourceText === 'string') p.sourceText = b.sourceText.slice(0, 8000);
     await p.save();
-    if (typeof b.title === 'string') await KadeAsset.updateMany({ user: req.user.id, 'metadata.projectId': String(p._id) }, { $set: { 'metadata.title': p.title, description: p.title } });
+    if (typeof b.title === 'string') {
+      const inProject = { user: req.user.id, 'metadata.projectId': String(p._id) };
+      await KadeAsset.updateMany({ ...inProject, 'metadata.voiceOf': { $exists: false } }, { $set: { 'metadata.title': p.title, description: p.title } });
+      /* Sep 29 2026: a version in her voice keeps "(in my voice)"; a rename used to give it the same name as its take. */
+      const voiced = voiceVersionTitle(p.title);
+      await KadeAsset.updateMany({ ...inProject, 'metadata.voiceOf': { $exists: true } }, { $set: { 'metadata.title': voiced, description: voiced } });
+    }
     return res.json({ project: projectView(p, priceFactor(req.user)) });
   } catch (error) {
     logger.error('[soundbooth/project patch] failed:', error);

@@ -277,8 +277,12 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
         : undefined;
   /* Sing it in my voice (music/myVoice.ts): "On" asks for a version of every take in the owner's voice. Only set when chosen,
    * so every other request is exactly as before; the booth's owner check clears it for an account with no voice model, and
-   * it never reaches the music worker (createYueRouter's submit leaves it out). */
-  const myVoice = body.my_voice === true || String(body.my_voice ?? '').trim().toLowerCase() === 'on';
+   * it never reaches the music worker (createYueRouter's submit leaves it out).
+   * Sep 29 2026: an instrumental has no singer to sing again, so it is cleared there too; it used to queue a paid voice
+   * version of every instrumental take. */
+  const myVoice =
+    !instrumental &&
+    (body.my_voice === true || String(body.my_voice ?? '').trim().toLowerCase() === 'on');
   return {
     style: trained ? `${trained.lead} ${body.script.trim()}`.slice(0, 3000) : body.script.trim(),
     title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
