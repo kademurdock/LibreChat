@@ -3803,7 +3803,7 @@ const worldHtml = `<!doctype html><html lang="en"><head><title>Reverie</title>${
 </main>
 <footer class="muted">Make yourself at home. &middot; <a href="/help/world">how Reverie works</a></footer>
 <script src="/assets/reverie/exploration.js?v=296"></script>
-<script src="/assets/reverie/guide.js?v=299"></script>
+<script src="/assets/reverie/guide.js?v=303"></script>
 <script src="/assets/reverie/audio.js?v=299"></script>
 <script src="/assets/reverie/room.js?v=296"></script>
 <script type="module" src="/assets/reverie/stage.mjs?v=299"></script>

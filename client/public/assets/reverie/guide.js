@@ -20,13 +20,38 @@
     in: 'in',
     out: 'out',
   };
+  var walkButton = function () {
+    return document.querySelector('[data-guide-command="walk route"]');
+  };
+  /* Sep 29 2026: the step button used to vanish on arrival while it held focus,
+   * dropping a screen reader to the top of the page. As in Part 180, a focused
+   * button stays, marked done, until focus moves on. */
+  function showWalk(show) {
+    var button = walkButton();
+    if (show) {
+      button.hidden = false;
+      delete button.dataset.done;
+      button.removeAttribute('aria-disabled');
+      button.removeAttribute('aria-label');
+    } else if (button === document.activeElement) {
+      button.dataset.done = '1';
+      button.setAttribute('aria-disabled', 'true');
+      button.setAttribute('aria-label', button.textContent + ', done. You have arrived.');
+    } else {
+      button.hidden = true;
+    }
+  }
   function renderPath(guide) {
+    var panel = $('routePanel');
+    /* closing the card never leaves focus on something hidden */
+    if (!guide && !panel.hidden && panel.contains(document.activeElement))
+      $('guideOpen').focus({ preventScroll: true });
     path = guide;
-    $('routePanel').hidden = !guide;
+    panel.hidden = !guide;
     if (!guide) return;
     $('routeTitle').textContent = guide.title;
     $('routeSummary').textContent = guide.summary;
-    document.querySelector('[data-guide-command="walk route"]').hidden = false;
+    showWalk(true);
     var list = $('routeStops');
     list.replaceChildren();
     guide.stops.forEach(function (stop, index) {
@@ -43,8 +68,14 @@
       api = callbacks;
       document.querySelectorAll('[data-guide-command]').forEach(function (button) {
         button.onclick = function () {
+          if (button.dataset.done) return;
           api.send(button.dataset.guideCommand, room && room.roomId);
         };
+      });
+      walkButton().addEventListener('blur', function () {
+        var button = walkButton();
+        /* a window losing focus keeps the button focused; wait for a real move */
+        if (button.dataset.done && button !== document.activeElement) button.hidden = true;
       });
       $('closeRoute').onclick = function () {
         renderPath(null);
@@ -57,7 +88,9 @@
       var index = path.stops.findIndex(function (stop) {
         return stop.id === room.roomId;
       });
-      if (index < 0) {
+      /* the server puts a route away on arrival, so an arrived card only
+       * lasts while you stay at the destination */
+      if (index < 0 || (path.arrived && index !== path.stops.length - 1)) {
         renderPath(null);
         return;
       }
@@ -68,7 +101,8 @@
       });
       var remaining = path.stops.length - 1 - index;
       var nextStop = path.stops[index + 1];
-      document.querySelector('[data-guide-command="walk route"]').hidden = !remaining;
+      if (!remaining) path.arrived = true;
+      showWalk(remaining > 0);
       $('routeSummary').textContent = remaining
         ? remaining +
           (remaining === 1 ? ' step remains. Next: ' : ' steps remain. Next: ') +
@@ -94,8 +128,11 @@
               ' of ' +
               progress.total +
               ' stops. Take the free trail at your own pace.';
-        $('savedRoute').hidden = !progress.destination;
-        if (!progress.destination) renderPath(null);
+        var saved = $('savedRoute');
+        if (!progress.destination && saved === document.activeElement)
+          $('guideOpen').focus({ preventScroll: true });
+        saved.hidden = !progress.destination;
+        if (!progress.destination && !(path && path.arrived)) renderPath(null);
       }
       if (result.guide) renderPath(result.guide);
     },

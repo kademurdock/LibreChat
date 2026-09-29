@@ -11,6 +11,8 @@ export interface GuideProjectState {
   variant: string;
   finished?: boolean;
   finish?: number;
+  /** Set by the store once the kept piece has been handed over. */
+  delivered?: boolean;
 }
 
 export interface GuideState {
@@ -42,6 +44,7 @@ export interface GuideStore {
   state(): Promise<GuideState>;
   destination(id: string): Promise<boolean>;
   project(id: string, before: number, after: GuideProjectState): Promise<boolean>;
+  /** Creates the kept piece at most once, then marks the project delivered. */
   deliver(id: string, title: string, description: string): Promise<void>;
   announce(line: string, sound: string): Promise<void>;
   walk(direction: string): Promise<GuideResult>;
@@ -590,7 +593,10 @@ export async function runReverieGuide(
       );
     const before = state.projects?.[id] || { stage: 0, variant: '0' };
     if (before.finished) {
-      await store.deliver(id, project.title(before.variant), projectDescription(project, before));
+      /* Sep 29 2026: a revisit only repairs a hand-over that never happened. It used
+       * to make the piece again after it was pawned or lost, a free item each time. */
+      if (!before.delivered)
+        await store.deliver(id, project.title(before.variant), projectDescription(project, before));
       return success(
         [
           `You finished ${project.title(before.variant)}. Your notebook keeps the record; check your inventory, or wherever you left the piece.`,
