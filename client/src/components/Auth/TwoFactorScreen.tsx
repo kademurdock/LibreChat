@@ -36,7 +36,8 @@ const TwoFactorScreen: React.FC = React.memo(() => {
   const { mutate: verifyTempMutate } = useVerifyTwoFactorTempMutation({
     onSuccess: (result) => {
       if (result.token != null && result.token !== '') {
-        window.location.href = getPostLoginRedirect(new URLSearchParams(window.location.search)) || '/home';
+        window.location.href =
+          getPostLoginRedirect(new URLSearchParams(window.location.search)) || '/home';
       }
     },
     onMutate: () => {

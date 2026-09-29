@@ -231,7 +231,15 @@ export {
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';
-export { songIdeaSparks, songIdeaSystem, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf } from './music/idea';
+export {
+  songIdeaSparks,
+  songIdeaSystem,
+  songIdeaSystemFor,
+  songIdeaRequest,
+  songIdeaTitle,
+  cleanSongIdea,
+  tooCloseToShelf,
+} from './music/idea';
 
 export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 
@@ -250,7 +258,16 @@ export {
 } from './library/requestTransport';
 export { libraryRequestsDescription, libraryRequestsSchema } from './tools/registry/requests';
 export { librarianGuide } from './library/guide';
-export { CONSULTATION_MAX_TURNS, consultationDescription, consultationInstructions, consultationToolsFor, isLibraryConsultant, libraryConsultation, wantsLibraryConsultation, withoutPerformance } from './library/consultation';
+export {
+  CONSULTATION_MAX_TURNS,
+  consultationDescription,
+  consultationInstructions,
+  consultationToolsFor,
+  isLibraryConsultant,
+  libraryConsultation,
+  wantsLibraryConsultation,
+  withoutPerformance,
+} from './library/consultation';
 export { readingText, readingJacket, readingPassages, printDisabilityNotice } from './library/text';
 export {
   familyLibraryMember,

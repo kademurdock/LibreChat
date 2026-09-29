@@ -206,14 +206,14 @@ const Registration: React.FC = () => {
                   type="text"
                   autoComplete="off"
                   inputMode="numeric"
-                  aria-label="Signup code"
-                  {...register('passcode', { required: 'Signup code is required — ask Kade for it' })}
+                  aria-label={localize('com_auth_signup_code')}
+                  {...register('passcode', { required: localize('com_auth_signup_code_required') })}
                   aria-invalid={!!errors.passcode}
                   className={authInputClassName}
                   placeholder=" "
                 />
                 <label htmlFor="passcode" className={authLabelClassName}>
-                  Signup code (Kade gives you this)
+                  {localize('com_auth_signup_code_label')}
                 </label>
               </div>
               {errors.passcode && (
@@ -229,13 +229,13 @@ const Registration: React.FC = () => {
                   id="phoneNumber"
                   type="tel"
                   autoComplete="tel"
-                  aria-label="Phone number (optional)"
+                  aria-label={localize('com_auth_phone_optional')}
                   {...register('phoneNumber')}
                   className={authInputClassName}
                   placeholder=" "
                 />
                 <label htmlFor="phoneNumber" className={authLabelClassName}>
-                  Phone number (optional — so the AI knows you when you call in)
+                  {localize('com_auth_phone_optional_label')}
                 </label>
               </div>
             </div>

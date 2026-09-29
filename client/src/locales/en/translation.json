@@ -2034,5 +2034,10 @@
   "com_ui_voice_portraits": "Animated voice portraits",
   "com_ui_voice_portrait_pause": "Pause voice message",
   "com_ui_voice_portrait_resume": "Resume voice message",
-  "com_ui_voice_portrait_play_error": "Playback could not resume. Try Resume again."
+  "com_ui_voice_portrait_play_error": "Playback could not resume. Try Resume again.",
+  "com_auth_signup_code": "Signup code",
+  "com_auth_signup_code_required": "Signup code is required — ask Kade for it",
+  "com_auth_signup_code_label": "Signup code (Kade gives you this)",
+  "com_auth_phone_optional": "Phone number (optional)",
+  "com_auth_phone_optional_label": "Phone number (optional — so the AI knows you when you call in)"
 }

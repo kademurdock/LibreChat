@@ -27,7 +27,12 @@ import {
   useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect, persistRedirectToSession } from '~/utils/redirect';
+import {
+  SESSION_KEY,
+  isSafeRedirect,
+  getPostLoginRedirect,
+  persistRedirectToSession,
+} from '~/utils/redirect';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -243,6 +248,7 @@ const AuthContextProvider = ({
     if (token == null || !token || !isAuthenticated) {
       silentRefresh();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- useTimeout returns a new function each render; depending on it repeatedly refreshes authentication.
   }, [
     token,
     isAuthenticated,
@@ -289,6 +295,7 @@ const AuthContextProvider = ({
       isAuthenticated,
     }),
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Mutation wrappers change identity each render; context consumers should update when auth state changes.
     [
       user,
       error,

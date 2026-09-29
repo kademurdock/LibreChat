@@ -158,7 +158,8 @@ export default defineConfig(({ command }) => ({
       manifest: {
         name: 'Kademurdock-AI',
         short_name: 'Kade-AI',
-        description: 'Your library, conversations, and creative tools, with accessibility at the center.',
+        description:
+          'Your library, conversations, and creative tools, with accessibility at the center.',
         start_url: '/home',
         display: 'standalone',
         background_color: '#0b0612',

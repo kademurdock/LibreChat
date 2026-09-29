@@ -10,7 +10,13 @@ import {
 } from '~/components/Auth';
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
-import { AgentBuilderPage, BookmarksPage, MemoriesPage, FilesPage, SettingsPage } from '~/components/Kade/KadePages';
+import {
+  AgentBuilderPage,
+  BookmarksPage,
+  MemoriesPage,
+  FilesPage,
+  SettingsPage,
+} from '~/components/Kade/KadePages';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import WithRum from '~/lib/rum/WithRum';
