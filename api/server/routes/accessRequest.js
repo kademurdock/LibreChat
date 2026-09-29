@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
       logger.warn('[access-request] doorbell push failed (request saved fine):', e.message);
     }
     logger.info(`[access-request] new request from "${name}" (${doc._id})`);
-    res.json({ ok: true, message: 'Request sent. If Kade knows you, expect to hear back soon — she gets it on her phone.' });
+    res.json({ ok: true, message: 'Request sent. Kade will review it and use the contact information you provided to get back to you.' });
   } catch (error) {
     logger.error('[access-request] failed', error);
     res.status(500).json({ error: 'The doorbell jammed — try again in a minute.' });
