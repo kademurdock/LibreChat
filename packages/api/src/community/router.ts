@@ -222,12 +222,10 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
         return;
       }
       const bounds = media ? trackBounds(media.track) : { begin: 0, end: null };
-      let position =
-        input.action === 'load'
-          ? bounds.begin
-          : media
-            ? playbackPosition(old!, now, media.track)
-            : 0;
+      let position = bounds.begin;
+      if (input.action !== 'load') {
+        position = media ? playbackPosition(old!, now, media.track) : 0;
+      }
       if (input.action === 'seek') {
         if (
           typeof input.position !== 'number' ||
@@ -241,6 +239,10 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
         position = input.position;
       }
       const stopped = input.action === 'stop';
+      let playing = input.action === 'play';
+      if (input.action === 'seek') {
+        playing = old!.playing;
+      }
       const state: IClubhousePlayback = {
         _id: roomId,
         revision: input.revision! + 1,
@@ -253,12 +255,7 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
         track: trackIndex,
         key: stopped ? '' : media!.track.key,
         position,
-        playing:
-          input.action === 'play'
-            ? true
-            : ['load', 'pause', 'stop', 'take-control'].includes(input.action!)
-              ? false
-              : old!.playing,
+        playing,
         changedAt: now,
         expiresAt: new Date(now + 12 * 3600000),
       };

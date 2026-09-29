@@ -39,12 +39,8 @@ export interface CommunityDependencies {
 
 export function trackBounds(track: MediaTrack): { begin: number; end: number | null } {
   const begin = Math.max(0, track.clipBegin || 0);
-  const end =
-    track.clipEnd && track.clipEnd > begin
-      ? track.clipEnd
-      : track.seconds && track.seconds > begin
-        ? track.seconds
-        : null;
+  const durationEnd = track.seconds && track.seconds > begin ? track.seconds : null;
+  const end = track.clipEnd && track.clipEnd > begin ? track.clipEnd : durationEnd;
   return { begin, end };
 }
 

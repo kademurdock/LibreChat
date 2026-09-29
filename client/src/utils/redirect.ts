@@ -6,8 +6,14 @@ const LOGIN_PATH_RE = /(?:^|\/)login(?:\/|$)/;
 
 /** Validates that a redirect target is a safe relative path (not an absolute or protocol-relative URL) */
 export function isSafeRedirect(url: string): boolean {
-  if (!url.startsWith('/') || url.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(url)) {
+  if (!url.startsWith('/') || url.startsWith('//') || url.includes('\\')) {
     return false;
+  }
+  for (const character of url) {
+    const code = character.charCodeAt(0);
+    if (code < 32 || code === 127) {
+      return false;
+    }
   }
   const path = url.split('?')[0].split('#')[0];
   return !LOGIN_PATH_RE.test(path);
