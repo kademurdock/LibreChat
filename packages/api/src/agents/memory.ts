@@ -36,6 +36,7 @@ import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
 import { existingMemoryScope } from './memoryScope';
+import { normalizeMemoryKey } from './memoryKey';
 import type { MemoryBucket } from './memoryScope';
 
 type RequiredMemoryMethods = Pick<
@@ -274,7 +275,8 @@ export const createMemoryTool = ({
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
 
   return tool(
-    async ({ key, value, scope, remind_at, remind_repeat, stale_after, subject }) => {
+    async ({ key: rawKey, value, scope, remind_at, remind_repeat, stale_after, subject }) => {
+      const key = normalizeMemoryKey(rawKey);
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -435,7 +437,7 @@ export const createMemoryTool = ({
           .describe(
             validKeys && validKeys.length > 0
               ? `The key of the memory value. Must be one of: ${validKeys.join(', ')}`
-              : 'Short snake_case topic name for this memory card (e.g. "dad_health", "concert_crew"). Reuse an existing key to update that card.',
+              : 'Short snake_case topic name for this memory card (e.g. "dad_health", "concert_crew"): lowercase letters and underscores only, numbers written as words. Reuse an existing key to update that card.',
           ),
         value: z
           .string()
@@ -495,7 +497,8 @@ export const createDeleteMemoryTool = ({
   existingBuckets?: MemoryBucket[];
 }): DynamicStructuredTool => {
   return tool(
-    async ({ key, scope }) => {
+    async ({ key: rawKey, scope }) => {
+      const key = normalizeMemoryKey(rawKey);
       try {
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
@@ -1008,7 +1011,7 @@ export async function createMemoryProcessor({
       logger.warn('[MemoryAgent] canon read failed (continuing without it)', error);
     }
     finalInstructions +=
-      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE, WHICH IS REAL AND NOT A CHILDHOOD: when the CHARACTER (not the user) states something TRUE of itself — a thing that actually happened to it on this platform ("a render of mine sat 98 minutes"), a standing position in its own voice ("I don\'t buy the alpha-dog stuff"), a taste or habit it claims — file it with scope "self" under a snake_case key naming it (render_hung_98_minutes, position_alpha_dog), one card per fact, one plain sentence, absolute dates. Invented childhood scenes (an aunt, a first car, a concert at twelve) are NOT canon — let them pass; a written background is not a memory. Once filed it is shown to the character in every conversation with anyone, so public positions and actual platform history stay consistent. The canon block above lists what already exists — if the claim is already there, file nothing; if the character merely contradicted a prior statement, file nothing. If it explicitly revised a general position because of new evidence and explained the change, update the SAME key, keeping the prior position and reason for revision briefly. Never file anything about the USER with scope "self"; never file private opinions about a user or their family, private feelings or promises there (promises have their own rule). General positions, tastes and verified platform events belong here; relationship-specific views stay in the private take. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
+      '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE, WHICH IS REAL AND NOT A CHILDHOOD: when the CHARACTER (not the user) states something TRUE of itself — a thing that actually happened to it on this platform ("a render of mine sat 98 minutes"), a standing position in its own voice ("I don\'t buy the alpha-dog stuff"), a taste or habit it claims — file it with scope "self" under a snake_case key naming it, letters and underscores only (render_hung_ninety_eight_minutes, position_alpha_dog), one card per fact, one plain sentence, absolute dates. Invented childhood scenes (an aunt, a first car, a concert at twelve) are NOT canon — let them pass; a written background is not a memory. Once filed it is shown to the character in every conversation with anyone, so public positions and actual platform history stay consistent. The canon block above lists what already exists — if the claim is already there, file nothing; if the character merely contradicted a prior statement, file nothing. If it explicitly revised a general position because of new evidence and explained the change, update the SAME key, keeping the prior position and reason for revision briefly. Never file anything about the USER with scope "self"; never file private opinions about a user or their family, private feelings or promises there (promises have their own rule). General positions, tastes and verified platform events belong here; relationship-specific views stay in the private take. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
   }
 
   return [
