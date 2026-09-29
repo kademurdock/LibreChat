@@ -1445,10 +1445,16 @@ function freshFirst(rooms) {
   });
 }
 
+/* Only people count as players. Strays (`stray:`) and players' children
+ * (`kid:`) are characters the city runs, like citizens (`npc:`). They used to
+ * count, and the director stamps whoever it moves as active, so a room with a
+ * stray and a citizen kept itself "occupied" and was directed with nobody in
+ * it (open since Part 296; fixed Sep 29 2026). */
+const NOT_A_PERSON = /^(npc|stray|kid):/;
 async function activePlayerRooms() {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000);
   const players = await MooChar.find({
-    userId: { $not: /^npc:/ }, lastActiveAt: { $gte: cutoff },
+    userId: { $not: NOT_A_PERSON }, lastActiveAt: { $gte: cutoff },
   }).select('roomId').lean();
   return [...new Set(players.map((p) => p.roomId))];
 }
