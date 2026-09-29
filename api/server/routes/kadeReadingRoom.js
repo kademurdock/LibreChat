@@ -2804,4 +2804,6 @@ const { readingRoomHtml } = require('./kadeReadingRoomPage');
 router.page = (_req, res) => res.type('html').send(readingRoomHtml);
 
 module.exports = router;
-module.exports._internals = { summary, chunkAt, openBook, refreshListen, libraryFiles, isChild, signGet };
+/* Sep 29 2026: the Family history reads its stories aloud in this same voice, direction and proxy. */
+const readingVoice = () => ({ proxy: PROXY_BASE(), voice: DEFAULT_VOICE(), steer: STEER() });
+module.exports._internals = { summary, chunkAt, openBook, refreshListen, libraryFiles, isChild, signGet, readingVoice };

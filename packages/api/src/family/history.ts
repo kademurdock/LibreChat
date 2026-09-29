@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { Router, json } from 'express';
 import type { Request, RequestHandler, Response } from 'express';
@@ -27,10 +28,35 @@ import {
   familyTreeExtras,
 } from './pages';
 import type { FamilySignCacheEntry } from './present';
-import { familyFileMime, familyPersonCards, familyPresenter, familySigner } from './present';
+import {
+  familyFileMime,
+  familyImage,
+  familyPersonCards,
+  familyPresenter,
+  familySigner,
+} from './present';
 import { familyDnaForAllowed, familyDnaPayload, familyDnaSelf } from './dna';
 import { familyPlacesPayload, familyTimelinePayload } from './timeline';
 import { familyPlayPayload } from './play';
+import type { FamilyNote } from './inbox';
+import {
+  FAMILY_NOTES_PER_DAY,
+  FAMILY_NOTE_KIND_TEXT,
+  familyNoteId,
+  familyNoteIdValid,
+  familyNoteKey,
+  familyNoteRequest,
+} from './inbox';
+import type { FamilyListener } from './listen';
+import { familyListener } from './listen';
+import type { FamilyStoryPart } from './story';
+import {
+  familyCues,
+  familySourceLookup,
+  familyStoryBlocks,
+  familyStoryHash,
+  familyStoryParts,
+} from './story';
 
 /* ----------------------------------------------------------------------------
  * FAMILY HISTORY (Sep 29 2026, docs/FAMILY_HISTORY.md is the contract)
@@ -592,6 +618,17 @@ export interface FamilyHistoryDependencies {
   /** Defaults to KADE_FAMILY_HISTORY_PREFIX or 'family-history'. */
   prefix?: string;
   log?: (message: string) => void;
+  /** Writes one object to the private bucket: notes to the owner, and Listen audio. */
+  putObject?: (key: string, body: Buffer, mime: string) => Promise<void>;
+  /** Every key under a prefix (the owner's notes). */
+  listKeys?: (prefix: string) => Promise<string[]>;
+  /** Voices a story part in the Library's voice (Listen); without it, Listen is off. */
+  speak?: (
+    text: string,
+    options: { session: string; userId: string },
+  ) => Promise<{ audio: Buffer; mime: string }>;
+  /** Names the voice and its direction: the audio cache covers it, so a new voice means new audio. */
+  voiceTag?: () => string;
 }
 
 export const FAMILY_HISTORY_PRIVATE: string = 'The family history is private to the family.';
@@ -1514,6 +1551,23 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const now = deps.now || Date.now;
   const signCache = new Map<string, FamilySignCacheEntry>();
   const lenses = new WeakMap<FamilyView, Map<string, FamilyLens>>();
+  const putObject = deps.putObject;
+  const listener: FamilyListener | null =
+    deps.speak && putObject
+      ? familyListener({
+          speak: deps.speak,
+          voiceTag: deps.voiceTag || (() => 'default'),
+          putObject,
+          loadObject: deps.loadObject,
+          now,
+        })
+      : null;
+  /** A story's Listen parts, worked out once per version. */
+  const storyParts = new Map<string, { hash: string; parts: FamilyStoryPart[] }>();
+  /** Notes read from the bucket, by key (a note changes only through this router). */
+  const notesCache = new Map<string, FamilyNote>();
+  /** Notes sent per account per day, "<account> <YYYY-MM-DD>". */
+  const sentToday = new Map<string, number>();
   const fail = (res: Response, error: Error): void => {
     deps.log?.(error.message);
     if (!res.headersSent) res.status(503).json({ error: FAMILY_HISTORY_UPDATING });
@@ -1589,7 +1643,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       version: ctx.state.version,
       dnaFindings: familyDnaFindingsSetting(),
       placesReady: !!ctx.bundle.places?.places?.length,
-      listenReady: false,
+      listenReady: !!listener,
       readable: (story) => !!familyStory(ctx.bundle, story.slug),
     };
   };
@@ -1598,6 +1652,62 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const send = async (res: Response, page: FamilyPageContext, body: unknown): Promise<void> => {
     await page.pc.signer.fill();
     res.json(body);
+  };
+
+  /** Every note in the owner's inbox, newest first. */
+  const loadNotes = async (): Promise<FamilyNote[]> => {
+    if (!deps.listKeys) return [];
+    const keys = (await deps.listKeys(`${prefix}/inbox/`)).filter((key) => {
+      const name = key.slice(key.lastIndexOf('/') + 1);
+      return name.endsWith('.json') && familyNoteIdValid(name.slice(0, -5));
+    });
+    const notes = await Promise.all(
+      keys.map(async (key) => {
+        const cached = notesCache.get(key);
+        if (cached) return cached;
+        const raw = await deps.loadObject(key);
+        if (!raw) return null;
+        try {
+          const note = JSON.parse(unpacked(raw).toString('utf8')) as FamilyNote;
+          if (!note || typeof note.id !== 'string' || typeof note.at !== 'string') return null;
+          notesCache.set(key, note);
+          return note;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return notes
+      .filter((note): note is FamilyNote => !!note)
+      .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+  };
+
+  /** A story this viewer may read, with its Listen parts (worked out once per version). */
+  const storyFor = async (
+    ctx: FamilyContext,
+    slug: string,
+  ): Promise<{ story: FamilyStory; hash: string; parts: FamilyStoryPart[] } | null> => {
+    const found = familyStory(ctx.bundle, slug);
+    const story = found && (found.sensitive !== true || mysteries(ctx)) ? found : null;
+    if (!story) return null;
+    const key = `${ctx.state.version} ${story.slug}`;
+    let known = storyParts.get(key);
+    if (!known) {
+      const text = await deps.loadObject(`${prefix}/${ctx.state.version}/${story.file}`);
+      if (!text) return null;
+      const markdown = familyStoryMarkdown(unpacked(text).toString('utf8'));
+      const { blocks } = familyStoryBlocks(
+        markdown,
+        familySourceLookup(ctx.bundle.records, ctx.bundle.memorials),
+      );
+      known = { hash: familyStoryHash(markdown), parts: familyStoryParts(blocks) };
+      storyParts.set(key, known);
+      if (storyParts.size > 64) {
+        const oldest = storyParts.keys().next().value;
+        if (oldest !== undefined) storyParts.delete(oldest);
+      }
+    }
+    return { story, ...known };
   };
 
   const family =
@@ -1726,7 +1836,8 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
             !!user.kadeFamilyHistoryAskedAt &&
             !familyHistoryViewer(user, ctx.bundle),
         ).length;
-        ownerExtra = { notes: 0, asks };
+        const notes = (await loadNotes()).filter((note) => !note.done).length;
+        ownerExtra = { notes, asks };
       }
       const since = queryText(req.query.since).slice(0, 64) || null;
       await send(res, page, familyHomePayload(page, since, ownerExtra));
@@ -1892,6 +2003,217 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       }
       const page = await pageOf(ctx);
       await send(res, page, { ...payload, ...familyStoryV2(page, story, payload.markdown) });
+    }),
+  );
+
+  /* Listen: the caption track for the whole story, then one part's audio at a time. */
+  router.get(
+    '/story/:slug/listen',
+    family(async (req, res, ctx) => {
+      const found = await storyFor(ctx, String(req.params.slug || ''));
+      if (!found) {
+        res.status(404).json({ error: 'That story was not found.' });
+        return;
+      }
+      const { story, hash, parts } = found;
+      res.json({
+        slug: story.slug,
+        title: story.title || story.slug,
+        listen: !!listener,
+        count: parts.length,
+        parts: parts.map((part) => ({
+          i: part.i,
+          text: part.text,
+          cues: part.cues,
+          audio: `/story/${encodeURIComponent(story.slug)}/audio/${part.i}`,
+          ready: !!listener && listener.known(prefix, hash, part.text),
+        })),
+      });
+    }),
+  );
+
+  router.get(
+    '/story/:slug/audio/:i',
+    family(async (req, res, ctx) => {
+      if (!listener) {
+        res.status(503).json({ error: 'Listening is not set up yet.' });
+        return;
+      }
+      const found = await storyFor(ctx, String(req.params.slug || ''));
+      if (!found) {
+        res.status(404).json({ error: 'That story was not found.' });
+        return;
+      }
+      const { story, hash, parts } = found;
+      const i = familyInt(req.params.i, -1, -1, 1e6);
+      const part = parts[i];
+      if (!part) {
+        res.status(404).json({ error: 'Past the end of the story.' });
+        return;
+      }
+      const userId = accountIdOf(ctx.user);
+      let note: Awaited<ReturnType<FamilyListener['ensure']>>;
+      try {
+        note = await listener.ensure(prefix, hash, part.text, userId);
+      } catch (error) {
+        deps.log?.(`listen ${story.slug} part ${i}: ${(error as Error).message}`);
+        res.status(502).json({ error: 'The voice did not answer. Try that part again.' });
+        return;
+      }
+      const url = await deps.signGet(note.key, note.mime, FAMILY_HISTORY_MEDIA_SECONDS);
+      if (queryText(req.query.redirect) === '1') res.redirect(302, url);
+      else
+        res.json({
+          slug: story.slug,
+          i,
+          count: parts.length,
+          text: part.text,
+          mime: note.mime,
+          duration: note.duration,
+          url,
+          expires: expires(),
+          cues: familyCues(part.text, note.duration),
+          next: i + 1 < parts.length ? i + 1 : null,
+        });
+      /* one part ahead, so the next one is ready when this one ends */
+      const ahead = parts[i + 1];
+      if (ahead && !listener.known(prefix, hash, ahead.text))
+        listener.ensure(prefix, hash, ahead.text, userId).catch((error: Error) => {
+          deps.log?.(`listen ${story.slug} part ${i + 1} ahead: ${error.message}`);
+        });
+    }),
+  );
+
+  /* Notes to the owner: a memory, who is in a picture, or a photo to restore. */
+  router.post(
+    '/note',
+    json({ limit: '16kb' }),
+    family(async (req, res, ctx) => {
+      if (!putObject) {
+        res.status(503).json({ error: 'Notes cannot be sent yet.' });
+        return;
+      }
+      const asked = familyNoteRequest(
+        req.body,
+        ctx.bundle,
+        familyModel(ctx.bundle),
+        ctx.audience,
+        (id) => familyPersonId(ctx.bundle, id),
+      );
+      if ('error' in asked) {
+        res.status(400).json({ error: asked.error });
+        return;
+      }
+      const userId = accountIdOf(ctx.user);
+      const at = now();
+      const day = new Date(at).toISOString().slice(0, 10);
+      const counted = `${userId} ${day}`;
+      const sent = sentToday.get(counted) || 0;
+      if (sent >= FAMILY_NOTES_PER_DAY) {
+        res.status(429).json({
+          error: `That is ${FAMILY_NOTES_PER_DAY} notes today. Send more tomorrow.`,
+        });
+        return;
+      }
+      const id = familyNoteId(at, randomBytes(4).toString('hex'));
+      const note: FamilyNote = {
+        id,
+        at: new Date(at).toISOString(),
+        from: {
+          userId,
+          name:
+            String(ctx.user.name || '').trim() ||
+            String(ctx.user.username || '').trim() ||
+            'Someone',
+          personId: ctx.viewer.mode === 'guest' ? null : ctx.viewer.personId,
+          mode: ctx.viewer.mode,
+        },
+        kind: asked.kind,
+        about: asked.about,
+        text: asked.text,
+        done: false,
+        doneAt: null,
+      };
+      const key = familyNoteKey(prefix, id);
+      await putObject(key, Buffer.from(JSON.stringify(note)), 'application/json');
+      notesCache.set(key, note);
+      for (const old of sentToday.keys()) if (!old.endsWith(day)) sentToday.delete(old);
+      sentToday.set(counted, sent + 1);
+      deps.log?.(`note ${asked.kind} from ${userId}`);
+      const ownerFirst = familyFirstName(own(ctx.bundle.people, ctx.bundle.owner)?.name);
+      res.json({
+        ok: true,
+        id,
+        text:
+          asked.kind === 'restore-request'
+            ? `Asked. ${ownerFirst} will see your request.`
+            : `Sent to ${ownerFirst}. Thank you.`,
+      });
+    }),
+  );
+
+  router.get(
+    '/notes',
+    family(async (_req, res, ctx) => {
+      if (!familyHistoryOwnerAccount(ctx.user, familyOwnerUserId())) {
+        res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
+        return;
+      }
+      const page = await pageOf(ctx);
+      const rows = (await loadNotes()).slice(0, 200).map((note) => {
+        const about = note.about || null;
+        const person = about?.personId
+          ? familyPersonCards(page.pc, [about.personId])[0] || null
+          : null;
+        const image = about?.mediaId ? familyImage(page.pc, about.mediaId) : null;
+        return {
+          id: note.id,
+          at: note.at,
+          from: { userId: note.from?.userId || '', name: note.from?.name || 'Someone' },
+          kind: note.kind,
+          kindText: own(FAMILY_NOTE_KIND_TEXT, note.kind) || 'A note',
+          about: person ? { person } : image ? { image } : null,
+          text: note.text,
+          done: !!note.done,
+          doneAt: note.doneAt || null,
+        };
+      });
+      await send(res, page, rows);
+    }),
+  );
+
+  router.post(
+    '/notes/:id/done',
+    json({ limit: '1kb' }),
+    family(async (req, res, ctx) => {
+      if (!familyHistoryOwnerAccount(ctx.user, familyOwnerUserId())) {
+        res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
+        return;
+      }
+      const id = String(req.params.id || '');
+      if (!familyNoteIdValid(id) || !putObject) {
+        res.status(404).json({ error: 'That note was not found.' });
+        return;
+      }
+      const key = familyNoteKey(prefix, id);
+      let note = notesCache.get(key) || null;
+      if (!note) {
+        const raw = await deps.loadObject(key);
+        note = raw ? (JSON.parse(unpacked(raw).toString('utf8')) as FamilyNote) : null;
+      }
+      if (!note) {
+        res.status(404).json({ error: 'That note was not found.' });
+        return;
+      }
+      const done = (req.body || {}).done !== false;
+      const changed: FamilyNote = {
+        ...note,
+        done,
+        doneAt: done ? new Date(now()).toISOString() : null,
+      };
+      await putObject(key, Buffer.from(JSON.stringify(changed)), 'application/json');
+      notesCache.set(key, changed);
+      res.json({ ok: true, id, done });
     }),
   );
 
