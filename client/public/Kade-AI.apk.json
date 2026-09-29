@@ -1,7 +1,7 @@
 {
-  "versionCode": 120,
-  "versionName": "2.16.0",
-  "notes": "Public beta: five tabs; native Library playback, bookmarks, Describe, Transcribe, prompts, galleries, alerts and announcements; Spotter camera. Some tools still use the website.",
+  "versionCode": 121,
+  "versionName": "2.16.1",
+  "notes": "Public beta 2.16.1: every Library shelf and search shows its first page; your listening place is saved on every pause and at the end, with your speed; an expired sign-in renews instead of signing you out; Spotter notice fix.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "bae61e14faa435753b41ac7c0115764c80a81df605934e2ec76cb0eb7a7fe70d"
+  "sha256": "053b82517f8e784b918bc015b667fe7e2b7b9e875107a45ba9d29adf76534248"
 }
