@@ -127,6 +127,34 @@ const check = (value, label) => {
       !r.guide && r.choices.length >= 2 && (await current()).roomId === origin,
       'ambiguous place names require a choice and never move the player',
     );
+    await run('go to foundry_court');
+    await run('route canal_towpath');
+    r = await run('walk route');
+    check(
+      r.ok &&
+        (await current()).roomId === 'canal_towpath' &&
+        r.lines.some((line) => line.startsWith('You have reached')) &&
+        !(await current()).attrs.life.guide.destination &&
+        !r.hud.guide.destination &&
+        !r.actions?.some((action) => action.cmd === 'route'),
+      'arriving by the route puts the saved route away',
+    );
+    r = await run('route foundry_court');
+    check(
+      (await current()).attrs.life.guide.destination === 'foundry_court' &&
+        r.actions.some((action) => action.cmd === 'route'),
+      'a new route is saved, with its button, after arriving',
+    );
+    await run('go to foundry_court');
+    check(
+      !(await current()).attrs.life.guide.destination,
+      'walking to the destination without the route also puts it away',
+    );
+    r = await run('route foundry_court');
+    check(
+      r.ok && !(await current()).attrs.life.guide.destination,
+      'asking for a route to where you already stand saves nothing',
+    );
     check(guideMatches(rooms, 'constructor').length === 0, 'prototype names are not destinations');
     r = await run('project constructor');
     check(
@@ -181,13 +209,33 @@ const check = (value, label) => {
         (await MooItem.findOne({ itemId }).lean()).location.type === 'room',
         `${id}: revisiting cannot take back an item left in the world`,
       );
+      await MooItem.deleteOne({ itemId });
+      await MooChar.updateOne(
+        { userId: 'guide-a' },
+        { $unset: { [`attrs.life.guide.projects.${id}.delivered`]: '' } },
+      );
+      await run(`project ${id}`);
+      check(
+        (await MooItem.countDocuments({ itemId })) === 1 &&
+          (await current()).attrs.life.guide.projects[id].delivered === true,
+        `${id}: a revisit still hands over a piece that never arrived`,
+      );
+      await MooItem.deleteOne({ itemId });
+      r = await run(`project ${id}`);
+      check(
+        r.ok && (await MooItem.countDocuments({ itemId })) === 0,
+        `${id}: a piece that was pawned or lost is not made again for free`,
+      );
     }
+    /* the Canal Towpath note was read above; start the walk with a fresh pause */
+    await MooChar.updateOne({ userId: 'guide-a' }, { $unset: { 'attrs.life.authoredAt': '' } });
     for (const stop of CANAL_STOPS) {
       await run(`go to ${stop.id}`);
-      await MooChar.updateOne({ userId: 'guide-a' }, { $unset: { 'attrs.life.waterfrontAt': '' } });
       r = await run(stop.command);
-      check(r.ok, `trail activity runs at ${stop.id}`);
+      check(r.ok, `trail activity runs at ${stop.id}, right after the last stop`);
     }
+    r = await run(CANAL_STOPS.at(-1).command);
+    check(!r.ok, 'repeating the same stop right away still waits');
     r = await run('notebook');
     check(
       r.lines.some((line) => line.startsWith('Canal trail complete')) &&

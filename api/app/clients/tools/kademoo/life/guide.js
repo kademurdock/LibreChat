@@ -45,6 +45,11 @@ function storeFor(ctx) {
         },
         { upsert: true },
       );
+      /* Sep 29 2026: once handed over, a revisit never makes the piece again */
+      await MooChar.updateOne(
+        { _id: ctx.ch._id, [`attrs.life.guide.projects.${id}.finished`]: true },
+        { $set: { [`attrs.life.guide.projects.${id}.delivered`]: true } },
+      );
     },
     async announce(line, sound) {
       try {
@@ -116,6 +121,20 @@ for (const name of [
   });
 }
 
+/* Sep 29 2026: a saved route ends when you stand at its destination, by the
+ * route or on your own feet. It used to stay saved and later lead you back.
+ * Called once after every turn (life/index.js) with the fresh character. */
+async function arrive(ctx) {
+  const guide = ctx.life && ctx.life.guide;
+  const destination = guide && guide.destination;
+  if (!destination || !ctx.ch || destination !== ctx.ch.roomId) return;
+  await MooChar.updateOne(
+    { _id: ctx.ch._id, 'attrs.life.guide.destination': destination },
+    { $set: { 'attrs.life.guide.destination': '' } },
+  );
+  guide.destination = '';
+}
+
 function progress(life) {
   const state = life.guide || {};
   const completed = CANAL_STOPS.filter((stop) => state.notes?.[stop.id]).length;
@@ -128,4 +147,4 @@ function progress(life) {
   };
 }
 
-module.exports = { progress };
+module.exports = { progress, arrive };

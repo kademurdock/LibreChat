@@ -59,6 +59,10 @@ async function main() {
     check(JSON.stringify(ch.attrs.life.wants.list.map((e) => e.id)) === JSON.stringify(w0.list.map((e) => e.id)), 'the draw is stable within the day');
     await MooChar.updateOne({ userId: 'p296-a', active: true }, { $set: { 'attrs.life.wants.list': [{ id: 'movie', n: 0, need: 1, done: false }, { id: 'build_room', n: 0, need: 1, done: false }, { id: 'chat3', n: 0, need: 3, done: false }], 'attrs.coin': 500 } });
     await run('go to the_bijou');
+    r = await run('work');
+    ch = await MooChar.findOne({ userId: 'p296-a', active: true }).lean();
+    check(r.ok && r.kinds.includes('cer.bijou.projector') && !ch.attrs.life.wants.list.find((e) => e.id === 'movie').done, 'a shift in the Bijou booth does not count as seeing a picture');
+    await MooChar.updateOne({ userId: 'p296-a', active: true }, { $set: { 'attrs.coin': 500 } });
     r = await run('watch a movie');
     ch = await MooChar.findOne({ userId: 'p296-a', active: true }).lean();
     check(!ch.attrs.life.wants.list.find((e) => e.id === 'movie').done, 'reading the bill does not count as seeing a picture');

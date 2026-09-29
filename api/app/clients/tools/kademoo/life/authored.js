@@ -50,19 +50,19 @@ for (const action of world.actions) {
       const stop = CANAL_STOPS.find(
         (entry) => entry.id === action.roomId && entry.command === action.command,
       );
+      /* Sep 29 2026: the pause belongs to this place. One shared clock for every
+       * authored action refused the next canal stop, and its note, for 15 seconds. */
+      const at = `attrs.life.authoredAt.${action.roomId}`;
       const claimed = await MooChar.updateOne(
         {
           _id: ctx.ch._id,
           active: true,
           roomId: action.roomId,
-          $or: [
-            { 'attrs.life.waterfrontAt': { $exists: false } },
-            { 'attrs.life.waterfrontAt': { $lte: now - 15000 } },
-          ],
+          $or: [{ [at]: { $exists: false } }, { [at]: { $lte: now - 15000 } }],
         },
         {
           $set: {
-            'attrs.life.waterfrontAt': now,
+            [at]: now,
             ...(stop ? { [`attrs.life.guide.notes.${stop.id}`]: true } : {}),
           },
         },

@@ -170,6 +170,8 @@ async function runTurn({ ch, userId, command, isWizard, live, isChild = false, r
   // Older verbs and character switching write through their own document.
   const current = await MooChar.findOne({ userId: String(userId), active: true });
   if (current) { ctx.ch = current; ctx.life = lifeOf(current); ctx._room = null; }
+  /* a walking route is done once you stand at its end (Sep 29 2026) */
+  try { await require('./guide').arrive(ctx); } catch (e) { logger.error('[life] route arrival failed (non-fatal):', e && e.message); }
 
   /* AFTER-EFFECTS — needs and skills queued by the verb, or implied by kind. */
   try { await applyEffects(ctx, result); } catch (e) { logger.error('[life] effects failed:', e && e.message); }

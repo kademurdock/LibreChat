@@ -86,7 +86,8 @@ const WANTS = [
   W('darts', 'Throw darts at Dez’s', 25, verbIs('darts'), { go: 'dezs_bar', when: (s) => !s.isChild, asp: ['hustle', 'popularity'] }),
   W('cards', 'Play a hand of cards in the Game Parlor', 25, (ev) => ev.verb === 'play cards' && /\d/.test(ev.lower), { go: 'game_parlor', when: (s) => !s.isChild, asp: ['hustle'], trait: ['hustler'] }),
   W('sing', 'Sing where people can hear you', 30, verbIs('sing'), { go: 'dezs_bar', asp: ['popularity', 'craft'], trait: ['loud'] }),
-  W('movie', 'Catch a picture at the Bijou', 30, (ev) => ev.kinds.includes('cer.bijou.projector'), { go: 'the_bijou', asp: ['peace', 'popularity', 'family'] }),
+  /* Sep 29 2026: the booth shift plays the projector too (Part 298), so the verb decides */
+  W('movie', 'Catch a picture at the Bijou', 30, (ev) => ev.verb === 'watch a movie' && ev.kinds.includes('cer.bijou.projector'), { go: 'the_bijou', asp: ['peace', 'popularity', 'family'] }),
   W('pinball', 'Play pinball at the Starlite Arcade', 25, verbIs('play pinball'), { go: 'starlite_arcade', asp: ['hustle', 'popularity'], trait: ['restless'] }),
   W('claw', 'Win something from the claw machine', 35, (ev) => ev.verb === 'claw machine' && ev.kinds.includes('game.claw.win'), { go: 'starlite_arcade', trait: ['hustler', 'restless'] }),
   W('skee', 'Roll a game of skee-ball', 20, verbIs('skee ball'), { go: 'starlite_arcade' }),
