@@ -185,9 +185,11 @@ kadeBookSchema.index({ shared: 1, sharedAt: -1 });
 kadeBookSchema.index({ owner: 1, originalPath: 1 });
 kadeBookSchema.index({ shared: 1, path: 1, title: 1 });
 /* Part 270: the media librarian's rounds find new arrivals by createdAt and
- * spot an identical copy by title, on the database the family chat shares. */
+ * spot an identical copy by title, on the database the family chat shares.
+ * The title index comes from `index: true` on the field itself; declaring it
+ * here too made Mongoose warn "Duplicate schema index on {title:1}" at every
+ * boot (Sep 29 2026). Same single index either way. */
 kadeBookSchema.index({ createdAt: -1 });
-kadeBookSchema.index({ title: 1 });
 /* Sep 25 2026, the one-file rule: find stored files of one size, one hash, one key; shortcuts of a
  * keeper; new uploads waiting to be checked; folded copies past their 30 days. */
 kadeBookSchema.index({ 'tracks.bytes': 1 });
