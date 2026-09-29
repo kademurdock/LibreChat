@@ -116,7 +116,8 @@
       "wrongRecords": { "c1:r2": "This census lists a different Dan Example, twenty years older." },
       "memorials": ["5001"], "wrongMemorials": {}, "media": ["m-tree1", "m-rec1"],
       "notes": [], "history": ["Invented history line."], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
-      "ownerRelation": "grandfather", "ownerGroup": "direct ancestor"
+      "ownerRelation": "grandfather", "ownerGroup": "direct ancestor",
+      "portrait": "m-tree1", "withheld": 1
     },
     "@I301@": {
       "id": "@I301@", "name": "Eve Example", "label": "Eve Example (1932-2010)", "sex": "F", "birthSurname": "Oakley",
@@ -150,10 +151,15 @@
     "@I400@": {
       "id": "@I400@", "name": "Hugo Example", "label": "Hugo Example (1900-1970)", "sex": "M", "birthSurname": null,
       "lifespan": "1900-1970", "living": false, "virtual": false, "confidence": null,
-      "birth": {}, "death": {}, "burial": {}, "otherNames": [], "facts": [],
+      "birth": { "date": "12 May 1900", "place": "Invented Village, Finland" }, "death": {}, "burial": {}, "otherNames": [],
+      "facts": [
+        { "type": "BIRT", "label": "Birth", "date": "12 May 1900", "year": 1900, "place": "Invented Village, Finland", "value": null, "note": null, "records": [], "placeId": "p3" },
+        { "type": "IMMI", "label": "Arrival", "date": "1925", "year": 1925, "place": "Invented County", "value": null, "note": null, "records": [], "placeId": "p1" },
+        { "type": "CENS", "label": "Census", "date": "1940", "year": 1940, "place": "Invented County", "value": null, "note": null, "records": ["c1:r1"], "placeId": "p1" }
+      ],
       "parents": [{ "id": "@I500@", "kind": "birth" }],
       "spouses": [], "children": ["@I300@"],
-      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": [],
+      "records": [], "wrongRecords": {}, "memorials": [], "wrongMemorials": {}, "media": ["m-story1"],
       "notes": [], "history": [], "duplicateOf": null, "duplicateWhy": null, "conflict": null,
       "ownerRelation": "great-grandfather", "ownerGroup": "direct ancestor"
     },
@@ -208,7 +214,7 @@
     },
     "c2:r1": {
       "key": "c2:r1", "collection": "Invented Birth Index", "name": "Ben Example",
-      "fields": [["Name", "Ben Example"], ["Birth", "1960"]], "tables": [],
+      "fields": [["Name", "Ben Example"], ["Birth", "1960"], ["Street address", "1 Invented Lane"]], "tables": [],
       "citation": "Invented index entry.", "url": "https://example.com/records/c2-r1", "image": null
     }
   },
@@ -229,19 +235,132 @@
     }
   },
   "media": {
-    "m-tree1": { "id": "m-tree1", "kind": "tree", "file": "media/m-tree1.jpg", "caption": "Dan Example on an invented porch", "people": ["@I300@"], "bytes": 1000 },
-    "m-rec1": { "id": "m-rec1", "kind": "record", "file": "media/m-rec1.jpg", "caption": "Invented census page", "people": ["@I300@"], "bytes": 2000 },
-    "m-grave1": { "id": "m-grave1", "kind": "grave", "file": "media/m-grave1.jpg", "caption": "Headstone", "people": ["@I300@"], "bytes": 3000 },
+    "m-tree1": {
+      "id": "m-tree1", "kind": "tree", "file": "media/m-tree1.jpg", "caption": "Dan Example on an invented porch", "people": ["@I300@"], "bytes": 1000,
+      "date": "about 1950", "place": "Invented County", "media_kind": "image", "category": "photo", "w": 1200, "h": 900,
+      "sizes": ["t", "s", "f"],
+      "sizeFiles": {
+        "t": { "file": "media/m-tree1.t.aaaa0001.jpg", "w": 400, "h": 300 },
+        "s": { "file": "media/m-tree1.s.aaaa0002.jpg", "w": 1200, "h": 900 },
+        "f": { "file": "media/m-tree1.f.aaaa0003.jpg", "w": 256, "h": 256 }
+      },
+      "alt": "A man in work clothes sits on a porch step.", "description": "An invented description: a man sits on a wooden porch step in bright sun.",
+      "text": null, "isPortrait": false, "isPhotograph": true, "faces": [{ "x": 0.4, "y": 0.2, "w": 0.2, "h": 0.25 }],
+      "describedBy": "automatic", "restored": "m-tree1r"
+    },
+    "m-tree1r": {
+      "id": "m-tree1r", "kind": "restored", "category": "photo", "restoredFrom": "m-tree1",
+      "caption": "Dan Example on an invented porch (restored with AI)", "people": ["@I300@"], "date": "about 1950",
+      "restoredNotes": "Invented repairs: a crease removed.", "faithful": true,
+      "alt": "A man in work clothes sits on a porch step.", "faces": [{ "x": 0.4, "y": 0.2, "w": 0.2, "h": 0.25 }], "describedBy": "automatic",
+      "w": 1200, "h": 900, "sizes": ["t", "s", "f"],
+      "sizeFiles": {
+        "t": { "file": "media/m-tree1r.t.bbbb0001.jpg", "w": 400, "h": 300 },
+        "s": { "file": "media/m-tree1r.s.bbbb0002.jpg", "w": 1200, "h": 900 },
+        "f": { "file": "media/m-tree1r.f.bbbb0003.jpg", "w": 256, "h": 256 }
+      }
+    },
+    "m-rec1": {
+      "id": "m-rec1", "kind": "record", "file": "media/m-rec1.jpg", "caption": "Invented census page", "people": ["@I300@"], "bytes": 2000,
+      "category": "record", "w": 5000, "h": 3000, "sizes": ["t", "s", "l", "o"],
+      "sizeFiles": {
+        "t": { "file": "media/m-rec1.t.cccc0001.jpg", "w": 400, "h": 240 },
+        "s": { "file": "media/m-rec1.s.cccc0002.jpg", "w": 2048, "h": 1229 },
+        "l": { "file": "media/m-rec1.l.cccc0003.jpg", "w": 4096, "h": 2458 },
+        "o": { "file": "media/m-rec1.jpg", "w": 5000, "h": 3000 }
+      }
+    },
+    "m-grave1": {
+      "id": "m-grave1", "kind": "grave", "file": "media/m-grave1.jpg", "caption": "Headstone", "people": ["@I300@"], "bytes": 3000,
+      "category": "grave", "sizes": ["t", "s"],
+      "sizeFiles": { "t": { "file": "media/m-grave1.t.dddd0001.jpg" }, "s": { "file": "media/m-grave1.s.dddd0002.jpg" } },
+      "alt": "A grey upright stone in short grass.", "describedBy": "automatic"
+    },
     "m-doc1": { "id": "m-doc1", "kind": "tree", "file": "media/m-doc1.pdf", "caption": "An invented certificate", "people": ["@I200@"], "bytes": 4000 },
-    "m-bad": { "id": "m-bad", "kind": "tree", "file": "../outside.jpg", "caption": "A path that leaves the media folder", "people": [], "bytes": 1 }
+    "m-bad": { "id": "m-bad", "kind": "tree", "file": "../outside.jpg", "caption": "A path that leaves the media folder", "people": [], "bytes": 1 },
+    "m-story1": {
+      "id": "m-story1", "kind": "tree", "file": "media/m-story1.htm", "caption": "An invented clipping about the farm", "people": ["@I400@"], "bytes": 500,
+      "media_kind": "story", "category": "story", "sizes": [], "textFile": "media/m-story1.text.eeee0001.txt", "hasText": true, "textChars": 60
+    },
+    "m-held": {
+      "id": "m-held", "kind": "tree", "file": "media/m-held.jpg", "caption": "An invented picture the export held back", "people": ["@I300@"], "bytes": 100,
+      "category": "photo", "heldFor": ["@I200@"], "sizes": ["t", "s"],
+      "sizeFiles": { "t": { "file": "media/m-held.t.ffff0001.jpg" }, "s": { "file": "media/m-held.s.ffff0002.jpg" } }
+    },
+    "m-living": {
+      "id": "m-living", "kind": "tree", "file": "media/m-living.jpg", "caption": "Jack Example at an invented fair", "people": ["@I101@"], "bytes": 100,
+      "date": "2015", "place": "Invented Town", "category": "photo", "sizes": ["t", "s"],
+      "sizeFiles": { "t": { "file": "media/m-living.t.gggg0001.jpg" }, "s": { "file": "media/m-living.s.gggg0002.jpg" } }
+    }
   },
   "findings": [
-    { "summary": "Finn Sample's father is probably the unnamed farmhand in an invented census.", "people": ["@I302@", "@I700@"] },
-    { "summary": "Ben and Ned Example share an invented DNA match.", "people": ["@I200@", "@I210@"] }
+    {
+      "summary": "Finn Sample's father is probably the unnamed farmhand in an invented census.", "people": ["@I302@", "@I700@"],
+      "key": "f1", "title": "Who was Finn Sample's father?", "text": "Finn Sample's father is probably the unnamed farmhand in an invented census.",
+      "proof": "dna", "band": "about 90 to 95% sure", "sensitive": true, "dna": true, "evidence": "Based on 3 invented sources.", "storySlug": "the-farm"
+    },
+    {
+      "summary": "Ben and Ned Example share an invented DNA match.", "people": ["@I200@", "@I210@"],
+      "key": "f2", "title": "Two brothers, one invented match", "text": "Ben and Ned Example share an invented DNA match.",
+      "proof": "records", "band": null, "sensitive": false, "dna": true, "evidence": "Based on 2 invented census pages.", "storySlug": null
+    }
   ],
+  "sensitivePeople": ["@I302@", "@I700@"],
   "stories": [
-    { "slug": "the-farm", "title": "The farm on Example Road", "file": "stories/the-farm.md", "words": 14 },
+    {
+      "slug": "the-farm", "title": "The farm on Example Road", "file": "stories/the-farm.md", "words": 14,
+      "short": ["An invented farm.", "An invented road.", "An invented family."], "research": true, "sensitive": false,
+      "people": ["@I300@", "@I400@"], "findings": ["f1"], "minutes": 1
+    },
     { "slug": "escape", "title": "A path that leaves the version folder", "file": "../outside.md", "words": 1 }
   ],
-  "sources": { "s1": { "title": "Invented source" } }
+  "sources": { "s1": { "title": "Invented source" } },
+  "schema": 2,
+  "milestones": [
+    { "md": "03-03", "year": 1960, "date": "3 Mar 1960", "type": "birth", "people": ["@I200@"], "placeText": "Invented County" },
+    { "md": "06-12", "year": 1955, "date": "12 Jun 1955", "type": "marriage", "people": ["@I300@", "@I301@"], "placeText": "Invented Church, Invented County" }
+  ],
+  "changes": [
+    { "version": "v1", "date": "2026-01-01", "since": "v0", "people": ["@I120@"], "updated": [], "media": ["m-living", "m-tree1"] }
+  ],
+  "dna": {
+    "tested": ["@I100@"], "testSide": "mother", "summary": "An invented summary.",
+    "clusters": [
+      {
+        "key": "c1", "title": "The Sample family", "couple": ["@I302@", "@I303@"], "members": 12, "band": "about 90 to 400 cM", "proof": "records", "text": "Invented.",
+        "matches": [{ "name": "Invented Match One", "cM": 120, "segments": 6 }, { "name": "Invented Match Two", "cM": 95, "segments": 4 }]
+      },
+      { "key": "c2", "title": "The Example family", "couple": ["@I300@", "@I301@"], "members": 5, "band": "about 50 to 200 cM", "proof": "dna", "text": "Invented." }
+    ],
+    "conclusions": [
+      {
+        "key": "k1", "finding": "f1", "title": "Finn Sample's father", "text": "Finn Sample's father was probably a farmhand from an invented census.",
+        "proof": "dna", "band": "about 90 to 95% sure", "sensitive": true, "people": ["@I302@", "@I700@"], "clusters": ["c1"], "storySlug": "the-farm"
+      }
+    ],
+    "details": { "title": "Details for DNA fans", "rows": ["Invented method: matches over 20 cM were grouped."], "caveats": ["An invented caveat."] }
+  },
+  "places": {
+    "ready": true,
+    "places": [
+      { "id": "p1", "short": "Invented County, IS", "lat": 10.123, "lon": -20.456, "precision": "county", "state": "IS", "country": "United States" },
+      { "id": "p2", "short": "Invented State", "lat": 11.0, "lon": -21.0, "precision": "state", "state": "IS", "country": "United States" },
+      { "id": "p3", "short": "Finland", "lat": 61.9, "lon": 25.7, "precision": "country", "state": null, "country": "Finland" }
+    ],
+    "stays": [
+      { "p": "@I400@", "pl": "p3", "y": 1900, "t": "BIRT" },
+      { "p": "@I400@", "pl": "p1", "y": 1925, "t": "IMMI" },
+      { "p": "@I400@", "pl": "p1", "y": 1940, "t": "CENS" },
+      { "p": "@I300@", "pl": "p1", "y": 1930, "t": "BIRT" },
+      { "p": "@I300@", "pl": "p2", "y": 1999, "t": "DEAT" },
+      { "p": "@I200@", "pl": "p1", "y": 1960, "t": "BIRT" }
+    ],
+    "moves": [
+      { "p": "@I400@", "from": "p3", "to": "p1", "y": 1925 },
+      { "p": "@I300@", "from": "p1", "to": "p2", "y": 1999 }
+    ],
+    "ocean": [{ "p": "@I400@", "from": "p3", "to": "p1", "born": 1900, "y": 1925, "country": "Finland" }],
+    "unplaced": [],
+    "note": "Places come from records. Some records give only a state."
+  }
 }

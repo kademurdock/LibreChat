@@ -55,6 +55,7 @@ export interface FamilyHistoryEvent {
 }
 
 const were = (count: number): string => (count === 1 ? 'was' : 'were');
+const grown = (count: number): string => (count === 1 ? 'was an adult' : 'were adults');
 
 /** About fifteen moments of national history, for the timeline and "lived through". A public
  * constant: dates are the commonly taught ones (United States involvement for the World Wars). */
@@ -65,7 +66,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1775,
     to: 1783,
     lived: 'the Revolutionary War',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the Revolutionary War.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the Revolutionary War.`,
   },
   {
     key: 'war1812',
@@ -73,7 +74,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1812,
     to: 1815,
     lived: 'the War of 1812',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the War of 1812.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the War of 1812.`,
   },
   {
     key: 'removal',
@@ -82,7 +83,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     to: 1850,
     lived: null,
     line: (n, poss) =>
-      `${n} of ${poss} ancestors ${were(n)} adults in the years of Indian removal, when tribes were forced west.`,
+      `${n} of ${poss} ancestors ${grown(n)} in the years of Indian removal, when tribes were forced west.`,
   },
   {
     key: 'goldrush',
@@ -90,7 +91,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1848,
     to: 1855,
     lived: 'the Gold Rush',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the Gold Rush.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the Gold Rush.`,
   },
   {
     key: 'census1850',
@@ -107,7 +108,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1861,
     to: 1865,
     lived: 'the Civil War',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the Civil War.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the Civil War.`,
   },
   {
     key: 'homestead',
@@ -116,7 +117,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     to: 1862,
     lived: null,
     line: (n, poss) =>
-      `${n} of ${poss} ancestors ${were(n)} adults when the Homestead Act offered free land in 1862.`,
+      `${n} of ${poss} ancestors ${grown(n)} when the Homestead Act offered free land in 1862.`,
   },
   {
     key: 'census1890',
@@ -133,7 +134,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1917,
     to: 1918,
     lived: 'World War I',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during World War I.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during World War I.`,
   },
   {
     key: 'flu',
@@ -141,7 +142,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1918,
     to: 1919,
     lived: 'the 1918 flu',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the 1918 flu.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the 1918 flu.`,
   },
   {
     key: 'depression',
@@ -149,7 +150,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1929,
     to: 1939,
     lived: 'the Great Depression',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the Great Depression.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the Great Depression.`,
   },
   {
     key: 'dustbowl',
@@ -157,7 +158,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1930,
     to: 1936,
     lived: 'the Dust Bowl',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during the Dust Bowl years.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during the Dust Bowl years.`,
   },
   {
     key: 'ww2',
@@ -165,7 +166,7 @@ export const FAMILY_HISTORY_EVENTS: readonly FamilyHistoryEvent[] = [
     from: 1941,
     to: 1945,
     lived: 'World War II',
-    line: (n, poss) => `${n} of ${poss} ancestors ${were(n)} adults during World War II.`,
+    line: (n, poss) => `${n} of ${poss} ancestors ${grown(n)} during World War II.`,
   },
   {
     key: 'census1950',
@@ -330,7 +331,12 @@ export function familySideText(side: FamilySide | null, voice: FamilyVoice): str
 
 /** The one proof scale: "Proven by records", "Strong DNA evidence (about 90-95% sure)", "Best guess". */
 export function familyProof(level: FamilyProofLevel, band?: string | null): FamilyProof {
-  const cleanBand = String(band || '').trim();
+  /* The research's own words for how sure, shown only when they carry a figure ("about 90 to 95%
+   * sure"); a bare "strong" says nothing the scale does not. */
+  const text = String(band || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cleanBand = /\d/.test(text) ? text : '';
   if (level === 'records') return { level, text: 'Proven by records', spoken: 'Proven by records' };
   if (level === 'dna') {
     return {
@@ -486,11 +492,7 @@ export function familyLivedThrough(
     (event) => event.lived && birth.year != null && birth.year <= event.to && end >= event.from,
   ).map((event) => event.lived as string);
   if (!lived.length) return null;
-  const list =
-    lived.length === 1
-      ? lived[0]
-      : `${lived.slice(0, -1).join(', ')}${lived.length > 2 ? ',' : ''} and ${lived[lived.length - 1]}`;
-  return `Born ${familyYearText(birth)}; lived through ${list}.`;
+  return `Born ${familyYearText(birth)}; lived through ${familyList(lived)}.`;
 }
 
 /** "About 18 minutes" for a story of this many characters (1,000 characters a minute, the

@@ -655,7 +655,7 @@ test('GET /person/:id: source records from facts, a wrongly attached grave, find
     assert.deepEqual(
       r.body.records.map((rec) => [rec.key, rec.wrong || null]),
       [['c2:r1', null], ['c1:r1', null], ['c1:r2', 'An invented mix-up.']],
-      `${who}: a living relative's records are served like anyone's (the export scrubbed addresses)`,
+      `${who}: a living relative's records are served like anyone's, as the export sends them`,
     );
     assert.deepEqual(r.body.memorials.map((m) => [m.id, m.wrong]), [['5003', 'An invented mix-up.']], who);
     assert.deepEqual(ids(r.body.media), ['m-rec1'], `${who}: with the record's scan`);

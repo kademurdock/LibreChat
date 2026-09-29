@@ -4,8 +4,33 @@ import type { Request, RequestHandler, Response } from 'express';
 import type { LibraryAccount } from '../library/access';
 import { libraryReviewSeat, libraryTestSeat } from '../library/access';
 import type { FamilyAudience } from './util';
-import { FAMILY_MONTH_NAMES, familyFirstName, familyMediaVisible } from './util';
-import { familyCapital, familyTermText, familyVoice } from './words';
+import { FAMILY_MONTH_NAMES, familyFirstName, familyInt, familyMediaVisible } from './util';
+import {
+  familyCapital,
+  familyGenerationName,
+  familyPageSpoken,
+  familyTermText,
+  familyVoice,
+} from './words';
+import type { FamilyLens } from './derive';
+import { familyLens, familyModel } from './derive';
+import type { FamilyDnaFindings, FamilyPageContext } from './pages';
+import {
+  familyFindingsV2,
+  familyGallery,
+  familyHomePayload,
+  familyMediaInfo,
+  familyMysteriesAllowed,
+  familyPersonV2,
+  familyStoriesV2,
+  familyStoryV2,
+  familyTreeExtras,
+} from './pages';
+import type { FamilySignCacheEntry } from './present';
+import { familyFileMime, familyPersonCards, familyPresenter, familySigner } from './present';
+import { familyDnaForAllowed, familyDnaPayload, familyDnaSelf } from './dna';
+import { familyPlacesPayload, familyTimelinePayload } from './timeline';
+import { familyPlayPayload } from './play';
 
 /* ----------------------------------------------------------------------------
  * FAMILY HISTORY (Sep 29 2026, docs/FAMILY_HISTORY.md is the contract)
@@ -16,9 +41,10 @@ import { familyCapital, familyTermText, familyVoice } from './words';
  * Every relationship is said from the viewer's place, read from that person's
  * view file (the owner's view, with a note, when theirs was not built).
  * Owner mode belongs to one account: KADE_FH_OWNER_USER_ID, or while that is
- * unset any administrator not matched to someone else (the v1 rule). Living
- * relatives are shown in full to the family (the owner's decision); the export
- * has already taken addresses and phone numbers out of their records.
+ * unset any administrator not matched to someone else (the v1 rule). The
+ * family sees the research as the owner does (her decision, Sep 29 2026):
+ * living relatives in full, records as they are. Strangers, test seats and the
+ * App Review seat see nothing at all.
  *
  * All family data lives in the private bucket, built offline:
  *   <prefix>/current.json                 {"version": "..."}
@@ -113,6 +139,8 @@ export interface FamilyRecord {
   citation?: string;
   url?: string;
   image?: string | null;
+  /** The export took contact details out (the record concerns a living relative). */
+  scrubbed?: boolean;
 }
 
 export interface FamilyMemorialRelative {
@@ -269,6 +297,9 @@ export interface FamilyDnaCluster {
   band?: string;
   proof?: FamilyProofLevel;
   text?: string;
+  /** The DNA matches in the cluster (name, shared cM and whatever the research recorded), when
+   * the export sends them: the family sees the research as the owner does. */
+  matches?: Record<string, unknown>[];
 }
 
 export interface FamilyDnaConclusion {
@@ -284,7 +315,7 @@ export interface FamilyDnaConclusion {
   storySlug?: string | null;
 }
 
-/** The owner's DNA test, curated by hand: no match's name ever appears here. */
+/** The owner's DNA test, curated by hand in the archive. */
 export interface FamilyDnaBlock {
   tested?: string[];
   /** The side of the tester's family the clusters are on: "mother", "father" or "both". */
@@ -861,10 +892,14 @@ export function familyFindings(
   bundle: FamilyBundle,
   view: FamilyView,
   personId?: string,
+  sensitiveAllowed: boolean = true,
 ): FamilyFindingView[] {
   const out: FamilyFindingView[] = [];
   for (const finding of bundle.findings) {
     if (personId && !(finding.people || []).includes(personId)) continue;
+    /* only a finding the export marked sensitive follows KADE_FH_DNA_FINDINGS here, so the web
+     * page reads an older, unmarked bundle as before */
+    if (finding.sensitive === true && !sensitiveAllowed) continue;
     out.push(findingView(bundle, view, finding));
   }
   return out;
@@ -895,14 +930,15 @@ const EVERYONE: FamilyAudience = { personId: '', owner: false };
 
 /**
  * One person, with their family, records, graves, pictures and findings, related to the viewer.
- * Living relatives get the same page as anyone (the owner's decision, Sep 29 2026): the export
- * has already scrubbed addresses and phone numbers from the records it keeps.
+ * Living relatives get the same page as anyone, records and all, as the export sends them (the
+ * owner's decision, Sep 29 2026: the family sees the research as she does).
  */
 export function familyPersonPayload(
   bundle: FamilyBundle,
   view: FamilyView,
   id: string,
   audience: FamilyAudience = EVERYONE,
+  sensitiveAllowed: boolean = true,
 ): FamilyPersonPayload | null {
   const person = own(bundle.people, id);
   if (!person) return null;
@@ -959,7 +995,7 @@ export function familyPersonPayload(
     records,
     memorials,
     media,
-    findings: familyFindings(bundle, view, id),
+    findings: familyFindings(bundle, view, id, sensitiveAllowed),
   };
 }
 
@@ -1438,9 +1474,35 @@ type OwnerHandler = (req: Request, res: Response, state: LoadedBundle) => Promis
 const signedIn = (req: Request): FamilyHistoryAccount | undefined =>
   (req as Request & { user?: FamilyHistoryAccount }).user;
 
+/** KADE_FH_DNA_FINDINGS, read on every request: `family` (the default) shows family mysteries to
+ * everyone matched, `owner` to the owner alone, `off` to nobody. */
+export function familyDnaFindingsSetting(env: NodeJS.ProcessEnv = process.env): FamilyDnaFindings {
+  const value = String(env.KADE_FH_DNA_FINDINGS || '')
+    .trim()
+    .toLowerCase();
+  return value === 'owner' || value === 'off' ? value : 'family';
+}
+
+/** Pages of everyone in the tree, sixty at a time. */
+export const FAMILY_PEOPLE_PAGE: number = 60;
+/** At most this many pictures are signed by one POST /media/sign. */
+export const FAMILY_SIGN_LIMIT: number = 100;
+const TEXT_LIMIT = 400 * 1024;
+
+const PEOPLE_V2: Readonly<Record<string, { title: string; groups: string[] }>> = {
+  ancestor: { title: 'Ancestors', groups: ['ancestor'] },
+  blood: { title: 'Blood relatives', groups: ['blood', 'descendant'] },
+  marriage: { title: 'By marriage', groups: ['marriage'] },
+  all: { title: 'Everyone in the tree', groups: [] },
+};
+
 /**
- * GET  /me /person/:id /tree /search /people /stories /story/:slug /findings /media/:id
- * POST /ask                      an account that is not matched asks to be added
+ * v1 (the web page):  GET /me /person/:id /tree /search /people /stories /story/:slug /findings
+ *                     /media/:id
+ * v2 (the iPhone app, which sends ?v=2 on every call; v1 routes answer exactly as before
+ * without it):        the same routes with server-written words, plus GET /home /gallery /dna
+ *                     /timeline /places /play /media/:id/info and POST /media/sign
+ * POST /ask           an account that is not matched asks to be added
  * GET  /accounts, POST /match   the owner only
  * Every answer is JSON with Cache-Control: no-store (a media redirect is a 302). A refused
  * account gets the same 403 on every route, with the reason its greyed Library row shows.
@@ -1450,6 +1512,8 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const prefix = deps.prefix || familyHistoryPrefix();
   const store = createFamilyStore(deps, prefix);
   const now = deps.now || Date.now;
+  const signCache = new Map<string, FamilySignCacheEntry>();
+  const lenses = new WeakMap<FamilyView, Map<string, FamilyLens>>();
   const fail = (res: Response, error: Error): void => {
     deps.log?.(error.message);
     if (!res.headersSent) res.status(503).json({ error: FAMILY_HISTORY_UPDATING });
@@ -1457,6 +1521,11 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const deny = (res: Response, user: FamilyHistoryAccount | undefined): void => {
     res.status(403).json(familyHistoryRefusal(user, now()));
   };
+  const v2 = (req: Request): boolean => queryText(req.query.v) === '2';
+  /** May this viewer see sensitive findings and stories (KADE_FH_DNA_FINDINGS, read now)? */
+  const mysteries = (ctx: FamilyContext): boolean =>
+    familyMysteriesAllowed(ctx.viewer.mode, familyDnaFindingsSetting());
+  const expires = (): string => new Date(now() + FAMILY_HISTORY_MEDIA_SECONDS * 1000).toISOString();
 
   /** The viewer and their view, null when refused; throws when the bundle or views cannot load. */
   const contextFor = async (user: FamilyHistoryAccount): Promise<FamilyContext | null> => {
@@ -1478,6 +1547,57 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       ...(mine || viewer.mode === 'guest' ? {} : { viewNote: FAMILY_HISTORY_VIEW_NOTE }),
       ownerView,
     };
+  };
+
+  /** Everything a v2 page builder needs: the view said in the right voice, and a signer. */
+  const pageOf = async (ctx: FamilyContext): Promise<FamilyPageContext> => {
+    const model = familyModel(ctx.bundle);
+    const ownerPerson = own(ctx.bundle.people, ctx.bundle.owner);
+    const ownerFirst = familyFirstName(ownerPerson?.name);
+    const key = `${ctx.borrowed ? 'borrowed' : 'own'} ${ownerFirst}`;
+    let byVoice = lenses.get(ctx.view);
+    if (!byVoice) {
+      byVoice = new Map();
+      lenses.set(ctx.view, byVoice);
+    }
+    let lens = byVoice.get(key);
+    if (!lens) {
+      lens = familyLens(model, ctx.view, familyVoice(ownerFirst, ownerPerson?.sex, ctx.borrowed));
+      byVoice.set(key, lens);
+    }
+    const signer = familySigner(
+      (objectKey, mime) => deps.signGet(objectKey, mime, FAMILY_HISTORY_MEDIA_SECONDS),
+      signCache,
+      now,
+    );
+    const person = own(ctx.bundle.people, ctx.viewer.personId);
+    const accountFirst = String(ctx.user.name || '').trim()
+      ? familyFirstName(ctx.user.name)
+      : ctx.viewer.mode === 'guest'
+        ? 'there'
+        : familyFirstName(person?.name);
+    return {
+      pc: familyPresenter(lens, prefix, signer, ctx.audience),
+      lens,
+      model,
+      bundle: ctx.bundle,
+      viewer: ctx.viewer,
+      accountFirst,
+      ownerFirst,
+      ownerView: await ctx.ownerView(),
+      now: now(),
+      version: ctx.state.version,
+      dnaFindings: familyDnaFindingsSetting(),
+      placesReady: !!ctx.bundle.places?.places?.length,
+      listenReady: false,
+      readable: (story) => !!familyStory(ctx.bundle, story.slug),
+    };
+  };
+
+  /** Signs every picture the answer asked for, then sends it. */
+  const send = async (res: Response, page: FamilyPageContext, body: unknown): Promise<void> => {
+    await page.pc.signer.fill();
+    res.json(body);
   };
 
   const family =
@@ -1594,25 +1714,46 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   });
 
   router.get(
+    '/home',
+    family(async (req, res, ctx) => {
+      const page = await pageOf(ctx);
+      let ownerExtra: { notes: number; asks: number } | null = null;
+      if (ctx.viewer.mode === 'owner') {
+        const asks = (await deps.findUsers()).filter(
+          (user) =>
+            !libraryReviewSeat(user) &&
+            !libraryTestSeat(user) &&
+            !!user.kadeFamilyHistoryAskedAt &&
+            !familyHistoryViewer(user, ctx.bundle),
+        ).length;
+        ownerExtra = { notes: 0, asks };
+      }
+      const since = queryText(req.query.since).slice(0, 64) || null;
+      await send(res, page, familyHomePayload(page, since, ownerExtra));
+    }),
+  );
+
+  router.get(
     '/person/:id',
-    family((req, res, ctx) => {
-      const payload = familyPersonPayload(
-        ctx.bundle,
-        ctx.view,
-        String(req.params.id || ''),
-        ctx.audience,
-      );
+    family(async (req, res, ctx) => {
+      const id = String(req.params.id || '');
+      const payload = familyPersonPayload(ctx.bundle, ctx.view, id, ctx.audience, mysteries(ctx));
       if (!payload) {
         res.status(404).json({ error: 'That person is not in the family tree.' });
         return;
       }
-      res.json(payload);
+      if (!v2(req)) {
+        res.json(payload);
+        return;
+      }
+      const page = await pageOf(ctx);
+      await send(res, page, familyPersonV2(page, id, payload));
     }),
   );
 
   router.get(
     '/tree',
-    family((req, res, ctx) => {
+    family(async (req, res, ctx) => {
       const asked = queryText(req.query.focus);
       const focus = asked ? familyPersonId(ctx.bundle, asked) : ctx.viewer.personId;
       const { up, down } = FAMILY_TREE_LIMITS;
@@ -1630,40 +1771,113 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
         res.status(404).json({ error: 'That person is not in the family tree.' });
         return;
       }
-      res.json(tree);
+      if (!v2(req)) {
+        res.json(tree);
+        return;
+      }
+      const page = await pageOf(ctx);
+      await send(res, page, { ...tree, ...familyTreeExtras(page, tree) });
     }),
   );
 
   router.get(
     '/search',
-    family((req, res, ctx) => {
-      res.json(familySearch(ctx.bundle, ctx.view, queryText(req.query.q), ctx.state.index));
+    family(async (req, res, ctx) => {
+      const found = familySearch(ctx.bundle, ctx.view, queryText(req.query.q), ctx.state.index);
+      if (!v2(req)) {
+        res.json(found);
+        return;
+      }
+      const page = await pageOf(ctx);
+      const n = found.length;
+      const text = n ? `${n} ${n === 1 ? 'person' : 'people'} found` : 'No one found';
+      await send(res, page, {
+        query: queryText(req.query.q).slice(0, 120),
+        total: n,
+        text,
+        spoken: text,
+        results: familyPersonCards(
+          page.pc,
+          found.map((row) => row.id),
+        ),
+      });
     }),
   );
 
   router.get(
     '/people',
-    family((req, res, ctx) => {
-      const group = familyPeopleGroup(queryText(req.query.group));
-      if (!group) {
+    family(async (req, res, ctx) => {
+      if (!v2(req)) {
+        const group = familyPeopleGroup(queryText(req.query.group));
+        if (!group) {
+          res.status(400).json({ error: 'Choose ancestor, blood, marriage or all.' });
+          return;
+        }
+        res.json(familyPeople(ctx.bundle, ctx.view, group));
+        return;
+      }
+      const key = queryText(req.query.group) || 'ancestor';
+      const segment = own(PEOPLE_V2, key);
+      if (!segment) {
         res.status(400).json({ error: 'Choose ancestor, blood, marriage or all.' });
         return;
       }
-      res.json(familyPeople(ctx.bundle, ctx.view, group));
+      const page = await pageOf(ctx);
+      const rows = familyPeople(ctx.bundle, ctx.view, 'all').filter(
+        (row) => !segment.groups.length || segment.groups.includes(row.group),
+      );
+      const total = rows.length;
+      const from = Math.min(familyInt(req.query.from, 0, 0, 1e6), Math.max(0, total - 1));
+      let previousGen: number | null = null;
+      const slice = rows.slice(from, from + FAMILY_PEOPLE_PAGE).map((row, i) => {
+        const card = familyPersonCards(page.pc, [row.id])[0];
+        let heading: string | null = null;
+        if (
+          key === 'ancestor' &&
+          typeof row.gen === 'number' &&
+          (i === 0 || row.gen !== previousGen)
+        )
+          heading = familyGenerationName(row.gen);
+        previousGen = typeof row.gen === 'number' ? row.gen : previousGen;
+        return { ...card, heading };
+      });
+      await send(res, page, {
+        group: key,
+        title: segment.title,
+        total,
+        from: total ? from : 0,
+        count: slice.length,
+        prev: from > 0 ? Math.max(0, from - FAMILY_PEOPLE_PAGE) : null,
+        next: from + FAMILY_PEOPLE_PAGE < total ? from + FAMILY_PEOPLE_PAGE : null,
+        pageSpoken: familyPageSpoken(total ? from : 0, slice.length, total),
+        rows: slice,
+      });
     }),
   );
 
   router.get(
     '/stories',
-    family((_req, res, ctx) => {
-      res.json(familyStories(ctx.bundle));
+    family(async (req, res, ctx) => {
+      if (!v2(req)) {
+        const allowed = mysteries(ctx);
+        res.json(
+          familyStories({
+            ...ctx.bundle,
+            stories: ctx.bundle.stories.filter((story) => allowed || story.sensitive !== true),
+          }),
+        );
+        return;
+      }
+      const page = await pageOf(ctx);
+      await send(res, page, familyStoriesV2(page));
     }),
   );
 
   router.get(
     '/story/:slug',
     family(async (req, res, ctx) => {
-      const story = familyStory(ctx.bundle, String(req.params.slug || ''));
+      const found = familyStory(ctx.bundle, String(req.params.slug || ''));
+      const story = found && (found.sensitive !== true || mysteries(ctx)) ? found : null;
       const text = story
         ? await deps.loadObject(`${prefix}/${ctx.state.version}/${story.file}`)
         : null;
@@ -1671,14 +1885,108 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
         res.status(404).json({ error: 'That story was not found.' });
         return;
       }
-      res.json(familyStoryPayload(story, unpacked(text).toString('utf8')));
+      const payload = familyStoryPayload(story, unpacked(text).toString('utf8'));
+      if (!v2(req)) {
+        res.json(payload);
+        return;
+      }
+      const page = await pageOf(ctx);
+      await send(res, page, { ...payload, ...familyStoryV2(page, story, payload.markdown) });
     }),
   );
 
   router.get(
     '/findings',
-    family((_req, res, ctx) => {
-      res.json(familyFindings(ctx.bundle, ctx.view));
+    family(async (req, res, ctx) => {
+      const group = queryText(req.query.group);
+      if (!v2(req) && !group) {
+        res.json(familyFindings(ctx.bundle, ctx.view, undefined, mysteries(ctx)));
+        return;
+      }
+      const page = await pageOf(ctx);
+      await send(res, page, familyFindingsV2(page, group));
+    }),
+  );
+
+  router.get(
+    '/gallery',
+    family(async (req, res, ctx) => {
+      const page = await pageOf(ctx);
+      const person = queryText(req.query.person);
+      const body = familyGallery(page, {
+        kind: queryText(req.query.kind) || 'photos',
+        person: person ? familyPersonId(ctx.bundle, person) || person : '',
+        since: queryText(req.query.since).slice(0, 64),
+        sort: queryText(req.query.sort) === 'year' ? 'year' : 'near',
+        from: familyInt(req.query.from, 0, 0, 1e6),
+      });
+      if (!body) {
+        res.status(400).json({
+          error:
+            'Choose photos, portraits, records, graves, documents, stories or all, for someone in the tree.',
+        });
+        return;
+      }
+      await send(res, page, body);
+    }),
+  );
+
+  router.post(
+    '/media/sign',
+    json({ limit: '16kb' }),
+    family(async (req, res, ctx) => {
+      const body = (req.body || {}) as { ids?: unknown; size?: unknown };
+      const size = typeof body.size === 'string' ? body.size : 't';
+      if (
+        !Array.isArray(body.ids) ||
+        body.ids.length > FAMILY_SIGN_LIMIT ||
+        !['t', 's', 'l', 'f', 'o'].includes(size)
+      ) {
+        res.status(400).json({
+          error: `Send up to ${FAMILY_SIGN_LIMIT} picture ids and a size (t, s, l, f or o).`,
+        });
+        return;
+      }
+      const page = await pageOf(ctx);
+      const urls: Record<string, string | null> = {};
+      for (const raw of body.ids) {
+        const id = typeof raw === 'string' ? raw : '';
+        const item = own(ctx.bundle.media, id);
+        if (!item || !familyMediaVisible(ctx.bundle, item, ctx.audience)) continue;
+        const file = page.model.sizeFile(item, size);
+        if (!file) continue;
+        page.pc.signer.later(urls, id, `${prefix}/${file}`, familyFileMime(file));
+      }
+      await page.pc.signer.fill();
+      res.json({ urls, size, expires: expires() });
+    }),
+  );
+
+  router.get(
+    '/media/:id/info',
+    family(async (req, res, ctx) => {
+      const id = String(req.params.id || '');
+      const item = own(ctx.bundle.media, id);
+      if (!item || !familyMediaVisible(ctx.bundle, item, ctx.audience)) {
+        res.status(404).json({ error: 'That picture is not in the family history.' });
+        return;
+      }
+      const page = await pageOf(ctx);
+      let text: string | null = null;
+      const textFile = String(item.textFile || '');
+      if (
+        /^media\/[A-Za-z0-9_-][A-Za-z0-9._-]{0,159}$/.test(textFile) &&
+        !textFile.includes('..')
+      ) {
+        const buffer = await deps.loadObject(`${prefix}/${textFile}`);
+        if (buffer) text = unpacked(buffer).subarray(0, TEXT_LIMIT).toString('utf8');
+      }
+      const body = familyMediaInfo(page, id, text);
+      if (!body) {
+        res.status(404).json({ error: 'That picture is not in the family history.' });
+        return;
+      }
+      await send(res, page, body);
     }),
   );
 
@@ -1686,18 +1994,98 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     '/media/:id',
     family(async (req, res, ctx) => {
       const id = String(req.params.id || '');
-      const visible = familyMediaVisible(ctx.bundle, own(ctx.bundle.media, id), ctx.audience);
-      const object = visible ? familyMediaObject(ctx.bundle, prefix, id) : null;
-      if (!object) {
-        res.status(404).json({ error: 'That picture is not in the family history.' });
+      const item = own(ctx.bundle.media, id);
+      const visible = familyMediaVisible(ctx.bundle, item, ctx.audience);
+      const size = queryText(req.query.size);
+      let key: string | null = null;
+      let mime = '';
+      let w: number | null = null;
+      let h: number | null = null;
+      if (visible && item && size) {
+        const file = familyModel(ctx.bundle).sizeFile(item, size);
+        if (file) {
+          key = `${prefix}/${file}`;
+          mime = familyFileMime(file);
+          const entry = item.sizeFiles ? own(item.sizeFiles, size) : undefined;
+          w = typeof entry?.w === 'number' ? entry.w : typeof item.w === 'number' ? item.w : null;
+          h = typeof entry?.h === 'number' ? entry.h : typeof item.h === 'number' ? item.h : null;
+        }
+      } else if (visible) {
+        const object = familyMediaObject(ctx.bundle, prefix, id);
+        if (object) {
+          key = object.key;
+          mime = object.mime;
+        }
+      }
+      if (!key) {
+        res.status(404).json({
+          error: size
+            ? 'That size of the picture is not in the family history.'
+            : 'That picture is not in the family history.',
+        });
         return;
       }
-      const url = await deps.signGet(object.key, object.mime, FAMILY_HISTORY_MEDIA_SECONDS);
+      const url = await deps.signGet(key, mime, FAMILY_HISTORY_MEDIA_SECONDS);
       if (queryText(req.query.redirect) === '1') {
         res.redirect(302, url);
         return;
       }
-      res.json({ url });
+      res.json(size ? { url, w, h, expires: expires() } : { url });
+    }),
+  );
+
+  router.get(
+    '/dna',
+    family(async (req, res, ctx) => {
+      const page = await pageOf(ctx);
+      const asked = queryText(req.query.for);
+      const forId = asked ? familyPersonId(ctx.bundle, asked) : familyDnaSelf(page);
+      if (!forId || !familyDnaForAllowed(page, forId)) {
+        res
+          .status(400)
+          .json({ error: 'Choose yourself, your husband or wife, or one of your children.' });
+        return;
+      }
+      await send(res, page, familyDnaPayload(page, forId));
+    }),
+  );
+
+  router.get(
+    '/timeline',
+    family(async (req, res, ctx) => {
+      const page = await pageOf(ctx);
+      const scope = queryText(req.query.scope) === 'all' ? 'all' : 'ancestors';
+      await send(res, page, familyTimelinePayload(page, scope));
+    }),
+  );
+
+  router.get(
+    '/places',
+    family(async (req, res, ctx) => {
+      const page = await pageOf(ctx);
+      const scope = queryText(req.query.scope) === 'all' ? 'all' : 'ancestors';
+      const body = familyPlacesPayload(page, scope);
+      if (!body) {
+        res.status(404).json({ error: 'The map is coming soon.', missing: 'places' });
+        return;
+      }
+      await send(res, page, body);
+    }),
+  );
+
+  router.get(
+    '/play',
+    family(async (req, res, ctx) => {
+      if (ctx.viewer.mode === 'guest') {
+        res
+          .status(403)
+          .json({ error: 'The game is for family members in the tree.', reason: 'guest' });
+        return;
+      }
+      const page = await pageOf(ctx);
+      const count = familyInt(req.query.count, 5, 1, 10);
+      const seed = familyInt(req.query.seed, now() % 2147483647, 0, 2147483647);
+      await send(res, page, familyPlayPayload(page, count, seed));
     }),
   );
 

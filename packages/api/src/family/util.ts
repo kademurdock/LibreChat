@@ -15,9 +15,9 @@ export interface FamilyAudience {
   owner: boolean;
 }
 
-/** May this viewer see this picture? An item the export held back only by the owner and the
- * people named in its `heldFor`; a restored copy only when its original may be seen. Living
- * relatives' pictures are the family's to see (the owner's decision). */
+/** May this viewer see this picture? Everything the export sends is the family's to see (the
+ * owner's decision: the family sees the research as she does), except an item the export marked
+ * `heldFor` a few people, which only they and the owner see; a restored copy follows its original. */
 export function familyMediaVisible(
   bundle: FamilyBundle,
   item: FamilyMedia | undefined,
