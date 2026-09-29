@@ -30,7 +30,7 @@ export interface CommunityDependencies {
   child(req: Request): Promise<boolean>;
   room(req: Request): string | null;
   openBook(req: Request, id: string): Promise<MediaBook | null>;
-  sign(key: string, mime: string, seconds: number): Promise<string>;
+  sign(key: string, mime: string, seconds: number, downloadName?: string): Promise<string>;
   books: Model<MediaBook>;
   playback: Model<IClubhousePlayback>;
   releases: Model<IPublicRelease>;

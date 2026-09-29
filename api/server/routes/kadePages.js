@@ -2960,7 +2960,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 /* KADE Aug 9 2026 — THE FRONT DOOR (her registration overhaul): a public
  * ask-in page. No account needed — that's the point. Honeypot + server-side
  * rate limit carry the abuse load; the submit rings her phone. */
-const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Ask to Join — Kade-AI</title>${SHARED_HEAD}
+const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request an account — Kade Murdock</title>${SHARED_HEAD}
 <style>
   form label { display:block; font-weight:600; margin:.9rem 0 .3rem; }
   form input[type=text], form textarea { width:100%; font-size:1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
@@ -2972,17 +2972,18 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Ask to Jo
 </style>
 </head><body>
 <a class="back" href="/login">&larr; Back to sign in</a>
-<h1>Ask to Join</h1>
-<p class="muted">Kade-AI is a private corner of the internet — family and friends of Kade's world. If that's you and nobody's handed you a code yet, knock here: tell her who you are, and the request goes straight to her phone. If she knows you, you'll hear back with your way in.</p>
+<h1>Request an account</h1>
+<p class="muted">Want to play or download Kade’s published recordings, or use the platform? Tell Kade a little about yourself below. She reviews requests before sending a signup code, which helps keep spam out. Published recordings are free once you have an account. Family Library access is separate, and a donation is never required.</p>
+<p>Already have a code? <a href="/register">Create your account</a>. Already registered? <a href="/login">Sign in</a>.</p>
 <div id="status" class="status" role="status" aria-live="polite"></div>
 <form id="askForm">
   <label for="name">What do people call you?</label>
   <input type="text" id="name" required maxlength="80" autocomplete="name">
   <label for="contact">How can Kade reach you? (phone or email)</label>
   <input type="text" id="contact" required maxlength="160" autocomplete="tel">
-  <label for="who">Who are you — how do you know Kade or the family?</label>
+  <label for="who">Tell Kade a little about yourself.</label>
   <textarea id="who" required maxlength="1200"></textarea>
-  <label for="why">What brings you here? (optional)</label>
+  <label for="why">What would you like to watch or use? (optional)</label>
   <textarea id="why" maxlength="1200"></textarea>
   <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" tabindex="-1" autocomplete="off"></div>
   <button class="pickbtn" type="submit" id="sendBtn">Send my request</button>

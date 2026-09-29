@@ -8,6 +8,7 @@ require('../../dev/community-load.cjs');
 const { createCommunityModels } = require('../../packages/data-schemas/src/models/community.ts');
 const { createCommunityRouter } = require('../../packages/api/src/community/router.ts');
 let mongo, db, app, books, playback, releases, ids;
+const signed = [];
 const people = {
   host: { id: new mongoose.Types.ObjectId().toString(), name: 'Kade', role: 'ADMIN' },
   guest: { id: new mongoose.Types.ObjectId().toString(), name: 'Friend', kadeLibraryAccess: 'family' },
@@ -36,7 +37,7 @@ before(async () => {
     child: async req => !!req.actor.child,
     room: req => ['room-a', 'room-b'].includes(req.get('X-Clubhouse-Token')) ? req.get('X-Clubhouse-Token') : null,
     openBook: async (req, id) => { const book = await books.findById(id).lean(); if (!book || (req.actor.role !== 'ADMIN' && (!book.shared || req.actor.kadeLibraryAccess !== 'family' || (req.actor.child && book.grownUpsOnly)))) return null; return book; },
-    sign: async key => 'https://media.example/' + key,
+    sign: async (key, mime, seconds, downloadName) => { signed.push({ key, mime, seconds, downloadName }); return 'https://media.example/' + key; },
     books, playback, releases, log: message => { throw new Error(message); },
   }));
 });
@@ -123,8 +124,48 @@ test('published release has its own public page, escapes text, and can be taken 
   const page = await supertest(app).get(url);
   assert.equal(page.status, 200); assert.match(page.text, /&lt;script&gt;release/); assert.doesNotMatch(page.text, /<img onerror/);
   const slug = url.split('/').pop();
-  assert.equal((await supertest(app).get('/api/community/releases/' + slug + '/stream')).status, 302);
+  assert.doesNotMatch(page.text, /<(video|audio)[^>]*\bsrc=/);
+  assert.match(page.text, /Sign in to play or download/);
+  assert.match(page.text, /href="\/request-access"/);
+  for (const kind of ['stream', 'download']) {
+    const endpoint = '/api/community/releases/' + slug + '/' + kind;
+    assert.equal((await supertest(app).get(endpoint)).status, 401);
+    const response = await api('outsider').get(endpoint);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.url, 'https://media.example/movie.mp4');
+    assert.equal(response.headers['cache-control'], 'no-store');
+  }
+  assert.equal(signed.at(-1).downloadName, slug + '.mp4');
+  assert.equal(signed.at(-1).seconds, 3600);
+  assert.deepEqual((await api('outsider').get('/api/community/library')).body.items, []);
+  assert.equal((await api('outsider').get('/api/community/tracks/' + ids.movie)).status, 404);
   assert.equal((await api().delete('/api/community/releases/' + slug)).status, 200);
   assert.equal((await supertest(app).get(url)).status, 404);
-  assert.equal((await supertest(app).get('/api/community/releases/' + slug + '/stream')).status, 404);
+  assert.equal((await api('outsider').get('/api/community/releases/' + slug + '/stream')).status, 404);
+});
+
+test('donations and the screened account request are visible without signing in', async () => {
+  for (const path of ['/', '/support', '/watch']) {
+    const response = await supertest(app).get(path);
+    assert.equal(response.status, 200);
+    assert.match(response.text, /href="\/support"/);
+    assert.match(response.text, /href="\/request-access"/);
+  }
+  const response = await supertest(app).get('/support');
+  assert.match(response.text, /https:\/\/cash.app\/\$kademurdock/);
+  assert.match(response.text, /https:\/\/paypal.me\/kademurdock/);
+  assert.match(response.text, /mailto:kademurdock@gmail.com/);
+  assert.match(response.text, /Donations are optional/);
+  assert.match(response.text, /I’m totally blind/);
+});
+
+test('only explicit releases bypass family membership and child restrictions still apply', async () => {
+  assert.equal((await api('outsider').get('/api/community/releases/unpublished/stream')).status, 404);
+  const response = await api().post('/api/community/releases', { book: ids.adult, track: 0, title: 'An adult release', confirmPublic: true });
+  const slug = response.body.url.split('/').pop();
+  assert.equal((await api('child').get('/api/community/releases/' + slug + '/stream')).status, 404);
+  assert.equal((await api('child').get('/api/community/releases/' + slug + '/download')).status, 404);
+  assert.equal((await api('outsider').get('/api/community/releases/' + slug + '/stream')).status, 200);
+  await books.updateOne({ _id: ids.adult }, { $set: { 'tracks.0.key': 'changed.mp4' } });
+  assert.equal((await api('outsider').get('/api/community/releases/' + slug + '/stream')).status, 404);
 });

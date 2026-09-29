@@ -144,6 +144,17 @@ describe('AuthContextProvider — community home sign-in', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/login/2fa?tempToken=temporary', { replace: true });
     sessionStorage.clear();
   });
+
+  it('returns to the actual release page after signing in', async () => {
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fwatch%2Fsample-release');
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+    renderProvider();
+    await act(async () => {
+      mockCapturedLoginOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'test-token' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(replaceSpy).toHaveBeenCalledWith('/watch/sample-release');
+  });
 });
 
 describe('AuthContextProvider — login onError redirect handling', () => {

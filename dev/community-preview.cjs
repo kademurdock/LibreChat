@@ -14,12 +14,17 @@ const { createCommunityModels } = require('../packages/data-schemas/src/models/c
   const Book = mongoose.model('PreviewBook', new mongoose.Schema({ title: String, kind: String, shared: Boolean, state: String, owner: mongoose.Schema.Types.ObjectId, tracks: [{ key: String, title: String, mime: String, seconds: Number }] }));
   const host = { id: new mongoose.Types.ObjectId().toString(), role: 'ADMIN', name: 'Preview Host', email: 'preview@example.invalid' };
   const guest = { id: new mongoose.Types.ObjectId().toString(), role: 'USER', name: 'Preview Guest', kadeLibraryAccess: 'family' };
-  await Book.create({ title: 'Preview recording (test fixture)', kind: 'video', state: 'ready', shared: true, owner: host.id, tracks: [{ key: 'preview.mp4', title: 'Silent sample', mime: 'video/mp4', seconds: 30 }] });
+  const previewBook = await Book.create({ title: 'Preview recording (test fixture)', kind: 'video', state: 'ready', shared: true, owner: host.id, tracks: [{ key: 'preview.mp4', title: 'Silent sample', mime: 'video/mp4', seconds: 30 }] });
+  const reader = { id: new mongoose.Types.ObjectId().toString(), role: 'USER', name: 'Preview Reader', kadeLibraryAccess: 'none' };
+  await models.releases.create({ _id: 'sample-release', book: String(previewBook._id), track: 0, key: 'preview.mp4', publisher: host.id, title: 'Synthetic test recording', description: 'A silent local sample, not real published content.', active: true, publishedAt: new Date() });
   const app = express();
   app.use('/assets', express.static(path.join(root, 'client/public/assets')));
   app.get('/preview.mp4', (_req, res) => res.sendFile(path.join(__dirname, 'preview.mp4')));
-  const actor = req => req.get('Authorization') === 'Bearer guest' ? guest : host;
-  app.post('/api/auth/refresh', (_req, res) => res.json({ token: 'host' }));
+  const actor = req => ({ 'Bearer guest': guest, 'Bearer reader': reader, 'Bearer host': host })[req.get('Authorization')];
+  app.post('/api/auth/refresh', (req, res) => req.get('Cookie')?.includes('previewSignedOut=1') ? res.sendStatus(401) : res.json({ token: 'reader' }));
+  app.get('/preview/sign-out', (_req, res) => res.set('Set-Cookie', 'previewSignedOut=1; Path=/; SameSite=Lax').redirect('/watch/sample-release'));
+  app.get('/preview/sign-in', (_req, res) => res.set('Set-Cookie', 'previewSignedOut=0; Path=/; SameSite=Lax').redirect('/watch/sample-release'));
+  app.get('/request-access', (_req, res) => res.type('html').send(require('../api/server/routes/kadePages').requestAccessHtml));
   app.get('/api/user', (_req, res) => res.json(host));
   app.get('/api/kade/app-banner', (_req, res) => res.json({}));
   app.get('/kade-tabbar.js', (_req, res) => res.type('js').send(''));
@@ -32,7 +37,7 @@ const { createCommunityModels } = require('../packages/data-schemas/src/models/c
     setAccess: async (_id, access) => { guest.kadeLibraryAccess = access; return guest; },
     approveUploads: async () => { throw new Error('Not part of this preview'); },
   }));
-  app.use(createCommunityRouter({ ...models, books: Book, auth: (_req, _res, next) => next(), actor, child: async () => false, room: req => req.get('X-Clubhouse-Token') === 'preview-room' ? 'preview-room' : null,
+  app.use(createCommunityRouter({ ...models, books: Book, auth: (req, res, next) => actor(req) ? next() : res.sendStatus(401), actor, child: async () => false, room: req => req.get('X-Clubhouse-Token') === 'preview-room' ? 'preview-room' : null,
     openBook: async (_req, id) => Book.findById(id).lean(), sign: async key => 'http://localhost:4179/' + key, log: console.error }));
   app.get('/home', (_req, res) => res.type('html').send(require('../api/server/routes/kadeHome').homeHtml));
   app.get('/publish', (_req, res) => res.sendFile(path.join(root, 'client/public/assets/community/publish.html')));

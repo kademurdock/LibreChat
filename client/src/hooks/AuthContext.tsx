@@ -99,7 +99,13 @@ const AuthContextProvider = ({
           return;
         }
 
-        if (finalRedirect === '/home' || finalRedirect === '/publish') {
+        const destinationPath = finalRedirect.split(/[?#]/)[0];
+        if (
+          ['/home', '/publish', '/watch', '/support', '/request-access'].includes(
+            destinationPath,
+          ) ||
+          destinationPath.startsWith('/watch/')
+        ) {
           window.location.replace(finalRedirect);
           return;
         }

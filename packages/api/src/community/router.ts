@@ -293,9 +293,13 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
     if (!release) return null;
     const book = await deps.books.findOne({ _id: release.book, state: 'ready' }).lean();
     const track = book?.tracks[release.track];
-    if (!track || track.key !== release.key) return null;
-    return { release, track };
+    if (!track || track.key !== release.key || !/^(audio|video)\//.test(track.mime)) return null;
+    return { release, track, grownUpsOnly: book?.grownUpsOnly === true };
   };
+  router.get('/support', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('html').send(publicPage('support', []));
+  });
   router.get(
     ['/', '/watch'],
     run(async (req, res) => {
@@ -323,15 +327,21 @@ export function createCommunityRouter(deps: CommunityDependencies): ReturnType<t
     }),
   );
   router.get(
-    '/api/community/releases/:slug/stream',
+    ['/api/community/releases/:slug/stream', '/api/community/releases/:slug/download'],
+    deps.auth,
     run(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       const item = await publicMedia(String(req.params.slug));
-      if (!item) {
+      if (!item || (item.grownUpsOnly && (await deps.child(req)))) {
         res.status(404).json({ error: 'This release is unavailable.' });
         return;
       }
-      res.redirect(302, await deps.sign(item.track.key, item.track.mime, 3600));
+      const extension = item.track.key.match(/\.[a-z0-9]{1,8}$/i)?.[0] || '';
+      const downloadName = req.path.endsWith('/download')
+        ? item.release._id + extension
+        : undefined;
+      const url = await deps.sign(item.track.key, item.track.mime, 3600, downloadName);
+      res.json({ url, expiresIn: 3600 });
     }),
   );
   router.get(

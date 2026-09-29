@@ -115,12 +115,15 @@ async function signPut(key, contentType, bytes) {
   const cmd = new PutObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key, ContentType: contentType, ...(bytes ? { ContentLength: bytes } : {}) });
   return getSignedUrl(client, cmd, { expiresIn: 3 * 3600 });
 }
-async function signGet(key, contentType, expiresIn = 12 * 3600) {
+async function signGet(key, contentType, expiresIn = 12 * 3600, downloadName) {
   const client = s3();
   if (!client || !MEDIA_BUCKET()) throw new Error('media storage is not configured');
   const { GetObjectCommand } = require('@aws-sdk/client-s3');
   const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-  const cmd = new GetObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key, ...(contentType ? { ResponseContentType: contentType } : {}) });
+  const cmd = new GetObjectCommand({ Bucket: MEDIA_BUCKET(), Key: key,
+    ...(contentType ? { ResponseContentType: contentType } : {}),
+    ...(downloadName ? { ResponseContentDisposition: `attachment; filename="${downloadName.replace(/[^a-zA-Z0-9._-]/g, '-')}"` } : {}),
+  });
   return getSignedUrl(client, cmd, { expiresIn });
 }
 async function headObject(key) {
