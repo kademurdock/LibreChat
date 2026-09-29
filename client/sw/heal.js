@@ -4,7 +4,9 @@
  * carry no recovery code of their own — the worker is the only code path
  * stale clients fetch fresh. Only visible chat-app routes participate.
  * Standalone tools (Sound Booth, Library, etc.) do not use these chunks
- * or the app's ping listener; silence is not evidence that they broke. */
+ * or the app's ping listener; silence is not evidence that they broke.
+ * The site root is the public homepage (server-rendered, no scripts), not
+ * the chat app, so it is never pinged. */
 const PING_TYPE = 'LC_SW_PING';
 const PONG_TYPE = 'LC_SW_PONG';
 const PONG_TIMEOUT_MS = 1500;
@@ -18,7 +20,7 @@ function isRecoverableAppClient(client) {
     const url = new URL(client.url);
     if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return false;
     const path = url.pathname.slice(scope.pathname.length);
-    return /^(?:$|(?:c|search|login|register|forgot-password|reset-password|verify|oauth|share|d|agent-builder|bookmarks|memories|files|settings|prompts|skills|projects|agents)(?:\/|$))/.test(path);
+    return /^(?:c|search|login|register|forgot-password|reset-password|verify|oauth|share|d|agent-builder|bookmarks|memories|files|settings|prompts|skills|projects|agents)(?:\/|$)/.test(path);
   } catch {
     return false;
   }
@@ -64,7 +66,11 @@ async function reloadUnresponsiveClients() {
         // The user may have switched tabs or opened a tool while the ping waited.
         const current = await self.clients.get(client.id);
         if (current && current.url === client.url && isRecoverableAppClient(current)) {
-          await current.navigate(current.url);
+          /* Not awaited: this worker is still activating, and the reload's own
+           * fetch waits for activation to finish. Awaiting it inside the
+           * activate waitUntil deadlocks until the browser kills the worker,
+           * which Firefox shows as "Corrupted Content Error". */
+          current.navigate(current.url).catch(() => {});
         }
       } catch {
         /* client closed or no longer controllable */

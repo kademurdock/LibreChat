@@ -11,7 +11,8 @@ async function activation(specs, scope = 'https://example.test/', afterPing) {
       pings.push(this.url);
       if (spec.responsive) handlers.message({ data: { type: 'LC_SW_PONG' }, source: this });
     },
-    async navigate(url) { navigations.push(url); },
+    // A real reload's fetch waits for activation, so its promise cannot settle first.
+    navigate(url) { navigations.push(url); return new Promise(() => {}); },
   }));
   const self = {
     registration: { scope },
@@ -26,14 +27,15 @@ async function activation(specs, scope = 'https://example.test/', afterPing) {
   handlers.activate({ waitUntil(promise) { done = promise; } });
   await new Promise(resolve => setImmediate(resolve));
   timers.forEach(fn => fn());
-  await done;
+  await Promise.race([done, new Promise((_, reject) => setTimeout(
+    () => reject(new Error('activation waited on its own reload (Firefox: Corrupted Content Error)')), 1000))]);
   return { navigations, pings };
 }
 
 (async () => {
-  const toolPaths = ['sound-booth', 'library', 'reading-room', 'home', 'parlor', 'help/library', 'feedback-dashboard'];
+  const toolPaths = ['', 'watch', 'support', 'sound-booth', 'library', 'reading-room', 'home', 'parlor', 'help/library', 'feedback-dashboard'];
   let result = await activation(toolPaths.map(path => ({ url: 'https://example.test/' + path })));
-  assert.deepEqual(result, { navigations: [], pings: [] }, 'tools without ping responders must remain open');
+  assert.deepEqual(result, { navigations: [], pings: [] }, 'the public homepage and tools without ping responders must remain open');
   result = await activation([{ url: 'https://example.test/c/new' }]);
   assert.deepEqual(result.navigations, ['https://example.test/c/new'], 'broken visible chat still recovers');
   for (const extra of [{ responsive: true }, { visibilityState: 'hidden' }, { frameType: 'nested' }]) {
@@ -49,5 +51,5 @@ async function activation(specs, scope = 'https://example.test/', afterPing) {
   assert.deepEqual(result.navigations, [], 'navigation during ping must be respected');
   result = await activation([{ url: 'https://example.test/c/new' }], undefined, client => ({ ...client, visibilityState: 'hidden' }));
   assert.deepEqual(result.navigations, [], 'tab backgrounded during ping');
-  console.log('Service-worker activation regression checks passed: tools, chat, hidden tabs, frames, scope and navigation races.');
+  console.log('Service-worker activation regression checks passed: homepage, tools, chat, no activation deadlock, hidden tabs, frames, scope and navigation races.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
