@@ -165,6 +165,8 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     kadeFamilyTreePerson: { type: String },
     /** Kade-AI (Sep 29 2026): Family history access for an account with no tree person: 'guest' sees it from the owner's place; 'none' is the owner's no. */
     kadeFamilyHistory: { type: String, enum: ['guest', 'none'] },
+    /** Kade-AI (Sep 29 2026): when an account that is not in the family tree last asked to be added (POST /api/kade/family-history/ask); cleared when the owner matches it. */
+    kadeFamilyHistoryAskedAt: { type: Date },
     /**
      * Kade-AI (Part 143, Sep 8 2026): ten digits somebody can sign in with
      * instead of an email address. Her words: "not everyone has both, one, or

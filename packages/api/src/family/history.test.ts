@@ -33,14 +33,19 @@ import type {
   FamilyView,
 } from './history';
 import {
+  FAMILY_HISTORY_ASKED,
   FAMILY_HISTORY_CACHE_MS,
   FAMILY_HISTORY_OWNER_ONLY,
   FAMILY_HISTORY_PRIVATE,
+  FAMILY_HISTORY_REFUSAL_WORDS,
+  FAMILY_HISTORY_ROW_HINT,
   FAMILY_HISTORY_UPDATING,
   FAMILY_HISTORY_VIEW_NOTE,
   familyFold,
   familyHistoryCandidate,
   familyHistoryMatch,
+  familyHistoryOwnerAccount,
+  familyHistoryRefusal,
   familyHistoryPrefix,
   familyHistoryRouter,
   familyHistoryViewer,
@@ -58,6 +63,18 @@ process.env.KADE_APP_REVIEW_USER_IDS = 'aaaaaaaaaaaaaaaaaaaaaa05';
 process.env.KADE_LIBRARY_HIDDEN_FROM = 'review-seat@example.com';
 delete process.env.NOTIFY_TEST_USER_IDS;
 delete process.env.KADE_FAMILY_HISTORY_PREFIX;
+delete process.env.KADE_FH_OWNER_USER_ID;
+delete process.env.KADE_FH_DNA_FINDINGS;
+
+/** Runs `body` with KADE_FH_OWNER_USER_ID set, then unsets it again. */
+async function withOwnerId<T>(id: string, body: () => Promise<T> | T): Promise<T> {
+  process.env.KADE_FH_OWNER_USER_ID = id;
+  try {
+    return await body();
+  } finally {
+    delete process.env.KADE_FH_OWNER_USER_ID;
+  }
+}
 
 const FIXTURES = join(__dirname, '__fixtures__', 'history');
 const fixtureText = (name: string): string => readFileSync(join(FIXTURES, name), 'utf8');
@@ -157,9 +174,11 @@ async function harness(objects: Map<string, Buffer> = bucket()): Promise<Harness
       if (!entry) return null;
       const changed: FamilyHistoryAccount = { ...entry[1] };
       if (fields.kadeFamilyTreePerson === null) delete changed.kadeFamilyTreePerson;
-      else changed.kadeFamilyTreePerson = fields.kadeFamilyTreePerson;
+      else if (fields.kadeFamilyTreePerson !== undefined) changed.kadeFamilyTreePerson = fields.kadeFamilyTreePerson;
       if (fields.kadeFamilyHistory === null) delete changed.kadeFamilyHistory;
-      else changed.kadeFamilyHistory = fields.kadeFamilyHistory;
+      else if (fields.kadeFamilyHistory !== undefined) changed.kadeFamilyHistory = fields.kadeFamilyHistory;
+      if (fields.kadeFamilyHistoryAskedAt === null) delete changed.kadeFamilyHistoryAskedAt;
+      else if (fields.kadeFamilyHistoryAskedAt !== undefined) changed.kadeFamilyHistoryAskedAt = new Date(fields.kadeFamilyHistoryAskedAt);
       users.set(entry[0], changed);
       return changed;
     },
@@ -191,9 +210,23 @@ async function harness(objects: Map<string, Buffer> = bucket()): Promise<Harness
 interface ReplyObject {
   error: string;
   access: boolean;
+  reason: string;
+  detail: string;
+  hint: string;
+  canAsk: boolean;
+  askedAt: string | null;
+  text: string;
   ok: boolean;
   url: string;
-  viewer: { personId: string; name: string; label: string; relationToOwner: FamilyRelation };
+  row: { detail: string; hint: string };
+  viewer: {
+    personId: string;
+    name: string;
+    label: string;
+    relationToOwner: FamilyRelation;
+    first: string;
+    inTree: boolean;
+  };
   mode: FamilyHistoryMode;
   isOwner: boolean;
   version: string;
@@ -286,6 +319,51 @@ test('the viewer rule: matched family, admins as the owner, guests from the owne
   assert.equal(familyHistoryCandidate({ ...TEST_SEAT, role: 'ADMIN', kadeFamilyTreePerson: '@I101@' }), false);
 });
 
+test('owner mode belongs to one account once KADE_FH_OWNER_USER_ID is set; before that, to an admin matched to nobody else', () => {
+  const helper: FamilyHistoryAccount = { id: 'aaaaaaaaaaaaaaaaaaaaaa11', name: 'Helper Admin', role: 'ADMIN' };
+  const ownerId = OWNER.id as string;
+  assert.deepEqual(familyHistoryViewer(helper, BUNDLE, ''), { personId: '@I100@', mode: 'owner' }, 'unset: any admin, as in v1');
+  assert.deepEqual(familyHistoryViewer({ ...OWNER, kadeFamilyTreePerson: '@I100@' }, BUNDLE, ''), { personId: '@I100@', mode: 'owner' }, 'unset: an admin matched to the owner is the owner');
+  assert.deepEqual(familyHistoryViewer(OWNER, BUNDLE, ownerId), { personId: '@I100@', mode: 'owner' });
+  assert.deepEqual(familyHistoryViewer({ ...OWNER, kadeFamilyTreePerson: '@I200@' }, BUNDLE, ownerId), { personId: '@I100@', mode: 'owner' }, 'the owner account is the owner, whatever it is matched to');
+  assert.deepEqual(familyHistoryViewer(helper, BUNDLE, ownerId), { personId: '@I100@', mode: 'guest' }, 'set: another admin visits as a guest');
+  assert.deepEqual(familyHistoryViewer({ ...helper, kadeFamilyTreePerson: '@I200@' }, BUNDLE, ownerId), { personId: '@I200@', mode: 'family' });
+  assert.equal(familyHistoryViewer({ id: ownerId, email: 'review-seat@example.com', role: 'ADMIN' }, BUNDLE, ownerId), null, 'the review seat never, even with the owner id');
+  assert.equal(familyHistoryViewer({ ...BEN, id: ownerId }, BUNDLE, ownerId)?.mode, 'family', 'the owner id is owner mode only on an administrator');
+
+  assert.equal(familyHistoryOwnerAccount(OWNER, ''), true);
+  assert.equal(familyHistoryOwnerAccount(helper, ''), true, 'unset: any admin keeps the owner pages, so the owner is never shut out');
+  assert.equal(familyHistoryOwnerAccount(OWNER, ownerId), true);
+  assert.equal(familyHistoryOwnerAccount(helper, ownerId), false);
+  assert.equal(familyHistoryOwnerAccount(REVIEW, ''), false);
+  assert.equal(familyHistoryOwnerAccount({ ...TEST_SEAT, role: 'ADMIN' }, ''), false);
+  assert.equal(familyHistoryOwnerAccount(BEN, ''), false);
+});
+
+test('refusals carry the reason the greyed Library row shows, and whether the account may ask', () => {
+  const at = Date.parse('2026-09-29T12:00:00Z');
+  const refusal = (user: FamilyHistoryAccount) => familyHistoryRefusal(user, at);
+  assert.deepEqual(refusal(STRANGER), {
+    access: false,
+    reason: 'unmatched',
+    error: FAMILY_HISTORY_PRIVATE,
+    detail: 'Not linked to the tree yet',
+    hint: "Ask the tree's owner to match your account.",
+    canAsk: true,
+    askedAt: null,
+  });
+  assert.equal(refusal(REVIEW).reason, 'review');
+  assert.equal(refusal(REVIEW).canAsk, false);
+  assert.equal(refusal(REVIEW).detail, 'Private to one family');
+  assert.equal(refusal(TEST_SEAT).reason, 'test');
+  assert.equal(refusal({ ...STRANGER, kadeFamilyHistory: 'none' }).reason, 'declined');
+  assert.equal(refusal({ ...STRANGER, kadeFamilyHistory: 'none' }).canAsk, false);
+  const asked = refusal({ ...STRANGER, kadeFamilyHistoryAskedAt: new Date(at - 86400000) });
+  assert.deepEqual([asked.canAsk, asked.detail, asked.askedAt], [false, 'Asked on 28 September 2026', '2026-09-28T12:00:00.000Z']);
+  assert.equal(refusal({ ...STRANGER, kadeFamilyHistoryAskedAt: '2026-09-01T00:00:00Z' }).canAsk, true, 'a week later they may ask again');
+  assert.equal(FAMILY_HISTORY_REFUSAL_WORDS.unmatched.detail, 'Not linked to the tree yet');
+});
+
 /* ── pure helpers ─────────────────────────────────────────────────────── */
 
 test('ids, depths, folding, prefixes and story markdown', () => {
@@ -363,19 +441,19 @@ test('match bodies are checked against the tree before anything is saved', () =>
   const user = STRANGER.id as string;
   assert.deepEqual(familyHistoryMatch({ userId: user, personId: '@I101@' }, BUNDLE), {
     userId: user,
-    fields: { kadeFamilyTreePerson: '@I101@', kadeFamilyHistory: null },
-  });
+    fields: { kadeFamilyTreePerson: '@I101@', kadeFamilyHistory: null, kadeFamilyHistoryAskedAt: null },
+  }, 'a match also clears an ask to be added');
   assert.deepEqual(familyHistoryMatch({ userId: user, personId: '@I900@', guest: true }, BUNDLE), {
     userId: user,
-    fields: { kadeFamilyTreePerson: '@I200@', kadeFamilyHistory: null },
+    fields: { kadeFamilyTreePerson: '@I200@', kadeFamilyHistory: null, kadeFamilyHistoryAskedAt: null },
   }, 'a duplicate entry is saved as its main person, and a person wins over guest');
   assert.deepEqual(familyHistoryMatch({ userId: user, personId: null, guest: true }, BUNDLE), {
     userId: user,
-    fields: { kadeFamilyTreePerson: null, kadeFamilyHistory: 'guest' },
+    fields: { kadeFamilyTreePerson: null, kadeFamilyHistory: 'guest', kadeFamilyHistoryAskedAt: null },
   });
   assert.deepEqual(familyHistoryMatch({ userId: user, personId: null }, BUNDLE), {
     userId: user,
-    fields: { kadeFamilyTreePerson: null, kadeFamilyHistory: 'none' },
+    fields: { kadeFamilyTreePerson: null, kadeFamilyHistory: 'none', kadeFamilyHistoryAskedAt: null },
   });
   assert.deepEqual(familyHistoryMatch({ userId: 'nope', personId: '@I101@' }, BUNDLE), { error: 'Choose an account.' });
   assert.deepEqual(familyHistoryMatch(null, BUNDLE), { error: 'Choose an account.' });
@@ -416,11 +494,20 @@ test('GET /me: the owner, a matched member, one with no view file, a guest and a
   assert.equal(r.cache, 'no-store');
   assert.deepEqual(r.body, {
     access: true,
-    viewer: { personId: '@I100@', name: 'Ada Example', label: 'Ada Example (born 1990)', relationToOwner: { term: 'you', group: 'self' } },
+    viewer: {
+      personId: '@I100@',
+      name: 'Ada Example',
+      label: 'Ada Example (born 1990)',
+      relationToOwner: { term: 'you', group: 'self' },
+      first: 'Owner',
+      inTree: true,
+    },
     mode: 'owner',
     isOwner: true,
     version: 'v1',
     counts: BUNDLE.counts,
+    owner: { first: 'Ada' },
+    row: { detail: 'Your tree', hint: FAMILY_HISTORY_ROW_HINT },
   });
 
   r = await call(main, '/me', 'ben');
@@ -429,16 +516,24 @@ test('GET /me: the owner, a matched member, one with no view file, a guest and a
   assert.equal(r.body.viewer.personId, '@I200@');
   assert.deepEqual(r.body.viewer.relationToOwner, OWNER_VIEW.relations['@I200@']);
   assert.equal('viewNote' in r.body, false, 'Ben has his own view file');
+  assert.equal(r.body.row.detail, 'Ada’s father', "the row says who they are to the tree's owner");
+  assert.equal(r.body.viewer.first, 'Ben', "the greeting uses the account's own name");
 
   r = await call(main, '/me', 'cora');
   assert.equal(r.body.viewer.personId, '@I201@');
   assert.equal(r.body.viewNote, FAMILY_HISTORY_VIEW_NOTE);
   assert.equal(r.body.viewer.relationToOwner.term, 'mother');
+  assert.equal(r.body.row.detail, 'Ada’s mother');
 
   r = await call(main, '/me', 'guest');
   assert.equal(r.body.mode, 'guest');
   assert.equal(r.body.isOwner, false);
-  assert.equal(r.body.viewer.personId, '@I100@');
+  assert.equal(r.body.viewer.personId, '@I100@', 'the web page centres a guest on the owner');
+  assert.equal(r.body.viewer.name, 'Ada Example', "the web page says the owner's words for a guest");
+  assert.equal(r.body.viewer.first, 'Guest', "a guest is greeted by their own name, never the owner's");
+  assert.equal(r.body.viewer.inTree, false);
+  assert.equal(r.body.row.detail, 'Guest');
+  assert.equal('viewNote' in r.body, false);
 
   r = await call(main, '/me', 'twin');
   assert.equal(r.body.viewer.personId, '@I200@');
@@ -447,12 +542,16 @@ test('GET /me: the owner, a matched member, one with no view file, a guest and a
 
 test('refused accounts are told plainly, on every route, with nothing cached and no bucket read for strangers', async () => {
   const paths = ['/me', '/person/%40I100%40', '/tree', '/search?q=example', '/people?group=all', '/stories', '/story/the-farm', '/findings', '/media/m-rec1'];
+  const reasons: Record<string, string> = { stranger: 'unmatched', test: 'test', review: 'review', stale: 'unmatched' };
   for (const who of ['stranger', 'test', 'review', 'stale']) {
     for (const path of paths) {
       const r = await call(main, path, who);
       assert.equal(r.status, 403, `${who} ${path}`);
       assert.equal(r.cache, 'no-store');
-      assert.deepEqual(r.body, { access: false, error: FAMILY_HISTORY_PRIVATE });
+      assert.equal(r.body.access, false);
+      assert.equal(r.body.error, FAMILY_HISTORY_PRIVATE);
+      assert.equal(r.body.reason, reasons[who], `${who} ${path}`);
+      assert.equal(r.body.canAsk, reasons[who] === 'unmatched', `${who} ${path}`);
     }
   }
   assert.equal(FAMILY_HISTORY_PRIVATE, 'The family history is private to the family.');
@@ -553,12 +652,14 @@ test('GET /person/:id: source records from facts, a wrongly attached grave, find
   for (const who of ['owner', 'ben', 'guest']) {
     r = await call(main, `/person/${pid('@I101@')}`, who);
     assert.equal(r.status, 200, who);
-    assert.deepEqual(r.body.records, [], `${who}: no record transcription for a living person, though a fact names two`);
-    assert.deepEqual(r.body.memorials, [], `${who}: no wrongly attached grave either`);
-    assert.deepEqual(r.body.media, [], `${who}: and no record scan`);
-    assert.deepEqual(r.body.person.facts, [
-      { type: 'RESI', label: 'Residence', date: null, year: null, place: 'Invented Town', value: null, note: null },
-    ], `${who}: the fact stays, without the keys of its source records`);
+    assert.deepEqual(
+      r.body.records.map((rec) => [rec.key, rec.wrong || null]),
+      [['c2:r1', null], ['c1:r1', null], ['c1:r2', 'An invented mix-up.']],
+      `${who}: a living relative's records are served like anyone's (the export scrubbed addresses)`,
+    );
+    assert.deepEqual(r.body.memorials.map((m) => [m.id, m.wrong]), [['5003', 'An invented mix-up.']], who);
+    assert.deepEqual(ids(r.body.media), ['m-rec1'], `${who}: with the record's scan`);
+    assert.deepEqual(r.body.person.facts?.[0].records, ['c2:r1', 'c1:r1'], `${who}: the fact keeps its source records`);
   }
 
   for (const missing of ['@I999@', 'constructor', '__proto__', 'hasOwnProperty']) {
@@ -830,6 +931,7 @@ test('GET /accounts: the owner sees every account but the review seat; nobody el
     access: 'family',
     testSeat: false,
     changeable: true,
+    askedAt: null,
   });
   assert.equal(row('Ben Twin')?.userId, 'aaaaaaaaaaaaaaaaaaaaaa08', 'a lean row with _id');
   assert.equal(row('Ben Twin')?.personLabel, 'Ben Example (1960-2020)');
@@ -886,26 +988,122 @@ test('POST /match: validated against the tree, never on the review seat, an admi
     r = await call(h, '/match', 'owner', { userId: STRANGER.id, personId: '@I900@' });
     assert.equal(r.status, 200);
     assert.equal(r.cache, 'no-store');
-    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: '@I200@', kadeFamilyHistory: null }]);
+    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: '@I200@', kadeFamilyHistory: null, kadeFamilyHistoryAskedAt: null }]);
     assert.deepEqual(r.body, {
       ok: true,
-      account: { userId: STRANGER.id, name: 'Bob Stranger', username: 'bob', personId: '@I200@', personLabel: 'Ben Example (1960-2020)', access: 'family', testSeat: false, changeable: true },
+      account: { userId: STRANGER.id, name: 'Bob Stranger', username: 'bob', personId: '@I200@', personLabel: 'Ben Example (1960-2020)', access: 'family', testSeat: false, changeable: true, askedAt: null },
     });
     me = await call(h, '/me', 'stranger');
     assert.equal(me.body.viewer.personId, '@I200@', 'the match takes effect at once');
 
     r = await call(h, '/match', 'owner', { userId: STRANGER.id, personId: null, guest: true });
-    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: null, kadeFamilyHistory: 'guest' }]);
+    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: null, kadeFamilyHistory: 'guest', kadeFamilyHistoryAskedAt: null }]);
     assert.equal(r.body.account.access, 'guest');
     assert.equal(r.body.account.personId, null);
     me = await call(h, '/me', 'stranger');
     assert.equal(me.body.mode, 'guest');
 
     r = await call(h, '/match', 'owner', { userId: STRANGER.id, personId: null, guest: false });
-    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: null, kadeFamilyHistory: 'none' }]);
+    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyTreePerson: null, kadeFamilyHistory: 'none', kadeFamilyHistoryAskedAt: null }]);
     assert.equal(r.body.account.access, 'none');
     me = await call(h, '/me', 'stranger');
     assert.equal(me.status, 403, 'access removed');
+  } finally {
+    await h.close();
+  }
+});
+
+test('POST /ask: an account that is not matched asks once a week; the owner sees askers first; a match clears the ask', async () => {
+  const h = await harness();
+  h.users.set('declined', { id: 'aaaaaaaaaaaaaaaaaaaaaa12', name: 'Said No', username: 'no', kadeFamilyHistory: 'none' });
+  try {
+    let r = await call(h, '/ask', 'stranger', {});
+    assert.equal(r.status, 200);
+    assert.equal(r.cache, 'no-store');
+    assert.deepEqual([r.body.ok, r.body.askedAt, r.body.text], [true, '2026-09-29T12:00:00.000Z', FAMILY_HISTORY_ASKED]);
+    assert.deepEqual(h.sets.pop(), [STRANGER.id, { kadeFamilyHistoryAskedAt: '2026-09-29T12:00:00.000Z' }]);
+    assert.deepEqual(h.reads, [], 'asking never reads the tree for an account that could not be in it');
+
+    r = await call(h, '/me', 'stranger');
+    assert.equal(r.status, 403);
+    assert.deepEqual([r.body.reason, r.body.canAsk, r.body.detail, r.body.askedAt], ['unmatched', false, 'Asked on 29 September 2026', '2026-09-29T12:00:00.000Z']);
+
+    r = await call(h, '/ask', 'stranger', {});
+    assert.equal(r.status, 429, 'once a week');
+    assert.equal(r.body.canAsk, false);
+    assert.deepEqual(h.sets, []);
+
+    h.tick(8 * 24 * 60 * 60 * 1000);
+    r = await call(h, '/ask', 'stranger', {});
+    assert.equal(r.status, 200, 'a week later they may ask again');
+    h.sets.length = 0;
+
+    for (const [who, reason] of [['review', 'review'], ['test', 'test'], ['declined', 'declined']]) {
+      r = await call(h, '/ask', who, {});
+      assert.equal(r.status, 403, who);
+      assert.equal(r.body.reason, reason, who);
+    }
+    for (const who of ['ben', 'guest', 'owner']) {
+      r = await call(h, '/ask', who, {});
+      assert.equal(r.status, 403, who);
+      assert.equal(r.body.error, 'This account can already open the family history.');
+    }
+    r = await call(h, '/ask', 'stale', {});
+    assert.equal(r.status, 200, 'a match that left the tree may ask again');
+    assert.deepEqual(h.sets.map((s) => s[0]), [STALE.id], 'nobody else was written');
+
+    r = await call(h, '/accounts', 'owner');
+    const rows: FamilyHistoryAccountRow[] = r.body;
+    assert.deepEqual(rows.slice(0, 2).map((row) => row.name), ['Bob Stranger', 'Stale Match'], 'askers first');
+    assert.equal(rows[0].askedAt, '2026-10-07T12:00:00.000Z');
+
+    r = await call(h, '/match', 'owner', { userId: STRANGER.id, personId: '@I101@' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.account.askedAt, null, 'the match clears the ask');
+    assert.equal((await call(h, '/me', 'stranger')).body.viewer.personId, '@I101@');
+  } finally {
+    await h.close();
+  }
+});
+
+test('KADE_FH_OWNER_USER_ID: the owner account keeps owner mode and the owner pages; another admin visits as a guest', async () => {
+  const h = await harness();
+  h.users.set('helper', { id: 'aaaaaaaaaaaaaaaaaaaaaa11', name: 'Helper Admin', username: 'helper', role: 'ADMIN' });
+  try {
+    await withOwnerId(OWNER.id as string, async () => {
+      let r = await call(h, '/me', 'owner');
+      assert.deepEqual([r.body.mode, r.body.isOwner], ['owner', true]);
+      r = await call(h, '/me', 'helper');
+      assert.deepEqual([r.body.mode, r.body.isOwner, r.body.viewer.first, r.body.row.detail], ['guest', false, 'Helper', 'Guest']);
+      assert.equal((await call(h, '/accounts', 'helper')).status, 403);
+      assert.equal((await call(h, '/accounts', 'owner')).status, 200);
+      r = await call(h, '/match', 'owner', { userId: 'aaaaaaaaaaaaaaaaaaaaaa11', personId: '@I200@' });
+      assert.equal(r.status, 409);
+      assert.match(r.body.error, /visits as a guest/);
+    });
+    const r = await call(h, '/accounts', 'helper');
+    assert.equal(r.status, 200, 'unset again: any admin, so the owner is never shut out');
+  } finally {
+    await h.close();
+  }
+});
+
+test('pictures the export held back reach only the owner and the people it names, on every v1 route', async () => {
+  const held = clone(BUNDLE);
+  held.media['m-held'] = { id: 'm-held', kind: 'tree', file: 'media/m-held.jpg', caption: 'An invented held picture', people: ['@I300@'], heldFor: ['@I200@'] };
+  held.people['@I300@'].media = ['m-held', 'm-tree1', 'm-rec1'];
+  held.memorials['5001'].photos = [{ media: 'm-held', caption: 'Held' }, { media: 'm-grave1', caption: 'Headstone' }];
+  const h = await harness(bucket('v1', held));
+  try {
+    for (const [who, sees] of [['owner', true], ['ben', true], ['guest', false], ['cora', false]] as const) {
+      const media = await call(h, '/media/m-held', who);
+      assert.equal(media.status, sees ? 200 : 404, who);
+      const person = await call(h, `/person/${pid('@I300@')}`, who);
+      assert.equal(ids(person.body.media).includes('m-held'), sees, who);
+      assert.equal(person.body.memorials[0].photos.some((p) => p.id === 'm-held'), sees, who);
+      const tree = await call(h, `/tree?focus=${pid('@I300@')}&up=0&down=0`, who);
+      assert.equal(tree.body.nodes[0].photo, sees ? 'm-held' : 'm-tree1', who);
+    }
   } finally {
     await h.close();
   }

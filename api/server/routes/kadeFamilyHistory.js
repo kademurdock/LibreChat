@@ -12,9 +12,11 @@ const { signGet } = require('./kadeReadingRoom')._internals;
 
 const unzip = promisify(gunzip);
 const BUCKET = () => process.env.KADE_MEDIA_BUCKET || process.env.AWS_BUCKET_NAME || '';
-const ACCOUNT_FIELDS = '_id name username email role kadeFamilyTreePerson kadeFamilyHistory';
+const ACCOUNT_FIELDS =
+  '_id name username email role kadeFamilyTreePerson kadeFamilyHistory kadeFamilyHistoryAskedAt';
 /** The only fields this route may ever write, whatever it is handed. */
-const MATCH_FIELDS = ['kadeFamilyTreePerson', 'kadeFamilyHistory'];
+const MATCH_FIELDS = ['kadeFamilyTreePerson', 'kadeFamilyHistory', 'kadeFamilyHistoryAskedAt'];
+const DATE_FIELDS = new Set(['kadeFamilyHistoryAskedAt']);
 
 /** The object's bytes, gunzipped for *.gz keys; null when the bucket has no such object. */
 async function loadObject(key) {
@@ -55,7 +57,11 @@ async function setUserFields(id, fields) {
   for (const name of MATCH_FIELDS) {
     if (!(name in fields)) continue;
     if (fields[name] == null) $unset[name] = '';
-    else $set[name] = String(fields[name]);
+    else if (DATE_FIELDS.has(name)) {
+      const at = new Date(fields[name]);
+      if (Number.isNaN(at.getTime())) throw new Error(`refused a bad date for ${name}`);
+      $set[name] = at;
+    } else $set[name] = String(fields[name]);
   }
   const update = {
     ...(Object.keys($set).length ? { $set } : {}),

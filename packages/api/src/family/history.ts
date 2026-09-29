@@ -3,6 +3,9 @@ import { Router, json } from 'express';
 import type { Request, RequestHandler, Response } from 'express';
 import type { LibraryAccount } from '../library/access';
 import { libraryReviewSeat, libraryTestSeat } from '../library/access';
+import type { FamilyAudience } from './util';
+import { FAMILY_MONTH_NAMES, familyFirstName, familyMediaVisible } from './util';
+import { familyCapital, familyTermText, familyVoice } from './words';
 
 /* ----------------------------------------------------------------------------
  * FAMILY HISTORY (Sep 29 2026, docs/FAMILY_HISTORY.md is the contract)
@@ -12,6 +15,10 @@ import { libraryReviewSeat, libraryTestSeat } from '../library/access';
  * The App Review seat and test seats never get in, and cannot be matched.
  * Every relationship is said from the viewer's place, read from that person's
  * view file (the owner's view, with a note, when theirs was not built).
+ * Owner mode belongs to one account: KADE_FH_OWNER_USER_ID, or while that is
+ * unset any administrator not matched to someone else (the v1 rule). Living
+ * relatives are shown in full to the family (the owner's decision); the export
+ * has already taken addresses and phone numbers out of their records.
  *
  * All family data lives in the private bucket, built offline:
  *   <prefix>/current.json                 {"version": "..."}
@@ -26,7 +33,8 @@ export type FamilyRelationGroup = 'self' | 'ancestor' | 'descendant' | 'blood' |
 export type FamilyPeopleGroup = FamilyRelationGroup | 'none';
 export type FamilyHistoryMode = 'family' | 'owner' | 'guest';
 export type FamilyHistoryAccess = FamilyHistoryMode | 'none';
-export type FamilyMediaKind = 'record' | 'grave' | 'tree' | 'codex';
+export type FamilyMediaKind = 'record' | 'grave' | 'tree' | 'codex' | 'web' | 'restored';
+export type FamilyHistoryRefusalReason = 'review' | 'test' | 'unmatched' | 'declined';
 
 export interface FamilyEvent {
   date?: string | null;
@@ -85,6 +93,15 @@ export interface FamilyPerson {
   conflict?: FamilyConflict | null;
   ownerRelation?: string;
   ownerGroup?: string;
+  /* Export v2. */
+  /** The export's best portrait of this person (a media id). */
+  portrait?: string | null;
+  /** How many sources the export left out whole because they name a DNA match. */
+  withheld?: number;
+  /** A research-only person's proof level. */
+  research?: 'dna' | 'guess' | null;
+  presumedLiving?: boolean;
+  mayBeLiving?: boolean;
 }
 
 export interface FamilyRecord {
@@ -139,11 +156,71 @@ export interface FamilyMedia {
   place?: string;
   description?: string;
   media_kind?: string;
+  /** Tree ids of the only people (with the owner) who may see an item the export held back. */
+  heldFor?: string[];
+  /* Export v2 (every field optional; the server works without them). */
+  /** portrait | photo | record | grave | document | story, when the export decided it. */
+  category?: string;
+  w?: number;
+  h?: number;
+  /** Sizes the bucket holds: t (400 px), s (2,048), l (4,096, big scans), f (a 256 px face crop),
+   * o (a scan's original). Their files are in `sizeFiles`. */
+  sizes?: string[];
+  sizeFiles?: Record<string, FamilySizeFile>;
+  /** Short visual alt text and a longer description, written offline ("Described automatically"). */
+  alt?: string;
+  text?: string | null;
+  textAuto?: boolean;
+  /** A story document's words, extracted by the export ("media/<id>.text.<hash>.txt"). */
+  textFile?: string;
+  textChars?: number;
+  hasText?: boolean;
+  isPortrait?: boolean;
+  isPhotograph?: boolean;
+  /** Faces as fractions of the picture. */
+  faces?: FamilyFaceBox[];
+  describedBy?: string;
+  /** On an original: the id of its restored copy. */
+  restored?: string;
+  /** On a restored copy (kind "restored"): its original's id. */
+  restoredFrom?: string;
+  restoredNotes?: string | null;
+  faithful?: boolean | null;
+  webSource?: string;
 }
+
+export interface FamilySizeFile {
+  /** "media/<id>.<size>.<hash>.jpg", relative to the prefix. */
+  file: string;
+  w?: number;
+  h?: number;
+  bytes?: number;
+}
+
+export interface FamilyFaceBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type FamilyProofLevel = 'records' | 'dna' | 'guess';
 
 export interface FamilyFinding {
   summary: string;
   people: string[];
+  /* Export v2: the curated findings. */
+  key?: string;
+  title?: string;
+  text?: string;
+  proof?: FamilyProofLevel;
+  /** How sure, in the research's words ("about 90 to 95% sure"). */
+  band?: string | null;
+  /** May be news to the family (who a father was): never featured, shown behind a heads-up. */
+  sensitive?: boolean;
+  dna?: boolean;
+  evidence?: string | null;
+  storySlug?: string | null;
 }
 
 export interface FamilyStory {
@@ -152,13 +229,99 @@ export interface FamilyStory {
   /** Markdown, relative to the version folder. */
   file: string;
   words?: number;
+  /* Export v2. */
+  short?: string[] | null;
+  research?: boolean;
+  sensitive?: boolean;
+  /** Who's who: tree ids the story names. */
+  people?: string[];
+  findings?: string[];
+  minutes?: number;
+}
+
+/** A dated moment for "On this day": people who have died, full dates only. */
+export interface FamilyMilestone {
+  people: string[];
+  type: string;
+  date: string;
+  placeText?: string | null;
+  /** "MM-DD" and the year, when the export sends them. */
+  md?: string;
+  year?: number;
+}
+
+/** What one export added since the one before it. */
+export interface FamilyChange {
+  version: string;
+  date?: string;
+  since?: string | null;
+  people?: string[];
+  updated?: string[];
+  media?: string[];
+}
+
+export interface FamilyDnaCluster {
+  key: string;
+  title?: string;
+  /** The couple whose descendants these DNA cousins are. */
+  couple: string[];
+  members?: number;
+  band?: string;
+  proof?: FamilyProofLevel;
+  text?: string;
+}
+
+export interface FamilyDnaConclusion {
+  key: string;
+  title: string;
+  text: string;
+  proof?: FamilyProofLevel;
+  band?: string;
+  sensitive?: boolean;
+  people: string[];
+  clusters?: string[];
+  finding?: string;
+  storySlug?: string | null;
+}
+
+/** The owner's DNA test, curated by hand: no match's name ever appears here. */
+export interface FamilyDnaBlock {
+  tested?: string[];
+  /** The side of the tester's family the clusters are on: "mother", "father" or "both". */
+  testSide?: string;
+  summary?: string;
+  clusters?: FamilyDnaCluster[];
+  conclusions?: FamilyDnaConclusion[];
+  details?: { title?: string; rows?: string[]; caveats?: string[] };
+}
+
+export interface FamilyPlace {
+  id: string;
+  short: string;
+  lat: number;
+  lon: number;
+  precision: string;
+  state?: string | null;
+  country?: string | null;
+}
+
+/** The offline map (export v2, tools/geocode.py). */
+export interface FamilyPlaces {
+  ready?: boolean;
+  places: FamilyPlace[];
+  /** A person (p) at a place (pl) in a year (y), from a fact of type t. */
+  stays: { p: string; pl: string; y: number; t?: string }[];
+  moves?: { p: string; from: string; to: string; y: number }[];
+  ocean?: { p: string; from: string; to: string; born?: number; y: number; country?: string }[];
+  unplaced?: string[];
+  note?: string;
 }
 
 export interface FamilyBundle {
   version: string;
   generated?: string;
   owner: string;
-  counts?: Record<string, number>;
+  counts?: Record<string, unknown>;
   anchors: string[];
   people: Record<string, FamilyPerson>;
   records: Record<string, FamilyRecord>;
@@ -167,6 +330,13 @@ export interface FamilyBundle {
   findings: FamilyFinding[];
   stories: FamilyStory[];
   sources?: Record<string, { title?: string }>;
+  /* Export v2 (schema 2); each part is optional and the routes work without it. */
+  schema?: number;
+  sensitivePeople?: string[];
+  milestones?: FamilyMilestone[];
+  changes?: FamilyChange[];
+  dna?: FamilyDnaBlock | null;
+  places?: FamilyPlaces | null;
 }
 
 export interface FamilyRelation {
@@ -177,17 +347,66 @@ export interface FamilyRelation {
   path?: string[];
   pathText?: string;
   notes?: string[];
+  /* Export v2. */
+  /** Coefficient of relationship on paper (1 for the anchor). */
+  cor?: number;
+  /** Ahnentafel numbers of an ancestor (more than one when the family married cousins). */
+  ahnen?: number[];
+  side?: string | null;
+  kind?: string;
+  research?: 'dna' | 'guess' | null;
+}
+
+export interface FamilyPaperRow {
+  gen: number;
+  slots: number;
+  named: number;
+  living?: number;
+  research?: number;
+  unknown?: number;
+  share?: number;
+}
+
+export interface FamilyBirthplaceRow {
+  gen: number;
+  slots: number;
+  named: number;
+  known: number;
+  unknown: number;
+  rows: { place: string; kind?: string; count: number; people: string[] }[];
 }
 
 export interface FamilyView {
   anchor: string;
   relations: Record<string, FamilyRelation>;
+  /* Export v2 (tools/inheritance.py). */
+  follows?: 'father' | 'mother' | null;
+  coverage?: Record<string, { named: number; deepest: number }>;
+  paper?: FamilyPaperRow[];
+  birthplaces?: FamilyBirthplaceRow[];
+  abroad?: { id: string; country: string; year?: number | null; gen: number }[];
+  faces?: { id: string; media: string; gen: number; mayBeLiving?: boolean }[];
 }
 
 export interface FamilyHistoryAccount extends LibraryAccount {
   /** A tree id like "@I123@" the owner matched this account to. */
   kadeFamilyTreePerson?: string | null;
   kadeFamilyHistory?: 'guest' | 'none' | null;
+  /** When an account that is not matched last asked to be added (POST /ask). */
+  kadeFamilyHistoryAskedAt?: Date | string | null;
+}
+
+/** The 403 every route answers to an account that may not see the family history. */
+export interface FamilyHistoryRefusal {
+  access: false;
+  reason: FamilyHistoryRefusalReason;
+  error: string;
+  /** The Library row's greyed detail: "Not linked to the tree yet". */
+  detail: string;
+  hint: string;
+  /** True when POST /ask would be taken now. */
+  canAsk: boolean;
+  askedAt: string | null;
 }
 
 export interface FamilyHistoryViewer {
@@ -310,11 +529,16 @@ export interface FamilyHistoryAccountRow {
   testSeat: boolean;
   /** False for accounts POST /match refuses: administrators and test seats. */
   changeable: boolean;
+  /** When this account asked to be added and has not been matched since, or null. */
+  askedAt: string | null;
 }
 
+/** Fields the router may write on an account; a field left out is not touched, null removes it. */
 export interface FamilyHistoryUserFields {
-  kadeFamilyTreePerson: string | null;
-  kadeFamilyHistory: 'guest' | 'none' | null;
+  kadeFamilyTreePerson?: string | null;
+  kadeFamilyHistory?: 'guest' | 'none' | null;
+  /** An ISO time. */
+  kadeFamilyHistoryAskedAt?: string | null;
 }
 
 export interface FamilyHistoryMatch {
@@ -346,6 +570,32 @@ export const FAMILY_HISTORY_OWNER_ONLY: string =
   'Only the owner of the family tree can see and change who has access.';
 export const FAMILY_HISTORY_VIEW_NOTE: string =
   "Your own place in the tree has not been mapped yet, so relationships are shown from the tree owner's place for now.";
+export const FAMILY_HISTORY_ROW_HINT: string =
+  'Your place in the family tree, with photos, records, a map and stories.';
+/** The greyed Library row's words for each refusal (generic: no family data). */
+export const FAMILY_HISTORY_REFUSAL_WORDS: Readonly<
+  Record<FamilyHistoryRefusalReason, { detail: string; hint: string }>
+> = {
+  review: {
+    detail: 'Private to one family',
+    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to accounts matched to a person in that family's tree.",
+  },
+  test: {
+    detail: 'Private to one family',
+    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to accounts matched to a person in that family's tree.",
+  },
+  unmatched: {
+    detail: 'Not linked to the tree yet',
+    hint: "Ask the tree's owner to match your account.",
+  },
+  declined: {
+    detail: 'Private to the family',
+    hint: "The tree's owner keeps this to the family.",
+  },
+};
+export const FAMILY_HISTORY_ASKED: string = "Asked. The tree's owner will see your request.";
+/** An account may ask to be added again after a week. */
+export const FAMILY_HISTORY_ASK_MS: number = 7 * 24 * 60 * 60 * 1000;
 export const FAMILY_HISTORY_CACHE_MS: number = 10 * 60 * 1000;
 export const FAMILY_HISTORY_MEDIA_SECONDS: number = 3600;
 export const FAMILY_SEARCH_LIMIT: number = 50;
@@ -417,24 +667,104 @@ export function familyPersonId(bundle: FamilyBundle, id: string): string | null 
   return person.duplicateOf && own(bundle.people, person.duplicateOf) ? person.duplicateOf : id;
 }
 
+/** The tree owner's account id (KADE_FH_OWNER_USER_ID), read on every request so changing it on
+ * the server needs no build; "" while it is unset. */
+export function familyOwnerUserId(env: NodeJS.ProcessEnv = process.env): string {
+  return String(env.KADE_FH_OWNER_USER_ID || '').trim();
+}
+
 /**
  * Who this account sees the tree as, or null when it may not see it:
- * the review seat and test seats never, whatever else they carry (the owner's decision); a matched
- * person (a duplicate entry's main person); an admin as the owner; a guest from the owner's place;
- * everyone else never.
+ * the review seat and test seats never, whatever else they carry (the owner's decision); the
+ * owner's account as the owner; a matched person (a duplicate entry's main person); any other
+ * administrator, and a guest, from the owner's place in the owner's words; everyone else never.
+ * While KADE_FH_OWNER_USER_ID is unset, an administrator who is not matched to someone else is
+ * the owner, as in v1, so the owner is never shut out before the setting is made.
  */
 export function familyHistoryViewer(
   user: FamilyHistoryAccount | null | undefined,
   bundle: FamilyBundle,
+  ownerUserId: string = familyOwnerUserId(),
 ): FamilyHistoryViewer | null {
   if (!user || libraryReviewSeat(user) || libraryTestSeat(user)) return null;
+  const admin = user.role === 'ADMIN';
   const matched = user.kadeFamilyTreePerson
     ? familyPersonId(bundle, user.kadeFamilyTreePerson)
     : null;
+  if (ownerUserId) {
+    if (admin && accountIdOf(user) === ownerUserId)
+      return { personId: bundle.owner, mode: 'owner' };
+  } else if (admin && (!matched || matched === bundle.owner)) {
+    return { personId: bundle.owner, mode: 'owner' };
+  }
   if (matched) return { personId: matched, mode: 'family' };
-  if (user.role === 'ADMIN') return { personId: bundle.owner, mode: 'owner' };
-  if (user.kadeFamilyHistory === 'guest') return { personId: bundle.owner, mode: 'guest' };
+  if (admin || user.kadeFamilyHistory === 'guest') return { personId: bundle.owner, mode: 'guest' };
   return null;
+}
+
+/** May this account use the owner's pages (/accounts, /match, /notes)? The owner's account, or,
+ * while KADE_FH_OWNER_USER_ID is unset, any administrator; never the review seat or a test seat. */
+export function familyHistoryOwnerAccount(
+  user: FamilyHistoryAccount | null | undefined,
+  ownerUserId: string = familyOwnerUserId(),
+): boolean {
+  if (!user || user.role !== 'ADMIN' || libraryReviewSeat(user) || libraryTestSeat(user))
+    return false;
+  return ownerUserId ? accountIdOf(user) === ownerUserId : true;
+}
+
+function isoOf(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const at = value instanceof Date ? value.getTime() : Date.parse(String(value));
+  return Number.isFinite(at) ? new Date(at).toISOString() : null;
+}
+
+/** "29 September 2026", for "Asked on ...". */
+export function familyDayText(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getUTCDate()} ${FAMILY_MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/** Why an account may not see the family history, in the words its greyed row shows. No bundle
+ * is needed, so a stranger never costs a bucket read. */
+export function familyHistoryRefusal(
+  user: FamilyHistoryAccount | null | undefined,
+  now: number,
+): FamilyHistoryRefusal {
+  let reason: FamilyHistoryRefusalReason = 'unmatched';
+  if (user && libraryReviewSeat(user)) reason = 'review';
+  else if (user && libraryTestSeat(user)) reason = 'test';
+  else if (user?.kadeFamilyHistory === 'none') reason = 'declined';
+  const words = FAMILY_HISTORY_REFUSAL_WORDS[reason];
+  const askedAt = reason === 'unmatched' ? isoOf(user?.kadeFamilyHistoryAskedAt) : null;
+  const waiting = !!askedAt && now - Date.parse(askedAt) < FAMILY_HISTORY_ASK_MS;
+  return {
+    access: false,
+    reason,
+    error: FAMILY_HISTORY_PRIVATE,
+    detail: waiting && askedAt ? `Asked on ${familyDayText(askedAt)}` : words.detail,
+    hint: waiting ? "The tree's owner will see your request." : words.hint,
+    canAsk: reason === 'unmatched' && !!user && !waiting,
+    askedAt,
+  };
+}
+
+/** The Library row's detail for an account that may open the family history: "Ada's sister",
+ * "Your tree", "Guest". */
+export function familyRowDetail(
+  mode: FamilyHistoryMode,
+  bundle: FamilyBundle,
+  relationToOwner: FamilyRelation | null | undefined,
+): string {
+  if (mode === 'owner') return 'Your tree';
+  if (mode === 'guest') return 'Guest';
+  const owner = own(bundle.people, bundle.owner);
+  const voice = familyVoice(familyFirstName(owner?.name), owner?.sex, true);
+  const term = relationToOwner
+    ? familyTermText(relationToOwner.term, relationToOwner.group, voice)
+    : null;
+  if (!term || term === voice.self) return 'In the family tree';
+  return familyCapital(term);
 }
 
 /** False when no bundle could let this account in, so a stranger never costs a bucket read. */
@@ -544,17 +874,14 @@ function memorialView(
   bundle: FamilyBundle,
   memorial: FamilyMemorial,
   wrong: string | undefined,
+  audience: FamilyAudience,
 ): FamilyMemorialView {
   const photos: FamilyMemorialPhotoView[] = [];
   for (const photo of memorial.photos || []) {
-    if (photo.media && own(bundle.media, photo.media))
+    if (photo.media && familyMediaVisible(bundle, own(bundle.media, photo.media), audience))
       photos.push({ id: photo.media, caption: photo.caption || '' });
   }
   return { ...memorial, photos, ...(wrong ? { wrong } : {}) };
-}
-
-function withoutRecords({ records: _records, ...fact }: FamilyFact): FamilyFact {
-  return fact;
 }
 
 /** How this child is linked to this parent, when it is anything but a birth link. */
@@ -563,27 +890,27 @@ function childLink(bundle: FamilyBundle, parentId: string, childId: string): Fam
   return kind && kind !== 'birth' ? kind : undefined;
 }
 
+/** Everyone may see everything but items the export held back (the owner sees those too). */
+const EVERYONE: FamilyAudience = { personId: '', owner: false };
+
 /**
  * One person, with their family, records, graves, pictures and findings, related to the viewer.
- * A living person gets only what the export left on them: their facts still name source records
- * (public-records indexes carry addresses), so those keys are neither followed nor sent.
+ * Living relatives get the same page as anyone (the owner's decision, Sep 29 2026): the export
+ * has already scrubbed addresses and phone numbers from the records it keeps.
  */
 export function familyPersonPayload(
   bundle: FamilyBundle,
   view: FamilyView,
   id: string,
+  audience: FamilyAudience = EVERYONE,
 ): FamilyPersonPayload | null {
   const person = own(bundle.people, id);
   if (!person) return null;
-  const living = !!person.living;
-  const wrongRecords = living ? {} : person.wrongRecords || {};
-  const wrongMemorials = living ? {} : person.wrongMemorials || {};
+  const wrongRecords = person.wrongRecords || {};
+  const wrongMemorials = person.wrongMemorials || {};
   const recordKeys = new Set<string>(person.records || []);
-  if (!living) {
-    for (const fact of person.facts || [])
-      for (const key of fact.records || []) recordKeys.add(key);
-    for (const key of Object.keys(wrongRecords)) recordKeys.add(key);
-  }
+  for (const fact of person.facts || []) for (const key of fact.records || []) recordKeys.add(key);
+  for (const key of Object.keys(wrongRecords)) recordKeys.add(key);
   const records: FamilyRecordView[] = [];
   recordKeys.forEach((key) => {
     const record = own(bundle.records, key);
@@ -597,13 +924,14 @@ export function familyPersonPayload(
   const memorials: FamilyMemorialView[] = [];
   memorialIds.forEach((mid) => {
     const memorial = own(bundle.memorials, mid);
-    if (memorial) memorials.push(memorialView(bundle, memorial, own(wrongMemorials, mid)));
+    if (memorial)
+      memorials.push(memorialView(bundle, memorial, own(wrongMemorials, mid), audience));
   });
   const media: FamilyMedia[] = [];
   const mediaIds = new Set<string>();
   const addMedia = (mediaId: string | null | undefined): void => {
     const item = mediaId && !mediaIds.has(mediaId) ? own(bundle.media, mediaId) : undefined;
-    if (!item) return;
+    if (!item || item.kind === 'restored' || !familyMediaVisible(bundle, item, audience)) return;
     mediaIds.add(item.id);
     media.push(item);
   };
@@ -612,7 +940,6 @@ export function familyPersonPayload(
   return {
     person: {
       ...person,
-      ...(living ? { facts: (person.facts || []).map(withoutRecords) } : {}),
       relation: own(view.relations, id) || null,
     },
     family: {
@@ -643,10 +970,20 @@ export function familyTreeDepth(text: string, fallback: number, max: number): nu
   return Math.min(max, Math.max(0, Math.floor(n)));
 }
 
-function portrait(bundle: FamilyBundle, person: FamilyPerson): string | undefined {
+function portrait(
+  bundle: FamilyBundle,
+  person: FamilyPerson,
+  audience: FamilyAudience,
+): string | undefined {
   for (const mediaId of person.media || []) {
     const item = own(bundle.media, mediaId);
-    if (item && item.kind === 'tree' && PORTRAIT.test(item.file)) return mediaId;
+    if (
+      item &&
+      item.kind === 'tree' &&
+      PORTRAIT.test(item.file) &&
+      familyMediaVisible(bundle, item, audience)
+    )
+      return mediaId;
   }
   return undefined;
 }
@@ -683,6 +1020,7 @@ export function familyTreeSlice(
   focus: string,
   up: number,
   down: number,
+  audience: FamilyAudience = EVERYONE,
 ): FamilyTree | null {
   const center = own(bundle.people, focus);
   if (!center) return null;
@@ -698,7 +1036,7 @@ export function familyTreeSlice(
   ids.forEach((id) => {
     const person = own(bundle.people, id) as FamilyPerson;
     const relation = own(view.relations, id);
-    const photo = portrait(bundle, person);
+    const photo = portrait(bundle, person, audience);
     nodes.push({
       id,
       label: person.label,
@@ -895,11 +1233,18 @@ export function familyMediaObject(
 }
 
 /** Why the owner may not match this account, or null when she may. */
-export function familyHistoryLocked(user: FamilyHistoryAccount): string | null {
+export function familyHistoryLocked(
+  user: FamilyHistoryAccount,
+  ownerUserId: string = familyOwnerUserId(),
+): string | null {
   if (libraryReviewSeat(user))
     return 'The App Review account is always kept out of the family history.';
   if (libraryTestSeat(user)) return 'Test accounts are always kept out of the family history.';
-  if (user.role === 'ADMIN') return 'An administrator always sees the family history as its owner.';
+  if (user.role === 'ADMIN') {
+    return ownerUserId && accountIdOf(user) !== ownerUserId
+      ? 'An administrator is not matched here: an administrator who is not the owner visits as a guest.'
+      : 'An administrator always sees the family history as its owner.';
+  }
   return null;
 }
 
@@ -908,15 +1253,17 @@ export function familyHistoryAccountRow(
   bundle: FamilyBundle,
 ): FamilyHistoryAccountRow {
   const personId = user.kadeFamilyTreePerson || null;
+  const access = familyHistoryViewer(user, bundle)?.mode || 'none';
   return {
     userId: accountIdOf(user),
     name: String(user.name || '').trim(),
     username: String(user.username || '').trim(),
     personId,
     personLabel: personId ? own(bundle.people, personId)?.label || null : null,
-    access: familyHistoryViewer(user, bundle)?.mode || 'none',
+    access,
     testSeat: libraryTestSeat(user),
     changeable: !familyHistoryLocked(user),
+    askedAt: access === 'none' ? isoOf(user.kadeFamilyHistoryAskedAt) : null,
   };
 }
 
@@ -935,12 +1282,19 @@ export function familyHistoryMatch(
   if (personId === undefined || personId === null || personId === '') {
     return {
       userId,
-      fields: { kadeFamilyTreePerson: null, kadeFamilyHistory: guest ? 'guest' : 'none' },
+      fields: {
+        kadeFamilyTreePerson: null,
+        kadeFamilyHistory: guest ? 'guest' : 'none',
+        kadeFamilyHistoryAskedAt: null,
+      },
     };
   }
   const main = typeof personId === 'string' ? familyPersonId(bundle, personId) : null;
   if (!main) return { error: 'That person is not in the family tree.' };
-  return { userId, fields: { kadeFamilyTreePerson: main, kadeFamilyHistory: null } };
+  return {
+    userId,
+    fields: { kadeFamilyTreePerson: main, kadeFamilyHistory: null, kadeFamilyHistoryAskedAt: null },
+  };
 }
 
 /* ── loading ─────────────────────────────────────────────────────────── */
@@ -980,7 +1334,7 @@ function completeBundle(raw: FamilyBundle | null, version: string): FamilyBundle
   };
 }
 
-function bundleCounts(bundle: FamilyBundle): Record<string, number> {
+function bundleCounts(bundle: FamilyBundle): Record<string, unknown> {
   return (
     bundle.counts || {
       people: Object.keys(bundle.people).length,
@@ -1048,7 +1402,7 @@ function createFamilyStore(deps: FamilyHistoryDependencies, prefix: string) {
     const file = `${state.version}/views/${anchor.replace(/@/g, '')}.json.gz`;
     const loading = read<FamilyView>(file).then((raw) =>
       raw && raw.relations && typeof raw.relations === 'object'
-        ? { anchor: raw.anchor || anchor, relations: raw.relations }
+        ? { ...raw, anchor: raw.anchor || anchor, relations: raw.relations }
         : null,
     );
     loading.catch(() => state.views.delete(anchor));
@@ -1071,6 +1425,9 @@ interface FamilyContext {
   user: FamilyHistoryAccount;
   viewer: FamilyHistoryViewer;
   view: FamilyView;
+  /** True when `view` is the owner's, standing in for a viewer who has none (or a guest). */
+  borrowed: boolean;
+  audience: FamilyAudience;
   viewNote?: string;
   ownerView: () => Promise<FamilyView | null>;
 }
@@ -1083,28 +1440,31 @@ const signedIn = (req: Request): FamilyHistoryAccount | undefined =>
 
 /**
  * GET  /me /person/:id /tree /search /people /stories /story/:slug /findings /media/:id
+ * POST /ask                      an account that is not matched asks to be added
  * GET  /accounts, POST /match   the owner only
- * Every answer is JSON with Cache-Control: no-store (a media redirect is a 302).
+ * Every answer is JSON with Cache-Control: no-store (a media redirect is a 302). A refused
+ * account gets the same 403 on every route, with the reason its greyed Library row shows.
  */
 export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const router = Router();
   const prefix = deps.prefix || familyHistoryPrefix();
   const store = createFamilyStore(deps, prefix);
+  const now = deps.now || Date.now;
   const fail = (res: Response, error: Error): void => {
     deps.log?.(error.message);
     if (!res.headersSent) res.status(503).json({ error: FAMILY_HISTORY_UPDATING });
   };
-  const deny = (res: Response): void => {
-    res.status(403).json({ access: false, error: FAMILY_HISTORY_PRIVATE });
+  const deny = (res: Response, user: FamilyHistoryAccount | undefined): void => {
+    res.status(403).json(familyHistoryRefusal(user, now()));
   };
 
   /** The viewer and their view, null when refused; throws when the bundle or views cannot load. */
   const contextFor = async (user: FamilyHistoryAccount): Promise<FamilyContext | null> => {
     const state = await store.loaded();
-    const viewer = familyHistoryViewer(user, state.bundle);
+    const viewer = familyHistoryViewer(user, state.bundle, familyOwnerUserId());
     if (!viewer) return null;
     const ownerView = (): Promise<FamilyView | null> => store.view(state, state.bundle.owner);
-    const mine = await store.view(state, viewer.personId);
+    const mine = viewer.mode === 'guest' ? null : await store.view(state, viewer.personId);
     const view = mine || (await ownerView());
     if (!view) throw new Error(`no view for ${viewer.personId} and none for the owner`);
     return {
@@ -1113,7 +1473,9 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       user,
       viewer,
       view,
-      ...(mine ? {} : { viewNote: FAMILY_HISTORY_VIEW_NOTE }),
+      borrowed: !mine || viewer.mode === 'guest',
+      audience: { personId: viewer.personId, owner: viewer.mode === 'owner' },
+      ...(mine || viewer.mode === 'guest' ? {} : { viewNote: FAMILY_HISTORY_VIEW_NOTE }),
       ownerView,
     };
   };
@@ -1122,14 +1484,14 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     (handler: FamilyHandler): RequestHandler =>
     async (req, res) => {
       const user = signedIn(req);
-      if (!user || !familyHistoryCandidate(user)) return deny(res);
+      if (!user || !familyHistoryCandidate(user)) return deny(res, user);
       let ctx: FamilyContext | null = null;
       try {
         ctx = await contextFor(user);
       } catch (error) {
         return fail(res, error as Error);
       }
-      if (!ctx) return deny(res);
+      if (!ctx) return deny(res, user);
       try {
         await handler(req, res, ctx);
       } catch (error) {
@@ -1140,8 +1502,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const owner =
     (handler: OwnerHandler): RequestHandler =>
     async (req, res) => {
-      const user = signedIn(req);
-      if (!user || user.role !== 'ADMIN' || libraryReviewSeat(user)) {
+      if (!familyHistoryOwnerAccount(signedIn(req), familyOwnerUserId())) {
         res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
         return;
       }
@@ -1162,28 +1523,85 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     '/me',
     family(async (_req, res, ctx) => {
       const person = own(ctx.bundle.people, ctx.viewer.personId) as FamilyPerson;
+      const ownerPerson = own(ctx.bundle.people, ctx.bundle.owner);
       const ownerView = await ctx.ownerView();
+      const relationToOwner = (ownerView && own(ownerView.relations, ctx.viewer.personId)) || null;
+      const accountFirst = String(ctx.user.name || '').trim()
+        ? familyFirstName(ctx.user.name)
+        : ctx.viewer.mode === 'guest'
+          ? 'there'
+          : familyFirstName(person.name);
       res.json({
         access: true,
         viewer: {
           personId: ctx.viewer.personId,
           name: person.name,
           label: person.label,
-          relationToOwner: (ownerView && own(ownerView.relations, ctx.viewer.personId)) || null,
+          relationToOwner,
+          /** The greeting's name: the account's own, never the owner's for a guest. */
+          first: accountFirst,
+          /** False for a guest, who sees the tree from the owner's place. */
+          inTree: ctx.viewer.mode !== 'guest',
         },
         mode: ctx.viewer.mode,
-        isOwner: ctx.user.role === 'ADMIN',
+        isOwner: ctx.viewer.mode === 'owner',
         version: ctx.state.version,
         counts: bundleCounts(ctx.bundle),
+        owner: { first: familyFirstName(ownerPerson?.name) },
+        row: {
+          detail: familyRowDetail(ctx.viewer.mode, ctx.bundle, relationToOwner),
+          hint: FAMILY_HISTORY_ROW_HINT,
+        },
         ...(ctx.viewNote ? { viewNote: ctx.viewNote } : {}),
       });
     }),
   );
 
+  router.post('/ask', async (req, res) => {
+    const user = signedIn(req);
+    let refusal = familyHistoryRefusal(user, now());
+    try {
+      if (user && familyHistoryCandidate(user) && (await contextFor(user))) {
+        res.status(403).json({ error: 'This account can already open the family history.' });
+        return;
+      }
+    } catch (error) {
+      return fail(res, error as Error);
+    }
+    if (!user || refusal.reason !== 'unmatched') {
+      res.status(403).json(refusal);
+      return;
+    }
+    if (!refusal.canAsk) {
+      res.status(429).json({ ...refusal, error: `${refusal.detail}. ${refusal.hint}` });
+      return;
+    }
+    const askedAt = new Date(now()).toISOString();
+    try {
+      const after = await deps.setUserFields(accountIdOf(user), {
+        kadeFamilyHistoryAskedAt: askedAt,
+      });
+      if (!after) {
+        res.status(404).json({ error: 'That account was not found.' });
+        return;
+      }
+      refusal = familyHistoryRefusal(after, now());
+    } catch (error) {
+      return fail(res, error as Error);
+    }
+    deps.log?.(`ask ${accountIdOf(user)}`);
+    res.json({ ok: true, askedAt, text: FAMILY_HISTORY_ASKED, refusal });
+  });
+
   router.get(
     '/person/:id',
     family((req, res, ctx) => {
-      const payload = familyPersonPayload(ctx.bundle, ctx.view, String(req.params.id || ''));
+      const payload = familyPersonPayload(
+        ctx.bundle,
+        ctx.view,
+        String(req.params.id || ''),
+        ctx.audience,
+      );
       if (!payload) {
         res.status(404).json({ error: 'That person is not in the family tree.' });
         return;
@@ -1205,6 +1623,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
             focus,
             familyTreeDepth(queryText(req.query.up), up.fallback, up.max),
             familyTreeDepth(queryText(req.query.down), down.fallback, down.max),
+            ctx.audience,
           )
         : null;
       if (!tree) {
@@ -1266,7 +1685,9 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   router.get(
     '/media/:id',
     family(async (req, res, ctx) => {
-      const object = familyMediaObject(ctx.bundle, prefix, String(req.params.id || ''));
+      const id = String(req.params.id || '');
+      const visible = familyMediaVisible(ctx.bundle, own(ctx.bundle.media, id), ctx.audience);
+      const object = visible ? familyMediaObject(ctx.bundle, prefix, id) : null;
       if (!object) {
         res.status(404).json({ error: 'That picture is not in the family history.' });
         return;
@@ -1286,8 +1707,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       const rows = (await deps.findUsers())
         .filter((user) => !libraryReviewSeat(user))
         .map((user) => familyHistoryAccountRow(user, state.bundle));
+      /* Accounts asking to be added come first, the newest ask first; then everyone by name. */
       rows.sort(
         (a, b) =>
+          (b.askedAt || '').localeCompare(a.askedAt || '') ||
           (a.name || a.username).localeCompare(b.name || b.username) ||
           a.userId.localeCompare(b.userId),
       );

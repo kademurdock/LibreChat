@@ -39,6 +39,8 @@ export interface IUser extends Document {
   kadeFamilyTreePerson?: string;
   /** Kade-AI: Family history access the owner set for an account with no tree person */
   kadeFamilyHistory?: 'guest' | 'none';
+  /** Kade-AI: when an account not in the family tree last asked to be added */
+  kadeFamilyHistoryAskedAt?: Date;
   /** Kade-AI: ten digits that can be typed into the login box instead of an email. */
   kadePhone?: string;
   totpSecret?: string;
