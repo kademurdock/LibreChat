@@ -128,6 +128,8 @@ const WEB_ONLY = [
 ];
 
 const ADMIN = [
+  { id: 'publish', href: '/publish', title: 'Publish on my website', icon: '📺',
+    hint: 'Choose finished recordings for the public Watch and Listen pages. This is separate from the family library.' },
   { id: 'usage', href: '/usage-dashboard', title: 'Admin dashboard', spoken: 'Admin dashboard', icon: '📊',
     hint: 'Usage and spending, feedback reports, and activity logs. Only admin accounts see this.' },
   { id: 'feedback', href: '/feedback-dashboard', title: 'Feedback reports', spoken: 'Feedback reports', icon: '📝',
@@ -195,17 +197,20 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
 <body>
 <main>
 <header class="home-welcome">
-<span class="home-brand" aria-hidden="true">KADE · AI</span>
-<h1>Home</h1>
-<p class="muted">Same map as the iPhone app: everything is here, in the same order, every time.</p>
+<span class="home-brand" aria-hidden="true">KADE MURDOCK</span>
+<h1>Your home</h1>
+<p class="muted">Read, watch, listen, make something, or spend time together.</p>
+<p><a href="/">Visit Kade’s public website</a></p>
 </header>
 
 <h2 id="sec-account">Your account</h2>
 <p class="acct" id="acctEmail" aria-live="polite">Checking who you are…</p>
 
-${section('Talk', TALK.map(tile))}
+${section('Watch, listen, and meet', TOOLS.filter(item => ['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile))}
 
-${section('Tools', TOOLS.map(tile))}
+${section('Create and explore', TOOLS.filter(item => !['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile))}
+
+${section('Talk', TALK.map(tile))}
 
 ${section('Settings and help', SETTINGS.map(tile))}
 
@@ -224,7 +229,7 @@ ${ADMIN.map(tile).join('\n')}
 <script>
 (async function(){
   var t = await getToken();
-  if(!t){ document.getElementById('acctEmail').textContent = 'Not signed in. '; var a=document.createElement('a'); a.href='/login'; a.textContent='Sign in'; document.getElementById('acctEmail').appendChild(a); return; }
+  if(!t){ location.replace('/login?redirect_to=%2Fhome'); return; }
   try{
     var r = await apiGet('/api/user', t); if(r.ok){ var u = await r.json();
       document.getElementById('acctEmail').textContent = u.email || u.username || 'Signed in';

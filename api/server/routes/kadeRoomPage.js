@@ -71,7 +71,7 @@ const roomHtml = `<!doctype html>
 </style>
 <script defer src="/kade-tabbar.js"></script></head>
 <body>
-  <a class="back" href="/">&larr; Back to chat</a>
+  <a class="back" href="/c/new">&larr; Back to chat</a>
   <h1>Debate &amp; Roleplay Room</h1>
   <p class="muted">Drop two or more characters into a room, hand them a topic or a scene, and jump in whenever you feel like it. They will argue, agree, and everything in between. Or pick the front porch instead: no topic, no contest, just good company hanging out with you.</p>
 

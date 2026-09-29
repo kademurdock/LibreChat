@@ -23,6 +23,11 @@
       }
       const LK = LivekitClient;
       const AC = window.AudioContext || window.webkitAudioContext;
+      const libraryPlayer = new window.ClubLibraryPlayer({
+        token: () => token,
+        pauseJukebox: () => clubCmd('pause'),
+        changed: () => sendData({ t: 'library-changed' }),
+      });
 
       let cfg;
       try{
@@ -744,6 +749,7 @@
         $('pick').hidden = true;
         $('room').hidden = false;
         $('room-title').textContent = label;
+        libraryPlayer.start(mint.mediaToken);
         micMuted = false;
         $('btn-mic').textContent = 'Mute my mic';
         CLUB = { v:0, actn:0, act:'', jb:{ queue:[], curId:null, playing:false, pos:-1 } };
@@ -821,6 +827,7 @@
       }
 
       function handleClubMsg(msg, participant){
+        if(msg.t === 'library-changed'){ libraryPlayer.poll(true); return; }
         var fromId = participant && participant.identity;
         if(msg.t === 'state'){ adoptState(msg); return; }
         if(msg.t === 'hello'){
@@ -1100,6 +1107,7 @@
       }
 
       function cleanupRoom(){
+        libraryPlayer.stop();
         knockStop(true);
         stopRec();
         RECORDERS = {}; renderRecOthers();
@@ -1382,4 +1390,4 @@
         if(dr){ clubCmd('remove', { id: dr.getAttribute('data-drop') }); }
       });
     })();
-  
+

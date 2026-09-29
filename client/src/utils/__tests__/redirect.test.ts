@@ -30,6 +30,12 @@ describe('isSafeRedirect', () => {
     expect(isSafeRedirect('//evil.com')).toBe(false);
   });
 
+  it('rejects backslashes and controls that browsers normalize into external destinations', () => {
+    expect(isSafeRedirect('/\\evil.com')).toBe(false);
+    expect(isSafeRedirect('/\t/evil.com')).toBe(false);
+    expect(isSafeRedirect('/\n/evil.com')).toBe(false);
+  });
+
   it('rejects a bare domain', () => {
     expect(isSafeRedirect('evil.com')).toBe(false);
   });

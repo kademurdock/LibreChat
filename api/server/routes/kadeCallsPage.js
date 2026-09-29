@@ -79,7 +79,7 @@ const callsHtml = `<!doctype html>
 </style>
 </head>
 <body>
-  <a class="back" href="/">&larr; Back to Kade-AI</a>
+  <a class="back" href="/home">&larr; Back to Kade-AI</a>
   <h1>Calls &amp; Conversations</h1>
   <p class="muted">Every phone call and voice conversation, saved as a readable transcript. Only you can see yours.</p>
   <p id="status" class="status" role="status" aria-live="polite">Loading your history…</p>

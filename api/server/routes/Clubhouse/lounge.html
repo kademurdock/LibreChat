@@ -34,9 +34,10 @@
   }
   .rec-live { background:#a33 !important; }
 </style>
+<script src="/assets/community/clubhouse.js"></script>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">The Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/whats-new">What's new</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/parlor">The Parlor</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/whats-new">What's new</a></p>
   <h1>Kade's Clubhouse</h1>
   <div id="status" class="status" role="status" aria-live="polite">Opening the Clubhouse&hellip;</div>
   <p id="rec-done" hidden></p>
@@ -85,6 +86,18 @@
       <button type="button" class="rowbtn red" id="btn-leave">Leave the room</button>
     </p>
 
+    <section class="card" id="library-panel" hidden aria-labelledby="library-heading">
+      <h3 id="library-heading" style="margin-top:0">Watch and listen together</h3>
+      <p>Play a shared library recording while you talk. The person who chooses it controls playback for the room. Each listener needs access to the file.</p>
+      <p id="library-status" role="status">Choose a recording from the shared library.</p>
+      <p id="library-now" class="nowline">Nothing selected.</p><p id="library-host"></p>
+      <video id="library-player" playsinline preload="metadata" style="width:100%;max-height:65vh;background:#111" aria-label="Shared library video" hidden></video>
+      <p id="library-picture-row" hidden><label><input id="library-picture" type="checkbox" checked> Show picture (sound keeps playing when hidden)</label></p>
+      <p><button class="rowbtn" id="library-toggle" disabled>Play for everyone</button><button class="rowbtn gray" id="library-back" disabled>Back 30 seconds</button><button class="rowbtn gray" id="library-ahead" disabled>Ahead 30 seconds</button><button class="rowbtn red" id="library-stop" disabled>Stop sharing</button><button class="rowbtn" id="library-take" hidden>Take over playback</button><button class="rowbtn gray" id="library-join" hidden>Rejoin playback</button></p>
+      <label class="blk" for="library-volume">My library media volume</label><input id="library-volume" type="range" min="0" max="100" value="50">
+      <p class="muted">This changes only the recording in your ears. Room recordings capture the conversation and jukebox; this library player is not included.</p>
+      <details><summary style="padding:12px 0">Choose from the library</summary><form id="library-search-form"><label class="blk" for="library-query">Search shared audio and video</label><input id="library-query" type="search" maxlength="120"><button class="rowbtn" id="library-search-button">Search</button></form><ul id="library-results"></ul><button class="rowbtn gray" id="library-more" hidden>More results</button><h4 id="library-chosen" tabindex="-1"></h4><div id="library-tracks"></div></details>
+    </section>
     <div class="card">
       <h3 style="margin-top:0">The jukebox</h3>
       <p class="muted">One player for the whole room &mdash; anybody can play, pause, skip, or jump back. Queue your song politely, or cut in and start a radio fight. House rule: volume is yours alone.</p>

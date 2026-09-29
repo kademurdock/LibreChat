@@ -240,7 +240,7 @@ const PAGE_HTML = `<!doctype html>
 <script defer src="/kade-tabbar.js"></script></head>
 <body>
 <main>
-  <a class="back" href="/">&larr; Back to Kade-AI</a>
+  <a class="back" href="/home">&larr; Back to Kade-AI</a>
   <h1>Transcribe a voice memo</h1>
   <p class="hint">Upload an audio file (voice memo, mp3, m4a, wav — up to about two hours), or record yourself live. You get back clean, punctuated text you can copy or download. Free to use.</p>
   <div class="card">

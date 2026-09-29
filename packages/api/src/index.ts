@@ -290,3 +290,4 @@ export { readMediaLink, mediaAudio, SITE_EXTRACTORS } from './description/links'
 export type { MediaAudio, MediaLink, MediaLinkFound, MediaSite } from './description/links';
 
 export { createDescriptionWallet } from './description/wallet';
+export { createCommunityRouter } from './community/router';

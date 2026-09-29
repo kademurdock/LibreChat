@@ -20,6 +20,7 @@ import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
+import HomeRedirect from './HomeRedirect';
 import Search from './Search';
 import Root from './Root';
 
@@ -125,8 +126,9 @@ export const router = createBrowserRouter(
           children: [
             {
               index: true,
-              element: <Navigate to="/c/new" replace={true} />,
+              element: <HomeRedirect />,
             },
+            { path: 'home', element: <HomeRedirect /> },
             {
               path: 'c/:conversationId?',
               element: <ChatRoute />,

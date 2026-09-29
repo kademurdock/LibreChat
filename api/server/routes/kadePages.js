@@ -214,7 +214,7 @@ const SHARED_HEAD = `
       /* Part 116.3: Home first -- it carries the whole map in the iPhone app's order; Tools lives inside it. */
       if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
       else if (active === 'tools') active = 'home';
-      var items = [['home','/home','Home','🏠'],['chats','/','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+      var items = [['home','/home','Home','🏠'],['chats','/c/new','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
       var nav = document.createElement('nav');
       nav.className = 'kadetabs';
       nav.setAttribute('aria-label','Main navigation');
@@ -236,7 +236,7 @@ const SHARED_HEAD = `
 
 const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</title>${SHARED_HEAD}</head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
   <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, picture and library descriptions, and phone calls also draw from your balance, with the same contribution. Described video has its own price, shown before it starts. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
 
@@ -330,9 +330,10 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
   </script>
 </body></html>`;
 
-const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage Dashboard</title>${SHARED_HEAD}</head>
+const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage Dashboard</title>${SHARED_HEAD}<script src="/assets/library/access.js?v=20260928"></script>
+<style>#familyAccess li { margin: 1rem 0; } #familyAccess .t { display: block; margin-bottom: .5rem; } #familyAccess button { font: inherit; min-height: 44px; padding: .5rem .8rem; } #familyAccess button:focus-visible { outline: 3px solid #5b1042; outline-offset: 3px; }</style></head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Kade-AI Usage Dashboard</h1>
   <p class="muted">Admin view. Spend, usage, and balances across everyone on the instance.</p>
   <p><a class="back" href="/logs" style="font-weight:600">&#128220; Logs &mdash; look up any user's conversations &rarr;</a></p>
@@ -340,6 +341,7 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
   <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
 
   <main id="content" hidden>
+    <section class="card" id="familyAccess" aria-labelledby="h-family-access" hidden></section>
     <div class="card" id="books_card">
       <h2 style="margin-top:0">This month &mdash; the books <span class="muted" id="books_since"></span></h2>
       <p id="books_line" aria-live="polite">Loading the books&hellip;</p>
@@ -463,6 +465,19 @@ const dashboardHtml = `<!doctype html><html lang="en"><head><title>Kade-AI Usage
       if(r.status===401 || r.status===403){ status.className='status err'; status.textContent='This dashboard is for admins only.'; return; }
       if(!r.ok){ status.className='status err'; status.textContent='Could not load the dashboard right now. Try reloading.'; return; }
       const d = await r.json();
+      if (window.setupLibraryAccess) window.setupLibraryAccess(async function(path, options) {
+        const body = options && options.json;
+        const send = () => fetch('/api/kade/reading-room' + path, {
+          method: body ? 'POST' : 'GET', credentials: 'include',
+          headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+          ...(body ? { body: JSON.stringify(body) } : {})
+        });
+        let response = await send();
+        if (response.status === 401) { token = await getToken(); response = await send(); }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not update the Family feature pack.');
+        return data;
+      });
       const t = d.totals || {};
       document.getElementById('winlabel').textContent = '(window = last ' + d.windowDays + ' days)';
       /* KADE Part 291: real provider cost first; what balances were charged stays beside it. */
@@ -741,7 +756,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/wall-of-fame">Wall of Fame &rarr;</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/wall-of-fame">Wall of Fame &rarr;</a></p>
   <h1>My Creations</h1>
   <p class="muted">Every video, image, and audio clip you've generated here, newest first. Videos and audio play right on this page. Hit "Share to the Wall of Fame" on a favorite and everyone on the site can enjoy it too.</p>
 
@@ -901,7 +916,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations</a></p>
   <h1>Wall of Fame</h1>
   <p class="muted">The best AI creations from everyone on Kade-AI — shared by their makers. Add your own from your <a href="/my-creations">My Creations</a> page.</p>
 
@@ -986,7 +1001,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
  * real tables with scoped headers, status region, prose summaries. */
 const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug Reports</title>${SHARED_HEAD}</head>
 <body>
-  <a class="back" href="/">&larr; Back to chat</a>
+  <a class="back" href="/c/new">&larr; Back to chat</a>
   <h1>Feedback &amp; Bug Reports</h1>
   <p class="muted">Everything your users filed by telling any character. Newest first. Marking a report <strong>Solved</strong> notifies the reporter (push or their next chat, delivered by their companion) — and they can reopen it by just saying so.</p>
   <div id="filters" hidden style="margin:.5rem 0">
@@ -1058,7 +1073,7 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
 
 const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notifications & Reminders</title>${SHARED_HEAD}</head>
 <body>
-  <a class="back" href="/">&larr; Back to chat</a>
+  <a class="back" href="/c/new">&larr; Back to chat</a>
   <h1>Notifications &amp; Reminders</h1>
   <p class="muted">Everything here is opt-in and off by default (except in-chat reminders, which are free and silent). Say "remind me to take my meds at 9" to any character and it becomes a real reminder. You pick how each kind of nudge reaches you.</p>
   <div id="status" class="status" role="status">Loading your settings&hellip;</div>
@@ -1360,7 +1375,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
   @media (prefers-color-scheme: dark){ code.tok{ background:#24272f; } }
 </style>
 </head><body>
-<a class="back" href="/">&larr; Back to Kade-AI</a>
+<a class="back" href="/home">&larr; Back to Kade-AI</a>
 <h1>Describe</h1>
 <section class="card" aria-label="Create a described video"><h2>A video you can listen to</h2><p>Add timed spoken descriptions to an uploaded video or YouTube link, then download the described video or its audio. Narration is included. Metered video analysis uses your account balance after you confirm the price.</p><a class="btn" href="/described-video">Make a described video</a></section>
 <p class="muted">Share, pick, or paste a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
@@ -1671,7 +1686,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI</title>${SHARED_HEAD}</head>
 <body>
 <main>
-<a class="back" href="/">&larr; Back to chat</a>
+<a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>Tools</h1>
 <p class="muted">Everything Kade-AI can do, in one place. Tap any one.</p>
 <nav class="hublist" aria-label="Tools">
@@ -1693,7 +1708,7 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
 const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</title>${SHARED_HEAD}</head>
 <body>
 <main>
-<a class="back" href="/">&larr; Back to chat</a>
+<a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>You</h1>
 <p class="muted">Your account and settings.</p>
 <nav class="hublist" aria-label="Your account">
@@ -1891,7 +1906,7 @@ const tabBarAsset = `(function(){
     else active = 'tools';
     if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
     else if (active === 'tools') active = 'home';
-    var items = [['home','/home','Home','🏠'],['chats','/','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
+    var items = [['home','/home','Home','🏠'],['chats','/c/new','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
     var nav = document.createElement('nav'); nav.className = 'kadetabs'; nav.setAttribute('aria-label','Main navigation');
     for (var i=0;i<items.length;i++){ var it=items[i]; var a=document.createElement('a'); a.href=it[1]; var ic=document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent=it[3]; var tx=document.createElement('span'); tx.textContent=it[2]; a.appendChild(ic); a.appendChild(tx); if(it[0]===active) a.setAttribute('aria-current','page'); nav.appendChild(a); }
     document.body.appendChild(nav);
@@ -2116,7 +2131,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
 </style>
 </head>
 <body>
-  <p><a class="back" href="/" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="#gameroom" id="gr-link">Game Room standings</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
+  <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a> &nbsp;&middot;&nbsp; <a class="back" href="#gameroom" id="gr-link">Game Room standings</a> &nbsp;&middot;&nbsp; <a class="back" href="/help/games">How the games work</a></p>
   <h1>The Parlor</h1>
   <div id="status" class="status" role="status" aria-live="polite">Warming up the tables&hellip;</div>
 
@@ -3105,7 +3120,7 @@ const feedbackFormHtml = `<!doctype html><html lang="en"><head><title>Tell Kade 
   @media (prefers-color-scheme: dark){ #err { color:#ffb4ab; } }
 </style>
 </head><body>
-<a class="back" href="/">&larr; Back to chat</a>
+<a class="back" href="/c/new">&larr; Back to chat</a>
 <h1>Tell Kade how it&rsquo;s going</h1>
 <p class="muted">Say how the app is going, report something broken, or share an idea. It goes straight to Kade with your name on it.</p>
 <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -3131,7 +3146,7 @@ const feedbackFormHtml = `<!doctype html><html lang="en"><head><title>Tell Kade 
 </section>
 <section id="done" hidden>
   <h2 id="hd" tabindex="-1">Sent. Thank you &mdash; Kade will see it.</h2>
-  <p><a class="pickbtn" href="/">Back to chat</a><button class="pickbtn" type="button" id="againBtn">Send another</button></p>
+  <p><a class="pickbtn" href="/c/new">Back to chat</a><button class="pickbtn" type="button" id="againBtn">Send another</button></p>
 </section>
 <footer class="muted">&mdash; Kade-AI</footer>
 <script>

@@ -263,7 +263,7 @@ export async function pendingLibraryDigest(models: LibraryModels): Promise<strin
     .limit(5000)
     .lean<LibrarySubmissionRow[]>();
   if (!pending.length) return '';
-  const bookIds = pending.filter((row) => row.book && row.type !== 'report').map((row) => row.book);
+  const bookIds = pending.flatMap((row) => row.book && row.type !== 'report' ? [row.book] : []);
   const kinds = new Map<string, string>();
   if (bookIds.length) {
     const items = await models.books
@@ -331,7 +331,7 @@ export async function approveTrustedUploads(
     .find({ user: owner, status: 'pending', type: { $ne: 'report' } }, 'book url title')
     .limit(5000)
     .lean<LibrarySubmissionRow[]>();
-  const fileRequests = pending.filter((row) => row.book);
+  const fileRequests = pending.filter((row): row is LibrarySubmissionRow & { book: Types.ObjectId } => !!row.book);
   const items = fileRequests.length
     ? await models.books
         .find({ _id: { $in: fileRequests.map((row) => row.book) }, owner }, '_id title state shared')
@@ -353,7 +353,7 @@ export async function approveTrustedUploads(
       else approve.set(String(item._id), item);
     }
   }
-  const requested = fileRequests.map((row) => row.book);
+  const requested = fileRequests.flatMap((row) => row.book ? [row.book] : []);
   const notRequested = await models.books.countDocuments({
     owner,
     state: 'ready',

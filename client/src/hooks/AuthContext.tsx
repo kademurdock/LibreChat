@@ -27,7 +27,7 @@ import {
   useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect, persistRedirectToSession } from '~/utils/redirect';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -94,6 +94,10 @@ const AuthContextProvider = ({
           return;
         }
 
+        if (finalRedirect === '/home' || finalRedirect === '/publish') {
+          window.location.replace(finalRedirect);
+          return;
+        }
         navigate(finalRedirect, { replace: true });
       }, 50),
     [navigate, setUser, setQueriesEnabled],
@@ -104,11 +108,13 @@ const AuthContextProvider = ({
     onSuccess: (data: t.TLoginResponse) => {
       const { user, token, twoFAPending, tempToken } = data;
       if (twoFAPending) {
+        const destination = getPostLoginRedirect(new URLSearchParams(window.location.search));
+        if (destination) persistRedirectToSession(destination);
         navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
         return;
       }
       setError(undefined);
-      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+      setUserContext({ token, isAuthenticated: true, user, redirect: '/home' });
     },
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;

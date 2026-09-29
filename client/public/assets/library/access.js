@@ -47,7 +47,7 @@
     root.appendChild(
       element(
         'p',
-        'The Family feature pack opens the family’s shared Library shelves and the media links: pasting a song link from YouTube or another media site in the Sound Booth, and the describer’s and jukebox’s links when those are limited to the pack. Family accounts from before September 24 have it. Accounts made after that see only their own uploads, with the link boxes greyed out, until you turn the pack on. Turning it off never touches anyone’s own uploads.',
+        'Choose who has the Family feature pack. It opens the shared Library, Clubhouse library playback, trained music styles, and the pack’s media-link features. New accounts wait for you to turn it on. Each button changes only that person’s access. Turning it off keeps their own uploads.',
       ),
     ).className = 'hint';
     /* The page's one live region (say) carries each change; a paragraph of its own would sit in

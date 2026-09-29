@@ -58,6 +58,8 @@ export type { IAgentTask, AgentTaskStatus } from './models/agentTask';
 export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';
 export * from './memory/policy';
 export { createLibraryRequestModel, createLibraryRequestStateModel } from './models/libraryRequest';
+export { createCommunityModels } from './models/community';
+export type { IClubhousePlayback, IPublicRelease } from './models/community';
 export type {
   ILibraryRequest,
   ILibraryRequestState,

@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","module":"commonjs","moduleResolution":"node","strict":true,"skipLibCheck":true,"esModuleInterop":true,"noEmit":true,"baseUrl":"..","paths":{"@librechat/data-schemas":["packages/data-schemas/src/models/community.ts"]}},"include":["../packages/api/src/community/*.ts","../packages/data-schemas/src/models/community.ts"]}

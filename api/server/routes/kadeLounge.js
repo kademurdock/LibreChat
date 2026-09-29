@@ -271,7 +271,9 @@ router.post('/token', requireJwtAuth, express.json(), async (req, res) => {
       process.env.LIVEKIT_API_SECRET,
       { algorithm: 'HS256' },
     );
-    return res.json({ token, url: process.env.LIVEKIT_URL, room, identity, name: firstName });
+    const mediaToken = jwt.sign({ uid: String(req.user.id), room }, process.env.LIVEKIT_API_SECRET,
+      { algorithm: 'HS256', audience: 'clubhouse-media', expiresIn: '6h' });
+    return res.json({ token, mediaToken, url: process.env.LIVEKIT_URL, room, identity, name: firstName });
   } catch (e) {
     logger.error('[kade/lounge token] error:', e);
     return res.status(500).json({ error: 'Could not mint a room key.' });

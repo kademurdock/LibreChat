@@ -224,6 +224,8 @@ const startServer = async () => {
     console.warn('Response compression has been disabled via DISABLE_COMPRESSION.');
   }
 
+  const community = require('./routes/kadeCommunity');
+  app.get('/', community);
   app.get('/index.html', sendIndexHtml);
   // Existing iPhone builds link here. Keep their policy link on the public help page.
   app.get('/privacy', (_req, res) => res.redirect(302, '/help/privacy'));
@@ -362,6 +364,8 @@ const startServer = async () => {
   app.get('/tools-legacy', routes.kade.toolsPage);
   // Part 116.3 — Kade Home layer (mirrors the native home screen).
   app.get('/home', routes.kade.homePage);
+  app.use(community);
+  app.get('/publish', (_req, res) => res.redirect(302, '/assets/community/publish.html'));
   // Part 116.4 — real addresses for what used to be "wherever the side panel
   // happened to be": the React shell reads ?panel= / ?open= (UnifiedSidebar,
   // Root) and opens the right thing, then strips the param.

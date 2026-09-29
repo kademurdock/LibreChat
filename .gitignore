@@ -185,3 +185,6 @@ codedb.snapshot
 /dev/character/out-voice/
 
 /dev/character/check-output/
+
+# Local community playback test media
+dev/preview.mp4

@@ -6,6 +6,7 @@ import { REGEXP_ONLY_DIGITS, REGEXP_ONLY_DIGITS_AND_CHARS } from 'input-otp';
 import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot, Label } from '@librechat/client';
 import { useVerifyTwoFactorTempMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
+import { getPostLoginRedirect } from '~/utils/redirect';
 
 interface VerifyPayload {
   tempToken: string;
@@ -35,7 +36,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
   const { mutate: verifyTempMutate } = useVerifyTwoFactorTempMutation({
     onSuccess: (result) => {
       if (result.token != null && result.token !== '') {
-        window.location.href = '/';
+        window.location.href = getPostLoginRedirect(new URLSearchParams(window.location.search)) || '/home';
       }
     },
     onMutate: () => {

@@ -10,7 +10,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { TAuthConfig } from '~/common';
 
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
-import { SESSION_KEY } from '~/utils';
+import { SESSION_KEY } from '~/utils/redirect';
 
 const mockNavigate = jest.fn();
 jest.mock('react-router-dom', () => ({
@@ -116,6 +116,35 @@ function renderProviderLive() {
     </QueryClientProvider>,
   );
 }
+
+describe('AuthContextProvider — community home sign-in', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    window.history.replaceState({}, '', '/login');
+  });
+
+  it('loads the server-rendered home after an ordinary login', async () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+    renderProvider();
+    await act(async () => {
+      mockCapturedLoginOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'test-token' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(replaceSpy).toHaveBeenCalledWith('/home');
+  });
+
+  it('preserves the publishing destination while asking for a second factor', () => {
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fpublish');
+    renderProvider();
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({ twoFAPending: true, tempToken: 'temporary' });
+    });
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/publish');
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa?tempToken=temporary', { replace: true });
+    sessionStorage.clear();
+  });
+});
 
 describe('AuthContextProvider — login onError redirect handling', () => {
   beforeEach(() => {
