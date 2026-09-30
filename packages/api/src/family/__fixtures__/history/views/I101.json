@@ -1,0 +1,21 @@
+{
+  "anchor": "@I101@",
+  "relations": {
+    "@I101@": { "term": "you", "group": "self" },
+    "@I200@": { "term": "father", "group": "ancestor", "gen": 1, "distance": 1, "path": ["@I101@", "@I200@"], "pathText": "your father" },
+    "@I201@": { "term": "mother", "group": "ancestor", "gen": 1, "distance": 1, "path": ["@I101@", "@I201@"], "pathText": "your mother" },
+    "@I300@": { "term": "grandfather", "group": "ancestor", "gen": 2, "distance": 2, "path": ["@I101@", "@I200@", "@I300@"], "pathText": "your father -> his father" },
+    "@I301@": { "term": "grandmother", "group": "ancestor", "gen": 2, "distance": 2, "path": ["@I101@", "@I200@", "@I301@"], "pathText": "your father -> his mother" },
+    "@I302@": { "term": "grandfather", "group": "ancestor", "gen": 2, "distance": 2, "path": ["@I101@", "@I201@", "@I302@"], "pathText": "your mother -> her father" },
+    "@I303@": { "term": "grandmother", "group": "ancestor", "gen": 2, "distance": 2, "path": ["@I101@", "@I201@", "@I303@"], "pathText": "your mother -> her mother" },
+    "@I400@": { "term": "great-grandfather", "group": "ancestor", "gen": 3, "distance": 3, "path": ["@I101@", "@I200@", "@I300@", "@I400@"], "pathText": "your father -> his father -> his father" },
+    "@I500@": { "term": "2nd great-grandfather", "group": "ancestor", "gen": 4, "distance": 4, "path": ["@I101@", "@I200@", "@I300@", "@I400@", "@I500@"], "pathText": "your father -> his father -> his father -> his father" },
+    "@I700@": { "term": "great-grandfather", "group": "ancestor", "gen": 3, "distance": 3, "path": ["@I101@", "@I201@", "@I302@", "@I700@"], "pathText": "your mother -> her father -> his father", "notes": ["Research finding: probable father, not proven."] },
+    "@I100@": { "term": "sister", "group": "blood", "gen": null, "distance": 2, "path": ["@I101@", "@I200@", "@I100@"], "pathText": "your father -> his daughter" },
+    "@I102@": { "term": "half brother", "group": "blood", "gen": null, "distance": 2, "path": ["@I101@", "@I200@", "@I102@"], "pathText": "your father -> his son" },
+    "@I210@": { "term": "uncle", "group": "blood", "gen": null, "distance": 3, "path": ["@I101@", "@I200@", "@I300@", "@I210@"], "pathText": "your father -> his father -> his son" },
+    "@I120@": { "term": "nephew", "group": "blood", "gen": null, "distance": 3, "path": ["@I101@", "@I200@", "@I100@", "@I120@"], "pathText": "your father -> his daughter -> her son" },
+    "@I110@": { "term": "husband of your sister, Ada Example (born 1990)", "group": "marriage" },
+    "@I211@": { "term": "wife of your uncle, Ned Example (1958-2018)", "group": "marriage" }
+  }
+}

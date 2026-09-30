@@ -3,7 +3,7 @@
   "generated": "2026-01-01T00:00:00",
   "owner": "@I100@",
   "counts": { "people": 18, "records": 3, "memorials": 2, "media": 5, "stories": 2, "anchors": 2 },
-  "anchors": ["@I100@", "@I200@"],
+  "anchors": ["@I100@", "@I200@", "@I101@"],
   "people": {
     "@I100@": {
       "id": "@I100@", "name": "Ada Example", "label": "Ada Example (born 1990)", "sex": "F", "birthSurname": null,

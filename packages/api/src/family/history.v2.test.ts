@@ -15,6 +15,7 @@ import type { RequestHandler } from 'express';
 import type { FamilyBundle, FamilyHistoryAccount, FamilyHistoryUserFields, FamilyView } from './history';
 import { FAMILY_SIGN_LIMIT, familyHistoryRouter } from './history';
 import { familySpokenProblems } from './words';
+import { familyDemoSwift, familyDumpNativeFixtures } from './dump-native-fixtures';
 
 process.env.KADE_APP_REVIEW_USER_IDS = 'aaaaaaaaaaaaaaaaaaaaaa05';
 process.env.KADE_LIBRARY_HIDDEN_FROM = 'review-seat@example.com';
@@ -67,6 +68,7 @@ function bucket(bundle: FamilyBundle = BUNDLE): Map<string, Buffer> {
     ['family-history/v1/bundle.json.gz', gzipSync(Buffer.from(JSON.stringify(bundle)))],
     ['family-history/v1/views/I100.json.gz', Buffer.from(JSON.stringify(OWNER_VIEW))],
     ['family-history/v1/views/I200.json.gz', Buffer.from(JSON.stringify(BEN_VIEW))],
+    ['family-history/v1/views/I101.json.gz', Buffer.from(fixtureText('views/I101.json'))],
     ['family-history/v1/stories/the-farm.md', Buffer.from(STORY)],
     ['family-history/media/m-story1.text.eeee0001.txt', Buffer.from(CLIPPING)],
   ]);
@@ -735,4 +737,26 @@ test('GET /findings?v=2: discoveries for everyone let in, family mysteries behin
   assert.deepEqual([r.body.available, r.body.findings.map((f: Json) => f.key)], [true, ['f1']]);
   r = await call(main, '/findings?v=2', 'guest');
   assert.equal(r.body.mysteries, null);
+});
+
+/* ── the app's demo family ───────────────────────────────────────────── */
+
+test('the iPhone app\'s demo answers come from the real router, as Jack in his own words, with no links', async () => {
+  const answers = await familyDumpNativeFixtures();
+  assert.deepEqual(Object.keys(answers).sort(), [
+    'dna', 'findings', 'gallery', 'home', 'me', 'mediaInfo', 'mysteries', 'noteSent', 'people', 'personDan',
+    'personHugo', 'photoDanRestored', 'places', 'play', 'search', 'signed', 'stories', 'story', 'timeline', 'tree',
+  ]);
+  for (const [name, json] of Object.entries(answers)) {
+    assert.doesNotThrow(() => JSON.parse(json), name);
+    assert.equal(json.includes('demo.invalid'), false, `${name} carries no signed address`);
+  }
+  assert.equal(JSON.parse(answers.home).hero.youAre, 'You’re Ada’s brother.');
+  assert.equal(JSON.parse(answers.personDan).person.term, 'your grandfather', 'his own view file');
+  assert.deepEqual(JSON.parse(answers.signed).urls, {});
+  const swift = familyDemoSwift(answers);
+  assert.ok(swift.startsWith('import Foundation\n'));
+  assert.ok(swift.includes('#if DEBUG\nenum FamilyDemoData {'));
+  assert.ok(swift.includes('    static let photoDanRestored = ##"""\n'));
+  assert.equal(swift.includes('\r'), false, 'line feeds only');
 });
