@@ -190,6 +190,14 @@ test('same tree and media ids remain isolated by archive, with explicit bindings
     assert.equal(second.body.mode, 'family');
     const owner = await h.call(`/me?archive=${DEFINITION.id}`, 'owner');
     assert.equal(owner.body.mode, 'owner');
+    assert.equal((owner.body.viewer as { inTree: boolean }).inTree, false, 'stewardship is not a tree identity');
+    assert.equal((owner.body.viewer as { relationToOwner: unknown }).relationToOwner, null);
+    const home = (await h.call(`/home?archive=${DEFINITION.id}`, 'owner')).body;
+    assert.equal((home.hero as { youAre: string }).youAre, 'You manage Aster’s family history.');
+    assert.match((home.hero as { headline: string }).headline, /^Aster’s family/);
+    const tree = (await h.call(`/tree?v=2&archive=${DEFINITION.id}`, 'owner')).body;
+    assert.equal((tree.layout as { boxes: { you: boolean }[] }).boxes.some((box) => box.you), false);
+    assert.equal((await h.call(`/dna?archive=${DEFINITION.id}`, 'owner')).body.test, null);
     const guest = await h.call(`/me?archive=${DEFINITION.id}`, 'extraGuest');
     assert.equal(
       guest.body.mode,
@@ -262,4 +270,14 @@ test('a non-admin owner configuration does not promote an account or implicitly 
   } finally {
     await h.close();
   }
+});
+
+test('a reviewed owner-to-person binding uses that tree identity without changing the default archive', async () => {
+  const h = await harness([{ ...DEFINITION, members: [...DEFINITION.members, { userId: id(1), personId: '@I100@' }] }]);
+  try {
+    const me = (await h.call(`/me?archive=${DEFINITION.id}`, 'owner')).body;
+    assert.equal((me.viewer as { inTree: boolean }).inTree, true);
+    const home = (await h.call(`/home?archive=${DEFINITION.id}`, 'owner')).body;
+    assert.equal((home.hero as { youAre: string }).youAre, 'This is your tree.');
+  } finally { await h.close(); }
 });

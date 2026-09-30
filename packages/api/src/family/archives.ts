@@ -217,6 +217,7 @@ export function familyHistoryArchivesRouter(
         auth: noAuth,
         prefix: definition.prefix,
         ownerUserId: () => definition.ownerUserId,
+        ownerIsTreePerson: (account, bundle) => account.kadeFamilyTreePerson === bundle.owner,
         findUsers: async () => [],
         setUserFields: async () => {
           throw new Error('Separate archive bindings are managed in private configuration');

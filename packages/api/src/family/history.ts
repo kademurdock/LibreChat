@@ -659,6 +659,8 @@ export interface FamilyHistoryDependencies {
   prefix?: string;
   /** A separate archive's verified owner; default reads the legacy setting on every request. */
   ownerUserId?: () => string;
+  /** Separate archive stewardship does not itself match the owner to a tree person. */
+  ownerIsTreePerson?: (user: FamilyHistoryAccount, bundle: FamilyBundle) => boolean;
   log?: (message: string) => void;
   /** Writes one object to the private bucket: notes to the owner, and Listen audio. */
   putObject?: (key: string, body: Buffer, mime: string) => Promise<void>;
@@ -1654,7 +1656,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       user,
       viewer,
       view,
-      borrowed: !mine || viewer.mode === 'guest',
+      borrowed:
+        !mine ||
+        viewer.mode === 'guest' ||
+        (viewer.mode === 'owner' && deps.ownerIsTreePerson?.(user, state.bundle) === false),
       audience: { personId: viewer.personId, owner: viewer.mode === 'owner' },
       ...(mine || viewer.mode === 'guest' ? {} : { viewNote: FAMILY_HISTORY_VIEW_NOTE }),
       ownerView,
@@ -1813,7 +1818,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       const person = own(ctx.bundle.people, ctx.viewer.personId) as FamilyPerson;
       const ownerPerson = own(ctx.bundle.people, ctx.bundle.owner);
       const ownerView = await ctx.ownerView();
-      const relationToOwner = (ownerView && own(ownerView.relations, ctx.viewer.personId)) || null;
+      const perspectiveOnly = ctx.viewer.mode === 'owner' && ctx.borrowed;
+      const relationToOwner = perspectiveOnly
+        ? null
+        : (ownerView && own(ownerView.relations, ctx.viewer.personId)) || null;
       const accountFirst = String(ctx.user.name || '').trim()
         ? familyFirstName(ctx.user.name)
         : ctx.viewer.mode === 'guest'
@@ -1829,7 +1837,8 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
           /** The greeting's name: the account's own, never the owner's for a guest. */
           first: accountFirst,
           /** False for a guest, who sees the tree from the owner's place. */
-          inTree: ctx.viewer.mode !== 'guest',
+          inTree: ctx.viewer.mode !== 'guest' && !perspectiveOnly,
+          ...(perspectiveOnly ? { perspectiveOnly: true } : {}),
         },
         mode: ctx.viewer.mode,
         isOwner: ctx.viewer.mode === 'owner',
@@ -1837,7 +1846,9 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
         counts: bundleCounts(ctx.bundle),
         owner: { first: familyFirstName(ownerPerson?.name) },
         row: {
-          detail: familyRowDetail(ctx.viewer.mode, ctx.bundle, relationToOwner),
+          detail: perspectiveOnly
+            ? `${familyFirstName(ownerPerson?.name)}’s family history`
+            : familyRowDetail(ctx.viewer.mode, ctx.bundle, relationToOwner),
           hint: FAMILY_HISTORY_ROW_HINT,
         },
         ...(ctx.viewNote ? { viewNote: ctx.viewNote } : {}),

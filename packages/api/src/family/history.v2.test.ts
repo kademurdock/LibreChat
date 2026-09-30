@@ -821,6 +821,21 @@ test('familyAttachment keeps the exact name for modern browsers and a plain-lett
 
 /* ── DNA ──────────────────────────────────────────────────────────────── */
 
+test('a shared known father with an unknown other parent does not imply full or half siblings or a fixed DNA percentage', async () => {
+  const bundle = clone(BUNDLE);
+  bundle.people['@I100@'].parents = [{ id: '@I200@', kind: 'birth' }];
+  bundle.people['@I101@'].parents = [{ id: '@I200@', kind: 'birth' }];
+  const h = await harness(bucket(bundle));
+  try {
+    const sibling = (await call(h, `/person/${pid('@I101@')}?v=2`, 'owner')).body;
+    assert.match(sibling.relation.dnaLine, /do not establish whether both parents are shared/);
+    assert.equal(sibling.relation.dnaLine.includes('%'), false);
+    const dna = (await call(h, '/dna', 'jack')).body;
+    assert.notEqual(dna.test?.applies, 'fullSibling');
+    assert.notEqual(dna.test?.applies, 'halfSibling');
+  } finally { await h.close(); }
+});
+
 test('GET /dna: the test counts in full for the owner and her full brother, only the shared families for others, never for guests or people married in', async () => {
   const dna = async (who: string, query = ''): Promise<Json> => (await call(main, `/dna${query}`, who)).body;
   let d = await dna('owner');

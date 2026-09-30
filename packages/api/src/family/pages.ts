@@ -192,7 +192,10 @@ export function familyFollowsText(
 
 /** "You're Ada's sister." from the owner's view of this person. */
 function youAre(ctx: FamilyPageContext): string {
-  if (ctx.viewer.mode === 'owner') return 'This is your tree.';
+  if (ctx.viewer.mode === 'owner')
+    return ctx.lens.voice.borrowed
+      ? `You manage ${ctx.ownerFirst}’s family history.`
+      : 'This is your tree.';
   if (ctx.viewer.mode === 'guest') return `You’re visiting as ${ctx.ownerFirst}’s guest.`;
   const relation = ctx.ownerView ? own(ctx.ownerView.relations, ctx.viewer.personId) : undefined;
   const ownerVoice = familyVoice(
@@ -259,7 +262,15 @@ export function familyDnaTile(ctx: FamilyPageContext): FamilyTile {
   if (ctx.viewer.mode === 'guest')
     return tile('dna', 'Your DNA', 'For family members in the tree', hint, null, false, 'guest');
   if (ctx.viewer.mode === 'owner')
-    return tile('dna', 'Your DNA test', 'What it found, in plain words', hint, { to: 'dna' });
+    return ctx.lens.voice.borrowed
+      ? tile(
+          'dna',
+          `${ctx.ownerFirst}’s inheritance, on paper`,
+          'From the saved family relationships',
+          hint,
+          { to: 'dna' },
+        )
+      : tile('dna', 'Your DNA test', 'What it found, in plain words', hint, { to: 'dna' });
   const sibling = familyIsFullSibling(ctx.bundle, ctx.viewer.personId);
   if (sibling)
     return tile(
@@ -636,7 +647,7 @@ export function familyHomePayload(
   const findings = ctx.model.findings;
   const discoveries = findings.filter((f) => !f.sensitive).length;
   const mysteries = mysteriesAllowed(ctx) ? findings.filter((f) => f.sensitive).length : 0;
-  const guest = ctx.viewer.mode === 'guest';
+  const guest = ctx.viewer.mode === 'guest' || (ctx.viewer.mode === 'owner' && voice.borrowed);
   const more: FamilyTile[] = [
     tile(
       'stories',
@@ -841,7 +852,9 @@ export function familyTreeExtras(
     const moreAbove = above > 0 ? above : null;
     return {
       ...box,
-      you: box.id === ctx.viewer.personId,
+      you:
+        box.id === ctx.viewer.personId &&
+        !(ctx.viewer.mode === 'owner' && ctx.lens.voice.borrowed),
       person,
       moreAbove,
       spoken: familySay(
@@ -1038,10 +1051,16 @@ function relationPart(ctx: FamilyPageContext, id: string): Record<string, unknow
     if (k > 0 && m > 0 && steps.slice(k).every((s) => !s.up)) {
       const viewerSide = path[k - 1];
       const relativeSide = path[k + 1];
-      const full =
-        !!viewerSide && !!relativeSide && sameBirthParents(ctx.bundle, viewerSide, relativeSide);
-      const coefficient = (full ? 2 : 1) * 0.5 ** (k + m);
-      dnaLine = `${lens.voice.borrowed ? `${ctx.ownerFirst} would` : 'You’d'} expect to share ${familyPercent(coefficient)} of ${lens.voice.borrowed ? 'their' : 'your'} DNA, on average.`;
+      const parentage =
+        viewerSide && relativeSide
+          ? siblingParentage(ctx.bundle, viewerSide, relativeSide)
+          : null;
+      if (parentage === null) {
+        dnaLine = 'The saved sources do not establish whether both parents are shared, so a precise DNA expectation is not shown.';
+      } else {
+        const coefficient = (parentage === 'full' ? 2 : 1) * 0.5 ** (k + m);
+        dnaLine = `${lens.voice.borrowed ? `${ctx.ownerFirst} would` : 'You’d'} expect to share ${familyPercent(coefficient)} of ${lens.voice.borrowed ? 'their' : 'your'} DNA, on average.`;
+      }
     }
   }
   return {
@@ -1062,15 +1081,21 @@ function familyCardChain(ctx: FamilyPageContext, id: string): string | null {
   return familyPersonCard(ctx.pc, id)?.chain || null;
 }
 
-function sameBirthParents(bundle: FamilyBundle, a: string, b: string): boolean {
+export function siblingParentage(
+  bundle: FamilyBundle,
+  a: string,
+  b: string,
+): 'full' | 'half' | null {
   const firm = (id: string): string[] =>
     (own(bundle.people, id)?.parents || [])
-      .filter((l) => l.kind === 'birth' || l.kind === 'adopted')
+      .filter((l) => l.kind === 'birth' && !!own(bundle.people, l.id))
       .map((l) => l.id)
       .sort();
   const pa = firm(a);
   const pb = firm(b);
-  return pa.length === 2 && pb.length === 2 && pa[0] === pb[0] && pa[1] === pb[1];
+  if (new Set(pa).size !== 2 || new Set(pb).size !== 2) return null;
+  const shared = pa.filter((id) => pb.includes(id)).length;
+  return shared === 2 ? 'full' : shared === 1 ? 'half' : null;
 }
 
 const MEMBER_TEXT: Readonly<Record<string, Readonly<Record<string, [string, string, string]>>>> = {

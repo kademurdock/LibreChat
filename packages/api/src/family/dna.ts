@@ -8,6 +8,7 @@ import {
   familyFollowsText,
   familyIsFullSibling,
   familyMysteriesAllowed,
+  siblingParentage,
 } from './pages';
 import { familyBirthPlace, familyRegion } from './derive';
 import {
@@ -109,7 +110,10 @@ export function familyDnaSelf(ctx: FamilyPageContext): string {
 
 function whoseWords(ctx: FamilyPageContext, forId: string): { poss: string; capital: string } {
   if (forId === familyDnaSelf(ctx)) {
-    const poss = ctx.viewer.mode === 'guest' ? ctx.lens.voice.poss : 'your';
+    const perspectiveOnly =
+      ctx.viewer.mode === 'guest' ||
+      (ctx.viewer.mode === 'owner' && ctx.lens.voice.borrowed);
+    const poss = perspectiveOnly ? ctx.lens.voice.poss : 'your';
     return { poss, capital: familyCapital(poss) };
   }
   const first = familyFirstName(own(ctx.bundle.people, forId)?.name);
@@ -120,7 +124,7 @@ function whoseWords(ctx: FamilyPageContext, forId: string): { poss: string; capi
 export function familyDnaApplies(ctx: FamilyPageContext): FamilyDnaApplies | 'none' {
   const bundle = ctx.bundle;
   const me = ctx.viewer.personId;
-  if (ctx.viewer.mode === 'owner') return 'self';
+  if (ctx.viewer.mode === 'owner') return ctx.lens.voice.borrowed ? 'none' : 'self';
   if (ctx.viewer.mode === 'guest') return 'none';
   if (familyIsFullSibling(bundle, me)) return 'fullSibling';
   const tested = (bundle.dna?.tested || [bundle.owner]).filter((id) => own(bundle.people, id));
@@ -132,7 +136,12 @@ export function familyDnaApplies(ctx: FamilyPageContext): FamilyDnaApplies | 'no
   const shared: string[] = [];
   if (mine.father && mine.father === ownerParents.father) shared.push('father');
   if (mine.mother && mine.mother === ownerParents.mother) shared.push('mother');
-  if (shared.length === 1 && (side === 'both' || shared[0] === side)) return 'halfSibling';
+  if (
+    shared.length === 1 &&
+    siblingParentage(bundle, me, bundle.owner) === 'half' &&
+    (side === 'both' || shared[0] === side)
+  )
+    return 'halfSibling';
   return sharesLine(ctx) ? 'sharedLine' : 'none';
 }
 
