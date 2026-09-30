@@ -7,6 +7,7 @@ import type {
 import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
 import { getToolDefinition } from './registry/definitions';
 import { loadToolDefinitions } from './definitions';
+import { familyHistoryToolDescription, familyHistoryToolSchema } from '../family/tool';
 
 describe('definitions.ts', () => {
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
@@ -17,6 +18,19 @@ describe('definitions.ts', () => {
   });
 
   describe('loadToolDefinitions', () => {
+    it('exposes the family archive schema to an actual event-driven agent turn', async () => {
+      const result = await loadToolDefinitions(
+        { userId: 'family-user', agentId: 'family-agent', tools: ['kade_family_history'] },
+        { getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools, isBuiltInTool: (name) => name === 'kade_family_history' },
+      );
+      expect(result.toolDefinitions).toHaveLength(1);
+      expect(result.toolDefinitions[0]).toMatchObject({
+        name: 'kade_family_history', description: familyHistoryToolDescription, parameters: familyHistoryToolSchema,
+      });
+      expect(result.toolRegistry.get('kade_family_history')?.allowed_callers).toEqual(['direct']);
+      expect(mockGetOrFetchMCPServerTools).not.toHaveBeenCalled();
+    });
+
     it.each([undefined, Providers.GOOGLE])(
       'exposes narration and its recovery controls through production studio loading (%s)',
       async (provider) => {

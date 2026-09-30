@@ -5,6 +5,7 @@ import { falStudioSchema, falNarrationInstructions } from './fal';
 import { libraryToolDescription, libraryToolSchema } from './library';
 import { libraryRequestsDescription, libraryRequestsSchema } from './requests';
 import { fundingToolDescription, fundingToolSchema } from './funding';
+import { familyHistoryToolDescription, familyHistoryToolSchema } from '../../family/tool';
 export { falStudioSchema, falNarrationInstructions } from './fal';
 export { fundingToolDescription, fundingToolSchema } from './funding';
 
@@ -1169,6 +1170,12 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     name: 'kade_library_requests',
     description: libraryRequestsDescription,
     schema: libraryRequestsSchema,
+    toolType: 'builtin',
+  },
+  kade_family_history: {
+    name: 'kade_family_history',
+    description: familyHistoryToolDescription,
+    schema: familyHistoryToolSchema as ExtendedJsonSchema,
     toolType: 'builtin',
   },
   /* KADE Sep 25 2026 (Part 291): "how much do I owe Kade?" */
