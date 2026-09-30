@@ -31,6 +31,7 @@ const KadeFeedback = require('./structured/KadeFeedback');
 const KadeMessage = require('./structured/KadeMessage');
 const KadeHelp = require('./structured/KadeHelp');
 const KadeLibrary = require('./structured/KadeLibrary');
+const KadeFamilyHistory = require('./structured/KadeFamilyHistory');
 const KadeLibraryRequests = require('./structured/KadeLibraryRequests');
 const KadeFundingBalance = require('./structured/KadeFundingBalance');
 const OpenWeather = require('./structured/OpenWeather');
@@ -76,6 +77,7 @@ module.exports = {
   KadeMessage,
   KadeHelp,
   KadeLibrary,
+  KadeFamilyHistory,
   KadeLibraryRequests,
   KadeFundingBalance,
   OpenWeather,

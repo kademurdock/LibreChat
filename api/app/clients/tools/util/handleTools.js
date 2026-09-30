@@ -54,6 +54,7 @@ const {
   KadeMessage,
   KadeHelp,
   KadeLibrary,
+  KadeFamilyHistory,
   KadeLibraryRequests,
   KadeFundingBalance,
   OpenWeather,
@@ -235,6 +236,7 @@ const loadTools = async ({
     kade_message: KadeMessage,
     kade_help: KadeHelp,
     kade_library: KadeLibrary,
+    kade_family_history: KadeFamilyHistory,
     kade_library_requests: KadeLibraryRequests,
     kade_funding_balance: KadeFundingBalance,
     calculator: Calculator,
@@ -330,6 +332,7 @@ const loadTools = async ({
 
   const toolOptions = {
     kade_library: { req: options.req },
+    kade_family_history: { req: options.req },
     kade_library_requests: { req: options.req },
     /* Part 291: reads the asker from req (voice caller or signed-in person), never userId. */
     kade_funding_balance: { req: options.req },

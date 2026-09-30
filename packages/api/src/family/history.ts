@@ -45,6 +45,8 @@ import { familyDnaForAllowed, familyDnaPayload, familyDnaSelf } from './dna';
 import { familyPlacesPayload, familyTimelinePayload } from './timeline';
 import { familyPlayPayload } from './play';
 import type { FamilyNote } from './inbox';
+import type { FamilyResearchNote } from './research-notes';
+import { FAMILY_RESEARCH_NOTE_NOTICE, familyResearchNoteAuthor, familyResearchNoteRequest } from './research-notes';
 import {
   FAMILY_NOTES_PER_DAY,
   FAMILY_NOTE_KIND_TEXT,
@@ -68,7 +70,7 @@ import {
  * FAMILY HISTORY (Sep 29 2026, docs/FAMILY_HISTORY.md is the contract)
  *
  * The owner's family research, served only to accounts matched to a person in
- * the tree, to admins (the owner) and to guests the owner lets in one by one.
+ * the tree, to the configured owner and to guests the owner lets in one by one.
  * The App Review seat and test seats never get in, and cannot be matched.
  * Every relationship is said from the viewer's place, read from that person's
  * view file (the owner's view, with a note, when theirs was not built).
@@ -1368,7 +1370,7 @@ export function familyHistoryLocked(
   if (user.role === 'ADMIN') {
     return ownerUserId && accountIdOf(user) !== ownerUserId
       ? 'An administrator is not matched here: only an explicit tree or guest grant allows access for a non-owner.'
-      : 'An administrator always sees the family history as its owner.';
+      : 'The configured owner has server-managed access; administrators with an existing tree binding remain family readers.';
   }
   return null;
 }
@@ -1646,6 +1648,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   /** May this viewer see sensitive findings and stories (KADE_FH_DNA_FINDINGS, read now)? */
   const mysteries = (ctx: FamilyContext): boolean =>
     familyMysteriesAllowed(ctx.viewer.mode, familyDnaFindingsSetting());
+  const authorPersonId = (ctx: FamilyContext): string | null =>
+    ctx.viewer.mode === 'guest' ||
+    (ctx.viewer.mode === 'owner' && deps.ownerIsTreePerson?.(ctx.user, ctx.bundle) === false)
+      ? null : ctx.viewer.personId;
   const expires = (): string => new Date(now() + FAMILY_HISTORY_MEDIA_SECONDS * 1000).toISOString();
 
   /** The viewer and their view, null when refused; throws when the bundle or views cannot load. */
@@ -2210,7 +2216,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
             String(ctx.user.name || '').trim() ||
             String(ctx.user.username || '').trim() ||
             'Someone',
-          personId: ctx.viewer.mode === 'guest' ? null : ctx.viewer.personId,
+          personId: authorPersonId(ctx),
           mode: ctx.viewer.mode,
         },
         kind: asked.kind,
@@ -2234,6 +2240,81 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
             ? `Asked. ${ownerFirst} will see your request.`
             : `Sent to ${ownerFirst}. Thank you.`,
       });
+    }),
+  );
+
+  /* Explicit recollections have their own store; the old private inbox is never shared. */
+  router.post(
+    '/research-notes',
+    json({ limit: '16kb' }),
+    family(async (req, res, ctx) => {
+      if (ctx.viewer.mode === 'guest') {
+        res.status(403).json({ error: 'Research notes require a matched account or the archive steward.' });
+        return;
+      }
+      if (!putObject || !deps.listKeys) {
+        res.status(503).json({ error: 'Research notes cannot be saved yet.' });
+        return;
+      }
+      const asked = familyResearchNoteRequest(req.body);
+      if ('error' in asked) {
+        res.status(400).json(asked);
+        return;
+      }
+      const personId = asked.personId ? familyPersonId(ctx.bundle, asked.personId) : null;
+      if (asked.personId && !personId) {
+        res.status(400).json({ error: 'That subject is not in the selected family archive.' });
+        return;
+      }
+      const at = now();
+      const author = familyResearchNoteAuthor(ctx.user, authorPersonId(ctx));
+      const day = new Date(at).toISOString().slice(0, 10);
+      const counted = `${author.userId} research ${day}`;
+      const sent = sentToday.get(counted) || 0;
+      if (sent >= FAMILY_NOTES_PER_DAY) {
+        res.status(429).json({ error: `That is ${FAMILY_NOTES_PER_DAY} research notes today. Send more tomorrow.` });
+        return;
+      }
+      const id = familyNoteId(at, randomBytes(4).toString('hex'));
+      const note: FamilyResearchNote = {
+        id, at: new Date(at).toISOString(), kind: 'unverified-recollection',
+        status: 'needs-source-review', author, personId, text: asked.text,
+        notice: FAMILY_RESEARCH_NOTE_NOTICE,
+      };
+      await putObject(`${prefix}/research-notes/${id}.json`, Buffer.from(JSON.stringify(note)), 'application/json');
+      for (const old of sentToday.keys()) if (!old.endsWith(day)) sentToday.delete(old);
+      sentToday.set(counted, sent + 1);
+      res.status(201).json({ ok: true, note });
+    }),
+  );
+  router.get(
+    '/research-notes',
+    family(async (_req, res, ctx) => {
+      if (ctx.viewer.mode === 'guest') {
+        res.status(403).json({ error: 'Research notes require a matched account or the archive steward.' });
+        return;
+      }
+      if (!deps.listKeys) {
+        res.status(503).json({ error: 'Research notes cannot be read yet.' });
+        return;
+      }
+      const folder = `${prefix}/research-notes/`;
+      const userId = accountIdOf(ctx.user);
+      const keys = (await deps.listKeys(folder)).filter((key) =>
+        key.startsWith(folder) && familyNoteIdValid(key.slice(folder.length, -5)) && key.endsWith('.json'));
+      const notes = (await Promise.all(keys.map(async (key): Promise<FamilyResearchNote | null> => {
+        const raw = await deps.loadObject(key);
+        if (!raw) return null;
+        try {
+          const note = JSON.parse(unpacked(raw).toString('utf8')) as FamilyResearchNote;
+          if (note.kind !== 'unverified-recollection' || note.status !== 'needs-source-review' ||
+              typeof note.text !== 'string' || typeof note.at !== 'string' || !note.author?.userId ||
+              !familyNoteIdValid(note.id) || key !== `${folder}${note.id}.json`) return null;
+          return ctx.viewer.mode === 'owner' || note.author.userId === userId ? note : null;
+        } catch { return null; }
+      }))).filter((note): note is FamilyResearchNote => note !== null)
+        .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id)).slice(0, 200);
+      res.json({ notes, notice: FAMILY_RESEARCH_NOTE_NOTICE, audience: 'author-and-archive-steward' });
     }),
   );
 

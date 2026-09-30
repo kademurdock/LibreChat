@@ -8,7 +8,7 @@ const { gunzip } = require('node:zlib');
 const axios = require('axios');
 const { GetObjectCommand, ListObjectsV2Command, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { logger } = require('@librechat/data-schemas');
-const { initializeS3, libraryReviewSeat, familyArchiveDefinitions, familyHistoryArchivesRouter } = require('@librechat/api');
+const { initializeS3, libraryReviewSeat, familyArchiveDefinitions, familyHistoryArchivesRouter, familyRouterCall } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { signGet, readingVoice } = require('./kadeReadingRoom')._internals;
@@ -163,7 +163,7 @@ async function setUserFields(id, fields) {
   }).lean();
 }
 
-module.exports = familyHistoryArchivesRouter({
+const dependencies = {
   auth: requireJwtAuth,
   loadObject,
   signGet: (key, mime, seconds) => signGet(key, mime, seconds),
@@ -178,6 +178,12 @@ module.exports = familyHistoryArchivesRouter({
   },
   now: () => Date.now(),
   log: (message) => logger.warn(`[family-history] ${message}`),
-}, {
+};
+const archiveOptions = {
   archives: () => familyArchiveDefinitions(process.env.KADE_FH_ARCHIVES),
-});
+};
+module.exports = familyHistoryArchivesRouter(dependencies, archiveOptions);
+/* Tools have already authenticated the current actor; no JWT/loopback credentials are used.
+ * This sibling router retains the same per-request archive catalog and ACL checks. */
+const toolRouter = familyHistoryArchivesRouter({ ...dependencies, auth: (_req, _res, next) => next() }, archiveOptions);
+module.exports.familyToolCall = (actor) => familyRouterCall(toolRouter, actor);

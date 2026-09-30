@@ -969,7 +969,7 @@ test('POST /match: validated against the tree, never on the review seat, an admi
     assert.deepEqual([r.status, r.body], [404, { error: 'That account was not found.' }]);
     r = await call(h, '/match', 'owner', { userId: REVIEW.id, personId: '@I101@' });
     assert.equal(r.status, 409);
-    const adminRefusal = { error: 'An administrator always sees the family history as its owner.' };
+    const adminRefusal = { error: 'The configured owner has server-managed access; administrators with an existing tree binding remain family readers.' };
     r = await call(h, '/match', 'owner', { userId: OWNER.id, personId: '@I300@' });
     assert.deepEqual([r.status, r.body], [409, adminRefusal], "the owner cannot re-anchor her own view on a relative");
     r = await call(h, '/match', 'owner', { userId: 'aaaaaaaaaaaaaaaaaaaaaa11', personId: '@I200@' });

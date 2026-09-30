@@ -303,6 +303,7 @@ export {
   FAMILY_HISTORY_PRIVATE,
 } from './family/history';
 export { familyArchiveDefinitions, familyHistoryArchivesRouter } from './family/archives';
+export { familyHistoryToolDescription, familyHistoryToolSchema, readFamilyHistoryTool, familyRouterCall } from './family/tool';
 export type { FamilyArchiveDefinition, FamilyArchiveMember, FamilyArchiveOptions } from './family/archives';
 export type {
   FamilyBundle,

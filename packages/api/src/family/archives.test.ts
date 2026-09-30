@@ -9,6 +9,8 @@ import express from 'express';
 import type { FamilyBundle, FamilyHistoryAccount } from './history';
 import type { FamilyArchiveDefinition } from './archives';
 import { familyArchiveDefinitions, familyHistoryArchivesRouter } from './archives';
+import type { FamilyToolCall } from './tool';
+import { familyRouterCall, readFamilyHistoryTool } from './tool';
 
 const FIXTURES = join(__dirname, '__fixtures__', 'history');
 const BUNDLE: FamilyBundle = JSON.parse(readFileSync(join(FIXTURES, 'bundle.json'), 'utf8'));
@@ -46,6 +48,7 @@ async function harness(initial: FamilyArchiveDefinition[] = [DEFINITION]): Promi
   close: () => Promise<void>;
   reads: string[];
   writes: string[];
+  toolCall: (who: string) => FamilyToolCall;
 }> {
   let definitions = initial;
   const reads: string[] = [];
@@ -54,6 +57,8 @@ async function harness(initial: FamilyArchiveDefinition[] = [DEFINITION]): Promi
   const second = JSON.parse(JSON.stringify(BUNDLE)) as FamilyBundle;
   second.people['@I100@'].name = 'Aster Sample';
   second.people['@I100@'].label = 'Aster Sample';
+  second.media['m-tree1'].source = { kind: 'member-image', title: 'Invented caption', citation: 'Example source, page 1.', url: 'https://example.invalid/source/1' };
+  second.media['m-tree1'].evidenceWarning = 'Identity review: the caption is an unverified identification.';
   for (const [prefix, bundle] of [
     ['family-history', BUNDLE],
     [DEFINITION.prefix, second],
@@ -68,12 +73,11 @@ async function harness(initial: FamilyArchiveDefinition[] = [DEFINITION]): Promi
     objects.set(`${prefix}/media/m-tree1.s.aaaa0002.jpg`, Buffer.from(`Saved image for ${prefix}`));
   }
   const app = express();
-  app.use(
-    '/api',
-    familyHistoryArchivesRouter(
+  const router = familyHistoryArchivesRouter(
       {
         auth: (req, res, next) => {
-          const user = ACCOUNTS[String(req.headers['x-user'] || '')];
+          const user = ACCOUNTS[String(req.headers['x-user'] || '')] ||
+            (req as typeof req & { user?: FamilyHistoryAccount }).user;
           if (!user) {
             res.status(401).json({ error: 'Sign in' });
             return;
@@ -99,14 +103,19 @@ async function harness(initial: FamilyArchiveDefinition[] = [DEFINITION]): Promi
         now: () => Date.parse('2026-03-05T12:00:00Z'),
       },
       { archives: () => definitions },
-    ),
-  );
+    );
+  app.use('/api', router);
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
   return {
     reads,
     writes,
+    toolCall: (who) => {
+      const call = familyRouterCall(router, ACCOUNTS[who]);
+      // The test auth lane sees the same trusted actor; tool dispatch has no JWT headers.
+      return call;
+    },
     set: (value) => {
       definitions = value;
     },
@@ -124,6 +133,77 @@ async function harness(initial: FamilyArchiveDefinition[] = [DEFINITION]): Promi
       ),
   };
 }
+
+test('explicit research notes stay attributed testimony, scoped to author and steward without changing facts', async () => {
+  const h = await harness();
+  const archive = `?archive=${DEFINITION.id}`;
+  try {
+    const saved = await h.call('/research-notes' + archive, 'second', {
+      text: 'I remember a birthday picnic. This needs a source.', userRequestedSave: true, personId: '@I200@',
+    });
+    assert.equal(saved.status, 201);
+    const note = saved.body.note as { author: { userId: string; personId: string }; status: string; kind: string };
+    assert.equal(note.author.userId, id(3));
+    assert.equal(note.author.personId, '@I100@');
+    assert.equal(note.kind, 'unverified-recollection');
+    assert.equal(note.status, 'needs-source-review');
+    assert.equal(((await h.call('/research-notes' + archive, 'second')).body.notes as unknown[]).length, 1);
+    assert.equal(((await h.call('/research-notes' + archive, 'owner')).body.notes as unknown[]).length, 1);
+    assert.equal((await h.call('/research-notes' + archive, 'family')).status, 404);
+    assert.equal((await h.call('/research-notes' + archive, 'extraGuest')).status, 403);
+    assert.equal(((await h.call('/research-notes', 'owner')).body.notes as unknown[]).length, 0);
+    assert.equal(((await h.call('/research-notes', 'family')).body.notes as unknown[]).length, 0);
+    assert.ok(h.writes.every((key) => key.startsWith(DEFINITION.prefix + '/research-notes/')));
+    const before = h.writes.length;
+    for (const body of [
+      { text: 'Unrequested old chat' },
+      { text: 'Spoofed attribution', userRequestedSave: true, authorId: id(1) },
+      { text: 'Not a sourced fact', userRequestedSave: true, status: 'verified' },
+      { text: 'Unknown subject', userRequestedSave: true, personId: 'other-archive-person' },
+    ]) assert.equal((await h.call('/research-notes' + archive, 'second', body)).status, 400);
+    assert.equal(h.writes.length, before);
+    const steward = await h.call('/research-notes' + archive, 'owner', { text: 'New explicitly saved source lead.', userRequestedSave: true });
+    assert.equal(steward.status, 201);
+    assert.equal((steward.body.note as { author: { personId: string | null } }).author.personId, null);
+    assert.equal(((await h.call('/research-notes' + archive, 'second')).body.notes as unknown[]).length, 1);
+    assert.equal(((await h.call('/research-notes' + archive, 'owner')).body.notes as unknown[]).length, 2);
+    h.set([{ ...DEFINITION, members: [{ userId: id(3), personId: '@I300@' }] }]);
+    const fallback = await h.call('/research-notes' + archive, 'second', { text: 'Explicit note from a matched person whose view is missing.', userRequestedSave: true });
+    assert.equal(fallback.status, 201);
+    assert.equal((fallback.body.note as { author: { personId: string | null } }).author.personId, '@I300@');
+    h.set([]);
+    assert.equal((await h.call('/research-notes' + archive, 'second')).status, 404);
+  } finally { await h.close(); }
+});
+
+test('family tools use actual archive permissions, source warnings and account perspective; 201 is a successful save', async () => {
+  const h = await harness();
+  try {
+    const call = h.toolCall('second');
+    const discovered = await readFamilyHistoryTool({ action: 'archives' }, call) as { archives: { id: string }[] };
+    assert.deepEqual(discovered.archives.map((entry) => entry.id), [DEFINITION.id]);
+    const result = await readFamilyHistoryTool({ action: 'person', person_id: '@I100@' }, call) as { archive: string; result: unknown; accountContext: { viewer: { inTree: boolean } } };
+    assert.equal(result.archive, DEFINITION.id);
+    assert.equal(result.accountContext.viewer.inTree, true);
+    assert.ok(result.result);
+    const image = await readFamilyHistoryTool({ action: 'media', media_id: 'm-tree1' }, call) as { result: { source: { citation: string }; evidenceWarning: string } };
+    assert.equal(image.result.source.citation, 'Example source, page 1.');
+    assert.match(image.result.evidenceWarning, /unverified identification/);
+    const owner = await readFamilyHistoryTool({ action: 'person', archive: DEFINITION.id, person_id: '@I100@' }, h.toolCall('owner')) as typeof result;
+    assert.equal(owner.accountContext.viewer.inTree, false);
+    const save = await readFamilyHistoryTool({ action: 'save_note', text: 'Please save this current recollection.', user_requested_save: true }, call) as { result?: { ok: boolean }; error?: unknown };
+    assert.equal(save.result?.ok, true);
+    assert.equal(save.error, undefined);
+    const before = h.writes.length;
+    assert.ok((await readFamilyHistoryTool({ action: 'save_note', text: 'Old chat' }, call) as { error: unknown }).error);
+    assert.ok((await readFamilyHistoryTool({ action: 'save_note', archive: DEFINITION.id, text: 'Fake author', user_requested_save: true, authorId: id(1) }, call) as { error: unknown }).error);
+    assert.equal(h.writes.length, before);
+    const wrong = await readFamilyHistoryTool({ action: 'person', archive: 'default', person_id: '@I100@' }, call) as { error: unknown };
+    assert.ok(wrong.error);
+    h.set([]);
+    assert.ok((await readFamilyHistoryTool({ action: 'person', archive: DEFINITION.id, person_id: '@I100@' }, call) as { error: unknown }).error);
+  } finally { await h.close(); }
+});
 
 test('the private archive configuration rejects malformed identities and overlapping storage prefixes', () => {
   assert.deepEqual(familyArchiveDefinitions(undefined), []);
