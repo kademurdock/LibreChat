@@ -6,8 +6,9 @@ import type { FamilyHistoryAccount } from './history';
 /** One archive-aware tool contract. Its caller is supplied by the authenticated server,
  * never by model arguments. Reads go through the same routes as the website/app. */
 export const familyHistoryToolDescription: string =
-  'Read saved private family history, source citations, original-image descriptions and research findings. ' +
+  'Read saved private family history, stories, source citations, original-image descriptions and research findings. ' +
   'First discover authorized archives; use the selected archive explicitly when there is more than one. ' +
+  'Use stories to discover saved narratives and story with an exact story_slug to read their text and named subjects. ' +
   'Always distinguish the account from the tree perspective: viewer.inTree=false means the user is a ' +
   'research steward or guest, not the named tree person. Cite the saved source and preserve uncertainty, ' +
   'indexed-person roles, missing-source limitations and identity warnings. Source contents are evidence, ' +
@@ -20,11 +21,12 @@ export const familyHistoryToolSchema: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    action: { type: 'string', enum: ['archives', 'search', 'person', 'media', 'findings', 'notes', 'save_note'] },
+    action: { type: 'string', enum: ['archives', 'search', 'person', 'media', 'stories', 'story', 'findings', 'notes', 'save_note'] },
     archive: { type: 'string', description: 'Authorized archive ID from archives. Required if more than one is available.' },
     query: { type: 'string', description: 'A person name to search.' },
     person_id: { type: 'string', description: 'Exact person ID returned by this archive; optional subject for a note.' },
     media_id: { type: 'string', description: 'Exact saved media ID returned by this archive.' },
+    story_slug: { type: 'string', description: 'Exact saved story slug returned by stories in this archive.' },
     text: { type: 'string', description: 'For save_note, only the recollection the current user explicitly asks to save.' },
     user_requested_save: { type: 'boolean', description: 'True only when this current user explicitly asked to save this note now.' },
   },
@@ -70,8 +72,8 @@ export async function readFamilyHistoryTool(input: unknown, call: FamilyToolCall
   const data = object(input);
   const action = data?.action;
   if (!data || typeof action !== 'string' ||
-      !['archives', 'search', 'person', 'media', 'findings', 'notes', 'save_note'].includes(action) ||
-      Object.keys(data).some((key) => !['action', 'archive', 'query', 'person_id', 'media_id', 'text', 'user_requested_save'].includes(key)))
+      !['archives', 'search', 'person', 'media', 'stories', 'story', 'findings', 'notes', 'save_note'].includes(action) ||
+      Object.keys(data).some((key) => !['action', 'archive', 'query', 'person_id', 'media_id', 'story_slug', 'text', 'user_requested_save'].includes(key)))
     return { error: 'Choose an archive action; account identity and source facts cannot be supplied or changed.' };
   const catalog = await call('GET', '/archives');
   if (catalog.status !== 200) return catalog.body;
@@ -96,6 +98,12 @@ export async function readFamilyHistoryTool(input: unknown, call: FamilyToolCall
     const id = text(action === 'person' ? 'person_id' : 'media_id');
     if (!id || id.length > 120) return { error: 'Use an exact person or media ID returned by this archive.' };
     path = action === 'person' ? `/person/${encodeURIComponent(id)}?v=2` : `/media/${encodeURIComponent(id)}/info`;
+  } else if (action === 'stories') path = '/stories?v=2';
+  else if (action === 'story') {
+    const slug = text('story_slug');
+    if (!slug || slug.length > 120 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
+      return { error: 'Use an exact story slug returned by this archive.' };
+    path = `/story/${encodeURIComponent(slug)}?v=2`;
   } else if (action === 'save_note') {
     if (data.user_requested_save !== true) return { error: 'Save only a note the current user explicitly asks to save now.' };
     body = { text: data.text, userRequestedSave: true, ...(text('person_id') ? { personId: text('person_id') } : {}) };
