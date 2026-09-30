@@ -398,7 +398,8 @@ button.chip { cursor: pointer; min-height: 44px; padding: .35rem .75rem; margin:
 .fh-dialog { width: min(96vw, 1000px); max-width: 96vw; max-height: 94vh; padding: 0; border: 1px solid var(--fh-line); border-radius: 14px; background: var(--fh-surface); color: var(--fh-ink); }
 .fh-dialog::backdrop { background: rgba(10, 12, 16, .72); }
 .fh-dialog-head { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .6rem .9rem; border-bottom: 1px solid var(--fh-line); }
-.fh-dialog-head h2 { margin: 0; font-size: 1.1rem; }
+.fh-dialog-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.1rem; }
+.fh-dialog-head > button { flex: 0 0 auto; white-space: nowrap; }
 .fh-dialog-head h2:focus { outline: none; }
 .fh-dialog-head h2:focus-visible { outline: 3px solid var(--fh-ring); outline-offset: 3px; }
 .fh-dialog-body { padding: .6rem; text-align: center; background: var(--fh-sunk); }
