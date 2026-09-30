@@ -789,7 +789,7 @@ export function familyOwnerUserId(env: NodeJS.ProcessEnv = process.env): string 
  * Who this account sees the tree as, or null when it may not see it:
  * the review seat and test seats never, whatever else they carry (the owner's decision); the
  * owner's account as the owner; a matched person (a duplicate entry's main person); any other
- * administrator, and a guest, from the owner's place in the owner's words; everyone else never.
+ * explicitly granted guest from the owner's place in the owner's words; everyone else never.
  * While KADE_FH_OWNER_USER_ID is unset, an administrator who is not matched to someone else is
  * the owner, as in v1, so the owner is never shut out before the setting is made.
  */
@@ -810,7 +810,7 @@ export function familyHistoryViewer(
     return { personId: bundle.owner, mode: 'owner' };
   }
   if (matched) return { personId: matched, mode: 'family' };
-  if (admin || user.kadeFamilyHistory === 'guest') return { personId: bundle.owner, mode: 'guest' };
+  if (user.kadeFamilyHistory === 'guest') return { personId: bundle.owner, mode: 'guest' };
   return null;
 }
 
@@ -880,9 +880,16 @@ export function familyRowDetail(
 }
 
 /** False when no bundle could let this account in, so a stranger never costs a bucket read. */
-export function familyHistoryCandidate(user: FamilyHistoryAccount | null | undefined): boolean {
+export function familyHistoryCandidate(
+  user: FamilyHistoryAccount | null | undefined,
+  ownerUserId: string = familyOwnerUserId(),
+): boolean {
   if (!user || libraryReviewSeat(user) || libraryTestSeat(user)) return false;
-  return !!user.kadeFamilyTreePerson || user.role === 'ADMIN' || user.kadeFamilyHistory === 'guest';
+  return (
+    !!user.kadeFamilyTreePerson ||
+    user.kadeFamilyHistory === 'guest' ||
+    (user.role === 'ADMIN' && (!ownerUserId || accountIdOf(user) === ownerUserId))
+  );
 }
 
 function personRef(bundle: FamilyBundle, view: FamilyView, id: string): FamilyPersonRef | null {
@@ -1360,7 +1367,7 @@ export function familyHistoryLocked(
   if (libraryTestSeat(user)) return 'Test accounts are always kept out of the family history.';
   if (user.role === 'ADMIN') {
     return ownerUserId && accountIdOf(user) !== ownerUserId
-      ? 'An administrator is not matched here: an administrator who is not the owner visits as a guest.'
+      ? 'An administrator is not matched here: only an explicit tree or guest grant allows access for a non-owner.'
       : 'An administrator always sees the family history as its owner.';
   }
   return null;
@@ -1777,7 +1784,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     (handler: FamilyHandler): RequestHandler =>
     async (req, res) => {
       const user = signedIn(req);
-      if (!user || !familyHistoryCandidate(user)) return deny(res, user);
+      if (!user || !familyHistoryCandidate(user, ownerUserId())) return deny(res, user);
       let ctx: FamilyContext | null = null;
       try {
         ctx = await contextFor(user);
@@ -1860,7 +1867,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     const user = signedIn(req);
     let refusal = familyHistoryRefusal(user, now());
     try {
-      if (user && familyHistoryCandidate(user) && (await contextFor(user))) {
+      if (user && familyHistoryCandidate(user, ownerUserId()) && (await contextFor(user))) {
         res.status(403).json({ error: 'This account can already open the family history.' });
         return;
       }

@@ -94,6 +94,8 @@ Routes:
 
 ## Separate authorized archives
 
+Set `KADE_FH_OWNER_USER_ID` to the verified owner account for production. Once set, an unrelated administrator has no implicit family access: only the configured ADMIN owner, a checked person binding, or an explicitly authorized one-by-one guest grant can enter. Family-pack membership does not grant history access. Before this setting is configured, the legacy administrator-owner fallback remains for initial setup; do not publish a new pointer until the verified owner setting and actual audience have been checked.
+
 `familyHistoryArchivesRouter` wraps the existing router. With no `KADE_FH_ARCHIVES` setting, all existing paths and access rules remain unchanged. The private setting is a JSON array of `{id,title,prefix,ownerUserId,members:[{userId,personId?}]}`. Use verified account IDs and verified tree identities only; omitting a member's personId makes that explicit reader a guest with the owner's relationships and without sensitive findings. The configured owner must be the verified ADMIN owner account to use owner controls. Never commit real bindings or private archive names here.
 
 An additional archive's administrator is a research steward, not automatically the viewing anchor. Unless that owner also has a reviewed member-to-anchor person binding, responses use the named anchor's perspective, `/me.viewer.inTree` is false, and no chart card marks the anchor as the administrator. Owner controls and permitted findings remain available. A single known shared parent does not establish full or half siblings; the API withholds a precise collateral DNA expectation while the other parent is unknown.

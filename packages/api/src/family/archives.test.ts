@@ -281,3 +281,21 @@ test('a reviewed owner-to-person binding uses that tree identity without changin
     assert.equal((home.hero as { youAre: string }).youAre, 'This is your tree.');
   } finally { await h.close(); }
 });
+
+test('a separate verified archive owner does not need access to the default archive', async () => {
+  const before = process.env.KADE_FH_OWNER_USER_ID;
+  process.env.KADE_FH_OWNER_USER_ID = id(99);
+  const h = await harness();
+  try {
+    assert.equal((await h.call('/me', 'owner')).status, 403);
+    assert.deepEqual((await h.call('/archives', 'owner')).body, {
+      archives: [{ id: DEFINITION.id, title: DEFINITION.title }],
+      defaultArchive: DEFINITION.id,
+    });
+    assert.equal((await h.call(`/me?archive=${DEFINITION.id}`, 'owner')).body.mode, 'owner');
+  } finally {
+    await h.close();
+    if (before === undefined) delete process.env.KADE_FH_OWNER_USER_ID;
+    else process.env.KADE_FH_OWNER_USER_ID = before;
+  }
+});

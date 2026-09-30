@@ -183,7 +183,7 @@ export function familyHistoryArchivesRouter(
   router.get('/archives', (req, res) => {
     const user = account(req);
     const archives = [
-      ...(familyHistoryCandidate(user)
+      ...(familyHistoryCandidate(user, deps.ownerUserId?.())
         ? [{ id: 'default', title: options.defaultTitle || 'My family history' }]
         : []),
       ...read()

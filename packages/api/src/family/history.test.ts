@@ -326,7 +326,9 @@ test('owner mode belongs to one account once KADE_FH_OWNER_USER_ID is set; befor
   assert.deepEqual(familyHistoryViewer({ ...OWNER, kadeFamilyTreePerson: '@I100@' }, BUNDLE, ''), { personId: '@I100@', mode: 'owner' }, 'unset: an admin matched to the owner is the owner');
   assert.deepEqual(familyHistoryViewer(OWNER, BUNDLE, ownerId), { personId: '@I100@', mode: 'owner' });
   assert.deepEqual(familyHistoryViewer({ ...OWNER, kadeFamilyTreePerson: '@I200@' }, BUNDLE, ownerId), { personId: '@I100@', mode: 'owner' }, 'the owner account is the owner, whatever it is matched to');
-  assert.deepEqual(familyHistoryViewer(helper, BUNDLE, ownerId), { personId: '@I100@', mode: 'guest' }, 'set: another admin visits as a guest');
+  assert.equal(familyHistoryViewer(helper, BUNDLE, ownerId), null, 'set: an unrelated administrator has no automatic access');
+  assert.equal(familyHistoryCandidate(helper, ownerId), false, 'denied before loading private tree data');
+  assert.deepEqual(familyHistoryViewer({ ...helper, kadeFamilyHistory: 'guest' }, BUNDLE, ownerId), { personId: '@I100@', mode: 'guest' }, 'an explicit guest grant still works');
   assert.deepEqual(familyHistoryViewer({ ...helper, kadeFamilyTreePerson: '@I200@' }, BUNDLE, ownerId), { personId: '@I200@', mode: 'family' });
   assert.equal(familyHistoryViewer({ id: ownerId, email: 'review-seat@example.com', role: 'ADMIN' }, BUNDLE, ownerId), null, 'the review seat never, even with the owner id');
   assert.equal(familyHistoryViewer({ ...BEN, id: ownerId }, BUNDLE, ownerId)?.mode, 'family', 'the owner id is owner mode only on an administrator');
@@ -1066,7 +1068,7 @@ test('POST /ask: an account that is not matched asks once a week; the owner sees
   }
 });
 
-test('KADE_FH_OWNER_USER_ID: the owner account keeps owner mode and the owner pages; another admin visits as a guest', async () => {
+test('KADE_FH_OWNER_USER_ID: only the configured owner inherits administrator access; matched family and explicit guests keep their access', async () => {
   const h = await harness();
   h.users.set('helper', { id: 'aaaaaaaaaaaaaaaaaaaaaa11', name: 'Helper Admin', username: 'helper', role: 'ADMIN' });
   try {
@@ -1074,12 +1076,23 @@ test('KADE_FH_OWNER_USER_ID: the owner account keeps owner mode and the owner pa
       let r = await call(h, '/me', 'owner');
       assert.deepEqual([r.body.mode, r.body.isOwner], ['owner', true]);
       r = await call(h, '/me', 'helper');
-      assert.deepEqual([r.body.mode, r.body.isOwner, r.body.viewer.first, r.body.row.detail], ['guest', false, 'Helper', 'Guest']);
+      assert.equal(r.status, 403);
+      const readsBefore = h.reads.length;
+      for (const path of ['/home', '/person/%40I100%40', '/tree', '/media/m-tree1', '/findings']) {
+        assert.equal((await call(h, path, 'helper')).status, 403);
+      }
+      assert.equal(h.reads.length, readsBefore, 'unbound administrators cannot read private bucket data');
       assert.equal((await call(h, '/accounts', 'helper')).status, 403);
       assert.equal((await call(h, '/accounts', 'owner')).status, 200);
       r = await call(h, '/match', 'owner', { userId: 'aaaaaaaaaaaaaaaaaaaaaa11', personId: '@I200@' });
       assert.equal(r.status, 409);
-      assert.match(r.body.error, /visits as a guest/);
+      assert.match(r.body.error, /explicit tree or guest grant/);
+      h.users.get('helper')!.kadeFamilyTreePerson = '@I200@';
+      assert.equal((await call(h, '/me', 'helper')).body.mode, 'family');
+      delete h.users.get('helper')!.kadeFamilyTreePerson;
+      h.users.get('helper')!.kadeFamilyHistory = 'guest';
+      assert.equal((await call(h, '/me', 'helper')).body.mode, 'guest');
+      assert.equal((await call(h, '/accounts', 'helper')).status, 403);
     });
     const r = await call(h, '/accounts', 'helper');
     assert.equal(r.status, 200, 'unset again: any admin, so the owner is never shut out');
