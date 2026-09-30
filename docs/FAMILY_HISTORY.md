@@ -81,7 +81,7 @@ Routes:
 - `GET /search?v=2&q=` → `{query, total, text ("12 people found"), spoken, people[card]}`.
 - `GET /people?v=2&group=ancestor|blood|marriage|all&from=` → `{group, title, total, from, count, prev, next, pageSpoken, people[card], sections[{heading, level, rows[{id, spoken, person}]}]}` (pages of 60; ancestors under generation headings; blood includes children).
 - `GET /stories?v=2` → `{stories[{slug, title, words, detail, research}], clippings[{id, title, people}]}`.
-- `GET /story/:slug?v=2` adds `{detail, research {banner}, short, whoswho[card], blocks[{type: h2|h3|p|li|quote, runs[{text, em?, strong?, link?, source?}], n?}], sources[{n, title, url}], chunks[{i, text, cues[{text, start, end}] (fractions)}], listen}`. Source paths become numbered chips with plain titles and never reach a reader.
+- `GET /story/:slug?v=2` adds `{detail, research {banner}, short, whoswho[card], blocks[{type: h2|h3|p|li|quote, runs[{text, em?, strong?, link?, source?}], n?}], sources[{n, title, url}], chunks[{i, text, cues[{text, start, end}] (fractions), audio ("/story/<slug>/audio/<i>")}], listen}`. Source paths become numbered chips with plain titles and never reach a reader.
 - `GET /findings?v=2` → `{discoveries[Finding], mysteries {title, headsUp, count} | null}`; `?group=mysteries` → `{title, headsUp, available, findings[]}`. Finding: `{key, title, text, summary, proof, proofText, proofSpoken, people[card], evidence, storySlug, dna, spoken}`.
 
 **Listen** (stories read aloud in the Library's voice):
