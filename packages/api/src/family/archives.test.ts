@@ -11,6 +11,7 @@ import type { FamilyArchiveDefinition } from './archives';
 import { familyArchiveDefinitions, familyHistoryArchivesRouter } from './archives';
 import type { FamilyToolCall } from './tool';
 import { familyRouterCall, readFamilyHistoryTool } from './tool';
+import { familySensitiveReader } from './history';
 
 const FIXTURES = join(__dirname, '__fixtures__', 'history');
 const BUNDLE: FamilyBundle = JSON.parse(readFileSync(join(FIXTURES, 'bundle.json'), 'utf8'));
@@ -34,6 +35,7 @@ const ACCOUNTS: Record<string, FamilyHistoryAccount> = {
   test: { id: id(7), username: 'Test Guest' },
   stranger: { id: id(8), kadeLibraryAccess: 'family' },
   extraGuest: { id: id(9), kadeFamilyTreePerson: '@I300@' },
+  otherGuest: { id: id(10), kadeFamilyHistory: 'guest' },
 };
 process.env.KADE_APP_REVIEW_USER_IDS = id(6);
 delete process.env.KADE_FH_OWNER_USER_ID;
@@ -203,6 +205,37 @@ test('family tools use actual archive permissions, source warnings and account p
     h.set([]);
     assert.ok((await readFamilyHistoryTool({ action: 'person', archive: DEFINITION.id, person_id: '@I100@' }, call) as { error: unknown }).error);
   } finally { await h.close(); }
+});
+
+test('an explicitly entitled default guest reads findings without becoming a tree person; other guests and archives do not inherit it', async () => {
+  const h = await harness();
+  try {
+    delete process.env.KADE_FH_SENSITIVE_READERS;
+    assert.equal((await h.call('/findings?v=2&group=mysteries', 'guest')).body.available, false);
+    process.env.KADE_FH_SENSITIVE_READERS = JSON.stringify([id(4)]);
+    const me = await h.call('/me', 'guest');
+    assert.equal(me.body.mode, 'guest');
+    assert.equal((me.body.viewer as { inTree: boolean }).inTree, false);
+    assert.equal(me.body.sensitiveFindings, true);
+    const findings = await h.call('/findings?v=2&group=mysteries', 'guest');
+    assert.equal(findings.body.available, true);
+    assert.ok((findings.body.findings as unknown[]).length > 0);
+    assert.equal((await h.call('/findings?v=2&group=mysteries', 'otherGuest')).body.available, false);
+    assert.equal((await h.call('/me', 'stranger')).status, 403, 'the family pack is not an entry grant');
+    assert.equal((await h.call('/accounts', 'guest')).status, 403);
+    assert.equal((await h.call('/research-notes', 'guest')).status, 403);
+    h.set([{ ...DEFINITION, members: [...DEFINITION.members, { userId: id(4) }] }]);
+    assert.equal((await h.call(`/findings?v=2&group=mysteries&archive=${DEFINITION.id}`, 'guest')).body.available, false,
+      'the default entitlement never carries to another archive');
+    const tool = await readFamilyHistoryTool({ action: 'findings', archive: 'default' }, h.toolCall('guest')) as { result: { researchFindings: { available: boolean; findings: unknown[] } } };
+    assert.equal(tool.result.researchFindings.available, true);
+    assert.ok(tool.result.researchFindings.findings.length);
+    process.env.KADE_FH_SENSITIVE_READERS = '[]';
+    assert.equal((await h.call('/findings?v=2&group=mysteries', 'guest')).body.available, false, 'revoked on the next request');
+    assert.equal(familySensitiveReader(ACCOUNTS.guest, '["invalid-id"]'), false);
+    assert.equal(familySensitiveReader(ACCOUNTS.guest, JSON.stringify([id(4), 7])), false);
+    assert.equal(familySensitiveReader(ACCOUNTS.guest, 'not-json'), false);
+  } finally { delete process.env.KADE_FH_SENSITIVE_READERS; await h.close(); }
 });
 
 test('the private archive configuration rejects malformed identities and overlapping storage prefixes', () => {

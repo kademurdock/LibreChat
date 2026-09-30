@@ -102,10 +102,16 @@ export async function readFamilyHistoryTool(input: unknown, call: FamilyToolCall
     path = '/research-notes';
   } else path = action === 'notes' ? '/research-notes' : '/findings?v=2';
   const reply = await call(action === 'save_note' ? 'POST' : 'GET', `${path}${path.includes('?') ? '&' : '?'}${query}`, body);
+  let result = reply.body;
+  if (action === 'findings' && reply.status >= 200 && reply.status < 300) {
+    const research = await call('GET', `/findings?v=2&group=mysteries&${query}`);
+    if (research.status !== 200) return { archive, accountContext: me.body, error: research.body };
+    result = { discoveries: reply.body, researchFindings: research.body };
+  }
   return {
     archive,
     accountContext: me.body,
     guidance: 'Use the named source subjects. A perspective-only viewer is not the tree person. Notes are attributed unverified testimony; source warnings and unknown relationships remain unresolved.',
-    ...(reply.status >= 200 && reply.status < 300 ? { result: reply.body } : { error: reply.body }),
+    ...(reply.status >= 200 && reply.status < 300 ? { result } : { error: reply.body }),
   };
 }

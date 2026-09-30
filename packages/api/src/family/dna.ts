@@ -240,7 +240,7 @@ function testSection(ctx: FamilyPageContext): Record<string, unknown> | null {
     (c) => c.sensitive !== false && (all || mine(c.people || [])),
   );
   const mysteries =
-    hidden.length && familyMysteriesAllowed(ctx.viewer.mode, ctx.dnaFindings)
+    hidden.length && familyMysteriesAllowed(ctx.viewer.mode, ctx.dnaFindings, ctx.sensitiveReader)
       ? { headsUp: FAMILY_MYSTERIES_HEADS_UP, cards: hidden.map(conclusion) }
       : null;
   let intro: string;

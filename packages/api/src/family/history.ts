@@ -663,6 +663,8 @@ export interface FamilyHistoryDependencies {
   ownerUserId?: () => string;
   /** Separate archive stewardship does not itself match the owner to a tree person. */
   ownerIsTreePerson?: (user: FamilyHistoryAccount, bundle: FamilyBundle) => boolean;
+  /** Explicit sensitive-reading permission, independent of a tree match. Extra archives override it. */
+  sensitiveReadAllowed?: (user: FamilyHistoryAccount) => boolean;
   log?: (message: string) => void;
   /** Writes one object to the private bucket: notes to the owner, and Listen audio. */
   putObject?: (key: string, body: Buffer, mime: string) => Promise<void>;
@@ -717,6 +719,20 @@ export const FAMILY_TREE_LIMITS: {
   up: { fallback: number; max: number };
   down: { fallback: number; max: number };
 } = { up: { fallback: 4, max: 8 }, down: { fallback: 2, max: 4 } };
+
+/** Default-archive readers explicitly approved for findings; malformed private config denies all.
+ * This grants no archive entry, person binding, owner rights or permission to write facts. */
+export function familySensitiveReader(
+  user: FamilyHistoryAccount,
+  raw: string | undefined = process.env.KADE_FH_SENSITIVE_READERS,
+): boolean {
+  if (!raw) return false;
+  try {
+    const ids: unknown = JSON.parse(raw);
+    if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id))) return false;
+    return ids.some((id: string) => id.toLowerCase() === accountIdOf(user).toLowerCase());
+  } catch { return false; }
+}
 
 const RETRY_MS = 60 * 1000;
 const VIEW_CACHE_LIMIT = 48;
@@ -1647,7 +1663,8 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const v2 = (req: Request): boolean => queryText(req.query.v) === '2';
   /** May this viewer see sensitive findings and stories (KADE_FH_DNA_FINDINGS, read now)? */
   const mysteries = (ctx: FamilyContext): boolean =>
-    familyMysteriesAllowed(ctx.viewer.mode, familyDnaFindingsSetting());
+    familyMysteriesAllowed(ctx.viewer.mode, familyDnaFindingsSetting(),
+      (deps.sensitiveReadAllowed || familySensitiveReader)(ctx.user));
   const authorPersonId = (ctx: FamilyContext): string | null =>
     ctx.viewer.mode === 'guest' ||
     (ctx.viewer.mode === 'owner' && deps.ownerIsTreePerson?.(ctx.user, ctx.bundle) === false)
@@ -1718,6 +1735,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       now: now(),
       version: ctx.state.version,
       dnaFindings: familyDnaFindingsSetting(),
+      sensitiveReader: (deps.sensitiveReadAllowed || familySensitiveReader)(ctx.user),
       placesReady: !!ctx.bundle.places?.places?.length,
       listenReady: !!listener,
       readable: (story) => !!familyStory(ctx.bundle, story.slug),
@@ -1854,6 +1872,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
           ...(perspectiveOnly ? { perspectiveOnly: true } : {}),
         },
         mode: ctx.viewer.mode,
+        sensitiveFindings: mysteries(ctx),
         isOwner: ctx.viewer.mode === 'owner',
         version: ctx.state.version,
         counts: bundleCounts(ctx.bundle),

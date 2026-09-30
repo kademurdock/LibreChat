@@ -77,6 +77,8 @@ export interface FamilyPageContext {
   now: number;
   version: string;
   dnaFindings: FamilyDnaFindings;
+  /** An explicitly reviewed read grant; never a match to the viewing anchor. */
+  sensitiveReader?: boolean;
   placesReady: boolean;
   listenReady: boolean;
   /** True when a story's file can be served (its path stays in its folder). */
@@ -241,18 +243,19 @@ function photoCount(ctx: FamilyPageContext): number {
 }
 
 /** Sensitive findings (family mysteries) by KADE_FH_DNA_FINDINGS: `family` (the default) shows
- * them to matched family and the owner, `owner` to the owner alone, `off` to nobody. Guests never. */
+ * them to matched family, the owner and explicitly entitled readers. Other guests never. */
 export function familyMysteriesAllowed(
   mode: FamilyHistoryViewer['mode'],
   setting: FamilyDnaFindings,
+  sensitiveReader: boolean = false,
 ): boolean {
-  if (setting === 'off' || mode === 'guest') return false;
+  if (setting === 'off') return false;
   if (setting === 'owner') return mode === 'owner';
-  return true;
+  return mode !== 'guest' || sensitiveReader;
 }
 
 function mysteriesAllowed(ctx: FamilyPageContext): boolean {
-  return familyMysteriesAllowed(ctx.viewer.mode, ctx.dnaFindings);
+  return familyMysteriesAllowed(ctx.viewer.mode, ctx.dnaFindings, ctx.sensitiveReader);
 }
 
 /** The DNA tile's words for this viewer, from their own place in the tree (even when their

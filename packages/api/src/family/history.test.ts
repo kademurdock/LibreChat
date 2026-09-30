@@ -505,6 +505,7 @@ test('GET /me: the owner, a matched member, one with no view file, a guest and a
       inTree: true,
     },
     mode: 'owner',
+    sensitiveFindings: true,
     isOwner: true,
     version: 'v1',
     counts: BUNDLE.counts,
