@@ -5,7 +5,13 @@ import type { Request, RequestHandler, Response } from 'express';
 import type { LibraryAccount } from '../library/access';
 import { libraryReviewSeat, libraryTestSeat } from '../library/access';
 import type { FamilyAudience } from './util';
-import { FAMILY_MONTH_NAMES, familyFirstName, familyInt, familyMediaVisible } from './util';
+import {
+  FAMILY_MONTH_NAMES,
+  familyFirstName,
+  familyInt,
+  familyMediaVisible,
+  familyPortraitIdentity,
+} from './util';
 import {
   familyCapital,
   familyGenerationName,
@@ -165,6 +171,14 @@ export interface FamilyRecord {
   citation?: string;
   url?: string;
   image?: string | null;
+  /** A reviewed association that still needs a human identity check. */
+  evidenceWarning?: string | null;
+  /** Saved words and their actual source; an excerpt need not be a complete original. */
+  sourceExcerpt?: string | null;
+  sourceExcerptCoverage?: string | null;
+  sourceCitation?: string | null;
+  sourceUrl?: string | null;
+  newspaperSource?: FamilyNewspaperSource;
   /** The export took contact details out (the record concerns a living relative). */
   scrubbed?: boolean;
 }
@@ -233,14 +247,40 @@ export interface FamilyMedia {
   isPhotograph?: boolean;
   /** Faces as fractions of the picture. */
   faces?: FamilyFaceBox[];
+  portraitPersonId?: string;
+  portraitIdentityBasis?: 'single-linked-person-single-face' | 'reviewed-face-identity';
   describedBy?: string;
   /** On an original: the id of its restored copy. */
   restored?: string;
   /** On a restored copy (kind "restored"): its original's id. */
   restoredFrom?: string;
   restoredNotes?: string | null;
-  faithful?: boolean | null;
+  faithful?: boolean | 'high' | 'medium' | 'low' | null;
+  source?: FamilyMediaSource;
+  evidenceWarning?: string | null;
+  newspaperSource?: FamilyNewspaperSource;
+  /** Several indexed relatives can share one physical newspaper scan. */
+  newspaperSources?: Record<string, FamilyNewspaperSource>;
   webSource?: string;
+}
+
+export interface FamilyMediaSource {
+  kind: string;
+  title: string;
+  citation?: string | null;
+  url?: string | null;
+}
+
+export interface FamilyNewspaperSource {
+  coverage?: string | null;
+  indexedPersonRole?: string | null;
+  principalArticleSubject?: string | null;
+  identityReview?: { status?: string; note?: string } | null;
+  linkedTreeIdentityVerified?: boolean;
+  requestedSourceUrl?: string | null;
+  sourceUrl?: string | null;
+  citation?: string | null;
+  limitations?: string[];
 }
 
 export interface FamilySizeFile {
@@ -617,6 +657,8 @@ export interface FamilyHistoryDependencies {
   now?: () => number;
   /** Defaults to KADE_FAMILY_HISTORY_PREFIX or 'family-history'. */
   prefix?: string;
+  /** A separate archive's verified owner; default reads the legacy setting on every request. */
+  ownerUserId?: () => string;
   log?: (message: string) => void;
   /** Writes one object to the private bucket: notes to the owner, and Listen audio. */
   putObject?: (key: string, body: Buffer, mime: string) => Promise<void>;
@@ -1054,6 +1096,7 @@ function portrait(
       item &&
       item.kind === 'tree' &&
       PORTRAIT.test(item.file) &&
+      familyPortraitIdentity(item, person.id) &&
       familyMediaVisible(bundle, item, audience)
     )
       return mediaId;
@@ -1392,6 +1435,18 @@ function parseJson<T>(buffer: Buffer | null): T | null {
   return buffer ? (JSON.parse(unpacked(buffer).toString('utf8')) as T) : null;
 }
 
+/** A Content-Disposition that saves a file under `name`: a plain-letter copy for old browsers,
+ * and the exact name (curly apostrophes and accents too) for the rest. */
+export function familyAttachment(name: string): string {
+  const exact = String(name || '').trim() || 'Family picture.jpg';
+  const plain = exact.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const encoded = encodeURIComponent(exact).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${plain}"; filename*=UTF-8''${encoded}`;
+}
+
 function completeBundle(raw: FamilyBundle | null, version: string): FamilyBundle {
   if (!raw || typeof raw.owner !== 'string' || !raw.people || !own(raw.people, raw.owner))
     throw new Error(`bundle ${version} has no owner in its people`);
@@ -1539,13 +1594,16 @@ const PEOPLE_V2: Readonly<Record<string, { title: string; groups: string[] }>> =
  * v2 (the iPhone app, which sends ?v=2 on every call; v1 routes answer exactly as before
  * without it):        the same routes with server-written words, plus GET /home /gallery /dna
  *                     /timeline /places /play /media/:id/info and POST /media/sign
+ * GET /media/:id/file one picture's bytes under its share name (Save and Share on the web page)
  * POST /ask           an account that is not matched asks to be added
  * GET  /accounts, POST /match   the owner only
- * Every answer is JSON with Cache-Control: no-store (a media redirect is a 302). A refused
+ * Every answer is JSON with Cache-Control: no-store (a media redirect is a 302, a saved picture
+ * its bytes). A refused
  * account gets the same 403 on every route, with the reason its greyed Library row shows.
  */
 export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const router = Router();
+  const ownerUserId = deps.ownerUserId || familyOwnerUserId;
   const prefix = deps.prefix || familyHistoryPrefix();
   const store = createFamilyStore(deps, prefix);
   const now = deps.now || Date.now;
@@ -1584,7 +1642,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   /** The viewer and their view, null when refused; throws when the bundle or views cannot load. */
   const contextFor = async (user: FamilyHistoryAccount): Promise<FamilyContext | null> => {
     const state = await store.loaded();
-    const viewer = familyHistoryViewer(user, state.bundle, familyOwnerUserId());
+    const viewer = familyHistoryViewer(user, state.bundle, ownerUserId());
     if (!viewer) return null;
     const ownerView = (): Promise<FamilyView | null> => store.view(state, state.bundle.owner);
     const mine = viewer.mode === 'guest' ? null : await store.view(state, viewer.personId);
@@ -1732,7 +1790,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const owner =
     (handler: OwnerHandler): RequestHandler =>
     async (req, res) => {
-      if (!familyHistoryOwnerAccount(signedIn(req), familyOwnerUserId())) {
+      if (!familyHistoryOwnerAccount(signedIn(req), ownerUserId())) {
         res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
         return;
       }
@@ -2164,7 +2222,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   router.get(
     '/notes',
     family(async (_req, res, ctx) => {
-      if (!familyHistoryOwnerAccount(ctx.user, familyOwnerUserId())) {
+      if (!familyHistoryOwnerAccount(ctx.user, ownerUserId())) {
         res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
         return;
       }
@@ -2195,7 +2253,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     '/notes/:id/done',
     json({ limit: '1kb' }),
     family(async (req, res, ctx) => {
-      if (!familyHistoryOwnerAccount(ctx.user, familyOwnerUserId())) {
+      if (!familyHistoryOwnerAccount(ctx.user, ownerUserId())) {
         res.status(403).json({ error: FAMILY_HISTORY_OWNER_ONLY });
         return;
       }
@@ -2290,6 +2348,38 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       }
       await page.pc.signer.fill();
       res.json({ urls, size, expires: expires() });
+    }),
+  );
+
+  /* Save and Share on the web page: one picture's bytes from this site under its share name, so a
+   * browser can keep it or hand it to the share sheet without the bucket answering other sites.
+   * Only the export's JPEG copies ("s", or "l" for a big scan); never a photo's original. */
+  router.get(
+    '/media/:id/file',
+    family(async (req, res, ctx) => {
+      const id = String(req.params.id || '');
+      const item = own(ctx.bundle.media, id);
+      const size = queryText(req.query.size) || 's';
+      if (size !== 's' && size !== 'l') {
+        res.status(400).json({ error: 'Choose the s or l size.' });
+        return;
+      }
+      const page = await pageOf(ctx);
+      const visible = !!item && familyMediaVisible(ctx.bundle, item, ctx.audience);
+      const file = visible && item ? page.model.sizeFile(item, size) : null;
+      const image = file ? familyImage(page.pc, id) : null;
+      const bytes =
+        file && image && /^image\//.test(familyFileMime(file))
+          ? await deps.loadObject(`${prefix}/${file}`)
+          : null;
+      if (!file || !image || !bytes) {
+        res.status(404).json({ error: 'That picture cannot be saved from the family history.' });
+        return;
+      }
+      res.setHeader('Content-Type', familyFileMime(file));
+      res.setHeader('Content-Disposition', familyAttachment(image.shareName));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.send(bytes);
     }),
   );
 

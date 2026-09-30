@@ -246,7 +246,7 @@ function fileName(words: string, restored: boolean): string {
 
 /**
  * A picture for this viewer, or null when they may not see it. With `prefer: 'restored'` a
- * restored copy is shown in its place (Home faces, the reel, tree boxes, person galleries);
+ * restored full copy is shown in its place (heroes, the reel and person galleries);
  * records and documents are always the original.
  */
 export function familyImage(
@@ -280,7 +280,7 @@ export function familyImage(
   const kindWord = FAMILY_IMAGE_KIND_WORD[category];
   const who = peopleWords(pc, people);
   const caption = familyCaption(original.caption);
-  const visual = String(original.alt || '').trim();
+  const visual = String(shown.alt || original.alt || '').trim();
   let short: string;
   let alt: string;
   let share: string;
@@ -299,8 +299,8 @@ export function familyImage(
     share = `${kindWord}${names.length ? ` of ${familyList(names.slice(0, 3))}` : caption ? `, ${caption}` : ''}${original.date ? `, ${original.date}` : ''}`;
   }
   if (wantRestored) alt = `${alt} Restored with AI.`;
-  const automatic = original.describedBy === 'automatic';
-  const description = String(original.description || '').trim() || null;
+  const automatic = (shown.describedBy || original.describedBy) === 'automatic';
+  const description = String(shown.description || original.description || '').trim() || null;
   const text = String(original.text || '').trim() || null;
   const faces =
     (Array.isArray(shown.faces) && shown.faces.length ? shown.faces : original.faces) || [];
@@ -337,12 +337,15 @@ export function familyImage(
   return image;
 }
 
-/** The small face picture a person card carries, from their best portrait (restored first). */
+/** Named identity crops always come from the original; optional restored full photos remain separate. */
 function faceRef(pc: FamilyPresenter, id: string): FamilyFaceRef | null {
   const mediaId = pc.model.portrait(id);
   if (!mediaId) return null;
-  const image = familyImage(pc, mediaId, { prefer: 'restored' });
+  const image = familyImage(pc, mediaId);
   if (!image || (!image.sizes.includes('f') && !image.sizes.includes('t'))) return null;
+  const original = own(pc.bundle.media, mediaId) as FamilyMedia;
+  const group = (original.faces || []).length > 1 || (original.people || []).length > 1;
+  if (group && !image.sizes.includes('f')) return null;
   const shown = own(pc.bundle.media, image.id) as FamilyMedia;
   const ref: FamilyFaceRef = {
     id: image.id,
@@ -352,7 +355,7 @@ function faceRef(pc: FamilyPresenter, id: string): FamilyFaceRef | null {
     showing: image.showing,
   };
   familySignSize(pc, shown, 'f', ref, 'face');
-  familySignSize(pc, shown, 't', ref, 'thumb');
+  familySignSize(pc, shown, group ? 'f' : 't', ref, 'thumb');
   return ref;
 }
 

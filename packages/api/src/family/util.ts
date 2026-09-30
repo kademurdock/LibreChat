@@ -34,6 +34,23 @@ export function familyMediaVisible(
   return true;
 }
 
+/** A face location or tree attachment is not an identity: require a reviewed assignment. */
+export function familyPortraitIdentity(item: FamilyMedia, personId: string): boolean {
+  const people = item.people || [];
+  if (!people.includes(personId)) return false;
+  if (item.portraitPersonId && item.portraitPersonId !== personId) return false;
+  const faces = (item.faces || []).filter(
+    (face) =>
+      [face.x, face.y, face.w, face.h].every((n) => Number.isFinite(n) && n >= 0 && n <= 1) &&
+      face.w > 0 &&
+      face.h > 0,
+  );
+  if (!faces.length) return false;
+  return (
+    item.portraitPersonId === personId && item.portraitIdentityBasis === 'reviewed-face-identity'
+  );
+}
+
 export interface FamilyDate {
   year: number | null;
   /** 1 to 12, or null when the date names no month. */

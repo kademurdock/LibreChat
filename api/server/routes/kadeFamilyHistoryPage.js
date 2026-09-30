@@ -11,10 +11,14 @@
  * SCREEN-READER SHAPE: one h1; each view has its own h2, which takes focus
  * when you move between views; one role="status" region for loading and
  * errors; the tree chart has a full text version under it.
+ *
+ * The script reads the v2 answers (?v=2), whose words the server writes from
+ * the viewer's own place. The tree's owner also gets "Who can see this" and
+ * "Notes from the family" in the sections list (added by the script).
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 
-const ASSET_VERSION = '20260929a';
+const ASSET_VERSION = '20260930a';
 
 const familyHistoryHtml = `<!doctype html><html lang="en"><head><title>Family history — Kade-AI</title>${SHARED_HEAD}
 <meta name="robots" content="noindex, nofollow">
@@ -24,12 +28,15 @@ const familyHistoryHtml = `<!doctype html><html lang="en"><head><title>Family hi
 <main id="fh-main">
 <a class="back" href="/home">&larr; Home</a>
 <h1 id="fh-title">Our family history</h1>
+<div id="fh-archives" hidden></div>
 <nav class="fh-nav" id="fh-nav" aria-label="Family history sections" hidden>
   <a href="#/" data-route="">Start</a>
   <a href="#/tree" data-route="tree">Family tree</a>
   <a href="#/people" data-route="people">People</a>
+  <a href="#/gallery" data-route="gallery">Photos</a>
   <a href="#/stories" data-route="stories">Stories</a>
-  <a href="#/findings" data-route="findings">Research findings</a>
+  <a href="#/findings" data-route="findings">Discoveries</a>
+  <a href="#/dna" data-route="dna">DNA</a>
 </nav>
 <p id="fh-status" class="fh-status" role="status" aria-live="polite">Checking that this account is family…</p>
 <div id="fh-view" class="fh-view"></div>

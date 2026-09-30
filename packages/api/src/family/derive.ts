@@ -18,7 +18,7 @@ import type {
 } from './words';
 import { familyProof, familyTermText } from './words';
 import type { FamilyDate } from './util';
-import { familyDate, own } from './util';
+import { familyDate, familyPortraitIdentity, own } from './util';
 
 /* ----------------------------------------------------------------------------
  * FAMILY HISTORY DERIVATIONS (docs/FAMILY_HISTORY.md, "What the server works out")
@@ -300,7 +300,7 @@ export function familyModel(bundle: FamilyBundle): FamilyModel {
     if (portraitCache.has(id)) return portraitCache.get(id) as string | null;
     const chosen = own(bundle.people, id)?.portrait;
     const chosenItem = chosen ? own(bundle.media, chosen) : undefined;
-    if (chosenItem && chosenItem.kind !== 'restored') {
+    if (chosenItem && chosenItem.kind !== 'restored' && familyPortraitIdentity(chosenItem, id)) {
       portraitCache.set(id, chosenItem.id);
       return chosenItem.id;
     }
@@ -310,6 +310,7 @@ export function familyModel(bundle: FamilyBundle): FamilyModel {
       const item = own(bundle.media, mediaId) as FamilyMedia;
       const kind = category(item);
       if (kind !== 'portrait' && kind !== 'photo') continue;
+      if (!familyPortraitIdentity(item, id)) continue;
       const restored = restoredOf(mediaId);
       const shown = restored ? (own(bundle.media, restored) as FamilyMedia) : item;
       let score = 0;

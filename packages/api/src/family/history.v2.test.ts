@@ -13,7 +13,7 @@ import type { Server } from 'node:http';
 import express from 'express';
 import type { RequestHandler } from 'express';
 import type { FamilyBundle, FamilyHistoryAccount, FamilyHistoryUserFields, FamilyView } from './history';
-import { FAMILY_SIGN_LIMIT, familyHistoryRouter } from './history';
+import { FAMILY_SIGN_LIMIT, familyAttachment, familyHistoryRouter } from './history';
 import { familySpokenProblems } from './words';
 import { familyDemoSwift, familyDumpNativeFixtures } from './dump-native-fixtures';
 
@@ -343,7 +343,11 @@ test('GET /tree?v=2: boxes in box units with cards and spoken sentences, the lis
   const r = await call(main, '/tree?v=2&up=4&down=2', 'owner');
   const { layout, summary, list, legend } = r.body;
   assert.equal(summary.text, 'Centred on you. 14 people shown.');
-  assert.equal(layout.order[0], layout.boxes.find((b: Json) => b.role === 'focus').key, 'the focus first');
+  assert.equal(
+    layout.order[0],
+    layout.boxes.find((b: Json) => b.role === 'focus').key,
+    'the focus first',
+  );
   assert.equal(layout.boxes.length, layout.order.length);
   const dan = layout.boxes.find((b: Json) => b.id === '@I300@');
   assert.deepEqual([dan.person.term, dan.moreAbove, dan.you], ['your grandfather', null, false]);
@@ -351,14 +355,25 @@ test('GET /tree?v=2: boxes in box units with cards and spoken sentences, the lis
   assert.equal(ivo.moreAbove, null, 'nothing is known above the oldest');
   const me = layout.boxes.find((b: Json) => b.id === '@I100@');
   assert.equal(me.you, true);
-  assert.equal(dan.person.face.id, 'm-tree1r', 'tree boxes use the restored portrait');
-  assert.match(dan.person.face.face, /m-tree1r\.f\.bbbb0003\.jpg/);
+  assert.equal(dan.person.face.id, 'm-tree1', 'named face crops retain the original identity');
+  assert.match(dan.person.face.face, /m-tree1\.f\.aaaa0003\.jpg/);
   const finn = layout.boxes.find((b: Json) => b.id === '@I302@');
   assert.equal(finn.moreAbove, null);
   const unknown = layout.boxes.find((b: Json) => b.id === '@I700@');
   assert.deepEqual(unknown.person.research, { level: 'dna', text: 'Strong DNA evidence' });
   assert.match(unknown.spoken, /Research finding, strong DNA evidence, not proven by records\.$/);
-  assert.deepEqual(list.map((s: Json) => s.heading), ['Parents', 'Grandparents', 'Great-grandparents', '2nd great-grandparents', 'Brothers and sisters', 'Spouses', 'Children']);
+  assert.deepEqual(
+    list.map((s: Json) => s.heading),
+    [
+      'Parents',
+      'Grandparents',
+      'Great-grandparents',
+      '2nd great-grandparents',
+      'Brothers and sisters',
+      'Spouses',
+      'Children',
+    ],
+  );
   assert.ok(legend.some((l: Json) => l.key === 'step'));
   const shallow = await call(main, '/tree?v=2&up=1&down=0', 'owner');
   const father = shallow.body.layout.boxes.find((b: Json) => b.id === '@I200@');
@@ -411,26 +426,69 @@ test('GET /person/:id?v=2: nutshell, lived-through, relation, restored pictures 
 
 /* ── pictures ─────────────────────────────────────────────────────────── */
 
-test('GET /gallery: photos first, pages of 48, signed thumbnails from the export\'s own files, held pictures only for who may see them', async () => {
+test("GET /gallery: photos first, pages of 48, signed thumbnails from the export's own files, held pictures only for who may see them", async () => {
   main.signed.length = 0;
   let r = await call(main, '/gallery', 'owner');
   assert.equal(r.body.kind, 'photos');
-  assert.deepEqual(r.body.items.map((i: Json) => i.id), ['m-tree1', 'm-living', 'm-held'], 'nearest relatives first, then oldest');
-  assert.equal(r.body.items[0].thumb, 'https://bucket.example/family-history/media/m-tree1.t.aaaa0001.jpg?signature=test');
-  assert.equal(r.body.items[0].restored, 'm-tree1r', 'the gallery shows the original and offers the restored copy');
+  assert.deepEqual(
+    r.body.items.map((i: Json) => i.id),
+    ['m-tree1r', 'm-living', 'm-held'],
+    'nearest relatives first, then oldest',
+  );
+  assert.equal(
+    r.body.items[0].thumb,
+    'https://bucket.example/family-history/media/m-tree1r.t.bbbb0001.jpg?signature=test',
+  );
+  assert.equal(
+    r.body.items[0].original,
+    'm-tree1',
+    'the gallery starts with the restored full photo and keeps the original selectable',
+  );
+  assert.equal(r.body.items[0].showing, 'restored');
+  assert.match(r.body.items[0].restoredLabel, /colours and repairs may be guessed/);
   assert.equal(r.body.items[0].index, 1);
   assert.equal(r.body.pageSpoken, 'Showing 1 to 3 of 3');
-  assert.deepEqual(r.body.kinds.map((k: Json) => [k.key, k.count]), [['photos', 3], ['portraits', 0], ['records', 1], ['graves', 1], ['documents', 1], ['stories', 1], ['all', 7]]);
-  assert.ok(main.signed.every((key) => !key.endsWith('m-tree1.jpg')), 'never a photo\'s original');
-  for (const [who, sees] of [['ben', true], ['guest', false], ['cora', false]] as const) {
+  assert.deepEqual(
+    r.body.kinds.map((k: Json) => [k.key, k.count]),
+    [
+      ['photos', 3],
+      ['portraits', 0],
+      ['records', 1],
+      ['graves', 1],
+      ['documents', 1],
+      ['stories', 1],
+      ['all', 7],
+    ],
+  );
+  assert.ok(
+    main.signed.every((key) => !key.endsWith('m-tree1.jpg')),
+    "never a photo's original",
+  );
+  for (const [who, sees] of [
+    ['ben', true],
+    ['guest', false],
+    ['cora', false],
+  ] as const) {
     r = await call(main, '/gallery?kind=all', who);
-    assert.equal(r.body.items.some((i: Json) => i.id === 'm-held'), sees, who);
-    assert.equal(r.body.items.some((i: Json) => i.id === 'm-bad'), false, 'a file outside the media folder is never listed');
+    assert.equal(
+      r.body.items.some((i: Json) => i.id === 'm-held'),
+      sees,
+      who,
+    );
+    assert.equal(
+      r.body.items.some((i: Json) => i.id === 'm-bad'),
+      false,
+      'a file outside the media folder is never listed',
+    );
   }
   r = await call(main, `/gallery?kind=all&person=${pid('@I300@')}&sort=year`, 'owner');
-  assert.deepEqual(r.body.items.map((i: Json) => i.id), ['m-tree1', 'm-grave1', 'm-held', 'm-rec1'], 'dated first, oldest first');
+  assert.deepEqual(
+    r.body.items.map((i: Json) => i.id),
+    ['m-tree1r', 'm-grave1', 'm-held', 'm-rec1'],
+    'dated first, oldest first',
+  );
   r = await call(main, '/gallery?kind=all&since=v0', 'owner');
-  assert.deepEqual(r.body.items.map((i: Json) => i.id).sort(), ['m-living', 'm-tree1']);
+  assert.deepEqual(r.body.items.map((i: Json) => i.id).sort(), ['m-living', 'm-tree1r']);
   r = await call(main, '/gallery?kind=all&from=5', 'owner');
   assert.deepEqual([r.body.from, r.body.count, r.body.prev, r.body.next], [5, 2, 0, null]);
   assert.equal((await call(main, '/gallery?kind=selfies', 'owner')).status, 400);
@@ -489,6 +547,276 @@ test('media sizes come only from the export\'s files; a photo\'s original is nev
   r = await call(main, '/media/m-grave1/info', 'owner');
   assert.equal(r.body.canAskRestore, true);
   assert.equal((await call(main, '/media/m-held/info', 'guest')).status, 404);
+});
+
+test('media info preserves newspaper citations, partial-source provenance and restored-copy descriptions', async () => {
+  const bundle = clone(BUNDLE);
+  bundle.media['m-story1'].source = {
+    kind: 'newspaper',
+    title: 'Example Gazette',
+    citation: 'Example Gazette, 4 May 1930, page 2; image example-001.',
+    url: 'https://example.com/newspaper/example-001',
+  };
+  bundle.media['m-doc1'].source = {
+    kind: 'partial-official-listing',
+    title: 'Example Funeral Home cached listing',
+    citation: 'Partial independent listing only; complete newspaper original remains unavailable.',
+    url: 'https://example.com/official-listing',
+  };
+  bundle.media['m-tree1r'].alt = 'Estimated colors on a restored porch photograph.';
+  bundle.media['m-tree1r'].description =
+    'The prepared AI copy has estimated green clothing; the original has no verified color information.';
+  const h = await harness(bucket(bundle));
+  try {
+    const newspaper = await call(h, '/media/m-story1/info', 'ben');
+    assert.deepEqual(newspaper.body.source, bundle.media['m-story1'].source);
+    assert.equal(
+      newspaper.body.text,
+      CLIPPING,
+      'saved words do not require a provider membership or generation',
+    );
+    const partial = await call(h, '/media/m-doc1/info', 'ben');
+    assert.deepEqual(partial.body.source, bundle.media['m-doc1'].source);
+    assert.equal(partial.body.canAskRestore, false);
+    const restored = await call(h, '/media/m-tree1r/info', 'ben');
+    assert.equal(restored.body.description, bundle.media['m-tree1r'].description);
+    assert.match(restored.body.image.alt, /Estimated colors/);
+    assert.match(restored.body.image.restoredLabel, /colours and repairs may be guessed/);
+    assert.equal(restored.body.image.original, 'm-tree1');
+    const record = await call(h, '/media/m-rec1/info', 'ben');
+    assert.equal(record.body.source.citation, bundle.records['c1:r1'].citation);
+    assert.equal(record.body.source.url, bundle.records['c1:r1'].url);
+  } finally {
+    await h.close();
+  }
+});
+
+test('record warnings and independent partial excerpts remain distinct from an unavailable newspaper original', async () => {
+  const bundle = clone(BUNDLE);
+  const record = bundle.records['c1:r1'];
+  record.evidenceWarning = 'Identity review needed: this indexed relative may be a namesake.';
+  record.sourceExcerpt =
+    'Partial independent listing: an invented relative is named. The complete article is unavailable.';
+  record.sourceExcerptCoverage = 'partial-independent-listing-only';
+  record.sourceCitation =
+    'Example Funeral Home cached listing, retrieved 5 March 2026; partial text only.';
+  record.sourceUrl = 'https://example.com/official-listing';
+  record.newspaperSource = {
+    coverage: record.sourceExcerptCoverage,
+    indexedPersonRole: 'named relative',
+    principalArticleSubject: 'A different invented person',
+    requestedSourceUrl: record.url,
+    sourceUrl: record.sourceUrl,
+    citation: record.sourceCitation,
+    linkedTreeIdentityVerified: false,
+    limitations: ['Original newspaper page and complete article remain unavailable.'],
+  };
+  bundle.media['m-rec1'].evidenceWarning = record.evidenceWarning;
+  bundle.media['m-rec1'].newspaperSources = {
+    [record.key]: record.newspaperSource,
+    'example:second-indexed-role': {
+      indexedPersonRole: 'article subject',
+      principalArticleSubject: 'A different invented person',
+    },
+  };
+  const h = await harness(bucket(bundle));
+  try {
+    const media = await call(h, '/media/m-rec1/info', 'ben');
+    assert.equal(media.body.evidenceWarning, record.evidenceWarning);
+    assert.deepEqual(
+      media.body.newspaperSources,
+      bundle.media['m-rec1'].newspaperSources,
+      'shared scans retain each indexed role without assigning one role to all linked people',
+    );
+    assert.equal(media.body.source.citation, record.sourceCitation);
+    assert.equal(media.body.source.url, record.sourceUrl);
+    record.image = null;
+    const partialHarness = await harness(bucket(bundle));
+    try {
+      const person = await call(partialHarness, `/person/${pid('@I300@')}?v=2`, 'ben');
+      const saved = person.body.records.find((r: { key: string }) => r.key === record.key);
+      assert.equal(
+        saved.image,
+        null,
+        'a partial listing does not fabricate a saved newspaper scan',
+      );
+      assert.equal(saved.sourceExcerpt, record.sourceExcerpt);
+      assert.equal(saved.evidenceWarning, record.evidenceWarning);
+      assert.match(saved.spoken, /identity review needed/i);
+      assert.equal(saved.citation, record.citation, 'the requested record citation is preserved');
+      assert.equal(saved.newspaperSource.indexedPersonRole, 'named relative');
+      assert.equal(saved.newspaperSource.principalArticleSubject, 'A different invented person');
+      const source = person.body.sources.find(
+        (s: { citation: string }) => s.citation === record.sourceCitation,
+      );
+      assert.equal(
+        source.url,
+        record.sourceUrl,
+        'the source list points to the actual recovered listing',
+      );
+    } finally {
+      await partialHarness.close();
+    }
+  } finally {
+    await h.close();
+  }
+});
+
+test('group photos remain available but cannot supply a named portrait from an anonymous largest face', async () => {
+  for (const reviewed of [false, true]) {
+    const bundle = clone(BUNDLE);
+    const image = bundle.media['m-tree1'];
+    image.faces = [
+      { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+      { x: 0.6, y: 0.1, w: 0.2, h: 0.2 },
+    ];
+    bundle.people['@I300@'].portrait = image.id;
+    if (reviewed) {
+      image.portraitPersonId = '@I300@';
+      image.portraitIdentityBasis = 'reviewed-face-identity';
+    } else {
+      delete image.portraitPersonId;
+      delete image.portraitIdentityBasis;
+    }
+    const h = await harness(bucket(bundle));
+    try {
+      const person = await call(h, `/person/${pid('@I300@')}?v=2`, 'ben');
+      if (reviewed) {
+        assert.equal(person.body.person.face.id, 'm-tree1');
+        assert.match(person.body.person.face.face, /m-tree1\.f\./);
+        assert.equal(
+          person.body.person.face.thumb,
+          person.body.person.face.face,
+          'a group thumbnail cannot stand in for the verified identity crop',
+        );
+      } else {
+        assert.equal(
+          person.body.person.face,
+          null,
+          'export-selected largest face is not accepted as identity',
+        );
+      }
+      const gallery = await call(h, '/gallery?kind=photos', 'ben');
+      assert.ok(
+        gallery.body.items.some((photo: { id: string; original: string | null }) => photo.id === image.id || photo.original === image.id),
+        'the complete image remains in the gallery with its original selectable',
+      );
+    } finally {
+      await h.close();
+    }
+  }
+});
+
+test('portrait association fails closed for multiple linked people, mismatched markers, or a group missing its verified crop', async () => {
+  const variants = [
+    { faces: 1, people: ['@I300@'], marker: null, crop: true },
+    { faces: 1, people: ['@I300@', '@I301@'], marker: null, crop: true },
+    { faces: 1, people: ['@I300@'], marker: '@I301@', crop: true },
+    { faces: 2, people: ['@I300@'], marker: '@I300@', crop: false },
+  ];
+  for (const variant of variants) {
+    const bundle = clone(BUNDLE);
+    const image = bundle.media['m-tree1'];
+    image.people = variant.people;
+    delete image.portraitPersonId;
+    delete image.portraitIdentityBasis;
+    image.faces = Array.from({ length: variant.faces }, (_, i) => ({
+      x: 0.1 + i * 0.4,
+      y: 0.1,
+      w: 0.2,
+      h: 0.2,
+    }));
+    bundle.people['@I300@'].portrait = image.id;
+    if (variant.marker) {
+      image.portraitPersonId = variant.marker;
+      image.portraitIdentityBasis = 'reviewed-face-identity';
+    }
+    if (!variant.crop) delete image.sizeFiles?.f;
+    const h = await harness(bucket(bundle));
+    try {
+      const person = await call(h, `/person/${pid('@I300@')}?v=2`, 'ben');
+      assert.equal(person.body.person.face, null);
+    } finally {
+      await h.close();
+    }
+  }
+});
+
+test("GET /media/:id/file: Save and Share get the export's JPEG copy from this site, under its share name", async () => {
+  const objects = bucket();
+  objects.set(
+    'family-history/media/m-tree1r.s.bbbb0002.jpg',
+    Buffer.from('invented restored bytes'),
+  );
+  objects.set(
+    'family-history/media/m-tree1.s.aaaa0002.jpg',
+    Buffer.from('invented original bytes'),
+  );
+  objects.set('family-history/media/m-rec1.l.cccc0003.jpg', Buffer.from('invented scan bytes'));
+  objects.set('family-history/media/m-held.s.ffff0002.jpg', Buffer.from('invented held bytes'));
+  const h = await harness(objects);
+  try {
+    const get = (path: string, who: string): Promise<Response> =>
+      fetch(`${h.base}${path}`, { headers: { 'x-user': who } });
+    let res = await get('/media/m-tree1r/file', 'ben');
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'invented restored bytes');
+    assert.equal(res.headers.get('content-type'), 'image/jpeg');
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(
+      res.headers.get('content-disposition'),
+      'attachment; filename="Photo of Dan Example, about 1950 (restored with AI).jpg"; filename*=UTF-8\'\'Photo%20of%20Dan%20Example%2C%20about%201950%20%28restored%20with%20AI%29.jpg',
+      'a restored copy says so in its file name',
+    );
+    res = await get('/media/m-tree1/file?size=s', 'guest');
+    assert.equal(await res.text(), 'invented original bytes');
+    assert.match(
+      res.headers.get('content-disposition') || '',
+      /filename="Photo of Dan Example, about 1950\.jpg"/,
+    );
+    res = await get('/media/m-rec1/file?size=l', 'owner');
+    assert.equal(await res.text(), 'invented scan bytes', 'a big scan saves its 4,096 pixel copy');
+    assert.equal(
+      (await get('/media/m-rec1/file?size=o', 'owner')).status,
+      400,
+      'never an original',
+    );
+    assert.equal(
+      (await get('/media/m-held/file', 'guest')).status,
+      404,
+      'a held picture stays held',
+    );
+    assert.equal(
+      (await get('/media/m-held/file', 'ben')).status,
+      200,
+      'but not from the one it was held for',
+    );
+    assert.equal(
+      (await get('/media/m-grave1/file', 'owner')).status,
+      404,
+      'a size the bucket does not have',
+    );
+    assert.equal(
+      (await get('/media/m-doc1/file', 'owner')).status,
+      404,
+      'a document has no picture copy',
+    );
+    assert.equal((await get('/media/m-tree1r/file', 'stranger')).status, 403);
+  } finally {
+    await h.close();
+  }
+});
+
+test('familyAttachment keeps the exact name for modern browsers and a plain-letter copy for old ones', () => {
+  assert.equal(
+    familyAttachment('Photo of Zoë O’Example.jpg'),
+    'attachment; filename="Photo of Zo_ O_Example.jpg"; filename*=UTF-8\'\'Photo%20of%20Zo%C3%AB%20O%E2%80%99Example.jpg',
+  );
+  assert.equal(
+    familyAttachment('a "quoted" \\ name.jpg'),
+    'attachment; filename="a _quoted_ _ name.jpg"; filename*=UTF-8\'\'a%20%22quoted%22%20%5C%20name.jpg',
+  );
+  assert.match(familyAttachment(''), /filename="Family picture\.jpg"/);
 });
 
 /* ── DNA ──────────────────────────────────────────────────────────────── */

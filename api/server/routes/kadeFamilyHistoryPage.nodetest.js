@@ -77,40 +77,51 @@ test('history.js compiles, builds nothing from HTML strings, and avoids syntax o
   assert.match(css, /button\.chip \{[^}]*min-height: 44px/, 'source chips are 44px tap targets');
 });
 
-test('relationship words are said from the viewer, or from whoever the tree is shown for', () => {
-  const { relText } = parts;
-  assert.equal(relText({ term: 'grandmother', group: 'ancestor' }), 'your grandmother');
-  assert.equal(relText('2nd great-grandfather'), 'your 2nd great-grandfather');
-  assert.equal(relText({ term: 'you', group: 'self' }), 'you');
-  assert.equal(relText({ term: 'husband of your great-aunt, Ada Example (1900-1970)', group: 'marriage' }), 'husband of your great-aunt, Ada Example (1900-1970)');
-  assert.equal(relText({ term: 'grandmother' }, 'Cora'), 'Cora’s grandmother');
-  assert.equal(relText({ term: 'wife of your uncle, Bram Example' }, 'Cora'), 'wife of Cora’s uncle, Bram Example');
-  assert.equal(relText({ term: 'you', group: 'self' }, 'Cora'), 'Cora');
-  assert.equal(relText(null), '');
+test('v2 relationship words retain the server viewer, side and research qualification', () => {
+  assert.equal(parts.personWords({ term: 'your grandmother', sideText: "Mom's side" }), "your grandmother, Mom's side");
+  assert.equal(parts.personWords({ term: 'Ada’s grandmother', sideText: "Mom's side" }), "Ada’s grandmother, Mom's side");
+  assert.equal(parts.personWords({ term: 'your grandmother', research: { text: 'Best guess; not proven by records' } }, true), 'your grandmother, research finding, best guess; not proven by records');
+  assert.equal(parts.personWords(null), '');
 });
 
-test('the side of the family comes from the first step of the path, or its words', () => {
-  const { sideOf, categoryOf } = parts;
-  const sides = { father: 'dad', mother: 'mum' };
-  assert.equal(sideOf({ term: 'grandmother', group: 'ancestor', path: ['me', 'dad', 'gran'] }, sides), 'father');
-  assert.equal(sideOf({ term: 'aunt', group: 'blood', path: ['me', 'mum', 'gran', 'aunt'] }, sides), 'mother');
-  assert.equal(sideOf({ term: 'sister', group: 'blood', path: ['me', 'dad', 'mum', 'sis'] }, sides), 'both');
-  assert.equal(sideOf({ term: 'great-uncle', group: 'blood', pathText: 'your mother Dot Example -> her father' }, {}), 'mother');
-  assert.equal(sideOf({ term: 'wife of your uncle', group: 'marriage' }, sides), 'marriage');
-  assert.equal(sideOf({ term: 'you', group: 'self' }, sides), 'self');
-  assert.equal(categoryOf({ term: 'grandfather', group: 'ancestor', path: ['me', 'mum', 'x'], notes: ['Research finding: probable, not proven'] }, {}, sides), 'research');
-  assert.equal(categoryOf({ term: 'grandfather', group: 'ancestor', path: ['me', 'mum', 'x'], notes: ['Caution: two fathers are listed'] }, {}, sides), 'mother');
+test('the web page uses v2 answers and displays the supplied family kind words', () => {
+  assert.match(source, /[?&]v=2/);
+  assert.match(source, /kindText/);
+  assert.equal(parts.personWords({ term: 'you', sideText: 'you' }), 'you');
 });
 
-test("a family member's own view names them in its lines; said to them, it is \"your\"", () => {
-  const { ownWords, sideOf } = parts;
-  assert.equal(ownWords("Cora Example's father Bram Example (born 1930) -> his mother Pia", 'Cora Example'), 'your father Bram Example (born 1930) -> his mother Pia');
-  assert.equal(ownWords('Cora Example’s mother Dot Sample', 'Cora Example'), 'your mother Dot Sample');
-  assert.equal(ownWords('your mother Dot Sample', 'Cora Example'), 'your mother Dot Sample', "the owner's view already says your");
-  assert.equal(ownWords('Cora Examples mother', 'Cora Example'), 'Cora Examples mother');
-  assert.equal(ownWords('Cora Example (born 1960) -> son Kit', 'Cora Example'), 'Cora Example (born 1960) -> son Kit', 'a line down from the viewer is left alone');
-  assert.equal(ownWords("Cora Example's mother Dot", ''), "Cora Example's mother Dot");
-  assert.equal(sideOf({ term: 'great-grandmother', group: 'ancestor', pathText: "Cora Example's mother Dot Sample -> her mother Hana" }, { selfName: 'Cora Example' }), 'mother');
+test('request dates use UTC and leave invalid values empty', () => {
+  assert.equal(parts.dayWords('2026-03-05T23:00:00Z'), '5 March 2026');
+  assert.equal(parts.dayWords('not a date'), '');
+  assert.equal(parts.dayWords(null), '');
+});
+
+test('the selected archive scopes records, signed files, notes and audio without changing default requests', () => {
+  for (const path of ['/me', '/person/x?v=2', '/media/x/file?size=s', '/note', '/story/example/audio/0?redirect=1']) {
+    assert.equal(parts.archivePath(path, 'default'), path);
+    assert.equal(parts.archivePath(path, null), path);
+    const extra = parts.archivePath(path, 'example-tree');
+    assert.match(extra, /[?&]archive=example-tree$/);
+    assert.equal((extra.match(/\?/g) || []).length, 1);
+  }
+  assert.match(html, /id="fh-archives" hidden/, 'the selector reveals no archives before authorization');
+});
+
+test('a delayed body from an old archive cannot finish after a switch or an A to B to A return', async () => {
+  let current = { id: 'default', seq: 0 };
+  const check = parts.archiveGuard({ ...current }, () => current);
+  check();
+  let finish;
+  const delayedBody = new Promise((resolve) => { finish = resolve; });
+  const consuming = delayedBody.then(() => { check(); return 'old image bytes'; });
+  current = { id: 'example-tree', seq: 1 };
+  current = { id: 'default', seq: 2 };
+  finish();
+  await assert.rejects(consuming, (error) => error.quiet === true && /archive changed/i.test(error.message));
+  const fresh = parts.archiveGuard({ ...current }, () => current);
+  fresh();
+  current = { id: 'example-tree', seq: 3 };
+  assert.throws(fresh, (error) => error.quiet === true);
 });
 
 /* An invented family: Cora is the focus; her parents Bram and Dot, Bram's
@@ -182,22 +193,15 @@ test('the text version says whose child each descendant and sibling is, and how 
   assert.equal(words('cora'), 'daughter of Bram Example and Dot Sample');
 });
 
-test('family members say how they are linked, and only web addresses become links', () => {
-  const { memberWord, webHref } = parts;
-  assert.equal(memberWord('siblings', 'half'), 'half-sibling', 'a half-sibling is never shown as a full brother or sister');
-  assert.equal(memberWord('siblings', 'step'), 'step-sibling');
-  assert.equal(memberWord('siblings', 'doubtful'), 'doubtful sibling, a research finding');
-  assert.equal(memberWord('children', 'step'), 'stepchild');
-  assert.equal(memberWord('children', 'probable'), 'probable child, a research finding');
-  assert.equal(memberWord('parents', 'adopted'), 'adoptive parent');
-  assert.equal(memberWord('siblings', undefined), '', 'a full sibling needs no word');
-  assert.equal(memberWord('children', 'constructor'), '');
+test('only web addresses become source links', () => {
+  const { webHref } = parts;
   assert.equal(webHref('https://example.com/records/1'), 'https://example.com/records/1');
   assert.equal(webHref('http://example.com/memorial/2'), 'http://example.com/memorial/2');
   for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,hi', 'mailto:a@example.com', '#/person/x', 'vbscript:x', '', null, undefined]) {
     assert.equal(webHref(bad), null, String(bad));
   }
-  assert.match(source, /if \(webHref\(r\.url\)\) card\.appendChild/, 'a record link goes through webHref');
+  assert.match(source, /if \(webHref\(r\.url\) && r\.url !== savedUrl\) card\.appendChild/, 'a record link goes through webHref');
+  assert.match(source, /if \(webHref\(savedUrl\)\) card\.appendChild/, 'an independent recovery link goes through webHref');
   assert.match(source, /if \(webHref\(m\.url\)\) card\.appendChild/, 'a memorial link goes through webHref');
   assert.match(source, /function newTab\(href, text, extraClass\) \{\n\s+var safe = webHref\(href\);\n\s+if \(!safe\) return document\.createTextNode\(text\);/, 'and newTab itself refuses anything else');
 });
@@ -263,6 +267,7 @@ test('Home shows the Family history tile only after /me says access', () => {
   assert.match(home, /<a class="hubitem" href="\/family-history" id="tile-familyhistory" style="display:none"/);
   assert.match(home, /apiGet\('\/api\/kade\/family-history\/me', t\)\.then\(/, 'not awaited, so a slow bundle load never holds up Sign out');
   assert.match(home, /if\(fj && fj\.access\)\{ document\.getElementById\('tile-familyhistory'\)\.style\.display=''; \}/);
+  assert.match(home, /apiGet\('\/api\/kade\/family-history\/archives', t\)/, 'an account authorized only for an extra archive can still discover Family history');
   const homeScripts = [...home.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   for (const s of homeScripts) new Function(s);
   assert.equal(home.includes('\b'), false);

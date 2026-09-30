@@ -246,7 +246,8 @@
       },
       "alt": "A man in work clothes sits on a porch step.", "description": "An invented description: a man sits on a wooden porch step in bright sun.",
       "text": null, "isPortrait": false, "isPhotograph": true, "faces": [{ "x": 0.4, "y": 0.2, "w": 0.2, "h": 0.25 }],
-      "describedBy": "automatic", "restored": "m-tree1r"
+      "describedBy": "automatic", "restored": "m-tree1r",
+      "portraitPersonId": "@I300@", "portraitIdentityBasis": "reviewed-face-identity"
     },
     "m-tree1r": {
       "id": "m-tree1r", "kind": "restored", "category": "photo", "restoredFrom": "m-tree1",

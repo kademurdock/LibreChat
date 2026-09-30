@@ -245,6 +245,9 @@ ${ADMIN.map(tile).join('\n')}
   }catch(e){}
   apiGet('/api/kade/family-history/me', t).then(function(fh){ return fh.ok ? fh.json() : null; }).then(function(fj){
     if(fj && fj.access){ document.getElementById('tile-familyhistory').style.display=''; }
+    else return apiGet('/api/kade/family-history/archives', t).then(function(r){ return r.ok ? r.json() : null; }).then(function(catalog){
+      if(catalog && Array.isArray(catalog.archives) && catalog.archives.length){ document.getElementById('tile-familyhistory').style.display=''; }
+    });
   }).catch(function(){});
   document.getElementById('signout').addEventListener('click', async function(){
     this.disabled = true; this.textContent = 'Signing out…';

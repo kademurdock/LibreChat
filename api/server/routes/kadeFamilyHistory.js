@@ -8,7 +8,7 @@ const { gunzip } = require('node:zlib');
 const axios = require('axios');
 const { GetObjectCommand, ListObjectsV2Command, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { logger } = require('@librechat/data-schemas');
-const { initializeS3, libraryReviewSeat, familyHistoryRouter } = require('@librechat/api');
+const { initializeS3, libraryReviewSeat, familyArchiveDefinitions, familyHistoryArchivesRouter } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { signGet, readingVoice } = require('./kadeReadingRoom')._internals;
@@ -163,7 +163,7 @@ async function setUserFields(id, fields) {
   }).lean();
 }
 
-module.exports = familyHistoryRouter({
+module.exports = familyHistoryArchivesRouter({
   auth: requireJwtAuth,
   loadObject,
   signGet: (key, mime, seconds) => signGet(key, mime, seconds),
@@ -178,4 +178,6 @@ module.exports = familyHistoryRouter({
   },
   now: () => Date.now(),
   log: (message) => logger.warn(`[family-history] ${message}`),
+}, {
+  archives: () => familyArchiveDefinitions(process.env.KADE_FH_ARCHIVES),
 });

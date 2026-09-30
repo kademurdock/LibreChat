@@ -302,6 +302,8 @@ export {
   familyHistoryPrefix,
   FAMILY_HISTORY_PRIVATE,
 } from './family/history';
+export { familyArchiveDefinitions, familyHistoryArchivesRouter } from './family/archives';
+export type { FamilyArchiveDefinition, FamilyArchiveMember, FamilyArchiveOptions } from './family/archives';
 export type {
   FamilyBundle,
   FamilyHistoryAccount,

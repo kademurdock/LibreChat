@@ -1090,17 +1090,39 @@ test('KADE_FH_OWNER_USER_ID: the owner account keeps owner mode and the owner pa
 
 test('pictures the export held back reach only the owner and the people it names, on every v1 route', async () => {
   const held = clone(BUNDLE);
-  held.media['m-held'] = { id: 'm-held', kind: 'tree', file: 'media/m-held.jpg', caption: 'An invented held picture', people: ['@I300@'], heldFor: ['@I200@'] };
+  held.media['m-held'] = {
+    id: 'm-held',
+    kind: 'tree',
+    file: 'media/m-held.jpg',
+    caption: 'An invented held picture',
+    people: ['@I300@'],
+    heldFor: ['@I200@'],
+    faces: [{ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }],
+    portraitPersonId: '@I300@',
+    portraitIdentityBasis: 'reviewed-face-identity',
+  };
   held.people['@I300@'].media = ['m-held', 'm-tree1', 'm-rec1'];
-  held.memorials['5001'].photos = [{ media: 'm-held', caption: 'Held' }, { media: 'm-grave1', caption: 'Headstone' }];
+  held.memorials['5001'].photos = [
+    { media: 'm-held', caption: 'Held' },
+    { media: 'm-grave1', caption: 'Headstone' },
+  ];
   const h = await harness(bucket('v1', held));
   try {
-    for (const [who, sees] of [['owner', true], ['ben', true], ['guest', false], ['cora', false]] as const) {
+    for (const [who, sees] of [
+      ['owner', true],
+      ['ben', true],
+      ['guest', false],
+      ['cora', false],
+    ] as const) {
       const media = await call(h, '/media/m-held', who);
       assert.equal(media.status, sees ? 200 : 404, who);
       const person = await call(h, `/person/${pid('@I300@')}`, who);
       assert.equal(ids(person.body.media).includes('m-held'), sees, who);
-      assert.equal(person.body.memorials[0].photos.some((p) => p.id === 'm-held'), sees, who);
+      assert.equal(
+        person.body.memorials[0].photos.some((p) => p.id === 'm-held'),
+        sees,
+        who,
+      );
       const tree = await call(h, `/tree?focus=${pid('@I300@')}&up=0&down=0`, who);
       assert.equal(tree.body.nodes[0].photo, sees ? 'm-held' : 'm-tree1', who);
     }

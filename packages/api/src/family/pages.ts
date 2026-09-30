@@ -1203,7 +1203,7 @@ export function familyPersonV2(
       imageId: record.image || null,
       household: (record.tables || [])[0] || [],
       spoken: familySay(
-        `${title}${scan ? ', scan available' : ''}, ${count(fields.length, 'field', 'fields')}${record.wrong ? `. Attached to this person by mistake: ${String(record.wrong).replace(/[.!?\s]+$/, '')}` : ''}.`,
+        `${title}${scan ? ', scan available' : ''}, ${count(fields.length, 'field', 'fields')}${record.wrong ? `. Attached to this person by mistake: ${String(record.wrong).replace(/[.!?\s]+$/, '')}` : ''}${record.evidenceWarning ? `. ${record.evidenceWarning.replace(/[.!?\s]+$/, '')}` : ''}.`,
       ),
       wrongText: record.wrong ? `Attached to this person by mistake: ${record.wrong}` : null,
     };
@@ -1236,8 +1236,10 @@ export function familyPersonV2(
     sources.push({
       kind: 'record',
       title: record.collection || 'A record',
-      citation: record.citation || null,
-      url: record.url && /^https:\/\//i.test(record.url) ? record.url : null,
+      citation:
+        record.sourceCitation || record.newspaperSource?.citation || record.citation || null,
+      url: familySourceUrl(record.sourceUrl || record.newspaperSource?.sourceUrl || record.url),
+      evidenceWarning: record.evidenceWarning || null,
     });
   }
   for (const m of v1.memorials) {
@@ -1427,7 +1429,7 @@ export function familyGallery(
     const image = familyImage(
       ctx.pc,
       item.id,
-      record ? { record: { collection: record.collection } } : {},
+      record ? { record: { collection: record.collection } } : { prefer: 'restored' },
     ) as FamilyImage;
     /* added onto the same object, so the signed addresses filled in later land on it */
     return Object.assign(image, {
@@ -1475,6 +1477,18 @@ function recordFor(
 
 /** GET /media/:id/info. Null when the viewer may not see it. `fileText` is a story document's
  * words, read by the router from the export's text file. */
+function familySourceUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.hostname
+      ? parsed.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function familyMediaInfo(
   ctx: FamilyPageContext,
   id: string,
@@ -1494,14 +1508,36 @@ export function familyMediaInfo(
     record ? { record: { collection: record.collection } } : {},
   );
   if (!image) return null;
-  let source: { kind: string; title: string };
-  if (record) source = { kind: 'record', title: record.collection || 'A record' };
-  else if (original.kind === 'grave') source = { kind: 'grave', title: 'Find a Grave' };
-  else source = { kind: 'tree', title: 'The family tree' };
+  const sourceRecord = record ? own(ctx.bundle.records, record.key) : undefined;
+  const recordedSource = original.source;
+  const source = {
+    kind:
+      recordedSource?.kind || (record ? 'record' : original.kind === 'grave' ? 'grave' : 'tree'),
+    title:
+      recordedSource?.title ||
+      record?.collection ||
+      (original.kind === 'grave' ? 'Find a Grave' : 'The family tree'),
+    citation:
+      recordedSource?.citation ||
+      sourceRecord?.sourceCitation ||
+      sourceRecord?.newspaperSource?.citation ||
+      sourceRecord?.citation ||
+      null,
+    url: familySourceUrl(
+      recordedSource?.url ||
+        sourceRecord?.sourceUrl ||
+        sourceRecord?.newspaperSource?.sourceUrl ||
+        sourceRecord?.url ||
+        original.webSource,
+    ),
+  };
   const text = image.text || (fileText ? fileText.trim() : null) || null;
   return {
     image,
     caption: familyCaption(original.caption) || image.short,
+    evidenceWarning: original.evidenceWarning || sourceRecord?.evidenceWarning || null,
+    newspaperSource: original.newspaperSource || sourceRecord?.newspaperSource || null,
+    newspaperSources: original.newspaperSources || null,
     description: image.description,
     described: image.described,
     describedNote: image.described ? FAMILY_DESCRIBED_NOTE : null,
