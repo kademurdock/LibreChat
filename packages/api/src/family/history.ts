@@ -1907,7 +1907,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
         total: n,
         text,
         spoken: text,
-        results: familyPersonCards(
+        people: familyPersonCards(
           page.pc,
           found.map((row) => row.id),
         ),
@@ -1939,29 +1939,38 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       );
       const total = rows.length;
       const from = Math.min(familyInt(req.query.from, 0, 0, 1e6), Math.max(0, total - 1));
-      let previousGen: number | null = null;
-      const slice = rows.slice(from, from + FAMILY_PEOPLE_PAGE).map((row, i) => {
-        const card = familyPersonCards(page.pc, [row.id])[0];
-        let heading: string | null = null;
-        if (
-          key === 'ancestor' &&
-          typeof row.gen === 'number' &&
-          (i === 0 || row.gen !== previousGen)
-        )
-          heading = familyGenerationName(row.gen);
-        previousGen = typeof row.gen === 'number' ? row.gen : previousGen;
-        return { ...card, heading };
-      });
+      const cards = familyPersonCards(
+        page.pc,
+        rows.slice(from, from + FAMILY_PEOPLE_PAGE).map((row) => row.id),
+      );
+      /* Ancestors come under generation headings (a heading repeats at the top of a page); the
+       * other groups are one section with no heading. */
+      const genOf = new Map(rows.map((row) => [row.id, row.gen]));
+      const sections: {
+        heading: string | null;
+        level: number;
+        rows: { id: string; spoken: string; person: (typeof cards)[number] }[];
+      }[] = [];
+      for (const card of cards) {
+        const gen = genOf.get(card.id);
+        const heading =
+          key === 'ancestor' && typeof gen === 'number' ? familyGenerationName(gen) : null;
+        const row = { id: card.id, spoken: card.spoken, person: card };
+        const last = sections[sections.length - 1];
+        if (last && last.heading === heading) last.rows.push(row);
+        else sections.push({ heading, level: 2, rows: [row] });
+      }
       await send(res, page, {
         group: key,
         title: segment.title,
         total,
         from: total ? from : 0,
-        count: slice.length,
+        count: cards.length,
         prev: from > 0 ? Math.max(0, from - FAMILY_PEOPLE_PAGE) : null,
         next: from + FAMILY_PEOPLE_PAGE < total ? from + FAMILY_PEOPLE_PAGE : null,
-        pageSpoken: familyPageSpoken(total ? from : 0, slice.length, total),
-        rows: slice,
+        pageSpoken: familyPageSpoken(total ? from : 0, cards.length, total),
+        people: cards,
+        sections,
       });
     }),
   );

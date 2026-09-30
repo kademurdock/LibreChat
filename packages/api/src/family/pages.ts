@@ -1198,7 +1198,9 @@ export function familyPersonV2(
       ...record,
       fields,
       title,
-      scan,
+      /* the scan as a picture (v1's `image` is only its id, kept here as `imageId`) */
+      image: scan,
+      imageId: record.image || null,
       household: (record.tables || [])[0] || [],
       spoken: familySay(
         `${title}${scan ? ', scan available' : ''}, ${count(fields.length, 'field', 'fields')}${record.wrong ? `. Attached to this person by mistake: ${String(record.wrong).replace(/[.!?\s]+$/, '')}` : ''}.`,
@@ -1572,7 +1574,9 @@ export interface FamilyStoryV2 {
   whoswho: FamilyPersonCard[];
   blocks: FamilyStoryBlock[];
   sources: FamilyStorySource[];
-  chunks: { i: number; text: string; cues: FamilyCue[] }[];
+  /** Listen parts: `audio` is the path of the part's voice (GET it for a signed address and
+   * the cues in seconds). */
+  chunks: { i: number; text: string; cues: FamilyCue[]; audio: string }[];
   listen: boolean;
 }
 
@@ -1586,7 +1590,10 @@ export function familyStoryV2(
     markdown,
     familySourceLookup(ctx.bundle.records, ctx.bundle.memorials),
   );
-  const chunks = familyStoryParts(blocks);
+  const chunks = familyStoryParts(blocks).map((part) => ({
+    ...part,
+    audio: `/story/${encodeURIComponent(story.slug)}/audio/${part.i}`,
+  }));
   return {
     detail: familyListenTime(familyStoryChars(blocks)),
     research: storyResearch(ctx, story) ? { banner: FAMILY_STORY_RESEARCH_BANNER } : null,

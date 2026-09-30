@@ -381,7 +381,8 @@ test('GET /person/:id?v=2: nutshell, lived-through, relation, restored pictures 
   assert.equal(p.pictures.items[0].restoredLabel, 'Restored with AI: colours and repairs may be guessed');
   assert.equal(p.pictures.items[0].shareName, 'Photo of Dan Example, about 1950 (restored with AI).jpg');
   assert.equal(p.records[0].spoken, 'Invented Census 1940, scan available, 2 fields.');
-  assert.equal(p.records[0].scan.alt, 'Record scan: Invented Census 1940 for your grandfather, Dan Example.');
+  assert.equal(p.records[0].image.alt, 'Record scan: Invented Census 1940 for your grandfather, Dan Example.');
+  assert.equal(p.records[0].imageId, 'm-rec1', 'the scan as a picture, and its id');
   assert.equal(p.records[1].spoken, 'Invented Census 1940, 2 fields. Attached to this person by mistake: This census lists a different Dan Example, twenty years older.');
   assert.equal(p.grave.cemetery, 'Invented Cemetery');
   assert.deepEqual(p.withheld, { count: 1, text: '1 source withheld: it names living relatives' });
@@ -665,14 +666,17 @@ test('GET /play: mixed rounds with their answers and explanations, never about r
 test('GET /search?v=2 and /people?v=2: person cards, counts in words, pages of 60 with generation headings', async () => {
   let r = await call(main, '/search?v=2&q=sample', 'owner');
   assert.deepEqual([r.body.total, r.body.text], [4, '4 people found']);
-  assert.deepEqual(ids(r.body.results), ['@I201@', '@I302@', '@I303@', '@I700@']);
+  assert.deepEqual(ids(r.body.people), ['@I201@', '@I302@', '@I303@', '@I700@']);
   r = await call(main, '/search?v=2&q=zzzz', 'owner');
-  assert.deepEqual([r.body.total, r.body.text, r.body.results], [0, 'No one found', []]);
+  assert.deepEqual([r.body.total, r.body.text, r.body.people], [0, 'No one found', []]);
   r = await call(main, '/people?v=2&group=ancestor', 'owner');
-  assert.deepEqual(r.body.rows.map((row: Json) => row.heading), ['Parents', null, 'Grandparents', null, null, null, 'Great-grandparents', null, '2nd great-grandparents']);
+  assert.deepEqual(r.body.sections.map((s: Json) => [s.heading, s.rows.length]), [['Parents', 2], ['Grandparents', 4], ['Great-grandparents', 2], ['2nd great-grandparents', 1]]);
+  assert.equal(r.body.sections[0].rows[0].spoken, 'Your father, Ben Example, 1960 to 2020, Dad’s side.');
+  assert.equal(r.body.people.length, 9);
   assert.equal(r.body.pageSpoken, 'Showing 1 to 9 of 9');
   r = await call(main, '/people?v=2&group=blood', 'owner');
-  assert.deepEqual(ids(r.body.rows), ['@I120@', '@I101@', '@I102@', '@I210@'], 'blood relatives, children included, nearest first');
+  assert.deepEqual(ids(r.body.people), ['@I120@', '@I101@', '@I102@', '@I210@'], 'blood relatives, children included, nearest first');
+  assert.deepEqual(r.body.sections.map((s: Json) => s.heading), [null], 'one section with no heading');
   r = await call(main, '/people?v=2&group=all&from=10', 'owner');
   assert.deepEqual([r.body.from, r.body.count, r.body.prev, r.body.next], [10, 7, 0, null]);
   assert.equal((await call(main, '/people?v=2&group=cousins', 'owner')).status, 400);
@@ -691,6 +695,7 @@ test('GET /stories?v=2 and /story/:slug?v=2: blocks, sources, parts with sentenc
   assert.deepEqual(s.whoswho.map((p: Json) => p.term), ['your grandfather', 'your great-grandfather']);
   assert.deepEqual(s.blocks.map((b: Json) => b.type), ['p', 'h2', 'p']);
   assert.deepEqual(s.sources, [{ n: 1, title: 'Invented Census 1940', url: 'https://example.com/records/c1-r1' }]);
+  assert.deepEqual(s.chunks.map((c: Json) => c.audio), ['/story/the-farm/audio/0']);
   assert.deepEqual(s.chunks.map((c: Json) => c.cues.map((q: Json) => q.text)), [
     ['We lived on an invented farm.', 'Mr. Example kept bees.', 'Later.', 'Then the family moved to an invented town.', 'It rained.'],
   ]);
