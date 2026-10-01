@@ -4,7 +4,14 @@ const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability, hasCapability } = require('~/server/middleware/roles/capabilities');
 const { logKadeUsage, CHARGED_USD } = require('~/models/kadeUsage');
 const { KadeAsset } = require('~/models/kadeAsset');
-const { needsRefresh, getNewS3URL, createHarnessRouter } = require('@librechat/api');
+const {
+  needsRefresh,
+  getNewS3URL,
+  createHarnessRouter,
+  monthlyBooks,
+  monthlyWindow,
+  MonthlyWindowError,
+} = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const {
@@ -21,6 +28,28 @@ const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 router.use('/harness/jobs', requireJwtAuth, requireAdminAccess, createHarnessRouter());
 /* KADE Sep 25 2026 (Part 291): the funding ledger (real cost vs what people paid Kade back). */
 router.use('/funding', require('./kadeFunding'));
+router.get('/monthly-books', requireJwtAuth, requireAdminAccess, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const window = monthlyWindow(req.query.from, req.query.to);
+    const { Transaction, KadeUsage, User } = models();
+    const { KadeFundingEntry } = require('~/models/kadeFunding');
+    return res.json(
+      await monthlyBooks(window, {
+        Transaction,
+        KadeUsage,
+        KadeFundingEntry,
+        userCollection: User.collection.name,
+      }),
+    );
+  } catch (error) {
+    if (error instanceof MonthlyWindowError) {
+      return res.status(400).json({ error: error.message });
+    }
+    logger.error('[monthly-books] Could not read accounting aggregates');
+    return res.status(503).json({ error: 'Could not read monthly accounting' });
+  }
+});
 router.get('/work-options', requireJwtAuth, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try { res.json({ codingJobs: await hasCapability(req.user, SystemCapabilities.ACCESS_ADMIN) }); }
