@@ -129,6 +129,7 @@ export {
 } from './reverie/guide';
 export { parseDaisyAudio, readDaisyFile } from './library/daisy';
 export { libraryPath, libraryCategory, libraryPathExpression } from './library/shelves';
+export { reviewedLibraryOriginal, libraryOriginalLibrarian } from './library/original';
 export {
   commercialPath,
   commercialBrands,

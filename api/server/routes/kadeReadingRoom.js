@@ -48,6 +48,7 @@ const { logger } = require('@librechat/data-schemas');
 const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
+const { reviewedLibraryOriginal, libraryOriginalLibrarian } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { userPriceFactor, extraChargeUSD } = require('~/server/services/kadeRealCost');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
@@ -170,6 +171,7 @@ function keyFromFileUrl(fileUrl) {
  * sections and is stamped so it is not retried on every open. */
 const reparsing = new Set();
 async function reparseIfStale(book) {
+  if (book && reviewedLibraryOriginal(book)) return book;
   if (!book || book.kind !== 'text' || (book.parserVersion || 1) >= PARSER_VERSION) return book;
   /* Sep 25 2026: a shortcut reads its keeper's text, so the keeper is re-read once and every
    * shortcut to it takes the new cut (and its readers' places). */
@@ -830,7 +832,9 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
     res.json({
       ...summary(book, progress),
       tracks,
-      librarian: book.librarian && book.librarian.state ? book.librarian : null,
+      librarian: await libraryOriginalLibrarian(book, signGet, () =>
+        logger.warn('[library/original] Could not sign the reviewed original.'),
+      ),
       jacket: require('@librechat/api').readingJacket(book.jacket || ''),
       language: book.language || 'en',
       chapters: (book.sections || []).map((s, i) => ({ s: i, title: s.title, chunks: s.chunkCount, chars: s.chars, kind: s.kind })),
@@ -1635,6 +1639,11 @@ router.post('/book/:id/librarian', requireJwtAuth, async (req, res) => {
     const book = await openBook(req, req.params.id);
     if (!book) return res.status(404).json({ error: 'No such item.' });
     const cur = book.librarian || {};
+    if (reviewedLibraryOriginal(book)) {
+      return res.json({ ok: true, librarian: await libraryOriginalLibrarian(book, signGet, () =>
+        logger.warn('[library/original] Could not sign the reviewed original.'),
+      ) });
+    }
     if (cur.state === 'done' && req.query.again !== '1') return res.json({ ok: true, librarian: cur });
     if (cur.state === 'working') return res.json({ ok: true, librarian: cur });
     await KadeBook.updateOne({ _id: book._id }, { $set: { 'librarian.state': 'working', 'librarian.error': '' } });
@@ -1660,7 +1669,12 @@ router.get('/book/:id/librarian', requireJwtAuth, async (req, res) => {
   try {
     const book = await openBook(req, req.params.id);
     if (!book) return res.status(404).json({ error: 'No such item.' });
-    res.json({ ok: true, librarian: book.librarian || {} });
+    const note = reviewedLibraryOriginal(book)
+      ? await libraryOriginalLibrarian(book, signGet, () =>
+        logger.warn('[library/original] Could not sign the reviewed original.'),
+      )
+      : book.librarian;
+    res.json({ ok: true, librarian: note || {} });
   } catch (e) {
     res.status(500).json({ error: 'Could not read the note.' });
   }
