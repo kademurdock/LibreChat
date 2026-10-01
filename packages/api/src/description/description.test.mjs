@@ -454,6 +454,197 @@ test('the short text wins over the full text squeezed toward the fastest speed',
   assert.ok(fast.placement.rate > 1.8);
 });
 
+test('finite card readings use their exact full text despite a sticky short preference', () => {
+  const reading = { ...cue, at: 1, until: 2.5, pauseAt: 1.2, reading: true };
+  const lengths = [];
+  const layout = (mode, full) =>
+    arrange({
+      cues: [reading],
+      length: (_index, variant) => {
+        lengths.push(variant);
+        return variant === 'full' ? full : 0.2;
+      },
+      prefer: () => 'short',
+      settings: { ...settings, mode },
+      blocked: [],
+      hard: [],
+      words: [],
+      seconds: 10,
+    });
+  const extended = layout('extended', 12);
+  assert.equal(extended.placed[0].variant, 'full');
+  assert.equal(extended.placed[0].placement.text, reading.text);
+  assert.equal(extended.placed[0].placement.shortened, false);
+  assert.ok(extended.placed[0].placement.pause > 0);
+  assert.ok(extended.placed[0].placement.pauseAt < reading.until);
+  assert.deepEqual(layout('standard', 12).left, [{ index: 0, reason: 'room' }]);
+  const standard = layout('standard', 1);
+  assert.equal(standard.placed[0].variant, 'full');
+  assert.equal(standard.placed[0].placement.text, reading.text);
+  assert.equal(standard.placed[0].placement.shortened, false);
+  assert.ok(
+    lengths.every((variant) => variant === 'full'),
+    'even fit/priority checks avoid short readings',
+  );
+});
+
+test('same-window card chunks freeze on the card and keep their source order', () => {
+  const cues = ['First complete line.', 'Second complete line.', 'Third complete line.'].map(
+    (text) => ({
+      ...cue,
+      at: 1,
+      until: 2,
+      pauseAt: 1.2,
+      text,
+      reading: true,
+    }),
+  );
+  const layout = arrange({
+    cues,
+    length: () => 6,
+    settings: { ...settings, mode: 'extended', density: 'rich' },
+    blocked: [],
+    hard: [],
+    words: [],
+    seconds: 12,
+  });
+  assert.deepEqual(layout.left, []);
+  assert.deepEqual(
+    layout.placed.map((item) => item.index),
+    [0, 1, 2],
+  );
+  const output = outputTimeline(layout.placed.map((item) => item.placement));
+  assert.ok(output[0].pauseAt > output[0].at, 'the first chunk has a partial in-sync run');
+  assert.ok(
+    output.every((item) => item.pauseAt === output[0].pauseAt),
+    'later chunks reuse that exact safe freeze',
+  );
+  for (const [index, placement] of output.entries()) {
+    assert.equal(placement.text, cues[index].text);
+    assert.ok(placement.pause > 0 && placement.pauseAt < 2);
+    if (index)
+      assert.ok(placement.outputAt >= output[index - 1].outputAt + output[index - 1].duration);
+  }
+});
+
+test('standard mode speaks a complete card group or releases all of its room', () => {
+  const chunks = ['First line.', 'Second line.', 'Third line.'].map((text) => ({
+    ...cue,
+    at: 1,
+    until: 2,
+    pauseAt: 1.2,
+    text,
+    reading: true,
+  }));
+  const layout = (length) =>
+    arrange({
+      cues: [...chunks, { ...cue, at: 1, until: 2, importance: 2, text: 'Another useful visual.' }],
+      length: (index) => (index < 3 ? length : 0.2),
+      settings: { ...settings, rate: 1, maxRate: 1 },
+      blocked: [],
+      hard: [],
+      words: [],
+      seconds: 10,
+    });
+  const partial = layout(0.8);
+  assert.deepEqual(
+    partial.left,
+    [0, 1, 2].map((index) => ({ index, reason: 'room' })),
+  );
+  assert.deepEqual(
+    partial.placed.map((item) => item.index),
+    [3],
+    'the incomplete card does not crowd another cue',
+  );
+  const complete = arrange({
+    cues: chunks.map((item) => ({ ...item, until: 4 })),
+    length: () => 0.5,
+    settings: { ...settings, rate: 1, maxRate: 1 },
+    blocked: [],
+    hard: [],
+    words: [],
+    seconds: 10,
+  });
+  assert.deepEqual(complete.left, []);
+  assert.deepEqual(
+    complete.placed.map((item) => item.placement.text),
+    chunks.map((item) => item.text),
+  );
+  const hard = [{ start: 1.2, end: 20 }];
+  const protectedCard = arrange({
+    cues: chunks.map((item) => ({ ...item, pauseAt: 1.1 })),
+    length: () => 4,
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1 },
+    blocked: mergeIntervals(hard, 25, 0.1),
+    hard,
+    words: [],
+    seconds: 25,
+  });
+  assert.deepEqual(protectedCard.left, []);
+  assert.equal(
+    protectedCard.placed.length,
+    3,
+    'later chunks reuse the first safe card freeze before speech starts',
+  );
+  assert.ok(protectedCard.placed.every((item) => item.placement.pauseAt === 1.1));
+});
+
+test('extended pauses respect complete protected speech and the existing event grace', () => {
+  const protectedSpeech = [{ start: 5, end: 20 }];
+  const layout = (hard, value = { ...cue, at: 7, until: 9, pauseAt: 8 }) =>
+    arrange({
+      cues: [value],
+      length: () => 4,
+      settings: { ...settings, mode: 'extended' },
+      blocked: mergeIntervals(hard, 25, 0.1),
+      hard,
+      words: [],
+      seconds: 25,
+    });
+  assert.deepEqual(
+    layout(protectedSpeech).left,
+    [{ index: 0, reason: 'room' }],
+    'no relevant breath in 15 seconds of missed speech',
+  );
+  const phraseGap = layout([
+    { start: 5, end: 10 },
+    { start: 10.4, end: 20 },
+  ]);
+  assert.equal(phraseGap.placed.length, 1);
+  assert.ok(
+    phraseGap.placed[0].placement.pauseAt > 10 && phraseGap.placed[0].placement.pauseAt < 10.4,
+  );
+  assert.ok(
+    phraseGap.placed[0].placement.pauseAt <= 13,
+    'legacy descriptions retain the four-second event grace',
+  );
+  assert.deepEqual(
+    layout(protectedSpeech, { ...cue, at: 7, until: 9, pauseAt: 8, reading: true }).left,
+    [{ index: 0, reason: 'room' }],
+  );
+  const words = [{ start: 1, end: 3, word: 'Dialogue' }];
+  const crossing = arrange({
+    cues: [{ ...cue, at: 1, until: 2, pauseAt: 1.2, reading: true }],
+    length: () => 4,
+    settings: { ...settings, mode: 'extended' },
+    blocked: mergeIntervals(words, 10, 0.22),
+    hard: [],
+    words,
+    seconds: 10,
+  });
+  assert.deepEqual(
+    crossing.left,
+    [{ index: 0, reason: 'room' }],
+    'clamping back to a card cannot move a freeze into a recognized word',
+  );
+  const nearEnd = layout([{ start: 5, end: 25 }], { ...cue, at: 23, until: 24, pauseAt: 23 });
+  assert.deepEqual(
+    nearEnd.left,
+    [{ index: 0, reason: 'room' }],
+    'a clamped fallback still cannot freeze inside hard speech',
+  );
+});
+
 test('extended mode pauses for important descriptions and leaves minor ones out', () => {
   const words = Array.from({ length: 100 }, (_, i) => ({
     start: i / 10,
@@ -525,6 +716,12 @@ test('descriptions move forward onto a scene cut, never back', () => {
   assert.equal(at([0.5, 1.6, 2.5]).pauseAt, 1.6);
   assert.equal(at([0.5]).at, 1);
   assert.equal(at([1.9]).at, 1);
+  const reading = { ...cue, at: 1, until: 1.4, pauseAt: 1.2, reading: true };
+  assert.deepEqual(
+    snapToCuts([reading], [1.6]),
+    [reading],
+    'a cut after a card cannot move or extend its reading',
+  );
 });
 
 test('sections end at a sentence, keep quiet stretches whole, and prefer scene cuts and chapters', () => {
@@ -719,6 +916,24 @@ test('close look slows the entire clip and maps descriptions back onto the origi
   );
   assert.ok(result.report.descriptions[0].at >= 1 && result.report.descriptions[0].at < 2);
   assert.ok(Math.abs(result.report.outputSeconds - 9) < 0.2);
+});
+
+test('close looks preserve a short card window even when a scene cut follows it', async () => {
+  const f = await fixture('close-look-card');
+  const reading = { ...cue, at: 4, until: 5.6, pauseAt: 4.4, reading: true };
+  const backend = providers(f.voice, [], [reading]);
+  const { keeper, kept } = keeperFor(savedPlan(9, [], { cuts: [1.6] }));
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    settings: { ...settings, mode: 'extended', closeLook: true },
+  });
+  const original = kept.records[0].analysis.cues[0];
+  assert.ok(Math.abs(original.until - 1.4) < 1e-9, `mapped card ends at ${original.until}`);
+  assert.ok(
+    result.report.descriptions[0].pauseAt < 1.4,
+    'the picture freezes before the card disappears',
+  );
 });
 
 test('look clips print the real film time of a part of a longer video, and the prompt knows the strip is there', async () => {
@@ -1881,8 +2096,13 @@ test('minor details are left out rather than stopping the video, and omissions a
     [cue, { ...cue, importance: 1, text: 'A minor detail.' }],
     { settings: { ...settings, mode: 'extended' } },
   );
-  assert.equal(extended.report.descriptions.length, 1);
-  assert.match(extended.report.skipped[0].reason, /minor detail/);
+  assert.equal(
+    extended.report.descriptions.length,
+    0,
+    'continuous whole-source speech has no safe, relevant phrase break for an extended pause',
+  );
+  assert.equal(extended.report.skipped.length, 2);
+  assert.ok(extended.report.skipped.some((item) => /minor detail/.test(item.reason)));
 });
 
 test('several extended pauses in a section stay aligned through the whole copy', async () => {
@@ -2865,6 +3085,211 @@ async function synthetic(name, seconds, audio, rate = '30', voiceSeconds = 3) {
   );
   return { dir, file, voice, work: join(dir, 'work') };
 }
+
+test('the real renderer voices every card chunk in full and freezes before the card ends', async () => {
+  const f = await fixture('complete-card-reading', 12);
+  const chunks = [
+    'NOTICE: All passengers must keep this ticket for the entire journey and show it at the destination.',
+    'For assistance, please speak to the conductor before leaving the train. Thank you for travelling.',
+  ].map((text) => ({ ...cue, at: 1, until: 2, pauseAt: 1.2, text, reading: true }));
+  const backend = providers(f.voice, [], chunks);
+  const voice = measuredVoice();
+  backend.synthesize = voice.synthesize;
+  const { keeper } = keeperFor(savedPlan(12, []));
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    settings: { ...settings, mode: 'extended', density: 'rich' },
+  });
+  assert.deepEqual(
+    voice.texts,
+    chunks.map((item) => item.text),
+    'short variants are never voiced',
+  );
+  assert.equal(result.report.skipped.length, 0);
+  assert.deepEqual(
+    result.report.descriptions.map((item) => item.text),
+    voice.texts,
+  );
+  const firstPause = result.report.descriptions[0];
+  assert.ok(
+    firstPause.pauseAt > firstPause.at,
+    'the first full chunk runs in sync before its frozen remainder',
+  );
+  assert.ok(
+    result.report.descriptions.every((item) => item.pauseAt === firstPause.pauseAt),
+    'later full chunks reuse the exact frozen frame',
+  );
+  const pcm = await decode(join(f.work, 'section-0', 'sound.flac'));
+  for (const [index, item] of result.report.descriptions.entries()) {
+    assert.ok(item.inserted && !item.shortened);
+    assert.ok(item.pauseAt < 2, `the card remains visible at ${item.pauseAt}`);
+    if (index) {
+      const before = result.report.descriptions[index - 1];
+      assert.ok(item.outputAt >= before.outputAt + before.duration);
+    }
+    const addedBefore = result.report.descriptions
+      .slice(0, index)
+      .reduce((sum, previous) => sum + previous.pause, 0);
+    const frozenAt = item.pauseAt + addedBefore + 0.4;
+    assert.ok(tone(pcm, frozenAt, 0.1, 660) > 0.01, 'the full reading continues during the freeze');
+    assert.ok(tone(pcm, frozenAt, 0.1, 220) < 0.003, 'original music is retained by pausing it');
+  }
+});
+
+test('card chunks share one safe freeze before protected speech and retain the complete source phrase', async () => {
+  const f = await synthetic(
+    'card-reading-before-speech',
+    12,
+    '0.1*sin(2*PI*220*t)+0.1*between(t,1.2,8)*sin(2*PI*880*t)',
+  );
+  const chunks = [
+    'NOTICE: Keep your ticket until arrival.',
+    'Show it to the conductor when requested.',
+  ].map((text) => ({
+    ...cue,
+    at: 1,
+    until: 2,
+    pauseAt: 1.1,
+    text,
+    reading: true,
+  }));
+  const backend = providers(f.voice, [], chunks);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => ({
+    ...(await analyze(look)),
+    protectedSounds: [{ start: 1.2, end: 8 }],
+  });
+  const { keeper } = keeperFor(savedPlan(12, []));
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    settings: { ...settings, mode: 'extended' },
+  });
+  assert.deepEqual(
+    result.report.descriptions.map((item) => item.text),
+    chunks.map((item) => item.text),
+  );
+  assert.equal(result.report.skipped.length, 0);
+  const pcm = await decode(join(f.work, 'section-0', 'sound.flac'));
+  let added = 0;
+  for (const item of result.report.descriptions) {
+    assert.ok(item.inserted && Math.abs(item.pauseAt - 1.1) < 1e-9);
+    assert.ok(
+      Math.abs(item.outputAt - (1.1 + added)) < 0.05,
+      'coincident freezes serialize in source order',
+    );
+    assert.ok(tone(pcm, item.outputAt + 0.5, 0.1, 880) < 0.003);
+    assert.ok(tone(pcm, item.outputAt + 0.5, 0.1, 660) > 0.01);
+    added += item.pause;
+  }
+  const first = tone(pcm, 1.5 + added, 0.1, 880);
+  assert.ok(first > 0.01, 'the first source phrase starts after both full readings');
+  assert.ok(
+    Math.abs(dB(tone(pcm, 7.5 + added, 0.1, 880), first)) < 0.5,
+    'the complete phrase retains its level',
+  );
+});
+
+test('a complete 15-second missed-speech guard prevents narration while instrumental music remains usable', async () => {
+  const f = await synthetic(
+    'missed-speech-no-breath',
+    30,
+    '0.1*sin(2*PI*220*t)+0.1*between(t,5,20)*sin(2*PI*880*t)+0.1*between(t,22.5,24)*sin(2*PI*1760*t)',
+    '30',
+    4.5,
+  );
+  const words = [
+    { start: 0.2, end: 1, word: 'Earlier.' },
+    { start: 20.3, end: 22, word: 'Afterwards.' },
+    { start: 22.5, end: 24, word: 'Sung lyrics.' },
+  ];
+  const backend = providers(f.voice, words, [
+    {
+      ...cue,
+      at: 1.3,
+      until: 4.9,
+      pauseAt: 2,
+      text: 'Useful visual detail during instrumental music.',
+    },
+    { ...cue, at: 7, until: 9, pauseAt: 8, text: 'A visual event during unrecognized speech.' },
+    {
+      ...cue,
+      at: 22.5,
+      until: 23.5,
+      pauseAt: 23,
+      importance: 1,
+      text: 'A minor visual detail during lyrics.',
+    },
+  ]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => ({
+    ...(await analyze(look)),
+    protectedSounds: [{ start: 5, end: 20 }],
+  });
+  const { keeper } = keeperFor(savedPlan(30, []), words);
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    settings: { ...settings, mode: 'extended' },
+  });
+  assert.equal(result.report.descriptions.length, 1);
+  assert.match(result.report.descriptions[0].text, /instrumental music/);
+  assert.equal(result.report.descriptions[0].pause, 0);
+  assert.equal(result.report.skipped.length, 2);
+  const pcm = await decode(join(f.work, 'section-0', 'sound.flac'));
+  assert.ok(tone(pcm, result.report.descriptions[0].outputAt + 0.5, 0.1, 660) > 0.01);
+  const speech = tone(pcm, 12, 0.1, 880);
+  for (const at of [5.2, 6, 10, 15, 19.7]) {
+    assert.ok(
+      Math.abs(dB(tone(pcm, at, 0.1, 880), speech)) < 0.5,
+      `missed speech keeps its full level at ${at}`,
+    );
+    assert.ok(tone(pcm, at, 0.1, 660) < 0.003, `no narrator covers missed speech at ${at}`);
+  }
+  assert.ok(tone(pcm, 23, 0.1, 1760) > 0.01, 'detected sung words are retained');
+  assert.ok(tone(pcm, 23, 0.1, 660) < 0.003, 'no narrator covers detected lyrics');
+});
+
+test('a real quiet phrase gap can hold an extended pause without cutting protected speech', async () => {
+  const f = await synthetic(
+    'missed-speech-phrase-gap',
+    25,
+    '0.1*sin(2*PI*220*t)+0.1*(between(t,5,10)+between(t,10.4,20))*sin(2*PI*880*t)',
+    '30',
+    4.5,
+  );
+  const backend = providers(f.voice, [], [{ ...cue, at: 7, until: 9, pauseAt: 8 }]);
+  const analyze = backend.analyze;
+  backend.analyze = async (look) => ({
+    ...(await analyze(look)),
+    protectedSounds: [
+      { start: 5, end: 10 },
+      { start: 10.4, end: 20 },
+    ],
+  });
+  const { keeper } = keeperFor(savedPlan(25, []));
+  const result = await run(f, [], [], {
+    providers: backend,
+    keeper,
+    settings: { ...settings, mode: 'extended' },
+  });
+  const item = result.report.descriptions[0];
+  assert.ok(
+    item.inserted && item.pauseAt >= 10 && item.pauseAt < 10.4,
+    `phrase-boundary freeze at ${item.pauseAt}`,
+  );
+  assert.ok(item.pauseAt <= 13, 'the pause remains within the event grace');
+  const pcm = await decode(join(f.work, 'section-0', 'sound.flac'));
+  const before = tone(pcm, 9.5, 0.1, 880);
+  const after = tone(pcm, 10.7 + item.pause, 0.1, 880);
+  assert.ok(Math.abs(dB(after, before)) < 0.5, 'both phrases keep their original level');
+  assert.ok(
+    tone(pcm, item.outputAt + 0.5, 0.1, 880) < 0.003,
+    'the source speech is paused during narration',
+  );
+  assert.ok(tone(pcm, item.outputAt + 0.5, 0.1, 660) > 0.01);
+});
 
 test('dialogue loudness counts the blocks centred in speech, not a sting just after it', () => {
   const blocks = [];

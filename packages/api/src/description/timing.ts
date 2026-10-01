@@ -229,10 +229,12 @@ export function tempoFilters(rate: number): string {
 /**
  * Moves each description onto a scene cut that follows its time within 0.8 s, since the model
  * samples only a few frames a second. Never earlier, so nothing is described before it appears.
+ * Finite card readings keep their exact visible window.
  */
 export function snapToCuts(cues: Cue[], cuts: number[]): Cue[] {
   if (!cuts.length) return cues;
   return cues.map((cue) => {
+    if (cue.reading) return cue;
     const cut = cuts.find((time) => time >= cue.at && time <= cue.at + 0.8);
     if (cut === undefined || cut === cue.at) return cue;
     return {
@@ -298,6 +300,7 @@ export type Leftover = 'room' | 'minor' | 'priority';
 export type Arrangement = { placed: Arranged[]; left: { index: number; reason: Leftover }[] };
 
 const textOf = (cue: Cue, variant: Variant) => (variant === 'full' ? cue.text : cue.shortText);
+const readingWindow = (cue: Cue): string => `${cue.at}:${cue.until}:${cue.pauseAt ?? cue.at}`;
 const spanOf = (placement: Placement): Interval =>
   placement.pause
     ? { start: placement.at - 0.05, end: placement.pauseAt + 0.05 }
@@ -311,7 +314,8 @@ const spanOf = (placement: Placement): Interval =>
  * text near the listener's usual speed if it can, then the short text, then either text up to
  * her fastest speed. A description is not allowed to take the room a later, more important one
  * needs; it is shortened, paused for (extended mode), or left out instead. `length` gives each
- * text's length at 1x, or undefined when that text cannot be used.
+ * text's length at 1x, or undefined when that text cannot be used. Marked readings use only
+ * the full text; chunks sharing a card window are spoken together or omitted together.
  */
 export function arrange(input: {
   cues: Cue[];
@@ -335,7 +339,9 @@ export function arrange(input: {
     const cue = cues[index];
     const full = input.length(index, 'full');
     const short =
-      cue.shortText && cue.shortText !== cue.text ? input.length(index, 'short') : undefined;
+      !cue.reading && cue.shortText && cue.shortText !== cue.text
+        ? input.length(index, 'short')
+        : undefined;
     return {
       ...(full !== undefined && full > 0 ? { full } : {}),
       ...(short !== undefined && short > 0 ? { short } : {}),
@@ -343,7 +349,7 @@ export function arrange(input: {
   };
   const tries = (index: number): [Variant, number][] => {
     const easy = Math.min(settings.maxRate, settings.rate * 1.2);
-    const sticky = input.prefer?.(index);
+    const sticky = cues[index].reading ? 'full' : input.prefer?.(index);
     const all: [Variant, number][] = sticky
       ? [
           [sticky, easy],
@@ -403,14 +409,37 @@ export function arrange(input: {
     }
     const full = lengths(index).full;
     if (!chosen && settings.mode === 'extended' && cue.importance >= 2 && full !== undefined) {
-      const point = pausePoint(
-        cue,
-        input.words,
-        [...input.hard, ...spans],
-        seconds,
-        input.cuts,
-        input.earliest,
-      );
+      const earlierReading = cue.reading
+        ? placed.find(
+            (item) =>
+              cues[item.index].reading &&
+              readingWindow(cues[item.index]) === readingWindow(cue) &&
+              item.placement.pause > 0,
+          )
+        : undefined;
+      const suggested =
+        earlierReading?.placement.pauseAt ??
+        pausePoint(
+          cue,
+          input.words,
+          [...input.hard, ...spans],
+          seconds,
+          input.cuts,
+          input.earliest,
+        );
+      const end = cue.reading ? Math.min(seconds, cue.until) : seconds;
+      const point =
+        cue.reading && !earlierReading
+          ? Math.min(Math.max(cue.at, end - 0.05), Math.max(cue.at, suggested))
+          : suggested;
+      const latest = Math.min(seconds - 0.05, cue.until + (cue.reading ? 0 : 4));
+      const readingInWord =
+        cue.reading &&
+        input.words.some((word) => word.start - 0.03 < point && point < word.end + 0.03);
+      if (point > latest + 1e-9 || inside(point, input.hard) || readingInWord) {
+        left.push({ index, reason: 'room' });
+        return;
+      }
       chosen = {
         index,
         variant: 'full',
@@ -421,7 +450,7 @@ export function arrange(input: {
           settings,
           point,
           [...input.blocked, ...spans],
-          seconds,
+          end,
         ),
       };
     }
@@ -439,6 +468,41 @@ export function arrange(input: {
     floor = Math.max(floor, span.end);
     placed.push(chosen);
   });
+  {
+    const readings = new Map<string, number[]>();
+    cues.forEach((cue, index) => {
+      if (!cue.reading) return;
+      const window = readingWindow(cue);
+      readings.set(window, [...(readings.get(window) ?? []), index]);
+    });
+    const spoken = new Set(placed.map((item) => item.index));
+    const incomplete = new Set(
+      [...readings.values()]
+        .filter(
+          (group) =>
+            group.some((index) => spoken.has(index)) && group.some((index) => !spoken.has(index)),
+        )
+        .flat(),
+    );
+    if (incomplete.size) {
+      // A finite card is one reading: omit all its chunks when only part fits, then release
+      // their room for other descriptions. Each retry removes at least one reading group.
+      const indices = cues.map((_cue, index) => index).filter((index) => !incomplete.has(index));
+      const rest = arrange({
+        ...input,
+        cues: indices.map((index) => cues[index]),
+        length: (index, variant) => input.length(indices[index], variant),
+        prefer: (index) => input.prefer?.(indices[index]),
+      });
+      return {
+        placed: rest.placed.map((item) => ({ ...item, index: indices[item.index] })),
+        left: [
+          ...rest.left.map((item) => ({ ...item, index: indices[item.index] })),
+          ...[...incomplete].map((index) => ({ index, reason: 'room' as const })),
+        ].sort((a, b) => a.index - b.index),
+      };
+    }
+  }
   return { placed, left };
 }
 

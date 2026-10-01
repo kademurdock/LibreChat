@@ -108,6 +108,8 @@ export type Cue = {
   text: string;
   shortText: string;
   importance: number;
+  /** Exact words read from a finite screen card; absent in older saved cues. */
+  reading?: boolean;
   /** Ids of the people this cue mentions. */
   who?: string[];
 };
@@ -218,6 +220,7 @@ export const analysisSchema: z.ZodType<Analysis, z.ZodTypeDef, unknown> = z.obje
       pauseAt: time.optional().catch(undefined),
       text: label(420),
       shortText: label(200),
+      reading: z.boolean().optional().catch(undefined),
       importance: z.number().int().min(1).max(3).catch(2),
       who: z.array(label(12)).max(12).optional().catch(undefined),
     }),

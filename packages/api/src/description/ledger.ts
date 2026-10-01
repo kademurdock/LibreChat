@@ -446,6 +446,35 @@ export function revealsFor(
   return reveals;
 }
 
+function cardReadings(order: { cue: Cue; index: number }[]): Map<number, string> {
+  const cards = new Map<number, string>();
+  let start = 0;
+  while (start < order.length) {
+    const first = order[start];
+    if (!first.cue.reading) {
+      start++;
+      continue;
+    }
+    let end = start + 1;
+    while (
+      end < order.length &&
+      order[end].cue.reading &&
+      order[end].cue.at === first.cue.at &&
+      order[end].cue.until === first.cue.until
+    )
+      end++;
+    cards.set(
+      first.index,
+      order
+        .slice(start, end)
+        .map(({ cue }) => cue.text)
+        .join(' '),
+    );
+    start = end;
+  }
+  return cards;
+}
+
 /**
  * Replaces names the listener cannot know yet at each cue's time with the person's label
  * (capitalised at a sentence start); joins "label, name" the first time a name is voiced.
@@ -492,13 +521,22 @@ export function gateCues(input: {
   const order = input.cues
     .map((cue, index) => ({ cue, index }))
     .sort((a, b) => a.cue.at - b.cue.at || a.index - b.index);
+  const cards = cardReadings(order);
   const out: Cue[] = [...input.cues];
   for (const { cue, index } of order) {
     const time = input.sectionStart + cue.at;
     for (const name of names) {
       const key = nameKey(name);
-      if (readsName(cue.text, name) && (reveals[key] === undefined || time < reveals[key]))
-        reveals[key] = time;
+      const shown = cue.reading
+        ? pattern(`${edge}${escape(name.trim()).replace(/\s+/g, '\\s+')}${after}`, 'iu').test(
+            cards.get(index) ?? '',
+          )
+        : readsName(cue.text, name);
+      if (shown && (reveals[key] === undefined || time < reveals[key])) reveals[key] = time;
+    }
+    if (cue.reading) {
+      out[index] = { ...cue, importance: 3 };
+      continue;
     }
     let text = cue.text;
     let shortText = cue.shortText;
@@ -544,6 +582,7 @@ export function gateCues(input: {
   const rejoin = (placed: { cue: Cue; spoken: string }[]): (Cue | undefined)[] => {
     const heard = new Set(Object.keys(input.state?.heard?.names ?? {}).map(nameKey));
     return placed.map(({ cue, spoken }) => {
+      if (cue.reading) return undefined;
       let text = cue.text,
         shortText = cue.shortText;
       for (const person of people) {

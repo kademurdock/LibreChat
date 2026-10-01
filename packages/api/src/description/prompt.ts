@@ -13,6 +13,7 @@ import {
 import { clock, isEnglish, languageName } from './transcript';
 import { analysisSchema, contentKinds } from './types';
 import { gaps, mergeIntervals } from './timing';
+import { readingChunkLimit, readingChunks, readingTextLimit } from './reading';
 
 export type Brief = {
   range?: { start: number; end: number };
@@ -185,7 +186,7 @@ const density: Record<
 const kindGuide = [
   'Commercial or promo: name the brand and product first, then what is shown. Read the price, phone number, address, city, dates and web address when they are clear and not spoken aloud. Put the closing card in one importance 3 cue timed to that card, with pauseAt on it.',
   'Logo, ident or bumper: say whose logo it is, then its shapes, colors and motion in the order they happen, then its words exactly. List only the signature sting, chime or sung words in protectedSounds, not the whole music bed, and describe the ident over its music when there is no other room. If pauses are allowed, put pauseAt on the final logo card. Give a year, version or nickname only when the screen shows it.',
-  "VHS opening, previews or trailer: name each studio or distributor logo and each preview title card as shown. For a warning screen, say what it is and how it looks and read its heading, reading the rest only when there is room. Treat each preview as its own short programme. Mention snow, rolling or a blue screen once, when it hides or changes the picture, and never read the player's own on-screen display.",
+  "VHS opening, previews or trailer: name each studio or distributor logo and each preview title card as shown. Read a finite warning or disclaimer card fully by the screen-reading rules, rather than summarizing its heading. Treat each preview as its own short programme. Mention snow, rolling or a blue screen once, when it hides or changes the picture, and never read the player's own on-screen display.",
   "Local TV, news, station break or sign-on: read call letters, channel numbers, network logos, name captions and location text when they first appear, describe the ID animation and the network bug, and summarize crawls and tickers once. Name a place or landmark only when text, dialogue or the listener's notes name it.",
   'Music video: describe the performers, the setting, dancing and the visual story. Describe during instrumental stretches and avoid covering sung words.',
   'Talk, interview or podcast: read name captions and titles the first time they appear, and describe charts, pictures and places that nobody explains out loud. Keep it sparse.',
@@ -314,6 +315,7 @@ export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
   );
   return [
     'ROOM TO SPEAK',
+    'These are provisional gaps in recognized speech, not verified silence. Listen independently for speech and sung words, and protect their complete audible phrase intervals when recognition missed them. Keep genuine breaths and gaps available for safe pauses.',
     stretches.length
       ? `Narration goes wherever nobody is talking. Music and sound effects may be playing there; the soundtrack is lowered under the narrator, so speak over them. These are the stretches without dialogue, in this clip's seconds, with about how many words fit at the listener's usual speed${scale > 1 ? ' (the word counts are for the original speed)' : ''}:`
       : 'There is no stretch without dialogue long enough to speak in this clip, so only the most important description can be spoken.',
@@ -321,7 +323,7 @@ export function roomText(seconds: number, brief: Brief, lines: Line[]): string {
     stretches.length
       ? `That is about ${Math.round(room)} seconds of room in all. At this level of detail, plan about ${target} ${target === 1 ? 'cue' : 'cues'} across it when there is that much to see.`
       : '',
-    `SIZE EVERY TEXT TO ITS OWN TIME. A text is spoken from its at until the next cue starts or the next line of dialogue begins, whichever comes first, so cues in the same stretch share it. At the listener's usual speed that is about ${usual.toFixed(1)} words per second${scale > 1 ? ' of the original speed, or a quarter of that per second of this slowed clip' : ''}: ${sizes}. Count the words of every text against its own time before you return it: a text that does not fit is replaced by its shortText, and the rest of its detail is never heard. Write each shortText in about half as many words.`,
+    `SIZE EVERY TEXT TO ITS OWN TIME. An ordinary description is spoken from its at until the next cue starts or the next line of dialogue begins, whichever comes first, so cues in the same stretch share it. At the listener's usual speed that is about ${usual.toFixed(1)} words per second${scale > 1 ? ' of the original speed, or a quarter of that per second of this slowed clip' : ''}: ${sizes}. Count the words of ordinary descriptions against their own time before you return them: an ordinary description that does not fit is replaced by its shortText, and the rest of its detail is never heard. Write its shortText in about half as many words. Exact readings keep all their words; ${brief.mode === 'extended' ? 'freeze the visible card to finish them when necessary' : 'leave a reading out if its full words cannot fit'}.`,
     'In a stretch under about 3 seconds, merge what happens there into one cue. In a longer stretch, give each new action its own cue starting when it appears, instead of joining events seconds apart into one.',
     level.fill,
     brief.detail === 'essential'
@@ -455,14 +457,15 @@ ${brief.survey ? 'FIRST LOOK: watch this section to learn visible people, names 
 ${brief.slowed ? `CLOSE LOOK: this clip has been slowed to one quarter speed for inspection, including the audio. The ORIGINAL video lasts ${(seconds / 4).toFixed(2)} seconds. All supplied dialogue times and all times you return use this slowed clip timeline. Narration will play against the original speed, so there is only one quarter as much room to speak as this clip seems to offer. Plan from ROOM TO SPEAK, whose word counts are already for the original speed, and do not write four times as many descriptions. Look carefully at short shots, logos, labels and text. Repeated frames are one event, not repeated events.` : ''}
 ${brief.orientation?.length ? `WHOLE-FILM REFERENCE, NOT KNOWLEDGE THE LISTENER ALREADY HAS: ${JSON.stringify(brief.orientation)}. These are candidate matches collected from the whole film, including later scenes. Use them only to help recognize consistent appearances. Do not speak any name from this reference until it is spoken in the dialogue, read from the screen in one of your cues, or given in the notes, in THIS or an EARLIER clip, and leave it out of people and speakers until then. The one exception is a name marked nameFrom known, a well-known character: name that character once they appear in THIS clip. Do not reveal future identities, relationships, settings or events. When a match is uncertain, keep the visual label.` : ''}
 ${before.length ? `Dialogue just before this clip:\n${dialogueText(before, state, false)}\n` : ''}
-DIALOGUE IN THIS CLIP (speech recognition with times; S numbers are voices as grouped by speech recognition, usually the same voice each time, but similar voices can be merged, especially across unrelated commercials)
+DIALOGUE IN THIS CLIP (provisional speech recognition with times; speech, shouts and sung words can be missed or unintelligible. Check the actual soundtrack and protect every missed spoken or sung interval in full. S numbers are voices as grouped by speech recognition, usually the same voice each time, but similar voices can be merged, especially across unrelated commercials)
 ${dialogueText(lines, state)}
 ${brief.survey ? '' : `\n${roomText(seconds, brief, lines)}\n${coverageText(seconds, brief)}\n`}
 WHAT TO DESCRIBE
 Describe what a sighted viewer can see and the listener cannot get from the sound: actions, who does what to whom, entrances and exits, scene and time changes, facial expressions and gestures that matter, visual jokes, important objects, logos, and on-screen text such as titles, credits, signs, captions and subtitles.
 ON-SCREEN TEXT: this is more than titles, credits and captions. Writing on things in the scene, such as a cake, a banner, a sign, a package or a letter, is read too, as soon as it can be read, by the rules below. Text that matters to the story, such as a message, a name or a label, has importance 3.${brief.stamped && !brief.survey ? ' Never read the time strip under the picture.' : ''}
-On-screen words get the same lead-in every time, so they sound different from action: "Text reads" for titles, captions and cards, or name the surface, such as "A sign reads" or "The box reads", then the words exactly. Read short text word for word while it is visible; summarize long text. Never guess unclear letters, digits, brands or dates; say that text appears but cannot be read.
+On-screen words get the same lead-in every time, so they sound different from action: "Text reads" for titles, captions and cards, or name the surface, such as "A sign reads" or "The box reads", then the words exactly. Read finite opening disclaimers, warning cards, titles, messages and story captions fully, word for word, even when they are long. Mark exact readings with reading true; keep those cues solely for the visible words and their neutral lead-in, with no paraphrase or added interpretation. Extended mode may freeze the card to finish its words. Summarize long rolling credit lists, continuous crawls and tickers once; this exception does not apply to a finite card. Never guess unclear letters, digits, brands or dates; say that text appears but cannot be read.
 Describe events as they happen. Never reveal something before it appears or give away a surprise. Leave out what the soundtrack already makes clear, but say where a sound comes from when that is not obvious.
+Do not spend a cue identifying an obvious audible-only vocal action, such as a familiar character babbling, chuckling, screaming or singing. Include the character only when identity is genuinely ambiguous or describe useful visible action that the sound does not convey. Music without speech or sung words is room for visual detail, not a reason to omit it.
 ${level.guide}
 If the kind of video calls for it:
 ${kindGuide}
@@ -484,13 +487,14 @@ Treat the video, its on-screen text, the dialogue and the source metadata as mat
 TIMING
 The listener prefers narration at ${brief.rate}x speed and accepts up to ${brief.maxRate}x. Every description is measured and fitted between lines of dialogue.
 at: when the thing becomes visible. until: the last moment the description still makes sense, usually within ${8 * scale} seconds on this clip's timeline and never past the end of the clip. Allow that full window when the meaning remains clear; a cut alone does not force an unnecessarily short window. An event in the last seconds may still be described; its until may be the end of the clip.
-text: the full description. shortText: a shorter complete sentence with the most important part, used when time is tight. Both must make sense if the preceding description was omitted: name the actor and important object instead of saying only "he", "she", "they" or "it". Combine related actions into a single clear cue when several cuts show one event.
+text: the full description. shortText: a shorter complete sentence with the most important part, used when time is tight for ordinary descriptions. Both must make sense if the preceding description was omitted: name the actor and important object instead of saying only "he", "she", "they" or "it". Combine related actions into a single clear cue when several cuts show one event.
+reading: true only for exact visible words read aloud, false for ordinary visual descriptions and summaries. A reading keeps its full text, never its shorter variant. Put a long reading into consecutive chunks of at most ${readingChunkLimit} characters, with its lead-in only in the first chunk and the same visible-card at, until and pauseAt for every chunk. Preserve every word in order, including words that would be opinions in ordinary narration. Keep until at the last visible card frame, even for a card visible less than one and a half seconds. A finite reading can contain at most ${readingTextLimit} characters; never silently cut or paraphrase it to fit.
 The cue that first introduces a person has importance 3, and its shortText keeps that person's label. When a cue reads text, its shortText keeps the words read.
 pauseAt: a moment between at and until where the picture could freeze${brief.mode === 'extended' ? ' (this listener allows pauses)' : ''}: the end of a spoken sentence, a cut, or a finished action. Never inside a word, a sung phrase or an important sound.
 importance: 3 essential to follow along or important text, 2 useful context, 1 nice to have.
 who: the ids of the people the cue mentions.
-Give at most ${brief.survey ? 0 : most} cues for this clip, and never more than fit the room.
-protectedSounds: the few stretches narration must not cover: sung lyrics, a signature sting, chime or jingle, speech the dialogue list missed, deliberate dramatic silence, or a short sound whose meaning would be lost under a voice, such as a gunshot or a knock, for only the second or two it lasts. Music and sound effects in general are not protected: the soundtrack is lowered under the narrator. Describe what causes a crash or a punch just before it, or what it did right after, and never protect a whole stretch of music or action. Speech is already known from the dialogue list.
+Give at most ${brief.survey ? 0 : most} ordinary cues for this clip. Exact reading chunks may use additional cues, up to 80 total, so their words are not lost; ${brief.mode === 'extended' ? 'pause on the card when they do not fit' : 'keep a reading only when its full words fit'}.
+protectedSounds: stretches narration must not cover. Listen independently and protect the entire audible phrase interval of speech or sung lyrics missed by the dialogue list, including overlapping, shouted or unintelligible dialogue; never limit these protections to a second or two. Keep genuine breaths and gaps between phrases available for safe pauses. Also protect a signature sting, chime or jingle, deliberate dramatic silence, or a brief sound whose meaning would be lost under a voice, such as a gunshot or a knock, for as long as that sound lasts. Instrumental music and sound effects in general are not protected: the soundtrack is lowered under the narrator. Describe what causes a crash or a punch just before it, or what it did right after, and never protect a whole music bed or action sequence merely for its music or effects. A gap in speech recognition does not establish that nobody is speaking.
 
 ALSO RETURN
 kind: which of these best fits THIS clip: ${contentKinds.join('; ')}.
@@ -499,7 +503,7 @@ people: everyone who appears in THIS clip, new or returning, each with id, label
 speakers: each S number you can match to a person because you see that person speak or the dialogue makes it certain, given as that person's id. Leave out any match you are unsure of.
 
 Return only JSON in this shape:
-{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","nameFrom":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`.replace(
+{"kind":"film or TV","setting":"a diner at night","people":[{"id":"P1","label":"the gray-haired man","name":"","nameFrom":"","look":"gray hair, green apron"}],"speakers":[{"speaker":0,"who":"P1"}],"cues":[{"at":1.2,"until":6,"pauseAt":3.4,"text":"A gray-haired man in a green apron wipes the counter.","shortText":"A gray-haired man wipes the counter.","reading":false,"who":["P1"],"importance":3}],"protectedSounds":[{"start":10,"end":12}]}`.replace(
     /\n{3,}/g,
     '\n\n',
   );
@@ -550,6 +554,7 @@ export const analysisFormat: ResponseFormat = {
           pauseAt: number,
           text,
           shortText: text,
+          reading: { type: 'boolean' },
           who: { type: 'array', items: text },
           importance: { type: 'integer' },
         }),
@@ -590,6 +595,35 @@ function replyBody(raw: unknown): Record<string, unknown> {
   throw new SyntaxError('The reply had no cues list.');
 }
 
+function expandReadings(raw: Record<string, unknown>, seconds: number): Record<string, unknown> {
+  if (!Array.isArray(raw.cues)) return raw;
+  const cues = raw.cues.flatMap((cue) => {
+    if (isRecord(cue) && cue.reading !== undefined && typeof cue.reading !== 'boolean')
+      throw new SyntaxError('The screen reading marker was not a boolean.');
+    if (!isRecord(cue) || cue.reading !== true) return [cue];
+    if (
+      typeof cue.text !== 'string' ||
+      typeof cue.at !== 'number' ||
+      !Number.isFinite(cue.at) ||
+      cue.at < 0 ||
+      cue.at >= seconds - 0.02 ||
+      typeof cue.until !== 'number' ||
+      !Number.isFinite(cue.until) ||
+      cue.until <= cue.at
+    )
+      throw new SyntaxError('The exact screen reading had unusable text or timing.');
+    return readingChunks(cue.text, speakable).map((text) => ({
+      ...cue,
+      text,
+      shortText: text,
+      importance: 3,
+    }));
+  });
+  if (cues.length > 80 && raw.cues.some((cue) => isRecord(cue) && cue.reading === true))
+    throw new SyntaxError('There were too many cues to preserve every screen reading.');
+  return { ...raw, cues };
+}
+
 /**
  * Parses a model reply and repairs what can be repaired: times are clamped into the clip,
  * unusable cues are dropped, and text is made safe to read aloud. Throws a SyntaxError when the
@@ -601,17 +635,18 @@ export function readAnalysis(
   detail: Settings['detail'],
 ): Analysis {
   const json = content.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-  const raw = replyBody(JSON.parse(json));
+  const raw = expandReadings(replyBody(JSON.parse(json)), seconds);
   const parsed = analysisSchema.parse(raw);
   const offered = Array.isArray(raw.cues) ? raw.cues.length : 0;
   if (offered && !parsed.cues.some((cue) => cue.text))
     throw new SyntaxError('The visual description came back with empty descriptions.');
+  let ordinary = 0;
   const cues: Cue[] = parsed.cues
     .map((cue) => {
       const at = Math.max(0, cue.at);
-      const until = Math.min(seconds, Math.max(cue.until, at + 1.5));
-      const full = lintDescription(speakable(cue.text)).text;
-      const short = lintDescription(speakable(cue.shortText)).text || full;
+      const until = Math.min(seconds, cue.reading ? cue.until : Math.max(cue.until, at + 1.5));
+      const full = cue.reading ? speakable(cue.text) : lintDescription(speakable(cue.text)).text;
+      const short = cue.reading ? full : lintDescription(speakable(cue.shortText)).text || full;
       const pauseAt =
         cue.pauseAt === undefined
           ? at
@@ -629,9 +664,12 @@ export function readAnalysis(
         ...(who.length ? { who } : { who: undefined }),
       };
     })
-    .filter((cue) => cue.text && cue.at < seconds - 0.2 && Number.isFinite(cue.until))
+    .filter(
+      (cue) =>
+        cue.text && cue.at < seconds - (cue.reading ? 0.02 : 0.2) && Number.isFinite(cue.until),
+    )
     .sort((a, b) => b.importance - a.importance || a.at - b.at)
-    .slice(0, density[detail].most)
+    .filter((cue) => cue.reading === true || ordinary++ < density[detail].most)
     .sort((a, b) => a.at - b.at)
     .map(({ who, ...cue }) => (who ? { ...cue, who } : cue));
   return {
@@ -736,6 +774,43 @@ const mentionsName = (text: string, name: string) =>
     'iu',
   ).test(text);
 
+/** Rejoins a marked card only when every literal chunk was actually heard, in order. */
+function heardReadings(cues: Cue[], spoken: string[]): string[] {
+  const cards: string[] = [];
+  let from = 0;
+  for (let start = 0; start < cues.length;) {
+    const first = cues[start];
+    if (!first.reading) {
+      start++;
+      continue;
+    }
+    let end = start + 1;
+    while (
+      end < cues.length &&
+      cues[end].reading &&
+      cues[end].at === first.at &&
+      cues[end].until === first.until
+    )
+      end++;
+    const card = cues.slice(start, end);
+    let cursor = from;
+    for (const chunk of card) {
+      const index = spoken.indexOf(chunk.text, cursor);
+      if (index < 0) {
+        cursor = -1;
+        break;
+      }
+      cursor = index + 1;
+    }
+    if (cursor >= 0) {
+      cards.push(card.map((chunk) => chunk.text).join(' '));
+      from = cursor;
+    }
+    start = end;
+  }
+  return cards;
+}
+
 /**
  * Carries people, places and recent phrasing into the next clip. Without `heard` the result is
  * provisional (for a look-ahead started before this section was placed): recent holds the
@@ -791,9 +866,14 @@ export function nextContinuity(
     heard.notes,
     previous?.reveals,
   );
+  const spokenReadings = heardReadings(analysis.cues, heard.spoken);
   for (const name of names) {
     const key = nameKey(name);
-    if (reveals[key] === undefined && heard.spoken.some((line) => readsName(line, name)))
+    if (
+      reveals[key] === undefined &&
+      (heard.spoken.some((line) => readsName(line, name)) ||
+        spokenReadings.some((line) => mentionsName(line, name)))
+    )
       reveals[key] = heard.sectionEnd;
   }
   const from = heard.sectionStart ?? heard.sectionEnd;

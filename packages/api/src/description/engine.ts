@@ -705,7 +705,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
   };
 
-  /** Maps a close look's slowed timeline back to the section and restores its minimum window. */
+  /** Maps a close look back to source time; only ordinary cues regain the minimum window. */
   const toSection = (analysis: Analysis, scale: number, seconds: number): Analysis => {
     if (scale === 1) return analysis;
     return {
@@ -715,7 +715,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         return {
           ...cue,
           at,
-          until: Math.max(cue.until / scale, Math.min(seconds, at + 1.5)),
+          until: cue.reading
+            ? Math.min(seconds, cue.until / scale)
+            : Math.max(cue.until / scale, Math.min(seconds, at + 1.5)),
           pauseAt: cue.pauseAt === undefined ? undefined : cue.pauseAt / scale,
         };
       }),
@@ -1139,8 +1141,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     await progress(`Voicing section ${i + 1} of ${count}`, at(0.3));
     const key = (index: number, variant: Variant) => `${index}:${variant}`;
     const clips = new Map<string, Voiced>();
+    const variants = (index: number): Variant[] =>
+      cues[index].reading ? ['full'] : ['full', 'short'];
     incoming.forEach((item, index) =>
-      item.clips.forEach((clip, variant) => clips.set(key(index, variant), clip)),
+      item.clips.forEach((clip, variant) => {
+        if (variants(index).includes(variant)) clips.set(key(index, variant), clip);
+      }),
     );
     const failing = new Set<string>();
     const failed = new Set<string>();
@@ -1158,7 +1164,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       bytes(saidOf(index, variant)) * secondsPerByte;
     const length = (index: number, variant: Variant) => clips.get(key(index, variant))?.base;
     const ratio = (index: number) => {
-      const variant = (['full', 'short'] as const).find((item) => clips.has(key(index, item)));
+      const variant = variants(index).find((item) => clips.has(key(index, item)));
       return variant ? (length(index, variant) ?? 0) / estimate(index, variant) : undefined;
     };
     const earliest = i > 0 ? edgeGuards(i, seconds)[0].end : undefined;
@@ -1183,6 +1189,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const fresh = wanted.filter(
         (_item, n) =>
           !clips.has(names[n]) &&
+          variants(_item.index).includes(_item.variant) &&
           !failing.has(names[n]) &&
           !failed.has(names[n]) &&
           names.indexOf(names[n]) === n,
@@ -1271,7 +1278,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         !records.has(i + 1);
       if (carry) {
         const kept = new Map<Variant, Voiced>();
-        for (const variant of ['full', 'short'] as const) {
+        for (const variant of variants(item.index)) {
           const clip = clips.get(key(item.index, variant));
           if (clip) kept.set(variant, clip);
         }
