@@ -308,12 +308,15 @@ ul.fh-list li, ol.fh-list li { margin: .3rem 0; }
 /* ── the family sky (sky.js): decoration, hidden from screen readers ──
  * Always a dusk sky (the site's navy and lamp amber), in light mode too.
  * Its height is set before anything loads, so the page never shifts; if the
- * drawing cannot load, this plain sky stays. Its one line of words sits on a
- * solid strip, never on the drawing. It steps aside wherever the paintings
- * do (history.js leaves it out at those times; this is the backstop). */
+ * drawing cannot load, this plain sky stays. It is shorter on a phone, so the
+ * chart below it stays close. Its one line of words sits on a solid strip,
+ * never on the drawing, and shows only once the lights are drawn. It steps
+ * aside wherever the paintings do (history.js leaves it out at those times;
+ * this is the backstop), and the key's sentence about it goes with it. */
 .fh-sky {
   display: flex; flex-direction: column; margin: .8rem 0 .7rem; overflow: hidden;
-  height: clamp(240px, 62vw, 380px); max-height: max(240px, 46vh);
+  height: 240px; /* for browsers without clamp() (iOS before 13.4) */
+  height: clamp(180px, 50vw, 380px); max-height: max(180px, 46vh);
   border: 1px solid #2b3466; border-radius: 16px;
   background:
     radial-gradient(70% 55% at 50% 108%, rgba(255, 183, 92, .30) 0%, rgba(255, 183, 92, 0) 70%),
@@ -321,14 +324,22 @@ ul.fh-list li, ol.fh-list li { margin: .3rem 0; }
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 .fh-skystage { position: relative; flex: 1; min-height: 0; }
-.fh-skycanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+/* One finger scrolls the page up and down or turns the sky; two fingers
+ * always zoom the page, as they do everywhere else. */
+.fh-skycanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; touch-action: pan-y pinch-zoom; }
 .fh-skyhint { margin: 0; padding: .4rem .85rem; background: #0a0f24; color: #d7ddf6; font-size: .85rem; line-height: 1.35; }
+.fh-sky:not(.is-drawn) .fh-skyhint { visibility: hidden; }
+.fh-skynote { margin: .5rem 0 .2rem; }
 @media (prefers-color-scheme: light) { .fh-sky { box-shadow: 0 8px 24px rgba(16, 22, 58, .2); } }
 @media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-data: reduce), (max-width: 22.5em), (max-height: 30em), print {
-  .fh-sky { display: none !important; }
+  .fh-sky, .fh-skynote { display: none !important; }
 }
-/* A lit star rings the same person's box in the chart and marks their line in the text version. */
-.fh-box.is-lit .fh-ring { stroke: var(--fh-ring); stroke-width: 5; }
+/* A lit star gives the same person's box in the chart a soft amber wash and
+ * glow, and their line in the text version a highlight. It is never a crisp
+ * solid ring, so it cannot pass for the keyboard focus ring, which stays on
+ * top when a box is both. */
+.fh-box.is-lit .fh-ring { fill: var(--fh-ring); fill-opacity: .18; stroke: var(--fh-ring); stroke-opacity: .35; stroke-width: 9; }
+.fh-box.is-lit .fh-boxlink:focus-visible .fh-ring { stroke-opacity: 1; stroke-width: 5; }
 .fh-personrow.is-lit { background: var(--fh-flag-bg); box-shadow: -.5rem 0 0 var(--fh-flag-bg), .5rem 0 0 var(--fh-flag-bg); border-radius: 6px; }
 
 /* ── person ── */

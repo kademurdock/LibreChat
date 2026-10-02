@@ -1545,10 +1545,18 @@
     var hint = mouse
       ? (still ? 'Point at a light to see who it is. Click it to open their page.' : 'Drag to turn the tree. Point at a light to see who it is.')
       : (still ? 'Tap a light to see who it is. Tap again to open.' : 'Tap a light to see who it is. Drag to turn.');
-    var stage = el('div', { class: 'fh-skystage' });
-    var box = el('div', { class: 'fh-sky', 'aria-hidden': 'true' }, stage, el('p', { class: 'fh-skyhint', 'aria-hidden': 'true' }, hint));
+    /* The canvas is made here with the box, so nothing is added to the page
+     * after the view is shown; sky.js only draws into it. The hint shows once
+     * the lights are drawn (history.css), and goes if they never are. */
+    var canvas = el('canvas', { class: 'fh-skycanvas', 'aria-hidden': 'true' });
+    var hintEl = el('p', { class: 'fh-skyhint', 'aria-hidden': 'true' }, hint);
+    var box = el('div', { class: 'fh-sky', 'aria-hidden': 'true' }, el('div', { class: 'fh-skystage' }, canvas), hintEl);
     var handle = null;
     var stopped = false;
+    /* No lights: the box keeps its plain dusk sky, and the hint goes. */
+    function noSky() {
+      if (hintEl.parentNode) hintEl.parentNode.removeChild(hintEl);
+    }
     /* A lit star rings that person's box in the chart and their line in the
      * text version (a look only: no words, no focus, nothing moves). */
     function mark(id) {
@@ -1568,16 +1576,18 @@
       start: function () {
         loadSky().then(function (Sky) {
           if (stopped || !box.isConnected) return;
-          handle = Sky.mount(stage, layout, {
+          handle = Sky.mount(canvas, layout, {
             still: skyStill,
             solid: !!(window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches),
             focusLabel: focusLabel,
             ringName: generationName,
             descName: descendantName,
+            onDrawn: function () { box.classList.add('is-drawn'); },
             onLight: mark,
             onOpen: function (id) { location.hash = personHref(id); },
           });
-        }).catch(function () { /* the box keeps its plain dusk sky */ });
+          if (!handle) noSky();
+        }).catch(noSky);
       },
       light: function (id) {
         if (handle) handle.light(id);
@@ -1620,7 +1630,8 @@
       s.appendChild(el('p', null, 'Centred on ', el('a', { href: personHref(layout.focus.id) }, focusName), focusCard && personWords(focusCard) ? ', ' + personWords(focusCard) : '', '. ',
         el('a', { href: '#/tree' }, me.mode === 'guest' ? 'Centre on ' + ownerFirst() : 'Centre on you')));
     }
-    var sky = skyView(fullLayout, isViewer ? 'You' : (focusCard && focusCard.first) || firstName(focusName));
+    var skyCentre = isViewer ? 'You' : (focusCard && focusCard.first) || firstName(focusName);
+    var sky = skyView(fullLayout, skyCentre);
     if (sky) {
       s.appendChild(sky.box);
       /* Pointing at a box or a name in the chart (or moving the keyboard
@@ -1731,7 +1742,11 @@
     s.appendChild(bar);
     if (depthRow) s.appendChild(depthRow);
     s.appendChild(frame);
-    s.appendChild(el('details', { class: 'fh-legendbox' }, el('summary', null, 'What the colours, patterns and lines mean'), legend(data.legend)));
+    /* The sky is hidden from screen readers, so the key says in one plain
+     * sentence that it is there and what it shows (words only, no new stop;
+     * history.css hides it wherever it hides the sky). */
+    var skyNote = sky ? el('p', { class: 'fh-skynote' }, 'The family sky above the chart is a picture of this same tree as lights, with ' + (isViewer ? 'you' : skyCentre) + ' in the middle, ancestors in rings above and any children below.') : null;
+    s.appendChild(el('details', { class: 'fh-legendbox' }, el('summary', null, 'What the colours, patterns and lines mean'), legend(data.legend), skyNote));
     s.appendChild(textVersion(fullLayout, focusName, isViewer, above));
     s.fhKeepStatus = true;
     /* The first view waits until the frame has a real size (a tab opened in

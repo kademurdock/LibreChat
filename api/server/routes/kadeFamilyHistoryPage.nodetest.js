@@ -201,21 +201,55 @@ test('the family sky is decoration only: hidden, no stops, no words, no sound, s
   assert.equal(/\(\?<[=!]/.test(skySource), false, 'no regex lookbehind');
   assert.equal(/[\w)\]]\?\.[\w(]|\?\?/.test(skySource), false, 'no optional chaining or nullish operators');
   assert.equal(/tabindex|tabIndex|\.focus\(|aria-live|role=|Audio|speechSynthesis|vibrate/.test(skySource), false, 'no focus, no live words, no sound');
-  assert.match(skySource, /canvas\.setAttribute\('aria-hidden', 'true'\)/);
-  assert.match(source, /el\('div', \{ class: 'fh-sky', 'aria-hidden': 'true' \}, stage, el\('p', \{ class: 'fh-skyhint', 'aria-hidden': 'true' \}, hint\)\)/, 'the whole box and its hint are hidden from screen readers');
+  assert.match(source, /var canvas = el\('canvas', \{ class: 'fh-skycanvas', 'aria-hidden': 'true' \}\);/, 'the canvas is made hidden, with the box');
+  assert.match(source, /var hintEl = el\('p', \{ class: 'fh-skyhint', 'aria-hidden': 'true' \}, hint\);/);
+  assert.match(source, /var box = el\('div', \{ class: 'fh-sky', 'aria-hidden': 'true' \}, el\('div', \{ class: 'fh-skystage' \}, canvas\), hintEl\);/, 'the whole box and its hint are hidden from screen readers');
+  assert.equal(/appendChild|insertBefore|\.append\(|\.prepend\(|\.after\(|\.before\(|replaceChild/.test(skySource), false, 'sky.js adds nothing to the page: it draws into the canvas history.js made');
+  assert.match(source, /handle = Sky\.mount\(canvas, layout, \{/);
+  assert.match(source, /onDrawn: function \(\) \{ box\.classList\.add\('is-drawn'\); \}/, 'the hint shows once the lights are drawn');
+  assert.match(source, /if \(!handle\) noSky\(\);\n\s+\}\)\.catch\(noSky\);/, 'and goes if they never are');
+  assert.match(source, /function noSky\(\) \{\n\s+if \(hintEl\.parentNode\) hintEl\.parentNode\.removeChild\(hintEl\);/);
   const open = Number(/var OPEN_MS = (\d+);/.exec(skySource)[1]);
   const settle = Number(/var SETTLE_MS = (\d+);/.exec(skySource)[1]);
+  const turn = Number(/var TURN = ([\d.]+);/.exec(skySource)[1]);
   assert.ok(open <= 1200, 'big movements last 1.2 seconds or less');
-  assert.ok(settle < 5000, 'motion that starts by itself stops within 5 seconds');
+  assert.ok(settle <= 1200, 'motion that starts by itself is over within 1.2 seconds');
+  assert.ok(open <= settle, 'the lights have opened before the motion stops');
+  assert.ok(turn <= 0.2, 'the turn that starts by itself is small');
+  assert.match(skySource, /if \(e\.isPrimary === false\) \{\n\s+if \(down && down\.turning\) canvas\.style\.cursor = 'grab';\n\s+down = null;\n\s+spin = 0;\n\s+return;/, 'a second finger is a pinch: it never turns the sky');
   assert.match(source, /function skyStill\(\) \{\n\s+return reducedMotion\(\) \|\| storeGet\('reverie_motion'\) === 'off';/, 'Reduce Motion and the in-app motion switch make it still');
   assert.match(source, /SKY_HIDDEN_WHEN = '\(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\)'/);
   assert.match(source, /connection\.saveData\) return false/);
   assert.match(source, /fontSize\) > 20\) return false/, 'very large text leaves it out');
   assert.match(source, /'sky\.js\$1'/, 'it loads from beside history.js at the same version');
   const css = fs.readFileSync(STYLE_PATH, 'utf8');
-  assert.match(css, /\.fh-sky \{[^}]*height: clamp\(/, 'its space is set before anything loads');
-  assert.match(css, /@media \(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\), \(max-width: 22\.5em\), \(max-height: 30em\), print \{\s*\.fh-sky \{ display: none !important; \}/);
+  assert.match(css, /\.fh-sky \{[^}]*height: 240px;[^}]*height: clamp\(180px, 50vw, 380px\); max-height: max\(180px, 46vh\);/, 'its space is set before anything loads, shorter on a phone, with a height for browsers without clamp()');
+  assert.match(css, /\.fh-skycanvas \{[^}]*touch-action: pan-y pinch-zoom;/, 'two fingers still zoom the page over the sky');
+  assert.match(css, /@media \(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\), \(max-width: 22\.5em\), \(max-height: 30em\), print \{\s*\.fh-sky, \.fh-skynote \{ display: none !important; \}/);
   assert.match(css, /\.fh-skyhint \{[^}]*background: #0a0f24; color: #d7ddf6;/, 'its words sit on a solid strip');
+  assert.match(css, /\.fh-sky:not\(\.is-drawn\) \.fh-skyhint \{ visibility: hidden; \}/, 'the hint waits for the lights');
+  const lit = /\.fh-box\.is-lit \.fh-ring \{([^}]*)\}/.exec(css)[1];
+  assert.match(lit, /fill-opacity: \.\d+;/, 'a lit box has a soft wash');
+  assert.match(lit, /stroke-opacity: \.\d+;/, 'and a soft glow, not a solid ring');
+  assert.doesNotMatch(lit, /stroke-width: 5;/, 'a lit box never looks like the focus ring');
+  assert.match(css, /\.fh-box\.is-lit \.fh-boxlink:focus-visible \.fh-ring \{ stroke-opacity: 1; stroke-width: 5; \}/, 'the focus ring stays crisp on a lit box');
+  assert.match(source, /legend\(data\.legend\), skyNote\)\);/, 'the key says the sky is there, inside the existing disclosure');
+  assert.match(source, /var skyNote = sky \? el\('p', \{ class: 'fh-skynote' \}, 'The family sky above the chart is a picture of this same tree as lights, with ' \+ \(isViewer \? 'you' : skyCentre\) \+ ' in the middle, ancestors in rings above and any children below\.'\) : null;/, 'in one plain sentence, only when the sky is shown');
+});
+
+test('a lit star says who it is in words, without the lifespan twice, with the side or research finding', () => {
+  const sky = loadSky();
+  const star = (node) => ({ box: { node } });
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'cora', label: 'Cora Example (born 1960)', lifespan: 'born 1960' }))), ['Cora Example', 'born 1960'], 'a box with no card: the name, then the years once');
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'x', label: 'Someone Example', lifespan: '' }))), ['Someone Example']);
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'bram', label: 'Bram Example (1930–2001)', lifespan: '1930–2001', card: { name: 'Bram Example', term: 'your father', years: '1930–2001', side: 'father', sideText: "Dad's side" } }))),
+    ['Bram Example', 'Your father, 1930–2001', "Dad's side"]);
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'hana', label: 'Hana Sample', card: { name: 'Hana Sample', term: 'your grandmother', years: '1905–1980', side: 'mother', sideText: "Mom's side", research: { text: 'Best guess; not proven by records' } } }))),
+    ['Hana Sample', 'Your grandmother, 1905–1980', 'Research finding'], 'a research ancestor is named as one in words, not by colour alone');
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'cora', label: 'Cora Example', card: { name: 'Cora Example', term: 'you', years: null, living: true, side: 'self', sideText: 'you' } }))),
+    ['Cora Example', 'You, Living'], 'the centre has no side line');
+  assert.deepEqual(plain(sky.wordsFor(star({ id: 'dot', label: 'Dot Sample', card: { name: 'Dot Sample', term: "your mother, Mom's side", years: '1932–2010', side: 'mother', sideText: "Mom's side" } }))),
+    ['Dot Sample', "Your mother, Mom's side, 1932–2010"], 'the side is not said twice');
 });
 
 test('the family sky places the invented family: ancestors rise in rings, Dad left, Mom right, children below', () => {
@@ -248,7 +282,7 @@ test('the family sky places the invented family: ancestors rise in rings, Dad le
 test('the family sky fits the whole tree in its box at every turn', () => {
   const sky = loadSky();
   const scene = sky.placeStars(parts.layoutTree(family(), { up: 4, down: 2 }));
-  for (const [w, h] of [[838, 347], [348, 190], [1200, 380]]) {
+  for (const [w, h] of [[838, 347], [348, 190], [356, 147], [338, 140], [1200, 380]]) {
     const cam = sky.fitCamera(scene, w, h, w >= 560 ? 118 : 0);
     const pt = {};
     for (let i = 0; i < 24; i++) {

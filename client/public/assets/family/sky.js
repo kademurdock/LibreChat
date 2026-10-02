@@ -19,15 +19,19 @@
  * (or a second tap) opens the same person page their name links to.
  *
  * Motion: when the box first comes into view the lights open out from the
- * centre (about a second) while the sky turns a little and slows to a stop
- * (4.5 seconds); after that it is still. Dragging sideways turns it, with a
- * short coast that stops within about a second. Under Reduce Motion it is a
- * still picture from the start and does not turn. It also stops when the tab
- * is hidden or the box scrolls away, and draws nothing while nothing changes.
+ * centre with a small turn, and all of it is done in 1.1 seconds (motion
+ * that starts by itself lasts 1.2 seconds at most); after that it is still.
+ * Dragging sideways turns it, with a short coast that stops within about a
+ * second. A second finger is a pinch, which stays the browser's zoom: it
+ * never turns the sky. Under Reduce Motion it is a still picture from the
+ * start and does not turn. It also stops when the tab is hidden or the box
+ * scrolls away, and draws nothing while nothing changes.
  *
  * No libraries and no WebGL: a plain 2D canvas with a small perspective
- * projection. The pure placement (placeStars, pathTo) is checked on an
- * invented family by api/server/routes/kadeFamilyHistoryPage.nodetest.js. */
+ * projection. history.js makes the canvas with the box, so nothing is added
+ * to the page later. The pure parts (placeStars, pathTo, wordsFor) are
+ * checked on an invented family by
+ * api/server/routes/kadeFamilyHistoryPage.nodetest.js. */
 (function () {
   'use strict';
 
@@ -49,9 +53,9 @@
   var FAN = 0.9; /* the share of a full turn the ancestors fill; the gap is at the back */
   var PITCH = 0.36; /* looking a little down onto the rings */
   var REST_YAW = -0.2;
-  var TURN = 0.8; /* how far the sky turns while it settles */
+  var TURN = 0.12; /* the small turn while the lights open out (about 7 degrees) */
   var OPEN_MS = 1100; /* the lights open out: a big movement, 1.2 seconds at most */
-  var SETTLE_MS = 4500; /* motion that starts by itself stops within 5 seconds */
+  var SETTLE_MS = 1100; /* the turn ends with the opening: nothing moves by itself after 1.2 seconds */
   var TURN_PER_PX = 0.0085;
   var FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
@@ -62,6 +66,14 @@
   function easeOut(v) {
     var t = 1 - clamp01(v);
     return 1 - t * t * t;
+  }
+
+  /* How far one light (or ring) has opened when the whole opening is at
+   * `open` (0 to 1): it starts `delay` in and still ends at 1, so the last
+   * frame of the opening is the same picture as the still one. */
+  function opened(open, delay) {
+    var d = Math.max(0, Math.min(0.6, delay));
+    return easeOut((open - d) / (1 - d));
   }
 
   /* The same rule as the chart's box colour (history.js boxCategory). */
@@ -253,7 +265,36 @@
     };
   }
 
-  var parts = { placeStars: placeStars, pathTo: pathTo, fitCamera: fitCamera, projector: projector, categoryOf: categoryOf, GLOW: GLOW };
+  function capital(text) {
+    var s = String(text || '');
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  }
+
+  /* A box's label without the lifespan the server adds to it, the way the
+   * chart's nameOf() strips it ("Name (1900–1980)" becomes "Name"). */
+  function plainName(node) {
+    var label = String(node.label || node.id || '');
+    var span = node.lifespan ? ' (' + node.lifespan + ')' : '';
+    if (span && label.slice(-span.length) === span) return label.slice(0, -span.length);
+    return label;
+  }
+
+  /* The words on a lit star's label, the chart box's words in one place:
+   * the name, then the relationship and years, then the side or "Research
+   * finding" (never colour alone). Empty lines are left out. */
+  function wordsFor(star) {
+    var node = (star && star.box && star.box.node) || {};
+    var card = node.card || null;
+    if (!card) return [plainName(node), String(node.lifespan || '')].filter(Boolean);
+    var term = String(card.term || '').trim();
+    var side = card.side !== 'self' ? String(card.sideText || '').trim() : '';
+    if (side && term.toLowerCase().indexOf(side.toLowerCase()) !== -1) side = '';
+    var tag = card.research ? 'Research finding' : side;
+    var years = card.years || (card.living ? 'Living' : '');
+    return [card.name ? String(card.name) : plainName(node), [capital(term), years].filter(Boolean).join(', '), tag].filter(Boolean);
+  }
+
+  var parts = { placeStars: placeStars, pathTo: pathTo, fitCamera: fitCamera, projector: projector, categoryOf: categoryOf, wordsFor: wordsFor, GLOW: GLOW };
   if (typeof module === 'object' && module && module.exports) module.exports = parts;
   if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
@@ -290,11 +331,6 @@
     return c;
   }
 
-  function capital(text) {
-    var s = String(text || '');
-    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-  }
-
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -305,19 +341,19 @@
     ctx.closePath();
   }
 
-  /* opts: still() -> true while nothing may move (Reduce Motion), solid
-   * (Reduce Transparency: no glow), focusLabel, ringName(gen) and
-   * descName(level) for the generation labels, onLight(id|null) when the
-   * pointer lights a star, onOpen(id) for a click or a second tap. */
-  function mount(host, layout, opts) {
+  /* canvas: the hidden canvas history.js made with the box (this draws into
+   * it and adds nothing to the page); it fills its parent, whose size it
+   * follows. opts: still() -> true while nothing may move (Reduce Motion),
+   * solid (Reduce Transparency: no glow), focusLabel, ringName(gen) and
+   * descName(level) for the generation labels, onDrawn() after the first
+   * picture, onLight(id|null) when the pointer lights a star, onOpen(id) for
+   * a click or a second tap. */
+  function mount(canvas, layout, opts) {
     var scene = placeStars(layout);
-    if (!scene || !scene.focus) return null;
-    var canvas = document.createElement('canvas');
-    canvas.setAttribute('aria-hidden', 'true');
-    canvas.className = 'fh-skycanvas';
+    var host = canvas ? canvas.parentNode : null;
+    if (!scene || !scene.focus || !host || !canvas.getContext) return null;
     var ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    host.appendChild(canvas);
     var sprites = {};
     Object.keys(GLOW).forEach(function (k) { sprites[k] = opts.solid ? null : glowSprite(GLOW[k]); });
 
@@ -339,6 +375,7 @@
     var drawn = [];
     var down = null;
     var dead = false;
+    var shown = false;
 
     function makeDust() {
       var rand = seeded(20261002);
@@ -403,18 +440,19 @@
       return hit;
     }
 
-    /* A lit person's name and relationship, beside their star. */
+    /* A lit person's name, relationship and side, beside their star: the
+     * name on the first line, the rest one line each below it. */
     function label(lines, x, y, edge) {
       var padX = 9;
-      var lineH = [17, 15];
+      var nameH = 17;
+      var moreH = 15;
+      var more = lines.slice(1);
       ctx.font = '700 13px ' + FONT;
       var tw = ctx.measureText(lines[0]).width;
-      if (lines[1]) {
-        ctx.font = '400 12px ' + FONT;
-        tw = Math.max(tw, ctx.measureText(lines[1]).width);
-      }
+      ctx.font = '400 12px ' + FONT;
+      more.forEach(function (line) { tw = Math.max(tw, ctx.measureText(line).width); });
       var bw = Math.min(w - 12, tw + padX * 2);
-      var bh = 8 + lineH[0] + (lines[1] ? lineH[1] : 0);
+      var bh = 8 + nameH + more.length * moreH;
       var bx = x + 14;
       var by = y - bh / 2;
       if (bx + bw > w - 6) bx = x - 14 - bw;
@@ -435,20 +473,12 @@
       ctx.fillStyle = '#ffffff';
       ctx.font = '700 13px ' + FONT;
       ctx.fillText(lines[0], bx + padX, by + 4 + 13);
-      if (lines[1]) {
-        ctx.fillStyle = '#d7ddf6';
-        ctx.font = '400 12px ' + FONT;
-        ctx.fillText(lines[1], bx + padX, by + 4 + lineH[0] + 12);
-      }
+      ctx.fillStyle = '#d7ddf6';
+      ctx.font = '400 12px ' + FONT;
+      more.forEach(function (line, i) {
+        ctx.fillText(line, bx + padX, by + 4 + nameH + i * moreH + 12);
+      });
       ctx.restore();
-    }
-
-    function wordsFor(star) {
-      var node = star.box.node || {};
-      var card = node.card || null;
-      var name = card && card.name ? String(card.name) : String(node.label || '');
-      var more = card ? [capital(card.term), card.years || ''].filter(Boolean).join(', ') : String(node.lifespan || '');
-      return [name, more];
     }
 
     /* A label in the column at the left of the sky, with a dotted line to
@@ -486,7 +516,7 @@
     function render(t) {
       if (!cam && !resize()) return;
       var opening = phase === 'opening';
-      var open = opening ? t / OPEN_MS : 1;
+      var open = opening ? clamp01(t / OPEN_MS) : 1;
       shownYaw = opening ? REST_YAW - TURN * (1 - easeOut(t / SETTLE_MS)) : yaw;
       var P = projector(cam, shownYaw);
       var pt = { x: 0, y: 0, k: 1, z: 0 };
@@ -512,7 +542,7 @@
       var ringEnds = [];
       ctx.lineWidth = 1;
       scene.rings.forEach(function (ring) {
-        var q = easeOut(open * 1.2 - Math.abs(ring.gen) * 0.06);
+        var q = opened(open, Math.abs(ring.gen) * 0.06);
         if (q <= 0) return;
         var pts = [];
         var left = null;
@@ -538,7 +568,7 @@
 
       /* where every star is this frame */
       var spots = scene.stars.map(function (s) {
-        var q = s.focus ? 1 : easeOut(open - Math.min(0.4, Math.abs(s.gen) * 0.07) - (s.role === 'ancestor' ? 0 : 0.05));
+        var q = s.focus ? 1 : opened(open, Math.min(0.4, Math.abs(s.gen) * 0.07) + (s.role === 'ancestor' ? 0 : 0.05));
         P(s.x * q, s.y * q, s.z * q, pt);
         return { star: s, x: pt.x, y: pt.y, k: pt.k, z: pt.z, q: q };
       });
@@ -647,6 +677,10 @@
         drawn.forEach(function (d) { if (d.star.id === id && (!best || d.star.z > best.star.z)) best = d; });
         if (best) label(wordsFor(best.star), best.x, best.y, GLOW[best.star.cat] || '#ffffff');
       }
+      if (!shown) {
+        shown = true;
+        if (opts.onDrawn) opts.onDrawn();
+      }
     }
 
     function tick(now) {
@@ -722,7 +756,16 @@
       return best;
     }
 
+    /* One finger (or the mouse) turns the sky. A second finger means a
+     * pinch, which belongs to the browser's zoom: the turn stops where it is
+     * and nothing more turns until every finger is up. */
     function onDown(e) {
+      if (e.isPrimary === false) {
+        if (down && down.turning) canvas.style.cursor = 'grab';
+        down = null;
+        spin = 0;
+        return;
+      }
       if (e.button) return;
       down = { x: e.clientX, id: e.pointerId, type: e.pointerType, yaw: phase === 'opening' ? shownYaw : yaw, moved: false, turning: false, lastX: e.clientX, lastT: e.timeStamp, v: 0 };
       spin = 0;
