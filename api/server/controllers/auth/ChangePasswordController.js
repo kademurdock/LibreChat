@@ -11,6 +11,7 @@ const bcrypt = require('bcryptjs');
 const { logger } = require('@librechat/data-schemas');
 const { comparePassword } = require('@librechat/api');
 const { findUser, updateUser } = require('~/models');
+const { isReviewSeat } = require('~/server/services/kadeFunding');
 
 const changePasswordController = async (req, res) => {
   const userId = req.user && (req.user.id || req.user._id);
@@ -18,6 +19,13 @@ const changePasswordController = async (req, res) => {
   const minLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10) || 8;
   if (!userId) {
     return res.status(401).json({ message: 'Sign in first.' });
+  }
+  /* Apple's reviewers and the nightly checks sign in with the review seat's
+   * known password; a reviewer trying this screen must not lock them out. */
+  if (isReviewSeat(req.user)) {
+    return res
+      .status(403)
+      .json({ message: 'The demo account keeps its password so App Review can sign in. Nothing changed.' });
   }
   if (typeof currentPassword !== 'string' || !currentPassword || currentPassword.length > 128) {
     return res.status(400).json({ message: 'Type your current password.' });

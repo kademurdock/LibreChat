@@ -7,6 +7,7 @@ jest.mock('@librechat/api', () => ({
   comparePassword: jest.fn(async (user, candidate, { compare }) => compare(candidate, user.password)),
 }));
 jest.mock('~/models', () => ({ findUser: jest.fn(), updateUser: jest.fn() }));
+jest.mock('~/server/services/kadeFunding', () => ({ isReviewSeat: jest.fn((u) => !!u && u.id === 'review') }));
 
 const { findUser, updateUser } = require('~/models');
 const { changePasswordController } = require('./ChangePasswordController');
@@ -48,6 +49,13 @@ describe('changePasswordController', () => {
   it('refuses without a signed-in user', async () => {
     const res = await run({ currentPassword: 'a', newPassword: 'new-password-2' }, null);
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('keeps the App Review seat\'s password', async () => {
+    const res = await run({ currentPassword: 'old-password-1', newPassword: 'new-password-2' }, { id: 'review' });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(findUser).not.toHaveBeenCalled();
+    expect(updateUser).not.toHaveBeenCalled();
   });
 
   it('says so when the account has no password', async () => {
