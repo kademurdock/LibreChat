@@ -815,7 +815,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         say((preview?'Voice sample queued. ':'Queued. ') + ((r.data.estimate && r.data.estimate.spoken) || '') + ' The page will say when it is ready.');
         startPoll();
       } else {
-        say(r.data.spoken || 'Ready. ' + r.data.seconds + ' seconds of audio, about ' + Math.max(1, Math.round((r.data.costUSD||0)*100)) + ' cents. It is in your library below and in My Creations.');
+        /* Oct 2 2026: a Seed clip that was shortened on the way is said first (the answer's note). */
+        say(r.data.spoken || (r.data.note ? r.data.note + ' ' : '') + 'Ready. ' + r.data.seconds + ' seconds of audio, about ' + Math.max(1, Math.round((r.data.costUSD||0)*100)) + ' cents. It is in your library below and in My Creations.');
         loadLibrary();
       }
       } finally { state.rendering=false;updateRenderControls(); }

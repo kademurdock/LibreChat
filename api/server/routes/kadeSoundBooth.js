@@ -23,6 +23,8 @@ const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP } = re
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
+/* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
+const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
 const router = express.Router();
 const musicReferenceHooks = {
@@ -1091,7 +1093,7 @@ const GUIDE = {
       ],
       settings: [
         { key: 'voice', label: 'Preset voice', hint: 'A built-in voice for a single narrator. Leave it off when you describe the voices or import clips.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
-        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three clean clips under thirty seconds, one person each (WAV, MP3, M4A or OGG). Name them in the script as @Audio1, @Audio2 and @Audio3.', kind: 'clip', max: 3 },
+        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three clean clips, one person each: WAV, MP3, M4A or OGG. An imported clip over 30 seconds is shortened to fit. Name them @Audio1 to @Audio3.', kind: 'clip', max: 3 },
         { key: 'speed', label: 'Speed', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
         { key: 'pitch', label: 'Pitch', hint: 'In semitones: zero is normal; twelve is an octave up, minus twelve an octave down.', kind: 'number', min: -12, max: 12, default: 0, advanced: true },
         { key: 'volume', label: 'Volume', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
@@ -1991,6 +1993,39 @@ async function scriptHandler(req, res) {
   }
 }
 
+/* Oct 2 2026: Seed Audio's reference clips, made to fit before fal sees them
+ * (kadeSoundBoothSeedClips.js). Built on first use from the storage and
+ * reference-registry helpers every other import already uses. */
+let seedClipPreparer = null;
+function seedClips() {
+  if (seedClipPreparer) return seedClipPreparer;
+  const clips = require('./kadeSoundBoothSeedClips');
+  seedClipPreparer = clips.createSeedClipPreparer({
+    resign: async (url, key) => (typeof getNewS3URL === 'function' ? getNewS3URL(url, key) : undefined),
+    seconds: async (user, url) => (typeof musicReferenceSeconds === 'function' ? musicReferenceSeconds(user, url) : undefined),
+    /* A clip's first bytes and its size in one small ranged read, so a clip known to fit is not fetched whole.
+     * Storage that ignores the range sends the file; anything over 256 KB then counts as unknown. */
+    peek: async (url) => {
+      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000, maxRedirects: 0, maxContentLength: 256 * 1024, headers: { Range: 'bytes=0-63' } });
+      const head = Buffer.from(r.data);
+      const range = String((r.headers && r.headers['content-range']) || '');
+      const total = Number((range.match(/\/(\d+)\s*$/) || [])[1]);
+      if (r.status !== 206) return { head, bytes: head.length };
+      return { head, bytes: total > 0 ? total : null };
+    },
+    download: async (url) => {
+      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 25 * 1024 * 1024 });
+      return Buffer.from(r.data);
+    },
+    measure: (buffer) => require('./kadeSoundBoothStitch').durationOf(buffer),
+    fit: (buffer, options) => clips.fitSeedClip(buffer, options),
+    save: (user, buffer, fileName) => saveBufferToS3({ userId: user, buffer, fileName, basePath: 'audios' }),
+    register: (user, url, seconds) => registerMusicReference(user, url, seconds),
+    logger,
+  });
+  return seedClipPreparer;
+}
+
 /* ============================ POST /render ================================ */
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
@@ -2297,11 +2332,13 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           timeout: 20000,
         });
       } catch (e) {
-        const msg = e?.response?.data?.error || e.message;
+        /* The bridge's own sentence when it sent one; never an object said as "[object Object]". */
+        const said = providerError(e, { name: 'The render service' });
+        logger.warn(`[soundbooth/render] scenema start failed project=${project._id} user=${req.user.id}: ${said.detail}`);
         project.state = 'failed';
-        project.lastError = String(msg).slice(0, 300);
+        project.lastError = said.message.slice(0, 300);
         await project.save();
-        return res.status(400).json({ error: msg, projectId: String(project._id) });
+        return res.status(400).json({ error: said.message, projectId: String(project._id) });
       }
       const jobId = r.data?.jobId;
       if (!jobId) throw new Error('The render service did not return a job. Check the library before retrying.');
@@ -2404,7 +2441,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         );
       } catch (e) {
         const status = e?.response?.status;
-        const detail = e?.response?.data?.error?.message || e?.response?.data?.error || e.message;
+        const said = providerError(e, { name: 'Lyria', max: 200 });
         googleKeyAlarm('Lyria songs', e, lyriaKeyName());
         /* The wall, named out loud. A 404 here is almost always the model id,
          * and the id is the one thing about Lyria 3.5 that does not follow its
@@ -2412,11 +2449,11 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
          * back Google's "not found for API version v1beta". */
         const msg = status === 404
           ? `Google does not recognise the model id "${LYRIA_MODEL}". The right one is lyria-3.5, with a DOT - its sibling models use hyphens, which is the usual reason this fails. Fix KADE_LYRIA_MODEL, or clear it and let the default stand.`
-          : `Lyria could not make that: ${String(detail).slice(0, 200)}`;
+          : `Lyria could not make that: ${said.message}`;
         project.state = 'failed';
         project.lastError = String(msg).slice(0, 300);
         await project.save();
-        logger.warn(`[soundbooth/render] lyria failed status=${status} model=${LYRIA_MODEL} user=${req.user.id}: ${String(detail).slice(0, 200)}`);
+        logger.warn(`[soundbooth/render] lyria failed status=${status} model=${LYRIA_MODEL} user=${req.user.id}: ${said.detail}`);
         return res.status(status === 404 ? 500 : 502).json({ error: msg, projectId: String(project._id) });
       }
 
@@ -2538,6 +2575,28 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.state = 'running';
     await project.save();
 
+    /* Oct 2 2026: fal takes a reference clip of up to 30 seconds and 10 MB, as
+     * WAV, MP3 or Ogg Opus. Her 32.6-second voice clip failed three renders in a
+     * row. Each clip in her own storage is checked first; a long one is cut to
+     * 29.5 seconds (at a pause when there is one) into a stored copy that later
+     * renders reuse, and the answer says so (kadeSoundBoothSeedClips.js). The
+     * project keeps her own clips in audio_urls, so switching it to AuK edit
+     * later still works on the whole recording; the copies Seed heard are
+     * recorded beside them as seed_sent_urls. */
+    let clipNotes = [];
+    /* What fal is sent: every clip signed again (so one from an old project is not an expired link), and a copy in place of a clip that needed one. */
+    let sentUrls = null;
+    if (opts.audio_urls?.length) {
+      const prepared = await seedClips()(String(req.user.id), opts.audio_urls);
+      clipNotes = prepared.notes;
+      sentUrls = prepared.urls;
+      if (prepared.fitted) {
+        project.options = { ...opts, seed_sent_urls: prepared.urls };
+        project.markModified('options');
+        logger.info(`[soundbooth/render] seed clips fitted project=${project._id} user=${req.user.id}: ${prepared.logs.join('; ')}`);
+      }
+    }
+
     const hq = opts.audio_quality !== 'low';
     const body = {
       prompt: script,
@@ -2550,7 +2609,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (opts.multilingual) body.multilingual = true;
     /* Clips override a preset: the docs say a reference clip beats a preset
      * name, and sending both is undefined. */
-    if (opts.audio_urls?.length) body.audio_urls = opts.audio_urls;
+    if (opts.audio_urls?.length) body.audio_urls = sentUrls || opts.audio_urls;
     else if (opts.voice) body.voice = opts.voice;
 
     let r;
@@ -2560,16 +2619,21 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         timeout: 180000,
       });
     } catch (e) {
-      const msg = e?.response?.data?.detail || e?.response?.data?.error || e.message;
+      /* fal answers a bad request with a FastAPI `detail` ARRAY; String() of it
+       * was the "[object Object]" she heard, and nothing was logged. */
+      const said = providerError(e, { name: 'Seed Audio', max: 200 });
+      logger.warn(`[soundbooth/render] seed failed status=${said.status || '-'} clips=${(body.audio_urls || []).length} chars=${script.length} project=${project._id} user=${req.user.id}: ${said.detail}`);
+      const error = `Seed Audio could not make that: ${said.message}`;
       project.state = 'failed';
-      project.lastError = String(msg).slice(0, 300);
+      project.lastError = error.slice(0, 300);
       await project.save();
       return res
         .status(502)
-        .json({ error: `Seed Audio could not make that: ${String(msg).slice(0, 200)}`, projectId: String(project._id) });
+        .json({ error, projectId: String(project._id) });
     }
     const audio = r.data?.audio;
     if (!audio?.url) {
+      logger.warn(`[soundbooth/render] seed returned no clip project=${project._id} user=${req.user.id}: ${providerError({ response: { data: r.data } }, { name: 'Seed Audio' }).detail}`);
       project.state = 'failed';
       project.lastError = 'Seed Audio returned no clip.';
       await project.save();
@@ -2619,6 +2683,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       url: audio.url,
       seconds,
       costUSD: priced(costUSD, priceFactor(req.user)),
+      /* What happened to a clip on the way, said before "Ready" on both screens (the phone reads `note`). */
+      note: clipNotes.length ? clipNotes.join(' ') : null,
     });
   } catch (error) {
     logger.error('[soundbooth/render] failed:', error);
@@ -2716,12 +2782,14 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
       throw e;
     }
     const j = r.data || {};
+    /* The bridge's reason as words, whatever shape it arrived in (Oct 2 2026). */
+    const jobError = j.error ? errorText(j.error, { name: 'The render service', max: 300, fallback: 'The render service did not say why.' }) : null;
     const map = { queued: 'queued', running: 'running', done: 'done', failed: 'failed', cancelled: 'cancelled' };
     // An old take must never overwrite the currently rendering take. The
     // conditional update also prevents two polls charging the same finish twice.
     if (map[j.state] && project.jobs.at(-1) === jobId) {
       const set = { state: map[j.state] };
-      if (j.state === 'failed') set.lastError = String(j.error || 'render failed').slice(0, 300);
+      if (j.state === 'failed') set.lastError = (jobError || 'render failed').slice(0, 300);
       const update = { $set: set };
       if (j.state === 'done' && typeof j.costUSD === 'number') update.$inc = { costUSD: j.costUSD };
       const changed = await KadeSoundBoothProject.updateOne({
@@ -2732,13 +2800,17 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
         try { await linkJobAssets([project], req.user.id); }
         catch (e) { logger.warn('[soundbooth] link on done failed: ' + e.message); }
       }
+      /* Logged once, when the failure is first written, with everything the bridge said. */
+      if (changed.modifiedCount && j.state === 'failed') {
+        logger.warn(`[soundbooth/status] job=${jobId} failed project=${project._id} user=${req.user.id}: ${providerError({ response: { data: j.error ?? null } }).detail}`);
+      }
     }
     const d = Math.round(j.result?.durationS || 0);
     return res.json({
       jobId,
       projectId: String(project._id),
       state: j.state,
-      error: j.error || null,
+      error: jobError,
       url: j.result?.url || null,
       durationS: j.result?.durationS || null,
       /* Part 295 review: the bridge reports the real price; a person is shown what they paid (the
@@ -2754,7 +2826,7 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
         j.state === 'done'
           ? `Ready. ${Math.floor(d / 60) ? `${Math.floor(d / 60)} minute${Math.floor(d / 60) === 1 ? '' : 's'} ` : ''}${d % 60} seconds of audio, in the Sound Booth library and My Creations.`
           : j.state === 'failed'
-            ? `That render did not finish. ${String(j.error || '').slice(0, 160)}`
+            ? `That render did not finish. ${(jobError || '').slice(0, 160)}`
             : j.state === 'cancelled'
             ? 'Stopped. Any completed takes are kept.'
           : j.wait?.spoken
@@ -3101,6 +3173,22 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
       outExt = 'wav';
       clipSeconds = norm.seconds;
       clipAdvice = norm.advice;
+      /* Oct 2 2026: Seed Audio refuses a clip over 30 seconds, and this one
+       * used to be stored at up to 45 and told "the first twenty are what
+       * count, and that is fine". A long Seed import is cut here instead, at a
+       * pause when there is one, so Play plays exactly what Seed will hear. */
+      const seedFit = require('./kadeSoundBoothSeedClips');
+      if (typeof norm.seconds === 'number' && norm.seconds > seedFit.SEED_CLIP_TARGET_SECONDS) {
+        try {
+          const fitted = await seedFit.fitSeedClip(norm.buffer, { format: 'wav', cut: true, seconds: norm.seconds });
+          outBuffer = fitted.buffer;
+          clipAdvice = seedFit.sayImportTrim(norm.seconds, fitted, { capped: norm.seconds >= 44.9 });
+          clipSeconds = Math.round((fitted.seconds || fitted.at) * 10) / 10;
+        } catch (e) {
+          logger.warn(`[soundbooth/reference] seed cut failed (stored at ${norm.seconds}s; the render cuts it): ${e.message} ${String(e.stderr || '').slice(-200)}`);
+          clipAdvice = seedFit.sayImportLong(norm.seconds);
+        }
+      }
     }
   } catch (e) {
     logger.warn(`[soundbooth/reference] transcode failed (storing the original): ${e.message} ${String(e.stderr || '').slice(0, 200)}`);
