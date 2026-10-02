@@ -3176,7 +3176,7 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
       const seedFit = require('./kadeSoundBoothSeedClips');
       if (typeof norm.seconds === 'number' && norm.seconds > seedFit.SEED_CLIP_TARGET_SECONDS) {
         try {
-          const fitted = await seedFit.fitSeedClip(norm.buffer, { format: 'wav', cut: true });
+          const fitted = await seedFit.fitSeedClip(norm.buffer, { format: 'wav', cut: true, seconds: norm.seconds });
           outBuffer = fitted.buffer;
           clipAdvice = seedFit.sayImportTrim(norm.seconds, fitted, { capped: norm.seconds >= 44.9 });
           clipSeconds = Math.round((fitted.seconds || fitted.at) * 10) / 10;

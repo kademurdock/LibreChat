@@ -14,12 +14,15 @@
  * reference list already knows is short enough, stored as an MP3 or as a WAV
  * of a size fal takes, is sent without fetching it. A clip longer than 29.5
  * seconds is cut, at a pause near the end if there is one, with a short fade,
- * into a 48 kHz mono WAV (the same shape a Seed import is stored in). A file
+ * into a 48 kHz mono WAV (the same shape a Seed import is stored in). A clip of
+ * 31 seconds or less is only a little over, so a pause counts only in its last
+ * 3 seconds; one earlier would throw away more than the cut needs. A file
  * too big, or in a format fal cannot read, is converted the same way. The copy
  * is stored beside the original as <name>-seed.wav and registered with its
  * length, so the next render finds it and does not cut again. The original is
  * never changed, and the project keeps it. The answer says what happened, in
- * a sentence she can hear.
+ * a sentence she can hear; a render that uses a copy made earlier says so in
+ * a short line.
  *
  * Fails open: anything that goes wrong here, or a check still running after
  * 25 seconds, sends the clip as it was, and the provider's answer
@@ -41,6 +44,10 @@ const SEED_CLIP_LIMIT_SECONDS = 30;
 const SEED_CLIP_TARGET_SECONDS = 29.5;
 /** A cut at a pause keeps at least this much of the clip. */
 const SEED_CLIP_EARLIEST_CUT = 20;
+/** A clip this long or shorter is only a little over: a pause counts only in its last few seconds. */
+const SEED_CLIP_NEAR_SECONDS = 31;
+/** How far back from the end of a clip that is only a little over a pause may be. */
+const SEED_CLIP_NEAR_PAUSE_SECONDS = 3;
 const SEED_CLIP_MAX_BYTES = 10 * 1000 * 1000;
 /** Re-encode a little under the limit; fal may count a megabyte either way. */
 const SEED_CLIP_SAFE_BYTES = 9.5 * 1000 * 1000;
@@ -137,6 +144,19 @@ function chooseCut(silences, { limit = SEED_CLIP_TARGET_SECONDS, earliest = SEED
   return best || { at: limit, pause: false };
 }
 
+/**
+ * The earliest a cut at a pause may be, for a clip of `seconds`. A clip of 31
+ * seconds or less needs only a little taken off, so a pause counts only in its
+ * last 3 seconds (never before 20); otherwise it is cut at 29.5. A longer clip,
+ * or one whose length is not known, keeps the 20-second floor.
+ */
+function earliestCut(seconds) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0 || seconds > SEED_CLIP_NEAR_SECONDS) {
+    return SEED_CLIP_EARLIEST_CUT;
+  }
+  return Math.max(SEED_CLIP_EARLIEST_CUT, Math.round((seconds - SEED_CLIP_NEAR_PAUSE_SECONDS) * 100) / 100);
+}
+
 function silenceArgs(inFile, limit = SEED_CLIP_TARGET_SECONDS) {
   return ['-nostdin', '-hide_banner', '-nostats', '-t', String(limit), '-i', inFile, '-vn', '-af', SILENCE_FILTER, '-f', 'null', '-'];
 }
@@ -150,10 +170,14 @@ function fitArgs(inFile, outFile, { at = null, fade = 0.3 } = {}) {
 }
 
 /**
- * Make the copy Seed Audio will take. `cut: false` only converts.
+ * Make the copy Seed Audio will take. `cut: false` only converts. `seconds`,
+ * the clip's own length when it is known, sets how early a pause may be
+ * (earliestCut).
+ * @param {Buffer} buffer
+ * @param {{ format?: string|null, cut?: boolean, seconds?: number|null }} [options]
  * @returns {Promise<{ buffer: Buffer, seconds: number|null, at: number|null, pause: boolean }>}
  */
-async function fitSeedClip(buffer, { format = null, cut = true } = {}) {
+async function fitSeedClip(buffer, { format = null, cut = true, seconds: clipSeconds = null } = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'booth-seed-'));
   try {
     const inFile = path.join(dir, `in.${String(format || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin'}`);
@@ -167,7 +191,7 @@ async function fitSeedClip(buffer, { format = null, cut = true } = {}) {
       } catch (_) {
         /* no pause found is the same as no pause: cut at the limit */
       }
-      choice = chooseCut(silences);
+      choice = chooseCut(silences, { earliest: earliestCut(clipSeconds) });
     }
     await run(fitArgs(inFile, outFile, { at: choice.at, fade: choice.pause ? 0.3 : 0.5 }), { timeout: 120000 });
     const out = await fs.readFile(outFile);
@@ -217,6 +241,16 @@ function sayTrimmed(label, was, used, pause) {
   if (atLimit(was)) return `${label} was right at Seed Audio's 30-second limit, so to be safe the first ${kept} seconds were used${ending}.`;
   const length = typeof was === 'number' && was > 0 ? `was ${sayLength(was)} seconds` : 'was longer than 30 seconds';
   return `${label} ${length}. Seed Audio takes up to 30, so the first ${kept} seconds were used${ending}.`;
+}
+
+/**
+ * Said when a render uses a cut copy made for an earlier render. She heard the
+ * whole sentence the first time, so this is short:
+ * "Using the 28 and a half second cut of your clip."
+ */
+function sayReused(label, seconds) {
+  const kept = typeof seconds === 'number' && seconds > 0 ? sayHalf(seconds) : sayHalf(SEED_CLIP_TARGET_SECONDS);
+  return `Using the ${kept} second cut of ${String(label).toLowerCase()}.`;
 }
 
 function sayConverted(label, why) {
@@ -286,7 +320,7 @@ function fileExtension(fileName) {
  *   peek?: (url: string) => Promise<{ head: Buffer, bytes: number|null }>,
  *   download: (url: string) => Promise<Buffer>,
  *   measure: (buffer: Buffer) => Promise<number|null>,
- *   fit: (buffer: Buffer, options: { format: string|null, cut: boolean }) => Promise<{ buffer: Buffer, seconds: number|null, at: number|null, pause: boolean }>,
+ *   fit: (buffer: Buffer, options: { format: string|null, cut: boolean, seconds: number }) => Promise<{ buffer: Buffer, seconds: number|null, at: number|null, pause: boolean }>,
  *   save: (userId: string, buffer: Buffer, fileName: string) => Promise<string>,
  *   register: (userId: string, url: string, seconds: number|null) => Promise<void>,
  *   logger?: { info: Function, warn: Function },
@@ -342,7 +376,7 @@ function createSeedClipPreparer(deps) {
         return {
           url: copyUrl,
           fitted: true,
-          note: cut ? sayTrimmed(label, was, copySeconds, copySeconds <= SEED_CLIP_TARGET_SECONDS - 0.08) : null,
+          note: cut ? sayReused(label, copySeconds) : null,
           log: `${own.file} -> ${copy} (kept from an earlier render, ${copySeconds}s)`,
         };
       }
@@ -363,7 +397,7 @@ function createSeedClipPreparer(deps) {
     }
     let fitted;
     try {
-      fitted = await deps.fit(buffer, { format, cut: plan.cut });
+      fitted = await deps.fit(buffer, { format, cut: plan.cut, seconds });
     } catch (e) {
       log.warn(`[soundbooth/seed-clip] could not fit ${own.file} (${plan.why.join(', ')}; sending it as it is): ${e && e.message} ${String((e && e.stderr) || '').slice(-200)}`);
       return { url: fresh };
@@ -431,6 +465,8 @@ module.exports = {
   SEED_CLIP_LIMIT_SECONDS,
   SEED_CLIP_TARGET_SECONDS,
   SEED_CLIP_EARLIEST_CUT,
+  SEED_CLIP_NEAR_SECONDS,
+  SEED_CLIP_NEAR_PAUSE_SECONDS,
   SEED_CLIP_MAX_BYTES,
   SEED_CLIP_SAFE_BYTES,
   SEED_PREP_DEADLINE_MS,
@@ -438,12 +474,14 @@ module.exports = {
   seedClipPlan,
   parseSilences,
   chooseCut,
+  earliestCut,
   silenceArgs,
   fitArgs,
   fitSeedClip,
   sayHalf,
   sayLength,
   sayTrimmed,
+  sayReused,
   sayConverted,
   sayImportTrim,
   sayImportLong,

@@ -82,6 +82,29 @@ test('the cut: the latest pause after twenty seconds, a little way into the quie
   }
 });
 
+test('a clip only a little over: a pause counts only in its last 3 seconds, else the cut is at 29.5', () => {
+  /* earliest = max(20, seconds - 3) for a clip of 31 seconds or less; 20 for anything longer or unknown. */
+  assert.equal(clips.earliestCut(31), 28);
+  assert.equal(clips.earliestCut(30.5), 27.5);
+  assert.equal(clips.earliestCut(30), 27);
+  assert.equal(clips.earliestCut(29.8), 26.8);
+  assert.equal(clips.earliestCut(31.01), 20, 'over 31: the 20-second floor');
+  assert.equal(clips.earliestCut(47), 20);
+  assert.equal(clips.earliestCut(22), 20, 'never under 20');
+  for (const unknown of [undefined, null, NaN, 0, -3, '30']) assert.equal(clips.earliestCut(unknown), 20);
+  assert.equal(clips.SEED_CLIP_NEAR_SECONDS, 31);
+  assert.equal(clips.SEED_CLIP_NEAR_PAUSE_SECONDS, 3);
+  /* Her breaths every 3.2 seconds: a 30.5-second clip cuts at the one at 28.2, not the one at 25. */
+  const breaths = [{ start: 21.8, end: 22.4 }, { start: 25, end: 25.6 }, { start: 28.2, end: 28.8 }];
+  assert.deepEqual(clips.chooseCut(breaths, { earliest: clips.earliestCut(30.5) }), { at: 28.5, pause: true });
+  /* With no pause in its last 3 seconds, it is cut at 29.5: half a second gone, not five. */
+  const early = [{ start: 21.8, end: 22.4 }, { start: 25, end: 25.6 }];
+  assert.deepEqual(clips.chooseCut(early, { earliest: clips.earliestCut(30.5) }), { at: 29.5, pause: false });
+  assert.deepEqual(clips.chooseCut(early, { earliest: clips.earliestCut(30) }), { at: 29.5, pause: false });
+  /* A longer clip still takes the pause at 25. */
+  assert.deepEqual(clips.chooseCut(early, { earliest: clips.earliestCut(33) }), { at: 25.3, pause: true });
+});
+
 test('the ffmpeg argument lists, exactly', () => {
   assert.deepEqual(clips.silenceArgs('/tmp/in.mp3'), ['-nostdin', '-hide_banner', '-nostats', '-t', '29.5', '-i', '/tmp/in.mp3', '-vn', '-af', 'silencedetect=noise=-35dB:d=0.25', '-f', 'null', '-']);
   assert.deepEqual(clips.fitArgs('/tmp/in.mp3', '/tmp/seed.wav', { at: 28.5, fade: 0.3 }), [
@@ -114,9 +137,15 @@ test('the sentences she hears', () => {
   assert.equal(clips.sayImportTrim(29.8, { seconds: 29.5, pause: false }), 'Seed Audio takes clips up to 30 seconds. Yours was right at that limit, so to be safe the first 29 and a half seconds were kept.');
   assert.equal(clips.sayImportLong(32.6), 'Seed Audio takes clips up to 30 seconds. This one is 33, so when you render, the first 29 and a half seconds are used.');
   assert.equal(clips.sayImportLong(29.9), 'Seed Audio takes clips up to 30 seconds. This one is right at that limit, so to be safe, when you render, the first 29 and a half seconds are used.');
+  /* A render that uses a cut made earlier: she heard the whole sentence then, so a short line now. */
+  assert.equal(clips.sayReused('Your clip', 28.4), 'Using the 28 and a half second cut of your clip.');
+  assert.equal(clips.sayReused('Clip 2', 29.5), 'Using the 29 and a half second cut of clip 2.');
+  assert.equal(clips.sayReused('Clip 3', 26.02), 'Using the 26 second cut of clip 3.');
+  assert.equal(clips.sayReused('Your clip', undefined), 'Using the 29 and a half second cut of your clip.');
   const said = [
     clips.sayTrimmed('Clip 1', 31, 29.5, true), clips.sayTrimmed('Clip 1', 29.9, 29.5, true), clips.sayConverted('Clip 1', ['big']),
     clips.sayImportTrim(40, { seconds: 29.5 }), clips.sayImportTrim(29.7, { seconds: 29.5 }), clips.sayImportLong(40), clips.sayImportLong(29.7),
+    clips.sayReused('Clip 1', 28.4),
   ];
   for (const line of said) assert.doesNotMatch(line, /[;:()]/, 'plain sentences, nothing a screen reader stumbles on');
 });
@@ -179,14 +208,15 @@ test('her clip: cut once, stored beside the original, said in one sentence', asy
   assert.deepEqual(out.notes, ['Your clip was 33 seconds. Seed Audio takes up to 30, so the first 28 and a half seconds were used, ending at a pause.']);
   assert.equal(out.fitted, 1);
   assert.deepEqual(w.saves, [`audios/${USER}/soundbooth-ref-muq-seed.wav`]);
-  assert.deepEqual(w.fits, [{ format: 'wav', cut: true }]);
+  assert.deepEqual(w.fits, [{ format: 'wav', cut: true, seconds: 32.6 }], 'the cut is told how long the clip is, so it knows how early a pause may be');
   assert.equal(w.registry.get(`${USER}|https://store.test/bucket/audios/${USER}/soundbooth-ref-muq-seed.wav`), 28.4, 'the copy is registered with its length');
   assert.equal(w.registry.get(`${USER}|https://store.test/bucket/audios/${USER}/soundbooth-ref-muq.wav`), 32.6, 'and so is the original');
 
-  /* The next render: no download, no cut, no save; the same copy and the same sentence. */
+  /* The next render: no download, no cut, no save; the same copy, said in a short line. */
   const again = await w.prepare(USER, [original]);
   assert.deepEqual(again.urls, [w.signed(`audios/${USER}/soundbooth-ref-muq-seed.wav`)]);
-  assert.deepEqual(again.notes, out.notes);
+  assert.deepEqual(again.notes, ['Using the 28 and a half second cut of your clip.']);
+  assert.equal(again.fitted, 1);
   assert.equal(w.saves.length, 1);
   assert.equal(w.fits.length, 1);
   assert.equal(w.downloads.length, 1);
@@ -201,6 +231,11 @@ test('a clip that fits goes as it is, signed again; three clips are named by pla
   assert.deepEqual(out.urls, [plain.signed(`audios/${USER}/a.wav`), plain.signed(`audios/${USER}/b-seed.wav`, 'saved'), plain.signed(`audios/${USER}/c.wav`)]);
   assert.deepEqual(out.notes, ['Clip 2 was 47 seconds. Seed Audio takes up to 30, so the first 28 and a half seconds were used, ending at a pause.']);
   assert.equal(out.fitted, 1);
+  /* Again: clip 2's cut is used as it was, and said in a short line by its place. */
+  const again = await plain.prepare(USER, ['a', 'b', 'c'].map((k) => plain.signed(`audios/${USER}/${k}.wav`, 'old')));
+  assert.deepEqual(again.urls, [plain.signed(`audios/${USER}/a.wav`), plain.signed(`audios/${USER}/b-seed.wav`), plain.signed(`audios/${USER}/c.wav`)]);
+  assert.deepEqual(again.notes, ['Using the 28 and a half second cut of clip 2.']);
+  assert.equal(plain.fits.length, 1);
 });
 
 test('a clip that is not hers, or not in our storage, is sent untouched and never fetched', async () => {
@@ -269,7 +304,7 @@ test('known to fit by length, but not by size or format, is still fetched and fi
   odd.objects.set(`audios/${USER}/odd.wav`, Buffer.concat([Buffer.from('fLaC\x00\x00\x00\x22', 'latin1'), Buffer.alloc(64)]));
   await odd.prepare(USER, [odd.signed(`audios/${USER}/odd.wav`, 'old')]);
   assert.deepEqual(odd.downloads, [`audios/${USER}/odd.wav`]);
-  assert.deepEqual(odd.fits, [{ format: 'flac', cut: false }]);
+  assert.deepEqual(odd.fits, [{ format: 'flac', cut: false, seconds: 10 }]);
 });
 
 test('checking stops at the deadline: a stalled clip, and any after it, go as they are', async () => {
@@ -298,12 +333,17 @@ function ff(args) {
   return new Promise((resolve, reject) => execFile(FFMPEG, args, { timeout: 60000 }, (e, so, se) => (e ? reject(new Error(String(se).slice(-400))) : resolve())));
 }
 const ffmpegReady = new Promise((resolve) => execFile(FFMPEG, ['-version'], { timeout: 15000 }, (e) => resolve(!e)));
-/** A tone of `seconds` as an `ext` file. With `gaps`, 2.6 s of tone then 0.6 s of quiet, like speech with breaths. */
-async function tone(seconds, { gaps = false, ext = 'mp3' } = {}) {
+/**
+ * A tone of `seconds` as an `ext` file. With `gaps`, 2.6 s of tone then 0.6 s of quiet, like speech
+ * with breaths (quiet from 2.6, 5.8, 9, … 25, 28.2); with `gapsUntil` too, steady tone from then on.
+ */
+async function tone(seconds, { gaps = false, gapsUntil = null, ext = 'mp3' } = {}) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'seed-tone-'));
   const f = path.join(dir, `a.${ext}`);
+  const breathing = 'if(lt(mod(t,3.2),2.6),0.8,0)';
+  const level = gapsUntil ? `if(lt(t,${gapsUntil}),${breathing},0.8)` : breathing;
   const source = gaps
-    ? `sine=frequency=330:sample_rate=44100:duration=${seconds},volume='if(lt(mod(t,3.2),2.6),0.8,0)':eval=frame`
+    ? `sine=frequency=330:sample_rate=44100:duration=${seconds},volume='${level}':eval=frame`
     : `sine=frequency=220:sample_rate=44100:duration=${seconds}`;
   const codec = { mp3: ['-c:a', 'libmp3lame', '-b:a', '128k'], m4a: ['-c:a', 'aac', '-b:a', '96k'], wav: ['-c:a', 'pcm_s16le'] }[ext];
   await ff(['-nostdin', '-hide_banner', '-v', 'error', '-y', '-f', 'lavfi', '-i', source, '-ac', '2', ...codec, f]);
@@ -328,6 +368,23 @@ test('real ffmpeg: a 33-second clip with pauses is cut at one; a steady 40-secon
   const converted = await clips.fitSeedClip(await tone(8, { ext: 'm4a' }), { format: 'm4a', cut: false });
   assert.equal(clips.sniffFormat(converted.buffer), 'wav');
   assert.ok(Math.abs(converted.seconds - 8) < 0.2, `kept whole: ${converted.seconds}`);
+});
+
+test('real ffmpeg: a 30.5-second clip takes a pause only in its last 3 seconds', async (t) => {
+  if (!(await ffmpegReady)) return t.skip('ffmpeg is not installed here; set FFMPEG_PATH and FFPROBE_PATH');
+  /* Breaths all the way: the one at 28.2 is in the window, so the cut is there. */
+  const late = await clips.fitSeedClip(await tone(30.5, { gaps: true, ext: 'wav' }), { format: 'wav', cut: true, seconds: 30.5 });
+  assert.equal(late.pause, true);
+  assert.ok(late.seconds >= 28.2 && late.seconds <= 29.4, `cut at ${late.seconds}`);
+  /* The last breath at 25, then steady: that pause is too early for a clip this short, so 29.5. */
+  const early = await tone(30.5, { gaps: true, gapsUntil: 26, ext: 'wav' });
+  const steady = await clips.fitSeedClip(early, { format: 'wav', cut: true, seconds: 30.5 });
+  assert.equal(steady.pause, false);
+  assert.ok(Math.abs(steady.seconds - 29.5) < 0.05, `cut at ${steady.seconds}`);
+  /* Not told its length, the same clip keeps the 20-second floor and is cut at the breath at 25. */
+  const floor = await clips.fitSeedClip(early, { format: 'wav', cut: true });
+  assert.equal(floor.pause, true);
+  assert.ok(floor.seconds >= 25 && floor.seconds <= 25.6, `cut at ${floor.seconds}`);
 });
 
 /* ---------------- the booth's routes, with a stub fal and stub storage ---------------- */
@@ -507,7 +564,7 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
     const r = await call('/render', { engine: 'seed', script, audio_urls: [signed(herClipKey, 'old')] });
     assert.equal(r.status, 200);
     assert.equal(keyOf(world.fal.at(-1).body.audio_urls[0]), keyOf(copyUrl));
-    assert.match(r.data.note, /^Your clip was 33 seconds\./);
+    assert.match(r.data.note, /^Using the \d+( and a half)? second cut of your clip\.$/, 'a short line, not the whole sentence again');
     assert.equal(world.saves.length, savesBefore);
     assert.equal(world.gets.filter((u) => keyOf(u) === herClipKey).length, fetchesBefore);
   });
@@ -569,6 +626,15 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
     assert.equal(world.peeks.filter((u) => keyOf(u) === keyOf(r.data.url)).length, 1, 'peeked at once');
     const p = await Project.findById(rendered.data.projectId);
     assert.equal(p.options.seed_sent_urls, undefined, 'nothing was swapped, so nothing extra is recorded');
+  });
+
+  await t.test('a Seed import only a little over 30 seconds is cut at 29.5 when its last pause is too early', async () => {
+    /* 30.5 seconds; its last breath is at 25. Cutting there would throw away five seconds to save half of one. */
+    const r = await upload('seed', await tone(30.5, { gaps: true, gapsUntil: 26, ext: 'wav' }), 'voice.wav', 'audio/wav');
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.ok(Math.abs(r.data.seconds - 29.5) < 0.1, `imported at ${r.data.seconds}s`);
+    assert.equal(r.data.spoken.includes('Seed Audio takes clips up to 30 seconds. Yours was 30.5, so the first 29 and a half seconds were kept.'), true, r.data.spoken);
+    assert.doesNotMatch(r.data.spoken, /ending at a pause/);
   });
 
   await t.test('an AuK import keeps the whole original, as before', async () => {

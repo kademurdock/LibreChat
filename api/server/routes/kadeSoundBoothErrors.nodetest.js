@@ -5,7 +5,24 @@
  * Run: node --test api/server/routes/kadeSoundBoothErrors.nodetest.js */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { providerError, errorText, redactUrls } = require('./kadeSoundBoothErrors');
+const { providerError, errorText, redactUrls, sayLink, logInput } = require('./kadeSoundBoothErrors');
+
+/** Runs `fn` with only the storage settings in `env` (the server reads them each time a link is said). */
+function withStorage(env, fn) {
+  const keys = ['AWS_ENDPOINT_URL', 'AWS_BUCKET_NAME', 'KADE_MEDIA_BUCKET', 'AWS_REGION'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  Object.assign(process.env, env);
+  try {
+    return fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+const OUR_STORAGE = { AWS_ENDPOINT_URL: 'https://store.test', AWS_BUCKET_NAME: 'bucket' };
 
 /** An axios-shaped failure: what `axios.post` throws when the server answers with an error status. */
 function answered(status, data, message = `Request failed with status code ${status}`) {
@@ -163,12 +180,43 @@ test('a link is said as its file name, never its address, signature or account f
   assert.doesNotMatch(said.detail, /deadbeef/);
   const account = '6a0000000000000000000abc';
   assert.equal(errorText(`Could not fetch https://store.test/bucket/audios/${account}/soundbooth-ref-x.mp3.`), 'Could not fetch soundbooth-ref-x.mp3.');
-  assert.equal(errorText('Could not fetch https://store.test/bucket/clips/abc?sig=1, try again'), 'Could not fetch the clip, try again', 'no file name: "the clip"');
+  assert.equal(withStorage(OUR_STORAGE, () => errorText('Could not fetch https://store.test/bucket/clips/abc?sig=1, try again')), 'Could not fetch the clip, try again', 'in our storage, no file name: "the clip"');
   assert.equal(errorText(`NoSuchKey: audios/${account}/soundbooth-ref-x.wav`), 'NoSuchKey: soundbooth-ref-x.wav', 'a storage path loses its account folder');
   assert.equal(errorText(`No balance left for user ${account}.`), 'No balance left for user.');
   for (const text of [said.message, errorText(`see https://store.test/bucket/audios/${account}/a.wav?X-Amz-Signature=1`)]) {
     assert.doesNotMatch(text, /https?:|X-Amz|\[signed\]|6a0{3}/);
   }
+});
+
+test('"the clip" only for an audio file, our storage or fal.media; any other link is its host, or "a link"', () => {
+  withStorage(OUR_STORAGE, () => {
+    /* A link that is not a clip: a help page, a model's address, a page with a file name. */
+    assert.equal(errorText('Quota exceeded. See https://ai.google.dev/gemini-api/docs/rate-limits.'), 'Quota exceeded. See ai.google.dev.');
+    assert.equal(errorText('Model https://fal.run/bytedance/seed-audio-1.0 is warming up'), 'Model fal.run is warming up');
+    assert.equal(errorText('Read https://www.example.com/help/limits.html first'), 'Read example.com first', 'a page is not a clip, and its file name is not said');
+    assert.equal(errorText('Could not reach http://10.0.0.5:8000/run'), 'Could not reach a link', 'an address in numbers is not read out');
+    assert.equal(sayLink('http://localhost:3080/api/x'), 'a link');
+    assert.equal(sayLink('http://[::1]:8000/run'), 'a link');
+    assert.equal(sayLink('https://store.test/otherbucket/clips/abc'), 'store.test', 'the same host, but not our bucket');
+    /* A clip: an audio file anywhere, or anything in our storage or on fal.media. */
+    assert.equal(sayLink('https://elsewhere.test/a/b/voice.wav?sig=1'), 'voice.wav');
+    assert.equal(sayLink(`https://elsewhere.test/a/${'x'.repeat(90)}.mp3`), 'the clip', 'an audio file whose name is too long to say');
+    assert.equal(sayLink('https://store.test/bucket/clips/abc?sig=1'), 'the clip');
+    assert.equal(sayLink('https://bucket.store.test/clips/abc'), 'the clip', 'our bucket in front of the host');
+    assert.equal(sayLink('https://v3b.fal.media/files/b/abc123'), 'the clip');
+    assert.equal(sayLink('https://fal.media/files/b/abc123'), 'the clip');
+    assert.equal(sayLink('https://notfal.media/files/b/abc123'), 'notfal.media');
+  });
+  /* With no endpoint set, our storage is Amazon's own host. */
+  withStorage({ AWS_BUCKET_NAME: 'bucket', AWS_REGION: 'us-east-1' }, () => {
+    assert.equal(sayLink('https://bucket.s3.us-east-1.amazonaws.com/clips/abc'), 'the clip');
+    assert.equal(sayLink('https://s3.amazonaws.com/bucket/clips/abc'), 'the clip');
+    assert.equal(sayLink('https://store.test/bucket/clips/abc'), 'store.test');
+  });
+  /* The whole path, from fal's answer to the words. */
+  const said = withStorage(OUR_STORAGE, () => providerError(answered(429, { error: { message: 'Resource exhausted. Please see https://ai.google.dev/gemini-api/docs/rate-limits for details.' } }), { name: 'Lyria' }));
+  assert.equal(said.message, 'Resource exhausted. Please see ai.google.dev for details.');
+  assert.doesNotMatch(said.message, /the clip/);
 });
 
 test('an engine error keeps its XML tag names; only an HTML page loses its markup', () => {
@@ -179,27 +227,36 @@ test('an engine error keeps its XML tag names; only an HTML page loses its marku
   assert.equal(errorText('Keep 2 < 3 as it is'), 'Keep 2 < 3 as it is');
 });
 
-test('a rejected value echoed back is cut to 80 characters before it is logged', () => {
+test('a rejected value echoed back is logged only as its type and length, unless it is a link', () => {
   const script = 'Narrator (warm): ' + 'A long line of her own writing that must never sit whole in a log. '.repeat(30);
   const said = providerError(answered(422, { detail: [{ loc: ['body', 'prompt'], msg: 'String should have at most 2048 characters', type: 'string_too_long', input: script, ctx: { max_length: 2048 } }] }), { name: 'Seed Audio' });
   const logged = JSON.parse(said.detail.replace(/^status=422 code=\S+ body=/, ''));
-  assert.equal(logged.detail[0].input.length, 80);
-  assert.ok(logged.detail[0].input.startsWith('Narrator (warm): A long line'));
-  assert.ok(logged.detail[0].input.endsWith('…'));
+  assert.deepEqual(logged.detail[0].input, { type: 'string', length: script.length });
   assert.equal(logged.detail[0].ctx.max_length, 2048, 'everything else is kept');
-  assert.ok(!said.detail.includes(script.slice(0, 200)));
-  /* A link keeps its end, where the file name is, and still loses its signature. */
+  assert.ok(!said.detail.includes('Narrator'), 'not one word of her script reaches the log');
+  /* A link is kept whole, without its signature. */
   const link = 'https://s3.us-east-005.backblazeb2.com/bucket/audios/6a0000000000000000000abc/soundbooth-ref-mq3x9k2-a1b2c3.wav?X-Amz-Signature=deadbeef';
   const clip = providerError(answered(422, { detail: [{ loc: ['body', 'audio_urls', 0], msg: 'too long', type: 'audio_duration_too_long', input: link }] }), { name: 'Seed Audio' });
   const input = JSON.parse(clip.detail.replace(/^status=422 code=\S+ body=/, '')).detail[0].input;
-  assert.ok(input.length <= 80, input);
-  assert.match(input, /soundbooth-ref-mq3x9k2-a1b2c3\.wav\?\[signed\]$/);
+  assert.equal(input, 'https://s3.us-east-005.backblazeb2.com/bucket/audios/6a0000000000000000000abc/soundbooth-ref-mq3x9k2-a1b2c3.wav?[signed]');
   assert.doesNotMatch(clip.detail, /deadbeef/);
-  /* A bare list (no `detail`) is cut the same way, and a short input is left alone. */
+  /* A bare list (no `detail`) is logged the same way, however short its input. */
   const bare = providerError(answered(400, [{ msg: 'bad', input: script }, { msg: 'ok', input: 'short' }]), { name: 'X' });
   const list = JSON.parse(bare.detail.replace(/^status=400 code=\S+ body=/, ''));
-  assert.equal(list[0].input.length, 80);
-  assert.equal(list[1].input, 'short');
+  assert.deepEqual(list[0].input, { type: 'string', length: script.length });
+  assert.deepEqual(list[1].input, { type: 'string', length: 5 });
+  /* Every other shape: its type and its length (items for a list, characters for the rest). */
+  assert.deepEqual(logInput([link, link]), { type: 'array', length: 2 });
+  assert.deepEqual(logInput({ text: 'her words' }), { type: 'object', length: 20 });
+  assert.deepEqual(logInput(3.5), { type: 'number', length: 3 });
+  assert.deepEqual(logInput(true), { type: 'boolean', length: 4 });
+  assert.deepEqual(logInput(null), { type: 'null', length: 0 });
+  assert.deepEqual(logInput('a line with https://example.com/x in it'), { type: 'string', length: 39 }, 'words with a link in them are still words');
+  /* A very long link keeps its end, where the file name is. */
+  const long = `https://store.test/${'a/'.repeat(200)}voice.wav?sig=1`;
+  const kept = logInput(long);
+  assert.ok(kept.length <= 300, kept.length);
+  assert.match(kept, /^….*\/voice\.wav\?\[signed\]$/);
 });
 
 test('redactUrls keeps the address and drops the signature', () => {
