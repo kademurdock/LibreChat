@@ -128,11 +128,14 @@ function withSpeakVoice(xml, voice) {
  *
  * Opening directions (<action>tender</action> alone on its line) do not end the
  * header lines: a VOICE:, SEX: or GENDER: line after them still moves up, and
- * the directions stay where they were. `words` limits which header words count
- * at all; /render passes VOICE_HEADER_WORDS, because in XML typed by hand
- * "Who: is there at the door?" is a spoken line, not a header.
+ * the directions stay where they were, but only when written in capitals
+ * ("Voice: that is all I have left." after a direction is a spoken line).
+ * `strict` is for XML typed or pasted by hand (/render): there a line counts
+ * when its word is VOICE/SEX/GENDER, or any header word written in capitals
+ * the way every screen and the desk write them (SCENE:, LANGUAGE:), so
+ * "Who: is there at the door?" and "Scene: one, take two." stay spoken.
  */
-function liftBodyHeaders(xml, { words } = {}) {
+function liftBodyHeaders(xml, { strict = false } = {}) {
   const s = String(xml || '');
   const open = s.match(/<speak\b[^>]*>/i);
   if (!open) return { xml: s, lifted: {} };
@@ -149,8 +152,9 @@ function liftBodyHeaders(xml, { words } = {}) {
     const m = line.match(HEADER_LINE);
     const word = m ? m[1].toLowerCase() : '';
     if (!m || !HEADER_KEYS[word] || m[2].includes('<')) break;
-    if (words && !words.includes(word)) break;
-    if (afterDirection && !VOICE_HEADER_WORDS.includes(word)) break;
+    const capitals = m[1] === m[1].toUpperCase();
+    if (strict && !VOICE_HEADER_WORDS.includes(word) && !capitals) break;
+    if (afterDirection && !(VOICE_HEADER_WORDS.includes(word) && capitals)) break;
     lifted[HEADER_KEYS[word]] = unescapeXml(m[2]);
   }
   if (!Object.keys(lifted).length) return { xml: s, lifted };

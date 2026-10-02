@@ -819,7 +819,9 @@ function aukVoiceOff(chosen, writerVoice, readback) {
  *  being off, never her script (review 1). */
 function aukVoiceWarning(voiceOff, mode) {
   if (!voiceOff) return '';
-  if (mode === 'format' && voiceOff.by === 'readback') {
+  /* Turn my words into a script keeps her words and renders her voice, so a
+   * mismatch there can only be the writer's description, whichever caught it. */
+  if (mode === 'format') {
     return `The description of what you will hear says ${voiceOff.who} is speaking, but your words are kept as you wrote them and the voice you chose is used. Only that description is off.`;
   }
   return `The writer wrote this for ${voiceOff.who}, not the voice you chose. Ask for the script again, or change the voice, before you generate.`;
@@ -2212,7 +2214,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     script = sanitizeScenema(script).script;
     /* A VOICE: line typed inside raw XML would be spoken; it moves into the tag (see liftBodyHeaders).
      * Only VOICE:, SEX: and GENDER: here: "Who: is there at the door?" is a spoken line (review 1). */
-    script = liftBodyHeaders(script, { words: VOICE_HEADER_WORDS }).xml;
+    script = liftBodyHeaders(script, { strict: true }).xml;
     const chosenVoice = String(b.voice_description || '').trim().slice(0, 600);
     if (chosenVoice) {
       /* Describe a new voice wins over a voice written in the script, as it always has. Oct 2 2026:

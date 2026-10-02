@@ -512,7 +512,9 @@ test('review 1 (6): in "Turn my words into a script" a readback alone naming som
   const { aukVoiceOff, aukVoiceWarning } = format.internals;
   assert.deepEqual({ ...aukVoiceOff(GIRL, 'A woman in her thirties.', '') }, { who: 'a woman', by: 'voice' });
   assert.deepEqual({ ...aukVoiceOff(GIRL, GIRL, readbackOff.slice(10)) }, { who: 'a woman', by: 'readback' });
-  assert.match(aukVoiceWarning({ who: 'a woman', by: 'voice' }, 'format'), /^The writer wrote this for a woman/);
+  /* Review 2: in format mode her words and her voice are kept, so even a wrong voice= is only the description being off. */
+  assert.match(aukVoiceWarning({ who: 'a woman', by: 'voice' }, 'format'), /^The description of what you will hear says a woman is speaking/);
+  assert.match(aukVoiceWarning({ who: 'a woman', by: 'voice' }, 'write'), /^The writer wrote this for a woman/);
   assert.equal(aukVoiceWarning(null, 'format'), '');
 });
 
@@ -552,7 +554,7 @@ test('review 1 (8): the screenplay for older screens has no SEX: line, and VOICE
   assert.match(screenplay.speakToScreenplay(`<speak voice="${cowboy}" gender="male">\nHello.\n</speak>`), /^VOICE: .*\nSEX: male\n/, 'the module default still writes SEX: for anyone else who asks');
 });
 
-test('review 1 (9): /render lifts only VOICE:, SEX: and GENDER: out of raw XML', async () => {
+test('review 1 (9): /render lifts header lines out of raw XML, but not spoken lines that start with a header word', async () => {
   for (const line of ['Who: is there at the door?', 'Where: did you put it?', 'Scene: one, take two.', 'Speaker: is this thing on?', 'Language: that is what I teach.']) {
     const desk = booth();
     await desk.render({ script: `<speak voice="A calm man." gender="male">\n${line}\n</speak>` });
@@ -563,6 +565,18 @@ test('review 1 (9): /render lifts only VOICE:, SEX: and GENDER: out of raw XML',
   await typed.render({ script: '<speak voice="A calm man.">\nGENDER: male\nSEX: male\nVOICE: Someone else.\nGood evening.\n</speak>' });
   assert.equal(spoken(typed.bridgeCalls[0].prompt), 'Good evening.');
   assert.equal(voiceOf(typed.bridgeCalls[0].prompt), 'A calm man.', 'the tag keeps the voice it had');
+  /* Header words in capitals still lift in any order (review 2: SCENE: before or after VOICE:). */
+  for (const body of ['VOICE: A calm man.\nSCENE: a porch at dusk', 'SCENE: a porch at dusk\nVOICE: A calm man.']) {
+    const pasted = booth();
+    await pasted.render({ script: `<speak>\n${body}\nGood evening.\n</speak>` });
+    assert.equal(spoken(pasted.bridgeCalls[0].prompt), 'Good evening.');
+    assert.equal(voiceOf(pasted.bridgeCalls[0].prompt), 'A calm man.');
+  }
+  const lang = booth();
+  await lang.render({ script: '<speak voice="A calm man.">\nLANGUAGE: en\nGood evening.\n</speak>' });
+  assert.equal(spoken(lang.bridgeCalls[0].prompt), 'Good evening.');
+  /* After a direction, a mixed-case Voice: line is speech, not a header (review 2, P9). */
+  assert.equal(spoken(screenplay.liftBodyHeaders('<speak voice="A narrator.">\n<action>whispers</action>\nVoice: that is all I have left.\n</speak>').xml), 'Voice: that is all I have left.');
   /* The desk still reads every header word a writer leaves at the top of its own XML. */
   const desk = await booth(['<speak voice="A tired nurse.">\nWHERE: a hospital break room\nOne more hour.\n</speak>\nREADBACK: A tired nurse.']).write();
   assert.equal(spoken(desk.script), 'One more hour.');
