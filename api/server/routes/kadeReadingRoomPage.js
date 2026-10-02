@@ -106,6 +106,18 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   .shelf-art { width:100%; max-width:392px; width:min(100%, calc(min(220px, 25vh) * 16 / 9)); aspect-ratio:16 / 9; margin:.8rem auto .3rem; }
   @media ${ART_HIDDEN_WHEN} { .kade-art { display:none !important; } }
   .kade-art-off .kade-art { display:none !important; }
+  /* Depth for the paintings (Oct 2 2026): each one sits in a shallow window,
+     a fine warm edge along the top and its corners falling into shadow, and
+     on the reading-alcove banner the lamp's light spills warm over the room.
+     Still layers drawn by CSS over the picture: no words, no focus, nothing
+     new for a screen reader (the img's alt is read as before), no motion.
+     They appear only over a picture that has loaded (art-shown), so a missing
+     one keeps its plain gradient, and step aside under Reduce Transparency. */
+  .kade-art { box-shadow:0 10px 26px rgba(14,18,44,.22); }
+  .kade-art::before, .kade-art::after { content:""; position:absolute; top:0; right:0; bottom:0; left:0; z-index:1; border-radius:inherit; pointer-events:none; display:none; }
+  .kade-art.art-shown::after { display:block; background:radial-gradient(ellipse 120% 112% at 50% 40%, rgba(8,10,26,0) 58%, rgba(8,10,26,.42) 100%), linear-gradient(180deg, rgba(255,228,186,.10), rgba(255,228,186,0) 16%, rgba(6,8,20,0) 76%, rgba(6,8,20,.32)); box-shadow:inset 0 0 0 1px rgba(255,238,210,.16), inset 0 2px 0 rgba(255,238,210,.18), inset 0 -14px 26px -14px rgba(0,0,0,.5); }
+  .alcove-art.art-shown::before { display:block; mix-blend-mode:screen; background:radial-gradient(ellipse 30% 82% at 67.5% 22%, rgba(255,186,104,.48), rgba(255,170,90,.16) 42%, rgba(255,170,90,0) 70%); }
+  @media (prefers-reduced-transparency: reduce) { .kade-art::before, .kade-art::after { display:none !important; } }
 </style>
 <script>${ART_OFF_SCRIPT}</script></head>
 <body>
@@ -526,8 +538,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     img.src = want;
   }
   function watchArt(img){
-    img.addEventListener('error', function(){ if (this.getAttribute('src')) this.parentNode.classList.add('art-failed'); });
-    img.addEventListener('load', function(){ this.parentNode.classList.remove('art-failed'); });
+    img.addEventListener('error', function(){ if (this.getAttribute('src')) { this.parentNode.classList.add('art-failed'); this.parentNode.classList.remove('art-shown'); } });
+    img.addEventListener('load', function(){ this.parentNode.classList.remove('art-failed'); this.parentNode.classList.add('art-shown'); });
   }
   function shelfArtFor(path){
     var parts = String(path || '').split('/');
@@ -542,7 +554,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (key === shelfArtKey) return;
     shelfArtKey = key;
     var img = $('shelfArt'), box = $('shelfArtBox');
-    box.classList.remove('art-failed');
+    box.classList.remove('art-failed'); box.classList.remove('art-shown');
     img.removeAttribute('srcset'); img.removeAttribute('src');
     if (key) {
       var f = ART_DIR + SHELF_ART[key].file;

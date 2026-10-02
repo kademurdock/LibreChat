@@ -310,3 +310,23 @@ for (const [label, opts] of [['Data Saver', { saveData: true }], ['very large te
     assert.equal(rig.shelf.getAttribute('src'), null, 'a screen change does not sneak a download in');
   });
 }
+
+test('the depth layers (Oct 2 2026) are still, wordless, and only over a picture that loaded', () => {
+  const { readingRoomHtml } = load();
+  assert.ok(readingRoomHtml.includes('.kade-art::before, .kade-art::after { content:""; position:absolute; top:0; right:0; bottom:0; left:0; z-index:1; border-radius:inherit; pointer-events:none; display:none; }'), 'empty CSS layers: no words for a screen reader, no taps caught');
+  assert.match(readingRoomHtml, /\.kade-art\.art-shown::after \{ display:block;/);
+  assert.match(readingRoomHtml, /\.alcove-art\.art-shown::before \{ display:block; mix-blend-mode:screen;/, "the alcove lamp's light");
+  assert.ok(readingRoomHtml.includes('@media (prefers-reduced-transparency: reduce) { .kade-art::before, .kade-art::after { display:none !important; } }'));
+  assert.doesNotMatch(readingRoomHtml, /art-shown[^{]*\{[^}]*(animation|transition|filter)/, 'no motion');
+  const rig = artRig();
+  rig.alcove.handlers.load.call(rig.alcove);
+  assert.ok(rig.alcoveBox.classList.contains('art-shown'), 'the layers appear once the painting is there');
+  rig.alcove.handlers.error.call(rig.alcove);
+  assert.ok(!rig.alcoveBox.classList.contains('art-shown'), 'a failed picture keeps its plain gradient');
+  rig.showShelfArt('Audio/Radio');
+  rig.shelf.handlers.load.call(rig.shelf);
+  assert.ok(rig.shelfBox.classList.contains('art-shown'));
+  rig.showShelfArt('Audio/Music');
+  assert.ok(!rig.shelfBox.classList.contains('art-shown'), 'a new shelf waits for its own picture');
+  assert.deepEqual(rig.made, [], 'still nothing added to the page');
+});
