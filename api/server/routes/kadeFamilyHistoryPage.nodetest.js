@@ -180,6 +180,88 @@ test('the tree chart: ancestors above (father left), sibling left, spouse right,
   assert.ok(layout.lines.some((l) => l.from.id === 'bram' && l.to.id === 'ivo'), 'the sibling hangs from the shared parents');
 });
 
+/* The family sky (sky.js): a picture of the tree for sighted family, drawn on
+ * one canvas from the chart's own layout. It must stay decoration only. */
+const SKY_PATH = path.join(__dirname, '..', '..', '..', 'client', 'public', 'assets', 'family', 'sky.js');
+const skySource = fs.readFileSync(SKY_PATH, 'utf8');
+function loadSky() {
+  const context = { module: { exports: {} } };
+  vm.runInNewContext(skySource, context);
+  return context.module.exports;
+}
+
+test('the family sky is decoration only: hidden, no stops, no words, no sound, safe syntax', () => {
+  new vm.Script(skySource, { filename: 'sky.js' });
+  const controls = [...skySource].filter((ch) => {
+    const code = ch.charCodeAt(0);
+    return code < 32 && code !== 9 && code !== 10 && code !== 13;
+  });
+  assert.deepEqual(controls, [], 'no control characters');
+  assert.equal(/\.(innerHTML|outerHTML|insertAdjacentHTML)\b|document\.write/.test(skySource), false);
+  assert.equal(/\(\?<[=!]/.test(skySource), false, 'no regex lookbehind');
+  assert.equal(/[\w)\]]\?\.[\w(]|\?\?/.test(skySource), false, 'no optional chaining or nullish operators');
+  assert.equal(/tabindex|tabIndex|\.focus\(|aria-live|role=|Audio|speechSynthesis|vibrate/.test(skySource), false, 'no focus, no live words, no sound');
+  assert.match(skySource, /canvas\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(source, /el\('div', \{ class: 'fh-sky', 'aria-hidden': 'true' \}, stage, el\('p', \{ class: 'fh-skyhint', 'aria-hidden': 'true' \}, hint\)\)/, 'the whole box and its hint are hidden from screen readers');
+  const open = Number(/var OPEN_MS = (\d+);/.exec(skySource)[1]);
+  const settle = Number(/var SETTLE_MS = (\d+);/.exec(skySource)[1]);
+  assert.ok(open <= 1200, 'big movements last 1.2 seconds or less');
+  assert.ok(settle < 5000, 'motion that starts by itself stops within 5 seconds');
+  assert.match(source, /function skyStill\(\) \{\n\s+return reducedMotion\(\) \|\| storeGet\('reverie_motion'\) === 'off';/, 'Reduce Motion and the in-app motion switch make it still');
+  assert.match(source, /SKY_HIDDEN_WHEN = '\(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\)'/);
+  assert.match(source, /connection\.saveData\) return false/);
+  assert.match(source, /fontSize\) > 20\) return false/, 'very large text leaves it out');
+  assert.match(source, /'sky\.js\$1'/, 'it loads from beside history.js at the same version');
+  const css = fs.readFileSync(STYLE_PATH, 'utf8');
+  assert.match(css, /\.fh-sky \{[^}]*height: clamp\(/, 'its space is set before anything loads');
+  assert.match(css, /@media \(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\), \(max-width: 22\.5em\), \(max-height: 30em\), print \{\s*\.fh-sky \{ display: none !important; \}/);
+  assert.match(css, /\.fh-skyhint \{[^}]*background: #0a0f24; color: #d7ddf6;/, 'its words sit on a solid strip');
+});
+
+test('the family sky places the invented family: ancestors rise in rings, Dad left, Mom right, children below', () => {
+  const sky = loadSky();
+  const layout = parts.layoutTree(family(), { up: 4, down: 2 });
+  const scene = sky.placeStars(layout);
+  const at = (id) => scene.stars.find((s) => s.id === id);
+  assert.equal(scene.stars.length, layout.boxes.length, 'one star for every box in the chart');
+  assert.equal(scene.focus.id, 'cora');
+  assert.deepEqual([scene.focus.x, scene.focus.y, scene.focus.z], [0, 0, 0]);
+  for (const s of scene.stars) assert.ok([s.x, s.y, s.z].every(Number.isFinite), `${s.id} has a place`);
+  assert.ok(at('bram').y > 0 && at('ezra').y > at('bram').y, 'each generation of ancestors rises');
+  assert.ok(Math.hypot(at('ezra').x, at('ezra').z) > Math.hypot(at('bram').x, at('bram').z), 'and widens');
+  assert.ok(at('bram').x < 0 && at('dot').x > 0, "Dad's side to the left, Mom's to the right");
+  assert.ok(at('ivo').x < 0 && at('ivo').y === 0, 'a brother stands to the left');
+  assert.ok(at('jon').x > 0 && at('jon').y === 0, 'a husband stands to the right');
+  assert.ok(at('kit').y < 0 && at('lua').y < at('kit').y, 'descendants hang below');
+  assert.equal(at('cora').cat, 'none', 'a box with no card takes the plain colour');
+  const kinds = plain(scene.links.map((l) => `${l.a.id}>${l.b.id}:${l.kind}`).sort());
+  assert.ok(kinds.includes('hana>dot:research'), 'a probable parent keeps the dotted research line');
+  assert.ok(kinds.includes('cora>jon:couple'));
+  assert.equal(scene.links.length, layout.lines.length, 'every line in the chart is a line in the sky');
+  const toLua = sky.pathTo(scene, at('lua'));
+  assert.deepEqual(plain([...toLua.stars].map((s) => s.id).sort()), ['cora', 'kit', 'lua'], 'a grandchild is reached through her parent');
+  const toEzra = sky.pathTo(scene, at('ezra'));
+  assert.deepEqual(plain([...toEzra.stars].map((s) => s.id).sort()), ['bram', 'cora', 'ezra']);
+  assert.equal(sky.placeStars(null), null);
+});
+
+test('the family sky fits the whole tree in its box at every turn', () => {
+  const sky = loadSky();
+  const scene = sky.placeStars(parts.layoutTree(family(), { up: 4, down: 2 }));
+  for (const [w, h] of [[838, 347], [348, 190], [1200, 380]]) {
+    const cam = sky.fitCamera(scene, w, h, w >= 560 ? 118 : 0);
+    const pt = {};
+    for (let i = 0; i < 24; i++) {
+      const project = sky.projector(cam, (i / 24) * Math.PI * 2);
+      for (const s of scene.stars) {
+        project(s.x, s.y, s.z, pt);
+        assert.ok(pt.x >= 0 && pt.x <= w && pt.y >= 0 && pt.y <= h, `${s.id} stays inside a ${w} by ${h} box`);
+        assert.ok(pt.k > 0, 'nothing passes behind the viewer');
+      }
+    }
+  }
+});
+
 test('the text version says whose child each descendant and sibling is, and how they are linked', () => {
   const tree = family();
   tree.nodes.push({ id: 'mo', label: 'Mo Partner (born 2012)', lifespan: 'born 2012', sex: 'U', living: true, virtual: false });
