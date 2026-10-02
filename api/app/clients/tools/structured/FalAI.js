@@ -400,7 +400,9 @@ class FalAI extends Tool {
         { encoding: 'utf8', timeout: 15000 },
       );
       const dur = parseFloat(String(probe.stdout || '').trim());
-      if (!Number.isFinite(dur) || dur <= 30.2) {
+      /* Oct 2 2026: fal refuses anything over 30.0 s ("Maximum is 30.0 seconds"), so a
+       * 30.1 s clip used to pass this check and fail the render. Same margin as the booth. */
+      if (!Number.isFinite(dur) || dur <= 29.5) {
         return url;
       }
       tmpOut = `${tmpIn}.wav`;

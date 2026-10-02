@@ -40,6 +40,7 @@ try {
   logger = console;
 }
 const { stitchMp3Buffers, durationOf, sayStitched } = require('./kadeSoundBoothStitch');
+const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -80,7 +81,7 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
     timeout: 20000,
   });
   const jobId = r.data?.jobId;
-  if (!jobId) throw new Error(r.data?.error || 'That part could not start.');
+  if (!jobId) throw new Error(errorText(r.data?.error, { name: 'The render service' }) || 'That part could not start.');
   logger.info(`[soundbooth/chain] part ${partIndex + 1}/${total} queued job=${jobId} user=${userId}`);
   return { jobId, estimate: r.data?.estimate || null };
 }
@@ -214,7 +215,10 @@ async function advanceLocked(project, { onStitched } = {}) {
       await project.save();
       return { changed: true, state: 'queued', jobId, spoken: sayProgress(project, null) };
     } catch (e) {
-      const msg = String(e?.response?.data?.error || e.message || 'that part could not start');
+      /* Oct 2 2026: the bridge's words when it sent some, never "[object Object]", and the whole answer in the log. */
+      const said = providerError(e, { name: 'The render service' });
+      logger.warn(`[soundbooth/chain] part ${next.index + 1}/${parts.length} could not start project=${project._id}: ${said.detail}`);
+      const msg = said.message;
       next.state = 'failed';
       next.error = msg.slice(0, 300);
       project.state = 'failed';
@@ -310,7 +314,8 @@ async function stitch(project, { onStitched } = {}) {
     /* The parts survive a failed join. Joining is cheap and repeatable; the
      * renders are not, and they are what cost money. */
     project.state = 'failed';
-    project.lastError = `The parts all rendered, but joining them failed: ${String(e.message).slice(0, 160)} Nothing was lost — say render again to retry just the join.`;
+    /* ffmpeg's own message is its whole command line, temp paths and all; she hears the short form. */
+    project.lastError = `The parts all rendered, but joining them failed: ${providerError(e, { name: 'The audio tool', max: 160 }).message} Nothing was lost — say render again to retry just the join.`;
     await project.save();
     logger.error('[soundbooth/chain] stitch failed:', e);
     return { spoken: project.lastError };
