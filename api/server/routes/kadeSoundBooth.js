@@ -19,7 +19,7 @@ const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
 /* Part 126: the person reads and writes a SCREENPLAY; the engine reads XML. */
-const { screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP, speakAttrs, withSpeakVoice, liftBodyHeaders, speakerClause, voicesDisagree, voiceTraits } = require('./kadeSoundBoothScreenplay');
+const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREENPLAY_HELP, speakAttrs, withSpeakVoice, liftBodyHeaders, speakerClause, voicesDisagree, voiceTraits, NEUTRAL_VOICE, VOICE_HEADER_WORDS } = require('./kadeSoundBoothScreenplay');
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
@@ -722,9 +722,9 @@ async function callModel({ system, user, maxTokens = 2200, model = MODEL, temper
 function wrapSpeak({ body, voice_description, gender, scene, shot, pace, language }) {
   const raw = String(body || '').trim();
   if (/<speak[\s>]/i.test(raw)) return raw;
-  const voice = String(
-    voice_description || 'Warm, clear adult woman with a natural American accent. Unhurried and kind.',
-  )
+  /* Oct 2 2026 (review 1): the fallback used to be "Warm, clear adult woman with a natural
+   * American accent", which pushed an unnamed AuK voice toward a woman. */
+  const voice = String(voice_description || NEUTRAL_VOICE)
     .trim()
     .slice(0, 600);
   const attrs = [`voice="${escapeXml(voice)}"`, `gender="${gender === 'male' ? 'male' : 'female'}"`];
@@ -759,15 +759,19 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
  *   - when she chose a voice, the tag carries HER words for it, and the writer's
  *     own voice= line is handed back separately so the handler can check that the
  *     words were written for the same person. gender= follows the voice when the
- *     voice plainly says (the worker does not read it, but a screen shows it). */
+ *     voice plainly says (the worker does not read it, but a screen shows it);
+ *   - `voice` is empty when the voice came from neither the writer nor her: the
+ *     XML then carries the neutral voice, and nothing is put in her voice box as
+ *     though someone had chosen it (review 1: bare <action> pieces used to come
+ *     back as "Warm, clear adult woman...", which the page put in the box). */
 function shapeAukDraft(body, b = {}) {
   let text = String(body || '').trim();
   const notes = [];
   const chosen = String(b.voice_description || '').trim().slice(0, 600);
   let writerVoice = '';
   if (isSpeakXml(text) || /<(?:action|sound)\b/i.test(text)) {
-    let xml = wrapSpeak({ body: text, voice_description: chosen, gender: b.gender, scene: b.scene, shot: b.shot, language: b.language })
-      .replace(/(<\/speak>)[\s\S]*$/i, '$1');
+    /* Bare pieces get a bare tag: the settings fill it below, as /render fills a script box. */
+    let xml = (isSpeakXml(text) ? text : `<speak>\n${text}\n</speak>`).replace(/(<\/speak>)[\s\S]*$/i, '$1');
     let unknown = /<!--/.test(xml);
     xml = xml.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<\/?([a-zA-Z][\w:-]*)\b[^<>]*>/g, (tag, name) => {
       if (/^(?:speak|action|sound)$/i.test(name)) return tag;
@@ -775,20 +779,21 @@ function shapeAukDraft(body, b = {}) {
       return ' ';
     });
     if (unknown) notes.push('took out markup the engine would have read aloud');
+    const own = speakAttrs(xml).voice || '';
     const lifted = liftBodyHeaders(xml);
     if (Object.keys(lifted.lifted).length) {
       xml = lifted.xml;
       notes.push('moved a voice line out of the spoken words');
     }
-    writerVoice = speakAttrs(xml).voice || '';
+    writerVoice = own || lifted.lifted.voice || '';
     text = speakToScreenplay(xml);
   } else {
     text = text.replace(/^[ \t]*\((?!\()(.+)\)[ \t]*$/gm, '[$1]');
+    writerVoice = parseScreenplay(text).headers.voice || '';
   }
   const compiled = screenplayToSpeak(text, {
     voice: chosen || undefined, gender: b.gender, scene: b.scene, shot: b.shot, language: b.language,
   });
-  if (!writerVoice) writerVoice = compiled.headers.voice;
   const cleaned = sanitizeScenema(compiled.xml);
   let script = cleaned.script;
   notes.push(...(compiled.notes || []), ...cleaned.notes);
@@ -799,10 +804,25 @@ function shapeAukDraft(body, b = {}) {
 }
 
 /** Who the draft was written for, when that plainly is not the voice she chose (her voice= words
- *  against the writer's own voice= line, then against who the readback says is speaking). */
+ *  against the writer's own voice= line, then against who the readback says is speaking):
+ *  { who, by: 'voice'|'readback' }, `by` saying which of the two named someone else, or null. */
 function aukVoiceOff(chosen, writerVoice, readback) {
   if (!chosen) return null;
-  return voicesDisagree(chosen, writerVoice) || voicesDisagree(chosen, speakerClause(readback));
+  const byVoice = voicesDisagree(chosen, writerVoice);
+  if (byVoice) return { who: byVoice, by: 'voice' };
+  const byReadback = voicesDisagree(chosen, speakerClause(readback));
+  return byReadback ? { who: byReadback, by: 'readback' } : null;
+}
+
+/** What she is told when a draft is still off after the second ask. In "Turn my words into a
+ *  script" the words are hers, so a readback that alone names someone else is the description
+ *  being off, never her script (review 1). */
+function aukVoiceWarning(voiceOff, mode) {
+  if (!voiceOff) return '';
+  if (mode === 'format' && voiceOff.by === 'readback') {
+    return `The description of what you will hear says ${voiceOff.who} is speaking, but your words are kept as you wrote them and the voice you chose is used. Only that description is off.`;
+  }
+  return `The writer wrote this for ${voiceOff.who}, not the voice you chose. Ask for the script again, or change the voice, before you generate.`;
 }
 
 /* An AuK edit performs no script: the imported recording is changed as the
@@ -1497,7 +1517,8 @@ function projectView(p, factor = 1) {
    * A speech project shows its voice in Describe a new voice: `performance` is the script box
    * without header lines and `voice_description` is the voice the script carries. A screen that
    * only knows `screenplay` (iPhone 2.2.2) keeps the VOICE: line when the project has no voice in
-   * its settings, because then that line is the only place the voice is. */
+   * its settings, because then that line is the only place the voice is. It never gets a SEX:
+   * line: the AuK worker does not read gender (review 1). */
   const aukEdit = p.engine === 'scenema' && (p.options || {}).auk_task === 'edit';
   const instruction = aukEdit ? String((p.options || {}).instruction || p.script || '').trim() : '';
   const voiceInSettings = p.engine === 'scenema' && !!String((p.options || {}).voice_description || '').trim();
@@ -1508,7 +1529,7 @@ function projectView(p, factor = 1) {
     mode: p.mode,
     sourceText: p.sourceText,
     script: p.script,
-    screenplay: p.engine === 'scenema' ? (aukEdit ? '' : speakToScreenplay(p.script || '', { includeHeaders: !voiceInSettings })) : p.script,
+    screenplay: p.engine === 'scenema' ? (aukEdit ? '' : speakToScreenplay(p.script || '', { includeHeaders: !voiceInSettings, includeSex: false })) : p.script,
     ...(p.engine === 'scenema' ? {
       performance: aukEdit ? '' : speakToScreenplay(p.script || '', { includeHeaders: false }),
       voice_description: aukEdit ? '' : speakAttrs(p.script).voice || '',
@@ -1749,7 +1770,11 @@ async function scriptHandler(req, res) {
     const aukVoice = engine === 'scenema' ? String(b.voice_description || '').trim().slice(0, 600) : '';
     const aukReference = engine === 'scenema' && !!(b.reference_voice_url || (Array.isArray(b.audio_urls) && b.audio_urls.length));
     if (engine === 'scenema') {
-      if (aukVoice) {
+      if (aukVoice && aukReference) {
+        /* Review 1: with a clip the worker clones the clip and never reads voice=, so the box is
+         * a note about who is speaking, not a voice the draft can be held to. */
+        lines.push(`THE SPEAKER, AS DESCRIBED: ${aukVoice}\nThe reference clip supplies the voice itself. Put this description in voice= as written, ${mode === 'write' ? 'and let the words suit this speaker.' : 'and keep their words as they are.'}`);
+      } else if (aukVoice) {
         lines.push(`THE VOICE IS CHOSEN: ${aukVoice}\nPut it in voice= exactly as written. ${mode === 'write' ? 'Write every word for this speaker, at their age,' : 'Keep their words as they are,'} and make the READBACK name this same speaker.`);
       } else if (!aukReference) {
         lines.push('THE VOICE IS NOT CHOSEN YET: choose the voice that suits this and describe it in voice=.');
@@ -2018,20 +2043,21 @@ async function scriptHandler(req, res) {
      * own voice line or readback plainly names someone else (a grown-up for a child's voice, a man
      * for a woman's) is asked for once more with the mismatch named, which costs about a fifth of
      * a cent and saves a paid render of the wrong person. If it is still off, she is told before
-     * she spends. KADE_AUK_VOICE_RETRY=0 skips the second ask; the warning stays. */
+     * she spends. KADE_AUK_VOICE_RETRY=0 skips the second ask; the warning stays. With a
+     * reference clip there is no check at all: the clip is the voice, whatever the box says. */
     let shapedVoice = '';
     let voiceOff = null;
     let voiceCheck;
     if (engine === 'scenema') {
       let shaped = shapeAukDraft(script, b);
-      voiceOff = aukVoiceOff(aukVoice, shaped.writerVoice, readback);
-      voiceCheck = aukVoice ? (voiceOff ? 'off' : 'ok') : undefined;
+      voiceOff = aukReference ? null : aukVoiceOff(aukVoice, shaped.writerVoice, readback);
+      voiceCheck = !aukVoice ? undefined : aukReference ? 'clip' : voiceOff ? 'off' : 'ok';
       if (voiceOff && process.env.KADE_AUK_VOICE_RETRY !== '0') {
         try {
           const again = await callModel({
             ...writingSettings,
             system: writingSystem,
-            user: `${lines.join('\n\n')}\n\nYOUR LAST DRAFT WAS WRITTEN FOR ${voiceOff.toUpperCase()}, but the voice is chosen and cannot change: ${aukVoice}\nWrite it again for exactly this speaker${mode === 'write' ? ', at their age' : ''}, and make the READBACK name this same speaker.`,
+            user: `${lines.join('\n\n')}\n\nYOUR LAST DRAFT WAS WRITTEN FOR ${voiceOff.who.toUpperCase()}, but the voice is chosen and cannot change: ${aukVoice}\nWrite it again for exactly this speaker${mode === 'write' ? ', at their age' : ''}, and make the READBACK name this same speaker.`,
             maxTokens: writingSettings.maxTokens || 2200,
           });
           totalCost += again.costUSD;
@@ -2039,7 +2065,7 @@ async function scriptHandler(req, res) {
           const split = splitScriptAndReadback(again);
           const reshaped = split.script ? shapeAukDraft(split.script, b) : null;
           const stillOff = reshaped ? aukVoiceOff(aukVoice, reshaped.writerVoice, split.readback) : voiceOff;
-          logger.info(`[soundbooth/script] auk voice: first draft written for ${voiceOff}; second draft ${reshaped ? (stillOff ? 'still for ' + stillOff : 'matches') : 'empty'} ${Date.now() - started}ms`);
+          logger.info(`[soundbooth/script] auk voice: first draft written for ${voiceOff.who} (${voiceOff.by}); second draft ${reshaped ? (stillOff ? 'still for ' + stillOff.who : 'matches') : 'empty'} ${Date.now() - started}ms`);
           if (reshaped && !stillOff) {
             shaped = { ...reshaped, notes: [...reshaped.notes, 'wrote it again for the voice you chose'] };
             readback = split.readback;
@@ -2080,9 +2106,11 @@ async function scriptHandler(req, res) {
       }
     }
     /* Both screens say `problem` after "Turn my words into a script" and `note` after "Help write
-     * this", so a voice still off after the second ask is said on either path. */
-    const voiceWarning = voiceOff ? `The writer wrote this for ${voiceOff}, not the voice you chose. Ask for the script again, or change the voice, before you generate.` : '';
-    const problem = ['lyria', 'yue2'].includes(engine) ? null : engine === 'seed' ? checkSeed(script) : checkScenema(script) || voiceWarning || null;
+     * this", so a voice still off after the second ask is said on either path, and beside a
+     * structural problem rather than instead of it (review 1). */
+    const voiceWarning = aukVoiceWarning(voiceOff, mode);
+    const problem = ['lyria', 'yue2'].includes(engine) ? null : engine === 'seed' ? checkSeed(script)
+      : [checkScenema(script), voiceWarning].filter(Boolean).join(' ') || null;
     const estimate = engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script, priceFactor(req.user));
     logKadeUsage({
       userId: req.user.id,
@@ -2103,7 +2131,8 @@ async function scriptHandler(req, res) {
         /* Part 296 follow-up: stock kiss-off lines in the first draft and in what she gets. */
         kissOffs: wantsWords && typeof lyricKissOffTells === 'function' ? { draft: kissOffsInDraft.length, left: kissOffsOf(raw).length } : undefined,
         model: writingSettings.model || MODEL,
-        /* Oct 2 2026, AuK with a chosen voice: ok, rewritten (the second ask fixed it) or off. */
+        /* Oct 2 2026, AuK with a chosen voice: ok, rewritten (the second ask fixed it), off, or
+         * clip (a reference clip is the voice, so nothing was checked). */
         voiceCheck,
         ms: Date.now() - started,
         inTok: usage.prompt_tokens,
@@ -2120,8 +2149,10 @@ async function scriptHandler(req, res) {
       /* Part 126: the same script as a screenplay — what the page shows. Oct 2 2026: for AuK
        * this is for screens that predate `performance` (iPhone 2.2.2). With a voice she chose,
        * it has no header lines, because her box wins at render; with none, its VOICE: line is
-       * the only way the writer's voice reaches that screen's render. */
-      screenplay: engine === 'scenema' ? speakToScreenplay(script, { includeHeaders: !aukVoice }) : script,
+       * the only way the writer's voice reaches that screen's render. Review 1: no SEX: line
+       * (the AuK worker does not read gender), and no VOICE: line when no one named a voice
+       * (that screen's render falls back to the same neutral voice by itself). */
+      screenplay: engine === 'scenema' ? speakToScreenplay(script, { includeHeaders: !aukVoice, includeVoice: !!shapedVoice, includeSex: false }) : script,
       /* Oct 2 2026, AuK only: the script box (directions in square brackets and spoken words,
        * never a header line) and the voice it was written for, which goes in Describe a new voice. */
       ...(engine === 'scenema' ? { performance: speakToScreenplay(script, { includeHeaders: false }), voice_description: shapedVoice } : {}),
@@ -2179,8 +2210,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       compileNotes = compiled.notes || [];
     }
     script = sanitizeScenema(script).script;
-    /* A VOICE: line typed inside raw XML would be spoken; it moves into the tag (see liftBodyHeaders). */
-    script = liftBodyHeaders(script).xml;
+    /* A VOICE: line typed inside raw XML would be spoken; it moves into the tag (see liftBodyHeaders).
+     * Only VOICE:, SEX: and GENDER: here: "Who: is there at the door?" is a spoken line (review 1). */
+    script = liftBodyHeaders(script, { words: VOICE_HEADER_WORDS }).xml;
     const chosenVoice = String(b.voice_description || '').trim().slice(0, 600);
     if (chosenVoice) {
       /* Describe a new voice wins over a voice written in the script, as it always has. Oct 2 2026:
@@ -3481,5 +3513,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { shapeAukDraft, aukVoiceOff, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

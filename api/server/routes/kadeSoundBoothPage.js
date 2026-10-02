@@ -826,6 +826,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
       if(!r.ok){ say(r.data.error || 'That render could not start.', true); return; }
+      /* Review 1: a voice the desk filled in is hers once she renders with it, so the next
+       * Help write this sends it as her choice and never swaps it for another. */
+      state.deskVoice = null;
       state.rerollVoice = false;
       state.projectId = r.data.projectId || state.projectId;
       if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;

@@ -10,7 +10,8 @@
  *   - the script box gets the performance, the voice comes back on its own;
  *   - iPhone 2.2.2, which reads only `screenplay`, still renders the same voice;
  *   - header lines and [cues] are never performed aloud (the Oct 1 Codex find);
- *   - an AuK edit is described as an edit, not as a script to hear.
+ *   - an AuK edit is described as an edit, not as a script to hear;
+ *   - the ten minors from review 1, one test each (at the end of this file).
  * Run: node --test kadeSoundBoothAukDesk.nodetest.js */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -330,7 +331,8 @@ test('who a voice is: only a plain contradiction counts', () => {
   assert.deepEqual(voiceTraits('A shy boy, around seven, soft-spoken.'), { age: 'child', sex: 'male' });
 });
 
-test('the page puts the performance in the script box and the voice in its own box', () => {
+/** The page's main script as served, and `cut(name)` to lift one of its functions out whole. */
+function pageScript() {
   const context = {
     module: { exports: {} },
     require: (name) => (name === './kadePages' ? { SHARED_HEAD: '<meta charset="utf-8">' } : require(path.join(__dirname, name))),
@@ -340,14 +342,21 @@ test('the page puts the performance in the script box and the voice in its own b
   const main = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((s) => s.includes('function takeDeskVoice('));
   assert.ok(main, 'takeDeskVoice is on the page');
   const cut = (name) => {
-    const start = main.indexOf('function ' + name + '(');
+    const at = main.indexOf('function ' + name + '(');
+    assert.ok(at >= 0, name + ' is on the page');
+    const start = main.slice(at - 6, at) === 'async ' ? at - 6 : at;
     let depth = 0;
-    for (let i = main.indexOf('{', start); i < main.length; i++) {
+    for (let i = main.indexOf('{', at); i < main.length; i++) {
       if (main[i] === '{') depth++;
       else if (main[i] === '}' && --depth === 0) return main.slice(start, i + 1);
     }
     throw new Error('unbalanced ' + name);
   };
+  return { main, cut };
+}
+
+test('the page puts the performance in the script box and the voice in its own box', () => {
+  const { cut } = pageScript();
   const make = new Function('state', 'renderSettings', 'writingUndo',
     `${['deskScript', 'deskVoiceUntouched', 'forDesk', 'takeDeskVoice'].map(cut).join('\n')}\nreturn { deskScript, forDesk, takeDeskVoice, undo: () => writingUndo };`);
   const fresh = (values = {}, clips = []) => {
@@ -375,4 +384,210 @@ test('the page puts the performance in the script box and the voice in its own b
   assert.equal(clip.page.takeDeskVoice(data, true), '');
   assert.equal(clip.state.values.voice_description, undefined, 'a recording sets the voice by itself');
   assert.equal(fresh().page.deskScript({ screenplay: 'Seed script.', script: 'x' }), 'Seed script.', 'other engines are unchanged');
+});
+
+/* ---- review 1: the ten minor fixes ---------------------------------------- */
+
+test('review 1 (1): with a reference clip the box is a note about the speaker, never a check or a second ask', async () => {
+  for (const clip of [{ reference_voice_url: 'https://example.invalid/clip.wav' }, { audio_urls: ['https://example.invalid/clip.wav'] }]) {
+    const desk = booth([`${WOMAN_XML}\n${WOMAN_READBACK}`]);
+    const out = await desk.write({ voice_description: GIRL, ...clip });
+    assert.equal(desk.writerCalls.length, 1, 'the clip is the voice, so the draft is not asked for again over the box');
+    const user = desk.writerCalls[0].messages[1].content;
+    assert.doesNotMatch(user, /THE VOICE IS CHOSEN/);
+    assert.match(user, /THE SPEAKER, AS DESCRIBED: A cheerful little girl[^\n]*\nThe reference clip supplies the voice itself\. Put this description in voice= as written, and let the words suit this speaker\./);
+    assert.equal(out.problem, null);
+    assert.equal(out.note, null, 'no "not the voice you chose" about a voice the clip replaces');
+    assert.equal(voiceOf(out.script), GIRL);
+  }
+  const format = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
+  await format.write({ mode: 'format', text: 'Hello there, little one.', voice_description: GIRL, reference_voice_url: 'https://example.invalid/clip.wav' });
+  assert.match(format.writerCalls[0].messages[1].content, /Put this description in voice= as written, and keep their words as they are\./);
+});
+
+test('review 1 (2): a voice no one named is the neutral voice, and nothing goes in her voice box', async () => {
+  const { wrapSpeak } = booth().internals;
+  assert.equal(voiceOf(wrapSpeak({ body: 'Hello.' })), screenplay.NEUTRAL_VOICE, 'the old fallback was an adult woman');
+  for (const reply of [
+    '<action>softly</action>\nHello there.\nREADBACK: A hello.',
+    '<speak gender="female">\nHello there.\n</speak>\nREADBACK: A hello.',
+    'Hello there.\nREADBACK: A hello.',
+  ]) {
+    const out = await booth([reply]).write({ text: 'Say hello.' });
+    assert.equal(voiceOf(out.script), screenplay.NEUTRAL_VOICE, reply);
+    assert.doesNotMatch(out.script, /woman/i, reply);
+    assert.equal(out.voice_description, '', reply);
+    assert.doesNotMatch(out.screenplay, /VOICE:|SEX:/, reply);
+    assert.equal(spoken(out.script), 'Hello there.', reply);
+    /* iPhone 2.2.2 renders that screenplay with an empty box: the same neutral voice. */
+    const phone = booth();
+    await phone.render({ script: out.screenplay });
+    assert.equal(voiceOf(phone.bridgeCalls[0].prompt), screenplay.NEUTRAL_VOICE, reply);
+  }
+  /* Bare pieces with the writer's own voice line are still the writer's voice. */
+  const named = await booth(['<action>softly</action>\nVOICE: A calm man.\nGood evening.\nREADBACK: A calm man says good evening.']).write();
+  assert.equal(named.voice_description, 'A calm man.');
+  assert.equal(voiceOf(named.script), 'A calm man.');
+  assert.equal(spoken(named.script), 'Good evening.');
+  /* Her box still wins over bare pieces, with no woman anywhere. */
+  const boxed = await booth(['<action>softly</action>\nHello there.\nREADBACK: A calm man says hello.']).write({ voice_description: 'A calm man.' });
+  assert.equal(boxed.voice_description, 'A calm man.');
+  assert.equal(voiceOf(boxed.script), 'A calm man.');
+  /* The page leaves the box alone when the desk names no voice. */
+  const { cut } = pageScript();
+  const state = { engine: 'scenema', values: {}, clips: [] };
+  const page = new Function('state', 'renderSettings', 'writingUndo',
+    `${['deskVoiceUntouched', 'takeDeskVoice'].map(cut).join('\n')}\nreturn { takeDeskVoice };`)(state, () => {}, null);
+  assert.equal(page.takeDeskVoice({ performance: 'Hello there.', voice_description: '' }, true), '');
+  assert.equal(state.values.voice_description, undefined);
+});
+
+test('review 1 (3): VOICE: and SEX: lines after the opening directions are lifted, never spoken', async () => {
+  /* The probe from the review: XML with a direction first. */
+  const xml = await booth(['<speak voice="A calm man.">\n<action>softly</action>\nVOICE: A calm man.\nSEX: male\nGood evening.\n</speak>\nREADBACK: A calm man says good evening.']).write();
+  assert.equal(spoken(xml.script), 'Good evening.');
+  assert.match(xml.script, /<action>softly<\/action>\nGood evening\./);
+  assert.ok(xml.repairs.includes('moved a voice line out of the spoken words'));
+  /* A screenplay reply that opens with [tender]. */
+  const sp = await booth(['[tender]\n\nVOICE: A calm man.\nSEX: male\n\nGood evening.\nREADBACK: A calm man says good evening.']).write();
+  assert.equal(spoken(sp.script), 'Good evening.');
+  assert.equal(voiceOf(sp.script), 'A calm man.');
+  assert.equal(sp.voice_description, 'A calm man.');
+  assert.match(sp.script, /<action>tender<\/action>/);
+  assert.equal(sp.performance, '[tender]\nGood evening.');
+  /* The same in what she types: a screenplay, and raw XML. */
+  const typed = booth();
+  await typed.render({ script: '[tender] ((rain on the roof))\nVOICE: A calm man.\nGood evening.' });
+  assert.equal(voiceOf(typed.bridgeCalls[0].prompt), 'A calm man.');
+  assert.equal(spoken(typed.bridgeCalls[0].prompt), 'Good evening.');
+  const raw = booth();
+  await raw.render({ script: '<speak gender="male">\n<action>softly</action>\nVOICE: A calm man.\nGood evening.\n</speak>' });
+  assert.equal(voiceOf(raw.bridgeCalls[0].prompt), 'A calm man.');
+  assert.equal(spoken(raw.bridgeCalls[0].prompt), 'Good evening.');
+  assert.match(raw.bridgeCalls[0].prompt, /<action>softly<\/action>/);
+  /* After a direction only the voice words count; after a spoken word nothing does. */
+  assert.equal(spoken(screenplay.screenplayToSpeak('[knocking]\nWho: is there at the door?').xml), 'Who: is there at the door?');
+  assert.equal(spoken(screenplay.liftBodyHeaders('<speak voice="A calm man.">\n<action>knocking</action>\nWho: is there?\n</speak>').xml), 'Who: is there?');
+  assert.equal(spoken(screenplay.screenplayToSpeak('Hello.\nVOICE: A calm man.').xml), 'Hello. VOICE: A calm man.');
+});
+
+test('review 1 (4): a single-quoted voice is still the writer\'s voice', async () => {
+  assert.deepEqual(screenplay.speakAttrs("<speak voice='A calm man.' gender='male'>"), { voice: 'A calm man.', gender: 'male' });
+  assert.equal(screenplay.speakAttrs(`<speak voice="The narrator's own voice." gender='female'>`).voice, "The narrator's own voice.");
+  const out = await booth(["<speak voice='A calm man.' gender='male'>\nGood evening.\n</speak>\nREADBACK: A calm man says good evening."]).write();
+  assert.equal(out.voice_description, 'A calm man.', 'it used to come back as the generic voice');
+  assert.equal(voiceOf(out.script), 'A calm man.');
+  assert.match(out.script, /gender="male"/);
+  assert.equal(spoken(out.script), 'Good evening.');
+});
+
+test('review 1 (5): a structural problem and a voice warning are said together', async () => {
+  const onlyDirections = '<speak voice="A woman in her early thirties." gender="female">\n<action>sighs</action>\n</speak>\nREADBACK: A woman in her early thirties sighs.';
+  const desk = booth([onlyDirections], { KADE_AUK_VOICE_RETRY: '0' });
+  const out = await desk.write({ voice_description: GIRL });
+  const structural = desk.internals.checkScenema(out.script);
+  assert.match(structural, /no spoken words/);
+  const warning = 'The writer wrote this for a woman, not the voice you chose. Ask for the script again, or change the voice, before you generate.';
+  assert.equal(out.problem, `${structural} ${warning}`, '"Turn my words into a script" reads only problem');
+  assert.equal(out.note, warning);
+});
+
+test('review 1 (6): in "Turn my words into a script" a readback alone naming someone else is the description being off', async () => {
+  const words = 'The thunder went boom and I hid under the table with my bunny!';
+  const readbackOff = 'READBACK: A woman in her early thirties reads a line about hiding from the thunder.';
+  const format = booth([`${GIRL_XML}\n${readbackOff}`], { KADE_AUK_VOICE_RETRY: '0' });
+  const out = await format.write({ mode: 'format', text: words, voice_description: GIRL });
+  const said = 'The description of what you will hear says a woman is speaking, but your words are kept as you wrote them and the voice you chose is used. Only that description is off.';
+  assert.equal(out.problem, said);
+  assert.equal(out.note, said);
+  assert.equal(voiceOf(out.script), GIRL);
+  assert.equal(spoken(out.script), words);
+  /* The second ask still runs when it is on; the wording follows the draft she keeps. */
+  const again = booth([`${GIRL_XML}\n${readbackOff}`, `${GIRL_XML}\n${readbackOff}`]);
+  assert.equal((await again.write({ mode: 'format', text: words, voice_description: GIRL })).problem, said);
+  assert.equal(again.writerCalls.length, 2);
+  /* In Help write this the words are the writer's, so the draft itself is what is off. */
+  const write = await booth([`${GIRL_XML}\n${readbackOff}`], { KADE_AUK_VOICE_RETRY: '0' }).write({ voice_description: GIRL });
+  assert.match(write.problem, /^The writer wrote this for a woman, not the voice you chose/);
+  const { aukVoiceOff, aukVoiceWarning } = format.internals;
+  assert.deepEqual({ ...aukVoiceOff(GIRL, 'A woman in her thirties.', '') }, { who: 'a woman', by: 'voice' });
+  assert.deepEqual({ ...aukVoiceOff(GIRL, GIRL, readbackOff.slice(10)) }, { who: 'a woman', by: 'readback' });
+  assert.match(aukVoiceWarning({ who: 'a woman', by: 'voice' }, 'format'), /^The writer wrote this for a woman/);
+  assert.equal(aukVoiceWarning(null, 'format'), '');
+});
+
+test('review 1 (7): a kindergarten teacher or a preschool class is not a child', async () => {
+  const { voiceTraits } = screenplay;
+  assert.equal(voiceTraits('A kindergarten teacher, warm and patient.').age, null);
+  assert.equal(voiceTraits('A kindergarten-teacher voice.').age, null);
+  assert.equal(voiceTraits('Her preschool class is singing.').age, null);
+  assert.equal(voiceTraits('A preschool teacher with a soft laugh.').age, null);
+  assert.equal(voiceTraits('A kindergartner, giggly and quick.').age, 'child');
+  assert.equal(voiceTraits('A preschooler who loves trucks.').age, 'child');
+  assert.equal(voiceTraits('A kindergarten girl with a lisp.').age, 'child');
+  const box = 'A calm woman in her forties.';
+  const desk = booth([`<speak voice="${box}" gender="female">\nGood morning, friends. Coats on the hooks, please.\n</speak>\nREADBACK: A kindergarten teacher welcomes her class back after the summer.`]);
+  const out = await desk.write({ voice_description: box });
+  assert.equal(desk.writerCalls.length, 1, 'no second ask over a teacher');
+  assert.equal(out.problem, null);
+  assert.equal(out.note, null);
+});
+
+test('review 1 (8): the screenplay for older screens has no SEX: line, and VOICE: only when the box was empty', async () => {
+  const cowboy = 'An old cowboy, gravelly and slow.';
+  const reply = `<speak voice="${cowboy}" gender="male">\nMy first horse was a roan mare.\n</speak>\nREADBACK: An old cowboy tells about his first horse.`;
+  const empty = await booth([reply]).write({ text: 'An old cowboy.' });
+  assert.equal(empty.screenplay, `VOICE: ${cowboy}\n\nMy first horse was a roan mare.`);
+  assert.equal(empty.voice_description, cowboy);
+  const phone = booth();
+  await phone.render({ script: empty.screenplay });
+  assert.equal(voiceOf(phone.bridgeCalls[0].prompt), cowboy);
+  assert.equal(spoken(phone.bridgeCalls[0].prompt), spoken(empty.script));
+  const chosen = await booth([reply]).write({ text: 'An old cowboy.', voice_description: 'A gravelly old voice.' });
+  assert.equal(chosen.screenplay, 'My first horse was a roan mare.');
+  const { projectView } = booth().internals;
+  const saved = projectView({ _id: 'p5', engine: 'scenema', script: `<speak voice="${cowboy}" gender="male" scene="a campfire">\nHello.\n</speak>`, options: {} });
+  assert.equal(saved.screenplay, `VOICE: ${cowboy}\nSCENE: a campfire\n\nHello.`);
+  assert.doesNotMatch(saved.screenplay, /SEX:/);
+  assert.match(screenplay.speakToScreenplay(`<speak voice="${cowboy}" gender="male">\nHello.\n</speak>`), /^VOICE: .*\nSEX: male\n/, 'the module default still writes SEX: for anyone else who asks');
+});
+
+test('review 1 (9): /render lifts only VOICE:, SEX: and GENDER: out of raw XML', async () => {
+  for (const line of ['Who: is there at the door?', 'Where: did you put it?', 'Scene: one, take two.', 'Speaker: is this thing on?', 'Language: that is what I teach.']) {
+    const desk = booth();
+    await desk.render({ script: `<speak voice="A calm man." gender="male">\n${line}\n</speak>` });
+    assert.equal(spoken(desk.bridgeCalls[0].prompt), line);
+    assert.equal(voiceOf(desk.bridgeCalls[0].prompt), 'A calm man.');
+  }
+  const typed = booth();
+  await typed.render({ script: '<speak voice="A calm man.">\nGENDER: male\nSEX: male\nVOICE: Someone else.\nGood evening.\n</speak>' });
+  assert.equal(spoken(typed.bridgeCalls[0].prompt), 'Good evening.');
+  assert.equal(voiceOf(typed.bridgeCalls[0].prompt), 'A calm man.', 'the tag keeps the voice it had');
+  /* The desk still reads every header word a writer leaves at the top of its own XML. */
+  const desk = await booth(['<speak voice="A tired nurse.">\nWHERE: a hospital break room\nOne more hour.\n</speak>\nREADBACK: A tired nurse.']).write();
+  assert.equal(spoken(desk.script), 'One more hour.');
+});
+
+test('review 1 (10): a voice the desk filled in is hers once she renders with it', async () => {
+  const { cut } = pageScript();
+  const make = new Function('state', 'document', 'referenceReady', 'updateRenderControls', 'collect', 'isUpload', 'post', 'say', 'startPoll', 'loadLibrary',
+    `${['deskVoiceUntouched', 'forDesk', 'doRender'].map(cut).join('\n')}\nreturn { forDesk, doRender };`);
+  const run = async (reply) => {
+    const els = {};
+    const document = { getElementById: (id) => els[id] || (els[id] = { value: '', textContent: '', hidden: true, disabled: false, focus() {} }) };
+    document.getElementById('script').value = 'Good evening.';
+    const state = { engine: 'scenema', values: { voice_description: 'A calm man.' }, clips: [], deskVoice: 'A calm man.' };
+    const sent = [];
+    const page = make(state, document, () => true, () => {}, () => ({ engine: 'scenema', voice_description: state.values.voice_description, gender: 'female' }),
+      () => false, async (url, body) => { sent.push(body); return reply; }, () => {}, () => {}, () => {});
+    assert.equal(page.forDesk({ voice_description: 'A calm man.' }).voice_description, undefined, 'before: the desk voice is not sent as her choice');
+    await page.doRender(false);
+    assert.equal(sent[0].voice_description, 'A calm man.');
+    return { state, page };
+  };
+  const ok = await run({ ok: true, data: { queued: true, jobId: 'offline-job', projectId: 'project-fixture', estimate: { spoken: 'About a cent.' } } });
+  assert.equal(ok.state.deskVoice, null);
+  assert.equal(ok.page.forDesk({ voice_description: 'A calm man.' }).voice_description, 'A calm man.', 'the next Help write this sends it as hers');
+  const failed = await run({ ok: false, data: { error: 'No.' } });
+  assert.equal(failed.state.deskVoice, 'A calm man.', 'a render that never started changes nothing');
 });
