@@ -408,6 +408,28 @@ function appendRequestContext(line: string, metadata: Record<string, unknown>): 
  * @param options - The options for formatting log messages.
  * @returns The formatted log message.
  */
+/**
+ * Plain words passed after the message, as in logger.warn('[x] failed:', err.message).
+ * Non-debug lines used to print only the message, so a failure logged its label and
+ * never its reason (Oct 2 2026: a month of gallery and Seed Audio failures read
+ * "failed:" with nothing after it). Objects stay out: they are metadata, and an
+ * Error's message is already joined to the line by winston. Redaction runs first.
+ */
+function splatWords(message: string, metadata: Record<string | symbol, unknown>): string {
+  if (/%[sdifjoO]/.test(message)) {
+    return '';
+  }
+  const splat = metadata[SPLAT_SYMBOL];
+  if (!Array.isArray(splat)) {
+    return '';
+  }
+  const words = splat
+    .filter((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
+    .map((v) => String(truncateLongStrings(String(v).trim(), DEBUG_MESSAGE_LENGTH * 2)))
+    .filter((v) => v.length > 0);
+  return words.length ? ` ${words.join(' ')}` : '';
+}
+
 const debugTraverse: winston.Logform.Format = winston.format.printf(
   ({ level, message, timestamp, ...metadata }: Record<string, unknown>) => {
     if (!message) {
@@ -425,7 +447,8 @@ const debugTraverse: winston.Logform.Format = winston.format.printf(
 
     try {
       if (level !== 'debug') {
-        return appendRequestContext(msgParts[0], metadata);
+        const words = splatWords(message, metadata as Record<string | symbol, unknown>);
+        return appendRequestContext(msgParts[0] + words, metadata);
       }
 
       if (!metadata) {

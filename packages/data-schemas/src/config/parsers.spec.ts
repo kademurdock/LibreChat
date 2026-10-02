@@ -277,6 +277,32 @@ describe('redactFormat', () => {
   });
 });
 
+describe('debugTraverse reasons passed after the message', () => {
+  it('prints a string reason on a warn line', () => {
+    const info = buildInfo('warn', {});
+    info.message = '[kadeAsset] audio describe failed:';
+    info[SPLAT_SYMBOL] = ['Request failed with status code 400'];
+    expect(runFormatter(info)).toContain('audio describe failed: Request failed with status code 400');
+  });
+
+  it('leaves metadata objects out of the words', () => {
+    const info = buildInfo('error', { userId: 'user-1' });
+    info.message = '[x] failed:';
+    info[SPLAT_SYMBOL] = [{ userId: 'user-1' }, 42];
+    const out = runFormatter(info);
+    expect(out).toContain('[x] failed: 42');
+    expect(out).not.toContain('[object Object]');
+    expect(out).toContain('"userId":"user-1"');
+  });
+
+  it('does not repeat words a %s placeholder already used', () => {
+    const info = buildInfo('info', {});
+    info.message = 'saved %s';
+    info[SPLAT_SYMBOL] = ['thing'];
+    expect(runFormatter(info)).not.toContain('thing');
+  });
+});
+
 describe('debugTraverse request context', () => {
   it('appends request context metadata for non-debug lines', () => {
     const out = runFormatter(
