@@ -207,8 +207,8 @@ test('the family sky is decoration only: hidden, no stops, no words, no sound, s
   assert.equal(/appendChild|insertBefore|\.append\(|\.prepend\(|\.after\(|\.before\(|replaceChild/.test(skySource), false, 'sky.js adds nothing to the page: it draws into the canvas history.js made');
   assert.match(source, /handle = Sky\.mount\(canvas, layout, \{/);
   assert.match(source, /onDrawn: function \(\) \{ box\.classList\.add\('is-drawn'\); \}/, 'the hint shows once the lights are drawn');
-  assert.match(source, /if \(!handle\) noSky\(\);\n\s+\}\)\.catch\(noSky\);/, 'and goes if they never are');
-  assert.match(source, /function noSky\(\) \{\n\s+if \(hintEl\.parentNode\) hintEl\.parentNode\.removeChild\(hintEl\);/);
+  assert.match(source, /\}\)\.catch\(function \(\) \{ \/\* the box keeps its plain dusk sky, its hint unseen \*\/ \}\);/, 'if they never are, nothing is taken away: the CSS keeps the hint unseen');
+  assert.doesNotMatch(source, /removeChild\(hintEl\)|noSky/, 'the hint node is never removed');
   const open = Number(/var OPEN_MS = (\d+);/.exec(skySource)[1]);
   const settle = Number(/var SETTLE_MS = (\d+);/.exec(skySource)[1]);
   const turn = Number(/var TURN = ([\d.]+);/.exec(skySource)[1]);
@@ -223,8 +223,14 @@ test('the family sky is decoration only: hidden, no stops, no words, no sound, s
   assert.match(source, /fontSize\) > 20\) return false/, 'very large text leaves it out');
   assert.match(source, /'sky\.js\$1'/, 'it loads from beside history.js at the same version');
   const css = fs.readFileSync(STYLE_PATH, 'utf8');
-  assert.match(css, /\.fh-sky \{[^}]*height: 240px;[^}]*height: clamp\(180px, 50vw, 380px\); max-height: max\(180px, 46vh\);/, 'its space is set before anything loads, shorter on a phone, with a height for browsers without clamp()');
-  assert.match(css, /\.fh-skycanvas \{[^}]*touch-action: pan-y pinch-zoom;/, 'two fingers still zoom the page over the sky');
+  assert.match(css, /\.fh-sky \{[^}]*height: 240px;[^}]*height: clamp\(180px, 50vw, 380px\); max-height: max\(200px, min\(46vh, 100vh - 35rem\)\);/, 'its space is set before anything loads, with a height for browsers without clamp(); above the chart it leaves room for the chart buttons');
+  assert.match(css, /\.fh-treeframe ~ \.fh-sky \{ max-height: max\(180px, 46vh\); \}/, 'after the chart it keeps its full height');
+  assert.match(source, /var SKY_AFTER_WHEN = '\(max-width: 43\.7em\), \(max-height: 47\.5em\)';/, 'a phone or a short window puts it after the chart');
+  assert.match(source, /var skyAfter = !!sky && skyAfterChart\(\);\n\s+if \(sky\) \{\n\s+if \(!skyAfter\) s\.appendChild\(sky\.box\);/, 'its place is chosen as the view is built');
+  assert.match(source, /s\.appendChild\(frame\);\n\s+if \(skyAfter\) s\.appendChild\(sky\.box\);/, 'after the chart frame, before the key');
+  assert.match(source, /if \(!window\.innerWidth\) return !!\(window\.screen && screen\.width && screen\.width < 700\);\n\s+return !!\(window\.matchMedia && window\.matchMedia\(SKY_AFTER_WHEN\)\.matches\);/, 'a background tab with no size yet goes by the screen');
+  assert.doesNotMatch(/\.fh-skycanvas \{([^}]*)\}/.exec(css)[1], /touch-action/, 'until the lights are drawn, touch on the canvas is the page\'s');
+  assert.match(css, /\.fh-sky\.is-drawn \.fh-skycanvas \{ touch-action: pan-y pinch-zoom; \}/, 'two fingers still zoom the page over the sky');
   assert.match(css, /@media \(forced-colors: active\), \(prefers-contrast: more\), \(prefers-reduced-data: reduce\), \(max-width: 22\.5em\), \(max-height: 30em\), print \{\s*\.fh-sky, \.fh-skynote \{ display: none !important; \}/);
   assert.match(css, /\.fh-skyhint \{[^}]*background: #0a0f24; color: #d7ddf6;/, 'its words sit on a solid strip');
   assert.match(css, /\.fh-sky:not\(\.is-drawn\) \.fh-skyhint \{ visibility: hidden; \}/, 'the hint waits for the lights');
@@ -234,7 +240,126 @@ test('the family sky is decoration only: hidden, no stops, no words, no sound, s
   assert.doesNotMatch(lit, /stroke-width: 5;/, 'a lit box never looks like the focus ring');
   assert.match(css, /\.fh-box\.is-lit \.fh-boxlink:focus-visible \.fh-ring \{ stroke-opacity: 1; stroke-width: 5; \}/, 'the focus ring stays crisp on a lit box');
   assert.match(source, /legend\(data\.legend\), skyNote\)\);/, 'the key says the sky is there, inside the existing disclosure');
-  assert.match(source, /var skyNote = sky \? el\('p', \{ class: 'fh-skynote' \}, 'The family sky above the chart is a picture of this same tree as lights, with ' \+ \(isViewer \? 'you' : skyCentre\) \+ ' in the middle, ancestors in rings above and any children below\.'\) : null;/, 'in one plain sentence, only when the sky is shown');
+  assert.match(source, /var skyNote = sky \? el\('p', \{ class: 'fh-skynote' \}, 'The family sky near the chart is a picture of this same tree\. When its lights show, each light is a person, with ' \+ \(isViewer \? 'you' : skyCentre\) \+ ' in the middle, ancestors in rings above and any children below\.'\) : null;/, 'in plain words, only when the sky is shown, true wherever it sits and if its lights never draw');
+  assert.doesNotMatch(source, /family sky above the chart/);
+});
+
+/* The drawing half of sky.js on a pretend canvas (no browser): enough of a
+ * window and document for mount() to draw, take taps and drags, and follow
+ * the page's zoom. */
+function mountSky(opts, scale) {
+  const listeners = (owner) => {
+    owner.on = {};
+    owner.addEventListener = (type, fn) => { (owner.on[type] = owner.on[type] || []).push(fn); };
+    owner.removeEventListener = (type, fn) => { owner.on[type] = (owner.on[type] || []).filter((f) => f !== fn); };
+    owner.fire = (type, e) => (owner.on[type] || []).slice().forEach((fn) => fn(e));
+    return owner;
+  };
+  const ctx = new Proxy({}, {
+    get(store, key) {
+      if (key in store) return store[key];
+      if (key === 'measureText') return () => ({ width: 50 });
+      if (key === 'createRadialGradient') return () => ({ addColorStop() {} });
+      return () => {};
+    },
+    set(store, key, value) { store[key] = value; return true; },
+  });
+  let clock = 1000;
+  const frames = [];
+  const viewport = listeners({ scale: scale || 1 });
+  const document = listeners({ hidden: false, createElement: () => ({ getContext: () => ctx }) });
+  const window = {
+    visualViewport: viewport,
+    devicePixelRatio: 1,
+    requestAnimationFrame: (cb) => { frames.push(cb); return frames.length; },
+    cancelAnimationFrame() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    performance: { now: () => clock },
+  };
+  const host = { clientWidth: 400, clientHeight: 300 };
+  const captured = [];
+  const canvas = listeners({
+    parentNode: host, isConnected: true, style: {}, width: 0, height: 0,
+    getContext: () => ctx,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 300 }),
+    setPointerCapture: (id) => captured.push(id),
+  });
+  const context = { window, document, performance: window.performance };
+  vm.runInNewContext(skySource, context);
+  const lights = [];
+  const handle = window.KadeFamilySky.mount(canvas, parts.layoutTree(family(), { up: 4, down: 2 }), Object.assign({
+    still: () => false, solid: true, focusLabel: 'You', ringName: () => 'Parents', descName: () => 'Children',
+    onLight: (id) => lights.push(id), onOpen() {},
+  }, opts));
+  /* The opening plays to its end; then nothing more is asked for. */
+  const settle = () => { clock += 5000; while (frames.length) frames.shift()(clock); };
+  settle();
+  let n = 0;
+  const pointer = (type, x, y, more) => canvas.fire(type, Object.assign({ clientX: x, clientY: y, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0, timeStamp: (n += 16) }, more));
+  const tap = (x, y) => { pointer('pointerdown', x, y); pointer('pointerup', x, y); };
+  const drag = (x0, x1, y) => {
+    pointer('pointerdown', x0, y);
+    for (let x = x0; x <= x1; x += 20) pointer('pointermove', x, y);
+    pointer('pointerup', x1, y);
+    settle();
+  };
+  /* Taps across the sky until one lights a star. */
+  const tapAStar = () => {
+    for (let y = 10; y < 300; y += 6) {
+      for (let x = 10; x < 400; x += 6) {
+        tap(x, y);
+        if (lights.length) return [x, y];
+      }
+    }
+    return null;
+  };
+  return { handle, canvas, document, viewport, lights, captured, tap, drag, tapAStar, settle };
+}
+
+test('the sky hands touch to the page while it is zoomed in, and turns again at 1', () => {
+  const sky = mountSky();
+  assert.equal(sky.canvas.style.touchAction, undefined, 'at 1 the CSS says pan-y pinch-zoom');
+  sky.drag(60, 200, 150);
+  assert.equal(sky.captured.length, 1, 'a drag at 1 turns the sky');
+  sky.viewport.scale = 2;
+  sky.viewport.fire('resize', {});
+  assert.equal(sky.canvas.style.touchAction, 'auto', 'pinched in: one finger pans the page over the sky too');
+  assert.equal(sky.canvas.style.cursor, 'default');
+  sky.drag(60, 200, 150);
+  assert.equal(sky.captured.length, 1, 'and a drag never turns the sky');
+  assert.notEqual(sky.canvas.style.cursor, 'grabbing');
+  sky.viewport.scale = 1;
+  sky.viewport.fire('resize', {});
+  assert.equal(sky.canvas.style.touchAction, '', 'back at 1 the CSS holds again');
+  assert.equal(sky.canvas.style.cursor, 'grab');
+  sky.drag(60, 200, 150);
+  assert.equal(sky.captured.length, 2, 'and a drag turns it again');
+  sky.handle.destroy();
+  assert.deepEqual(sky.viewport.on.resize, [], 'it stops following the zoom when it goes');
+});
+
+test('a sky drawn on a page that is already zoomed in hands touch to the page from the start', () => {
+  const sky = mountSky(null, 1.5);
+  assert.equal(sky.canvas.style.touchAction, 'auto');
+  sky.drag(60, 200, 150);
+  assert.equal(sky.captured.length, 0, 'no drag turns it');
+});
+
+test('a star lit by a tap goes out when anything else on the page is pressed', () => {
+  const sky = mountSky();
+  const at = sky.tapAStar();
+  assert.ok(at, 'a tap lights a star');
+  const id = sky.lights[sky.lights.length - 1];
+  assert.ok(id != null);
+  sky.document.fire('pointerdown', { target: sky.canvas });
+  assert.equal(sky.lights[sky.lights.length - 1], id, 'a press on the sky itself leaves it lit');
+  sky.document.fire('pointerdown', { target: {} });
+  assert.equal(sky.lights[sky.lights.length - 1], null, 'a press anywhere else puts it out');
+  const count = sky.lights.length;
+  sky.document.fire('pointerdown', { target: {} });
+  assert.equal(sky.lights.length, count, 'and nothing more happens while nothing is lit');
+  sky.handle.destroy();
+  assert.deepEqual(sky.document.on.pointerdown, [], 'it stops listening when it goes');
 });
 
 test('a lit star says who it is in words, without the lifespan twice, with the side or research finding', () => {

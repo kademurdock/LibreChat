@@ -23,7 +23,9 @@
  * that starts by itself lasts 1.2 seconds at most); after that it is still.
  * Dragging sideways turns it, with a short coast that stops within about a
  * second. A second finger is a pinch, which stays the browser's zoom: it
- * never turns the sky. Under Reduce Motion it is a still picture from the
+ * never turns the sky, and while the page is zoomed in one finger pans the
+ * page over it too. A star lit by a tap goes out when anything else on the
+ * page is pressed. Under Reduce Motion it is a still picture from the
  * start and does not turn. It also stops when the tab is hidden or the box
  * scrolls away, and draws nothing while nothing changes.
  *
@@ -419,6 +421,18 @@
       return !opts.still();
     }
 
+    /* Zoomed in (the page pinched past 1), one finger pans the page here as
+     * it does everywhere else: the canvas takes touch-action: auto and a
+     * drag never turns the sky. Back at 1, history.css has it again. */
+    var viewport = window.visualViewport || null;
+    function zoomed() {
+      return !!(viewport && viewport.scale > 1.001);
+    }
+
+    function canDrag() {
+      return canTurn() && !zoomed();
+    }
+
     function litId() {
       return hover ? hover.id : outsideId;
     }
@@ -733,7 +747,7 @@
       var before = hover ? hover.id : null;
       var after = star ? star.id : null;
       hover = star;
-      canvas.style.cursor = star ? 'pointer' : canTurn() ? 'grab' : 'default';
+      canvas.style.cursor = star ? 'pointer' : canDrag() ? 'grab' : 'default';
       if (before === after) return;
       if (opts.onLight) opts.onLight(after);
       request();
@@ -777,7 +791,7 @@
         /* A drag is never a tap; it turns the sky only while motion is allowed. */
         if (!down.moved && Math.abs(dx) > 6) {
           down.moved = true;
-          down.turning = canTurn();
+          down.turning = canDrag();
           if (down.turning) {
             settle(true);
             down.yaw = yaw - dx * TURN_PER_PX;
@@ -805,7 +819,7 @@
       if (was.moved) {
         if (!was.turning) return;
         canvas.style.cursor = 'grab';
-        if (canTurn() && Math.abs(was.v) > 0.002) {
+        if (canDrag() && Math.abs(was.v) > 0.002) {
           spin = Math.max(-0.08, Math.min(0.08, was.v));
           spinFrames = 0;
           request();
@@ -838,15 +852,36 @@
 
     function onMotionSetting() {
       if (!canTurn()) settle(false);
-      canvas.style.cursor = canTurn() ? 'grab' : 'default';
+      if (!hover) canvas.style.cursor = canDrag() ? 'grab' : 'default';
     }
 
-    canvas.style.cursor = canTurn() ? 'grab' : 'default';
+    /* Pinched in, the canvas hands one-finger touch to the page and any turn
+     * under way stops where it is; pinched back to 1, history.css's
+     * touch-action holds again. */
+    function onZoom() {
+      var z = zoomed();
+      canvas.style.touchAction = z ? 'auto' : '';
+      if (z) {
+        down = null;
+        spin = 0;
+      }
+      if (!hover) canvas.style.cursor = canDrag() ? 'grab' : 'default';
+    }
+
+    /* A star lit by a tap goes out when anything else on the page is pressed. */
+    function onPressElsewhere(e) {
+      if (hover && e.target !== canvas) setHover(null);
+    }
+
+    canvas.style.cursor = canDrag() ? 'grab' : 'default';
+    if (zoomed()) onZoom();
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
     canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('pointerleave', onLeave);
+    document.addEventListener('pointerdown', onPressElsewhere, true);
+    if (viewport) viewport.addEventListener('resize', onZoom);
     document.addEventListener('visibilitychange', onVisibility);
     var motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
     if (motionQuery && motionQuery.addEventListener) motionQuery.addEventListener('change', onMotionSetting);
@@ -880,6 +915,8 @@
       raf = 0;
       if (sizer) sizer.disconnect();
       if (watcher) watcher.disconnect();
+      document.removeEventListener('pointerdown', onPressElsewhere, true);
+      if (viewport) viewport.removeEventListener('resize', onZoom);
       document.removeEventListener('visibilitychange', onVisibility);
       if (motionQuery && motionQuery.removeEventListener) motionQuery.removeEventListener('change', onMotionSetting);
       else if (motionQuery && motionQuery.removeListener) motionQuery.removeListener(onMotionSetting);

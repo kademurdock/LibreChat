@@ -1490,6 +1490,10 @@
    * zoomed window (left to CSS, because a tab opened in the background is
    * laid out at no width at all). */
   var SKY_HIDDEN_WHEN = '(forced-colors: active), (prefers-contrast: more), (prefers-reduced-data: reduce)';
+  /* A phone (under about 700px wide), or a window too short for a 200px sky
+   * above the chart's buttons and the site's tab bar (history.css): there the
+   * sky goes after the chart frame, so the buttons are in view on arrival. */
+  var SKY_AFTER_WHEN = '(max-width: 43.7em), (max-height: 47.5em)';
   var skyNow = null;
   var skyLoading = null;
 
@@ -1511,6 +1515,18 @@
    * (reverie_motion = off), the site's one in-app motion switch so far. */
   function skyStill() {
     return reducedMotion() || storeGet('reverie_motion') === 'off';
+  }
+
+  /* Chosen once, as the view is built: the sky is never moved afterwards. A
+   * tab opened in the background can have no size yet; then the screen's
+   * width decides. */
+  function skyAfterChart() {
+    try {
+      if (!window.innerWidth) return !!(window.screen && screen.width && screen.width < 700);
+      return !!(window.matchMedia && window.matchMedia(SKY_AFTER_WHEN).matches);
+    } catch (e) {
+      return false;
+    }
   }
 
   function loadSky() {
@@ -1547,16 +1563,13 @@
       : (still ? 'Tap a light to see who it is. Tap again to open.' : 'Tap a light to see who it is. Drag to turn.');
     /* The canvas is made here with the box, so nothing is added to the page
      * after the view is shown; sky.js only draws into it. The hint shows once
-     * the lights are drawn (history.css), and goes if they never are. */
+     * the lights are drawn (history.css), and stays hidden if they never are:
+     * nothing is taken away either. */
     var canvas = el('canvas', { class: 'fh-skycanvas', 'aria-hidden': 'true' });
     var hintEl = el('p', { class: 'fh-skyhint', 'aria-hidden': 'true' }, hint);
     var box = el('div', { class: 'fh-sky', 'aria-hidden': 'true' }, el('div', { class: 'fh-skystage' }, canvas), hintEl);
     var handle = null;
     var stopped = false;
-    /* No lights: the box keeps its plain dusk sky, and the hint goes. */
-    function noSky() {
-      if (hintEl.parentNode) hintEl.parentNode.removeChild(hintEl);
-    }
     /* A lit star rings that person's box in the chart and their line in the
      * text version (a look only: no words, no focus, nothing moves). */
     function mark(id) {
@@ -1586,8 +1599,7 @@
             onLight: mark,
             onOpen: function (id) { location.hash = personHref(id); },
           });
-          if (!handle) noSky();
-        }).catch(noSky);
+        }).catch(function () { /* the box keeps its plain dusk sky, its hint unseen */ });
       },
       light: function (id) {
         if (handle) handle.light(id);
@@ -1632,8 +1644,12 @@
     }
     var skyCentre = isViewer ? 'You' : (focusCard && focusCard.first) || firstName(focusName);
     var sky = skyView(fullLayout, skyCentre);
+    /* Above the chart in a wide, tall window; after the chart frame on a
+     * phone or a short window (skyAfterChart). Screen readers skip the sky
+     * wherever it is, and their order through the page is the same. */
+    var skyAfter = !!sky && skyAfterChart();
     if (sky) {
-      s.appendChild(sky.box);
+      if (!skyAfter) s.appendChild(sky.box);
       /* Pointing at a box or a name in the chart (or moving the keyboard
        * onto one) lights that person's star. */
       var pointAt = function (e) {
@@ -1742,10 +1758,12 @@
     s.appendChild(bar);
     if (depthRow) s.appendChild(depthRow);
     s.appendChild(frame);
+    if (skyAfter) s.appendChild(sky.box);
     /* The sky is hidden from screen readers, so the key says in one plain
      * sentence that it is there and what it shows (words only, no new stop;
-     * history.css hides it wherever it hides the sky). */
-    var skyNote = sky ? el('p', { class: 'fh-skynote' }, 'The family sky above the chart is a picture of this same tree as lights, with ' + (isViewer ? 'you' : skyCentre) + ' in the middle, ancestors in rings above and any children below.') : null;
+     * history.css hides it wherever it hides the sky). It stays true wherever
+     * the sky sits, and if its lights never draw. */
+    var skyNote = sky ? el('p', { class: 'fh-skynote' }, 'The family sky near the chart is a picture of this same tree. When its lights show, each light is a person, with ' + (isViewer ? 'you' : skyCentre) + ' in the middle, ancestors in rings above and any children below.') : null;
     s.appendChild(el('details', { class: 'fh-legendbox' }, el('summary', null, 'What the colours, patterns and lines mean'), legend(data.legend), skyNote));
     s.appendChild(textVersion(fullLayout, focusName, isViewer, above));
     s.fhKeepStatus = true;
