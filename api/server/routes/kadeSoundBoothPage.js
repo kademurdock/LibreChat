@@ -130,7 +130,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <div id="settings"></div>
 
       <div id="moodPanel"><label class="field" for="mood">Performance mood</label>
-      <p class="hint">A note to the actor about what they feel, placed between your sentences.</p>
+      <p class="hint">A note to the actor about what they feel. It is never spoken.</p>
       <select id="mood"><option value="">No particular mood</option></select></div>
       <div id="moreSettings"></div>
 
@@ -589,7 +589,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     async function makeScript(which){
       if((state.engine==='lyria'||state.engine==='yue2') || busy()) return;
-      var b = collect(); b.mode = which;
+      var b = forDesk(collect()); b.mode = which;
       if(!b.text || b.text.trim().length < 3){ say(which==='write' ? 'Say what you want made first.' : 'Type the words you want performed first.', true); document.getElementById('text').focus(); return; }
       state.writing=true;document.getElementById('btnMake').disabled = true;
       say(which==='write' ? 'Writing it\\u2026' : 'Shaping your words\\u2026');
@@ -598,7 +598,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!r.ok){ say(r.data.error || 'The script desk had trouble. Try again.', true); return; }
       /* Part 126: the person sees the screenplay; the engine's XML sits behind
        * a disclosure for anyone who wants it. Seed scripts are already prose. */
-      document.getElementById('script').value = r.data.screenplay || r.data.script || '';
+      document.getElementById('script').value = deskScript(r.data);
+      var voiceLead = takeDeskVoice(r.data);
       state.lastXml = r.data.script || '';
       showCode(state.lastXml);
       document.getElementById('readback').textContent = r.data.readback || '';
@@ -607,6 +608,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* The mismatch question comes FIRST: it is the one thing that can make
        * everything after it wrong. */
       if(r.data.mismatch) parts.push(r.data.mismatch);
+      if(voiceLead) parts.push(voiceLead);
       if(r.data.readback) parts.push(r.data.readback);
       if(r.data.estimate && r.data.estimate.spoken) parts.push(r.data.estimate.spoken);
       if(r.data.problem) parts.push('One thing to fix first: ' + r.data.problem);
@@ -614,6 +616,24 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('script').focus();
     }
     document.getElementById('btnMake').onclick = function(){ makeScript(state.input === 'brief' ? 'write' : 'format'); };
+    /* Oct 2 2026, her report: "it writes things in the wrong places like voice descriptions".
+     * An AuK draft comes back as the performance (directions in square brackets and spoken words)
+     * and, apart from it, the voice it was written for. The script box gets the performance. The
+     * voice goes in Describe a new voice only when that box is empty and no recording is attached
+     * (a recording sets the voice by itself); a voice she typed is never replaced. A voice the
+     * desk put there and she left alone is not held against the next idea: it is not sent as her
+     * choice, and the next draft's voice replaces it. Other engines, and a server without these
+     * fields, keep the screenplay as before. */
+    function deskScript(data){ return data && typeof data.performance==='string' ? data.performance : (data && (data.screenplay || data.script)) || ''; }
+    function deskVoiceUntouched(){ var v=String(state.values.voice_description||'').trim(); return !!v && v===state.deskVoice; }
+    function forDesk(body){ if(state.engine==='scenema' && deskVoiceUntouched()) delete body.voice_description; return body; }
+    function takeDeskVoice(data, undoable){
+      if(state.engine!=='scenema' || !data || !data.voice_description) return '';
+      if((String(state.values.voice_description||'').trim() && !deskVoiceUntouched()) || state.clips.length) return '';
+      if(undoable && writingUndo && writingUndo.engine==='scenema'){ writingUndo.voice=state.values.voice_description||''; writingUndo.deskVoice=state.deskVoice||null; }
+      state.values.voice_description=data.voice_description; state.deskVoice=data.voice_description; renderSettings();
+      return 'The voice it wrote for is now in Describe a new voice.';
+    }
     ${SONG_PASTE_SOURCE || ''}
     var writingUndo=null, writingLyrics;
     function changeWriting(value){
@@ -659,7 +679,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     document.getElementById('btnUndoWriting').onclick=function(){
       if(busy() || !writingUndo || writingUndo.engine!==state.engine)return;
-      document.getElementById('script').value=writingUndo.text;if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}writingUndo=null;
+      document.getElementById('script').value=writingUndo.text;if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}if(writingUndo.voice!==undefined){state.values.voice_description=writingUndo.voice;state.deskVoice=writingUndo.deskVoice;renderSettings();}writingUndo=null;
       this.hidden=true;invalidateQuote();document.getElementById('script').focus();say('Previous writing restored.');
     };
     document.getElementById('btnInspire').onclick=function(){
@@ -716,7 +736,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var box=document.getElementById('script'), original=box.value;
       var text=original.trim()||document.getElementById('text').value.trim();
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
-      var engine=state.engine, revision=state.quoteRevision, body=collect();body.text=text;body.mode='write';body.patient=true;
+      var engine=state.engine, revision=state.quoteRevision, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
       var song=(engine==='lyria'||engine==='yue2'), deep=song && !document.getElementById('quickDraft').checked;
       if(deep)body.background=true;
       if(resume)deep=true;
@@ -733,11 +753,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         }
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
-        var result=r.data.screenplay||r.data.script;
+        var result=deskScript(r.data);
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
         var sorted=sortDraft(engine,r.data,result);
         changeWriting(sorted.result);document.getElementById('readback').textContent=r.data.readback||'';
-        say(sorted.lead+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
+        var voiceLead=takeDeskVoice(r.data,true);
+        say(sorted.lead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
@@ -805,6 +826,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
       if(!r.ok){ say(r.data.error || 'That render could not start.', true); return; }
+      /* Review 1: a voice the desk filled in is hers once she renders with it, so the next
+       * Help write this sends it as her choice and never swaps it for another. */
+      state.deskVoice = null;
       state.rerollVoice = false;
       state.projectId = r.data.projectId || state.projectId;
       if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;
@@ -917,6 +941,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       box.innerHTML = ps.map(function(p){
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
         var upload = isUpload(p.engine), ue = uploadEngine(), eg = state.guide.engines[p.engine] || {};
+        var aukEdit = p.engine === 'scenema' && !!p.options && p.options.auk_task === 'edit';
         var engine = upload ? eg.name : p.engine === 'stable' ? 'Stable Audio' : p.engine === 'yue2' ? 'YuE2' : p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
@@ -933,7 +958,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    (ue && !t.voiceOf && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
                    (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
           }).join('') +
-          (upload ? '' : '<details><summary>'+(p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(p.screenplay || p.script) + '</pre></details>') +
+          (upload ? '' : '<details><summary>'+(aukEdit?'Edit instructions':p.engine==='stable'?'Sound description':p.engine==='lyria'?'Music direction':'Script')+'</summary><pre class="script">' + esc(aukEdit ? (p.options.instruction || p.script) : (p.screenplay || p.script)) + '</pre></details>') +
           ((p.carryTo||[]).length ?
             '<fieldset class="carry"><legend>Try this on another engine</legend>' +
             '<p class="hint">Your lyrics, their section tags, the words you typed, the seed and any recording you imported come across exactly, for free. This one stays exactly as it is.</p>' +
@@ -1001,15 +1026,18 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           state.projectId = p.id; setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
           document.getElementById('trackTitle').value = p.title || '';
           document.getElementById('text').value = p.sourceText || '';
-          document.getElementById('script').value = p.screenplay || p.script || '';
+          document.getElementById('script').value = deskScript(p);
           state.lastXml = p.script || ''; showCode(state.lastXml);
           document.getElementById('readback').textContent = p.readback || '';
-          state.values={}; state.clips=[];state.importError=''; state.voiceSeed=p.voiceSeed; state.rerollVoice=false;
+          state.values={}; state.clips=[];state.importError=''; state.voiceSeed=p.voiceSeed; state.rerollVoice=false; state.deskVoice=null;
           if(p.options){
             Object.keys(p.options).forEach(function(k){ if(typeof p.options[k] !== 'object') state.values[k]=p.options[k]; });
             var urls=p.engine==='lyria' ? [] : p.engine==='seed' ? p.options.audio_urls||[] : (p.options.reference_voice_url?[p.options.reference_voice_url]:[]);
             state.clips=urls.map(function(url,i){return {url:url,name:'Saved reference '+(i+1)};});
           }
+          /* Oct 2 2026: a speech project saved with the voice inside its script shows that voice
+           * in Describe a new voice, so the script box holds only the performance. */
+          if(p.engine==='scenema' && state.values.auk_task!=='edit' && !String(state.values.voice_description||'').trim() && p.voice_description && !state.clips.length) state.values.voice_description=p.voice_description;
           /* Part 296: a saved score sits in More settings, so the group opens to show it. */
           if(state.guide.engines[p.engine].settings.some(function(s){ var v=state.values[s.key]; return s.advanced && s.kind==='text' && typeof v==='string' && v.trim(); })) moreOpen[p.engine]=true;
           invalidateQuote(); renderSettings(); if(isUpload() && state.clips.length) quoteUpload();
@@ -1025,7 +1053,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function newProject(starter){
       if(busy()){say('Finish the current operation first.',true);return;}
       if(starter && !setEngine(starter.engine))return;
-      state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];state.importError='';
+      state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.values={};state.clips=[];state.importError='';state.deskVoice=null;
       if(starter && starter.engine==='lyria')state.values.instrumental=starter.script.indexOf('Instrumental only, no vocals.')!==-1;
       document.getElementById('trackTitle').value=starter?starter.title:'';
       document.getElementById('mood').value='';
