@@ -90,7 +90,7 @@ async function mirrorAsset(doc) {
     });
     return signedUrl || null;
   } catch (err) {
-    logger.warn('[kadeAsset] mirror failed (non-fatal):', err.message);
+    logger.warn(`[kadeAsset] mirror failed (non-fatal): ${describeError(err)}`);
     return null;
   }
 }
@@ -103,8 +103,25 @@ async function mirrorAsset(doc) {
  * Falls back to a prompt-based text description for videos if the vision
  * call fails. Disable with KADE_ASSET_DESCRIBE=0.
  * -------------------------------------------------------------------------- */
-const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
+/* Oct 2 2026: the gallery has its own model setting. It used to follow
+ * KADE_VISION_MODEL, which moved to a Pro model with mandatory reasoning;
+ * the reasoning-off request below was refused on every clip from Sep 3 and
+ * My Creations wrote no descriptions for a month. Flash-lite is the original
+ * gallery model and the cheapest that reads pictures and video. */
+const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'google/gemini-3.1-flash-lite';
+/* A Pro-class model cannot switch reasoning off: think briefly, hide the
+ * thinking, and leave room for it so the words are not cut short. */
+const describeIsPro = /-pro/.test(DESCRIBE_MODEL);
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
+
+/** The reason a call failed, with the provider's own words when it sent some. */
+function describeError(err) {
+  const data = err && err.response && err.response.data;
+  const said = data && (data.error && (data.error.message || data.error) || data.message || data.detail);
+  const status = err && err.response && err.response.status;
+  const why = typeof said === 'string' ? said : said ? JSON.stringify(said) : '';
+  return [status ? `HTTP ${status}` : '', (err && err.message) || String(err), why].filter(Boolean).join(' - ').slice(0, 500);
+}
 
 async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   const key = process.env.OPENROUTER_KEY;
@@ -125,8 +142,8 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
      * a place to be stingy. */
     {
       model: DESCRIBE_MODEL,
-      max_tokens: maxTokens,
-      reasoning: { enabled: false },
+      max_tokens: describeIsPro ? maxTokens + 2000 : maxTokens,
+      reasoning: describeIsPro ? { effort: 'low', exclude: true } : { enabled: false },
       messages: [{ role: 'user', content }],
       usage: { include: true },
     },
@@ -187,7 +204,7 @@ async function describeAudio(doc) {
     );
     return text ? text.slice(0, 2000) : null;
   } catch (err) {
-    logger.warn('[kadeAsset] audio describe failed:', err.message);
+    logger.warn(`[kadeAsset] audio describe failed: ${describeError(err)}`);
     return null;
   }
 }
@@ -224,7 +241,7 @@ async function describeAsset(doc) {
     }
     throw new Error('empty description');
   } catch (err) {
-    logger.warn('[kadeAsset] vision describe failed:', err.message);
+    logger.warn(`[kadeAsset] vision describe failed: ${describeError(err)}`);
     // Fallback (videos especially): describe from the prompt so the gallery
     // entry is never a mystery to a screen-reader user.
     try {
@@ -242,7 +259,7 @@ async function describeAsset(doc) {
       ], 120, doc.user);
       return text ? text.slice(0, 2000) : null;
     } catch (err2) {
-      logger.warn('[kadeAsset] prompt-based describe failed too:', err2.message);
+      logger.warn(`[kadeAsset] prompt-based describe failed too: ${describeError(err2)}`);
       return null;
     }
   }
@@ -268,7 +285,7 @@ async function enrichAsset(doc) {
       );
     }
   } catch (err) {
-    logger.warn('[kadeAsset] enrichAsset failed (non-fatal):', err.message);
+    logger.warn(`[kadeAsset] enrichAsset failed (non-fatal): ${describeError(err)}`);
   }
 }
 
@@ -318,7 +335,7 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
      * row; every older caller ignores the return value, so this is additive. */
     return doc;
   } catch (error) {
-    logger.warn('[logKadeAsset] failed (non-fatal):', error.message);
+    logger.warn(`[logKadeAsset] failed (non-fatal): ${describeError(error)}`);
   }
 }
 
