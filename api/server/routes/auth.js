@@ -17,6 +17,7 @@ const {
 const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
+const { changePasswordController } = require('~/server/controllers/auth/ChangePasswordController');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
@@ -50,6 +51,14 @@ router.post(
   loginController,
 );
 router.post('/refresh', refreshController);
+/* Oct 2 2026: change a password while signed in (proves the current one). */
+router.post(
+  '/changePassword',
+  middleware.requireJwtAuth,
+  middleware.resetPasswordLimiter,
+  middleware.checkBan,
+  changePasswordController,
+);
 router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
   const result = getCloudFrontAuthCookieRefreshResult(req, res);
   if (!result.enabled) {
