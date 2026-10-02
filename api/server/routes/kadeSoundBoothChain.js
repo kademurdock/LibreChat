@@ -74,6 +74,10 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
     vc_cfg_rate: opts?.vc_cfg_rate,
     vc_steps: opts?.vc_steps,
     skip_vc: opts?.skip_vc,
+    /* Oct 2 2026: a description-only voice is set by a private opening take, so
+     * AuK never speaks the description (her Oct 1 preview did). Worker
+     * aa31fa8; KADE_AUK_VOICE_SAMPLE=0 turns it off. */
+    voice_sample: process.env.KADE_AUK_VOICE_SAMPLE !== '0' && opts?.auk_task !== 'edit' && !opts?.reference_voice_url ? true : undefined,
   };
   const r = await axios.post(`${bridgeBase()}/audio/scenema/start`, body, {
     headers: { 'User-Agent': UA },
