@@ -131,7 +131,75 @@ test('errorText reads a bridge job error of any shape', () => {
   assert.equal(errorText({ error: { message: 'No worker free' } }), 'No worker free');
   assert.equal(errorText(null, { fallback: 'render failed' }), 'render failed');
   assert.equal(errorText(undefined), '');
-  assert.equal(errorText({ odd: 1 }), '{"odd":1}');
+  assert.equal(errorText({ odd: 1 }), '', 'an unfamiliar shape is not read out as JSON');
+  assert.equal(errorText({ odd: 1 }, { fallback: 'The render service did not say why.' }), 'The render service did not say why.');
+  assert.equal(errorText('[object Object]', { fallback: 'render failed' }), 'render failed', 'a job saved as "[object Object]" is not read out either');
+  assert.equal(errorText('{"error":{"message":"No worker free"}}'), 'No worker free', 'a JSON string is read as what it holds');
+  assert.equal(errorText('[Errno 2] No such file'), '[Errno 2] No such file', 'words that start with a bracket stay words');
+});
+
+test('no raw JSON is ever read aloud; it goes to the log instead', () => {
+  const shapes = [
+    answered(500, { state: 'FAILED' }),
+    answered(400, { foo: 'bar', n: 1 }),
+    answered(422, { detail: { nested: { deeper: true } } }),
+    answered(400, { detail: '{"inner":"json"}' }),
+    { response: { data: { state: 'FAILED' } } },
+    { state: 'FAILED' },
+  ];
+  for (const shape of shapes) {
+    const said = providerError(shape, { name: 'Seed Audio' });
+    assert.doesNotMatch(said.message, /[{}"]/, `${JSON.stringify(shape)} said as ${said.message}`);
+  }
+  assert.equal(providerError(answered(500, { state: 'FAILED' }), { name: 'Seed Audio' }).message, 'Seed Audio had a problem on its side. Try again in a minute.');
+  assert.equal(providerError({ response: { data: { state: 'FAILED' } } }, { name: 'Seed Audio' }).message, 'Seed Audio did not say why.');
+  assert.match(providerError(answered(500, { state: 'FAILED' }), { name: 'Seed Audio' }).detail, /"state":"FAILED"/);
+});
+
+test('a link is said as its file name, never its address, signature or account folder', () => {
+  const said = providerError(answered(422, { detail: [{ loc: ['body', 'audio_urls', 1], msg: `Failed to download file from ${SIGNED}`, type: 'file_download_error' }] }), { name: 'Seed Audio' });
+  assert.equal(said.message, 'Clip 2: Failed to download file from soundbooth-ref-abc.wav');
+  assert.match(said.detail, /audios\/u1\/soundbooth-ref-abc\.wav\?\[signed\]/, 'the log keeps the redacted address');
+  assert.doesNotMatch(said.detail, /deadbeef/);
+  const account = '6a0000000000000000000abc';
+  assert.equal(errorText(`Could not fetch https://store.test/bucket/audios/${account}/soundbooth-ref-x.mp3.`), 'Could not fetch soundbooth-ref-x.mp3.');
+  assert.equal(errorText('Could not fetch https://store.test/bucket/clips/abc?sig=1, try again'), 'Could not fetch the clip, try again', 'no file name: "the clip"');
+  assert.equal(errorText(`NoSuchKey: audios/${account}/soundbooth-ref-x.wav`), 'NoSuchKey: soundbooth-ref-x.wav', 'a storage path loses its account folder');
+  assert.equal(errorText(`No balance left for user ${account}.`), 'No balance left for user.');
+  for (const text of [said.message, errorText(`see https://store.test/bucket/audios/${account}/a.wav?X-Amz-Signature=1`)]) {
+    assert.doesNotMatch(text, /https?:|X-Amz|\[signed\]|6a0{3}/);
+  }
+});
+
+test('an engine error keeps its XML tag names; only an HTML page loses its markup', () => {
+  assert.equal(errorText('Unknown tag <emotion> in line 3'), 'Unknown tag emotion in line 3');
+  assert.equal(errorText('prompt must be Scenema <speak ...> XML'), 'prompt must be Scenema speak XML');
+  assert.equal(errorText('Close the </voice> tag before <break time="1s"/>.'), 'Close the voice tag before break.');
+  assert.equal(errorText('Error: <html><body><h1>Bad Gateway</h1></body></html>'), 'Error: Bad Gateway');
+  assert.equal(errorText('Keep 2 < 3 as it is'), 'Keep 2 < 3 as it is');
+});
+
+test('a rejected value echoed back is cut to 80 characters before it is logged', () => {
+  const script = 'Narrator (warm): ' + 'A long line of her own writing that must never sit whole in a log. '.repeat(30);
+  const said = providerError(answered(422, { detail: [{ loc: ['body', 'prompt'], msg: 'String should have at most 2048 characters', type: 'string_too_long', input: script, ctx: { max_length: 2048 } }] }), { name: 'Seed Audio' });
+  const logged = JSON.parse(said.detail.replace(/^status=422 code=\S+ body=/, ''));
+  assert.equal(logged.detail[0].input.length, 80);
+  assert.ok(logged.detail[0].input.startsWith('Narrator (warm): A long line'));
+  assert.ok(logged.detail[0].input.endsWith('…'));
+  assert.equal(logged.detail[0].ctx.max_length, 2048, 'everything else is kept');
+  assert.ok(!said.detail.includes(script.slice(0, 200)));
+  /* A link keeps its end, where the file name is, and still loses its signature. */
+  const link = 'https://s3.us-east-005.backblazeb2.com/bucket/audios/6a0000000000000000000abc/soundbooth-ref-mq3x9k2-a1b2c3.wav?X-Amz-Signature=deadbeef';
+  const clip = providerError(answered(422, { detail: [{ loc: ['body', 'audio_urls', 0], msg: 'too long', type: 'audio_duration_too_long', input: link }] }), { name: 'Seed Audio' });
+  const input = JSON.parse(clip.detail.replace(/^status=422 code=\S+ body=/, '')).detail[0].input;
+  assert.ok(input.length <= 80, input);
+  assert.match(input, /soundbooth-ref-mq3x9k2-a1b2c3\.wav\?\[signed\]$/);
+  assert.doesNotMatch(clip.detail, /deadbeef/);
+  /* A bare list (no `detail`) is cut the same way, and a short input is left alone. */
+  const bare = providerError(answered(400, [{ msg: 'bad', input: script }, { msg: 'ok', input: 'short' }]), { name: 'X' });
+  const list = JSON.parse(bare.detail.replace(/^status=400 code=\S+ body=/, ''));
+  assert.equal(list[0].input.length, 80);
+  assert.equal(list[1].input, 'short');
 });
 
 test('redactUrls keeps the address and drops the signature', () => {

@@ -15,12 +15,18 @@
  * Google's `{ error: { message } }`, the bridge's `{ error: '...' }`, a plain
  * string body, an HTML error page, a timeout, a host that cannot be reached,
  * and ffmpeg failing on a file. `message` is short and plain, for her and her
- * screen reader. `detail` is the whole answer for logger.warn, with signed
- * links cut short so a log line never carries a working key to her audio.
+ * screen reader: a link in it becomes its file name (or "the clip"), never an
+ * address or an account folder, and an answer it cannot read as words is not
+ * read out as JSON. An engine's XML tag keeps its name. `detail` is the whole
+ * answer for logger.warn, with signed links cut short so a log line never
+ * carries a working key to her audio, and the `input` a provider echoes back
+ * (which can be her script) cut to 80 characters.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const MAX_MESSAGE = 240;
 const MAX_DETAIL = 1500;
+/** How much of a rejected value (fal's `input`) reaches the log: enough to know it, never her whole script. */
+const MAX_INPUT = 80;
 
 const TIMEOUT_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT']);
 const UNREACHABLE_CODES = new Set([
@@ -36,9 +42,43 @@ function looksLikeHtml(text) {
   return /^\s*<(!doctype|html|head|body)\b/i.test(text);
 }
 
-/** Short, one line, no markup, cut at a word. */
+/** A file name worth saying: short, plain, with a real extension (".wav", not "1.0"). */
+const SAYABLE_FILE = /^\w[\w .-]{0,79}\.[a-z][a-z0-9]{1,4}$/i;
+
+/**
+ * A link, said: its file name, or "the clip". The address itself, its
+ * signature and the account folder in it are never read aloud; the redacted
+ * link stays in `detail` for the log.
+ */
+function sayLinks(text) {
+  return text.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (match) => {
+    const trail = (match.match(/[.,;:!?)\]}]+$/) || [''])[0];
+    const link = trail ? match.slice(0, -trail.length) : match;
+    let file = '';
+    try {
+      file = decodeURIComponent(new URL(link).pathname.split('/').filter(Boolean).pop() || '');
+    } catch (_) {
+      file = '';
+    }
+    return (SAYABLE_FILE.test(file) ? file : 'the clip') + trail;
+  });
+}
+
+/**
+ * Short, one line, cut at a word. A link becomes its file name, a storage path
+ * loses its account folder, and a 24-character account or project id is not
+ * read out. Markup is removed only from an HTML page; anywhere else a tag such
+ * as <emotion> keeps its name, because in an engine's error that name is the
+ * thing to fix.
+ */
 function clean(text, max = MAX_MESSAGE) {
-  let s = redactUrls(text).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  let s = sayLinks(String(text == null ? '' : text).slice(0, 4000))
+    .replace(/(?:[\w.-]+\/)*[0-9a-f]{24}\/(?=[\w.-])/gi, '')
+    .replace(/\b[0-9a-f]{24}\b/gi, '');
+  s = /<(!doctype|html|head|body)\b/i.test(s)
+    ? s.replace(/<[^>]*>/g, ' ')
+    : s.replace(/<\/?\s*([A-Za-z][\w:.-]*)[^<>]*>/g, '$1');
+  s = s.replace(/\s+([,.;:!?])(?=\s|$)/g, '$1').replace(/\s+/g, ' ').trim();
   if (s.length > max) {
     const cut = s.slice(0, max - 1);
     const space = cut.lastIndexOf(' ');
@@ -101,11 +141,25 @@ function itemWords(item, name) {
 
 /**
  * Any error-ish value as words: a string, a FastAPI `detail`, `{ error }`,
- * `{ message }`. Never "[object Object]": an unknown object becomes its JSON.
+ * `{ message }`. Never "[object Object]", and never raw JSON: an object in a
+ * shape this does not know says nothing here (the caller falls back to the
+ * status, or "did not say why"), and the JSON goes to `detail` for the log.
+ * A string that is itself JSON is read the same way.
  */
 function textOf(value, name = 'The service') {
   if (value == null) return '';
-  if (typeof value === 'string') return looksLikeHtml(value) ? '' : value;
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t || looksLikeHtml(t) || /^\[object \w+\]$/.test(t)) return '';
+    if (/^[[{]/.test(t)) {
+      try {
+        return textOf(JSON.parse(t), name);
+      } catch (_) {
+        /* words that happen to start with a bracket */
+      }
+    }
+    return value;
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) {
     const said = [];
@@ -116,19 +170,36 @@ function textOf(value, name = 'The service') {
     return said.join(' ');
   }
   if (typeof value === 'object') {
-    if (!Object.keys(value).length) return '';
-    let known = false;
     for (const key of ['detail', 'error', 'message', 'msg', 'error_message', 'reason']) {
       if (value[key] != null) {
-        known = true;
         const words = textOf(value[key], name);
         if (words) return words;
       }
     }
-    /* A familiar shape with nothing in it says nothing; an unfamiliar one is shown as it is. */
-    return known ? '' : compactJson(value, 300);
+    /* Braces and quotes are not words: an unfamiliar shape says nothing aloud. */
+    return '';
   }
   return String(value);
+}
+
+/** A rejected value echoed back (fal's `input`), cut for the log. A link keeps its end, where the file name is. */
+function shortInput(value) {
+  const s = redactUrls(typeof value === 'string' ? value : compactJson(value, MAX_INPUT * 4)).replace(/\s+/g, ' ');
+  if (s.length <= MAX_INPUT) return s;
+  return /^https?:\/\/\S+$/i.test(s) ? '…' + s.slice(-(MAX_INPUT - 1)) : s.slice(0, MAX_INPUT - 1) + '…';
+}
+
+/** The answer as it is logged: every problem in a `detail` list (or a bare list) has its `input` cut short. */
+function forLog(body) {
+  const items = (list) =>
+    list.map((item) =>
+      item && typeof item === 'object' && !Array.isArray(item) && item.input !== undefined
+        ? { ...item, input: shortInput(item.input) }
+        : item,
+    );
+  if (Array.isArray(body)) return items(body);
+  if (body && typeof body === 'object' && Array.isArray(body.detail)) return { ...body, detail: items(body.detail) };
+  return body;
 }
 
 function statusWords(status, name) {
@@ -171,10 +242,10 @@ function providerError(error, { name = 'The service', max = MAX_MESSAGE } = {}) 
   const parts = [];
   if (status) parts.push(`status=${status}`);
   if (code) parts.push(`code=${code}`);
-  if (body != null) parts.push(`body=${typeof body === 'string' ? body : compactJson(body, MAX_DETAIL)}`);
+  if (body != null) parts.push(`body=${typeof body === 'string' ? body : compactJson(forLog(body), MAX_DETAIL)}`);
   else if (ownMessage) parts.push(`message=${ownMessage}`);
   else if (!(error && typeof error === 'object')) parts.push(`value=${String(error)}`);
-  else if (!(error instanceof Error)) parts.push(`value=${compactJson(error, MAX_DETAIL)}`);
+  else if (!(error instanceof Error)) parts.push(`value=${compactJson(forLog(error), MAX_DETAIL)}`);
   if (ffmpeg && e.stderr) parts.push(`stderr=${String(e.stderr).slice(-400)}`);
 
   return {
@@ -191,4 +262,4 @@ function errorText(value, { name = 'The service', max = MAX_MESSAGE, fallback = 
   return words ? clean(words, max) : fallback;
 }
 
-module.exports = { providerError, errorText, redactUrls, textOf, clean };
+module.exports = { providerError, errorText, redactUrls, textOf, clean, sayLinks, forLog, MAX_INPUT };

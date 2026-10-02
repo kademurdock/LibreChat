@@ -10,18 +10,21 @@
  * clips" since July, but only the chat tool (FalAI.js) ever trimmed; the Sound
  * Booth sent every clip as it was.
  *
- * Now every clip in her own storage is checked before fal sees it. A clip
- * longer than 29.5 seconds is cut, at a pause near the end if there is one,
- * with a short fade, into a 48 kHz mono WAV (the same shape a Seed import is
- * stored in). A file too big, or in a format fal cannot read, is converted the
- * same way. The copy is stored beside the original as <name>-seed.wav and
- * registered with its length, so the next render finds it and does not cut
- * again. The original is never changed. The answer says what happened, in a
- * sentence she can hear.
+ * Now every clip in her own storage is checked before fal sees it. A clip the
+ * reference list already knows is short enough, stored as an MP3 or as a WAV
+ * of a size fal takes, is sent without fetching it. A clip longer than 29.5
+ * seconds is cut, at a pause near the end if there is one, with a short fade,
+ * into a 48 kHz mono WAV (the same shape a Seed import is stored in). A file
+ * too big, or in a format fal cannot read, is converted the same way. The copy
+ * is stored beside the original as <name>-seed.wav and registered with its
+ * length, so the next render finds it and does not cut again. The original is
+ * never changed, and the project keeps it. The answer says what happened, in
+ * a sentence she can hear.
  *
- * Fails open: anything that goes wrong here sends the clip as it was, and the
- * provider's answer (kadeSoundBoothErrors.js) says why in plain words.
- * ffmpeg runs through execFile, never a shell.
+ * Fails open: anything that goes wrong here, or a check still running after
+ * 25 seconds, sends the clip as it was, and the provider's answer
+ * (kadeSoundBoothErrors.js) says why in plain words. ffmpeg runs through
+ * execFile, never a shell.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const fs = require('fs/promises');
@@ -43,6 +46,12 @@ const SEED_CLIP_MAX_BYTES = 10 * 1000 * 1000;
 const SEED_CLIP_SAFE_BYTES = 9.5 * 1000 * 1000;
 const SEED_FORMATS = new Set(['wav', 'mp3', 'ogg_opus']);
 const SILENCE_FILTER = 'silencedetect=noise=-35dB:d=0.25';
+/**
+ * All the clips of one render get this long to be checked. fal then has up to
+ * 180 seconds, and the phone waits 240 for the whole render, so a stalled
+ * download must not eat the difference. Past it, a clip goes as it is.
+ */
+const SEED_PREP_DEADLINE_MS = 25000;
 
 function run(args, { timeout = 60000, bin = FFMPEG } = {}) {
   return new Promise((resolve, reject) => {
@@ -191,11 +200,23 @@ function sayLength(n) {
   return n < 31 ? String(Math.round(n * 10) / 10) : String(Math.round(n));
 }
 
+/**
+ * A clip of 29.5 to 30 seconds is cut too, to leave room for a decoder that
+ * measures a little long. Said as its length ("was 29.8 seconds. Seed Audio
+ * takes up to 30") that sounds like a cut for no reason, so it is said as
+ * being right at the limit. Rounded as sayLength rounds, so 30.04 is here too.
+ */
+function atLimit(was) {
+  return typeof was === 'number' && was > 0 && Math.round(was * 10) / 10 <= SEED_CLIP_LIMIT_SECONDS;
+}
+
 /** "Your clip was 33 seconds. Seed Audio takes up to 30, so the first 29 and a half seconds were used." */
 function sayTrimmed(label, was, used, pause) {
-  const length = typeof was === 'number' && was > 0 ? `was ${sayLength(was)} seconds` : 'was longer than 30 seconds';
   const kept = typeof used === 'number' && used > 0 ? sayHalf(used) : sayHalf(SEED_CLIP_TARGET_SECONDS);
-  return `${label} ${length}. Seed Audio takes up to 30, so the first ${kept} seconds were used${pause ? ', ending at a pause' : ''}.`;
+  const ending = pause ? ', ending at a pause' : '';
+  if (atLimit(was)) return `${label} was right at Seed Audio's 30-second limit, so to be safe the first ${kept} seconds were used${ending}.`;
+  const length = typeof was === 'number' && was > 0 ? `was ${sayLength(was)} seconds` : 'was longer than 30 seconds';
+  return `${label} ${length}. Seed Audio takes up to 30, so the first ${kept} seconds were used${ending}.`;
 }
 
 function sayConverted(label, why) {
@@ -208,13 +229,18 @@ function sayConverted(label, why) {
 
 /** Said when a Seed import is cut on the way in, so Play plays what Seed will hear. */
 function sayImportTrim(was, fitted, { capped = false } = {}) {
-  const length = capped ? 'Yours was longer than 45 seconds' : `Yours was ${sayLength(was)}`;
-  return `Seed Audio takes clips up to 30 seconds. ${length}, so the first ${sayHalf(fitted.seconds || fitted.at || SEED_CLIP_TARGET_SECONDS)} seconds were kept${fitted.pause ? ', ending at a pause' : ''}.`;
+  const edge = !capped && atLimit(was);
+  let length = `Yours was ${sayLength(was)}`;
+  if (capped) length = 'Yours was longer than 45 seconds';
+  else if (edge) length = 'Yours was right at that limit';
+  return `Seed Audio takes clips up to 30 seconds. ${length}, so ${edge ? 'to be safe ' : ''}the first ${sayHalf(fitted.seconds || fitted.at || SEED_CLIP_TARGET_SECONDS)} seconds were kept${fitted.pause ? ', ending at a pause' : ''}.`;
 }
 
 /** Said when a long Seed import could not be cut on the way in; the render cuts it instead. */
 function sayImportLong(was) {
-  return `Seed Audio takes clips up to 30 seconds. This one is ${sayLength(was)}, so when you render, the first ${sayHalf(SEED_CLIP_TARGET_SECONDS)} seconds are used.`;
+  const kept = sayHalf(SEED_CLIP_TARGET_SECONDS);
+  if (atLimit(was)) return `Seed Audio takes clips up to 30 seconds. This one is right at that limit, so to be safe, when you render, the first ${kept} seconds are used.`;
+  return `Seed Audio takes clips up to 30 seconds. This one is ${sayLength(was)}, so when you render, the first ${kept} seconds are used.`;
 }
 
 /* ---------- which clips are hers, and where the copy goes --------------- */
@@ -245,22 +271,31 @@ function ownClip(url, fresh, userId) {
   }
 }
 
+/** The end of a stored clip's name, lower case: "wav" for "soundbooth-ref-x.wav". */
+function fileExtension(fileName) {
+  const m = String(fileName || '').match(/\.([a-z0-9]{1,5})$/i);
+  return m ? m[1].toLowerCase() : '';
+}
+
 /**
  * The render's half. Every dependency is passed in, so the whole path is
  * tested without storage, a database or the network.
  * @param {{
  *   resign: (url: string, key?: string) => Promise<string|undefined>,
  *   seconds: (userId: string, url: string) => Promise<number|undefined>,
+ *   peek?: (url: string) => Promise<{ head: Buffer, bytes: number|null }>,
  *   download: (url: string) => Promise<Buffer>,
  *   measure: (buffer: Buffer) => Promise<number|null>,
  *   fit: (buffer: Buffer, options: { format: string|null, cut: boolean }) => Promise<{ buffer: Buffer, seconds: number|null, at: number|null, pause: boolean }>,
  *   save: (userId: string, buffer: Buffer, fileName: string) => Promise<string>,
  *   register: (userId: string, url: string, seconds: number|null) => Promise<void>,
  *   logger?: { info: Function, warn: Function },
+ *   deadlineMs?: number,
  * }} deps
  */
 function createSeedClipPreparer(deps) {
   const log = deps.logger || { info() {}, warn() {} };
+  const deadlineMs = Number.isFinite(deps.deadlineMs) && deps.deadlineMs > 0 ? deps.deadlineMs : SEED_PREP_DEADLINE_MS;
   const quietly = async (work) => {
     try {
       return await work();
@@ -268,18 +303,41 @@ function createSeedClipPreparer(deps) {
       return undefined;
     }
   };
+  const LATE = Symbol('late');
+  /** The work's answer, or LATE when `ms` runs out first. The work itself carries on. */
+  const within = (promise, ms) => {
+    let timer;
+    const late = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(LATE), Math.max(0, ms));
+    });
+    return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+  };
 
-  async function one(userId, url, label) {
+  async function one(userId, url, label, seen) {
     const fresh = await quietly(() => deps.resign(url));
     const own = fresh ? ownClip(url, fresh, userId) : null;
     if (!own) return { url };
+    seen.fresh = fresh;
+    /* Every import records its length, so most clips are known without fetching them. */
+    const was = await quietly(() => deps.seconds(userId, url));
+    if (typeof was === 'number' && was > 0 && was <= SEED_CLIP_TARGET_SECONDS) {
+      const ext = fileExtension(own.file);
+      /* An MP3 of under 30 seconds is always far under 10 MB. */
+      if (ext === 'mp3') return { url: fresh };
+      /* A WAV kept as it was imported can be large (29 seconds of 96 kHz, 24-bit stereo is
+       * 17 MB), so its first bytes and its size are read, not the whole file. */
+      if (ext === 'wav' && typeof deps.peek === 'function') {
+        const peek = await quietly(() => deps.peek(fresh));
+        const bytes = peek ? Number(peek.bytes) : NaN;
+        if (peek && sniffFormat(peek.head) === 'wav' && bytes > 0 && bytes <= SEED_CLIP_SAFE_BYTES) return { url: fresh };
+      }
+    }
     const copy = seedCopyName(own.file);
     if (copy !== own.file) {
       /* A copy made for an earlier render is used again, without fetching or cutting anything. */
       const copyUrl = await quietly(() => deps.resign(url, `audios/${userId}/${copy}`));
       const copySeconds = copyUrl ? await quietly(() => deps.seconds(userId, copyUrl)) : undefined;
       if (copyUrl && typeof copySeconds === 'number' && copySeconds > 0 && copySeconds <= SEED_CLIP_TARGET_SECONDS + 0.05) {
-        const was = await quietly(() => deps.seconds(userId, url));
         const cut = typeof was !== 'number' || was > SEED_CLIP_TARGET_SECONDS;
         return {
           url: copyUrl,
@@ -337,14 +395,28 @@ function createSeedClipPreparer(deps) {
   return async function prepareSeedClips(userId, urls) {
     const list = Array.isArray(urls) ? urls : [];
     const out = { urls: [], notes: [], fitted: 0, logs: [] };
+    const started = Date.now();
     for (let i = 0; i < list.length; i++) {
       const label = list.length === 1 ? 'Your clip' : `Clip ${i + 1}`;
-      let r;
-      try {
-        r = await one(String(userId), list[i], label);
-      } catch (e) {
-        log.warn(`[soundbooth/seed-clip] check failed (sending the clip as it is): ${e && e.message}`);
-        r = { url: list[i] };
+      const seen = { fresh: null };
+      const left = deadlineMs - (Date.now() - started);
+      let r = LATE;
+      if (left > 0) {
+        const work = one(String(userId), list[i], label, seen).catch((e) => {
+          log.warn(`[soundbooth/seed-clip] check failed (sending the clip as it is): ${e && e.message}`);
+          return { url: seen.fresh || list[i] };
+        });
+        r = await within(work, left);
+      }
+      if (r === LATE) {
+        /* Fails open on time as it does on errors. A copy the unfinished check goes on to
+         * store is still registered, so the next render uses it. */
+        log.warn(`[soundbooth/seed-clip] ${label.toLowerCase()} not checked within ${deadlineMs} ms; sending it as it is`);
+        if (!seen.fresh) {
+          const fresh = await within(quietly(() => deps.resign(list[i])), 2000);
+          if (typeof fresh === 'string' && ownClip(list[i], fresh, String(userId))) seen.fresh = fresh;
+        }
+        r = { url: seen.fresh || list[i] };
       }
       out.urls.push(r.url || list[i]);
       if (r.note) out.notes.push(r.note);
@@ -361,6 +433,7 @@ module.exports = {
   SEED_CLIP_EARLIEST_CUT,
   SEED_CLIP_MAX_BYTES,
   SEED_CLIP_SAFE_BYTES,
+  SEED_PREP_DEADLINE_MS,
   sniffFormat,
   seedClipPlan,
   parseSilences,

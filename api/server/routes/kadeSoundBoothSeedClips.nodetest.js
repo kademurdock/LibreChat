@@ -97,15 +97,27 @@ test('the ffmpeg argument lists, exactly', () => {
 test('the sentences she hears', () => {
   assert.equal(clips.sayTrimmed('Your clip', 32.6, 29.5, false), 'Your clip was 33 seconds. Seed Audio takes up to 30, so the first 29 and a half seconds were used.');
   assert.equal(clips.sayTrimmed('Clip 2', 47, 28.04, true), 'Clip 2 was 47 seconds. Seed Audio takes up to 30, so the first 28 seconds were used, ending at a pause.');
-  assert.equal(clips.sayTrimmed('Your clip', 29.8, 29.5, false), 'Your clip was 29.8 seconds. Seed Audio takes up to 30, so the first 29 and a half seconds were used.');
+  /* A clip of 29.5 to 30 seconds is cut too; said by its length it would sound like a cut for no reason. */
+  assert.equal(clips.sayTrimmed('Your clip', 29.8, 29.5, false), "Your clip was right at Seed Audio's 30-second limit, so to be safe the first 29 and a half seconds were used.");
+  assert.equal(clips.sayTrimmed('Clip 2', 30, 26.4, true), "Clip 2 was right at Seed Audio's 30-second limit, so to be safe the first 26 and a half seconds were used, ending at a pause.");
+  assert.equal(clips.sayTrimmed('Your clip', 30.04, 29.5, false), "Your clip was right at Seed Audio's 30-second limit, so to be safe the first 29 and a half seconds were used.", 'rounds to 30, so it is said as the limit');
+  assert.equal(clips.sayTrimmed('Your clip', 30.1, 29.5, false), 'Your clip was 30.1 seconds. Seed Audio takes up to 30, so the first 29 and a half seconds were used.');
   assert.equal(clips.sayTrimmed('Your clip', undefined, 29.5, false), 'Your clip was longer than 30 seconds. Seed Audio takes up to 30, so the first 29 and a half seconds were used.');
+  for (const was of [29.51, 29.8, 29.96, 30, 30.04]) {
+    assert.doesNotMatch(clips.sayTrimmed('Your clip', was, 29.5, false), /was (29|30)(\.\d)? seconds/, `${was} is never said as a length under or at the limit`);
+  }
   assert.equal(clips.sayConverted('Your clip', ['format']), 'Your clip was in a format Seed Audio cannot read, so a WAV copy was sent.');
   assert.equal(clips.sayConverted('Clip 3', ['big']), 'Clip 3 was too big a file for Seed Audio, so a smaller copy was sent.');
   assert.equal(clips.sayConverted('Clip 1', ['big', 'format']), 'Clip 1 was too big and in a format Seed Audio cannot read, so a smaller WAV copy was sent.');
   assert.equal(clips.sayImportTrim(32.6, { seconds: 28.51, pause: true }), 'Seed Audio takes clips up to 30 seconds. Yours was 33, so the first 28 and a half seconds were kept, ending at a pause.');
   assert.equal(clips.sayImportTrim(45, { seconds: 29.5, pause: false }, { capped: true }), 'Seed Audio takes clips up to 30 seconds. Yours was longer than 45 seconds, so the first 29 and a half seconds were kept.');
+  assert.equal(clips.sayImportTrim(29.8, { seconds: 29.5, pause: false }), 'Seed Audio takes clips up to 30 seconds. Yours was right at that limit, so to be safe the first 29 and a half seconds were kept.');
   assert.equal(clips.sayImportLong(32.6), 'Seed Audio takes clips up to 30 seconds. This one is 33, so when you render, the first 29 and a half seconds are used.');
-  const said = [clips.sayTrimmed('Clip 1', 31, 29.5, true), clips.sayConverted('Clip 1', ['big']), clips.sayImportTrim(40, { seconds: 29.5 }), clips.sayImportLong(40)];
+  assert.equal(clips.sayImportLong(29.9), 'Seed Audio takes clips up to 30 seconds. This one is right at that limit, so to be safe, when you render, the first 29 and a half seconds are used.');
+  const said = [
+    clips.sayTrimmed('Clip 1', 31, 29.5, true), clips.sayTrimmed('Clip 1', 29.9, 29.5, true), clips.sayConverted('Clip 1', ['big']),
+    clips.sayImportTrim(40, { seconds: 29.5 }), clips.sayImportTrim(29.7, { seconds: 29.5 }), clips.sayImportLong(40), clips.sayImportLong(29.7),
+  ];
   for (const line of said) assert.doesNotMatch(line, /[;:()]/, 'plain sentences, nothing a screen reader stumbles on');
 });
 
@@ -128,24 +140,34 @@ test('which clips the booth may open, and the copy beside them', () => {
 function fakeWorld(over = {}) {
   const STORE = 'https://store.test/bucket/';
   const w = {
-    objects: new Map(), registry: new Map(), saves: [], downloads: [], fits: [], logs: [],
+    objects: new Map(), registry: new Map(), saves: [], downloads: [], peeks: [], fits: [], logs: [],
     measure: async () => 32.6,
     fit: async (buffer, options) => ({ buffer: Buffer.alloc(4000, 1), seconds: 28.4, at: 28.4, pause: true, options }),
+    downloadDelay: 0,
     ...over,
   };
   const keyOf = (url) => new URL(url).pathname.replace('/bucket/', '');
   const identity = (url) => { const u = new URL(url); return u.origin + u.pathname; };
+  const stored = (url) => w.objects.get(keyOf(url)) || Buffer.from('RIFF\x00\x00\x00\x00WAVEfmt ' + 'x'.repeat(100), 'latin1');
   w.signed = (key, tag = 'fresh') => `${STORE}${key}?X-Amz-Signature=${tag}`;
   w.prepare = clips.createSeedClipPreparer({
     resign: async (url, key) => { const k = key || keyOf(url); return k.split('/').length >= 3 ? w.signed(k) : undefined; },
     seconds: async (user, url) => w.registry.get(user + '|' + identity(url)),
-    download: async (url) => { w.downloads.push(keyOf(url)); if (w.downloadFails) throw new Error('403 expired'); return w.objects.get(keyOf(url)) || Buffer.from('RIFF\x00\x00\x00\x00WAVEfmt ' + 'x'.repeat(100), 'latin1'); },
+    peek: async (url) => { w.peeks.push(keyOf(url)); const b = stored(url); return { head: b.subarray(0, 64), bytes: b.length }; },
+    download: async (url) => {
+      w.downloads.push(keyOf(url));
+      if (w.downloadDelay) await new Promise((r) => setTimeout(r, w.downloadDelay));
+      if (w.downloadFails) throw new Error('403 expired');
+      return stored(url);
+    },
     measure: (buffer) => w.measure(buffer),
     fit: async (buffer, options) => { w.fits.push(options); return w.fit(buffer, options); },
     save: async (user, buffer, fileName) => { if (w.saveFails) throw new Error('storage down'); const k = `audios/${user}/${fileName}`; w.saves.push(k); w.objects.set(k, buffer); return w.signed(k, 'saved'); },
     register: async (user, url, seconds) => { if (typeof seconds === 'number') w.registry.set(user + '|' + identity(url), seconds); },
     logger: { info: (m) => w.logs.push(['info', m]), warn: (m) => w.logs.push(['warn', m]) },
+    deadlineMs: w.deadlineMs,
   });
+  w.know = (key, seconds) => w.registry.set(`${USER}|${STORE}${key}`, seconds);
   return w;
 }
 
@@ -210,6 +232,63 @@ test('anything going wrong sends the clip as it was (fails open) and says why in
   assert.equal(w.fits.length, 0, 'a clip whose length cannot be read is not cut blind');
   assert.match(w.logs.at(-1)[1], /length unknown/);
   assert.deepEqual(await fakeWorld().prepare(USER, undefined), { urls: [], notes: [], fitted: 0, logs: [] });
+});
+
+test('a clip the reference list knows fits is not fetched: an MP3 at all, a WAV only its first bytes', async () => {
+  const w = fakeWorld();
+  w.know(`audios/${USER}/voice.mp3`, 12);
+  w.know(`audios/${USER}/voice.wav`, 29.5);
+  const out = await w.prepare(USER, [w.signed(`audios/${USER}/voice.mp3`, 'old'), w.signed(`audios/${USER}/voice.wav`, 'old')]);
+  assert.deepEqual(out.urls, [w.signed(`audios/${USER}/voice.mp3`), w.signed(`audios/${USER}/voice.wav`)]);
+  assert.deepEqual(out.notes, []);
+  assert.deepEqual(w.downloads, [], 'nothing fetched whole');
+  assert.deepEqual(w.peeks, [`audios/${USER}/voice.wav`], 'only the WAV is peeked at, for its size');
+  assert.equal(w.fits.length, 0);
+});
+
+test('known to fit by length, but not by size or format, is still fetched and fitted', async () => {
+  /* A 20-second WAV kept as it was imported, 14 MB: too big for fal, so it is converted. */
+  const big = fakeWorld({ measure: async () => 20 });
+  big.know(`audios/${USER}/hires.wav`, 20);
+  big.objects.set(`audios/${USER}/hires.wav`, Buffer.concat([Buffer.from('RIFF\x00\x00\x00\x00WAVEfmt ', 'latin1'), Buffer.alloc(14 * 1000 * 1000)]));
+  const b = await big.prepare(USER, [big.signed(`audios/${USER}/hires.wav`, 'old')]);
+  assert.deepEqual(big.peeks, [`audios/${USER}/hires.wav`]);
+  assert.deepEqual(big.downloads, [`audios/${USER}/hires.wav`]);
+  assert.deepEqual(b.urls, [big.signed(`audios/${USER}/hires-seed.wav`, 'saved')]);
+  /* An M4A is never sent as it is, whatever its length; it is not even peeked at. */
+  const m4a = fakeWorld({ measure: async () => 8 });
+  m4a.know(`audios/${USER}/memo.m4a`, 8);
+  m4a.objects.set(`audios/${USER}/memo.m4a`, Buffer.concat([Buffer.from('\x00\x00\x00\x20ftypM4A ', 'latin1'), Buffer.alloc(64)]));
+  const m = await m4a.prepare(USER, [m4a.signed(`audios/${USER}/memo.m4a`, 'old')]);
+  assert.deepEqual(m4a.peeks, []);
+  assert.deepEqual(m4a.downloads, [`audios/${USER}/memo.m4a`]);
+  assert.deepEqual(m.notes, ['Your clip was in a format Seed Audio cannot read, so a WAV copy was sent.']);
+  /* A ".wav" whose first bytes are not a WAV is fetched and looked at properly. */
+  const odd = fakeWorld({ measure: async () => 10 });
+  odd.know(`audios/${USER}/odd.wav`, 10);
+  odd.objects.set(`audios/${USER}/odd.wav`, Buffer.concat([Buffer.from('fLaC\x00\x00\x00\x22', 'latin1'), Buffer.alloc(64)]));
+  await odd.prepare(USER, [odd.signed(`audios/${USER}/odd.wav`, 'old')]);
+  assert.deepEqual(odd.downloads, [`audios/${USER}/odd.wav`]);
+  assert.deepEqual(odd.fits, [{ format: 'flac', cut: false }]);
+});
+
+test('checking stops at the deadline: a stalled clip, and any after it, go as they are', async () => {
+  const w = fakeWorld({ deadlineMs: 60, downloadDelay: 400 });
+  const first = w.signed(`audios/${USER}/slow.wav`, 'old');
+  const second = w.signed(`audios/${USER}/next.wav`, 'old');
+  const started = Date.now();
+  const out = await w.prepare(USER, [first, second]);
+  assert.ok(Date.now() - started < 350, `answered in ${Date.now() - started} ms, not after the stalled download`);
+  assert.deepEqual(out.urls, [w.signed(`audios/${USER}/slow.wav`), w.signed(`audios/${USER}/next.wav`)], 'signed again, as they are');
+  assert.deepEqual(out.notes, []);
+  assert.equal(out.fitted, 0);
+  assert.deepEqual(w.downloads, [`audios/${USER}/slow.wav`], 'the clip after the deadline is not started');
+  assert.ok(w.logs.some(([level, line]) => level === 'warn' && /clip 1 not checked within 60 ms; sending it as it is/.test(line)));
+  assert.ok(w.logs.some(([level, line]) => level === 'warn' && /clip 2 not checked/.test(line)));
+  /* The stalled check finishes on its own and stores its copy, so the next render can use it. */
+  await new Promise((r) => setTimeout(r, 500));
+  assert.deepEqual(w.saves, [`audios/${USER}/slow-seed.wav`]);
+  assert.equal(clips.SEED_PREP_DEADLINE_MS, 25000);
 });
 
 /* ---------------- real ffmpeg: synthetic tones only ---------------- */
@@ -329,7 +408,7 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
   process.env.FAL_KEY = 'test-only';
   process.env.BRIDGE_SECRET = 'test-only';
 
-  const world = { objects: new Map(), registry: new Map(), saves: [], logs: [], assets: [], gets: [], fal: [], foreign: new Map(), bridgeJob: null };
+  const world = { objects: new Map(), registry: new Map(), saves: [], logs: [], assets: [], gets: [], peeks: [], fal: [], foreign: new Map(), bridgeJob: null };
   /* fal, as it behaved on Oct 2: it fetches every clip and refuses one over 30 seconds. */
   world.falAnswer = async (body) => {
     for (const [i, url] of (body.audio_urls || []).entries()) {
@@ -343,13 +422,16 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
     return { data: { audio: { url: 'https://v3b.fal.media/files/b/test/out.wav', duration: 3.2 } } };
   };
   world.axios = {
-    get: async (url) => {
-      world.gets.push(url);
+    get: async (url, options = {}) => {
+      /* Storage answers a ranged read as B2 does: 206, the bytes asked for, and the whole size. */
+      const range = options.headers && options.headers.Range;
+      if (range) world.peeks.push(url); else world.gets.push(url);
       if (url.includes('/audio/scenema/status')) return { data: world.bridgeJob };
       if (!url.startsWith(STORE)) { const e = new Error('getaddrinfo ENOTFOUND'); e.code = 'ENOTFOUND'; throw e; }
       const b = world.objects.get(keyOf(url));
       if (!b) { const e = new Error('Request failed with status code 404'); e.response = { status: 404, data: Buffer.from('<Error><Code>NoSuchKey</Code></Error>') }; throw e; }
-      return { data: b };
+      if (range === 'bytes=0-63') return { status: 206, headers: { 'content-range': `bytes 0-63/${b.length}` }, data: b.subarray(0, 64) };
+      return { status: 200, headers: {}, data: b };
     },
     post: async (url, body) => { world.fal.push({ url, body }); return world.falAnswer(body); },
   };
@@ -413,7 +495,9 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
     assert.deepEqual(world.saves, [`audios/${USER}/soundbooth-ref-muq-seed.wav`]);
     const p = await Project.findById(r.data.projectId);
     assert.equal(p.state, 'done');
-    assert.equal(keyOf(p.options.audio_urls[0]), `audios/${USER}/soundbooth-ref-muq-seed.wav`, 'the project keeps what Seed actually heard');
+    assert.equal(keyOf(p.options.audio_urls[0]), herClipKey, 'the project keeps her own whole clip, so AuK edit still gets all of it');
+    assert.equal(p.options.audio_urls.length, 1);
+    assert.deepEqual(p.options.seed_sent_urls.map(keyOf), [`audios/${USER}/soundbooth-ref-muq-seed.wav`], 'and records the copy Seed heard');
     assert.ok(world.logs.some(([level, line]) => level === 'info' && /seed clips fitted/.test(line) && /cut at a pause/.test(line)));
   });
 
@@ -473,12 +557,18 @@ test('the booth: her failed renders replayed, then the same clip of hers going t
     assert.equal(clips.sniffFormat(stored), 'wav');
     assert.ok((await durationOf(stored)) <= 29.5);
     assert.equal(world.registry.get(USER + '|' + identity(r.data.url)), r.data.seconds, 'registered at the length that was kept');
-    /* And it goes straight through a render: nothing more to cut. */
+    /* And it goes straight through a render: nothing more to cut, and it is not fetched whole,
+     * because the reference list knows its length; only its first bytes are read, for its size. */
     const before = world.saves.length;
     const rendered = await call('/render', { engine: 'seed', script, audio_urls: [r.data.url] });
     assert.equal(rendered.status, 200);
     assert.equal(rendered.data.note, null);
     assert.equal(world.saves.length, before);
+    assert.equal(keyOf(world.fal.at(-1).body.audio_urls[0]), keyOf(r.data.url));
+    assert.equal(world.gets.filter((u) => keyOf(u) === keyOf(r.data.url)).length, 0, 'not downloaded');
+    assert.equal(world.peeks.filter((u) => keyOf(u) === keyOf(r.data.url)).length, 1, 'peeked at once');
+    const p = await Project.findById(rendered.data.projectId);
+    assert.equal(p.options.seed_sent_urls, undefined, 'nothing was swapped, so nothing extra is recorded');
   });
 
   await t.test('an AuK import keeps the whole original, as before', async () => {

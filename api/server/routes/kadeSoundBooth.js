@@ -1093,7 +1093,7 @@ const GUIDE = {
       ],
       settings: [
         { key: 'voice', label: 'Preset voice', hint: 'A built-in voice for a single narrator. Leave it off when you describe the voices or import clips.', kind: 'choice', options: ['', 'vivi_mixed_en_zh_ja_es_id', 'mindy_en_es_id_pt_zh', 'kian_en_zh', 'cedric_en_zh', 'sophie_en_zh', 'jean_en_zh', 'magnus_en_zh', 'mabel_en_zh', 'nadia_en_zh', 'opal_en_zh', 'pearl_en_zh', 'quentin_en_zh', 'corinne_mixed_en_zh', 'esther_mixed_en_zh', 'lyla_mixed_en_zh', 'tracy_es_zh', 'sandy_es_mixed_en_zh', 'felix_zh', 'celeste_zh', 'monkey_king_zh'], default: '' },
-        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three clean clips, one person each: WAV, MP3, M4A or OGG. A clip over 30 seconds is shortened to fit. Name them @Audio1 to @Audio3.', kind: 'clip', max: 3 },
+        { key: 'audio_urls', label: 'Import clips to clone', hint: 'Up to three clean clips, one person each: WAV, MP3, M4A or OGG. An imported clip over 30 seconds is shortened to fit. Name them @Audio1 to @Audio3.', kind: 'clip', max: 3 },
         { key: 'speed', label: 'Speed', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
         { key: 'pitch', label: 'Pitch', hint: 'In semitones: zero is normal; twelve is an octave up, minus twelve an octave down.', kind: 'number', min: -12, max: 12, default: 0, advanced: true },
         { key: 'volume', label: 'Volume', hint: 'One is normal, from half to double.', kind: 'number', min: 0.5, max: 2, default: 1, advanced: true },
@@ -2003,6 +2003,16 @@ function seedClips() {
   seedClipPreparer = clips.createSeedClipPreparer({
     resign: async (url, key) => (typeof getNewS3URL === 'function' ? getNewS3URL(url, key) : undefined),
     seconds: async (user, url) => (typeof musicReferenceSeconds === 'function' ? musicReferenceSeconds(user, url) : undefined),
+    /* A clip's first bytes and its size in one small ranged read, so a clip known to fit is not fetched whole.
+     * Storage that ignores the range sends the file; anything over 256 KB then counts as unknown. */
+    peek: async (url) => {
+      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000, maxRedirects: 0, maxContentLength: 256 * 1024, headers: { Range: 'bytes=0-63' } });
+      const head = Buffer.from(r.data);
+      const range = String((r.headers && r.headers['content-range']) || '');
+      const total = Number((range.match(/\/(\d+)\s*$/) || [])[1]);
+      if (r.status !== 206) return { head, bytes: head.length };
+      return { head, bytes: total > 0 ? total : null };
+    },
     download: async (url) => {
       const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 25 * 1024 * 1024 });
       return Buffer.from(r.data);
@@ -2566,20 +2576,20 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
      * row. Each clip in her own storage is checked first; a long one is cut to
      * 29.5 seconds (at a pause when there is one) into a stored copy that later
      * renders reuse, and the answer says so (kadeSoundBoothSeedClips.js). The
-     * project keeps the clips that were actually sent, so opening it again
-     * plays what Seed heard. */
+     * project keeps her own clips in audio_urls, so switching it to AuK edit
+     * later still works on the whole recording; the copies Seed heard are
+     * recorded beside them as seed_sent_urls. */
     let clipNotes = [];
+    /* What fal is sent: every clip signed again (so one from an old project is not an expired link), and a copy in place of a clip that needed one. */
+    let sentUrls = null;
     if (opts.audio_urls?.length) {
       const prepared = await seedClips()(String(req.user.id), opts.audio_urls);
       clipNotes = prepared.notes;
+      sentUrls = prepared.urls;
       if (prepared.fitted) {
-        opts.audio_urls = prepared.urls;
-        project.options = { ...opts };
+        project.options = { ...opts, seed_sent_urls: prepared.urls };
         project.markModified('options');
         logger.info(`[soundbooth/render] seed clips fitted project=${project._id} user=${req.user.id}: ${prepared.logs.join('; ')}`);
-      } else {
-        /* Signed again, so a clip opened from an old project is not an expired link. */
-        opts.audio_urls = prepared.urls;
       }
     }
 
@@ -2595,7 +2605,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (opts.multilingual) body.multilingual = true;
     /* Clips override a preset: the docs say a reference clip beats a preset
      * name, and sending both is undefined. */
-    if (opts.audio_urls?.length) body.audio_urls = opts.audio_urls;
+    if (opts.audio_urls?.length) body.audio_urls = sentUrls || opts.audio_urls;
     else if (opts.voice) body.voice = opts.voice;
 
     let r;
@@ -2769,7 +2779,7 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
     }
     const j = r.data || {};
     /* The bridge's reason as words, whatever shape it arrived in (Oct 2 2026). */
-    const jobError = j.error ? errorText(j.error, { name: 'The render service', max: 300 }) || null : null;
+    const jobError = j.error ? errorText(j.error, { name: 'The render service', max: 300, fallback: 'The render service did not say why.' }) : null;
     const map = { queued: 'queued', running: 'running', done: 'done', failed: 'failed', cancelled: 'cancelled' };
     // An old take must never overwrite the currently rendering take. The
     // conditional update also prevents two polls charging the same finish twice.

@@ -243,8 +243,9 @@ test('Part 296: common settings on top, rarely changed ones in More settings, sh
   assert.match(pure.GUIDE.engines.lyria.where, /Google/);
   assert.match(pure.GUIDE.engines.seed.where, /fal/);
   assert.match(pure.GUIDE.engines.lyria.howToWrite.join(' '), /Always say how long/);
-  /* Oct 2 2026: a long Seed clip is shortened before fal sees it, and the hint says so. */
-  assert.match(pure.GUIDE.engines.seed.settings.find((s) => s.key === 'audio_urls').hint, /over 30 seconds is shortened/);
+  /* Oct 2 2026: a long imported Seed clip is shortened before fal sees it, and the hint says so
+   * (only clips imported here: a link from anywhere else is sent as it is). */
+  assert.match(pure.GUIDE.engines.seed.settings.find((s) => s.key === 'audio_urls').hint, /An imported clip over 30 seconds is shortened to fit/);
   /* A setting that moved into More settings is still named where the mistake would happen. */
   assert.match(pure.GUIDE.engines.scenema.howToWrite.join(' '), /adds or removes words, set Target seconds for edit/);
   assert.match(pure.GUIDE.engines.seed.howToWrite.join(' '), /turn on Multilingual for any language but English/);
