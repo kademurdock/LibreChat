@@ -22,6 +22,7 @@
  * the bridge so pokes only happen when something is due.
  */
 const express = require('express');
+const { diaryDiagnostic } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { runNudgeSweepOnce, computeNextDueAt } = require('~/server/services/kadeNudges');
 const { runSummarySweep } = require('~/server/services/kadeMemorySummarySweep');
@@ -240,6 +241,14 @@ router.get('/memory-health', async (req, res) => {
         { projection: { createdAt: 1 } })
       .sort({ createdAt: -1 }).limit(1).toArray();
 
+    let diaryActivity = null;
+    try {
+      diaryActivity = await diaryDiagnostic(diary, new Date(now));
+    } catch {
+      /* Unavailable coverage must not imply a recovered writer. */
+    }
+    const liveDiaryActivity = diaryActivity?.byOrigin.live_chat;
+
     const summariesTotal = await summaries.countDocuments({});
     const [newestSummary] = await summaries.find({}, { projection: { updatedAt: 1 } })
       .sort({ updatedAt: -1 }).limit(1).toArray();
@@ -329,8 +338,15 @@ router.get('/memory-health', async (req, res) => {
         /* See the comment at the aggregate: the total above mixes the live
          * keeper with mining/backfill, and they fail separately. */
         wrote24hBySource: diaryWrote24hBySource,
-        keeperWrote24h: diaryWrote24hBySource.keeper || 0,
-        keeperNewestAgeHours: hoursAgo(newestKeeperDiary && newestKeeperDiary.createdAt),
+        keeperWrote24h: liveDiaryActivity
+          ? liveDiaryActivity.createdEntries24h + liveDiaryActivity.amendedEntries24h
+          : null,
+        keeperNewestAgeHours: hoursAgo(liveDiaryActivity?.lastWriteAt),
+        keeperMetricScope: 'successful_non_temporary_chat_creates_and_amendments',
+        legacyKeeperNewestCreatedAgeHours: hoursAgo(
+          newestKeeperDiary && newestKeeperDiary.createdAt,
+        ),
+        activity: diaryActivity,
       },
       summaries: {
         rows: summariesTotal,
@@ -378,16 +394,21 @@ router.get('/memory-health', async (req, res) => {
       })(),
       warnings: (() => {
         const w = [];
-        const diaryAge = hoursAgo(newestDiary && newestDiary.createdAt);
         const cardAge = hoursAgo(newestCard && newestCard.updated_at);
         const consAge = hoursAgo(consolidationLastRunAt);
-        /* 48h, not 24: a genuinely quiet day is normal and common. Two days
-         * with nothing across EVERY seat on the platform is not. */
-        if (diaryAge != null && diaryAge > 48) {
+        const keeperDiaryAge = hoursAgo(liveDiaryActivity?.lastWriteAt);
+        if (keeperDiaryAge == null) {
           w.push({
-            lane: 'diary',
-            severity: diaryAge > 96 ? 'red' : 'amber',
-            detail: `the logbook has not been written in ${diaryAge}h (platform-wide). It went silent Aug 20-26 2026 and nothing said so for three days.`,
+            lane: 'diary-keeper',
+            severity: 'unknown',
+            detail:
+              'Successful non-temporary chat logbook writes are unverified. Temporary traffic and legacy source history are separate; this is not evidence of recovery or outage.',
+          });
+        } else if (keeperDiaryAge > 48) {
+          w.push({
+            lane: 'diary-keeper',
+            severity: 'amber',
+            detail: `No successful non-temporary chat logbook create or amendment observed in ${keeperDiaryAge}h. Quiet or ineligible turns are possible; this alone does not establish an outage.`,
           });
         }
         if (cardAge != null && cardAge > 48) {
@@ -396,28 +417,6 @@ router.get('/memory-health', async (req, res) => {
         /* The sweep is configured daily; 36h means a window was missed. */
         if (consAge == null || consAge > 36) {
           w.push({ lane: 'consolidation', severity: consAge == null || consAge > 72 ? 'red' : 'amber', detail: consAge == null ? 'the consolidation sweep has never recorded a run.' : `the consolidation sweep last ran ${consAge}h ago; it is configured to run daily.` });
-        }
-        /* ⭐ THE MASKED OUTAGE (Aug 31 2026, Part 111). Every warning above
-         * reads the logbook as one lane. It is two: a live keeper writing as
-         * the day happens, and backfill lanes (mining, admin) writing about
-         * days already gone. A mining batch makes `diary.newestAgeHours` young
-         * and this whole block green while the live writer is stone dead —
-         * which is the Aug-24 shape wearing a disguise. So the keeper's own
-         * age gets its own verdict, and it only speaks when the plain diary
-         * warning above has NOT already fired (otherwise it is just noise
-         * repeating a louder alarm). */
-        const keeperDiaryAge = hoursAgo(newestKeeperDiary && newestKeeperDiary.createdAt);
-        if (keeperDiaryAge != null && keeperDiaryAge > 48 && diaryAge != null && diaryAge <= 48) {
-          w.push({
-            lane: 'diary-keeper',
-            severity: keeperDiaryAge > 96 ? 'red' : 'amber',
-            detail: `the LIVE keeper has not written a logbook entry in ${keeperDiaryAge}h — recent entries are backfill (${Object.keys(diaryWrote24hBySource).join(', ') || 'none'}), which reads as a healthy lane and is not one.`,
-          });
-        }
-        /* Diary + cards both dead is a different animal from either alone: it
-         * points at the keeper lane itself rather than one rule inside it. */
-        if (diaryAge != null && cardAge != null && diaryAge > 48 && cardAge > 48) {
-          w.push({ lane: 'keeper', severity: 'red', detail: 'BOTH the logbook and the cards have stopped — that is the memory writer itself, not one rule inside it.' });
         }
         /* ⭐⭐⭐ THE EMBEDDING LANE (Aug 28 2026 — the Shinedown outage).
          *

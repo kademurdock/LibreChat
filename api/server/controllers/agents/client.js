@@ -1145,12 +1145,28 @@ class AgentClient extends BaseClient {
       logDiary: async ({ text, scope, salience }) => {
         const { logDiaryEntry } = require('~/models/kadeDiary');
         /* Part 236: a note for the Jev keeper shadow's log line (runMemory),
-         * that the keeper reached for the logbook this turn. Read by nothing else. */
-        this._kadeKeeperLogged = true;
+         * that the keeper successfully saved the logbook this turn. */
         /* Part 112: the conversation rides along so the diary can keep ONE
          * entry per episode (her key choice) — injected here, never decided
          * by the keeper. See kadeDiary.js's episode block. */
-        return logDiaryEntry({ userId, agentId: activeAgentId, text, scope, salience, conversationId });
+        const { diaryChatOrigin } = require('@librechat/api');
+        const origin = diaryChatOrigin({
+          isTemporary: this.options.req.body?.isTemporary,
+          toolPolicy: this.options.req.body?.kadeToolPolicy,
+        });
+        const result = await logDiaryEntry({
+          userId,
+          agentId: activeAgentId,
+          text,
+          scope,
+          salience,
+          conversationId,
+          origin,
+        });
+        if (result.ok) {
+          this._kadeKeeperLogged = true;
+        }
+        return result;
       },
     });
 

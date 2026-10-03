@@ -11,6 +11,7 @@ const {
   monthlyBooks,
   monthlyWindow,
   MonthlyWindowError,
+  diaryDiagnostic,
 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 
@@ -25,6 +26,24 @@ const {
 
 const router = express.Router();
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
+const requireMemoryAdminRead = requireCapability(SystemCapabilities.READ_USERS);
+router.get(
+  '/admin/diary-diagnostic',
+  requireJwtAuth,
+  requireAdminAccess,
+  requireMemoryAdminRead,
+  async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (process.env.KADE_MEMORY_HEALTH === '0') {
+      return res.json({ disabled: true });
+    }
+    try {
+      return res.json(await diaryDiagnostic(mongoose.connection.collection('kadediaryentries')));
+    } catch {
+      return res.status(503).json({ error: 'Could not read diary activity metadata' });
+    }
+  },
+);
 router.use('/harness/jobs', requireJwtAuth, requireAdminAccess, createHarnessRouter());
 /* KADE Sep 25 2026 (Part 291): the funding ledger (real cost vs what people paid Kade back). */
 router.use('/funding', require('./kadeFunding'));

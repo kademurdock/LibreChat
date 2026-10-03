@@ -328,3 +328,10 @@ export { createCommunityRouter } from './community/router';
 
 export { monthlyBooks, monthlyWindow, MonthlyWindowError } from './kade/monthly';
 export type { MonthlyBooksDependencies, MonthlyBooksReport, MonthlyWindow } from './kade/monthly';
+
+export {
+  diaryWriteOrigins,
+  diaryChatOrigin,
+  diaryWriteOrigin,
+  diaryDiagnostic,
+} from './memory/diary';

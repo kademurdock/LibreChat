@@ -1,0 +1,62 @@
+name: Diary diagnostic
+
+on:
+  push:
+    branches:
+      - 'codex/diary-diagnostic-*'
+  pull_request:
+    paths:
+      - '.github/workflows/diary-diagnostic.yml'
+      - 'api/models/kadeDiary*'
+      - 'api/server/controllers/agents/client.js'
+      - 'api/server/services/Memory/diaryVoiceRepair.js'
+      - 'api/server/routes/kade.js'
+      - 'api/server/routes/kadeClock.js'
+      - 'packages/api/src/memory/diary*'
+      - 'packages/api/src/index.ts'
+      - 'packages/data-schemas/src/memory/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/api/package.json'
+      - 'packages/data-schemas/package.json'
+      - 'packages/data-provider/package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diary-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      MONGOMS_VERSION: '8.2.1'
+      MONGOMS_MD5_CHECK: 'true'
+      KADE_EMBED_GEMINI_KEY: ''
+      KADE_EMBED_OPENAI_KEY: ''
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.16.0'
+      - name: Install exact locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check the diagnostic helper types
+        run: node_modules/.bin/tsc --noEmit --strict --skipLibCheck --target ES2022 --module Node16 --moduleResolution Node16 packages/api/src/memory/diary.ts
+      - name: Lint and format the focused diagnostic files
+        run: |
+          node_modules/.bin/eslint packages/api/src/memory/diary.ts packages/api/src/memory/diary.nodetest.mjs api/models/kadeDiary.activity.mongo.nodetest.mjs
+          node_modules/.bin/prettier --check packages/api/src/memory/diary.ts packages/api/src/memory/diary.nodetest.mjs api/models/kadeDiary.activity.mongo.nodetest.mjs .github/workflows/diary-diagnostic.yml
+      - name: Build data provider
+        run: npm run build:data-provider
+      - name: Build data schemas
+        run: npm run build:data-schemas
+      - name: Build API package
+        run: npm run build:api
+      - name: Verify classification, metadata, access boundary, and date stripping
+        run: node --test packages/api/src/memory/diary.nodetest.mjs api/models/kadeDiary.stamp.test.js
+      - name: Verify real MongoDB writes and aggregates using synthetic fixtures
+        run: node --test api/models/kadeDiary.activity.mongo.nodetest.mjs
