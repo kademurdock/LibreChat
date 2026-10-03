@@ -18,7 +18,7 @@
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 
-const ASSET_VERSION = '20260930b';
+const ASSET_VERSION = '20261002a';
 
 const familyHistoryHtml = `<!doctype html><html lang="en"><head><title>Family history — Kade-AI</title>${SHARED_HEAD}
 <meta name="robots" content="noindex, nofollow">

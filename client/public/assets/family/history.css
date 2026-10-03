@@ -305,6 +305,53 @@ ul.fh-list li, ol.fh-list li { margin: .3rem 0; }
 
 .fh-textversion { margin-top: 1.4rem; padding-top: .4rem; border-top: 2px solid var(--fh-line); }
 
+/* ── the family sky (sky.js): decoration, hidden from screen readers ──
+ * Always a dusk sky (the site's navy and lamp amber), in light mode too.
+ * Its height is set before anything loads, so the page never shifts; if the
+ * drawing cannot load, this plain sky stays. Its one line of words sits on a
+ * solid strip, never on the drawing, and shows only once the lights are
+ * drawn. It steps aside wherever the paintings do (history.js leaves it out
+ * at those times; this is the backstop), and the key's sentence about it
+ * goes with it.
+ * Where it goes: in a wide, tall window it sits above the chart, and leaves
+ * about 35rem of the window for the heading, the sections, the chart's
+ * buttons and the site's tab bar, so those buttons are in view on arrival.
+ * On a phone, or a window too short for a 200px sky above the buttons,
+ * history.js puts it after the chart frame instead, at its full height. */
+.fh-sky {
+  display: flex; flex-direction: column; margin: .8rem 0 .7rem; overflow: hidden;
+  height: 240px; /* for browsers without clamp() (iOS before 13.4) */
+  height: clamp(180px, 50vw, 380px); max-height: max(200px, min(46vh, 100vh - 35rem));
+  border: 1px solid #2b3466; border-radius: 16px;
+  background:
+    radial-gradient(70% 55% at 50% 108%, rgba(255, 183, 92, .30) 0%, rgba(255, 183, 92, 0) 70%),
+    radial-gradient(120% 95% at 50% 100%, #3a3160 0%, #1c2452 48%, #0b1130 100%);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.fh-treeframe ~ .fh-sky { max-height: max(180px, 46vh); }
+.fh-skystage { position: relative; flex: 1; min-height: 0; }
+/* Once the lights are drawn, one finger scrolls the page up and down or
+ * turns the sky, and two fingers always zoom the page, as they do everywhere
+ * else. Until then (or if they never draw) a touch here does what it does
+ * anywhere on the page, and so it does while the page is zoomed in (sky.js
+ * sets touch-action: auto then). */
+.fh-skycanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+.fh-sky.is-drawn .fh-skycanvas { touch-action: pan-y pinch-zoom; }
+.fh-skyhint { margin: 0; padding: .4rem .85rem; background: #0a0f24; color: #d7ddf6; font-size: .85rem; line-height: 1.35; }
+.fh-sky:not(.is-drawn) .fh-skyhint { visibility: hidden; }
+.fh-skynote { margin: .5rem 0 .2rem; }
+@media (prefers-color-scheme: light) { .fh-sky { box-shadow: 0 8px 24px rgba(16, 22, 58, .2); } }
+@media (forced-colors: active), (prefers-contrast: more), (prefers-reduced-data: reduce), (max-width: 22.5em), (max-height: 30em), print {
+  .fh-sky, .fh-skynote { display: none !important; }
+}
+/* A lit star gives the same person's box in the chart a soft amber wash and
+ * glow, and their line in the text version a highlight. It is never a crisp
+ * solid ring, so it cannot pass for the keyboard focus ring, which stays on
+ * top when a box is both. */
+.fh-box.is-lit .fh-ring { fill: var(--fh-ring); fill-opacity: .18; stroke: var(--fh-ring); stroke-opacity: .35; stroke-width: 9; }
+.fh-box.is-lit .fh-boxlink:focus-visible .fh-ring { stroke-opacity: 1; stroke-width: 5; }
+.fh-personrow.is-lit { background: var(--fh-flag-bg); box-shadow: -.5rem 0 0 var(--fh-flag-bg), .5rem 0 0 var(--fh-flag-bg); border-radius: 6px; }
+
 /* ── person ── */
 .fh-personhead { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; margin: .6rem 0; }
 .fh-personhead .fh-headpic { width: 180px; max-width: 45vw; }

@@ -711,6 +711,12 @@
   /* ── the page ─────────────────────────────────────────────────────────── */
 
   var API = '/api/kade/family-history';
+  /* The family sky (sky.js) sits beside this file, at this file's version,
+   * and loads only when a tree view can show it. */
+  var SKY_SRC = (function () {
+    var own = document.currentScript && document.currentScript.src;
+    return own && /history\.js(\?[^#]*)?$/.test(own) ? own.replace(/history\.js(\?[^#]*)?$/, 'sky.js$1') : '/assets/family/sky.js';
+  })();
   var SVGNS = 'http://www.w3.org/2000/svg';
   var SILENCE = '/assets/silence.mp3';
   var ZOOMS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75, 2];
@@ -1156,6 +1162,7 @@
 
   function route() {
     stopListening();
+    stopSky();
     var r = parseHash(location.hash);
     var current = { '': '', tree: 'tree', person: 'people', people: 'people', gallery: 'gallery', stories: 'stories', story: 'stories', findings: 'findings', dna: 'dna', accounts: 'accounts', notes: 'notes' }[r.name];
     Array.prototype.forEach.call(nav.querySelectorAll('a[data-route]'), function (a) {
@@ -1473,6 +1480,138 @@
     return box;
   }
 
+  /* ── the family sky: the tree as lights, for sighted family ─────────────
+   * Decoration only (sky.js says what it draws and how it moves). The box is
+   * aria-hidden and holds nothing focusable, so it adds no stop and no words;
+   * the chart and its text version stay the content. It is left out before
+   * the view is drawn (so nothing shifts later) under forced colours,
+   * Increase Contrast, data saving and very large text, the same times the
+   * site's paintings step aside; history.css also hides it in a narrow or
+   * zoomed window (left to CSS, because a tab opened in the background is
+   * laid out at no width at all). */
+  var SKY_HIDDEN_WHEN = '(forced-colors: active), (prefers-contrast: more), (prefers-reduced-data: reduce)';
+  /* A phone (under about 700px wide), or a window too short for a 200px sky
+   * above the chart's buttons and the site's tab bar (history.css): there the
+   * sky goes after the chart frame, so the buttons are in view on arrival. */
+  var SKY_AFTER_WHEN = '(max-width: 43.7em), (max-height: 47.5em)';
+  var skyNow = null;
+  var skyLoading = null;
+
+  function skyAllowed(layout) {
+    if (!layout || layout.boxes.length < 3) return false;
+    try {
+      if (window.matchMedia && window.matchMedia(SKY_HIDDEN_WHEN).matches) return false;
+      var connection = navigator.connection;
+      if (connection && connection.saveData) return false;
+      if (parseFloat(getComputedStyle(document.documentElement).fontSize) > 20) return false;
+      var probe = document.createElement('canvas');
+      return !!(probe.getContext && probe.getContext('2d'));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /* Still: the system's Reduce Motion, or Reverie's World motion switch
+   * (reverie_motion = off), the site's one in-app motion switch so far. */
+  function skyStill() {
+    return reducedMotion() || storeGet('reverie_motion') === 'off';
+  }
+
+  /* Chosen once, as the view is built: the sky is never moved afterwards. A
+   * tab opened in the background can have no size yet; then the screen's
+   * width decides. */
+  function skyAfterChart() {
+    try {
+      if (!window.innerWidth) return !!(window.screen && screen.width && screen.width < 700);
+      return !!(window.matchMedia && window.matchMedia(SKY_AFTER_WHEN).matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function loadSky() {
+    if (window.KadeFamilySky) return Promise.resolve(window.KadeFamilySky);
+    if (!skyLoading) {
+      skyLoading = new Promise(function (resolve, reject) {
+        var tag = el('script', { src: SKY_SRC, async: true });
+        tag.addEventListener('load', function () {
+          if (window.KadeFamilySky) resolve(window.KadeFamilySky);
+          else reject(new Error('The sky did not load.'));
+        });
+        tag.addEventListener('error', function () {
+          skyLoading = null;
+          tag.remove();
+          reject(new Error('The sky did not load.'));
+        });
+        document.head.appendChild(tag);
+      });
+    }
+    return skyLoading;
+  }
+
+  function stopSky() {
+    if (skyNow) skyNow.stop();
+    skyNow = null;
+  }
+
+  function skyView(layout, focusLabel) {
+    if (!skyAllowed(layout)) return null;
+    var still = skyStill();
+    var mouse = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+    var hint = mouse
+      ? (still ? 'Point at a light to see who it is. Click it to open their page.' : 'Drag to turn the tree. Point at a light to see who it is.')
+      : (still ? 'Tap a light to see who it is. Tap again to open.' : 'Tap a light to see who it is. Drag to turn.');
+    /* The canvas is made here with the box, so nothing is added to the page
+     * after the view is shown; sky.js only draws into it. The hint shows once
+     * the lights are drawn (history.css), and stays hidden if they never are:
+     * nothing is taken away either. */
+    var canvas = el('canvas', { class: 'fh-skycanvas', 'aria-hidden': 'true' });
+    var hintEl = el('p', { class: 'fh-skyhint', 'aria-hidden': 'true' }, hint);
+    var box = el('div', { class: 'fh-sky', 'aria-hidden': 'true' }, el('div', { class: 'fh-skystage' }, canvas), hintEl);
+    var handle = null;
+    var stopped = false;
+    /* A lit star rings that person's box in the chart and their line in the
+     * text version (a look only: no words, no focus, nothing moves). */
+    function mark(id) {
+      var host = box.parentNode;
+      if (!host) return;
+      Array.prototype.forEach.call(host.querySelectorAll('.is-lit'), function (n) { n.classList.remove('is-lit'); });
+      if (id == null) return;
+      var href = personHref(id);
+      Array.prototype.forEach.call(host.querySelectorAll('a[href]'), function (a) {
+        if (a.getAttribute('href') !== href) return;
+        var spot = a.closest('.fh-box, .fh-personrow');
+        if (spot) spot.classList.add('is-lit');
+      });
+    }
+    return {
+      box: box,
+      start: function () {
+        loadSky().then(function (Sky) {
+          if (stopped || !box.isConnected) return;
+          handle = Sky.mount(canvas, layout, {
+            still: skyStill,
+            solid: !!(window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches),
+            focusLabel: focusLabel,
+            ringName: generationName,
+            descName: descendantName,
+            onDrawn: function () { box.classList.add('is-drawn'); },
+            onLight: mark,
+            onOpen: function (id) { location.hash = personHref(id); },
+          });
+        }).catch(function () { /* the box keeps its plain dusk sky, its hint unseen */ });
+      },
+      light: function (id) {
+        if (handle) handle.light(id);
+      },
+      stop: function () {
+        stopped = true;
+        if (handle) handle.destroy();
+        mark(null);
+      },
+    };
+  }
+
   async function treeView(live, focusId) {
     var data = await api('/tree?v=2&up=' + treeDepth.up + '&down=' + treeDepth.down + (focusId ? '&focus=' + enc(focusId) : ''));
     if (!live()) return null;
@@ -1502,6 +1641,24 @@
     if (!isViewer) {
       s.appendChild(el('p', null, 'Centred on ', el('a', { href: personHref(layout.focus.id) }, focusName), focusCard && personWords(focusCard) ? ', ' + personWords(focusCard) : '', '. ',
         el('a', { href: '#/tree' }, me.mode === 'guest' ? 'Centre on ' + ownerFirst() : 'Centre on you')));
+    }
+    var skyCentre = isViewer ? 'You' : (focusCard && focusCard.first) || firstName(focusName);
+    var sky = skyView(fullLayout, skyCentre);
+    /* Above the chart in a wide, tall window; after the chart frame on a
+     * phone or a short window (skyAfterChart). Screen readers skip the sky
+     * wherever it is, and their order through the page is the same. */
+    var skyAfter = !!sky && skyAfterChart();
+    if (sky) {
+      if (!skyAfter) s.appendChild(sky.box);
+      /* Pointing at a box or a name in the chart (or moving the keyboard
+       * onto one) lights that person's star. */
+      var pointAt = function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[href^="#/person/"]') : null;
+        sky.light(a ? parseHash(a.getAttribute('href')).arg || null : null);
+      };
+      s.addEventListener('mouseover', pointAt);
+      s.addEventListener('focusin', pointAt);
+      s.addEventListener('focusout', function () { sky.light(null); });
     }
     s.appendChild(el('p', { class: 'fh-skip' }, el('a', { href: '#fh-textversion', onclick: function (e) { e.preventDefault(); var h = document.getElementById('fh-tv-h'); if (h) { h.scrollIntoView({ block: 'start' }); h.focus(); } } }, 'Skip the chart to its text version')));
 
@@ -1601,7 +1758,13 @@
     s.appendChild(bar);
     if (depthRow) s.appendChild(depthRow);
     s.appendChild(frame);
-    s.appendChild(el('details', { class: 'fh-legendbox' }, el('summary', null, 'What the colours, patterns and lines mean'), legend(data.legend)));
+    if (skyAfter) s.appendChild(sky.box);
+    /* The sky is hidden from screen readers, so the key says in one plain
+     * sentence that it is there and what it shows (words only, no new stop;
+     * history.css hides it wherever it hides the sky). It stays true wherever
+     * the sky sits, and if its lights never draw. */
+    var skyNote = sky ? el('p', { class: 'fh-skynote' }, 'The family sky near the chart is a picture of this same tree. When its lights show, each light is a person, with ' + (isViewer ? 'you' : skyCentre) + ' in the middle, ancestors in rings above and any children below.') : null;
+    s.appendChild(el('details', { class: 'fh-legendbox' }, el('summary', null, 'What the colours, patterns and lines mean'), legend(data.legend), skyNote));
     s.appendChild(textVersion(fullLayout, focusName, isViewer, above));
     s.fhKeepStatus = true;
     /* The first view waits until the frame has a real size (a tab opened in
@@ -1616,6 +1779,10 @@
       return true;
     }
     s.fhAfter = function () {
+      if (sky) {
+        skyNow = sky;
+        sky.start();
+      }
       if (!firstView() && 'ResizeObserver' in window) {
         var watcher = new ResizeObserver(function () { if (firstView()) watcher.disconnect(); });
         watcher.observe(frame);
@@ -3304,6 +3471,7 @@
     navSeq++;
     activeArchive = id;
     stopListening();
+    stopSky();
     if (viewer) { if (viewer.dialog.open) viewer.dialog.close(); viewer.seq++; }
     cards.clear(); signedUrls.clear(); fileCache.clear();
     lazyQueue.clear();
