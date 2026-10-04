@@ -18,7 +18,7 @@
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 
-const ASSET_VERSION = '20261002a';
+const ASSET_VERSION = '20261003a';
 
 const familyHistoryHtml = `<!doctype html><html lang="en"><head><title>Family history — Kade-AI</title>${SHARED_HEAD}
 <meta name="robots" content="noindex, nofollow">
@@ -35,7 +35,6 @@ const familyHistoryHtml = `<!doctype html><html lang="en"><head><title>Family hi
   <a href="#/people" data-route="people">People</a>
   <a href="#/gallery" data-route="gallery">Photos</a>
   <a href="#/stories" data-route="stories">Stories</a>
-  <a href="#/findings" data-route="findings">Discoveries</a>
   <a href="#/dna" data-route="dna">DNA</a>
 </nav>
 <p id="fh-status" class="fh-status" role="status" aria-live="polite">Checking that this account is family…</p>

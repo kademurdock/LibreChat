@@ -584,15 +584,6 @@ function reel(
       { to: 'person', id: abroad.id },
     );
   }
-  const solved = ctx.model.findings.find((f) => !f.sensitive);
-  if (solved) {
-    const people = solved.people.filter(
-      (id) => own(ctx.bundle.people, id) && familyFeaturable(ctx, id),
-    );
-    card('mystery', `A mystery that was solved: ${solved.title.replace(/[.!?]$/, '')}.`, people, {
-      to: 'discoveries',
-    });
-  }
   const regions = new Map<string, number>();
   let placed = 0;
   for (const id of settled) {
@@ -647,9 +638,6 @@ export function familyHomePayload(
   const you = youAre(ctx);
   const faces = homeFaces(ctx, ancestors);
   const maxGen = ancestors.reduce((m, id) => Math.max(m, ctx.lens.relation(id)?.gen || 0), 0);
-  const findings = ctx.model.findings;
-  const discoveries = findings.filter((f) => !f.sensitive).length;
-  const mysteries = mysteriesAllowed(ctx) ? findings.filter((f) => f.sensitive).length : 0;
   const guest = ctx.viewer.mode === 'guest' || (ctx.viewer.mode === 'owner' && voice.borrowed);
   const more: FamilyTile[] = [
     tile(
@@ -664,24 +652,6 @@ export function familyHomePayload(
       'Family stories to read or listen to.',
       { to: 'stories' },
     ),
-    tile(
-      'discoveries',
-      'Discoveries',
-      count(discoveries, 'discovery', 'discoveries'),
-      'What the research found, with how sure it is.',
-      { to: 'discoveries' },
-    ),
-    ...(mysteries
-      ? [
-          tile(
-            'mysteries',
-            FAMILY_MYSTERIES_TITLE,
-            FAMILY_MYSTERIES_HEADS_UP,
-            'Opens behind a heads-up.',
-            { to: 'mysteries' },
-          ),
-        ]
-      : []),
     tile(
       'people',
       'Everyone in the tree',

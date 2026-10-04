@@ -271,7 +271,7 @@ test('GET /home: the hero, faces, reel, featured, news, four tiles and more, all
     'Through the years, and on a map',
     'What it found, in plain words',
   ]);
-  assert.deepEqual(home.more.map((t: Json) => t.key), ['stories', 'discoveries', 'mysteries', 'people', 'play', 'note']);
+  assert.deepEqual(home.more.map((t: Json) => t.key), ['stories', 'people', 'play', 'note']);
   assert.equal(home.more[0].detail, '1 story', 'a story whose file leaves its folder is still counted by v1, not here');
   assert.equal(home.comingSoon, null);
   assert.deepEqual(home.owner, { notes: 0, asks: 1 });
@@ -279,13 +279,40 @@ test('GET /home: the hero, faces, reel, featured, news, four tiles and more, all
   assert.equal(home.featured[0].text, '3 March 1960: Your father, Ben Example, was born in Invented County. 66 years ago this week.');
   assert.equal(home.news.text, '2 new photos and 1 new person since your last visit');
   assert.deepEqual(home.news.open, { to: 'gallery', since: 'v0', filter: 'all' });
-  assert.deepEqual(home.reel.cards.map((c: Json) => c.key), ['you', 'grandparents', 'oldest', 'ocean', 'mystery', 'end'], 'no places card: only one ancestor has a birthplace');
+  assert.deepEqual(home.reel.cards.map((c: Json) => c.key), ['you', 'grandparents', 'oldest', 'ocean', 'end'], 'no places card: only one ancestor has a birthplace');
   assert.equal(home.reel.cards[0].text, 'It starts with you, Owner.');
   assert.equal(home.reel.cards[2].text, 'Your 2nd great-grandfather, Ivo Example, was born in 1870.');
   assert.equal(home.reel.cards[3].text, 'Your great-grandfather, Hugo Example, was born in Finland in 1900, across the ocean.');
-  assert.equal(home.reel.cards[4].text, 'A mystery that was solved: Two brothers, one invented match.');
-  assert.equal(home.reel.detail, '6 cards, about a minute');
+  assert.equal(home.reel.cards[4].text, 'Explore your tree.');
+  assert.equal(home.reel.detail, '5 cards, about a minute');
   assert.equal((await call(main, '/home', 'owner')).body.news, null, 'no last visit, no news');
+});
+
+test('Home has no retired findings navigation for any viewer while person pages retain authorized findings', async () => {
+  for (const who of INSIDE) {
+    const home = (await call(main, '/home', who)).body;
+    const links: { open: { to: string } | null }[] = [
+      ...home.tiles,
+      ...home.more,
+      ...home.reel.cards,
+    ];
+    for (const link of links) {
+      assert.equal(
+        ['discoveries', 'mysteries', 'findings'].includes(link.open?.to || ''),
+        false,
+        `${who}: ${link.open?.to}`,
+      );
+    }
+  }
+  const ordinary = (await call(main, `/person/${pid('@I200@')}?v=2`, 'owner')).body;
+  assert.deepEqual(ordinary.findings.map((finding: { key: string }) => finding.key), ['f2']);
+  assert.equal(ordinary.findings[0].proofText, 'Proven by records');
+  const sensitive = (await call(main, `/person/${pid('@I700@')}?v=2`, 'owner')).body;
+  assert.deepEqual(sensitive.findings.map((finding: { key: string }) => finding.key), ['f1']);
+  assert.equal(sensitive.findings[0].proofText, 'Strong DNA evidence (about 90 to 95% sure)');
+  assert.match(sensitive.findings[0].text, /probably/);
+  const guest = (await call(main, `/person/${pid('@I700@')}?v=2`, 'guest')).body;
+  assert.deepEqual(guest.findings, []);
 });
 
 test('Home never features anyone on a research path or in a sensitive finding, nor anyone living in its history cards', async () => {
@@ -295,7 +322,7 @@ test('Home never features anyone on a research path or in a sensitive finding, n
       const found = cardIds(part);
       for (const unsettled of ['@I302@', '@I700@']) assert.equal(found.has(unsettled), false, `${who}: ${unsettled}`);
     }
-    for (const card of home.reel.cards.filter((c: Json) => ['oldest', 'ocean', 'mystery'].includes(c.key)))
+    for (const card of home.reel.cards.filter((c: Json) => ['oldest', 'ocean'].includes(c.key)))
       for (const person of card.people) assert.equal(person.living, false, `${who} ${card.key}`);
     for (const item of home.featured) {
       const person = BUNDLE.people[item.open.id];
@@ -1067,7 +1094,7 @@ test('sensitive stories follow the family-mysteries switch and never reach a gue
   }
 });
 
-test('GET /findings?v=2: discoveries for everyone let in, family mysteries behind a heads-up, each with its proof words', async () => {
+test('GET /findings?v=2: retained finding APIs preserve the authorized audience and proof words', async () => {
   let r = await call(main, '/findings?v=2', 'cora');
   assert.deepEqual(r.body.discoveries.map((f: Json) => f.key), ['f2']);
   assert.equal(r.body.discoveries[0].spoken, 'Two brothers, one invented match. Ben and Ned Example share an invented DNA match. Proven by records.');

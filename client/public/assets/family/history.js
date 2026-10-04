@@ -1,7 +1,7 @@
 /* Family history (Sep 29 2026). Contract: docs/FAMILY_HISTORY.md.
  *
  * One page, hash routes so Back works: #/ (start), #/tree/<id>, #/person/<id>,
- * #/people, #/gallery, #/stories, #/story/<slug>, #/findings, #/dna, #/note,
+ * #/people, #/gallery, #/stories, #/story/<slug>, #/dna, #/note,
  * and for the tree's owner #/accounts and #/notes. Every word about the family
  * comes from /api/kade/family-history, read with ?v=2: the server writes each
  * relationship, sentence and picture label from the viewer's own place ("your
@@ -371,8 +371,12 @@
 
   /* Where a tile, card or row from the server goes on this page ({to, id,
    * since, filter}); null for the parts only the iPhone app has so far. */
+  function isRetiredSection(name) {
+    return name === 'findings' || name === 'discoveries' || name === 'mysteries';
+  }
+
   function openHref(open) {
-    if (!open || typeof open !== 'object') return null;
+    if (!open || typeof open !== 'object' || isRetiredSection(open.to)) return null;
     var id = typeof open.id === 'string' ? open.id : '';
     switch (open.to) {
       case 'tree': return hashFor('tree', id);
@@ -381,8 +385,6 @@
       case 'story': return id ? hashFor('story', id) : '#/stories';
       case 'stories': return '#/stories';
       case 'dna': return '#/dna';
-      case 'discoveries': return '#/findings';
-      case 'mysteries': return '#/findings/mysteries';
       case 'people': return '#/people';
       case 'note': return hashFor('note', '', { person: id });
       default: return null;
@@ -668,7 +670,7 @@
   }
 
   /* The routes this page draws, by the first part of the hash. */
-  var ROUTES = ['', 'tree', 'person', 'people', 'gallery', 'stories', 'story', 'findings', 'dna', 'note', 'accounts', 'notes'];
+  var ROUTES = ['', 'tree', 'person', 'people', 'gallery', 'stories', 'story', 'dna', 'note', 'accounts', 'notes'];
 
   function archivePath(path, id) {
     return !id || id === 'default' ? path : path + (path.indexOf('?') === -1 ? '?' : '&') + 'archive=' + encodeURIComponent(id);
@@ -694,6 +696,7 @@
     parseHash: parseHash,
     hashFor: hashFor,
     openHref: openHref,
+    isRetiredSection: isRetiredSection,
     textKey: textKey,
     cueRanges: cueRanges,
     parseInline: parseInline,
@@ -1164,7 +1167,11 @@
     stopListening();
     stopSky();
     var r = parseHash(location.hash);
-    var current = { '': '', tree: 'tree', person: 'people', people: 'people', gallery: 'gallery', stories: 'stories', story: 'stories', findings: 'findings', dna: 'dna', accounts: 'accounts', notes: 'notes' }[r.name];
+    if (isRetiredSection(r.name)) {
+      history.replaceState(null, '', '#/');
+      r = parseHash(location.hash);
+    }
+    var current = { '': '', tree: 'tree', person: 'people', people: 'people', gallery: 'gallery', stories: 'stories', story: 'stories', dna: 'dna', accounts: 'accounts', notes: 'notes' }[r.name];
     Array.prototype.forEach.call(nav.querySelectorAll('a[data-route]'), function (a) {
       if (a.getAttribute('data-route') === current) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
@@ -1177,7 +1184,6 @@
     if (r.name === 'gallery') return show(function (live) { return galleryView(live, q); }, 'Loading the pictures…');
     if (r.name === 'stories') return show(storiesView, 'Loading the stories…');
     if (r.name === 'story' && r.arg) return show(function (live) { return storyView(live, r.arg); }, 'Loading the story…');
-    if (r.name === 'findings') return show(function (live) { return findingsView(live, r.arg); }, 'Loading the discoveries…');
     if (r.name === 'dna') return show(dnaView, 'Loading what the DNA says…');
     if (r.name === 'note') return show(function (live) { return noteView(live, q); }, 'Loading…');
     if (r.name === 'accounts' && isOwner()) return show(accountsView, 'Loading the accounts…');
@@ -1234,7 +1240,9 @@
       })));
     }
     var go = el('nav', { class: 'fh-big', 'aria-label': 'Go to' });
-    (home.tiles || []).concat(home.more || []).forEach(function (t, i) {
+    (home.tiles || []).concat(home.more || []).filter(function (t) {
+      return !isRetiredSection(t.key) && !isRetiredSection(t.open && t.open.to);
+    }).forEach(function (t, i) {
       var href = openHref(t.open);
       var id = 'fh-big-' + i;
       if (t.enabled === false) {
@@ -3022,57 +3030,6 @@
     return s;
   }
 
-  /* ── discoveries and family mysteries ─────────────────────────────────── */
-
-  async function findingsView(live, arg) {
-    var data = await api('/findings?v=2');
-    if (!live()) return null;
-    var s = section('Discoveries', 'Discoveries');
-    s.appendChild(el('p', null, 'What the research found, and how sure it is. A research finding is marked, and is not proven by records.'));
-    var list = (data && data.discoveries) || [];
-    if (!list.length) s.appendChild(el('p', null, 'There are no discoveries yet.'));
-    list.forEach(function (f) { s.appendChild(findingCard(f, 'h3')); });
-    var m = data && data.mysteries;
-    if (m) {
-      var box = el('section', { class: 'fh-mysteries', 'aria-labelledby': 'fh-myst-h' },
-        el('h3', { id: 'fh-myst-h', tabindex: '-1' }, (m.title || 'Family mysteries') + (m.count ? ' (' + num(m.count) + ')' : '')));
-      box.appendChild(el('p', { class: 'fh-flagnote' }, m.headsUp || 'This part is about who some of your ancestors really were.'));
-      var holder = el('div', { id: 'fh-myst-list', hidden: true });
-      var btn = el('button', { type: 'button', class: 'fh-btn', 'aria-expanded': 'false', 'aria-controls': 'fh-myst-list' }, 'Show the family mysteries');
-      var loaded = false;
-      btn.addEventListener('click', async function () {
-        if (!holder.hidden) {
-          holder.hidden = true;
-          btn.setAttribute('aria-expanded', 'false');
-          btn.textContent = 'Show the family mysteries';
-          return;
-        }
-        if (!loaded) {
-          try {
-            var got = await api('/findings?group=mysteries');
-            (got.findings || []).forEach(function (f) { holder.appendChild(findingCard(f, 'h4')); });
-            if (!(got.findings || []).length) holder.appendChild(el('p', null, got.available === false ? 'The family mysteries are not open to you.' : 'There are none right now.'));
-            loaded = true;
-          } catch (e) {
-            say(e.message, true);
-            return;
-          }
-        }
-        holder.hidden = false;
-        btn.setAttribute('aria-expanded', 'true');
-        btn.textContent = 'Hide the family mysteries';
-        var firstCard = holder.querySelector('h4');
-        say('Showing ' + plural(holder.querySelectorAll('article').length, 'family mystery', 'family mysteries') + '.');
-        if (firstCard) setTimeout(function () { firstCard.focus(); }, 150);
-      });
-      box.appendChild(btn);
-      box.appendChild(holder);
-      s.appendChild(box);
-      if (arg === 'mysteries') focusNext = 'fh-myst-h';
-    }
-    return s;
-  }
-
   /* ── DNA ──────────────────────────────────────────────────────────────── */
 
   function matchesTable(matches, caption) {
@@ -3117,27 +3074,6 @@
       s.appendChild(el('h3', null, 'What the DNA test found'));
       if (t.intro) s.appendChild(el('p', null, t.intro));
       (t.cards || []).forEach(function (c) { s.appendChild(dnaCard(c, 'h4')); });
-      var myst = t.mysteries;
-      if (myst && (myst.cards || []).length) {
-        var box = el('section', { class: 'fh-mysteries', 'aria-labelledby': 'fh-dna-myst-h' }, el('h4', { id: 'fh-dna-myst-h' }, 'Family mysteries'));
-        box.appendChild(el('p', { class: 'fh-flagnote' }, myst.headsUp));
-        var holder = el('div', { id: 'fh-dna-myst', hidden: true }, myst.cards.map(function (c) { return dnaCard(c, 'h5'); }));
-        var btn = el('button', { type: 'button', class: 'fh-btn', 'aria-expanded': 'false', 'aria-controls': 'fh-dna-myst' }, 'Show the family mysteries');
-        btn.addEventListener('click', function () {
-          var open = holder.hidden;
-          holder.hidden = !open;
-          btn.setAttribute('aria-expanded', String(open));
-          btn.textContent = open ? 'Hide the family mysteries' : 'Show the family mysteries';
-          if (open) {
-            say('Showing ' + plural(myst.cards.length, 'family mystery', 'family mysteries') + '.');
-            var h = holder.querySelector('h5');
-            if (h) setTimeout(function () { h.focus(); }, 150);
-          }
-        });
-        box.appendChild(btn);
-        box.appendChild(holder);
-        s.appendChild(box);
-      }
       var det = t.details;
       if (det) {
         var fans = el('details', { class: 'fh-more' }, el('summary', null, det.title || 'Details for DNA fans'));
