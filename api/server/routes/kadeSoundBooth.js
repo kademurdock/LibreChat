@@ -498,24 +498,22 @@ HOW THIS ENGINE WORKS, so you write for it:
 
 const SEED_GRAMMAR = `SEED AUDIO 1.0 SCRIPT FORMAT (the only format you may output):
 
-[Setting: the place, weather, acoustics, and a continuous sound bed — spelled out, e.g. rain "pat-pat" on a tin roof, distant traffic, room reverb]
-[Music, if any: a MOOD, not a genre label — "soft piano that swells", "low brass and war drums"]
-Name (sex, age, accent, voice texture, personality) says, manner and emotion: "the exact line."
-[A sound effect at this moment — spell it out: a screen door "slap", a zipper "zzzip"]
-Other Name (traits) answers softly, flustered: "the reply."
-[How it ends: footsteps fading, music fading out]
+Use a brief [Setting: place and audible surroundings] and bracketed sound cues where the sound changes. Music is optional; keep it out when the request excludes it.
+For speech, use Name (concise voice traits) says, manner and emotion: "the exact spoken words." Give each voice its traits on its first turn; later turns can use the name and a short delivery cue.
+Repeat speaker turns as the piece needs. This is notation, not a fixed plot, a two-line exchange or a checklist that every piece must follow.
 
 HOW THIS ENGINE WORKS, so you write for it:
-- It makes a WHOLE SCENE in one pass: several voices, music, sound effects, and ambience, mixed. Write it like a short scene brief, not a text-to-speech line.
-- The SCENE checklist — include all five: Setting (weather, location, acoustics), Cast (what each person is doing), Effects (music mood + sound effects), Notes on voice (sex, age, accent, emotion, tone, speed), Exact lines in quotes.
-- Every spoken line uses the shape:  Name (traits) says, manner: "words."  The manner goes before the colon — "lowers her voice, flustered:", "coaxes, dragging his words:", "can't help laughing:". Emotion words in parentheses after the name also work: Emma (whispering): "...".
-- THE CAP COMES FIRST: the whole script, setting lines included, must be under 1,800 characters (the engine refuses anything over 2,048 and that is about two minutes of audio). Inside that, write DENSE, not long: the environment, the score, and each delivery are all things this engine renders, so spend the characters on them and cut the number of lines before you cut the description of a line.
+- It makes a WHOLE SCENE in one pass: voices, music, sound effects, and ambience, mixed. Write the actual piece to perform, not a synopsis of one.
+- Keep spoken lines in quotes, separate from directions. Do not substitute a synopsis of people talking for their supplied words.
+- For music, ambience or effects without speech, use only the requested sound directions: no voices, narrator, dialogue or sung words. Do not invent speech to fill out the format.
+- A speaker's first turn uses the shape: Name (traits) says, manner: "words." Later turns can use Name: "words." or a short delivery cue. The manner goes before the colon — "lowers her voice, flustered:", "coaxes, dragging his words:", "can't help laughing:". Emotion words in parentheses after the name also work: Emma (whispering): "...".
+- The whole script, all directions included, must fit within 2,048 characters. Keep setting, repeated voice traits and delivery cues concise so the spoken exchanges have room. When cuts are needed, remove redundant descriptions before meaningful dialogue or the ending. Two minutes is the model's maximum per generation, not a guaranteed duration for a given character count.
 - SPELL THE SOUNDS OUT. Onomatopoeia is more reliable than naming: a bell "ring-a-ling" fading from near to far; a blade's "whoom, whoom".
 - Music by MOOD, never by music-theory terms.
 - Match the language: write the whole prompt in the language the lines are spoken in.
-- Up to three named voices. If reference clips are given they are @Audio1, @Audio2, @Audio3 — tag a clip to a speaker inline: Marcus (warm broadcaster, the actor is @Audio1) says: "...".
+- Keep the cast manageable and the voices distinct. Up to three reference clips may be given as @Audio1, @Audio2, @Audio3 — tag a clip to a speaker inline: Marcus (warm broadcaster, the actor is @Audio1) says: "...".
 - Optional exact timing: put [start:end] at the front of a line, e.g. "[5.5s:8.0s] Maya! Wait." and that line is fitted to that window.
-- Hard cap, again: under 1,800 characters. Longer pieces are made scene by scene with the same voices, and the desk will cut a script that runs over rather than refuse it — so it is better that YOU choose what to cut.
+- Longer pieces require separate clips; this format does not remove the per-clip limit.
 - NEVER use %%%…%%% markers. That is a different engine's syntax. A delivery note goes in parentheses after the name, or as the manner before the colon — nowhere else.
 - Output the script and nothing else. No code fence, no preamble.`;
 
@@ -644,7 +642,9 @@ function systemPrompt({ engine, mode }) {
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2')
         ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a full song of about four minutes when it has sung words, or two minutes when it is instrumental, and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
-        : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
+        : engine === 'seed'
+          ? `The user has given you a DESCRIPTION of a piece of audio they want made. Write the actual piece in the format below. Honor their requested form and length, including a short ident, jingle or a single narrated voice. When they ask for a story, scene or conversation with people, and have not asked for narration, a monologue or no dialogue, write a developed scene carried by sustained, natural dialogue, with a complete action and ending. Give the people distinct wants and concrete things to do; let their replies change what happens instead of narrating a synopsis of their conversation. Unless they ask for a short piece, use the available space: usually 1,600 to 2,000 characters including concise directions, within the 2,048-character cap. Vary the action and pacing to suit this particular idea; do not impose a two-turn exchange, an obligatory twist or a stock closing line. For music, ambience or effects without speech, keep it wordless and do not pad the description to reach that character range. Do not claim an exact output duration.`
+          : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
       : engine === 'scenema'
         /* Oct 2 2026: AuK's grammar says no invented directions between sentences, and the
          * old job told the desk to add them there. Her own cues are kept; nothing is added. */
@@ -2089,7 +2089,7 @@ async function scriptHandler(req, res) {
        * trim below is the guarantee if it still runs over */
       try {
         const shorter = await callModel({
-          system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 1700. Cut it to fit. Keep the [Setting] line, every named voice with its traits, the shape of the scene and its ending; shorten spoken lines and drop the least necessary beat. Output the script and nothing else — no fence, no preamble, no READBACK.`,
+          system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 2000. Cut it to fit by removing redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue. Keep the distinct voices, the conversation's progression, the requested sound constraints and its complete ending. Keep a wordless piece wordless; never invent speech. Output the script and nothing else — no fence, no preamble, no READBACK.`,
           user: script,
           maxTokens: 1400,
         });

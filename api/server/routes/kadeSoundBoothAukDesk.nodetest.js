@@ -11,7 +11,8 @@
  *   - iPhone 2.2.2, which reads only `screenplay`, still renders the same voice;
  *   - header lines and [cues] are never performed aloud (the Oct 1 Codex find);
  *   - an AuK edit is described as an edit, not as a script to hear;
- *   - the ten minors from review 1, one test each (at the end of this file).
+ *   - the ten minors from review 1, one test each;
+ *   - Seed writing modes, dialogue space and its existing over-cap repair.
  * Run: node --test kadeSoundBoothAukDesk.nodetest.js */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -604,4 +605,118 @@ test('review 1 (10): a voice the desk filled in is hers once she renders with it
   assert.equal(ok.page.forDesk({ voice_description: 'A calm man.' }).voice_description, 'A calm man.', 'the next Help write this sends it as hers');
   const failed = await run({ ok: false, data: { error: 'No.' } });
   assert.equal(failed.state.deskVoice, 'A calm man.', 'a render that never started changes nothing');
+});
+
+const SEED_SCENE = [
+  '[Setting: Rain taps the roof of a closed repair shop. No music.]',
+  'Mira (a low, practical adult voice) says: "You put the radio on my bench again. We agreed I would fix the kettle first."',
+  'Otis (an older, eager voice) answers: "The kettle can wait until morning. The school broadcast starts in an hour, and they asked me to listen."',
+  'Mira: "They asked you to listen, not to turn this place upside down. Pass me the small screwdriver, please."',
+  '[A drawer slides open; loose tools clink.]',
+  'Otis: "This one? I kept it separate so you would not have to hunt for it. Can you hear anything through the speaker?"',
+  'Mira: "Only a hum. Hold the lamp over here. I need both hands, and I cannot see the wire behind that dial."',
+  'Otis: "I can do that. My hand shakes a little, so tell me when it slips. You used to make me hold this same lamp."',
+  'Mira: "And you used to explain every repair before you let me touch it. Now let me find the loose connection."',
+  '[The radio crackles, then falls quiet.]',
+  'Otis: "Was that the station? I thought I heard the presenter take a breath. Try the dial just a little to the left."',
+  'Mira: "Keep the lamp still. Yes, there. It is the station, but the speaker cable needs a fresh joint before it will stay."',
+  'Otis: "I will fetch the solder. Then you can finish the kettle. I did not mean to leave all the work to you tonight."',
+  'Mira: "Look at the cable first. You were the one who spotted it, and I would like you to see why it keeps losing contact."',
+  'Otis: "I see it now. I was watching the dial instead. Next time I will bring you a better explanation than a radio that does not work."',
+  'Mira: "You have not. Sit beside me and hold this cable while it cools. We can listen without trying to fix anything else."',
+  'Otis: "And tomorrow I will make the tea. Provided your kettle really is going to work."',
+  'Mira: "It will. Tonight, you get to be the audience. Turn the volume up just enough for the two of us."',
+  '[The steady radio signal settles under the rain.]',
+].join('\n');
+const SEED_READBACK = 'Two people repair a radio together in a rainy shop. Their disagreement softens as they share the work.';
+
+test('Seed writes a developed conversation without the old short default, and returns the near-cap draft intact', async () => {
+  assert.ok(SEED_SCENE.length > 1800 && SEED_SCENE.length <= 2048, `fixture is ${SEED_SCENE.length} characters`);
+  const desk = booth([`${SEED_SCENE}\nREADBACK: ${SEED_READBACK}`]);
+  const out = await desk.write({ engine: 'seed', text: 'Two people repair a radio after closing.', audio_urls: ['https://fixtures.invalid/voice.wav'] });
+  const system = desk.writerCalls[0].messages[0].content;
+  assert.match(system, /sustained, natural dialogue/);
+  assert.match(system, /distinct wants and concrete things to do/);
+  assert.match(system, /1,600 to 2,000 characters/);
+  assert.doesNotMatch(system, /30 to 60 seconds|80 to 160 words|under 1,800|cut the number of lines before/);
+  assert.match(system, /redundant descriptions before meaningful dialogue/);
+  assert.match(desk.writerCalls[0].messages[1].content, /REFERENCE CLIPS IMPORTED: 1.*@Audio1/);
+  assert.equal(desk.writerCalls[0].max_tokens, 1200, 'the existing writer budget is unchanged');
+  assert.equal(desk.writerCalls.length, 1, 'READBACK is separate and does not cause an extra paid shortening pass');
+  assert.equal(out.script, SEED_SCENE);
+  assert.equal(out.screenplay, SEED_SCENE);
+  assert.equal(out.readback, SEED_READBACK);
+  assert.equal(out.problem, null);
+  assert.equal(Object.hasOwn(out, 'performance'), false, 'AuK field placement is not applied to Seed');
+  assert.equal(Object.hasOwn(out, 'voice_description'), false);
+});
+
+test('Seed formatting keeps supplied wording, repetition and order without the write-mode length target', async () => {
+  const words = 'Ari says: "Wait. Wait, I said. I can\'t hear you."\nBo answers: "I can\'t hear you either; leave it where it is."';
+  const desk = booth([`${words}\nREADBACK: Two people try to hear each other.`]);
+  const out = await desk.write({ engine: 'seed', mode: 'format', text: words });
+  const system = desk.writerCalls[0].messages[0].content;
+  assert.match(system, /Keep every sentence they wrote, in their order, in their wording/);
+  assert.doesNotMatch(system, /1,600 to 2,000|developed scene carried by sustained/);
+  assert.equal(desk.writerCalls[0].messages[1].content.split('\n\n')[0], `THEIR WORDS:\n${words}`);
+  assert.equal(out.script, words);
+  assert.equal(desk.writerCalls.length, 1);
+});
+
+test('Seed sound-only requests accept bracketed ambience with no cast, music or invented spoken words', async () => {
+  const ambient = '[Steady rain on an open courtyard, occasional water dripping into a metal bucket. No music, voices or narration.]';
+  const brief = 'Courtyard rain and dripping water only. No speech, no voices, no music.';
+  const desk = booth([`${ambient}\nREADBACK: Rain and dripping water in a courtyard, with no voices or music.`]);
+  const out = await desk.write({ engine: 'seed', text: brief });
+  const system = desk.writerCalls[0].messages[0].content;
+  assert.match(system, /without speech, keep it wordless and do not pad/);
+  assert.match(system, /no voices, narrator, dialogue or sung words/);
+  assert.doesNotMatch(system, /include all five/);
+  assert.ok(desk.writerCalls[0].messages[1].content.includes(brief));
+  assert.equal(out.script, ambient);
+  assert.equal(out.problem, null);
+  assert.equal(desk.writerCalls.length, 1);
+});
+
+test('Seed explicitly short and single-narrator requests remain short and keep their requested form', async () => {
+  for (const [brief, script] of [
+    ['A ten-second spoken station ident.', 'Announcer (warm): "You are listening to the evening service. Stay with us."'],
+    ['A single narrator reads a twenty-second letter; no dialogue.', 'Narrator (quiet): "I left the gate open for you. Come in when you get here; I will be in the kitchen."'],
+    ['A single narrator tells a story about two sisters, no dialogue.', 'Narrator (warm): "The sisters spent the morning looking for their old home. At the last corner, they recognized the steps."'],
+  ]) {
+    const desk = booth([`${script}\nREADBACK: One voice speaks the requested short piece.`]);
+    const out = await desk.write({ engine: 'seed', text: brief });
+    assert.match(desk.writerCalls[0].messages[0].content, /Honor their requested form and length/);
+    assert.match(desk.writerCalls[0].messages[0].content, /a short ident, jingle or a single narrated voice/);
+    assert.match(desk.writerCalls[0].messages[0].content, /have not asked for narration, a monologue or no dialogue/);
+    assert.equal(out.script, script);
+    assert.equal(desk.writerCalls.length, 1);
+  }
+});
+
+test('Seed overflow asks for concise directions before cutting dialogue and keeps a complete repaired draft', async () => {
+  const over = `[Repeated weather detail: ${'rain on the roof, '.repeat(35)}]\n${SEED_SCENE}`;
+  const desk = booth([`${over}\nREADBACK: ${SEED_READBACK}`, SEED_SCENE]);
+  const out = await desk.write({ engine: 'seed', text: 'Two people repair a radio after closing.' });
+  assert.equal(desk.writerCalls.length, 2, 'only the existing over-cap rewrite runs');
+  const rewrite = desk.writerCalls[1].messages[0].content;
+  assert.match(rewrite, /target is under 2000/);
+  assert.match(rewrite, /redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue/);
+  assert.match(rewrite, /requested sound constraints and its complete ending/);
+  assert.match(rewrite, /wordless piece wordless; never invent speech/);
+  assert.equal(desk.writerCalls[1].max_tokens, 1400);
+  assert.equal(out.script, SEED_SCENE);
+  assert.ok(out.repairs.some((note) => note.startsWith('cut to fit Seed\'s cap:')));
+  assert.equal(out.problem, null);
+});
+
+test('Seed still has a deterministic 2048-character fallback when the existing rewrite stays too long', async () => {
+  const over = `${SEED_SCENE}\n${'Otis: "The lamp can stay here until we finish the repair."\n'.repeat(18)}[The steady radio signal settles under the rain.]`;
+  const desk = booth([`${over}\nREADBACK: ${SEED_READBACK}`, over]);
+  const out = await desk.write({ engine: 'seed', text: 'Two people repair a radio after closing.' });
+  assert.equal(desk.writerCalls.length, 2);
+  assert.ok(out.script.length <= 2048);
+  assert.ok(out.script.endsWith('[The steady radio signal settles under the rain.]'));
+  assert.ok(out.repairs.some((note) => note.startsWith('Cut to fit Seed Audio:')));
+  assert.equal(out.problem, null);
 });
