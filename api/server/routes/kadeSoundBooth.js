@@ -1122,6 +1122,7 @@ const GUIDE = {
         'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
         'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
         'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones; Replace one word with another. If the edit changes speed or adds or removes words, set Target seconds for edit.',
+        'For a voice or age change, try the timbre template: Keep the spoken content unchanged and change the timbre to: "a youthful, light voice with clear diction". This requests a change; listen to judge whether it worked.',
         'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
       /* Part 296: `advanced` settings sit in one collapsed "More settings" group on both screens. */
@@ -1129,7 +1130,7 @@ const GUIDE = {
         { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording.', kind: 'choice', options: ['speech', 'edit'], default: 'speech' },
         { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit.', kind: 'text' },
         { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery, used when no reference is attached.', kind: 'text' },
-        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent; Edit changes the recording. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
+        { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent. Edits regenerate audio and may reduce quality; test a short section first. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
         { key: 'edit_start', label: 'Edit from second (optional)', hint: 'Leave blank to start at the beginning. Audio outside the selected section is kept.', kind: 'number', min: 0 },
         { key: 'edit_end', label: 'Edit to second (optional)', hint: 'Leave blank to edit through the end. Select a short section for word, lyric or speaker edits.', kind: 'number', min: 0.1 },
         { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Length of the edited section. Leave blank to keep its length; set it when changing speed or word count.', kind: 'number', min: 0.1, advanced: true },
