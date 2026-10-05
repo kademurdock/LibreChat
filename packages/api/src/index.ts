@@ -329,6 +329,7 @@ export { createCommunityRouter } from './community/router';
 
 export { monthlyBooks, monthlyWindow, MonthlyWindowError } from './kade/monthly';
 export { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } from './speech/edit';
+export { aukEditDescription, legacyAukEditCandidate, audioAssetDescription } from './audio/editDescription';
 export type { MonthlyBooksDependencies, MonthlyBooksReport, MonthlyWindow } from './kade/monthly';
 
 export {

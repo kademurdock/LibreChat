@@ -148,6 +148,7 @@ test('Sing it in my voice through the real booth', async (t) => {
   const referenceChecks = []; // what each render's recording was checked for (validateMusicReference's `use`)
   let clipSeconds = 181.2;
   const api = {
+    ...require('../../../packages/api/src/audio/editDescription.ts'),
     ...yue, // every YuE2 export the booth reads (yueSavedOptions, yueStyleAccess, ...), so kade's own additions keep working
     ...voice,
     createYueRouter: yue.createYueRouter,

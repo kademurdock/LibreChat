@@ -23,7 +23,7 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
-const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } = require('@librechat/api');
+const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
@@ -1512,8 +1512,9 @@ async function takesFor(projects, userId, paid = false) {
   const valid = ids.filter((i) => mongoose.Types.ObjectId.isValid(String(i)));
   if (!valid.length) return new Map();
   const docs = await KadeAsset.find({ _id: { $in: valid }, user: userId })
-    .select('_id kind url backupUrl description createdAt costUSD chargedUSD metadata')
+    .select('_id kind service model prompt url backupUrl description createdAt costUSD chargedUSD metadata')
     .lean();
+  const editAssets = new Set(projects.filter(project => project.engine === 'scenema' && project.options?.auk_task === 'edit').flatMap(project => project.assets || []).map(String));
   const map = new Map();
   for (const d of docs) {
     map.set(String(d._id), {
@@ -1525,7 +1526,7 @@ async function takesFor(projects, userId, paid = false) {
       /* The blind-friendly description the gallery writes, when it has landed
        * yet -- enrichment runs detached, so a brand-new take often has none. */
       title: d.metadata?.title || '',
-      description: d.description || '',
+      description: audioAssetDescription(d, editAssets.has(String(d._id))),
       seconds: (d.metadata && (d.metadata.seconds || d.metadata.durationS)) || null,
       costUSD: paid && typeof d.chargedUSD === 'number' ? d.chargedUSD : d.costUSD || 0,
       /* Part 295: a YuE2 take's short note (chords not heard, words that may not fit the tune). */

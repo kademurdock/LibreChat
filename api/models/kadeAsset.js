@@ -273,7 +273,10 @@ async function enrichAsset(doc) {
     if (backupUrl) {
       updates.backupUrl = String(backupUrl).slice(0, 2048);
     }
-    const description = await describeAsset(doc);
+    // Edit descriptions are stored at creation; a delayed mirror must not overwrite a user rename.
+    const description = doc.kind === 'audio' && doc.metadata?.aukTask === 'edit'
+      ? null
+      : await describeAsset(doc);
     if (description) {
       updates.description = description;
     }
@@ -325,6 +328,9 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
       costUSD: cost,
       ...(typeof chargedUSD === 'number' ? { chargedUSD } : {}),
       metadata,
+      ...(kind === 'audio' && metadata?.aukTask === 'edit'
+        ? { description: require('@librechat/api').aukEditDescription(metadata.editInstruction || prompt || '') }
+        : {}),
     });
     // Enrichment runs detached; never blocks or throws into the caller.
     setImmediate(() => {

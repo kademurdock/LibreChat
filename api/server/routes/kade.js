@@ -5,6 +5,7 @@ const { requireCapability, hasCapability } = require('~/server/middleware/roles/
 const { logKadeUsage, CHARGED_USD } = require('~/models/kadeUsage');
 const { KadeAsset } = require('~/models/kadeAsset');
 const {
+  audioAssetDescription,
   needsRefresh,
   getNewS3URL,
   createHarnessRouter,
@@ -626,14 +627,14 @@ async function freshAssetUrl(url) {
 
 /* Part 295: `paid` shows the owner what they paid (the asset's chargedUSD); without it (the
  * administrator, an asset from before Part 295, a trial Kade pays for) the real costUSD. */
-async function assetView(d, { withOwner = false, paid = false } = {}) {
+async function assetView(d, { withOwner = false, paid = false, legacyEdit = false } = {}) {
   const view = {
     id: String(d._id),
     kind: d.kind,
     service: d.service,
     url: await freshAssetUrl(d.url),
     backupUrl: d.backupUrl ? await freshAssetUrl(d.backupUrl) : '',
-    description: d.description || '',
+    description: audioAssetDescription(d, legacyEdit),
     shared: !!d.shared,
     archived: !!d.archived,
     prompt: d.prompt || '',
@@ -664,7 +665,8 @@ router.get('/my-assets', requireJwtAuth, async (req, res) => {
       .limit(300)
       .lean();
     const paid = !isAdminRole(req.user && req.user.role);
-    const assets = await Promise.all(docs.map((d) => assetView(d, { paid })));
+    const edits = await require('./kadeSoundBoothAssetDescriptions').legacyEditAssetIds(docs, oid);
+    const assets = await Promise.all(docs.map((d) => assetView(d, { paid, legacyEdit: edits.has(String(d._id)) })));
     return res.json({ count: assets.length, assets });
   } catch (error) {
     logger.error('[/api/kade/my-assets] error:', error);
@@ -1270,6 +1272,7 @@ router.post('/asset-event', async (req, res) => {
       return res.status(400).json({ error: 'userId, kind (video|image|audio|document) and an http(s) url are required' });
     }
     const { logKadeAsset } = require('~/models/kadeAsset');
+    const editMetadata = kind === 'audio' ? await require('./kadeSoundBoothAssetDescriptions').editMetadataForJob(String(userId), metadata?.jobId) : {};
     await logKadeAsset({
       userId: String(userId),
       kind: String(kind),
@@ -1278,7 +1281,7 @@ router.post('/asset-event', async (req, res) => {
       prompt: prompt ? String(prompt).slice(0, 2000) : undefined,
       model: model ? String(model).slice(0, 64) : undefined,
       costUSD: typeof costUSD === 'number' ? costUSD : 0,
-      metadata,
+      metadata: { ...metadata, ...editMetadata },
     });
     return res.json({ ok: true });
   } catch (error) {

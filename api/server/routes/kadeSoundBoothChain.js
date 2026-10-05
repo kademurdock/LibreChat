@@ -306,6 +306,7 @@ async function stitch(project, { onStitched } = {}) {
       costUSD: project.costUSD || 0,
       metadata: {
         via: 'sound-booth',
+        ...(project.options?.auk_task === 'edit' ? { aukTask: 'edit', editInstruction: project.script } : {}),
         projectId: String(project._id),
         joinedFromParts: parts.length,
         durationS: seconds,
