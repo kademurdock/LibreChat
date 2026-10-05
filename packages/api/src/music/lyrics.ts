@@ -303,7 +303,8 @@ type Hooks = {
   auth: RequestHandler;
   user: (req: Request) => string;
   savedSources: (user: string) => Promise<string[]>;
-  refresh: (url: string) => Promise<string>;
+  authorize?: (user: string, url: string) => Promise<void>;
+  refresh: (url: string, user: string) => Promise<string>;
   duration: (buffer: Buffer) => Promise<number | null>;
   transcribe: (buffer: Buffer, mime: string, seconds: number) => Promise<Transcript>;
 };
@@ -425,9 +426,29 @@ export function musicCoverLengthGuide<
   };
 }
 
-async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'savedSources'>) {
+class ReferenceOwnershipError extends Error {
+  constructor() {
+    super('That recording is not saved on your account. Import it again.');
+  }
+}
+
+async function authorizeReference(user: string, url: string, hooks: Pick<Hooks, 'authorize'>) {
+  try {
+    await hooks.authorize?.(user, url);
+  } catch {
+    throw new ReferenceOwnershipError();
+  }
+}
+
+async function ownedReference(user: string, url: string, hooks: Pick<Hooks, 'savedSources' | 'authorize'>) {
+  // A legacy registry row or cached transcript is not evidence of ownership.
+  await authorizeReference(user, url, hooks);
+  const key = identity(url);
   const reference = await References.findOne({ user, key }).lean();
-  if (reference) return reference;
+  if (reference) {
+    await authorizeReference(user, reference.url, hooks);
+    return reference;
+  }
   const sources = await hooks.savedSources(user);
   const owned = sources.find((url) => {
     try {
@@ -436,8 +457,12 @@ async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'sav
       return false;
     }
   });
-  if (!owned) return null;
-  await registerMusicReference(user, owned);
+  // An independently authorized import may predate the registry, and equivalent
+  // bucket/key URLs can have different origins or paths. Keep that import usable.
+  const source = owned || (hooks.authorize ? url : null);
+  if (!source) return null;
+  await authorizeReference(user, source, hooks);
+  await registerMusicReference(user, source);
   return References.findOne({ user, key }).lean();
 }
 
@@ -446,16 +471,16 @@ async function ownedReference(user: string, key: string, hooks: Pick<Hooks, 'sav
 export async function validateMusicReference(
   user: string,
   url: string,
-  hooks: Pick<Hooks, 'savedSources' | 'refresh' | 'duration'>,
+  hooks: Pick<Hooks, 'savedSources' | 'refresh' | 'duration' | 'authorize'>,
   use: MusicReferenceUse = {},
 ): Promise<string> {
-  const key = identity(url);
-  const reference = await ownedReference(user, key, hooks);
+  const reference = await ownedReference(user, url, hooks);
   if (!reference) throw new Error('That recording is not saved on your account. Import it again.');
   let refreshed: string;
   let seconds = reference.seconds;
   try {
-    refreshed = await hooks.refresh(reference.url);
+    refreshed = await hooks.refresh(reference.url, user);
+    await authorizeReference(user, refreshed, hooks);
     if (seconds === undefined) {
       const audio = await axios.get<ArrayBuffer>(refreshed, {
         responseType: 'arraybuffer',
@@ -466,7 +491,8 @@ export async function validateMusicReference(
       seconds = (await hooks.duration(Buffer.from(audio.data))) ?? undefined;
       await registerMusicReference(user, reference.url, seconds);
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof ReferenceOwnershipError) throw error;
     throw new Error(
       use.speechEdit
         ? 'Could not check the recording. No edit request was sent. Import it again and retry.'
@@ -496,7 +522,7 @@ export function createLyricsRouter(hooks: Hooks): Router {
         return;
       }
       try {
-        const reference = await ownedReference(user, key, hooks);
+        const reference = await ownedReference(user, req.body.url, hooks);
         if (!reference) {
           res
             .status(404)
@@ -524,6 +550,7 @@ export function createLyricsRouter(hooks: Hooks): Router {
           return;
         }
         try {
+          await authorizeReference(user, claim.url, hooks);
           if (claim.transcript && claim.transcriptVersion === transcriptVersion) {
             res.json({
               ...claim.transcript,
@@ -532,7 +559,8 @@ export function createLyricsRouter(hooks: Hooks): Router {
             });
             return;
           }
-          const url = await hooks.refresh(claim.url);
+          const url = await hooks.refresh(claim.url, user);
+          await authorizeReference(user, url, hooks);
           const audio = await axios.get<ArrayBuffer>(url, {
             responseType: 'arraybuffer',
             maxRedirects: 0,
@@ -567,8 +595,12 @@ export function createLyricsRouter(hooks: Hooks): Router {
         } finally {
           await References.updateOne({ user, key }, { $unset: { leaseUntil: 1 } });
         }
-      } catch {
+      } catch (error) {
         if (res.headersSent) return;
+        if (error instanceof ReferenceOwnershipError) {
+          res.status(400).json({ error: error.message });
+          return;
+        }
         res.status(502).json({
           error:
             'Could not transcribe this recording. Your existing lyrics are kept. Try a clearer recording or type the words.',

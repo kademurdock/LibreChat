@@ -62,6 +62,19 @@ export function isAukOwnedReference(user: string, value: string, assets: string[
   });
 }
 
+/** Stored provider/CDN takes are also valid music references, but must never enter the S3 re-signer. */
+export function isOwnedAudioReference(user: string, value: string, assets: string[] = [], env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isAukOwnedReference(user, value, assets, env)) return true;
+  const identity = (source: string): string | null => {
+    try {
+      const url = new URL(source);
+      return url.protocol === 'https:' && !url.username && !url.password && !url.hash ? url.href : null;
+    } catch { return null; }
+  };
+  const key = identity(value);
+  return key !== null && assets.some((source) => identity(source) === key);
+}
+
 /** Keep each paid job to at most three 28-second source-plus-target windows. */
 export function planAukEdit(seconds: number, options: AukEditOptions): AukEditPart[] {
   if (!Number.isFinite(seconds) || seconds <= 0) {

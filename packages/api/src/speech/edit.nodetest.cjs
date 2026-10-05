@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planAukEdit, isAukStorageReference, isAukOwnedReference } = (() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, 'edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process }); return mod.exports; })();
+const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } = (() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, 'edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process }); return mod.exports; })();
 
 test('edit references stay inside configured storage buckets, with signed URLs preserved', () => {
   const env = { AWS_ENDPOINT_URL: 'https://s3.us-west-004.backblazeb2.com', AWS_BUCKET_NAME: 'recordings', KADE_MEDIA_BUCKET: 'masters' };
@@ -65,6 +65,16 @@ test('edit ownership comes from the import namespace or an owned asset, never a 
   assert.equal(isAukOwnedReference('owner', 'https://kademurdockchat.s3.us-east-005.backblazeb2.com/auk/owned-master.wav', [master], env), true);
   assert.equal(isAukOwnedReference('owner', base + 'auk/other-master.wav', [master], env), false);
   assert.equal(isAukOwnedReference('owner', base + 'audios/other/take.wav', [master], env), false);
+});
+
+test('music references preserve exact owned provider assets without trusting arbitrary external URLs', () => {
+  const owned = 'https://media.provider.test/takes/owned.wav?X-Amz-Signature=old';
+  assert.equal(isOwnedAudioReference('owner', owned, [owned], {}), true);
+  assert.equal(isOwnedAudioReference('owner', owned.replace('=old', '=new'), [owned], {}), false);
+  assert.equal(isAukOwnedReference('owner', owned, [owned], {}), false);
+  for (const url of ['https://media.provider.test/takes/owned.wav?id=other', 'https://media.provider.test/takes/other.wav', 'https://media.provider.test.evil.test/takes/owned.wav', 'http://media.provider.test/takes/owned.wav', 'https://user@media.provider.test/takes/owned.wav']) {
+    assert.equal(isOwnedAudioReference('owner', url, [owned], {}), false, url);
+  }
 });
 
 test('long edits preserve the entire input once and bound each paid job', () => {

@@ -342,7 +342,7 @@ test('Sing it in my voice through the real booth', async (t) => {
         headers: { 'x-engine': 'myvoice', 'x-file-name': 'take.mp3', 'x-file-type': 'audio/mpeg' },
       });
       assert.equal(speech.status, 200);
-      assert.match(speech.data.spoken, /Speech uses a voice sample/);
+      assert.match(speech.data.spoken, /Speech uses the first eight seconds as its voice sample/);
     },
   );
 

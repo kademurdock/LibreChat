@@ -44,13 +44,15 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const user = new mongoose.Types.ObjectId();
   const importedReference = 'https://example.test/recordings/audios/' + user + '/source.wav';
   let ownedAssets = [];
+  let musicHooks;
+  const signRequests = [];
   const module = { exports: {} };
   const localRequire = (name) => {
     if (name === '~/server/services/kadeJevJudges' || name === '~/models') return {};
     if (name === '~/server/utils/kadeSongAudience') return require('../utils/kadeSongAudience');
     if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => express.Router(), guideFor: g => g };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
-    if (name === '@librechat/api') return { createMyVoiceRouter: () => express.Router(), createLyricsRouter: () => express.Router(), createEffectsRouter: () => express.Router(), effectsGuide: {}, yueStylesEnabled: () => false, yueStyles: {}, validateMusicReference: async (_user, url, hooks) => { validatedReferences.push(url); return hooks.refresh(registeredReference || url); }, musicReferenceSeconds: async () => 61, registerMusicReference: async () => {}, ...editHelpers, isAukStorageReference: url => editHelpers.isAukStorageReference(url, storageEnv), isAukOwnedReference: (owner, url, assets) => editHelpers.isAukOwnedReference(owner, url, assets, storageEnv), createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => !!resignedReference, getNewS3URL: async () => resignedReference, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
+    if (name === '@librechat/api') return { createMyVoiceRouter: () => express.Router(), createLyricsRouter: hooks => { musicHooks = hooks; return express.Router(); }, createEffectsRouter: () => express.Router(), effectsGuide: {}, yueStylesEnabled: () => false, yueStyles: {}, validateMusicReference: async (_user, url, hooks) => { validatedReferences.push(url); return hooks.refresh(registeredReference || url); }, musicReferenceSeconds: async () => 61, registerMusicReference: async () => {}, ...editHelpers, isAukStorageReference: url => editHelpers.isAukStorageReference(url, storageEnv), isAukOwnedReference: (owner, url, assets) => editHelpers.isAukOwnedReference(owner, url, assets, storageEnv), isOwnedAudioReference: (owner, url, assets) => editHelpers.isOwnedAudioReference(owner, url, assets, storageEnv), createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => !!resignedReference, getNewS3URL: async url => { signRequests.push(url); return resignedReference; }, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
     if (name === './kadeSoundBoothStitch') return { ...require(name), durationOf: async () => 61, normalizeReferenceClip: async () => { throw new Error('Must not trim an AuK source'); } };
     if (name === '~/server/middleware') return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(user) }; next(); } };
     if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
@@ -195,6 +197,51 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     resignedReference = undefined;
     ownedAssets = [];
     assert.equal(starts.length, before, 'quotes and rejected sources start no paid job');
+  });
+
+  await t.test('project reads never re-sign caller-supplied foreign references or Seed audio URLs', async () => {
+    const foreign = 'https://example.test/recordings/audios/another-user/private.wav?X-Amz-Signature=old';
+    const external = 'https://untrusted.test/recordings/audios/' + user + '/take.wav?X-Amz-Signature=old';
+    const own = importedReference + '?X-Amz-Signature=old';
+    const project = await Project.create({ user, engine: 'seed', state: 'failed', script: 'Saved words', options: { reference_voice_url: foreign, audio_urls: [own, foreign, external] } });
+    resignedReference = own.replace('=old', '=new');
+    let before = signRequests.length;
+    let result = await call('/projects/' + project._id);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.project.options.reference_voice_url, foreign);
+    assert.deepEqual(result.data.project.options.audio_urls, [resignedReference, foreign, external]);
+    assert.deepEqual(signRequests.slice(before), [own]);
+    before = signRequests.length;
+    result = await call('/projects');
+    assert.equal(result.status, 200);
+    assert.ok(!signRequests.slice(before).includes(foreign));
+    assert.ok(!signRequests.slice(before).includes(external));
+    const stored = await Project.findById(project._id);
+    assert.equal(stored.options.reference_voice_url, foreign, 'reads preserve existing project data');
+    resignedReference = undefined;
+  });
+
+  await t.test('shared music hooks trust imports and owned assets, not raw projects, and never re-sign provider URLs', async () => {
+    const foreign = 'https://example.test/recordings/audios/another-user/private.wav?X-Amz-Signature=old';
+    const provider = 'https://media.provider.test/owned.wav?X-Amz-Signature=old';
+    const master = 'https://example.test/recordings/auk/owned-master.wav?X-Amz-Signature=old';
+    ownedAssets = [{ url: provider, metadata: { wavUrl: master } }];
+    const sources = await musicHooks.savedSources(String(user));
+    assert.deepEqual(Array.from(sources), [provider, master]);
+    await assert.rejects(musicHooks.authorize(String(user), foreign), /not saved on your account/);
+    await musicHooks.authorize(String(user), importedReference);
+    await musicHooks.authorize(String(user), provider);
+    const before = signRequests.length;
+    resignedReference = foreign;
+    assert.equal(await musicHooks.refresh(provider, String(user)), provider);
+    assert.equal(signRequests.length, before, 'owned provider URL never reaches the S3 re-signer');
+    await assert.rejects(musicHooks.refresh(master, String(user)), /not saved on your account/);
+    await assert.rejects(musicHooks.refresh(foreign, String(user)), /not saved on your account/);
+    assert.equal(signRequests.length, before + 1, 'only the owned storage master was signed');
+    resignedReference = master.replace('=old', '=new');
+    assert.equal(await musicHooks.refresh(master, String(user)), resignedReference);
+    ownedAssets = [];
+    resignedReference = undefined;
   });
 
   await t.test('long edit checkpoints and resumes only unfinished ranges', async () => {

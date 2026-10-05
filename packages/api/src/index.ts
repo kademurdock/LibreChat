@@ -328,7 +328,7 @@ export { createDescriptionWallet } from './description/wallet';
 export { createCommunityRouter } from './community/router';
 
 export { monthlyBooks, monthlyWindow, MonthlyWindowError } from './kade/monthly';
-export { planAukEdit, isAukStorageReference, isAukOwnedReference } from './speech/edit';
+export { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } from './speech/edit';
 export type { MonthlyBooksDependencies, MonthlyBooksReport, MonthlyWindow } from './kade/monthly';
 
 export {

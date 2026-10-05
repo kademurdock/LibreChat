@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const source = readFileSync(`${__dirname}/kadeSoundBooth.js`, 'utf8');
 // The render route itself: the paste and style middlewares (Sep 25 and 27 2026) register '/render' first.
 const start = source.indexOf("router.post('/render', requireJwtAuth");
-const body = source.slice(source.indexOf('  const b = req.body || {};', start), source.indexOf('  let script =', start));
+const body = source.slice(source.indexOf('  const b = req.body || {};', start), source.indexOf('  const editing =', start));
 const check = vm.runInNewContext(`(req, res) => { ${body}; return 'continue'; }`);
 for (const engine of ['scenema', 'seed']) {
   for (const fields of [{}, { reference_voice_url: '', audio_urls: [] }, { reference_voice_url: ' ', audio_urls: [''] }]) {

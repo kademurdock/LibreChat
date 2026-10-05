@@ -23,23 +23,21 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
-const { planAukEdit, isAukStorageReference, isAukOwnedReference } = require('@librechat/api');
+const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
 const router = express.Router();
 const musicReferenceHooks = {
-  auth: requireJwtAuth, user: req => String(req.user.id), refresh: freshAssetUrl,
+  auth: requireJwtAuth, user: req => String(req.user.id),
+  authorize: (user, url) => audioReferenceGuard(user).authorize(url),
+  refresh: (url, user) => audioReferenceGuard(user).refresh(url),
   duration: buffer => require('./kadeSoundBoothStitch').durationOf(buffer),
   /* Part 295: a Gemini refusal that is the key's own trouble reaches the Google key alarm; the
    * transcriber still falls back to scribe_v2 as before. */
   transcribe: (buffer, mime, seconds) => transcribeMusicLyrics(buffer, mime, seconds, (error) =>
     googleKeyAlarm('the lyric transcriber', error, process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : 'KADE_EMBED_GEMINI_KEY')),
-  savedSources: async user => {
-    const projects = await KadeSoundBoothProject.find({ user, 'options.reference_voice_url': { $exists: true } }).select('options.reference_voice_url').lean();
-    const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
-    return [...projects.map(p => p.options.reference_voice_url), ...assets.flatMap(a => [a.url, a.metadata?.wavUrl])].filter(Boolean);
-  },
+  savedSources: user => audioReferenceGuard(user).savedSources(),
 };
 /* Sep 25 2026: a song pasted whole from ChatGPT ("Lyrics Box", "Tag Box",
  * "Negative Tag Box") is sorted before any render route reads it -- YuE2's
@@ -1433,9 +1431,35 @@ function stableOption(value) {
   }
   return value;
 }
-async function refreshReferences(view) {
-  if (view.options?.reference_voice_url) view.options.reference_voice_url = await freshAssetUrl(view.options.reference_voice_url);
-  if (Array.isArray(view.options?.audio_urls)) view.options.audio_urls = await Promise.all(view.options.audio_urls.map(freshAssetUrl));
+function audioReferenceGuard(user) {
+  let assetSources;
+  const savedSources = async () => {
+    if (!assetSources) {
+      const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
+      assetSources = assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
+    }
+    return assetSources;
+  };
+  const authorize = async url => {
+    if (isAukOwnedReference(user, url)) return;
+    if (!isOwnedAudioReference(user, url, await savedSources())) throw new Error('That recording is not saved on your account. Import it again.');
+  };
+  return { savedSources, authorize, refresh: async url => {
+    await authorize(url);
+    // An owned provider/CDN take can play as stored, but must never be signed with our storage credentials.
+    if (!isAukOwnedReference(user, url, assetSources || [])) return url;
+    const refreshed = await freshAssetUrl(url);
+    await authorize(refreshed);
+    return refreshed;
+  } };
+}
+async function refreshReferences(view, references) {
+  const refresh = async url => {
+    try { return await references.refresh(url); }
+    catch { return url; } // Preserve old project data without granting an unowned recording a new signature.
+  };
+  if (view.options?.reference_voice_url) view.options.reference_voice_url = await refresh(view.options.reference_voice_url);
+  if (Array.isArray(view.options?.audio_urls)) view.options.audio_urls = await Promise.all(view.options.audio_urls.map(refresh));
 }
 
 /* ---------- linking a AuK take back to its project ----------------------
@@ -3178,9 +3202,10 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
     await linkJobAssets(rows, req.user.id);
     const takes = await takesFor(rows, req.user.id, !isKade(req.user));
     const factor = priceFactor(req.user);
+    const references = audioReferenceGuard(String(req.user.id));
     const projects = await Promise.all(rows.map(async (r) => {
       const v = projectView(r, factor);
-      await refreshReferences(v);
+      await refreshReferences(v, references);
       v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
       return v;
     }));
@@ -3201,7 +3226,7 @@ router.get('/projects/:id', requireJwtAuth, async (req, res) => {
     await linkJobAssets([p], req.user.id);
     const takes = await takesFor([p], req.user.id, !isKade(req.user));
     const v = projectView(p, priceFactor(req.user));
-    await refreshReferences(v);
+    await refreshReferences(v, audioReferenceGuard(String(req.user.id)));
     v.takes = (p.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
     return res.json({ project: v });
   } catch (error) {
