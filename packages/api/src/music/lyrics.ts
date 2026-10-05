@@ -468,7 +468,9 @@ export async function validateMusicReference(
     }
   } catch {
     throw new Error(
-      'Could not check the cover recording. No music request was sent. Import it again and retry.',
+      use.speechEdit
+        ? 'Could not check the recording. No edit request was sent. Import it again and retry.'
+        : 'Could not check the cover recording. No music request was sent. Import it again and retry.',
     );
   }
   const error = musicReferenceError(seconds, use);
