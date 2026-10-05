@@ -44,6 +44,17 @@ test('music drafting reads the current Lyric persona while formatting and speech
   await assert.rejects(() => musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => null), error => error.status === 503);
 });
 
+test('engine delivery contracts separate compact YuE style from Lyria arrangement prose', async () => {
+  const read = async () => ({ instructions: 'Write original songs with a distinct point of view.' });
+  const yue = (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
+  const lyria = (await musicWritingPrompt('Lyria format', { engine: 'lyria', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
+  assert.match(yue, /25 to 45 words in one or two compact sentences/);
+  assert.doesNotMatch(yue, /the technical line says about four minutes|backing vocals and arrangement dynamics as appropriate/);
+  assert.match(lyria, /backing vocals and arrangement dynamics as appropriate/);
+  assert.match(lyria, /the technical line says about four minutes/);
+  assert.doesNotMatch(lyria, /25 to 45 words/);
+});
+
 test('the real music writing handler sends Lyric instructions and reasoning settings to the lyric model and preserves supplied lyrics', async () => {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [];
@@ -413,7 +424,7 @@ test('Part 231: Surprise me writes ideas in her format, shows her list only as a
   assert.equal(tooCloseToShelf('Polka: A different idea entirely about a cashier who notices which customers fold their pay stubs.', [good]), true, 'so is one she was already shown');
 });
 
-test('Part 230: the desk demands rhyme and one meter, counts syllables itself, and knows her newest pet hates', async () => {
+test('the desk keeps melodic rhyme and meter guidance, counts syllables itself, and knows her pet hates', async () => {
   const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
   assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /THE CHORUS STATES THE HOOK\. The verses can show; the chorus TELLS/);
   assert.doesNotMatch(prompt, /say it plain/i, 'Part 293: the old heading was sung back in a real song and is on her ban list');
@@ -480,10 +491,14 @@ test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no 
   for (const rule of ['Trust the listener', 'When a line lands, move on', 'Never explain a joke', 'one saying how sad the singer is', 'No lesson at the end', 'grief can stay grief, anger can stay anger', 'want the person they shouldn', 'Give the singer a personality', 'opinions, bad habits, pettiness, contradictions', 'do not have to be the good guy', 'Songs are not HR training videos', 'Every line earns its spot', 'could sit in 500 other songs', 'exists only for the rhyme', 'explains the line before it', 'only links two better lines', 'Plain words with a sharp observation beat fancy words', 'No thesaurus poetry', 'never turn a feeling into a person just to get a rhyme', 'take the premise seriously', 'Start with a believable version and escalate', 'callbacks and misdirection', 'set up an expectation and wreck it', 'Specific beats random', 'Never explain the punchline', 'a phrase, a question, a command, a ridiculous image, a repeated word or a punchline', 'Take the title from the hook or from the central joke', 'Punk and emo', 'hard consonants, specific grievances, not eyeliner and darkness', 'no vocabulary flexing and no generic bragging', 'only when something happens there', 'bodies and rooms', 'brutally clear in one sentence', 'Experimental may break the shape, never into nonsense'])
     assert.ok(section.includes(rule), rule);
   assert.doesNotMatch(section, /["“”]/, 'no worked example lines: the writer hands examples back');
-  assert.match(musicWritingCraft, /could another good songwriter surprise me with this\? Are there a few lines somebody would quote, caption or yell with friends the next morning\?/);
+  assert.match(musicWritingCraft, /one focused silent craft revision/);
+  assert.match(musicWritingCraft, /unclear speaker, actor, object or sequence of events/);
+  assert.match(musicWritingCraft, /earlier detail return with a changed meaning/);
   /* The conflicts, settled her way. */
-  assert.match(musicWritingCraft, /At most ONE deliberately unrhymed line in the whole song\. Slant rhyme counts as rhyme\. Never twist word order or grammar to land a rhyme/);
-  assert.match(musicWritingCraft, /Skip the nursery-rhyme pairs/);
+  assert.match(musicWritingCraft, /Never twist word order or grammar to land a rhyme/);
+  assert.match(musicWritingCraft, /melodic defaults, not rules for rap/);
+  assert.match(musicWritingCraft, /internal and cross-bar rhymes/);
+  assert.doesNotMatch(musicWritingCraft, /A listener must be able to guess|Every verse is built in couplets|At most ONE deliberately unrhymed line/);
   assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /The desk draws a SECTION MAP for each song and sends it with the request, under the idea\. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent\./);
   assert.doesNotMatch(musicWritingCraft, /Final Chorus|two long verses|three verses/, 'Part 293 follow-up: the shapes live in the drawn map, not in a list');
   assert.match(musicWritingCraft, /No more than two observed details per verse, and each one something only this song could contain/);
