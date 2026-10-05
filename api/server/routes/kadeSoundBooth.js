@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -720,7 +720,7 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
   );
   const out = r.data?.choices?.[0]?.message?.content;
   const usage = r.data?.usage || {};
-  return { text: String(out || ''), usage, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
+  return { text: String(out || ''), usage, finishReason: r.data?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */
@@ -1653,8 +1653,8 @@ async function notifyDraft(userId, ok) {
 
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
   const b = req.body || {};
-  if (b.thinkMode !== undefined && !['auto', 'low', 'medium'].includes(b.thinkMode)) {
-    return res.status(400).json({ error: 'Choose Auto, Low or Medium for writing thought.' });
+  if (b.thinkMode !== undefined && !['auto', 'low', 'medium', 'high'].includes(b.thinkMode)) {
+    return res.status(400).json({ error: 'Choose Auto, Low, Medium or High for writing thought.' });
   }
   const deep = musicWritingBackground(b) && String(b.text || '').trim().length >= 3;
   /* A pasted three-box song needs no writer, so it is answered at once. */
@@ -1879,13 +1879,20 @@ async function scriptHandler(req, res) {
      * anyone unknown get a clean note. Never throws; fails clean. The audit
      * below reuses this same system prompt, so it keeps the same note. */
     const audience = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
-    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode }, getAgent, audience);
+    const requestedTitle = typeof b.title === 'string' ? b.title.trim().slice(0, 80) : '';
+    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode, title: requestedTitle }, getAgent, audience);
     const first = await callModel({
       ...writingSettings,
       system: writingSystem,
       user: lines.join('\n\n'),
       maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
     });
+    if (mode === 'write' && ['lyria', 'yue2'].includes(engine) && first.finishReason === 'length') {
+      logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: first.costUSD,
+        metadata: { engine, mode, costMeasured: first.measured, model: writingSettings.model, refused: 'output limit', ms: Date.now() - started, inTok: first.usage.prompt_tokens, outTok: first.usage.completion_tokens },
+      }).catch(() => {});
+      return res.status(502).json({ error: 'The writer reached its output limit before finishing the song. Your idea is kept; no audio was generated. Try a shorter brief or a lower Think setting.' });
+    }
     let raw = first.text;
     const usage = first.usage;
     let totalCost = first.costUSD;
@@ -2051,7 +2058,9 @@ async function scriptHandler(req, res) {
       return res.status(422).json({ error: 'This song has to be clean, and the draft came back with words it cannot have. Your idea is kept. Try again.' });
     }
     if (ownsLyrics) raw = fixStageDirections(raw);
-    let { script, readback } = splitScriptAndReadback(raw);
+    const titled = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(raw) : { script: raw };
+    const title = requestedTitle || titled.title || (mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(first.text).title : undefined);
+    let { script, readback } = splitScriptAndReadback(titled.script);
     /* Sep 25 2026: when she gave Lyria her own words, her lyrics box keeps
      * them. Lyric's delivery contract asks for a Lyrics: heading with the
      * words, so the desk may hand back a copy -- sometimes reformatted -- and
@@ -2194,6 +2203,7 @@ async function scriptHandler(req, res) {
       engine,
       mode,
       script,
+      ...(title ? { title } : {}),
       /* Part 126: the same script as a screenplay — what the page shows. Oct 2 2026: for AuK
        * this is for screens that predate `performance` (iPhone 2.2.2). With a voice she chose,
        * it has no header lines, because her box wins at render; with none, its VOICE: line is
@@ -3628,8 +3638,8 @@ async function ideasAlreadyShown(userId) {
   }
 }
 router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
-  if (req.body?.thinkMode !== undefined && !['auto', 'low', 'medium'].includes(req.body.thinkMode)) {
-    return res.status(400).json({ error: 'Choose Auto, Low or Medium for writing thought.' });
+  if (req.body?.thinkMode !== undefined && !['auto', 'low', 'medium', 'high'].includes(req.body.thinkMode)) {
+    return res.status(400).json({ error: 'Choose Auto, Low, Medium or High for writing thought.' });
   }
   const started = Date.now();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());

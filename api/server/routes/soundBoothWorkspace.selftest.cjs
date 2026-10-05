@@ -43,7 +43,7 @@ const server=http.createServer((req,res)=>{
   await page.goto('http://127.0.0.1:'+server.address().port+'/sound-booth');
   await page.locator('#app').waitFor({state:'visible'});
   assert.equal(await page.getByRole('button',{name:'Writing thought: Auto',exact:true}).count(),1);
-  for(const mode of ['Low','Medium','Auto']){
+  for(const mode of ['Low','Medium','High','Auto']){
     await page.locator('#btnThink').click();
     assert.equal(await page.locator('#btnThink').getAttribute('aria-label'),'Writing thought: '+mode);
     assert.equal(await page.locator('#status').innerText(),'Writing thought: '+mode+'.');

@@ -70,14 +70,14 @@ function booth(replies = [], env = {}) {
         writerCalls.push(body);
         const reply = replies[writerCalls.length - 1];
         assert.ok(reply !== undefined, 'the writer was asked more times than this test expected');
-        return { data: { choices: [{ message: { content: reply } }], usage: { cost: 0 } } };
+        return { data: { choices: [{ message: { content: typeof reply === 'string' ? reply : reply.text }, finish_reason: typeof reply === 'string' ? 'stop' : reply.finishReason }], usage: { cost: 0 } } };
       } };
       if (name === 'crypto') return require(name);
       if (name === '@librechat/api') return {
         writingCost: () => ({ costUSD: 0, measured: true }),
         validateMusicReference: async (_user, url) => url, musicReferenceSeconds: async () => 10,
         ...(() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process: { env: { AWS_ENDPOINT_URL: 'https://example.invalid', AWS_BUCKET_NAME: 'recordings' } } }); return mod.exports; })(),
-        ...writing, ...ideas, musicWritingPrompt: async (base) => base,
+        ...writing, ...ideas, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')), musicWritingPrompt: async (base) => base,
         yueStylesEnabled: () => false, yueStyles: {}, effectsGuide: {},
         createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {},
       };
@@ -131,14 +131,14 @@ const GIRL_READBACK = 'READBACK: A little girl about five tells how she hid from
 
 test('Sol writes and formats speech with the chosen thought, without unsupported sampling controls', async () => {
   for (const mode of ['write', 'format']) {
-    for (const thinkMode of ['auto', 'low', 'medium']) {
+    for (const thinkMode of ['auto', 'low', 'medium', 'high']) {
       const desk = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
       const result = await desk.write({ mode, thinkMode, voice_description: GIRL });
       const sent = desk.writerCalls[0];
       assert.equal(sent.model, 'openai/gpt-6.1-sol');
       assert.equal(Object.hasOwn(sent, 'temperature'), false);
       assert.equal(Object.hasOwn(sent, 'top_p'), false);
-      assert.equal(sent.max_tokens, 16384);
+      assert.equal(sent.max_tokens, thinkMode === 'high' ? 65536 : 16384);
       if (thinkMode === 'auto') {
         assert.equal(sent.reasoning, undefined);
         assert.equal(sent.kade_think_max_effort, 'medium');
@@ -152,8 +152,8 @@ test('Sol writes and formats speech with the chosen thought, without unsupported
   }
 });
 
-test('song length stays in the brief while all three thought modes use resumable jobs', async () => {
-  for (const thinkMode of ['auto', 'low', 'medium']) {
+test('song length stays in the brief while all four thought modes use resumable jobs', async () => {
+  for (const thinkMode of ['auto', 'low', 'medium', 'high']) {
     const desk = booth(['A four-minute instrumental with a quiet ending.\nREADBACK: A full instrumental.']);
     const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A four-minute instrumental with a quiet ending.', instrumental: true, thinkMode, notify: false });
     assert.equal(start.status, 202);
@@ -190,15 +190,60 @@ test('legacy background and deepWrite retain medium; a new explicit choice overr
 test('unsupported effort is rejected before the writing desk is charged', async () => {
   const desk = booth();
   for (const route of ['post/script', 'post/idea']) {
-    const result = await desk.request(route, { engine: 'lyria', mode: 'write', text: 'A song.', thinkMode: 'high' });
+    const result = await desk.request(route, { engine: 'lyria', mode: 'write', text: 'A song.', thinkMode: 'xhigh' });
     assert.equal(result.status, 400);
-    assert.match(result.result.error, /Auto, Low or Medium/);
+    assert.match(result.result.error, /Auto, Low, Medium or High/);
   }
   assert.equal(desk.writerCalls.length, 0);
 });
 
+test('the writer supplies separate title metadata without changing a manual title or legacy draft', async () => {
+  const titles = loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts'));
+  const song = 'Warm folk, guitar and a playful alto.\n\nLyrics:\n[Verse 1]\nKite climbs over the barn\nREADBACK: A kite escapes.';
+  for (const header of ['TITLE: Ribbon Thief', '**Title:** “Ribbon Thief”', 'Song Title: Ribbon Thief']) {
+    const parsed = titles.splitLyricTitle(header + '\n' + song);
+    assert.equal(parsed.title, 'Ribbon Thief');
+    assert.equal(parsed.script, song);
+  }
+  assert.equal(titles.splitLyricTitle(song).title, undefined);
+  assert.equal(titles.splitLyricTitle(song).script, song);
+  assert.equal(titles.splitLyricTitle('TITLE: Untitled\n' + song).title, undefined);
+  assert.equal(titles.splitLyricTitle('Warm folk.\nLyrics:\nTitle: a line I wrote').script, 'Warm folk.\nLyrics:\nTitle: a line I wrote');
+  for (const title of ['', 'My title']) {
+    const desk = booth(['TITLE: Ribbon Thief\n' + song], { KADE_LYRIC_REPEATS: '0' });
+    const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A short kite jingle.', title, thinkMode: 'high', notify: false });
+    let polled;
+    for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+    assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+    assert.equal(polled.result.result.title, title || 'Ribbon Thief');
+    assert.doesNotMatch(polled.result.result.script, /TITLE:|Ribbon Thief/);
+    assert.match(polled.result.result.script, /Kite climbs/);
+    assert.equal(desk.writerCalls[0].reasoning.effort, 'high');
+    assert.equal(desk.writerCalls[0].kade_think_max_effort, undefined);
+    assert.equal(desk.writerCalls[0].max_tokens, 65536);
+  }
+  const prompt = await writing.musicWritingPrompt('Engine format.', { engine: 'lyria', mode: 'write' }, async () => ({ instructions: 'Lyric persona.' }));
+  assert.match(prompt, /TITLE:.*specific, original song title/);
+  assert.match(prompt, /metadata, never a sung line/);
+  const chosen = await writing.musicWritingPrompt('Engine format.', { engine: 'lyria', mode: 'write', title: 'My title' }, async () => ({ instructions: 'Lyric persona.' }));
+  assert.match(chosen, /chosen title, exactly: "My title"/);
+  const yue = await writing.musicWritingPrompt('No headings other than Lyrics:; an instrumental is only a direction.', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'Lyric persona.' }));
+  assert.ok(yue.indexOf('No headings other than Lyrics:') < yue.indexOf('SOUND BOOTH DELIVERY CONTRACT'));
+  assert.match(yue, /TITLE: metadata line is an exception/);
+});
+
+test('a song that reaches the output ceiling is reported rather than returned as a complete draft', async () => {
+  const desk = booth([{ text: 'TITLE: Ribbon Thief\nWarm folk.\nLyrics:\n[Verse 1]\nAn unfinished', finishReason: 'length' }]);
+  const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A kite song.', thinkMode: 'high', notify: false });
+  let polled;
+  for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+  assert.equal(polled.result.state, 'failed');
+  assert.match(polled.result.error, /output limit.*no audio/);
+  assert.equal(desk.writerCalls.length, 1);
+});
+
 test('the song idea helper uses Sol and respects the same selected thought', async () => {
-  for (const thinkMode of ['auto', 'low', 'medium']) {
+  for (const thinkMode of ['auto', 'low', 'medium', 'high']) {
     const idea = 'Meter Hearing: Deadpan western swing follows an apologetic driver addressing a broken meter as a judge; after its repaired coin slot accepts his payment, he treats the receipt as a full pardon.';
     const desk = booth([idea]);
     const result = await desk.request('post/idea', { thinkMode });

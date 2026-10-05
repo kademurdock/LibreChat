@@ -23,6 +23,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const titleHelpers = {};
+vm.runInNewContext(require('typescript').transpileModule(fs.readFileSync(path.join(__dirname, '../../../packages/api/src/music/title.ts'), 'utf8'), {
+  compilerOptions: { module: require('typescript').ModuleKind.CommonJS },
+}).outputText, { exports: titleHelpers });
 const express = require('express');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
@@ -58,6 +62,7 @@ function loadBooth({ saved, usage, assets, api: extraApi = {}, requires = {} }) 
          * without them it no longer loaded at all. Inert stand-ins: nothing in
          * this file exercises the writing desk's model, YuE2 or Stable Audio. */
         writingCost: () => ({ costUSD: 0, measured: false }),
+        splitLyricTitle: titleHelpers.splitLyricTitle,
         musicWritingSettings: () => ({}),
         musicWritingBackground: () => false,
         labelReadback: (text) => text,

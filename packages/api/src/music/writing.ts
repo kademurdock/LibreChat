@@ -4,7 +4,7 @@ import { hitWritingSystem } from './hitSystem';
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
 export const lyricWritingModel = 'openai/gpt-6.1-sol';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
-export type BoothThinkMode = 'auto' | 'low' | 'medium';
+export type BoothThinkMode = 'auto' | 'low' | 'medium' | 'high';
 type Request = {
   engine: string;
   mode: string;
@@ -13,6 +13,7 @@ type Request = {
   background?: boolean;
   deepWrite?: boolean;
   thinkMode?: BoothThinkMode;
+  title?: string;
 };
 
 const writesMusic = (request: Request): boolean =>
@@ -35,13 +36,13 @@ export function musicWritingSettings(request: Request): {
   maxTokens: number;
   timeoutMs: number;
   kade_think_max_effort?: 'medium';
-  reasoning?: { enabled: boolean; effort: 'low' | 'medium'; exclude: boolean };
+  reasoning?: { enabled: boolean; effort: 'low' | 'medium' | 'high'; exclude: boolean };
 } {
   const thinkMode = boothThinkMode(request);
   const timeoutMs = musicWritingBackground(request) ? 600000 : request.patient ? 225000 : 112000;
   return {
     model: lyricWritingModel,
-    maxTokens: 16384,
+    maxTokens: thinkMode === 'high' ? 65536 : 16384,
     timeoutMs,
     ...(thinkMode === 'auto'
       ? { kade_think_max_effort: 'medium' as const }
@@ -1526,11 +1527,12 @@ ${hitWritingSystem}
 
 ${musicWritingCraft}
 
+${base}
+
 ${note ? `${note}\n\n` : ''}SOUND BOOTH DELIVERY CONTRACT
 This is a single text-only writing request, not a conversation. Do not ask questions; make the creative choices and deliver. Do not access conversation history, personal memory, other agents, or audio tools.
 Keep supplied lyrics exactly as the request instructs; do not rewrite them merely to improve their rhymes. Formatting-only work must preserve authored words.
-The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here. ${direction} Output the music direction first, then a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
-Length check, when you wrote the lyrics yourself and the person gave no length: the sections follow the SECTION MAP sent with the request, every verse sized by the genre's density tier, ${request.engine === 'lyria' ? 'the technical line says about four minutes, ' : ''}and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format below, never a description of it.
-
-${base}`;
+The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here. ${direction} Start with one TITLE: line containing ${request.title?.trim() ? `the person's chosen title, exactly: ${JSON.stringify(request.title.trim().slice(0, 80))}` : 'a specific, original song title of at most 80 characters, taken from this song\'s hook, central joke or defining image; never a generic label such as Untitled or Your Song'}. Then output the music direction, a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. The TITLE: line is metadata, never a sung line or music direction. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
+The TITLE: metadata line is an exception to the engine's direction-first, no-other-headings or direction-only instructions above. For an instrumental, return TITLE: followed by the music direction, with no Lyrics: heading or sung words.
+Length check, when you wrote the lyrics yourself and the person gave no length: the sections follow the SECTION MAP sent with the request, every verse sized by the genre's density tier, ${request.engine === 'lyria' ? 'the technical line says about four minutes, ' : ''}and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format above, never a description of it.`;
 }

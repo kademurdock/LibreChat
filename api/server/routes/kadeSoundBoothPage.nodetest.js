@@ -36,7 +36,7 @@ test('the writing thought button cycles, persists and announces its current mode
   const main = scripts.find((s) => s.includes("document.getElementById('btnThink').onclick="));
   const onclick = main.match(/document\.getElementById\('btnThink'\)\.onclick=([\s\S]*?);\n    showWritingThink\(\);/)[1];
   vm.runInNewContext(pageFunction('nextWritingThink') + '\n' + pageFunction('showWritingThink') + '\nfunction busy(){return !!state.writing;}\nfunction say(message){said.push(message);}\nthis.click=' + onclick + ';showWritingThink();', ctx);
-  for (const expected of ['Low', 'Medium', 'Auto']) {
+  for (const expected of ['Low', 'Medium', 'High', 'Auto']) {
     ctx.click();
     assert.equal(button.textContent, 'Think: ' + expected);
     assert.equal(button.attributes['aria-label'], 'Writing thought: ' + expected);
@@ -49,7 +49,7 @@ test('the writing thought button cycles, persists and announces its current mode
 });
 
 test('the writing thought request leaves the requested song length and words intact', () => {
-  for (const thinkMode of ['auto', 'low', 'medium']) {
+  for (const thinkMode of ['auto', 'low', 'medium', 'high']) {
     const ctx = { state: { engine: 'lyria', writingThink: thinkMode } };
     vm.runInNewContext(pageFunction('forDesk') + '\nthis.forDesk=forDesk;', ctx);
     const body = { text: 'A full four-minute song.', lyrics: 'My exact words.', seconds: 240 };

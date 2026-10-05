@@ -140,7 +140,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     <fieldset id="editorPanel">
       <legend id="editorLegend">The script</legend>
       <p class="hint" id="scriptHint">Write only the words to perform. For sound effects, use Seed Audio.</p>
-      <label class="field" for="trackTitle">Track title</label><input type="text" id="trackTitle" maxlength="80" aria-describedby="trackTitleHint"><p class="hint" id="trackTitleHint">Optional. Left blank, it uses the first few words you wrote.</p>
+      <label class="field" for="trackTitle">Track title</label><input type="text" id="trackTitle" maxlength="80" aria-describedby="trackTitleHint"><p class="hint" id="trackTitleHint">Optional. A song draft fills an empty title with the writer's title. Your own title is kept. Other recordings use the first few words when left blank.</p>
       <label class="field" for="script" id="editorLabel">Script</label>
       <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
       <div class="quick-actions" role="group" aria-label="Writing help" id="quickWriting">
@@ -150,7 +150,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
       </div>
       <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
-      <p class="hint" id="writingThinkHint">Auto chooses the thought needed. Low is quicker; Medium spends more time developing the writing. Song length follows your idea.</p>
+      <p class="hint" id="writingThinkHint">Auto chooses up to Medium thought. Low is quicker; Medium develops the writing longer; High gives the lyric writer more room to reason and can take longer. Song length follows your idea.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">
@@ -208,9 +208,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
     var drafts = {}, copyUndo = {};
-    var state = { importError:'', quoteRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
-    var writingThink='auto';try{var savedThink=localStorage.getItem('kadeSoundBoothThinkMode');if(['auto','low','medium'].indexOf(savedThink)>=0)writingThink=savedThink;}catch(e){}
-    function nextWritingThink(mode){var modes=['auto','low','medium'];return modes[(modes.indexOf(mode)+1)%modes.length];}
+    var state = { importError:'', quoteRevision:0, titleRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
+    var writingThink='auto';try{var savedThink=localStorage.getItem('kadeSoundBoothThinkMode');if(['auto','low','medium','high'].indexOf(savedThink)>=0)writingThink=savedThink;}catch(e){}
+    function nextWritingThink(mode){var modes=['auto','low','medium','high'];return modes[(modes.indexOf(mode)+1)%modes.length];}
     function showWritingThink(){state.writingThink=writingThink;var label='Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1),button=document.getElementById('btnThink');button.textContent=label.replace('Writing thought','Think');button.setAttribute('aria-label',label);button.title=label;button.disabled=!!state.writing;}
     document.getElementById('btnThink').onclick=function(){if(busy())return;writingThink=nextWritingThink(writingThink);try{localStorage.setItem('kadeSoundBoothThinkMode',writingThink);}catch(e){}showWritingThink();say('Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1)+'.');};
     showWritingThink();
@@ -234,7 +234,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function uploadEngine(){ var ks=Object.keys((state.guide&&state.guide.engines)||{}).filter(function(k){ return isUpload(k); }); return ks[0]||null; }
     function uploadUi(e){ var g=state.guide.engines[e||state.engine]||{}; return g.ui||{}; }
     function focusWork(){ if(!isUpload()){ document.getElementById('script').focus(); return; } var pick=document.querySelector('#settings input[type=file]'); (pick && !pick.disabled ? pick : document.getElementById('btnRender')).focus(); }
-    function invalidateQuote(){ state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
+    function invalidateQuote(event){ if(event&&event.target&&event.target.id==='trackTitle'){state.titleRevision++;return;}state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
     app.addEventListener('change', invalidateQuote);
 
@@ -716,6 +716,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.values.voice_description=data.voice_description; state.deskVoice=data.voice_description; renderSettings();
       return 'The voice it wrote for is now in Describe a new voice.';
     }
+    function takeDeskTitle(data, originalTitle, titleRevision){
+      var box=document.getElementById('trackTitle'), title=data&&typeof data.title==='string'?data.title.trim().slice(0,80):'';
+      if((state.engine!=='lyria'&&state.engine!=='yue2') || state.titleRevision!==titleRevision || String(originalTitle||'').trim() || box.value.trim() || !title)return '';
+      if(writingUndo){writingUndo.title=box.value;writingUndo.generatedTitle=title;}
+      box.value=title;
+      return 'Track title: '+title+'. ';
+    }
     ${SONG_PASTE_SOURCE || ''}
     var writingUndo=null, writingLyrics;
     function changeWriting(value){
@@ -761,7 +768,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     document.getElementById('btnUndoWriting').onclick=function(){
       if(busy() || !writingUndo || writingUndo.engine!==state.engine)return;
-      document.getElementById('script').value=writingUndo.text;if(writingUndo.idea!==undefined){document.getElementById('text').value=writingUndo.idea;setInput(writingUndo.input||'words');}if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}if(writingUndo.voice!==undefined){state.values.voice_description=writingUndo.voice;state.deskVoice=writingUndo.deskVoice;renderSettings();}writingUndo=null;
+      document.getElementById('script').value=writingUndo.text;if(writingUndo.idea!==undefined){document.getElementById('text').value=writingUndo.idea;setInput(writingUndo.input||'words');}if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}if(writingUndo.voice!==undefined){state.values.voice_description=writingUndo.voice;state.deskVoice=writingUndo.deskVoice;renderSettings();}if(writingUndo.title!==undefined&&document.getElementById('trackTitle').value===writingUndo.generatedTitle)document.getElementById('trackTitle').value=writingUndo.title;writingUndo=null;
       this.hidden=true;invalidateQuote();document.getElementById('script').focus();say('Previous writing restored.');
     };
     document.getElementById('btnInspire').onclick=function(){
@@ -815,7 +822,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Part 219: one press. Coming back to the page picks the waiting draft up by
        * itself (see the resume below); nobody presses this twice. */
       var resume=this.getAttribute('data-resume')==='1';this.removeAttribute('data-resume');
-      var box=document.getElementById('script'), original=box.value;
+      var box=document.getElementById('script'), original=box.value, originalTitle=document.getElementById('trackTitle').value, titleRevision=state.titleRevision;
       var idea=document.getElementById('text').value.trim();
       var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&idea?idea:original.trim()||idea;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
@@ -841,8 +848,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
         var sorted=sortDraft(engine,r.data,result);
         changeWriting(sorted.result);document.getElementById('readback').textContent=r.data.readback||'';
+        var titleLead=takeDeskTitle(r.data,originalTitle,titleRevision);
         var voiceLead=takeDeskVoice(r.data,true);
-        say(sorted.lead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
+        say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;showWritingThink();document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
