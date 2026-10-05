@@ -42,6 +42,16 @@ test('AWS and explicit endpoint prefixes match exactly', () => {
   assert.equal(isAukStorageReference('https://storage.test/objects/recordings/voice.wav', custom), false);
 });
 
+test('B2 configured mixed-case bucket names retain exact path matching and DNS case folding', () => {
+  const env = { AWS_ENDPOINT_URL: 'https://s3.us-east-005.backblazeb2.com', AWS_BUCKET_NAME: 'Kademurdockchat', AWS_REGION: 'us-east-005' };
+  assert.equal(isAukStorageReference('https://s3.us-east-005.backblazeb2.com/Kademurdockchat/audio/take.wav', env), true);
+  assert.equal(isAukStorageReference('https://Kademurdockchat.s3.us-east-005.backblazeb2.com/audio/take.wav', env), true);
+  assert.equal(isAukStorageReference('https://kademurdockchat.s3.us-east-005.backblazeb2.com/audio/take.wav', env), true);
+  assert.equal(isAukStorageReference('https://s3.us-east-005.backblazeb2.com/kademurdockchat/audio/take.wav', env), false);
+  assert.equal(isAukStorageReference('https://s3.us-east-005.backblazeb2.com/Kademurdockchat-other/audio/take.wav', env), false);
+  assert.equal(isAukStorageReference('https://Kademurdockchat.s3.us-east-005.backblazeb2.com.evil.test/audio/take.wav', env), false);
+});
+
 test('long edits preserve the entire input once and bound each paid job', () => {
   for (const seconds of [0.2, 14, 42, 84, 251.73, 1800]) {
     const parts = planAukEdit(seconds, {});

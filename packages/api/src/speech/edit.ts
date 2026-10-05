@@ -18,7 +18,7 @@ export function isAukStorageReference(value: string, env: NodeJS.ProcessEnv = pr
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) return false;
     const buckets = [env.AWS_BUCKET_NAME, env.KADE_MEDIA_BUCKET].filter(
-      (bucket): bucket is string => typeof bucket === 'string' && /^[a-z0-9][a-z0-9.-]*$/.test(bucket),
+      (bucket): bucket is string => typeof bucket === 'string' && /^[a-z0-9][a-z0-9.-]*$/i.test(bucket),
     );
     if (!buckets.length) return false;
     const region = env.AWS_REGION || '';
@@ -33,7 +33,7 @@ export function isAukStorageReference(value: string, env: NodeJS.ProcessEnv = pr
       const object = url.pathname.slice(prefix.length);
       return buckets.some((bucket) =>
         (url.hostname === endpoint.hostname && object.startsWith(bucket + '/') && object.length > bucket.length + 1) ||
-        (url.hostname === bucket + '.' + endpoint.hostname && object.length > 0),
+        (url.hostname === bucket.toLowerCase() + '.' + endpoint.hostname && object.length > 0),
       );
     });
   } catch {
