@@ -37,11 +37,12 @@ export default function ModelPanel({
 // (librechat.yaml's OpenRouter list). Grounded in what is actually wired and
 // measured on this fleet -- no marketing. Models not listed just show nothing.
 const KADE_MODEL_NOTES: Record<string, string> = {
-  'z-ai/glm-5.2': 'The house default. Smart, dependable, and great with tools -- if you are not sure, pick this.',
-  'minimax/minimax-m3': 'Big flagship brain that can also see images you share. Good all-rounder, costs more than the default.',
-  'z-ai/glm-4.7': 'The default’s cheaper sibling. Solid all-rounder for everyday characters.',
+  'openai/gpt-6.1-sol': localize('com_agents_sol_model_note'),
+  'z-ai/glm-5.2': localize('com_agents_glm_model_note'),
+  'minimax/minimax-m3': localize('com_agents_minimax_model_note'),
+  'z-ai/glm-4.7': localize('com_agents_glm_budget_model_note'),
   'deepseek/deepseek-v4.1-flash':
-    'The family default. Warm, stays in character, careful with tools, a huge memory, and very cheap. A little slower to answer than Grok.',
+    localize('com_agents_deepseek_model_note'),
   'deepseek/deepseek-v4-flash': 'Very cheap and fast with a huge memory -- great for long, chatty conversations.',
   'deepseek/deepseek-v4-pro': 'The deep thinker. Slower, but strongest on hard problems and careful reasoning.',
   'google/gemini-3-flash-preview': 'Fast, and can see images, audio, and video you share.',
@@ -51,7 +52,7 @@ const KADE_MODEL_NOTES: Record<string, string> = {
   'openai/gpt-4o-mini': 'The familiar one -- cheap, quick, and can see images.',
   'mistralai/mistral-nemo': 'A creative-roleplay classic. Cheap and playful; not built for tools or deep reasoning.',
   'nousresearch/hermes-4-70b': 'Uncensored workhorse for adult personas -- about 6x cheaper than the default. Cannot use tools (chat only).',
-  'nousresearch/hermes-4-405b': 'Uncensored flagship, priced like the default. Cannot use tools (chat only).',
+  'nousresearch/hermes-4-405b': localize('com_agents_hermes_model_note'),
   'sao10k/l3.1-euryale-70b': 'A roleplay-community favorite with real personality. Tools work on this one.',
   'mistralai/mistral-small-2603': 'Light-touch and cheap, with tools and thinking. Good budget pick for capable characters.',
   'moonshotai/kimi-k2.5': 'Huge model that still feels fast in conversation. A star at lyrics and wordplay.',

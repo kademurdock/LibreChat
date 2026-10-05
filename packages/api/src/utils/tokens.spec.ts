@@ -2,6 +2,15 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { EndpointTokenConfig } from '~/types';
 import { getModelMaxTokens, getModelMaxOutputTokens } from './tokens';
 
+describe('Sol token limits through the current custom endpoint', () => {
+  it('finds the full context and output limits for both model name formats', () => {
+    for (const model of ['gpt-6.1-sol', 'openai/gpt-6.1-sol']) {
+      expect(getModelMaxTokens(model, EModelEndpoint.custom)).toBe(1050000);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.custom)).toBe(128000);
+    }
+  });
+});
+
 describe('getModelMaxTokens partial-override fallback', () => {
   const partialOverride: EndpointTokenConfig = {
     'custom-model': { prompt: 1, completion: 2, context: 32000, output: 4096 },

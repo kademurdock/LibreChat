@@ -50,7 +50,7 @@ const MAX_TRANSCRIPT = 400; // hard per-room cap
 const HISTORY_WINDOW = 60; // transcript entries sent to the model
 const TURN_MAX_TOKENS = parseInt(process.env.KADE_ROOM_MAX_TOKENS || '600', 10);
 const DAILY_TURN_CAP = parseInt(process.env.KADE_ROOM_DAILY_TURNS || '300', 10);
-const FALLBACK_MODEL = process.env.KADE_ROOM_FALLBACK_MODEL || 'google/gemini-3.1-flash-lite';
+const FALLBACK_MODEL = process.env.KADE_ROOM_FALLBACK_MODEL || 'openai/gpt-6.1-sol';
 
 const oidOf = (req) => new mongoose.Types.ObjectId(String(req.user.id || req.user._id));
 const isChild = (req) => req.user && req.user.kadeAccountType === 'child';

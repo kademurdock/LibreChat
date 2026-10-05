@@ -41,10 +41,9 @@ export async function residentReply(context: ResidentConversation): Promise<stri
           Math.max(2000, Math.min(30000, context.timeoutMs ?? 18000)),
         ),
         body: JSON.stringify({
-          model: 'z-ai/glm-5.3-flash',
+          model: 'openai/gpt-6.1-sol',
           max_tokens: 220,
-          temperature: 0.8,
-          reasoning: { enabled: false },
+          reasoning: { enabled: true, effort: 'low', exclude: true },
           messages: [
             { role: 'system', content: prompt },
             /* Ten turns, not six. Kade, Sep 21 2026: "I want people to talk to

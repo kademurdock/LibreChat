@@ -147,9 +147,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act" id="btnDraft">Help write this</button>
         <button type="button" class="act quiet" id="btnInspire"><span aria-hidden="true">&#127922; </span>Surprise me</button>
         <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
-        <label id="quickDraftWrap" hidden><input type="checkbox" id="quickDraft"> Quick song draft: about a minute and a half instead of five, less polished</label>
+        <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
       </div>
-      <p class="hint" id="quickWritingHint">Neither button makes audio. A draft uses the writing model; Surprise me costs a fraction of a cent for songs and nothing otherwise.</p>
+      <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
+      <p class="hint" id="writingThinkHint">Auto chooses the thought needed. Low is quicker; Medium spends more time developing the writing. Song length follows your idea.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">
@@ -208,6 +209,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
     var drafts = {}, copyUndo = {};
     var state = { importError:'', quoteRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
+    var writingThink='auto';try{var savedThink=localStorage.getItem('kadeSoundBoothThinkMode');if(['auto','low','medium'].indexOf(savedThink)>=0)writingThink=savedThink;}catch(e){}
+    function nextWritingThink(mode){var modes=['auto','low','medium'];return modes[(modes.indexOf(mode)+1)%modes.length];}
+    function showWritingThink(){state.writingThink=writingThink;var label='Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1),button=document.getElementById('btnThink');button.textContent=label.replace('Writing thought','Think');button.setAttribute('aria-label',label);button.title=label;button.disabled=!!state.writing;}
+    document.getElementById('btnThink').onclick=function(){if(busy())return;writingThink=nextWritingThink(writingThink);try{localStorage.setItem('kadeSoundBoothThinkMode',writingThink);}catch(e){}showWritingThink();say('Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1)+'.');};
+    showWritingThink();
     function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -328,7 +334,6 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       }
       state.engine = e;
       showDraftTransfer();
-      document.getElementById('quickDraftWrap').hidden=!(e==='lyria'||e==='yue2');
       document.getElementById('btnUndoWriting').hidden=!writingUndo || writingUndo.engine!==e;
       Array.prototype.forEach.call(engBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
       var g = state.guide.engines[e];
@@ -344,6 +349,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var blocked=!!(state.importing || state.importError || state.writing || state.rendering || state.jobId || state.copying);
       document.getElementById('btnRender').disabled=blocked;
       document.getElementById('btnPreview').disabled=blocked;
+      document.getElementById('btnThink').disabled=!!busy();
     }
     function referenceReady(){
       if(state.importing){say('Wait for the reference clip to finish importing.',true);return false;}
@@ -667,10 +673,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if((state.engine==='lyria'||state.engine==='yue2') || busy()) return;
       var b = forDesk(collect()); b.mode = which;
       if(!b.text || b.text.trim().length < 3){ say(which==='write' ? 'Say what you want made first.' : 'Type the words you want performed first.', true); document.getElementById('text').focus(); return; }
-      state.writing=true;document.getElementById('btnMake').disabled = true;
+      state.writing=true;showWritingThink();document.getElementById('btnMake').disabled = true;
       say(which==='write' ? 'Writing it\\u2026' : 'Shaping your words\\u2026');
       var r = await post('/api/kade/sound-booth/script', b);
-      state.writing=false;document.getElementById('btnMake').disabled = false;
+      state.writing=false;showWritingThink();document.getElementById('btnMake').disabled = false;
       if(!r.ok){ say(r.data.error || 'The script desk had trouble. Try again.', true); return; }
       /* Part 126: the person sees the screenplay; the engine's XML sits behind
        * a disclosure for anyone who wants it. Seed scripts are already prose. */
@@ -702,7 +708,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * fields, keep the screenplay as before. */
     function deskScript(data){ return data && typeof data.performance==='string' ? data.performance : (data && (data.screenplay || data.script)) || ''; }
     function deskVoiceUntouched(){ var v=String(state.values.voice_description||'').trim(); return !!v && v===state.deskVoice; }
-    function forDesk(body){ if(state.engine==='scenema' && deskVoiceUntouched()) delete body.voice_description; return body; }
+    function forDesk(body){ body.thinkMode=state.writingThink||'auto';if(state.engine==='scenema' && deskVoiceUntouched()) delete body.voice_description; return body; }
     function takeDeskVoice(data, undoable){
       if(state.engine!=='scenema' || !data || !data.voice_description) return '';
       if((String(state.values.voice_description||'').trim() && !deskVoiceUntouched()) || state.clips.length) return '';
@@ -773,12 +779,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
        * server. The list above is only what she gets if the writer cannot be reached. */
       var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
       state.writing=true;btn.disabled=true;document.getElementById('btnDraft').disabled=true;updateRenderControls();
-      say('Thinking up a song idea. About ten seconds.');
+      say('Thinking up a new song idea.');
       /* Part 293: the Style rides along (Sep 27 2026: it no longer makes a pitch clean; the account decides).
        * Part 295 review: never a locked Style (outside the Family feature pack), which an opened
        * project can still hold in state.values; collect() never sends one either. */
       var styleOpen=engine==='yue2'&&!state.guide.engines.yue2.settings.some(function(s){return s.key==='band'&&s.locked;});
-      post('/api/kade/sound-booth/idea',{band:styleOpen?state.values.band:undefined}).then(function(r){
+      post('/api/kade/sound-booth/idea',{band:styleOpen?state.values.band:undefined,thinkMode:writingThink}).then(function(r){
         if(state.engine!==engine || box.value!==original){say('Your editor changed while the idea was being made. Your current text is kept.',true);return;}
         if(r.ok&&r.data&&r.data.idea){changeWriting(r.data.idea);say('New song idea in the editor. Change it, press Surprise me again for another, or choose Help write this. Undo restores your previous writing.');}
         else {changeWriting(idea);say('The writer could not be reached, so this idea came from the short list. Change it or choose Help write this. Undo restores your previous writing.');}
@@ -814,13 +820,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&idea?idea:original.trim()||idea;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
       var engine=state.engine, revision=state.quoteRevision, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
-      var song=(engine==='lyria'||engine==='yue2'), deep=song && !document.getElementById('quickDraft').checked;
+      var song=(engine==='lyria'||engine==='yue2'), deep=song;
       if(deep)body.background=true;
       if(resume)deep=true;
       var label=this.textContent;if(deep)this.textContent='Writing your song\u2026';
       state.writing=true;box.readOnly=true;this.disabled=true;
+      showWritingThink();
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
-      say(resume ? 'Your song is still being written. The draft will appear here by itself when it is ready.' : deep ? 'Writing your song. The writer is thinking it through, about six minutes, and the draft will appear here by itself. You can stay, or leave and come back; a notice arrives when it is ready, and this page picks it up on its own.' : song ? 'Writing a quick song draft, about a minute and a half. Keep this page open.' : 'Writing a draft from your idea.');
+      say(resume ? 'Your song is still being written. The draft will appear here by itself when it is ready.' : deep ? 'Writing your song. The draft will appear here when it is ready. You can leave and come back; a notice arrives when it is ready, and this page picks it up on its own.' : 'Writing a draft from your idea.');
       try {
         var r=null, waiting=deep?draftJob().split('|')[0]:'';
         if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||'')&&!resume)r=null;}
@@ -837,7 +844,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var voiceLead=takeDeskVoice(r.data,true);
         say(sorted.lead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
-      finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;document.getElementById('btnInspire').disabled=false;updateRenderControls();}
+      finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;showWritingThink();document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
     setTimeout(function(){
       var kept=draftJob().split('|');

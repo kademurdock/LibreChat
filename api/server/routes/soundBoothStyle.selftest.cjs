@@ -344,6 +344,6 @@ test('the web page: a locked choice is shown disabled on its default, says why, 
   assert.match(script, /if\(s\.kind==='clip' \|\| s\.locked\) return;/, 'collect() never sends a locked choice');
   // Review: Surprise me never sends a locked Style either (an opened project can still hold one).
   assert.match(script, /var styleOpen=engine==='yue2'&&!state\.guide\.engines\.yue2\.settings\.some\(function\(s\)\{return s\.key==='band'&&s\.locked;\}\);/);
-  assert.match(script, /post\('\/api\/kade\/sound-booth\/idea',\{band:styleOpen\?state\.values\.band:undefined\}\)/);
+  assert.match(script, /post\('\/api\/kade\/sound-booth\/idea',\{band:styleOpen\?state\.values\.band:undefined,thinkMode:writingThink\}\)/);
   assert.match(html, /select\[disabled\] \{ opacity:\.55; cursor:default; \}/, 'greyed out');
 });

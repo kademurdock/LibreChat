@@ -27,6 +27,40 @@ test('every inline script compiles and no backspace character crept in', () => {
   assert.equal(html.includes('\b'), false);
 });
 
+test('the writing thought button cycles, persists and announces its current mode', () => {
+  assert.match(html, /id="btnThink" aria-label="Writing thought: Auto"/);
+  assert.doesNotMatch(html, /id="quickDraft"|id="quickDraftWrap"/);
+  const button = { textContent: '', attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } };
+  const stored = {};
+  const ctx = { state: {}, writingThink: 'auto', document: { getElementById: () => button }, localStorage: { setItem: (key, value) => { stored[key] = value; } }, said: [] };
+  const main = scripts.find((s) => s.includes("document.getElementById('btnThink').onclick="));
+  const onclick = main.match(/document\.getElementById\('btnThink'\)\.onclick=([\s\S]*?);\n    showWritingThink\(\);/)[1];
+  vm.runInNewContext(pageFunction('nextWritingThink') + '\n' + pageFunction('showWritingThink') + '\nfunction busy(){return !!state.writing;}\nfunction say(message){said.push(message);}\nthis.click=' + onclick + ';showWritingThink();', ctx);
+  for (const expected of ['Low', 'Medium', 'Auto']) {
+    ctx.click();
+    assert.equal(button.textContent, 'Think: ' + expected);
+    assert.equal(button.attributes['aria-label'], 'Writing thought: ' + expected);
+    assert.equal(ctx.said.at(-1), 'Writing thought: ' + expected + '.');
+    assert.equal(stored.kadeSoundBoothThinkMode, expected.toLowerCase());
+  }
+  ctx.state.writing = true;
+  ctx.click();
+  assert.equal(ctx.writingThink, 'auto', 'an active draft keeps its selected thought');
+});
+
+test('the writing thought request leaves the requested song length and words intact', () => {
+  for (const thinkMode of ['auto', 'low', 'medium']) {
+    const ctx = { state: { engine: 'lyria', writingThink: thinkMode } };
+    vm.runInNewContext(pageFunction('forDesk') + '\nthis.forDesk=forDesk;', ctx);
+    const body = { text: 'A full four-minute song.', lyrics: 'My exact words.', seconds: 240 };
+    const sent = ctx.forDesk(body);
+    assert.equal(sent.thinkMode, thinkMode);
+    assert.equal(sent.text, 'A full four-minute song.');
+    assert.equal(sent.lyrics, 'My exact words.');
+    assert.equal(sent.seconds, 240);
+  }
+});
+
 /* The page's own function, cut out by its braces and run as a browser would. */
 function pageFunction(name) {
   const main = scripts.find((s) => s.includes('function ' + name + '('));
@@ -245,6 +279,6 @@ test('each engine is announced by what it does', () => {
   assert.match(html, /e==='stable'\?'Describe your sounds, then choose Generate sounds\.'/);
   assert.doesNotMatch(html, /other engines show a price confirmation/, 'no confirmation step is promised');
   /* A draft is not free for a member, so the writing hint never reads as if it were. */
-  assert.match(html, /id="quickWritingHint">Neither button makes audio\. A draft uses the writing model; Surprise me costs a fraction of a cent for songs and nothing otherwise\.</);
+  assert.match(html, /id="quickWritingHint">Neither button makes audio\. Drafts and song ideas use the writing model; Surprise me is free for other ideas\.</);
   assert.doesNotMatch(html, /otherwise it is free/);
 });

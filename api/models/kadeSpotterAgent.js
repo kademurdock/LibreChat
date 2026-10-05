@@ -19,7 +19,7 @@ const { getSpotter } = require('./kadeSpotter');
 /* Part 304 (Sep 29 2026): was google/gemini-3.1-pro-preview, which is not in kade-config.yaml's
  * agent model list, so every typed turn to a Spotter failed with illegal_model_request (Ziggy,
  * Ambrosia, Cato, Pepper). Whatever this names must be in that list and must see images. */
-const SPOTTER_TEXT_MODEL = process.env.KADE_SPOTTER_TEXT_MODEL || 'google/gemini-3-flash-preview';
+const SPOTTER_TEXT_MODEL = process.env.KADE_SPOTTER_TEXT_MODEL || 'openai/gpt-6.1-sol';
 
 function KadeSpotterModel() {
   return mongoose.models.KadeSpotter || mongoose.model('KadeSpotter');
@@ -68,7 +68,7 @@ async function ensureSpotterAgent(userId, spotter) {
       instructions,
       provider: 'OpenRouter',
       model: SPOTTER_TEXT_MODEL,
-      model_parameters: { temperature: 0.8, top_p: 0.9, maxContextTokens: 600000 },
+      model_parameters: { maxContextTokens: 600000, reasoning_effort: 'none' },
       category: 'general',
       tools: [],
     };

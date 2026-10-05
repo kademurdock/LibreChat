@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
-const { musicWritingPrompt, musicWritingSettings, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
@@ -66,7 +66,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: 'Intimate R&B with warm piano.\nLyrics:\n[Verse]\nMy exact authored line.\nREADBACK: A quiet song.' } }], usage: { cost: 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async filter => { assert.equal(filter.id, lyricAgentId); return { instructions }; } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -87,9 +87,9 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   assert.ok(requests[0].messages[0].content.includes(SONG_EXPLICIT_NOTE)); assert.ok(!requests[0].messages[0].content.includes(SONG_CLEAN_NOTE));
   assert.equal(ledger[0].metadata.audience, 'explicit');
   assert.equal(requests[0].model, lyricWritingModel);
-  assert.equal(requests[0].max_tokens, 24000);
-  assert.equal(requests[0].temperature, 0.85);
-  assert.equal(requests[0].top_p, 0.95);
+  assert.equal(requests[0].max_tokens, 16384);
+  assert.equal(requests[0].temperature, undefined);
+  assert.equal(requests[0].top_p, undefined);
   assert.deepEqual({ ...requests[0].reasoning }, { enabled: true, effort: 'low', exclude: true }, 'thin briefs must not depend on the gateway classifier to think');
   assert.equal(ledger[0].metadata.model, lyricWritingModel);
   assert.match(requests[0].messages[1].content, /Keep these words exactly/);
@@ -105,11 +105,11 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   assert.equal(requests[2].model, lyricWritingModel);
   request.body.mode = 'format';
   await handlers.get('post/script')(request, response);
-  assert.equal(requests[3].model, 'nousresearch/hermes-4-405b');
-  assert.equal(requests[3].temperature, 0.7);
-  assert.equal(requests[3].reasoning, undefined);
+  assert.equal(requests[3].model, lyricWritingModel);
+  assert.equal(requests[3].temperature, undefined);
+  assert.deepEqual({ ...requests[3].reasoning }, { enabled: true, effort: 'low', exclude: true });
   assert.equal(requests[3].top_p, undefined);
-  assert.equal(requests[3].max_tokens, 2200);
+  assert.equal(requests[3].max_tokens, 16384);
   assert.equal(audienceStub.calls.length, 3, 'formatting her own words never asks, and never gets a note');
   assert.doesNotMatch(requests[3].messages[0].content, /CLEAN OR EXPLICIT/);
 });
@@ -117,6 +117,15 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
 test('provider cost, including free/cached calls, wins over token estimates', () => {
   assert.deepEqual(writingCost({ cost: 0, prompt_tokens: 3000, completion_tokens: 1000 }, 'nousresearch/hermes-4-405b'), { costUSD: 0, measured: true });
   assert.deepEqual(writingCost({ cost: 0.0032, prompt_tokens: 3000 }, 'custom/model'), { costUSD: 0.0032, measured: true });
+});
+
+test('Sol writing fallback bills total completion tokens once and retains actual regional costs', () => {
+  const usage = { prompt_tokens: 1000, completion_tokens: 1500, completion_tokens_details: { reasoning_tokens: 1000 } };
+  for (const model of ['openai/gpt-6.1-sol', 'gpt-6.1-sol']) {
+    assert.deepEqual(writingCost(usage, model), { costUSD: 0.017, measured: false }, 'completion_tokens already includes the 1,000 reasoning tokens');
+    assert.deepEqual(writingCost({ ...usage, cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } }, model), { costUSD: 0.017, measured: false }, 'a missing upstream charge is estimated rather than treated as free');
+    assert.deepEqual(writingCost({ ...usage, cost: 0.031, cost_details: { upstream_inference_cost: 0.031 } }, model), { costUSD: 0.031, measured: true }, 'the measured regional receipt wins and is not counted twice');
+  }
 });
 
 test('Part 295: a normal reply costs its cost once; the upstream figure that restates it is never added', () => {
@@ -149,7 +158,7 @@ test('real Sound Booth request honors its configured model and returns its actua
   const start = route.indexOf('async function callModel(');
   const end = route.indexOf('\n/* ---------- AuK XML', start);
   const requests = [];
-  const context = { writingCost, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
+  const context = { writingCost, lyricWritingModel, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
   vm.runInNewContext(declaration + '\n' + route.slice(start, end) + '\nthis.call=callModel;', context);
   const result = await context.call({ system: 'Format only.', user: 'At the end of the day.' });
   assert.equal(requests[0][1].model, 'nousresearch/hermes-4-405b');
@@ -176,7 +185,7 @@ test('real script route accounts for the shortening call as well as the first dr
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async () => { calls++; return { data: { choices: [{ message: { content: '[Setting: A quiet room.]\nNora (calm woman) says softly: "' + 'Stay here. '.repeat(calls === 1 ? 220 : 30) + '"' } }], usage: { cost: calls === 1 ? 0.004 : 0.002 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
@@ -192,12 +201,12 @@ test('real script route accounts for the shortening call as well as the first dr
   assert.equal(calls, 2);
   assert.equal(ledger[0].costUSD, 0.006);
   assert.equal(ledger[0].metadata.costMeasured, true);
-  assert.equal(ledger[0].metadata.model, 'nousresearch/hermes-4-405b');
+  assert.equal(ledger[0].metadata.model, lyricWritingModel);
 });
 
 test('lyric model token estimates use its own prices', () => {
-  assert.equal(lyricWritingModel, 'deepseek/deepseek-v4.1-flash');
-  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 1.5, measured: false });
+  assert.equal(lyricWritingModel, 'openai/gpt-6.1-sol');
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 12, measured: false });
   assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, 'moonshotai/kimi-k3'), { costUSD: 12.87, measured: false });
 });
 
@@ -253,7 +262,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row) };
@@ -285,7 +294,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   requests.length = 0; let code = 0; result = null;
   const accepted = { status(value) { code = value; return this; }, json(value) { result = value; return this; } };
   handlers.get('post/script')({ user: { id: 'deep-fixture' }, body: { engine: 'yue2', mode: 'write', background: true, notify: false, text: 'a folk song about a bad morning' } }, accepted);
-  assert.equal(code, 202); assert.equal(result.job, 'job-fixture'); assert.match(result.spoken, /about five minutes/);
+  assert.equal(code, 202); assert.equal(result.job, 'job-fixture'); assert.match(result.spoken, /notice when the draft is ready/);
   handlers.get('post/script')({ user: { id: 'deep-fixture' }, body: { engine: 'yue2', mode: 'write', background: true, text: 'another one' } }, accepted);
   assert.equal(code, 409, 'one deep draft per person at a time');
   for (let i = 0; i < 50 && requests.length < 2; i++) await new Promise(done => setTimeout(done, 5));
@@ -298,7 +307,8 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   assert.match(polled.error, /That draft is gone/, 'a job belongs to the person who asked');
   const deepSettings = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
   assert.equal(deepSettings.reasoning.effort, 'medium'); assert.equal(deepSettings.timeoutMs, 600000);
-  assert.deepEqual(musicWritingSettings({ engine: 'scenema', mode: 'write', deep: true }), {}, 'speech has no deep lane');
+  assert.equal(musicWritingBackground({ engine: 'scenema', mode: 'write', deep: true }), false, 'speech has no song background lane');
+  assert.equal(musicWritingSettings({ engine: 'scenema', mode: 'write', deep: true }).model, lyricWritingModel);
 });
 
 test('Part 216: only the sung words come from a repair; direction and READBACK stay as first written', () => {
@@ -371,7 +381,7 @@ test('Part 217: the website says it can wait and gets time for the audit; the ph
   assert.equal(phone.reasoning.effort, 'low'); assert.equal(phone.timeoutMs, 112000, 'iPhone build 302 gives up at 120 s');
   assert.equal(web.reasoning.effort, 'low', 'medium measured 275 s with the system in the prompt'); assert.equal(web.timeoutMs, 225000, 'the web page aborts at 240 s');
   assert.equal(web.model, phone.model);
-  assert.deepEqual(musicWritingSettings({ engine: 'scenema', mode: 'write', patient: true }), {}, 'speech is untouched');
+  assert.equal(musicWritingSettings({ engine: 'scenema', mode: 'write', patient: true }).model, lyricWritingModel, 'speech uses the same creative model');
 });
 
 test('Part 217: the audit asks for the turn, the hook and the spice, carries flagged lines, and stage directions never get sung', () => {
@@ -436,7 +446,7 @@ test('the desk keeps melodic rhyme and meter guidance, counts syllables itself, 
   assert.doesNotMatch(lyricAuditRequest(even, [], null), /Counted by the desk/);
   const tells = lyricTells('x\nLyrics:\n[Verse 1]\nThe heater hummin\' warm and low\nShe gave me that knowing look\nI know the way back home\n(Mm, mm)', '');
   assert.deepEqual(tells.map(t => t.tell), ['humming', '"knowing" as a mood']);
-  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 48000);
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 16384);
 });
 
 test('Part 231: a duet line that opens with a singer cue is a sung line, so a repair that relabels singers still merges', () => {
@@ -588,7 +598,7 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: pitch } }], usage: { cost: 0.001 } } }; } };
-    if (name === '@librechat/api') return { ...idea, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
+    if (name === '@librechat/api') return { ...idea, writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {}, KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
     if (name === '~/server/utils/kadeSongAudience') return songAudienceStub;
@@ -659,7 +669,7 @@ function loadBooth({ reply, api = {}, middleware, jev, clock, env = {} } = {}) {
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: reply(body, requests.length) } }], usage: { cost: 0.01 } } }; } };
-    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => 'the YuE2 router', createEffectsRouter: () => 'the effects router', createLyricsRouter: () => 'the lyrics router', effectsGuide: {}, ...bootStubs, ...api };
+    if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => 'the YuE2 router', createEffectsRouter: () => 'the effects router', createLyricsRouter: () => 'the lyrics router', effectsGuide: {}, ...bootStubs, ...api };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async row => ledger.push(row), KadeUsage: { find: () => ({ sort: () => ({ limit: () => ({ select: () => ({ lean: async () => [] }) }) }) }) } };
@@ -793,7 +803,7 @@ test('Part 293 review: the website sends the Style with Surprise me', () => {
   const page = readFileSync(new URL('../../../../api/server/routes/kadeSoundBoothPage.js', import.meta.url), 'utf8');
   /* Part 295: the Style rides along only while it is not locked (outside the Family feature pack). */
   assert.match(page, /var styleOpen=engine==='yue2'&&/);
-  assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:styleOpen\?state\.values\.band:undefined\}\)/);
+  assert.match(page, /post\('\/api\/kade\/sound-booth\/idea',\{band:styleOpen\?state\.values\.band:undefined,thinkMode:writingThink\}\)/);
 });
 
 /* Part 293 follow-up (Sep 25 2026): the before/after test found a house shape ([Final Chorus] in
@@ -898,13 +908,13 @@ test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the
   assert.deepEqual(lyricEndingLines(story), ['That goat will never sleep', 'v2'], 'a story song with no chorus: the last two lines, in the order they first appear');
 });
 
-test('Part 293 follow-up: the deep lane may think to 48,000 tokens; the phone and the web keep 24,000', () => {
+test('Sol writing budgets leave room for thought without the old DeepSeek 48K allowance', () => {
   const deep = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
-  assert.equal(deep.maxTokens, 48000); assert.ok(deep.maxTokens <= 131072, "inside the model's listed max output (OpenRouter, Sep 25 2026)");
+  assert.equal(deep.maxTokens, 16384); assert.ok(deep.maxTokens <= 131072, "inside the model's listed max output (OpenRouter, Sep 25 2026)");
   assert.equal(deep.timeoutMs, 600000); assert.equal(deep.reasoning.effort, 'medium');
-  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write' }).maxTokens, 24000, 'phone lane untouched');
-  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', patient: true }).maxTokens, 24000, 'web lane untouched');
-  assert.equal(musicWritingSettings({ engine: 'lyria', mode: 'write', deep: true }).maxTokens, 48000);
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write' }).maxTokens, 16384, 'phone lane untouched');
+  assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', patient: true }).maxTokens, 16384, 'web lane untouched');
+  assert.equal(musicWritingSettings({ engine: 'lyria', mode: 'write', deep: true }).maxTokens, 16384);
 });
 
 test('Part 293 follow-up: the route sends the drawn map under the idea, holds the length check to it, and no Jev veto drops a tidy ending', async () => {

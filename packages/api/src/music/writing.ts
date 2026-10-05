@@ -2,81 +2,52 @@ import type { IAgent } from '@librechat/data-schemas';
 import { hitWritingSystem } from './hitSystem';
 
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
-/* Chosen by side-by-side drafts on identical briefs (Part 212): Kimi K3 wrote
- * concrete, witty, well-rhymed verses where Grok 4.20 and 4.6 wrote filler
- * couplets, and it writes explicit lyrics when asked.
- * Sep 20 2026: Kade's word, "Switch the desk to deepseek flash v4.1", after the
- * Moonshot balance ran out and every draft failed with a 429. One probe on a
- * one-sentence brief: 27 s on low, about one cent, three full verses. To go
- * back to Kimi, restore 'moonshotai/kimi-k3' here; its price row is kept. */
-export const lyricWritingModel = 'deepseek/deepseek-v4.1-flash';
+export const lyricWritingModel = 'openai/gpt-6.1-sol';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
-type Request = { engine: string; mode: string; patient?: boolean; deep?: boolean };
+export type BoothThinkMode = 'auto' | 'low' | 'medium';
+type Request = {
+  engine: string;
+  mode: string;
+  patient?: boolean;
+  deep?: boolean;
+  background?: boolean;
+  deepWrite?: boolean;
+  thinkMode?: BoothThinkMode;
+};
 
 const writesMusic = (request: Request): boolean =>
   ['lyria', 'yue2'].includes(request.engine) && request.mode === 'write';
 
-/* The shared gateway only thinks when its classifier calls a message complex. A
- * one-sentence song idea is classed simple, so thin briefs were written in
- * seven seconds with no reasoning. The desk asks for reasoning itself; the
- * gateway respects an explicit choice. Reasoning tokens count against
- * max_tokens, hence the larger budget. Measured on Kimi K3: low effort 25 to
- * 30 seconds, medium 73 to 111, high up to 180, and a reasoning max_tokens cap
- * ran past 300. iPhone build 302 abandons this request at 120 seconds, so the
- * desk uses low, gives up first and says so. Low still wrote the better song. */
+export function boothThinkMode(request: Request): BoothThinkMode {
+  if (request.thinkMode) return request.thinkMode;
+  return request.deep || request.deepWrite || request.background ? 'medium' : 'low';
+}
+
+export function musicWritingBackground(request: Request): boolean {
+  return (
+    writesMusic(request) &&
+    !!(request.deep || request.deepWrite || request.background || request.thinkMode)
+  );
+}
+
 export function musicWritingSettings(request: Request): {
-  model?: string;
-  temperature?: number;
-  top_p?: number;
-  maxTokens?: number;
-  timeoutMs?: number;
+  model: string;
+  maxTokens: number;
+  timeoutMs: number;
+  kade_think_max_effort?: 'medium';
   reasoning?: { enabled: boolean; effort: 'low' | 'medium'; exclude: boolean };
 } {
-  if (!writesMusic(request)) return {};
-  /* Part 218: Kade, "I want the best lyrics I can get, even if it means waiting."
-   * The draft runs as a background job, so no web request has to stay open and
-   * the writer can think on medium (275 s measured with the system in the
-   * prompt). The audit that follows stays on low; the handler sets that.
-   * Sep 20 2026: budgets raised by 8,000 each after a DeepSeek draft spent its
-   * whole 16,000 thinking about rhyme and meter and came back cut off mid-bridge.
-   * Part 293 follow-up (Sep 25 2026): 2 of 14 deep drafts spent all 32,000 on
-   * thinking and came back with no lyrics, and the retry took the job to 276 and
-   * 324 s. OpenRouter's /api/v1/models lists deepseek/deepseek-v4.1-flash with a
-   * 131,072-token max output on its top provider, and 131,072 or more on every
-   * endpoint but one (BaseTen, 32,768), so the deep lane gets 48,000: another
-   * ~75 s of thinking at the measured ~215 tokens a second, well inside the
-   * job's 600 s, and about two cents at most. The phone and web lanes keep 24,000. */
-  if (request.deep)
-    return {
-      model: lyricWritingModel,
-      temperature: 0.85,
-      top_p: 0.95,
-      maxTokens: 48000,
-      timeoutMs: 600000,
-      reasoning: { enabled: true, effort: 'medium', exclude: true },
-    };
-  /* Part 217: the website's own page says it can wait (it aborts at 240 s). iPhone
-   * build 302 sends no such flag and gives up at 120 s, so it keeps the 112 s limit. */
-  /* Measured with the hit-writing system in the prompt: medium effort wrote the
-   * best song of the night and took 275 seconds, past any web request. So both
-   * lanes draft on low and then run one low-effort producer's audit (about 30 s
-   * plus 40 s). The patient flag only buys time, so the audit always has room. */
-  if (request.patient)
-    return {
-      model: lyricWritingModel,
-      temperature: 0.85,
-      top_p: 0.95,
-      maxTokens: 24000,
-      timeoutMs: 225000,
-      reasoning: { enabled: true, effort: 'low', exclude: true },
-    };
+  const thinkMode = boothThinkMode(request);
+  const timeoutMs = musicWritingBackground(request) ? 600000 : request.patient ? 225000 : 112000;
   return {
     model: lyricWritingModel,
-    temperature: 0.85,
-    top_p: 0.95,
-    maxTokens: 24000,
-    timeoutMs: 112000,
-    reasoning: { enabled: true, effort: 'low', exclude: true },
+    maxTokens: 16384,
+    timeoutMs,
+    ...(thinkMode === 'auto'
+      ? { kade_think_max_effort: 'medium' as const }
+      : {
+          reasoning: { enabled: true, effort: thinkMode, exclude: true },
+        }),
   };
 }
 

@@ -32,6 +32,8 @@ export function writingCost(
     return { costUSD: upstream, measured: true };
   }
   const prices: { [model: string]: [number, number] } = {
+    'openai/gpt-6.1-sol': [2, 10],
+    'gpt-6.1-sol': [2, 10],
     'nousresearch/hermes-4-405b': [1, 3],
     'x-ai/grok-4.20': [1.25, 2.5],
     'moonshotai/kimi-k3': [1.95, 10.92],

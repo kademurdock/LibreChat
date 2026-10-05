@@ -9,6 +9,46 @@ import type * as t from '~/types';
 import { getOpenAILLMConfig, extractDefaultParams, applyDefaultParams } from './llm';
 
 describe('getOpenAILLMConfig', () => {
+  describe('GPT-6.1 Sol migration', () => {
+    it('preserves the OpenRouter Auto sentinel until gateway classification and drops sampling', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        useOpenRouter: true,
+        modelOptions: {
+          model: 'openai/gpt-6.1-sol',
+          reasoning_effort: ReasoningEffort.none,
+          temperature: 0.85,
+          topP: 0.95,
+          max_tokens: 8000,
+        },
+        addParams: { top_p: 0.95, top_logprobs: 2 },
+      });
+      expect(result.llmConfig.modelKwargs?.reasoning).toEqual({ effort: 'none' });
+      expect(result.llmConfig.useResponsesApi).not.toBe(true);
+      expect(result.llmConfig.temperature).toBeUndefined();
+      expect(result.llmConfig.topP).toBeUndefined();
+      expect(result.llmConfig.modelKwargs?.top_p).toBeUndefined();
+      expect(result.llmConfig.modelKwargs?.top_logprobs).toBeUndefined();
+      expect(result.llmConfig.modelKwargs?.max_completion_tokens).toBe(8000);
+    });
+
+    it('uses supported low reasoning and Responses for direct OpenAI tool compatibility', () => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: {
+          model: 'gpt-6.1-sol',
+          reasoning_effort: ReasoningEffort.none,
+          max_tokens: 8000,
+        },
+      });
+      expect(result.llmConfig.useResponsesApi).toBe(true);
+      expect(result.llmConfig.reasoning).toEqual({ effort: 'low' });
+      expect(result.llmConfig.modelKwargs?.max_output_tokens).toBe(8000);
+    });
+  });
   describe('Basic Configuration', () => {
     it('should create a basic configuration with required fields', () => {
       const result = getOpenAILLMConfig({

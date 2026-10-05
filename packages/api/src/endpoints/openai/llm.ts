@@ -481,6 +481,9 @@ export function getOpenAILLMConfig({
   let hasModelKwargs = false;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
+  const isSolModel = /^(?:openai\/)?gpt-6\.1-sol(?:-\d{8})?$/i.test(
+    String(modelOptions.model ?? '').replace(/^~/, ''),
+  );
 
   if (verbosity != null && verbosity !== '' && useOpenRouter) {
     llmConfig.verbosity = verbosity;
@@ -655,6 +658,12 @@ export function getOpenAILLMConfig({
   }
 
   if (!useOpenRouter) {
+    if (isSolModel) {
+      llmConfig.useResponsesApi = true;
+      if (!reasoningEffort || reasoningEffort === 'none' || reasoningEffort === 'minimal') {
+        reasoningEffort = 'low';
+      }
+    }
     hasModelKwargs =
       applyReasoningConfig({
         endpoint,
@@ -703,7 +712,7 @@ export function getOpenAILLMConfig({
    */
   if (
     modelOptions.model &&
-    /\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string)
+    (/\b(o[13]|gpt-5)(?!\.|-chat)(?:-|$)/.test(modelOptions.model as string) || isSolModel)
   ) {
     const reasoningExcludeParams = [
       'frequencyPenalty',
@@ -713,6 +722,19 @@ export function getOpenAILLMConfig({
       'logitBias',
       'n',
       'logprobs',
+      ...(isSolModel
+        ? [
+            'top_p',
+            'topLogprobs',
+            'top_logprobs',
+            'top_k',
+            'stop',
+            'stopSequences',
+            'frequency_penalty',
+            'presence_penalty',
+            'logit_bias',
+          ]
+        : []),
     ];
 
     const updatedDropParams = dropParams || [];

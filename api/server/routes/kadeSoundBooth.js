@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -311,7 +311,7 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || 'nousresearch/hermes-4-405b';
+const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || lyricWritingModel;
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
@@ -690,7 +690,7 @@ function stripFence(s) {
   return t;
 }
 
-async function callModel({ system, user, maxTokens = 2200, model = MODEL, temperature = 0.7, top_p, reasoning, timeoutMs = 90000 }) {
+async function callModel({ system, user, maxTokens = 8192, model = MODEL, temperature = 0.7, top_p, reasoning, kade_think_max_effort, timeoutMs = 90000 }) {
   const gatewayUrl =
     process.env.KADE_LLM_GATEWAY_URL ||
     'https://reframe-proxy-production.up.railway.app/chat/completions';
@@ -705,9 +705,9 @@ async function callModel({ system, user, maxTokens = 2200, model = MODEL, temper
     {
       model,
       max_tokens: maxTokens,
-      temperature,
-      ...(top_p !== undefined ? { top_p } : {}),
+      ...(model === lyricWritingModel ? {} : { temperature, ...(top_p !== undefined ? { top_p } : {}) }),
       ...(reasoning ? { reasoning } : {}),
+      ...(kade_think_max_effort ? { kade_think_max_effort } : {}),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -1653,7 +1653,10 @@ async function notifyDraft(userId, ok) {
 
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
   const b = req.body || {};
-  const deep = b.background === true && b.mode === 'write' && ['lyria', 'yue2'].includes(b.engine) && String(b.text || '').trim().length >= 3;
+  if (b.thinkMode !== undefined && !['auto', 'low', 'medium'].includes(b.thinkMode)) {
+    return res.status(400).json({ error: 'Choose Auto, Low or Medium for writing thought.' });
+  }
+  const deep = musicWritingBackground(b) && String(b.text || '').trim().length >= 3;
   /* A pasted three-box song needs no writer, so it is answered at once. */
   if (!deep || songPaste.splitSongPaste(b.text)) return scriptHandler(req, res);
   sweepScriptJobs();
@@ -1680,7 +1683,7 @@ router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, r
     .catch((e) => { job.state = 'failed'; job.error = 'The script desk had trouble. Try again.'; logger.error('[soundbooth/script] deep job crashed:', e); })
     .then(() => { if (b.notify !== false) return notifyDraft(userId, job.state === 'done'); })
     .catch((e) => logger.warn('[soundbooth/script] draft notice failed: ' + e.message));
-  return res.status(202).json({ job: id, state: 'working', spoken: 'The writer has your idea and is taking its time, about five minutes. You can leave this page; you will get a notice when the draft is ready.' });
+  return res.status(202).json({ job: id, state: 'working', spoken: 'The writer has your idea. You can leave this page; you will get a notice when the draft is ready.' });
 });
 
 router.get('/script/job/:id', requireJwtAuth, (req, res) => {
@@ -1853,10 +1856,10 @@ async function scriptHandler(req, res) {
     }
 
     const started = Date.now();
-    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true });
+    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true || b.deepWrite === true, thinkMode: b.thinkMode });
     /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
      * lyrics are hers and are never scanned or touched. */
-    const ownsLyrics = !!writingSettings.model && !(typeof b.lyrics === 'string' && b.lyrics.trim());
+    const ownsLyrics = mode === 'write' && ['lyria', 'yue2'].includes(engine) && !(typeof b.lyrics === 'string' && b.lyrics.trim());
     const wantsWords = ownsLyrics && !instrumentalDraft && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
     /* Part 293 follow-up: a list of shapes in the prompt came back as one house shape
      * ([Final Chorus] in 10 of 10 songs), so the desk draws ONE section map per request,
@@ -1969,7 +1972,7 @@ async function scriptHandler(req, res) {
           user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text),
           maxTokens: writingSettings.maxTokens,
           /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
-          reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
+          reasoning: { enabled: true, effort: 'low', exclude: true },
           timeoutMs: Math.min(timeLeft, 225000),
         });
         totalCost += fixed.costUSD;
@@ -2074,7 +2077,7 @@ async function scriptHandler(req, res) {
     }
     /* Part 216: she hears the readback before she spends on a render. When the
      * writer gives none, say the music direction's opening instead of nothing. */
-    if (!readback && writingSettings.model) {
+    if (!readback && mode === 'write' && ['lyria', 'yue2'].includes(engine)) {
       const direction = script.split(/^\s*lyrics\s*:/im)[0].replace(/\[[^\]]*\]|->/g, ' ').replace(/\s+/g, ' ').trim();
       readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
     }
@@ -2131,7 +2134,8 @@ async function scriptHandler(req, res) {
         const shorter = await callModel({
           system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 2000. Cut it to fit by removing redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue. Keep the distinct voices, the conversation's progression, the requested sound constraints and its complete ending. Keep a wordless piece wordless; never invent speech. Output the script and nothing else — no fence, no preamble, no READBACK.`,
           user: script,
-          maxTokens: 1400,
+          maxTokens: 16384,
+          reasoning: { enabled: true, effort: 'low', exclude: true },
         });
         const candidate = stripFence(shorter.text).trim();
         totalCost += shorter.costUSD;
@@ -3624,6 +3628,9 @@ async function ideasAlreadyShown(userId) {
   }
 }
 router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req, res) => {
+  if (req.body?.thinkMode !== undefined && !['auto', 'low', 'medium'].includes(req.body.thinkMode)) {
+    return res.status(400).json({ error: 'Choose Auto, Low or Medium for writing thought.' });
+  }
   const started = Date.now();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
   if (ideaDayStamp !== today) { ideaDayStamp = today; ideaCounts.clear(); }
@@ -3643,14 +3650,12 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
     while (!idea && tries < 2) {
       tries += 1;
       const made = await callModel({
+        ...musicWritingSettings({ engine: 'idea', mode: 'write', thinkMode: req.body?.thinkMode || 'auto' }),
         system: songIdeaSystemFor(audience),
         user: songIdeaRequest(songIdeaSparks(Math.random, seen, clean ? isClean : undefined)),
         model: lyricWritingModel,
         maxTokens: 8000,
-        temperature: 1.1,
-        top_p: 0.95,
-        reasoning: { enabled: true, effort: 'medium', exclude: true },
-        timeoutMs: 60000,
+        timeoutMs: 112000,
       });
       costUSD += made.costUSD; measured = measured && made.measured; usage = made.usage;
       const pitched = cleanSongIdea(made.text);

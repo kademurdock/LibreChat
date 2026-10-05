@@ -48,7 +48,9 @@ function check(value, label) { assert(value, label); checks++; console.log('PASS
   global.fetch=async(url,options)=>{ requests++;requestBody=JSON.parse(options.body);return {ok:true,json:async()=>({choices:[{message:{content:'%%%smiles%%% Less heat. Give the eggs a minute.'}}]})}; };
   try {
    r=await run('converse Pat: My eggs keep burning.'); check(r.ok&&r.lines.some(l=>l.includes('Less heat.'))&&!r.lines.join('').includes('%%%'),'model dialogue strips voice-only markup');
-   check(requestBody.model==='z-ai/glm-5.3-flash'&&requestBody.max_tokens===220,'cheap model and bounded output');
+   check(requestBody.model==='openai/gpt-6.1-sol'&&requestBody.max_tokens===220,'Sol conversational trial keeps the bounded request');
+   check(requestBody.reasoning.effort==='low'&&requestBody.reasoning.enabled===true&&requestBody.reasoning.exclude===true,'resident dialogue selects supported low thought');
+   check(!Object.hasOwn(requestBody,'temperature')&&!Object.hasOwn(requestBody,'top_p'),'resident dialogue omits unsupported sampling');
    r=await run('reply I see: less heat.'); check(r.ok&&requests===2,'reply permits colons in natural speech');
    check(requestBody.messages.some(m=>m.role==='assistant'&&m.content.includes('Less heat')),'resident receives bounded conversation history');
    const saved=await MooChar.findOne({_id:ch._id});check(saved.attrs.life.conversations.pat.length===4,'history belongs to this player and resident');

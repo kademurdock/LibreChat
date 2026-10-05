@@ -213,6 +213,8 @@ export {
 export {
   musicWritingPrompt,
   musicWritingSettings,
+  boothThinkMode,
+  musicWritingBackground,
   lyricTells,
   lyricRepairRequest,
   mergeRepairedLyrics,

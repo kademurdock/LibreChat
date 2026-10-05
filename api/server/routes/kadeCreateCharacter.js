@@ -44,9 +44,8 @@ const {
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE MODEL MENU — models as choices a person can hear and pick between.
- * Slugs verified against the live fleet (Sep 20 2026: Kiana and 223 others run
- * OpenRouter / deepseek/deepseek-v4.1-flash; the all-rounder was moonshotai/kimi-k3
- * until the Moonshot account ran dry and Kade moved everything off it). `everyoneNote` is the line the page reads out loud;
+ * The all-rounder follows the conversational fleet's Oct 5 2026 Sol trial.
+ * `everyoneNote` is the line the page reads out loud;
  * `expert` is what the "show technical names" toggle reveals.
  * ──────────────────────────────────────────────────────────────────────── */
 const MODEL_MENU = [
@@ -54,8 +53,8 @@ const MODEL_MENU = [
     key: 'all-rounder',
     plainName: 'The all-rounder',
     provider: 'OpenRouter',
-    model: 'deepseek/deepseek-v4.1-flash',
-    blurb: 'Quick, warm, and steady, with a good memory for the conversation. This is what nearly every character on the platform runs.',
+    model: 'openai/gpt-6.1-sol',
+    blurb: 'GPT-6.1 Sol, the model in the current character trial. Can see images and use the tools you give your character.',
     goodFor: 'friends, companions, helpers, almost anything',
     speed: 'fast',
     default: true,
@@ -298,8 +297,7 @@ function compose(answers) {
     'Remember what people tell you and bring it back later — it is the difference between talking AT someone and knowing them. When someone seems low, care about the person before the problem.',
   ].filter(Boolean);
 
-  const menuPick = a.tone === 'funny' ? 'chatterbox' : a.role === 'expert' ? 'deep-thinker' : 'all-rounder';
-  const modelEntry = MODEL_MENU.find((m) => m.key === menuPick) || MODEL_MENU[0];
+  const modelEntry = MODEL_MENU.find((m) => m.default) || MODEL_MENU[0];
 
   const ageWord = { young: 'young', grown: '', elder: 'elderly' }[a.age] || '';
   const speciesWord = {
@@ -499,21 +497,18 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
  * that already arrives globally on every turn. Which is also why the craft
  * brief below tells the writer, in as many words, not to write anti-slop rules.
  *
- * MODEL: pinned in env, default `z-ai/glm-5.3-flash` — KADE'S CALL, Sep 1
- * ("I want 5.3 flash on the agent building stuff"), overriding the plan's
- * suggestion of the full 5.3. At $0.075/M in and $0.25/M out a full round
- * costs about a fifth of a cent, so the button says a penny and means it.
+ * MODEL: follows the creative-helper Sol trial, Oct 5 2026.
  * Move it with KADE_PERSONA_MODEL without a code change.
  * ──────────────────────────────────────────────────────────────────────── */
 
-const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'z-ai/glm-5.3-flash';
+const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'openai/gpt-6.1-sol';
 const PERSONA_DAILY_CAP = Number(process.env.KADE_PERSONA_DAILY_CAP || 12);
 const PERSONA_MAX_TOKENS = Number(process.env.KADE_PERSONA_MAX_TOKENS || 6000);
 /* OpenRouter's published price for the default model, per MILLION tokens.
  * Used only to print an honest number; the wallet is charged the measured
  * amount, not an estimate. */
-const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 0.075);
-const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 0.25);
+const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 2);
+const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 10);
 
 let personaDayStamp = '';
 const personaCounts = new Map();
@@ -570,7 +565,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       {
         model: PERSONA_MODEL,
         max_tokens: PERSONA_MAX_TOKENS,
-        temperature: 0.8,
+        reasoning: { enabled: true, effort: 'low', exclude: true },
         messages: [
           { role: 'system', content: PERSONA_CRAFT },
           { role: 'user', content: userContent },
@@ -692,7 +687,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     app.innerHTML='<h2>How would you like to start?</h2>'
       +'<div class="row"><button type="button" id="doorDescribe" class="primary">Describe them in your own words</button>'
       +'<button type="button" id="doorQuiz">Answer eight quick questions</button></div>'
-      +'<p class="help">The first one writes a full, detailed personality for you from a description — it costs about a penny of credit. The questions are free and build a shorter starter personality you can grow later.</p>';
+      +'<p class="help">The first one writes a full, detailed personality for you from a description. Each draft uses credit based on its length and shows its charge when it finishes. The questions are free and build a shorter starter personality you can grow later.</p>';
     say('How would you like to start? Describe them in your own words, or answer eight quick questions.');
     document.getElementById('doorDescribe').onclick=function(){ renderDescribe(); };
     document.getElementById('doorQuiz').onclick=function(){ step=0; answers={}; renderStep(); };

@@ -20,6 +20,20 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const screenplay = require('./kadeSoundBoothScreenplay');
+const ts = require('typescript');
+function loadTs(filename) {
+  const loaded = { exports: {} };
+  const code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  vm.runInNewContext(code, {
+    exports: loaded.exports, module: loaded,
+    require: (name) => name.startsWith('.') ? loadTs(path.resolve(path.dirname(filename), name + '.ts')) : require(name),
+  });
+  return loaded.exports;
+}
+const writing = loadTs(path.join(__dirname, '../../../packages/api/src/music/writing.ts'));
+const ideas = loadTs(path.join(__dirname, '../../../packages/api/src/music/idea.ts'));
 
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
 const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry'];
@@ -30,6 +44,7 @@ function booth(replies = [], env = {}) {
   const writerCalls = [];
   const bridgeCalls = [];
   const saved = [];
+  const warnings = [];
   let project;
   class Project {
     constructor(fields) {
@@ -57,16 +72,18 @@ function booth(replies = [], env = {}) {
         assert.ok(reply !== undefined, 'the writer was asked more times than this test expected');
         return { data: { choices: [{ message: { content: reply } }], usage: { cost: 0 } } };
       } };
+      if (name === 'crypto') return require(name);
       if (name === '@librechat/api') return {
         writingCost: () => ({ costUSD: 0, measured: true }),
         validateMusicReference: async (_user, url) => url, musicReferenceSeconds: async () => 10,
         ...(() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process: { env: { AWS_ENDPOINT_URL: 'https://example.invalid', AWS_BUCKET_NAME: 'recordings' } } }); return mod.exports; })(),
-        musicWritingPrompt: async (base) => base, musicWritingSettings: () => ({}),
+        ...writing, ...ideas, musicWritingPrompt: async (base) => base,
         yueStylesEnabled: () => false, yueStyles: {}, effectsGuide: {},
         createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {},
       };
-      if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
+      if (name === '@librechat/data-schemas') return { logger: { info() {}, warn: (message) => warnings.push(message), error: (message) => warnings.push(message) } };
       if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {} };
+      if (name === '~/server/utils/kadeSongAudience') return { songAudience: async () => 'explicit', explicitSungLines: () => [] };
       if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
       if (name === './kadeSoundBoothChain') return { acquire: async () => 'fixture-lease', release: async () => {}, MAX_PARTS: 12 };
       if (LOCAL.includes(name)) return require(name);
@@ -75,16 +92,20 @@ function booth(replies = [], env = {}) {
     },
   };
   vm.runInNewContext(ROUTE, context);
-  const call = async (key, body) => {
+  const request = async (key, body, params = {}, userId = 'offline-owner') => {
     let status = 200;
     let result;
     const res = { status(v) { status = v; return this; }, json(v) { result = v; return this; } };
-    await handlers.get(key)({ user: { id: 'offline-owner' }, body }, res);
+    await handlers.get(key)({ user: { id: userId }, body, params }, res);
+    return { status, result };
+  };
+  const call = async (key, body) => {
+    const { status, result } = await request(key, body);
     assert.equal(status, 200, JSON.stringify(result));
     return result;
   };
   return {
-    writerCalls, bridgeCalls, saved, internals: context.module.exports._internals,
+    writerCalls, bridgeCalls, saved, warnings, request, internals: context.module.exports._internals,
     write: (body) => call('post/script', { engine: 'scenema', mode: 'write', text: 'A short story.', gender: 'female', ...body }),
     render: (body) => call('post/render', { engine: 'scenema', gender: 'female', ...body }),
   };
@@ -107,6 +128,89 @@ const WOMAN_XML = '<speak voice="A woman in her early thirties, hushed and intim
 const WOMAN_READBACK = 'READBACK: A woman in her early thirties tells, in hushed tones, how she found a key during a storm. About thirty seconds.';
 const GIRL_XML = `<speak voice="${GIRL}" gender="female">\nThe thunder went boom and I hid under the table with my bunny!\n</speak>`;
 const GIRL_READBACK = 'READBACK: A little girl about five tells how she hid from the thunder with her bunny. About ten seconds.';
+
+test('Sol writes and formats speech with the chosen thought, without unsupported sampling controls', async () => {
+  for (const mode of ['write', 'format']) {
+    for (const thinkMode of ['auto', 'low', 'medium']) {
+      const desk = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
+      const result = await desk.write({ mode, thinkMode, voice_description: GIRL });
+      const sent = desk.writerCalls[0];
+      assert.equal(sent.model, 'openai/gpt-6.1-sol');
+      assert.equal(Object.hasOwn(sent, 'temperature'), false);
+      assert.equal(Object.hasOwn(sent, 'top_p'), false);
+      assert.equal(sent.max_tokens, 16384);
+      if (thinkMode === 'auto') {
+        assert.equal(sent.reasoning, undefined);
+        assert.equal(sent.kade_think_max_effort, 'medium');
+      } else {
+        assert.equal(sent.reasoning.effort, thinkMode);
+        assert.equal(sent.reasoning.exclude, true);
+        assert.equal(sent.kade_think_max_effort, undefined);
+      }
+      assert.equal(result.performance, 'The thunder went boom and I hid under the table with my bunny!');
+    }
+  }
+});
+
+test('song length stays in the brief while all three thought modes use resumable jobs', async () => {
+  for (const thinkMode of ['auto', 'low', 'medium']) {
+    const desk = booth(['A four-minute instrumental with a quiet ending.\nREADBACK: A full instrumental.']);
+    const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A four-minute instrumental with a quiet ending.', instrumental: true, thinkMode, notify: false });
+    assert.equal(start.status, 202);
+    const id = start.result.job;
+    let polled;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(setImmediate);
+      polled = await desk.request('get/script/job/:id', {}, { id });
+      if (polled.result.state !== 'working') break;
+    }
+    assert.equal(polled.status, 200);
+    assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+    assert.match(desk.writerCalls[0].messages[1].content, /four-minute instrumental/);
+    assert.equal(desk.writerCalls[0].model, 'openai/gpt-6.1-sol');
+    assert.equal(desk.writerCalls[0].reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
+    assert.match(polled.result.result.script, /four-minute instrumental/);
+    assert.equal((await desk.request('get/script/job/:id', {}, { id }, 'other-owner')).status, 404);
+  }
+});
+
+test('legacy background and deepWrite retain medium; a new explicit choice overrides delivery', () => {
+  const base = { engine: 'lyria', mode: 'write' };
+  assert.equal(writing.musicWritingSettings(base).reasoning.effort, 'low');
+  for (const legacy of [{ background: true }, { deepWrite: true }, { deep: true }]) {
+    assert.equal(writing.musicWritingSettings({ ...base, ...legacy }).reasoning.effort, 'medium');
+    assert.equal(writing.musicWritingBackground({ ...base, ...legacy }), true);
+    assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'low' }).reasoning.effort, 'low');
+    assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'auto' }).reasoning, undefined);
+  }
+  assert.equal(writing.musicWritingBackground({ engine: 'seed', mode: 'write', thinkMode: 'medium' }), false);
+  assert.equal(writing.musicWritingBackground({ engine: 'lyria', mode: 'format', thinkMode: 'medium' }), false);
+});
+
+test('unsupported effort is rejected before the writing desk is charged', async () => {
+  const desk = booth();
+  for (const route of ['post/script', 'post/idea']) {
+    const result = await desk.request(route, { engine: 'lyria', mode: 'write', text: 'A song.', thinkMode: 'high' });
+    assert.equal(result.status, 400);
+    assert.match(result.result.error, /Auto, Low or Medium/);
+  }
+  assert.equal(desk.writerCalls.length, 0);
+});
+
+test('the song idea helper uses Sol and respects the same selected thought', async () => {
+  for (const thinkMode of ['auto', 'low', 'medium']) {
+    const idea = 'Meter Hearing: Deadpan western swing follows an apologetic driver addressing a broken meter as a judge; after its repaired coin slot accepts his payment, he treats the receipt as a full pardon.';
+    const desk = booth([idea]);
+    const result = await desk.request('post/idea', { thinkMode });
+    assert.equal(result.status, 200, JSON.stringify({ result: result.result, warnings: desk.warnings }));
+    assert.equal(result.result.idea, idea);
+    const sent = desk.writerCalls[0];
+    assert.equal(sent.model, 'openai/gpt-6.1-sol');
+    assert.equal(Object.hasOwn(sent, 'temperature'), false);
+    assert.equal(Object.hasOwn(sent, 'top_p'), false);
+    assert.equal(sent.reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
+  }
+});
 
 test('a chosen voice is a fixed choice: written for, kept in voice=, and out of the script box', async () => {
   const desk = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
@@ -643,7 +747,7 @@ test('Seed writes a developed conversation without the old short default, and re
   assert.doesNotMatch(system, /30 to 60 seconds|80 to 160 words|under 1,800|cut the number of lines before/);
   assert.match(system, /redundant descriptions before meaningful dialogue/);
   assert.match(desk.writerCalls[0].messages[1].content, /REFERENCE CLIPS IMPORTED: 1.*@Audio1/);
-  assert.equal(desk.writerCalls[0].max_tokens, 1200, 'the existing writer budget is unchanged');
+  assert.equal(desk.writerCalls[0].max_tokens, 16384, 'the writer has room for reasoning and the complete draft');
   assert.equal(desk.writerCalls.length, 1, 'READBACK is separate and does not cause an extra paid shortening pass');
   assert.equal(out.script, SEED_SCENE);
   assert.equal(out.screenplay, SEED_SCENE);
@@ -706,7 +810,7 @@ test('Seed overflow asks for concise directions before cutting dialogue and keep
   assert.match(rewrite, /redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue/);
   assert.match(rewrite, /requested sound constraints and its complete ending/);
   assert.match(rewrite, /wordless piece wordless; never invent speech/);
-  assert.equal(desk.writerCalls[1].max_tokens, 1400);
+  assert.equal(desk.writerCalls[1].max_tokens, 16384);
   assert.equal(out.script, SEED_SCENE);
   assert.ok(out.repairs.some((note) => note.startsWith('cut to fit Seed\'s cap:')));
   assert.equal(out.problem, null);

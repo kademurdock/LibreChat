@@ -1,4 +1,10 @@
 {
+  "com_agents_sol_model_note": "The model in the current family trial. Supports images, tools, and low or deep thinking. Costs more than the previous DeepSeek model.",
+  "com_agents_deepseek_model_note": "The previous family model, kept as a budget option and for switching back after the trial. Supports tools, images, and long conversations.",
+  "com_agents_glm_model_note": "A previous house model. Supports tools and careful reasoning.",
+  "com_agents_minimax_model_note": "An all-rounder that can also see images you share.",
+  "com_agents_glm_budget_model_note": "A cheaper GLM option for everyday characters.",
+  "com_agents_hermes_model_note": "An uncensored character model. Cannot use tools here; chat only.",
   "com_ui_dictate": "Dictate",
   "com_ui_dictation_stop": "Stop and transcribe",
   "com_ui_dictation_working": "Transcribing…",

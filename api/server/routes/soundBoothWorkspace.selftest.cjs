@@ -42,6 +42,13 @@ const server=http.createServer((req,res)=>{
   await page.addInitScript(()=>{const original=window.setInterval;window.setInterval=(callback,ms,...args)=>original(callback,ms===15000?30:ms,...args);});
   await page.goto('http://127.0.0.1:'+server.address().port+'/sound-booth');
   await page.locator('#app').waitFor({state:'visible'});
+  assert.equal(await page.getByRole('button',{name:'Writing thought: Auto',exact:true}).count(),1);
+  for(const mode of ['Low','Medium','Auto']){
+    await page.locator('#btnThink').click();
+    assert.equal(await page.locator('#btnThink').getAttribute('aria-label'),'Writing thought: '+mode);
+    assert.equal(await page.locator('#status').innerText(),'Writing thought: '+mode+'.');
+  }
+  assert.equal(await page.locator('#quickDraft').count(),0);
   assert.equal(await page.locator('#recentDrawer').getAttribute('open'),null);
   await page.locator('#recentDrawer > summary').click();
   await page.getByRole('heading',{name:'Recoverable recording',exact:true}).waitFor();
@@ -164,6 +171,7 @@ const server=http.createServer((req,res)=>{
   await page.waitForFunction(()=>document.getElementById('script').value==='A newly written performance.');
   assert.equal(sent.at(-1).body.text,'Keep my original idea');
   assert.ok(sent.at(-1).url.endsWith('/script'));
+  assert.equal(sent.at(-1).body.thinkMode,'auto');
   assert.equal(sent.length,beforeWriting+1,'drafting does not start an audio job');
   await page.locator('#btnUndoWriting').click();
   assert.equal(await page.locator('#script').inputValue(),'Keep my original idea');

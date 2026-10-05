@@ -419,6 +419,7 @@ function loadBooth(world) {
     effectsConfigured: () => false,
     writingCost: () => ({ costUSD: 0, measured: false }),
     musicWritingSettings: () => ({}),
+    musicWritingBackground: () => false,
     notifyMusic: async () => ({ accepted: false }),
   };
   const proxied = new Proxy(api, {
