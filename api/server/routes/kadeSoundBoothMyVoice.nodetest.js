@@ -9,10 +9,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const tsx = require('tsx/cjs/api');
-
-const voice = tsx.require('../../../packages/api/src/music/myVoice.ts', __filename);
-const yue = tsx.require('../../../packages/api/src/music/yue.ts', __filename);
+const ts = require('typescript');
+require.extensions['.ts'] = (mod, file) => mod._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText, file);
+const voice = require('../../../packages/api/src/music/myVoice.ts');
+const yue = require('../../../packages/api/src/music/yue.ts');
 
 const OWNER = '6a0000000000000000000001';
 const OTHER = '6a0000000000000000000002';
@@ -78,7 +80,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
       lead_split: true,
       lead_model: 'frazer',
       dereverb: false,
-      soft_s: true,
+      soft_s: false,
       index_rate: 0.5,
       protect: 0.33,
       rms_mix_rate: 0.25,
@@ -147,7 +149,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
     [{ reference_voice_url: url, extractor: 'magic' }, /listed extractors/],
     [{ reference_voice_url: url, protect: 0.9 }, /from 0 to 0.5/],
     [{ reference_voice_url: url, lead_split: 'maybe' }, /on or off/],
-    [{ reference_voice_url: url, soft_s: 'sometimes' }, /Softer S sounds, choose on or off/],
+    [{ reference_voice_url: url, soft_s: 'sometimes' }, /Keep original singer’s S sounds, choose on or off/],
     [
       { reference_voice_url: url, vocal_fx: 'cathedral' },
       /Under Vocal effects, choose one of the listed/,
@@ -174,7 +176,7 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     lead_split: false,
     lead_model: 'frazer',
     dereverb: false,
-    soft_s: true,
+    soft_s: false,
     index_rate: 0.5,
     protect: 0.2,
     rms_mix_rate: 0.25,
@@ -199,8 +201,8 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     }))(voice.myVoiceDefaults(round1)),
     { extractor: 'bs_roformer', lead_model: 'aufr33', dereverb: true, soft_s: false },
   );
-  assert.match(voice.myVoiceGuideEngine(round1).howToWrite.join(' '), /turn on Softer S sounds/);
-  assert.match(voice.myVoiceGuideEngine(ON).howToWrite.join(' '), /Softer S sounds is on/);
+  assert.match(voice.myVoiceGuideEngine(round1).howToWrite.join(' '), /Keep original singer’s S sounds is off/);
+  assert.match(voice.myVoiceGuideEngine(ON).howToWrite.join(' '), /Keep original singer’s S sounds is off/);
   assert.equal(
     voice.myVoiceGuideEngine(env).settings.find((s) => s.key === 'extractor').default,
     'Mel-RoFormer Kim',
@@ -209,6 +211,32 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     voice.myVoiceDefaults({ MY_VOICE_DEFAULTS: '{broken' }),
     voice.myVoiceDefaults({}),
   );
+});
+
+test('source S restoration is off for new jobs while explicit choices and saved project options stay intact', async () => {
+  const url = 'https://assets.test/audios/u/song.mp3';
+  const prepare = voice.myVoicePrepare(async () => voice.parseMyVoiceModels(ON.MY_VOICE_MODELS)[OWNER]);
+  assert.equal(voice.myVoiceInput({ reference_voice_url: url }, ON).voice.options.soft_s, false);
+  for (const soft_s of [true, false]) {
+    const input = await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url, soft_s }, ON));
+    assert.equal(voice.myVoiceWorkerInput(input).options.soft_s, soft_s);
+    assert.equal(voice.myVoiceProjectOptions(input).soft_s, soft_s);
+    const saved = voice.myVoiceProjectOptions(input);
+    const reopened = voice.myVoiceInput(saved, ON);
+    assert.equal(reopened.voice.options.soft_s, soft_s);
+    assert.equal(input.voice.options.protect, 0.33);
+    assert.equal(input.voice.options.index_rate, 0.5);
+    assert.equal(input.voice.options.rms_mix_rate, 0.25);
+  }
+  const explicitlyOn = { ...ON, MY_VOICE_DEFAULTS: JSON.stringify({ soft_s: true }) };
+  assert.equal(voice.myVoiceDefaults(explicitlyOn).soft_s, true);
+  const guide = voice.myVoiceGuideEngine(ON);
+  const setting = guide.settings.find(s => s.key === 'soft_s');
+  assert.equal(setting.label, 'Keep original singer’s S sounds');
+  assert.equal(setting.default, false);
+  assert.match(guide.howToWrite.join(' '), /pronunciation and rhythm still follow the original/);
+  assert.doesNotMatch(guide.howToWrite.join(' '), /every sound from your voice model/);
+  assert.match(voice.myVoiceGuideEngine(explicitlyOn).howToWrite.join(' '), /S sounds is on/);
 });
 
 test('the owner check adds her model and the recording length; the worker gets exactly its contract', async () => {
@@ -240,7 +268,7 @@ test('the owner check adds her model and the recording length; the worker gets e
       lead_split: true,
       lead_model: 'frazer',
       dereverb: false,
-      soft_s: true,
+      soft_s: false,
       index_rate: 0.5,
       protect: 0.33,
       rms_mix_rate: 0.25,
@@ -264,7 +292,7 @@ test('the owner check adds her model and the recording length; the worker gets e
     extractor: 'BS-RoFormer HyperACE v2',
     lead_split: true,
     dereverb: false,
-    soft_s: true,
+    soft_s: false,
     index_rate: 0.5,
     protect: 0.33,
     rms_mix_rate: 0.25,
@@ -502,7 +530,7 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
     ['reference_voice_url', 'voice_source', 'vocal_fx'],
     'the recording, what is in it and the vocal effect stay in view; the rest waits in More settings',
   );
-  assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, true);
+  assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, false);
   assert.equal(engine.settings.find((s) => s.key === 'dereverb').default, false);
   assert.match(engine.ui.fromTake, /attached/);
   assert.deepEqual(engine.settings[1].options, ['Song with music', 'Just a vocal']);

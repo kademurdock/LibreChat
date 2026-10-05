@@ -249,7 +249,7 @@ const DEFAULTS: MyVoiceOptions = {
   lead_split: true,
   lead_model: 'frazer',
   dereverb: false,
-  soft_s: true,
+  soft_s: false,
   index_rate: 0.5,
   protect: 0.33,
   rms_mix_rate: 0.25,
@@ -257,7 +257,7 @@ const DEFAULTS: MyVoiceOptions = {
 };
 const RANGES = { index_rate: [0, 1], protect: [0, 0.5], rms_mix_rate: [0, 1] } as const;
 
-/** The round 2 chain, or MY_VOICE_DEFAULTS (JSON, any of the keys above) once her listening picks another. Bad values are ignored. */
+/** The round 2 chain with source-hiss restoration off, or explicit MY_VOICE_DEFAULTS. Bad values are ignored. */
 export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOptions {
   const out: MyVoiceOptions = { ...DEFAULTS };
   let said: Record<string, unknown> = {};
@@ -412,7 +412,7 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
       ),
       lead_model: defaults.lead_model,
       dereverb: flagChoice(body.dereverb, defaults.dereverb, 'Take the room off the voice first'),
-      soft_s: flagChoice(body.soft_s, defaults.soft_s, 'Softer S sounds'),
+      soft_s: flagChoice(body.soft_s, defaults.soft_s, 'Keep original singer’s S sounds'),
       index_rate: numberChoice(
         body.index_rate,
         defaults.index_rate,
@@ -735,16 +735,18 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
     notFor: [
       'recordings over six minutes',
       'fixing words: it re-sings exactly what the recording sings, so a word the split garbled stays garbled',
+      'choosing different diction: pronunciation and rhythm still follow the original singer',
       "anybody else's voice",
     ],
     howToWrite: [
       'Import the recording under Recording to sing. A whole song as an MP3 fits, up to twenty megabytes and six minutes.',
       'Under What is in the file, choose Song with music when there is a band or a backing track: the singing is split from the music, the lead singer is sung again in your voice, and it is put back. Choose Just a vocal for singing with nothing else in it, such as a dry vocal you exported.',
       'Pitch is automatic: the melody stays where it is and moves one octave only when the song sits outside your range. To move it yourself, type semitones under More settings; twelve is one octave.',
-      'If some words still come out strange, the split between the voice and the music is the usual cause. Under More settings, try another Vocal extractor. Some of it can also be how the original was sung.',
+      'The voice model changes the sound of the singer, while pronunciation and rhythm still follow the original singing. It does not perform the words again with your own diction.',
+      'If some words come out strange, vocal separation can be a cause. Under More settings, try another Vocal extractor. Some of it can also be how the original was sung.',
       d.soft_s
-        ? 'Softer S sounds is on: the S, SH, T and F hiss comes from the original singer, which takes the robotic edge off. Turn it off under More settings to hear every sound from your voice model.'
-        : 'If S sounds come out a little robotic, turn on Softer S sounds under More settings: the S, SH, T and F hiss then comes from the original singer.',
+        ? 'Keep original singer’s S sounds is on: S, SH, T and F hiss is put back from the original singer after conversion. Turn it off under More settings to keep the converted vocal without that added hiss.'
+        : 'Keep original singer’s S sounds is off: original S, SH, T and F hiss is not put back after conversion. If converted S sounds are robotic, this optional setting can soften them using the original singer’s sounds; it does not change pronunciation or rhythm.',
       'Vocal effects puts studio reverb or echo on your voice: Studio polish evens and brightens it, Plate reverb and Hall reverb add a room, Slapback is one quick repeat, Echo repeats in time with the song, and Dreamy is a wide wash of echo and reverb. None keeps it dry.',
       'You get two files: the song in your voice, and your voice on its own, always dry, ready for a DAW. With a vocal effect on a song you also get your voice with the effect; with just a vocal, the take itself is your voice with the effect.',
     ],
@@ -804,8 +806,8 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       },
       {
         key: 'soft_s',
-        label: 'Softer S sounds',
-        hint: 'On: the S, SH, T and F hiss comes from the original singer instead of being rebuilt by your voice model, which is what makes S sounds a little robotic. That hiss carries almost nothing of who is singing, so the voice stays yours. Off: every sound comes from your voice model.',
+        label: 'Keep original singer’s S sounds',
+        hint: 'Off: keep the converted vocal without adding original S, SH, T and F hiss back. On: restores those sounds from the original singer to soften robotic consonants. Pronunciation and rhythm still follow the original singing.',
         kind: 'toggle',
         default: d.soft_s,
         advanced: true,
@@ -832,7 +834,7 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       {
         key: 'protect',
         label: 'Protect breaths',
-        hint: 'How much of the original breath and consonant sound is kept. 0.2 and 0.5 sounded the same as 0.33 in tests; for robotic S sounds use Softer S sounds instead. 0.5 turns this off.',
+        hint: 'Protects some source breath and consonant detail during conversion. 0.5 disables protection. This is a clarity setting, not a way to choose different pronunciation or rhythm.',
         kind: 'range',
         min: 0,
         max: 0.5,
