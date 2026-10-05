@@ -218,11 +218,17 @@ async function storeZip({ userId, zipBuffer }) {
     };
   }
   if (_parseBusy) {
-    return { ok: false, error: 'Another import is being read right this second. Give it a minute and try again.' };
+    return {
+      ok: false,
+      error: 'Another import is being read right this second. Give it a minute and try again.',
+    };
   }
   _parseBusy = true;
   try {
-    const entries = readZipEntries(zipBuffer, /(^|\/)(conversations\.json|memories?[^/]*\.(json|txt)|model_set_context[^/]*\.json)$/i);
+    const entries = readZipEntries(
+      zipBuffer,
+      /(^|\/)(conversations\.json|memories?[^/]*\.(json|txt)|model_set_context[^/]*\.json)$/i,
+    );
     const convFile = entries.find((e) => /conversations\.json$/i.test(e.name) && e.data);
     const memFiles = entries.filter((e) => !/conversations\.json$/i.test(e.name) && e.data);
     let stored = 0;
@@ -237,7 +243,11 @@ async function storeZip({ userId, zipBuffer }) {
       try {
         parsed = JSON.parse(convFile.data.toString('utf8'));
       } catch (e) {
-        return { ok: false, error: 'conversations.json inside that zip would not parse. Re-download the export and try once more.' };
+        return {
+          ok: false,
+          error:
+            'conversations.json inside that zip would not parse. Re-download the export and try once more.',
+        };
       }
       const list = Array.isArray(parsed) ? parsed : [];
       for (const c of list) {
@@ -280,12 +290,16 @@ function memoriesInstructions() {
 }
 
 async function importMemoriesText({ userId, text }) {
+  const sourceAt = new Date();
   if (!importEnabled()) {
     return { ok: false, error: 'Imports are switched off right now.' };
   }
   const clean = String(text || '').trim();
   if (clean.length < 10) {
-    return { ok: false, error: 'That memory list looks empty. Paste the whole thing, then try again.' };
+    return {
+      ok: false,
+      error: 'That memory list looks empty. Paste the whole thing, then try again.',
+    };
   }
   const appConfig = await getAppConfig();
   const memoryConfig = appConfig && appConfig.memory;
@@ -304,7 +318,10 @@ async function importMemoriesText({ userId, text }) {
   await processMemory({
     res: stubRes,
     userId: String(userId),
-    messages: [new HumanMessage(`# The user's saved ChatGPT memories:\n\n${clean.slice(0, 100000)}`)],
+    sourceAt,
+    messages: [
+      new HumanMessage(`# The user's saved ChatGPT memories:\n\n${clean.slice(0, 100000)}`),
+    ],
     validKeys: undefined,
     llmConfig,
     messageId: `gpt-import-mem-${Date.now()}`,
@@ -316,7 +333,10 @@ async function importMemoriesText({ userId, text }) {
     forceAgentScope: false,
     setMemory,
     deleteMemory: async () => ({ ok: false, message: 'Imports never delete memory.' }),
-    logDiary: async () => ({ ok: false, message: 'Imported memories become cards, not logbook entries.' }),
+    logDiary: async () => ({
+      ok: false,
+      message: 'Imported memories become cards, not logbook entries.',
+    }),
     user: { id: String(userId) },
   });
   const after = await getFormattedMemories({ userId: String(userId) });
@@ -363,11 +383,12 @@ function importStatus() {
 async function mineOneImport({ doc, memoryConfig, appConfig }) {
   const userId = String(doc.userId);
   const convoDate = centralDateString(doc.sourceDate || doc.createdAt || new Date());
-  let buffer = doc.turns
-    .map((t) => `${t.u ? 'User' : 'ChatGPT'}: ${t.t}`)
-    .join('\n');
+  let buffer = doc.turns.map((t) => `${t.u ? 'User' : 'ChatGPT'}: ${t.t}`).join('\n');
   if (buffer.length > MAX_BUFFER_CHARS) {
-    buffer = buffer.slice(0, 20000) + '\n\n[Middle of a long conversation omitted]\n\n' + buffer.slice(-30000);
+    buffer =
+      buffer.slice(0, 20000) +
+      '\n\n[Middle of a long conversation omitted]\n\n' +
+      buffer.slice(-30000);
   }
   const llmConfig = await resolveMemoryAgentLLMConfig({
     appConfig,
@@ -381,7 +402,9 @@ async function mineOneImport({ doc, memoryConfig, appConfig }) {
   await processMemory({
     res: stubRes,
     userId,
-    messages: [new HumanMessage(`# The old ChatGPT conversation (from ${convoDate}):\n\n${buffer}`)],
+    messages: [
+      new HumanMessage(`# The old ChatGPT conversation (from ${convoDate}):\n\n${buffer}`),
+    ],
     validKeys: undefined,
     llmConfig,
     messageId: `gpt-import-${doc.convoId}`,
@@ -468,7 +491,10 @@ async function startImportMining({ userId }) {
           control.errors += 1;
           control.processed += 1;
           logger.warn(`[gptImport] convo ${doc.convoId} failed (moving on): ${e.message}`);
-          await KadeGptImportConvo.updateOne({ _id: doc._id }, { $set: { status: 'error:' + e.message.slice(0, 80) } });
+          await KadeGptImportConvo.updateOne(
+            { _id: doc._id },
+            { $set: { status: 'error:' + e.message.slice(0, 80) } },
+          );
         }
         await new Promise((r) => setTimeout(r, DELAY_MS));
       }

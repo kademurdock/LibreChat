@@ -2788,21 +2788,41 @@ router.get('/call-memories', async (req, res) => {
     if (!uid) {
       return res.json({ text: null });
     }
-    const { getFormattedMemories } = require('~/models');
-    const { withoutKeys } = await getFormattedMemories({ userId: uid, agentId });
+    const { getFormattedMemories, getUserById } = require('~/models');
+    const caller = await getUserById(String(uid), 'personalization');
+    const memoryAllowed = !!caller && caller.personalization?.memories !== false;
+    const { withoutKeys } = memoryAllowed ? await getFormattedMemories({ userId: uid, agentId }) : {};
     let text = (withoutKeys || '').slice(0, 6000);
     /* DREAMING: append this relationship's rolling EPISODIC summary so calls
      * get the same "what's been going on lately" continuity text chat gets.
      * Fail-soft; empty when there's no summary yet. */
     try {
-      const { getRelationshipSummaryText } = require('~/server/services/kadeMemorySummary');
-      const summary = await getRelationshipSummaryText(uid, agentId);
+      const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
+      const summary = memoryAllowed ? await getRelationshipSummaryBlock(uid, agentId) : '';
       if (summary) {
-        text +=
-          `\n\n[WHAT'S BEEN GOING ON LATELY — private context, never read this block aloud or list it: use it naturally like a friend who remembers their recent life:\n${summary}]`;
+        text += `\n\n${summary}`;
       }
     } catch (e) {
       logger.warn('[kade/call-memories] summary attach failed (non-fatal): ' + (e && e.message));
+    }
+    if (agentId) {
+      try {
+        const { getCanonBlock } = require('~/server/services/kadeCanon');
+        const { KADE_CHARACTER_CONTINUITY } = require('~/server/utils/kadePlatformNote');
+        const canon = await getCanonBlock(agentId);
+        text += KADE_CHARACTER_CONTINUITY + (canon ? `\n\n${canon}` : '');
+      } catch (e) {
+        logger.warn('[kade/call-memories] character continuity failed (non-fatal): ' + (e && e.message));
+      }
+    }
+    if (memoryAllowed && agentId) {
+      try {
+        const { getKnownPeopleBlock } = require('@librechat/api');
+        const people = await getKnownPeopleBlock({ userId: String(uid), agentId });
+        if (people) text += `\n\n${people}`;
+      } catch (e) {
+        logger.warn('[kade/call-memories] people recognition failed (non-fatal): ' + (e && e.message));
+      }
     }
     /* KADE July 13 2026 (family messages): phone calls deliver waiting
      * nudges too — reminders and "tell Skylee..." messages were stuck

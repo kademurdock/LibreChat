@@ -37,6 +37,14 @@ import { resolveConfigHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
 import { existingMemoryScope } from './memoryScope';
 import { normalizeMemoryKey } from './memoryKey';
+import {
+  PEOPLE_INSTRUCTIONS,
+  personUpdateSchema,
+  rememberDirectAcquaintance,
+  updatePersonRecognition,
+} from '../memory/people';
+import { peopleOffRecord, hasPeoplePrivacyControl } from '../memory/privacy';
+import { forgetRelationshipImpressions } from '../memory/relationship';
 import type { MemoryBucket } from './memoryScope';
 
 type RequiredMemoryMethods = Pick<
@@ -350,7 +358,8 @@ export const createMemoryTool = ({
          * fixed canon owner, not under this user -- one fact, every seat. Only when a
          * character is active; with no agentId there is nobody to be canon about. */
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
-        if (!canon && !forceAgentScope) targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
+        if (!canon && !forceAgentScope)
+          targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
         const targetUserId = canon ? CANON_USER_ID : userId;
         if (canon && typeof canonEvidence === 'string') {
           const share = canonEvidenceShare(value, canonEvidence);
@@ -497,9 +506,14 @@ export const createDeleteMemoryTool = ({
   existingBuckets?: MemoryBucket[];
 }): DynamicStructuredTool => {
   return tool(
-    async ({ key: rawKey, scope }) => {
+    async ({ key: rawKey, scope, deletionKind }) => {
       const key = normalizeMemoryKey(rawKey);
       try {
+        if (deletionKind === 'resolved-promise' && !key.startsWith('promise_'))
+          return [
+            'Only a promise_ card can be removed as resolved-promise housekeeping.',
+            undefined,
+          ];
         if (validKeys && validKeys.length > 0 && !validKeys.includes(key)) {
           logger.warn(
             `Memory Agent failed to delete memory: Invalid key "${key}". Must be one of: ${validKeys.join(
@@ -525,11 +539,16 @@ export const createDeleteMemoryTool = ({
             ? agentId
             : undefined;
         const canon = scope === 'self' && Boolean(agentId) && !forceAgentScope;
-        if (!canon && !forceAgentScope) targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
+        if (!canon && !forceAgentScope)
+          targetAgentId = existingMemoryScope(existingBuckets, key, targetAgentId);
         const result = await deleteMemory({
           userId: canon ? CANON_USER_ID : userId,
           agentId: targetAgentId,
           key,
+          forget:
+            !forceAgentScope &&
+            !/^consolidat/.test(memorySourceStorage.getStore()?.conversationId || '') &&
+            deletionKind !== 'resolved-promise',
         });
         if (result.ok) {
           logger.debug(`Memory deleted for key "${key}" for user "${userId}"`);
@@ -548,6 +567,12 @@ export const createDeleteMemoryTool = ({
         'Deletes specific memory data about the user using the provided key. For updating existing memories, use the `set_memory` tool instead',
       responseFormat: 'content_and_artifact',
       schema: z.object({
+        deletionKind: z
+          .enum(['forget', 'resolved-promise'])
+          .optional()
+          .describe(
+            'Use forget for a user erasure request. Use resolved-promise only to remove a fulfilled or canceled promise_ card; that housekeeping must preserve relationship growth.',
+          ),
         key: z
           .string()
           .describe(
@@ -651,15 +676,20 @@ export class BasicToolEndHandler implements EventHandler {
 export async function processMemory(
   options: Parameters<typeof processMemoryCore>[0],
 ): ReturnType<typeof processMemoryCore> {
+  if (options.currentOffRecord) return undefined;
   const source = {
     userId: String(options.userId),
     conversationId: options.conversationId,
     messageId: options.messageId,
+    agentId: options.agentId,
+    sourceAt: options.sourceAt,
     kind: 'conversation' as const,
   };
   const revision = await memoryPolicyRevision(source.userId);
   if (/^consolidat/.test(source.conversationId)) {
-    Object.assign(source, { conversationIds: await memoryDerivationSources(source.userId, options.agentId) });
+    Object.assign(source, {
+      conversationIds: await memoryDerivationSources(source.userId, options.agentId),
+    });
   }
   Object.assign(source, { revision });
   if (!(await memorySourceAllowed(source))) return undefined;
@@ -686,6 +716,9 @@ async function processMemoryCore({
   forceAgentScope = false,
   logDiary,
   existingBuckets = [],
+  actualUserEvidence,
+  actualAssistantEvidence,
+  currentOffRecord = false,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -709,6 +742,10 @@ async function processMemoryCore({
   /** KADE diary (Aug 7 2026): when provided, the keeper also gets `log_diary` for episodic archive entries. */
   logDiary?: DiaryLogFn;
   existingBuckets?: MemoryBucket[];
+  sourceAt?: string | Date;
+  actualUserEvidence?: string;
+  actualAssistantEvidence?: string;
+  currentOffRecord?: boolean;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -723,11 +760,11 @@ async function processMemoryCore({
       /* KADE CANON: the AI side of the window is the only evidence a "self" card may rest on. */
       canonEvidence: forceAgentScope
         ? undefined
-        : aiTurnsOf(
-            messages
-              .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
-              .join('\n'),
-          ),
+        : (actualAssistantEvidence ??
+          messages
+            .filter((message) => message._getType() === 'ai')
+            .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)))
+            .join('\n')),
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -737,6 +774,78 @@ async function processMemoryCore({
       forceAgentScope,
       existingBuckets,
     });
+    const userEvidence =
+      actualUserEvidence ??
+      messages
+        .filter((message) => message._getType() === 'human')
+        .slice(-1)
+        .map((message) =>
+          typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+        )
+        .join('\n');
+    const offRecord =
+      currentOffRecord ||
+      peopleOffRecord(
+        actualUserEvidence !== undefined
+          ? [actualUserEvidence]
+          : messages
+              .filter((message) => message._getType() === 'human')
+              .map((message) =>
+                typeof message.content === 'string'
+                  ? message.content
+                  : JSON.stringify(message.content),
+              ),
+      );
+    const peopleTool =
+      agentId && !forceAgentScope && !/^consolidat/.test(conversationId)
+        ? tool(
+            async (update) =>
+              updatePersonRecognition({
+                context: {
+                  userId: String(userId),
+                  agentId,
+                  userText: userEvidence,
+                  conversationId,
+                  offRecord,
+                },
+                update,
+                userEvidence,
+              }),
+            {
+              name: 'record_person',
+              description:
+                'Remember or forget only a named acquaintance and how they were introduced; never store private life details. All relationship links stay private to this account. Supply an exact quote from the user as evidence.',
+              schema: personUpdateSchema,
+            },
+          )
+        : undefined;
+    const resetTool =
+      agentId && !forceAgentScope && !/^consolidat/.test(conversationId)
+        ? tool(
+            async ({ evidence }) =>
+              forgetRelationshipImpressions({
+                userId: String(userId),
+                agentId,
+                evidence,
+                userEvidence,
+              }),
+            {
+              name: 'forget_relationship_impressions',
+              description:
+                "On the user's explicit request, erase this character's private relationship impressions and their evidence even if no memory card exists. Respectful help and the character's general values/canon are preserved. Do not call on ordinary disagreement or a request for reassurance.",
+              schema: z.object({
+                evidence: z
+                  .string()
+                  .trim()
+                  .min(8)
+                  .max(300)
+                  .describe(
+                    'An exact quote from the latest USER message explicitly requesting these private impressions be forgotten.',
+                  ),
+              }),
+            },
+          )
+        : undefined;
 
     const currentMemoryTokens = totalTokens;
 
@@ -877,9 +986,13 @@ ${memory ?? 'No existing memories'}`;
       graphConfig: {
         type: 'standard',
         llmConfig: finalLLMConfig,
-        tools: logDiary
-          ? [memoryTool, deleteMemoryTool, createDiaryTool({ logDiary })]
-          : [memoryTool, deleteMemoryTool],
+        tools: [
+          memoryTool,
+          deleteMemoryTool,
+          ...(logDiary ? [createDiaryTool({ logDiary })] : []),
+          ...(peopleTool ? [peopleTool] : []),
+          ...(resetTool ? [resetTool] : []),
+        ],
         instructions: graphInstructions,
         additional_instructions: graphAdditionalInstructions,
         toolEnd: true,
@@ -934,6 +1047,8 @@ export async function createMemoryProcessor({
   streamId = null,
   user,
   logDiary,
+  sourceAt = new Date(),
+  currentOffRecord = false,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -947,6 +1062,8 @@ export async function createMemoryProcessor({
   user?: IUser;
   /** KADE diary (Aug 7 2026): api-layer write function; presence turns the diary lane on for this run. */
   logDiary?: DiaryLogFn;
+  sourceAt?: string | Date;
+  currentOffRecord?: boolean;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
 
@@ -981,11 +1098,16 @@ export async function createMemoryProcessor({
       '\n\n⚠️ AND A CANCELLATION IS A FACT — THIS IS THE ONE THAT GOT MISSED, AND IT HAS A RECEIPT. On Aug 26 2026 a family member said in the morning that her mother\'s surgery had been called off. Nothing was filed. Her cards still held SEVEN separate notes saying that surgery was happening — the date, the pre-op, the anaesthesia plan, the recovery window, the surgical detail, the calendar, an aside about her aunt — and not one saying it was cancelled, so hours later the surgery got named back to her as if it were still on. FILE THE ENDINGS: cancellations, postponements, break-ups, quittings, deaths, "we\'re not doing that any more", "she\'s not coming after all". A thing that STOPS happening is far easier to forget to write down than a thing that starts, and it does more damage, because the old plan is still sitting in the record looking current.' +
       '\n\nONE THING, MANY CARDS — USE `subject`. That surgery was spread over seven keys, so "update the SAME key" had no correct answer and a perfectly obedient fix would still have left six cards stale. When several cards are about ONE real-world situation, give them all the SAME short `subject` ("mom_foot_surgery"). Then an update can reach the whole thing instead of one seventh of it. Most cards need no subject — this is for situations that genuinely sprawl. When you correct something that has a subject, fix EVERY card carrying it that is now wrong, not just the one that came to mind.' +
       '\n\nPLANS GO STALE, RECORDS DO NOT — USE `stale_after`. A card is not always a fact. "Her favourite Grey\'s character is Bailey" is true forever. "Mom\'s foot surgery is Thursday August 27, 2026" is a CLAIM ABOUT THE FUTURE that goes false on a known day. When you file a plan — an appointment, a trip, a procedure, a deadline, a visit — set `stale_after` to the day it will be over, as YYYY-MM-DD. After that day the card is shown to you as unconfirmed, so you ask instead of announce. ⚠️ DO NOT set it on things that already happened: "got CPR certified July 22", "saw Shinedown July 28", "the dog died in 2025" are RECORDS and stay true forever. The test is the tense, never the presence of a date.' +
-      '\n\nPROMISES: when the CHARACTER makes a concrete commitment to the user ("I\'ll have the second verse tomorrow," "remind me to ask how the appointment went"), file an agent-scoped card under a key starting promise_ with what was promised and when it\'s due. When a promise is delivered or clearly dead, delete its card. Promises are the character\'s own word — keeping them is what makes the character real.' +
+      '\n\nPROMISES: when the CHARACTER makes a concrete commitment to the user ("I\'ll have the second verse tomorrow," "remind me to ask how the appointment went"), file an agent-scoped card under a key starting promise_ with what was promised and when it\'s due. When a promise is delivered or clearly dead, delete its card with deletionKind resolved-promise. Promises are the character\'s own word — keeping them is what makes the character real.' +
       '\n\nOFF THE RECORD: if the user has said "off the record" in the visible conversation and has not since said they\'re back on the record, save NOTHING from that span — no cards, no logbook entries, no exceptions. When they say "back on the record" (or similar), normal listening resumes from that point. If they ask you to forget an off-record slip you already saved, delete it.';
   }
 
-  finalInstructions += '\n\nMEMORY CONTROLS: A direct request to correct, update, forget or remove a saved fact is a memory action, never task chatter. Act on the latest user request even if the assistant response disagrees or asks a question. Reuse BOTH the exact key and the scope printed on the existing card. If the same obsolete fact exists in shared and agent cards, correct or delete each affected card in its own scope. A request to forget a topic does not require choosing which conflicting value is true. Do not save the forget request as a new fact or diary entry.';
+  finalInstructions +=
+    '\n\nMEMORY CONTROLS: A direct request to correct, update, forget or remove a saved fact is a memory action, never task chatter. Act on the latest user request even if the assistant response disagrees or asks a question. Reuse BOTH the exact key and the scope printed on the existing card. If the same obsolete fact exists in shared and agent cards, correct or delete each affected card in its own scope. A request to forget a topic does not require choosing which conflicting value is true. Do not save the forget request as a new fact or diary entry.';
+  if (agentId) finalInstructions += PEOPLE_INSTRUCTIONS;
+  if (agentId)
+    finalInstructions +=
+      '\n\nPRIVATE IMPRESSION CONTROLS: when the user explicitly asks to forget your private view of them or what led to it, call forget_relationship_impressions with an exact quote from their latest request. A missing fact card is not a reason to retain an unwanted private judgment. Never erase opinions merely because someone disagrees or declines advice.';
   const { withKeys, withoutKeys, totalTokens, buckets } = await memoryMethods.getFormattedMemories({
     userId,
     agentId,
@@ -1017,12 +1139,46 @@ export async function createMemoryProcessor({
   return [
     withoutKeys,
     async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+      if (currentOffRecord) return undefined;
       try {
+        const offRecord = peopleOffRecord(
+          messages
+            .filter((message) => message._getType() === 'human')
+            .map((message) =>
+              typeof message.content === 'string'
+                ? message.content
+                : JSON.stringify(message.content),
+            ),
+        );
+        const latestUser = messages
+          .filter((message) => message._getType() === 'human')
+          .slice(-1)[0];
+        const latestText =
+          latestUser &&
+          (typeof latestUser.content === 'string'
+            ? latestUser.content
+            : JSON.stringify(latestUser.content));
+        if (
+          agentId &&
+          !offRecord &&
+          !hasPeoplePrivacyControl(latestText || '') &&
+          !/^consolidat/.test(conversationId)
+        ) {
+          await rememberDirectAcquaintance({
+            userId: String(userId),
+            agentId,
+            sourceConversationIds: [conversationId],
+            sourceAt,
+          }).catch((error) =>
+            logger.warn('[MemoryAgent] Acquaintance registration skipped', error),
+          );
+        }
         return await processMemory({
           res,
           userId,
           agentId,
           messages,
+          sourceAt,
           validKeys: effectiveValidKeys,
           llmConfig,
           messageId,
@@ -1082,6 +1238,7 @@ export async function consolidateMemoryBucket({
   /** KADE Aug 8 2026: when provided, consolidation may DEMOTE episodic cards into dated logbook entries (job 5). */
   logDiary?: DiaryLogFn;
 }): Promise<{ ran: boolean; attachments?: (TAttachment | null)[] }> {
+  const sourceAt = new Date();
   const resolvedAgentId = agentId ?? undefined;
   const { withKeys, totalTokens } = await memoryMethods.getFormattedMemories({
     userId,
@@ -1123,6 +1280,7 @@ Emit ALL of your set_memory/delete_memory calls together in a single response. D
     res: res ?? stubRes,
     userId,
     agentId: resolvedAgentId,
+    sourceAt,
     setMemory: memoryMethods.setMemory,
     deleteMemory: memoryMethods.deleteMemory,
     messages: [consolidationRequest],

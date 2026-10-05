@@ -85,7 +85,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
-const { KADE_PLATFORM_NOTE, carriesPlatformNote } = require('~/server/utils/kadePlatformNote');
+const { KADE_PLATFORM_NOTE, carriesPlatformNote, KADE_CHARACTER_CONTINUITY } = require('~/server/utils/kadePlatformNote');
 const { getWorldBlock, KADE_WHISPER_LINE } = require('~/server/utils/kadeWorldPulse');
 const { getAnniversaryLine } = require('~/server/utils/kadeAnniversaries');
 const { getMCPManager } = require('~/config');
@@ -190,6 +190,9 @@ class AgentClient extends BaseClient {
     this.indexTokenCountMap = {};
     /** @type {Array<Record<string, unknown>> | null} */
     this.memoryPayload = null;
+    this.memoryEvidenceTurns = [];
+    this.memoryOffRecord = false;
+    this.memorySourceAt = new Date();
     /** @type {(messages: BaseMessage[]) => Promise<void>} */
     this.processMemory;
   }
@@ -403,7 +406,7 @@ class AgentClient extends BaseClient {
     /** @type {Record<string, number>} */
     const tokenCountMap = {};
     const memoryPayload = [];
-    let hasFileContext = false;
+    const memoryEvidenceTurns = [];
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
     const formattedMessages = orderedMessages.map((message, i) => {
@@ -417,6 +420,15 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      let memoryControlText = typeof message.text === 'string' ? message.text : '';
+      if (typeof message.text !== 'string' && typeof message.content === 'string') {
+        memoryControlText = message.content;
+      } else if (typeof message.text !== 'string' && Array.isArray(message.content)) {
+        memoryControlText = message.content
+          .filter((part) => part?.type === ContentTypes.TEXT && typeof part.text === 'string')
+          .map((part) => part.text)
+          .join('\n');
+      }
 
       /**
        * Bind file context to the message it belongs to. Historical attachments
@@ -424,7 +436,6 @@ class AgentClient extends BaseClient {
        * too instead of living only in the dynamic system tail.
        */
       if (message.fileContext) {
-        hasFileContext = true;
         prependFileContext(formattedMessage, message.fileContext);
       }
 
@@ -440,6 +451,16 @@ class AgentClient extends BaseClient {
       }
 
       memoryPayload.push(memoryFormattedMessage);
+      const isUserEvidence = message.isCreatedByUser === true || message.role === 'user';
+      memoryEvidenceTurns.push({
+        role: isUserEvidence ? 'user' : 'assistant',
+        text: memoryControlText,
+        at:
+          message.createdAt ??
+          (i === orderedMessages.length - 1 && isUserEvidence ? this.memorySourceAt : undefined),
+        conversationId: message.conversationId || this.conversationId,
+        payload: memoryFormattedMessage,
+      });
 
       const sourceNote = message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
       if (sourceNote) {
@@ -550,7 +571,10 @@ class AgentClient extends BaseClient {
     }
 
     payload = formattedMessages;
-    this.memoryPayload = hasFileContext ? memoryPayload : null;
+    this.memoryPayload = memoryPayload;
+    this.memoryEvidenceTurns = memoryEvidenceTurns;
+    const { permittedUserEvidence } = require('@librechat/api');
+    this.memoryOffRecord = permittedUserEvidence(memoryEvidenceTurns).offRecord;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
@@ -702,6 +726,30 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] episodic-summary inject failed (non-fatal):', summaryError.message);
     }
 
+    if (withoutKeys !== undefined && this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)) {
+      try {
+        const { getPeopleRecognitionBlock, peopleOffRecord } = require('@librechat/api');
+        const userTurns = orderedMessages
+          .filter(message => message.isCreatedByUser === true || message.role === 'user')
+          .map(message => typeof message.text === 'string' ? message.text : '');
+        const userText = typeof this.options.req?.body?.text === 'string'
+          ? this.options.req.body.text
+          : [...orderedMessages].reverse().find(message => message.isCreatedByUser === true || message.role === 'user')?.text || '';
+        const peopleBlock = await getPeopleRecognitionBlock({
+          userId: String(this.options.req.user.id),
+          agentId: this.options.agent.id,
+          userText,
+          conversationId: this.conversationId,
+          offRecord: this.memoryOffRecord || peopleOffRecord([...userTurns, userText]),
+        });
+        if (peopleBlock) {
+          volatileTurnContext = [volatileTurnContext, peopleBlock].filter(Boolean).join('\n\n');
+        }
+      } catch (peopleError) {
+        logger.warn('[AgentClient] people recognition failed (non-fatal):', peopleError.message);
+      }
+    }
+
     /** KADE CANON (Part 124, Sep 4 2026): the character's own life — what it has
      * said about itself to anyone — rides the STABLE head for every person it
      * talks to. Lives under a fixed owner id (see packages/api memory.ts,
@@ -725,7 +773,10 @@ class AgentClient extends BaseClient {
      * only here and by the admin routes. Stable per relationship -> head. */
     try {
       const { getCareNoteBlock } = require('~/models/kadeCareNote');
-      const careBlock = await getCareNoteBlock(this.options.req.user.id, this.options.agent?.id);
+      const { ownsPrivateMemory } = require('@librechat/api');
+      const careBlock = ownsPrivateMemory(this.options.req)
+        ? await getCareNoteBlock(this.options.req.user.id, this.options.agent?.id)
+        : '';
       if (careBlock) {
         stableMemoryContext = stableMemoryContext
           ? `${stableMemoryContext}\n\n${careBlock}`
@@ -784,8 +835,14 @@ class AgentClient extends BaseClient {
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
-        const currentConversation = await db.getConvo(String(this.options.req.user.id), this.conversationId);
-        const workingProjectId = currentConversation?.chatProjectId || this.options.req.body.chatProjectId;
+        const { ownsPrivateMemory } = require('@librechat/api');
+        const privateContextAllowed = ownsPrivateMemory(this.options.req);
+        const currentConversation = privateContextAllowed
+          ? await db.getConvo(String(this.options.req.user.id), this.conversationId)
+          : undefined;
+        const workingProjectId = privateContextAllowed
+          ? currentConversation?.chatProjectId || this.options.req.body.chatProjectId
+          : undefined;
         if (workingProjectId) {
           const { loadProjectWork } = require('@librechat/api');
           const projectWork = await loadProjectWork(String(this.options.req.user.id), String(workingProjectId), db.getChatProject, agentId);
@@ -857,6 +914,10 @@ class AgentClient extends BaseClient {
         if (!isBareProbe && !carriesPlatformNote(agent.instructions)) {
           headParts.push(KADE_PLATFORM_NOTE);
         }
+        if (!isBareProbe && ![...headParts, agent.instructions].some(part =>
+          String(part || '').includes(KADE_CHARACTER_CONTINUITY))) {
+          headParts.push(KADE_CHARACTER_CONTINUITY);
+        }
         /** KADE Aug 6 2026 — LIVING WORLD LAYER (ideas 25+26, her pick):
          * daily seed + family board, byte-stable per (agent, Central day) so
          * the head re-caches ONCE a day — see utils/kadeWorldPulse.js for the
@@ -885,7 +946,7 @@ class AgentClient extends BaseClient {
            * one scope-respecting, day-stable line when a memory card turns
            * exactly N months old today. See utils/kadeAnniversaries.js. */
           try {
-            const anniversaryLine = await getAnniversaryLine(this.options.req.user.id, agentId);
+            const anniversaryLine = withoutKeys === undefined ? '' : await getAnniversaryLine(this.options.req.user.id, agentId);
             if (anniversaryLine) {
               headParts.push(anniversaryLine);
             }
@@ -979,6 +1040,9 @@ class AgentClient extends BaseClient {
    * @returns {Promise<string | undefined>}
    */
   async useMemory() {
+    this.processMemory = undefined;
+    const { ownsPrivateMemory } = require('@librechat/api');
+    if (!ownsPrivateMemory(this.options.req)) return;
     const user = this.options.req.user;
     const { getConversationMemoryPolicy } = require('@librechat/data-schemas');
     if (await getConversationMemoryPolicy(String(user.id), this.conversationId)) return;
@@ -1130,6 +1194,8 @@ class AgentClient extends BaseClient {
       messageId,
       streamId,
       conversationId,
+      sourceAt: this.memorySourceAt,
+      currentOffRecord: this.memoryOffRecord,
       memoryMethods: {
         setMemory: db.setMemory,
         deleteMemory: db.deleteMemory,
@@ -1937,10 +2003,23 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      let memoryEvidence = this.memoryPayload;
+      if (this.processMemory) {
+        const { memoryClearCutoff } = require('@librechat/data-schemas');
+        const { permittedMemoryTurns } = require('@librechat/api');
+        const activeAgentId =
+          this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)
+            ? this.options.agent.id
+            : undefined;
+        const cutoff = await memoryClearCutoff(String(this.options.req.user.id), activeAgentId);
+        memoryEvidence = permittedMemoryTurns(this.memoryEvidenceTurns || [], cutoff).map(
+          (turn) => turn.payload,
+        );
+      }
       const memoryMessages =
         this.processMemory && this.memoryPayload
           ? formatAgentMessages(
-              this.memoryPayload,
+              memoryEvidence,
               undefined,
               toolSet,
               skillPrimeResult?.skills,

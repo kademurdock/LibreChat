@@ -44,6 +44,12 @@ export * from './memory';
 export * from './modelSpecs';
 /* Agents */
 export * from './agents';
+export {
+  generateConversationStarters,
+  parseConversationStarters,
+  conversationStartersHandler,
+} from './agents/starters';
+export type { StarterProfile } from './agents/starters';
 /* Actions */
 export * from './actions';
 /* Prompts */

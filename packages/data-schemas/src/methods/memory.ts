@@ -5,6 +5,9 @@ import {
   memorySourceStorage,
   memorySourceAllowed,
   excludedMemoryConversations,
+  advanceMemoryPolicyRevision,
+  memoryPolicyRevision,
+  setMemoryClearCutoff,
 } from '~/memory/policy';
 
 /* Once-per-process TTL-index ensure for the overwrite-watch receipts. */
@@ -327,11 +330,19 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     userId,
     agentId,
     key,
+    forget,
   }: t.DeleteMemoryParams): Promise<t.MemoryResult> {
     try {
       const source = memorySourceStorage.getStore();
       if (!(await memorySourceAllowed(source))) return { ok: false };
       const MemoryEntry = mongoose.models.MemoryEntry;
+      const removedSources = await MemoryEntry.find({
+        userId,
+        agentId: toAgentFilterValue(agentId),
+        key,
+      })
+        .select('sourceConversationIds')
+        .lean<{ sourceConversationIds?: string[] }[]>();
       if (
         source &&
         (await MemoryEntry.exists({
@@ -349,6 +360,32 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         key,
         ...(source ? { correctionLocked: { $ne: true } } : {}),
       });
+      if (result.deletedCount && (forget ?? !source)) {
+        await mongoose.connection
+          .collection('kadememoryledgers')
+          .deleteMany({ userId: String(userId), agentId: toAgentFilterValue(agentId), key });
+        await advanceMemoryPolicyRevision(String(userId));
+        if (source) source.revision = await memoryPolicyRevision(String(userId));
+        const summaryScope = { userId: String(userId), ...(agentId ? { agentId } : {}) };
+        await mongoose.connection
+          .collection('kadememorysummaries')
+          .updateMany(summaryScope, { $set: { invalidated: true }, $inc: { revision: 1 } });
+        const sourceIds = removedSources.flatMap((row) => row.sourceConversationIds || []);
+        if (sourceIds.length)
+          await mongoose.connection.collection('kadepeople').updateMany(
+            {
+              ownerId: String(userId),
+              ...(agentId ? { agentId } : {}),
+              provenance: { $ne: 'direct' },
+              sourceConversationIds: { $in: sourceIds },
+            },
+            {
+              $set: { forgotten: true, sourceConversationIds: [] },
+              $unset: { relationship: 1 },
+              $inc: { revision: 1 },
+            },
+          );
+      }
       return { ok: (result.deletedCount ?? 0) > 0 };
     } catch (error) {
       throw new Error(
@@ -506,8 +543,13 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       ]);
 
       return {
-        withKeys, withoutKeys, totalTokens,
-        buckets: allMemories.map((memory) => ({ key: memory.key, agentId: memory.agentId || undefined })),
+        withKeys,
+        withoutKeys,
+        totalTokens,
+        buckets: allMemories.map((memory) => ({
+          key: memory.key,
+          agentId: memory.agentId || undefined,
+        })),
       };
     } catch (error) {
       logger.error('Failed to get formatted memories:', error);
@@ -525,12 +567,55 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
     options: t.DeleteAllUserMemoriesOptions = {},
   ): Promise<number> {
     try {
+      const clearedAt = await setMemoryClearCutoff(
+        String(userId),
+        Object.prototype.hasOwnProperty.call(options, 'agentId') ? options.agentId : undefined,
+      );
       const MemoryEntry = mongoose.models.MemoryEntry;
       const filter: Record<string, unknown> = { userId };
       if (Object.prototype.hasOwnProperty.call(options, 'agentId')) {
         filter.agentId = toAgentFilterValue(options.agentId);
       }
       const result = await MemoryEntry.deleteMany(filter);
+      await mongoose.connection.collection('kadememoryledgers').deleteMany({
+        userId: String(userId),
+        ...(Object.prototype.hasOwnProperty.call(options, 'agentId')
+          ? { agentId: toAgentFilterValue(options.agentId) }
+          : {}),
+      });
+      const derivedScope = {
+        userId: String(userId),
+        ...(options.agentId ? { agentId: options.agentId } : {}),
+      };
+      await mongoose.connection
+        .collection('kadememorysummaries')
+        .updateMany(derivedScope, {
+          $set: {
+            invalidated: true,
+            take: '',
+            thread: '',
+            learned: '',
+            curious: '',
+            verdicts: '',
+            relationship: {},
+            relationshipHistory: [],
+            impressionsReset: true,
+            impressionsResetAt: clearedAt,
+          },
+          $inc: { revision: 1 },
+        });
+      await mongoose.connection.collection('kadepeople').updateMany(
+        {
+          ownerId: String(userId),
+          ...(options.agentId ? { agentId: options.agentId } : {}),
+          ...(options.agentId === null ? { provenance: { $ne: 'direct' } } : {}),
+        },
+        {
+          $set: { forgotten: true, sourceConversationIds: [], clearedAt },
+          $unset: { relationship: 1 },
+          $inc: { revision: 1 },
+        },
+      );
       return result.deletedCount;
     } catch (error) {
       throw new Error(

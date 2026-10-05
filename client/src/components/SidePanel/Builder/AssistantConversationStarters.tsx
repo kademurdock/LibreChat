@@ -25,7 +25,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
   const [newStarter, setNewStarter] = useState('');
 
   const handleAddStarter = () => {
-    if (newStarter.trim() && field.value.length < Constants.MAX_CONVO_STARTERS) {
+    if (newStarter.trim() && field.value.length < Constants.MAX_CONVO_STARTER_POOL) {
       const newValues = [newStarter, ...field.value];
       field.onChange(newValues);
       setNewStarter('');
@@ -57,7 +57,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
     exited: { opacity: 0 },
   };
 
-  const hasReachedMax = field.value.length >= Constants.MAX_CONVO_STARTERS;
+  const hasReachedMax = field.value.length >= Constants.MAX_CONVO_STARTER_POOL;
 
   const addConversationStarterLabel = hasReachedMax
     ? localize('com_assistants_max_starters_reached')
@@ -96,7 +96,7 @@ const AssistantConversationStarters: React.FC<AssistantConversationStartersProps
           />
           <Transition
             nodeRef={nodeRef}
-            in={field.value.length < Constants.MAX_CONVO_STARTERS}
+            in={field.value.length < Constants.MAX_CONVO_STARTER_POOL}
             timeout={200}
             unmountOnExit
           >

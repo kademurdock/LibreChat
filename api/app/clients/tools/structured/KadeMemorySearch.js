@@ -57,7 +57,13 @@ const memorySearchJsonSchema = {
 class KadeMemorySearch extends Tool {
   constructor(fields = {}) {
     super();
-    this.userId = fields.userId;
+    const req = fields.req;
+    const onBehalf = req?.user?.role === 'ADMIN' ? req.kadeOnBehalfOf?.id : undefined;
+    this.userId = String(onBehalf || req?.user?.id || '');
+    this.unresolvedCaller =
+      req?.kadeOnBehalfOfUnresolved === true ||
+      (req?.user?.role === 'ADMIN' && Boolean(req.body?.kadeOnBehalfOf) && !onBehalf);
+    this.conversationId = fields.conversationId || req?.body?.conversationId;
     this.agentId = fields.agentId;
     this.name = 'kade_memory_search';
     this.description =
@@ -66,15 +72,49 @@ class KadeMemorySearch extends Tool {
       'Search by meaning (query), by date range, or both.';
     this.description_for_model =
       this.description +
-      ' Weave whatever you find in naturally, like a friend recalling — mention the day in passing if it helps ("back at the start of the month you said…"). Never read entries out as a list unless the user asks for exactly that, never invent entries, and if the tool returns nothing say honestly that your notes don\'t show it. If an entry contradicts what the user is telling you right now, believe the user. For date ranges, compute real YYYY-MM-DD dates from today\'s date first. WHEN-shaped questions (\'when did I\u2026\', \'how long ago\u2026\', \'when did X change\') are temporal: every entry returns dated, so answer from the DATES \u2014 name the day or the distance plainly (\'that was July 12th, about a month back\'), and if the story changed over time, tell it in date order using a wider limit.';
+      " Weave whatever you find in naturally, like a friend recalling — mention the day in passing if it helps (\"back at the start of the month you said…\"). Never read entries out as a list unless the user asks for exactly that, never invent entries, and if the tool returns nothing say honestly that your notes don't show it. If an entry contradicts what the user is telling you right now, believe the user. For date ranges, compute real YYYY-MM-DD dates from today's date first. WHEN-shaped questions ('when did I\u2026', 'how long ago\u2026', 'when did X change') are temporal: every entry returns dated, so answer from the DATES \u2014 name the day or the distance plainly ('that was July 12th, about a month back'), and if the story changed over time, tell it in date order using a wider limit.";
     this.schema = memorySearchJsonSchema;
+  }
+
+  async _privacyBlock(expectedRevision) {
+    if (this.unresolvedCaller || !this.userId) {
+      return 'Private memory search is unavailable because the person on this turn could not be identified.';
+    }
+    try {
+      const { getUserById } = require('~/models');
+      const user = await getUserById(this.userId, 'personalization');
+      if (!user || user.personalization?.memories === false) {
+        return 'Private memory search is turned off for this account.';
+      }
+      const {
+        getConversationMemoryPolicy,
+        memoryPolicyRevision,
+      } = require('@librechat/data-schemas');
+      if (
+        this.conversationId &&
+        (await getConversationMemoryPolicy(this.userId, this.conversationId))
+      ) {
+        return 'Private memory search is turned off for this conversation.';
+      }
+      if (
+        expectedRevision !== undefined &&
+        expectedRevision !== (await memoryPolicyRevision(this.userId))
+      ) {
+        return 'Private memory changed while I was checking it. Please try the search again.';
+      }
+      return '';
+    } catch (error) {
+      logger.warn('[KadeMemorySearch] memory privacy check failed: ' + error.name);
+      return 'Private memory search is unavailable right now.';
+    }
   }
 
   async _call(data) {
     const { query, date_from, date_to, limit, scope, changes } = data || {};
-    if (!this.userId) {
-      return 'Memory search is unavailable right now (no user context).';
-    }
+    const privacyBlock = await this._privacyBlock();
+    if (privacyBlock) return privacyBlock;
+    const { memoryPolicyRevision } = require('@librechat/data-schemas');
+    const revision = await memoryPolicyRevision(this.userId);
     /* Part 69 rung 3 — the spoken trail: "what changed in your memory?" */
     if (changes === true) {
       try {
@@ -84,6 +124,8 @@ class KadeMemorySearch extends Tool {
           agentId: this.agentId,
           limit: limit || 10,
         });
+        const currentPrivacyBlock = await this._privacyBlock(revision);
+        if (currentPrivacyBlock) return currentPrivacyBlock;
         if (!rows || rows.length === 0) {
           return 'No recent memory edits on record — nothing has been rewritten, merged, or removed lately.';
         }
@@ -126,7 +168,8 @@ class KadeMemorySearch extends Tool {
       const qv = query ? await embedText(String(query).slice(0, 1500)) : null;
 
       const cardLines = [];
-      const cardLine = (m) => `(${String(m.key).replace(/_/g, ' ')}) ${m.value}\n${m.correctionLocked ? 'User-corrected; automatic replacement is blocked. ' : ''}${m.sourceConversationIds?.length ? 'Recorded sources can be reviewed here: ' : 'No conversation source evidence was recorded. Review this memory here: '}https://kademurdock.com/assets/memory/index.html?memoryId=${encodeURIComponent(String(m._id))}`;
+      const cardLine = (m) =>
+        `(${String(m.key).replace(/_/g, ' ')}) ${m.value}\n${m.correctionLocked ? 'User-corrected; automatic replacement is blocked. ' : ''}${m.sourceConversationIds?.length ? 'Recorded sources can be reviewed here: ' : 'No conversation source evidence was recorded. Review this memory here: '}https://kademurdock.com/assets/memory/index.html?memoryId=${encodeURIComponent(String(m._id))}`;
       if (wantCards) {
         try {
           const { searchCardVectors } = require('~/models/kadeCardVector');
@@ -173,7 +216,10 @@ class KadeMemorySearch extends Tool {
             }
           }
         } catch (cardErr) {
-          logger.warn('[KadeMemorySearch] card half failed (logbook still answers):', cardErr.message);
+          logger.warn(
+            '[KadeMemorySearch] card half failed (logbook still answers):',
+            cardErr.message,
+          );
         }
       }
 
@@ -188,6 +234,8 @@ class KadeMemorySearch extends Tool {
             limit: limit || 5,
           })
         : [];
+      const currentPrivacyBlock = await this._privacyBlock(revision);
+      if (currentPrivacyBlock) return currentPrivacyBlock;
       if ((!hits || hits.length === 0) && cardLines.length === 0) {
         return query
           ? `Nothing in your memory cards or logbook matches "${query}"${date_from || date_to ? ' in that date range' : ''}. Do not guess; say your notes don't show it.`

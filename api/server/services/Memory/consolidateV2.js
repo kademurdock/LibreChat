@@ -63,7 +63,10 @@ function v2Enabled() {
   return process.env.KADE_CONSOLIDATE_V2 !== '0';
 }
 
-const instructionsFor = (scopeLabel, hasReadOnlyShared) => `You are doing a CONNECTION pass over your own long-term memory about one person, NOT extracting anything from a conversation. Below are the memory cards in the "${scopeLabel}" bucket${hasReadOnlyShared ? ', plus a READ-ONLY view of the shared cards the same character also sees (context only — you may not edit or delete those, and you must never copy a shared fact into an editable card)' : ''}.
+const instructionsFor = (
+  scopeLabel,
+  hasReadOnlyShared,
+) => `You are doing a CONNECTION pass over your own long-term memory about one person, NOT extracting anything from a conversation. Below are the memory cards in the "${scopeLabel}" bucket${hasReadOnlyShared ? ', plus a READ-ONLY view of the shared cards the same character also sees (context only — you may not edit or delete those, and you must never copy a shared fact into an editable card)' : ''}.
 
 Your jobs, in priority order:
 
@@ -98,6 +101,7 @@ Emit ALL of your set_memory/delete_memory calls together in a single response.`;
  * @returns {Promise<{ran:boolean,reason?:string,edits?:number,refused?:number}>}
  */
 async function consolidateBucketV2({ userId, agentId = null, appConfig = null }) {
+  const sourceAt = new Date();
   if (!v2Enabled()) {
     return { ran: false, reason: 'disabled (KADE_CONSOLIDATE_V2=0)' };
   }
@@ -145,8 +149,12 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
        * were the whole reason cards.wrote24h lied (Part 112: 33 rows touched,
        * 0 ledger rows) and why sweepTouched24h had to be built to see past
        * them. A sweep that changes nothing now touches nothing. */
-      if (before && typeof before.value === 'string' && typeof params.value === 'string'
-          && before.value.trim() === params.value.trim()) {
+      if (
+        before &&
+        typeof before.value === 'string' &&
+        typeof params.value === 'string' &&
+        before.value.trim() === params.value.trim()
+      ) {
         counters.skippedIdentical = (counters.skippedIdentical || 0) + 1;
         return { ok: true, unchanged: true, skipped: true };
       }
@@ -160,6 +168,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
           action: 'set',
           before: before?.value || '',
           after: params.value || '',
+          sourceConversationIds: before?.sourceConversationIds || [],
           note: before ? 'connection pass rewrite' : 'connection pass new card',
         });
         byKey.set(key, { ...(before || {}), key, value: params.value });
@@ -177,6 +186,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
           agentId: aid,
           key,
           action: 'refused',
+          sourceConversationIds: before?.sourceConversationIds || [],
           note: 'delete aimed outside the editable bucket — blocked by scope guard',
         });
         return { ok: false };
@@ -188,6 +198,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
           agentId: aid,
           key,
           action: 'refused',
+          sourceConversationIds: before?.sourceConversationIds || [],
           note: 'delete of a live reminder card — blocked by the reminder rail',
         });
         return { ok: false };
@@ -201,6 +212,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
           key,
           action: 'delete',
           before: before?.value || '',
+          sourceConversationIds: before?.sourceConversationIds || [],
           note: 'connection pass removal (merged or obsolete)',
         });
         byKey.delete(key);
@@ -234,6 +246,7 @@ async function consolidateBucketV2({ userId, agentId = null, appConfig = null })
       res: stubRes,
       userId: uid,
       agentId: aid ?? undefined,
+      sourceAt,
       setMemory: guardedSet,
       deleteMemory: guardedDelete,
       messages: [request],

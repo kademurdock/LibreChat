@@ -55,6 +55,7 @@ import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
+import { ownsPrivateMemory } from '../memory/audience';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
@@ -583,7 +584,8 @@ export async function initializeAgent(
     allowedProviders,
     isInitialAgent = false,
   } = params;
-  const requestFileOwnerId = req.user?.id;
+  const privateFilesAllowed = req == null || ownsPrivateMemory(req);
+  const requestFileOwnerId = privateFilesAllowed ? req?.user?.id : undefined;
   const requestFileOwnerScope: FileOwnerScope | undefined = requestFileOwnerId
     ? { userId: requestFileOwnerId, tenantId: req.user?.tenantId }
     : undefined;
@@ -625,7 +627,7 @@ export async function initializeAgent(
    * in the conversation. Without this, file_search and execute_code tools
    * on handoff agents would fail to find previously attached files.
    */
-  if (conversationId != null && resendFiles) {
+  if (privateFilesAllowed && conversationId != null && resendFiles) {
     const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
@@ -725,7 +727,7 @@ export async function initializeAgent(
       }
       currentFiles = requestUsageFiles.concat(toolUsageFiles);
     }
-  } else if (requestFiles.length) {
+  } else if (privateFilesAllowed && requestFiles.length) {
     currentFiles = requestFileOwnerId
       ? ((await db.updateFilesUsage(requestFiles, undefined, {
           user: requestFileOwnerId,
@@ -752,18 +754,25 @@ export async function initializeAgent(
     requestAttachments: primedRequestAttachments,
     agentContextAttachments: primedAgentContextAttachments,
     tool_resources,
-  } = await primeResources({
-    req: req as never,
-    getFiles: db.getFiles as never,
-    filterFiles: db.filterFilesByAgentAccess,
-    appConfig: req.config,
-    agentId: agent.id,
-    attachments: currentFiles
-      ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
-      : undefined,
-    tool_resources: agent.tool_resources,
-    requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
-  });
+  } = privateFilesAllowed
+    ? await primeResources({
+        req: req as never,
+        getFiles: db.getFiles as never,
+        filterFiles: db.filterFilesByAgentAccess,
+        appConfig: req.config,
+        agentId: agent.id,
+        attachments: currentFiles
+          ? (Promise.resolve(currentFiles) as unknown as Promise<TFile[]>)
+          : undefined,
+        tool_resources: agent.tool_resources,
+        requestFileSet: new Set(requestFiles?.map((file) => file.file_id)),
+      })
+    : {
+        attachments: undefined,
+        requestAttachments: undefined,
+        agentContextAttachments: undefined,
+        tool_resources: {},
+      };
 
   /**
    * Pre-resolve manually-invoked + always-apply skill primes so their
@@ -786,8 +795,8 @@ export async function initializeAgent(
    * go first so their names win on dedup (primes earlier in the list
    * contribute before the same name gets deduped on a later prime).
    */
-  const hasSkillAccess = (params.accessibleSkillIds?.length ?? 0) > 0;
-  const skillAuthoringAvailable = params.skillAuthoringAvailable === true;
+  const hasSkillAccess = privateFilesAllowed && (params.accessibleSkillIds?.length ?? 0) > 0;
+  const skillAuthoringAvailable = privateFilesAllowed && params.skillAuthoringAvailable === true;
   let manualSkillPrimes: ResolvedManualSkill[] | undefined;
   let alwaysApplySkillPrimes: ResolvedAlwaysApplySkill[] | undefined;
   let extraAllowedToolNames: string[] = [];
@@ -1105,7 +1114,8 @@ export async function initializeAgent(
    * duplicate — exactly one copy of each tool reaches the LLM.
    */
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const effectiveCodeEnvAvailable =
+    privateFilesAllowed && params.codeEnvAvailable === true && agentRequestsCodeExec;
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
@@ -1244,9 +1254,9 @@ export async function initializeAgent(
    * Ensures `getSkillByName` cannot resolve a deactivated skill even if the
    * LLM (or a direct-invocation path) names one.
    */
-  let executableSkillIds = params.accessibleSkillIds;
+  let executableSkillIds = privateFilesAllowed ? params.accessibleSkillIds : [];
   let activeSkillNames: Set<string> | undefined;
-  const { accessibleSkillIds } = params;
+  const accessibleSkillIds = executableSkillIds;
   if (accessibleSkillIds && accessibleSkillIds.length > 0) {
     const skillResult = await injectSkillCatalog({
       agent,
@@ -1355,7 +1365,7 @@ export async function initializeAgent(
           (baseContextTokens > 0 ? Math.min(maxContextTokens, baseContextTokens) : maxContextTokens)
         : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
     ),
-    primedCodeFiles,
+    primedCodeFiles: privateFilesAllowed ? primedCodeFiles : undefined,
     endpointTokenConfig: options.endpointTokenConfig,
   };
 

@@ -5,8 +5,9 @@
  * short trail — never silent loss."
  *
  * What lands here: one row per set/delete/refusal made by the connection pass
- * (consolidate-v2), with the BEFORE value captured at edit time — so even a
- * hard delete leaves its words behind. The spoken window (kade_memory_search
+ * (consolidate-v2), with the BEFORE value captured at edit time. Routine
+ * consolidation removals retain an audit; explicit forgetting erases it.
+ * The spoken window (kade_memory_search
  * `changes` lane) reads this newest-first and says it plainly.
  *
  * SCOPING is the card rule: rows are keyed to the bucket they touched; a
@@ -15,7 +16,13 @@
  * Plain Mongoose on purpose (kadeDiary precedent).
  */
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const {
+  logger,
+  excludedMemoryConversations,
+  memoryPolicyRevision,
+  memorySourceAllowed,
+  memorySourceStorage,
+} = require('@librechat/data-schemas');
 
 const kadeMemoryLedgerSchema = new mongoose.Schema(
   {
@@ -33,6 +40,8 @@ const kadeMemoryLedgerSchema = new mongoose.Schema(
     note: { type: String, default: '' },
     /** 'consolidate-v2' now; future lanes name themselves. */
     source: { type: String, default: 'consolidate-v2' },
+    sourceConversationIds: { type: [String], default: undefined },
+    memoryRevision: { type: Number, default: undefined },
   },
   { timestamps: true },
 );
@@ -44,8 +53,31 @@ const KadeMemoryLedger =
 
 /** Append one row. Never throws — a ledger hiccup must never block an edit
  * (the edit itself is already trailed by the supersede chain in memoryentries). */
-async function addLedger({ userId, agentId = null, key, action, before = '', after = '', note = '', source = 'consolidate-v2' }) {
+async function addLedger({
+  userId,
+  agentId = null,
+  key,
+  action,
+  before = '',
+  after = '',
+  note = '',
+  source = 'consolidate-v2',
+  sourceConversationIds = [],
+}) {
   try {
+    const memorySource = memorySourceStorage.getStore();
+    if (
+      memorySource &&
+      (memorySource.userId !== String(userId) || !(await memorySourceAllowed(memorySource)))
+    )
+      return false;
+    const revision = memorySource?.revision ?? (await memoryPolicyRevision(String(userId)));
+    const sourceIds = [
+      ...new Set([
+        ...sourceConversationIds,
+        ...(memorySource?.conversationIds || (memorySource ? [memorySource.conversationId] : [])),
+      ]),
+    ];
     await KadeMemoryLedger.create({
       userId: String(userId),
       agentId: agentId == null ? null : String(agentId),
@@ -55,6 +87,8 @@ async function addLedger({ userId, agentId = null, key, action, before = '', aft
       after: String(after || '').slice(0, 2000),
       note: String(note || '').slice(0, 500),
       source,
+      sourceConversationIds: sourceIds,
+      memoryRevision: revision,
     });
     return true;
   } catch (e) {
@@ -65,19 +99,38 @@ async function addLedger({ userId, agentId = null, key, action, before = '', aft
 
 /**
  * Read the trail, newest first, scoped like cards (shared + this agent's own).
+ * Model recall is restricted to the current privacy revision. Older audit rows
+ * cannot revive forgotten material, and excluded sources never reach the model.
  * Returns rows shaped for the ear: { when, bucket, key, action, before, after, note }.
  */
 async function readLedger({ userId, agentId = null, limit = 12, sinceDays = null }) {
   try {
+    const uid = String(userId);
+    const [revision, excluded] = await Promise.all([
+      memoryPolicyRevision(uid),
+      excludedMemoryConversations(uid),
+    ]);
     const cap = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 40);
     const filter = {
-      userId: String(userId),
-      $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : [])],
+      userId: uid,
+      $and: [
+        { $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : [])] },
+        {
+          $or: [
+            { memoryRevision: revision },
+            ...(revision === 0 ? [{ memoryRevision: { $exists: false } }] : []),
+          ],
+        },
+      ],
+      ...(excluded.length
+        ? { sourceConversationIds: { $nin: excluded, $exists: true, $ne: [] } }
+        : {}),
     };
     if (sinceDays && Number.isFinite(Number(sinceDays))) {
       filter.createdAt = { $gte: new Date(Date.now() - Number(sinceDays) * 86400000) };
     }
     const rows = await KadeMemoryLedger.find(filter).sort({ createdAt: -1 }).limit(cap).lean();
+    if (revision !== (await memoryPolicyRevision(uid))) return [];
     return rows.map((r) => ({
       when: r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '',
       bucket: r.agentId ? 'own' : 'shared',

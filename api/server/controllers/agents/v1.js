@@ -4,6 +4,7 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
+  generateConversationStarters,
   agentCreateSchema,
   agentUpdateSchema,
   refreshListAvatars,
@@ -344,6 +345,9 @@ const createAgentHandler = async (req, res) => {
   try {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
+    if (agentData.conversation_starters == null) {
+      agentData.conversation_starters = generateConversationStarters(agentData);
+    }
 
     if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
       agentData.model_parameters = removeNullishValues(agentData.model_parameters, true);

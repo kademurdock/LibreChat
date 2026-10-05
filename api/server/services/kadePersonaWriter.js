@@ -45,11 +45,15 @@ RULES ABOUT THE PROMPT ITSELF:
 
 THE QUESTIONS. After the prompt, ask the TWO OR THREE questions whose answers would most improve the NEXT draft. Ask about what is missing or guessed, never about what the brief already told you. The best question is the one that makes the person realise something they had not said yet — "what does she sound like when she disagrees with you?" beats "what is her name?". If the persona is genuinely finished and further questions would only pad it, return no questions at all.
 
+THE STARTING POINTS. Write 24 short messages the PERSON could choose to send TO this particular character to start a conversation. They are user messages, never greetings spoken by the character. Each should open a real conversation, small activity, interesting disagreement, unusual question, or useful task. Ground them in the character's stated interests, world, perspective, specialties and age. Give them several different subjects and shapes, with at least half relying on a concrete detail of THIS persona; do not recycle the same menu across characters. Companions need company, playful curiosity and opinions, not a service desk. Specialists need realistic tasks in their field. Children need their actual age and a natural voice. Never invent shared memories, named real acquaintances, secrets, current events or facts about the person. Never copy hidden rules, private background, tool setup or instructions into a starting point. No "how can I help", introductions, menus, demands for emotional disclosure, or supposed ongoing activities. Each is 12–180 characters, plain spoken text, one per line. These stay outside the persona itself.
+
 OUTPUT FORMAT — exactly this, no preamble, no commentary, no markdown code fences:
 ===PERSONA===
 (the full system prompt)
 ===QUESTIONS===
 (one question per line, numbered; or the single word NONE)
+===STARTERS===
+(24 different messages from the person to the character, one per line)
 ===NOTES===
 (one short plain sentence to the person about what you did and what you guessed)`;
 
@@ -86,13 +90,13 @@ function parsePersonaOutput(raw) {
     const m = text.match(re);
     return m ? m[1].trim() : '';
   };
-  let instructions = grab('PERSONA', 'QUESTIONS|NOTES');
-  const qBlock = grab('QUESTIONS', 'NOTES');
+  let instructions = grab('PERSONA', 'QUESTIONS|STARTERS|NOTES');
+  const qBlock = grab('QUESTIONS', 'STARTERS|NOTES');
   const notes = grab('NOTES', 'PERSONA');
   /* Fail-soft: a model that ignores the format still gives us a persona —
    * better a whole draft with no questions than an error page. */
   if (!instructions) {
-    instructions = text.replace(/^```[a-z]*\n?|```$/gim, '').trim();
+    instructions = text.split(/\n===\s*(?:QUESTIONS|STARTERS|NOTES)\s*===/i)[0].replace(/^```[a-z]*\n?|```$/gim, '').trim();
   }
   instructions = instructions.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
   const questions = qBlock && !/^none\.?$/i.test(qBlock.trim())

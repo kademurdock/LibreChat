@@ -1,3 +1,7 @@
+import type { RelationshipImpressions } from '@librechat/data-schemas';
+import { relationshipImpressionsSchema } from './continuity';
+import { permittedUserEvidence } from './privacy';
+
 export interface Reflection {
   summary: string;
   take?: string;
@@ -5,6 +9,7 @@ export interface Reflection {
   learned?: string;
   curious?: string;
   verdicts?: string;
+  relationship?: RelationshipImpressions;
 }
 
 type ReflectionField = keyof Reflection;
@@ -17,6 +22,7 @@ const LABELS: { [label: string]: ReflectionField } = {
   'WHAT IVE LEARNED FROM THEM': 'learned',
   'CURIOUS ABOUT': 'curious',
   VERDICTS: 'verdicts',
+  RELATIONSHIP: 'relationship',
 };
 
 const SENTINELS: Partial<{ [field in ReflectionField]: RegExp }> = {
@@ -33,7 +39,7 @@ export function parseReflection(text: string): Reflection | null {
   let current: ReflectionField | undefined;
   for (const line of text.split('\n')) {
     const match = line.match(
-      /^\s*(?:#{1,3}\s+)?(?:\*\*)?(SUMMARY|MY TAKE|CARRIED THREAD|WHAT I['’]?VE LEARNED FROM THEM|CURIOUS ABOUT|VERDICTS)(?:\*\*)?\s*:(?:\*\*)?\s*(.*)$/i,
+      /^\s*(?:#{1,3}\s+)?(?:\*\*)?(SUMMARY|MY TAKE|CARRIED THREAD|WHAT I['’]?VE LEARNED FROM THEM|CURIOUS ABOUT|VERDICTS|RELATIONSHIP)(?:\*\*)?\s*:(?:\*\*)?\s*(.*)$/i,
     );
     if (match) {
       current = LABELS[match[1].toUpperCase().replace('’', "'")];
@@ -52,6 +58,16 @@ export function parseReflection(text: string): Reflection | null {
     // A missing/empty section is a format error; only a sentinel intentionally clears it.
     if (value) result[field] = SENTINELS[field]?.test(value) ? '' : value;
   }
+  if (sections.relationship) {
+    try {
+      const parsed = relationshipImpressionsSchema.safeParse(
+        JSON.parse(sections.relationship.join('\n')),
+      );
+      if (parsed.success) result.relationship = parsed.data;
+    } catch {
+      // A malformed private section leaves the previously supported impressions intact.
+    }
+  }
   return result;
 }
 
@@ -67,6 +83,7 @@ export interface ReflectionCursor {
   at: string;
   messageId: string;
   pending: boolean;
+  offRecordConversations?: string[];
 }
 
 function compare(
@@ -93,7 +110,14 @@ export function buildReflectionBatch({
   until: string;
   maxMessages?: number;
   maxChars?: number;
-}): { text: string; cursor: ReflectionCursor; messages: number; conversations: number } | null {
+}): {
+  text: string;
+  userEvidence: string;
+  evidenceTurns: { text: string; at?: string | Date }[];
+  cursor: ReflectionCursor;
+  messages: number;
+  conversations: number;
+} | null {
   const seen = new Set<string>();
   const fresh = turns
     .filter((turn) => {
@@ -124,9 +148,21 @@ export function buildReflectionBatch({
     conversations.add(turn.conversationId);
   }
   const last = fresh[count - 1];
+  const evidence = permittedUserEvidence(
+    fresh.slice(0, count),
+    false,
+    cursor?.offRecordConversations,
+  );
   return {
     text: lines.join('\n\n'),
-    cursor: { at: last.at, messageId: last.messageId, pending: count < fresh.length },
+    userEvidence: evidence.userEvidence,
+    evidenceTurns: evidence.evidenceTurns,
+    cursor: {
+      at: last.at,
+      messageId: last.messageId,
+      pending: count < fresh.length,
+      offRecordConversations: evidence.offRecordConversations,
+    },
     messages: count,
     conversations: conversations.size,
   };

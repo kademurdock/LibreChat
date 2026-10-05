@@ -80,6 +80,8 @@ export interface DeleteMemoryParams {
   userId: string | Types.ObjectId;
   agentId?: string | null;
   key: string;
+  /** Explicit erasure clears derived private state; routine cleanup preserves growth. */
+  forget?: boolean;
 }
 
 export interface GetFormattedMemoriesParams {

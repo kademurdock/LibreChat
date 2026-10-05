@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
+  ownsPrivateMemory,
   toolkitParent,
   createSafeUser,
   mcpToolPattern,
@@ -424,6 +425,7 @@ const loadTools = async ({
     /** KADE LIVING DIARY (Aug 7 2026): explicit archive search. Scope =
      * shared + THIS agent only — enforced server-side in searchDiary. */
     kade_memory_search: {
+      req: options.req,
       userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,
     },
@@ -494,6 +496,7 @@ const loadTools = async ({
 
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
+      if (!ownsPrivateMemory(options.req)) continue;
       requestedTools[tool] = async () => {
         const { files, toolContext } = await primeCodeFiles({
           ...options,
@@ -514,6 +517,9 @@ const loadTools = async ({
       continue;
     } else if (tool === Tools.file_search) {
       requestedTools[tool] = async () => {
+        if (!ownsPrivateMemory(options.req)) {
+          return createFileSearchTool({ userId: '', files: [], fileCitations: false });
+        }
         const { files, toolContext } = await primeSearchFiles({
           ...options,
           agentId: agent?.id,

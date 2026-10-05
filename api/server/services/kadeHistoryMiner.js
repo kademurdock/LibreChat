@@ -30,9 +30,18 @@
  * account ≈ fifty cents. Numbers reported by /status.
  */
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
-const { processMemory, resolveMemoryAgentLLMConfig } = require('@librechat/api');
-const { HumanMessage, AIMessage, getBufferString } = require('@librechat/agents/langchain/messages');
+const { logger, memoryClearCutoff } = require('@librechat/data-schemas');
+const {
+  processMemory,
+  resolveMemoryAgentLLMConfig,
+  permittedUserEvidence,
+  permittedMemoryTurns,
+} = require('@librechat/api');
+const {
+  HumanMessage,
+  AIMessage,
+  getBufferString,
+} = require('@librechat/agents/langchain/messages');
 const { getFormattedMemories, setMemory, getUserKey, getUserKeyValues } = require('~/models');
 const { logDiaryEntry, centralDateString } = require('~/models/kadeDiary');
 const { KadeMiningState } = require('~/models/kadeMiningState');
@@ -74,13 +83,20 @@ NEVER: never call delete_memory (it will refuse); never log the mechanics of the
 
 async function mineOneConversation({ convo, memoryConfig, appConfig }) {
   const userId = String(convo.user);
-  if (await require('@librechat/data-schemas').getConversationMemoryPolicy(userId, convo.conversationId)) return { skipped: 'conversation-memory-excluded' };
+  if (
+    await require('@librechat/data-schemas').getConversationMemoryPolicy(
+      userId,
+      convo.conversationId,
+    )
+  )
+    return { skipped: 'conversation-memory-excluded' };
   const agentId = convo.agent_id ? String(convo.agent_id).slice(0, 64) : undefined;
+  const cutoff = await memoryClearCutoff(userId, agentId);
   const convoDate = centralDateString(new Date(convo.createdAt));
 
   const msgs = await mongoose.models.Message.find({ conversationId: convo.conversationId })
     .sort({ createdAt: 1 })
-    .select('text isCreatedByUser sender content')
+    .select('text isCreatedByUser sender content createdAt')
     .lean();
   const textOf = (m) => {
     if (m.text && m.text.trim()) return m.text;
@@ -92,7 +108,17 @@ async function mineOneConversation({ convo, memoryConfig, appConfig }) {
     }
     return '';
   };
-  const turns = msgs.map((m) => ({ user: Boolean(m.isCreatedByUser), text: textOf(m).trim() })).filter((t) => t.text);
+  const turns = permittedMemoryTurns(
+    msgs
+      .map((m) => ({
+        user: Boolean(m.isCreatedByUser),
+        role: m.isCreatedByUser ? 'user' : 'assistant',
+        text: textOf(m).trim(),
+        at: m.createdAt,
+      }))
+      .filter((t) => t.text),
+    cutoff,
+  );
   if (turns.length < 2) {
     return { skipped: 'too-short' };
   }
@@ -119,6 +145,12 @@ async function mineOneConversation({ convo, memoryConfig, appConfig }) {
     res: stubRes,
     userId,
     agentId,
+    sourceAt: turns[turns.length - 1].at,
+    actualUserEvidence: permittedUserEvidence(turns).userEvidence,
+    actualAssistantEvidence: turns
+      .filter((turn) => !turn.user)
+      .map((turn) => turn.text)
+      .join('\n'),
     messages: [new HumanMessage(`# The old conversation (from ${convoDate}):\n\n${buffer}`)],
     validKeys: undefined,
     llmConfig,
@@ -211,15 +243,25 @@ async function startMining({ scope = 'all', maxPerRun = 150 } = {}) {
           control.entriesLogged += result.logged || 0;
           await KadeMiningState.updateOne(
             { conversationId: String(convo.conversationId) },
-            { $set: { status: result.skipped ? `skipped:${result.skipped}` : 'done', entries: result.logged || 0, minedAt: new Date() } },
+            {
+              $set: {
+                status: result.skipped ? `skipped:${result.skipped}` : 'done',
+                entries: result.logged || 0,
+                minedAt: new Date(),
+              },
+            },
           );
         } catch (e) {
           control.errors += 1;
           control.processed += 1;
-          logger.warn(`[historyMiner] convo ${convo.conversationId} failed (moving on): ${e.message}`);
+          logger.warn(
+            `[historyMiner] convo ${convo.conversationId} failed (moving on): ${e.message}`,
+          );
           await KadeMiningState.updateOne(
             { conversationId: String(convo.conversationId) },
-            { $set: { status: 'error', note: String(e.message).slice(0, 200), minedAt: new Date() } },
+            {
+              $set: { status: 'error', note: String(e.message).slice(0, 200), minedAt: new Date() },
+            },
           ).catch(() => {});
         }
         await new Promise((r) => setTimeout(r, DELAY_MS));
@@ -292,11 +334,25 @@ async function resetMining({ from, to, scope = 'all', dry = false } = {}) {
       .lean();
     const ids = convos.map((c) => String(c.conversationId));
     if (!ids.length) {
-      return { ok: true, window: { from, to }, scope, conversations: 0, cleared: 0, dry: Boolean(dry) };
+      return {
+        ok: true,
+        window: { from, to },
+        scope,
+        conversations: 0,
+        cleared: 0,
+        dry: Boolean(dry),
+      };
     }
     const claimed = await KadeMiningState.countDocuments({ conversationId: { $in: ids } });
     if (dry) {
-      return { ok: true, window: { from, to }, scope, conversations: ids.length, wouldClear: claimed, dry: true };
+      return {
+        ok: true,
+        window: { from, to },
+        scope,
+        conversations: ids.length,
+        wouldClear: claimed,
+        dry: true,
+      };
     }
     const r = await KadeMiningState.deleteMany({ conversationId: { $in: ids } });
     logger.info(
@@ -365,7 +421,10 @@ async function minerStatus() {
     const claimedSet = new Set(claimedRows.map((r) => String(r.conversationId)));
     remaining = ids.reduce((n, id) => n + (claimedSet.has(id) ? 0 : 1), 0);
   } catch (e) {
-    logger.warn('[historyMiner] exact remaining failed, falling back to the old estimate:', e.message);
+    logger.warn(
+      '[historyMiner] exact remaining failed, falling back to the old estimate:',
+      e.message,
+    );
     remaining = Math.max(0, totalConvos - done - skipped - errors);
     remainingExact = false;
   }
@@ -382,7 +441,13 @@ async function minerStatus() {
       errors: control.errors,
       lastConvoId: control.lastConvoId,
     },
-    allTime: { done, skipped, errors, stuckClaims: claimed - (control.running ? 1 : 0), orphanClaims },
+    allTime: {
+      done,
+      skipped,
+      errors,
+      stuckClaims: claimed - (control.running ? 1 : 0),
+      orphanClaims,
+    },
     remaining,
     remainingExact,
     totalConvos,

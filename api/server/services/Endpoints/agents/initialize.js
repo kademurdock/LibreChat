@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator } = require('@librechat/agents');
 const {
   loadSkillStates,
+  ownsPrivateMemory,
   initializeAgent,
   primeInvokedSkills,
   validateAgentModel,
@@ -308,8 +309,10 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    *      `agent.skills` allowlist narrows the catalog; empty/undefined
    *      allowlist with the toggle on = full accessible catalog. */
   const enabledCapabilities = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities);
-  const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
-  const codeEnvAvailable = enabledCapabilities.has(AgentCapabilities.execute_code);
+  const skillsCapabilityEnabled =
+    ownsPrivateMemory(req) && enabledCapabilities.has(AgentCapabilities.skills);
+  const codeEnvAvailable =
+    ownsPrivateMemory(req) && enabledCapabilities.has(AgentCapabilities.execute_code);
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
 

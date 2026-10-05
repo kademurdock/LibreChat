@@ -7,6 +7,8 @@ export interface MemorySource {
   messageId?: string;
   conversationIds?: string[];
   revision?: number;
+  agentId?: string;
+  sourceAt?: string | Date;
   kind: 'conversation' | 'user-correction';
 }
 
@@ -17,11 +19,36 @@ interface MemoryPolicy {
   updatedAt: Date;
 }
 
+interface MemoryClear {
+  userId: string;
+  agentId: string;
+  at: Date;
+}
+
 export const memorySourceStorage: AsyncLocalStorage<MemorySource> =
   new AsyncLocalStorage<MemorySource>();
 const policies = () => mongoose.connection.collection<MemoryPolicy>('kadememorypolicies');
 const epochs = () =>
   mongoose.connection.collection<{ _id: string; revision: number }>('kadememoryepochs');
+const clears = () => mongoose.connection.collection<MemoryClear>('kadememoryclears');
+
+export async function setMemoryClearCutoff(userId: string, agentId?: string | null): Promise<Date> {
+  const at = new Date();
+  await clears().createIndex({ userId: 1, agentId: 1 }, { unique: true });
+  const scope = { userId, agentId: agentId === undefined ? '*' : agentId || '' };
+  await clears().updateOne(scope, { $max: { at } }, { upsert: true });
+  await advanceMemoryPolicyRevision(userId);
+  return (await clears().findOne(scope))?.at || at;
+}
+
+export async function memoryClearCutoff(userId: string, agentId?: string): Promise<Date | null> {
+  const row = await clears()
+    .find({ userId, agentId: { $in: ['*', '', ...(agentId ? [agentId] : [])] } })
+    .sort({ at: -1 })
+    .limit(1)
+    .next();
+  return row?.at || null;
+}
 
 export async function memoryPolicyRevision(userId: string): Promise<number> {
   return (await epochs().findOne({ _id: userId }))?.revision || 0;
@@ -42,6 +69,13 @@ export async function excludedMemoryConversations(userId: string): Promise<strin
 
 export async function memorySourceAllowed(source?: MemorySource): Promise<boolean> {
   if (!source || source.kind === 'user-correction') return true;
+  const cutoff = await memoryClearCutoff(source.userId, source.agentId);
+  const at = source.sourceAt ? new Date(source.sourceAt).getTime() : NaN;
+  if (
+    cutoff &&
+    (!Number.isFinite(cutoff.getTime()) || !Number.isFinite(at) || at <= cutoff.getTime())
+  )
+    return false;
   if (
     source.revision !== undefined &&
     source.revision !== (await memoryPolicyRevision(source.userId))
@@ -53,7 +87,9 @@ export async function memorySourceAllowed(source?: MemorySource): Promise<boolea
     excluded: true,
   });
   if (excluded) return false;
-  const user = await mongoose.models.User?.findById(source.userId).select('personalization').lean();
+  const user = await mongoose.models.User?.findById(source.userId)
+    .select('personalization')
+    .lean<{ personalization?: { memories?: boolean } }>();
   return user?.personalization?.memories !== false;
 }
 

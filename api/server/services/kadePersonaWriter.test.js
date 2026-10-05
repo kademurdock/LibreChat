@@ -43,6 +43,15 @@ test('NONE means no questions, not a question that says NONE', () => {
   assert.deepStrictEqual(out.questions, []);
 });
 
+test('conversation starters remain outside the persona and follow-up questions', () => {
+  const raw = '===PERSONA===\nYou are Rook.\n===QUESTIONS===\n1. What does Rook collect?\n===STARTERS===\nTell me what makes a mystery interesting.\n===NOTES===\nDone.';
+  const out = W.parsePersonaOutput(raw);
+  assert.equal(out.instructions, 'You are Rook.');
+  assert.deepStrictEqual(out.questions, ['What does Rook collect?']);
+  assert.equal(out.notes, 'Done.');
+  assert.match(W.PERSONA_CRAFT, /messages the PERSON could choose to send TO this particular character/);
+});
+
 test('at most three questions survive, however many the model writes', () => {
   const out = W.parsePersonaOutput(
     `===PERSONA===\nYou are Rook.\n===QUESTIONS===\n1. a?\n2. b?\n3. c?\n4. d?\n5. e?\n===NOTES===\nx`,
@@ -55,6 +64,11 @@ test('a model that ignores the format still hands back its draft', () => {
   const out = W.parsePersonaOutput(raw);
   assert.equal(out.instructions, raw);
   assert.deepStrictEqual(out.questions, []);
+});
+
+test('a missing persona label still preserves the draft without swallowing starter metadata', () => {
+  const out = W.parsePersonaOutput('You are Rook.\n===STARTERS===\nTell me a mystery.\n===NOTES===\nDone.');
+  assert.equal(out.instructions, 'You are Rook.');
 });
 
 test('code fences are stripped off an unformatted draft', () => {

@@ -32,6 +32,11 @@ const express = require('express');
 const https = require('https');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
+const {
+  generateConversationStarters,
+  parseConversationStarters,
+  conversationStartersHandler,
+} = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
 const { userPriceFactor, openRouterCost } = require('~/server/services/kadeRealCost');
@@ -321,19 +326,16 @@ function compose(answers) {
     'simple clean solid-color background, rich saturated color, high detail, characterful expression, square, ' +
     'no text, no words, no watermark, no border.';
 
-  const starters = {
-    friend: ["How's your day actually going?", 'Tell me something good that happened this week.', 'I was just thinking about you. What are you up to?'],
-    helper: ['What are we knocking out today?', "What's been sitting on your list too long?", 'Want me to help you plan something?'],
-    story: ['Come in, come in — you made it.', 'You look like someone with a question.', 'Shall I tell you what happened here yesterday?'],
-    elder: ['Sit down, honey. What`s on your mind?', 'You eating enough? Tell me the truth.', 'I was about to make coffee. Talk to me.'],
-    expert: ['What are you curious about today?', 'Ask me anything — start anywhere.', 'What should we dig into?'],
-  }[a.role];
+  const category = a.role === 'story' ? 'roleplay' : a.role === 'helper' ? 'productivity' : a.role === 'expert' ? 'education' : 'friends';
+  const instructions = paragraphs.join('\n\n');
+  const starters = generateConversationStarters({ name: names[0], description: buildDescription(a), instructions, category });
 
   return {
     names,
     description: buildDescription(a),
-    instructions: paragraphs.join('\n\n'),
-    category: a.role === 'story' ? 'roleplay' : a.role === 'helper' ? 'productivity' : a.role === 'expert' ? 'education' : 'friends',
+    instructions,
+    starterInstructions: instructions,
+    category,
     conversation_starters: starters,
     modelKey: modelEntry.key,
     provider: modelEntry.provider,
@@ -391,6 +393,7 @@ function httpsReq(url, { method = 'GET', headers = {}, body = null } = {}) {
 
 const router = express.Router();
 router.use(requireJwtAuth);
+router.post('/starters', express.json({ limit: '256kb' }), conversationStartersHandler);
 
 router.get('/model-menu', (req, res) => {
   res.json({ menu: MODEL_MENU });
@@ -616,6 +619,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       ok: true,
       round,
       instructions: parsed.instructions,
+      conversation_starters: parseConversationStarters(raw, { name, description, instructions: parsed.instructions }),
       questions: parsed.questions,
       notes: parsed.notes,
       /* Part 295 review: what this person paid (the real cost for Kade); the log line keeps the real one. */
@@ -718,6 +722,8 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
       personaRound=out.round; personaQs=out.questions||[]; personaNotes=out.notes||'';
       if(!draft){ draft=await composeFallbackDraft(); }
       draft.instructions=out.instructions;
+      draft.starterInstructions=out.instructions;
+      draft.conversation_starters=out.conversation_starters||draft.conversation_starters;
       if(describeName) draft.names=[describeName].concat(draft.names.filter(function(x){return x!==describeName;}));
       renderPersona(out);
     }catch(e){
@@ -840,7 +846,12 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
     st.textContent='Bringing them to life…'; say('Bringing them to life.');
     try{
       var mk=document.querySelector('input[name=mm]:checked'); var menu=MENU.find(function(m){return m.key===(mk?mk.value:draft.modelKey);})||MENU[0];
-      var body={ name:currentName(), description:document.getElementById('desc').value.trim(), instructions:document.getElementById('inst').value.trim(), provider:menu.provider, model:menu.model, conversation_starters:draft.conversation_starters, category:draft.category, tools:[] };
+      var name=currentName(), description=document.getElementById('desc').value.trim(), instructions=document.getElementById('inst').value.trim();
+      if(instructions!==(draft.starterInstructions||draft.instructions)){
+        var fresh=await api('/api/kade/builder/starters',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,description:description,instructions:instructions,category:draft.category})});
+        draft.conversation_starters=fresh.conversation_starters;
+      }
+      var body={ name:name, description:description, instructions:instructions, provider:menu.provider, model:menu.model, conversation_starters:draft.conversation_starters, category:draft.category, tools:[] };
       var agent=await api('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       if(portraitB64){
         st.textContent='Hanging their portrait…';

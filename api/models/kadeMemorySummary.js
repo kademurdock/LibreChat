@@ -13,7 +13,11 @@
  * build, matching kadeVoicePref / kadeCallTranscript.
  */
 const mongoose = require('mongoose');
-const { excludedMemoryConversations } = require('@librechat/data-schemas');
+const {
+  excludedMemoryConversations,
+  createRelationshipSchemas,
+} = require('@librechat/data-schemas');
+const relationshipSchemas = createRelationshipSchemas(mongoose);
 
 const kadeMemorySummarySchema = new mongoose.Schema(
   {
@@ -43,6 +47,10 @@ const kadeMemorySummarySchema = new mongoose.Schema(
     learned: { type: String, default: '', maxlength: 1200 },
     curious: { type: String, default: '', maxlength: 800 },
     verdicts: { type: String, default: '', maxlength: 1600 },
+    relationship: { type: relationshipSchemas.relationship, default: undefined },
+    relationshipHistory: { type: [relationshipSchemas.revision], default: undefined },
+    impressionsReset: { type: Boolean, default: false },
+    impressionsResetAt: { type: Date },
     lastActivityAt: { type: Date }, // newest conversation/call turn folded in — drives decay
     refreshedAt: { type: Date }, // when the writer last rewrote this summary
     revision: { type: Number, default: 0 },
@@ -53,6 +61,7 @@ const kadeMemorySummarySchema = new mongoose.Schema(
       at: { type: String },
       messageId: { type: String },
       pending: { type: Boolean, default: false },
+      offRecordConversations: { type: [String], default: undefined },
     },
   },
   { timestamps: true },
@@ -68,16 +77,50 @@ async function getMemorySummary(userId, agentId) {
   if (!userId || !agentId) {
     return null;
   }
-  const row = await KadeMemorySummary.findOne({ userId: String(userId), agentId: String(agentId) }).lean();
+  const row = await KadeMemorySummary.findOne({
+    userId: String(userId),
+    agentId: String(agentId),
+  }).lean();
   const excluded = await excludedMemoryConversations(String(userId));
   if (row && (row.invalidated || row.sourceConversationIds?.some((id) => excluded.includes(id)))) {
-    return { ...row, summary: '', take: '', thread: '', learned: '', curious: '', verdicts: '', sourceConversationIds: [] };
+    return {
+      ...row,
+      summary: '',
+      take: '',
+      thread: '',
+      learned: '',
+      curious: '',
+      verdicts: '',
+      relationship: undefined,
+      relationshipHistory: [],
+      sourceConversationIds: [],
+    };
   }
   return row;
 }
 
 /** Upsert the rolling summary for a relationship. Empty/blank summary deletes the row. */
-async function setMemorySummary(userId, agentId, { summary, take, thread, learned, curious, verdicts, agentName, lastActivityAt, source, nightlyCursor, expectedRevision, sourceConversationIds = [] } = {}) {
+async function setMemorySummary(
+  userId,
+  agentId,
+  {
+    summary,
+    take,
+    thread,
+    learned,
+    curious,
+    verdicts,
+    relationship,
+    relationshipHistory,
+    impressionsReset,
+    agentName,
+    lastActivityAt,
+    source,
+    nightlyCursor,
+    expectedRevision,
+    sourceConversationIds = [],
+  } = {},
+) {
   if (!userId || !agentId) {
     return null;
   }
@@ -88,11 +131,21 @@ async function setMemorySummary(userId, agentId, { summary, take, thread, learne
   }
   const excluded = await excludedMemoryConversations(String(userId));
   if (sourceConversationIds.some((id) => excluded.includes(id))) return null;
-  const set = { summary: clean, refreshedAt: new Date(), sourceConversationIds, invalidated: false };
+  const set = {
+    summary: clean,
+    refreshedAt: new Date(),
+    sourceConversationIds,
+    invalidated: false,
+  };
   if (typeof take === 'string') {
     set.take = take.trim().slice(0, 2400);
   }
-  for (const [k, cap] of [['thread', 600], ['learned', 1200], ['curious', 800], ['verdicts', 1600]]) {
+  for (const [k, cap] of [
+    ['thread', 600],
+    ['learned', 1200],
+    ['curious', 800],
+    ['verdicts', 1600],
+  ]) {
     const v = { thread, learned, curious, verdicts }[k];
     if (typeof v === 'string') {
       set[k] = v.trim().slice(0, cap);
@@ -108,13 +161,16 @@ async function setMemorySummary(userId, agentId, { summary, take, thread, learne
     set.source = String(source).slice(0, 24);
   }
   if (nightlyCursor) set.nightlyCursor = nightlyCursor;
+  if (relationship) set.relationship = relationship;
+  if (relationshipHistory) set.relationshipHistory = relationshipHistory.slice(0, 12);
+  if (typeof impressionsReset === 'boolean') set.impressionsReset = impressionsReset;
   const query = { userId: String(userId), agentId: String(agentId) };
   if (expectedRevision === 0) query.$or = [{ revision: 0 }, { revision: { $exists: false } }];
   else if (expectedRevision !== undefined) query.revision = expectedRevision;
   const result = await KadeMemorySummary.updateOne(
     query,
     { $set: set, $inc: { revision: 1 } },
-    { upsert: expectedRevision === undefined || expectedRevision === 0 },
+    { upsert: expectedRevision === undefined || expectedRevision === 0, runValidators: true },
   );
   return result.matchedCount || result.upsertedCount ? clean : null;
 }

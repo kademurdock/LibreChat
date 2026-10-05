@@ -23,9 +23,18 @@
  *  - Env hatch KADE_CALL_MEMORY=0 disables instantly (no redeploy), matching the
  *    KADE_SIGHT / KADE_VOICE_TAGS pattern.
  */
-const { logger } = require('@librechat/data-schemas');
-const { processMemory, resolveMemoryAgentLLMConfig } = require('@librechat/api');
-const { HumanMessage, AIMessage, getBufferString } = require('@librechat/agents/langchain/messages');
+const { logger, memoryClearCutoff } = require('@librechat/data-schemas');
+const {
+  processMemory,
+  resolveMemoryAgentLLMConfig,
+  permittedUserEvidence,
+  permittedMemoryTurns,
+} = require('@librechat/api');
+const {
+  HumanMessage,
+  AIMessage,
+  getBufferString,
+} = require('@librechat/agents/langchain/messages');
 const {
   setMemory,
   deleteMemory,
@@ -58,7 +67,11 @@ async function extractMemoryFromCall(transcriptDoc) {
       return { ran: false, reason: 'no-doc' };
     }
     const userId = String(doc.user);
-    const turns = Array.isArray(doc.turns) ? doc.turns.filter((t) => t && t.text) : [];
+    const cutoff = await memoryClearCutoff(userId, doc.agentId);
+    const turns = permittedMemoryTurns(
+      Array.isArray(doc.turns) ? doc.turns.filter((t) => t && t.text) : [],
+      cutoff,
+    );
     if (turns.length < 2) {
       return { ran: false, reason: 'too-short' }; // nothing worth learning from a one-liner
     }
@@ -66,7 +79,10 @@ async function extractMemoryFromCall(transcriptDoc) {
     /* Run-once guard: atomically claim this transcript. If memoryExtractedAt is
      * already set (a prior /ingest retry got here first), bail — no double-file. */
     const claim = await KadeCallTranscript.updateOne(
-      { _id: doc._id, $or: [{ memoryExtractedAt: { $exists: false } }, { memoryExtractedAt: null }] },
+      {
+        _id: doc._id,
+        $or: [{ memoryExtractedAt: { $exists: false } }, { memoryExtractedAt: null }],
+      },
       { $set: { memoryExtractedAt: new Date() } },
     );
     const claimed = claim && (claim.modifiedCount === 1 || claim.nModified === 1);
@@ -120,6 +136,12 @@ async function extractMemoryFromCall(transcriptDoc) {
       res: stubRes,
       userId,
       agentId,
+      sourceAt: turns[turns.length - 1].at || doc.endedAt,
+      actualUserEvidence: permittedUserEvidence(turns).userEvidence,
+      actualAssistantEvidence: turns
+        .filter((turn) => turn.role !== 'user')
+        .map((turn) => String(turn.text || ''))
+        .join('\n'),
       messages: [new HumanMessage(memoryInput)],
       validKeys: undefined, // free-form memory-cards mode, same as chat
       llmConfig,

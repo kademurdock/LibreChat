@@ -131,10 +131,14 @@ async function runSummarySweep() {
       if (!perRelationship.has(key)) perRelationship.set(key, c);
     }
     // A bounded batch left unfinished yesterday must stay eligible after the lookback window.
-    const backlogs = await KadeMemorySummary.find({ 'nightlyCursor.pending': true }, 'userId agentId').lean();
+    const backlogs = await KadeMemorySummary.find(
+      { 'nightlyCursor.pending': true },
+      'userId agentId',
+    ).lean();
     for (const row of backlogs) {
       const key = `${row.userId}::${row.agentId}`;
-      if (!perRelationship.has(key)) perRelationship.set(key, { user: row.userId, agent_id: row.agentId });
+      if (!perRelationship.has(key))
+        perRelationship.set(key, { user: row.userId, agent_id: row.agentId });
     }
     const targets = Array.from(perRelationship.values()).slice(0, maxPerRun);
     const nameCache = new Map();
@@ -149,35 +153,74 @@ async function runSummarySweep() {
           continue;
         }
         const prior = await getMemorySummary(userId, agentId);
-        const cursor = prior?.nightlyCursor?.at && prior?.nightlyCursor?.messageId ? prior.nightlyCursor : null;
+        const cutoff = await require('@librechat/data-schemas').memoryClearCutoff(userId, agentId);
+        const cursor =
+          prior?.nightlyCursor?.at && prior?.nightlyCursor?.messageId ? prior.nightlyCursor : null;
         const from = cursor ? new Date(cursor.at) : since;
         const until = new Date();
-        const sources = await Conversation.find({
-          user: userId, agent_id: agentId, updatedAt: { $gte: from },
-        }, 'conversationId').lean();
+        const sources = await Conversation.find(
+          {
+            user: userId,
+            agent_id: agentId,
+            updatedAt: { $gte: from },
+          },
+          'conversationId',
+        ).lean();
         const turns = [];
         for (const source of sources) {
-          if (await require('@librechat/data-schemas').getConversationMemoryPolicy(userId, source.conversationId)) continue;
-          const msgs = await db.getMessages({ conversationId: source.conversationId, user: userId });
+          if (
+            await require('@librechat/data-schemas').getConversationMemoryPolicy(
+              userId,
+              source.conversationId,
+            )
+          )
+            continue;
+          const msgs = await db.getMessages({
+            conversationId: source.conversationId,
+            user: userId,
+          });
           for (const m of msgs || []) {
-            if (m.error || m.unfinished || !m.createdAt) continue;
+            if (m.error || m.unfinished) continue;
             turns.push({
-              messageId: m.messageId, conversationId: source.conversationId,
+              messageId: m.messageId,
+              conversationId: source.conversationId,
               role: m.isCreatedByUser ? 'user' : 'assistant',
-              text: summaryTextOf(m).replace(/\[EARLIER IN THIS CONVERSATION[\s\S]*?Reply ONLY to what follows\.\]\s*/gi, ''),
-              at: m.updatedAt || m.createdAt,
+              text: summaryTextOf(m).replace(
+                /\[EARLIER IN THIS CONVERSATION[\s\S]*?Reply ONLY to what follows\.\]\s*/gi,
+                '',
+              ),
+              at: m.createdAt,
             });
           }
         }
         const batch = buildReflectionBatch({
-          turns, cursor, since: since.toISOString(), until: until.toISOString(), maxMessages: maxMsgs,
+          turns: require('@librechat/api').permittedMemoryTurns(
+            turns.sort((a, b) => new Date(a.at) - new Date(b.at)),
+            cutoff,
+          ),
+          cursor,
+          since: since.toISOString(),
+          until: until.toISOString(),
+          maxMessages: maxMsgs,
         });
-        if (!batch) { skipped += 1; continue; }
+        if (!batch) {
+          skipped += 1;
+          continue;
+        }
         const agentName = await agentNameLookup(nameCache, agentId);
         const res = await refreshSummaryFromText({
-          userId, agentId, agentName,
+          userId,
+          agentId,
+          agentName,
           conversationText: batch.text,
-          lastActivityAt: new Date(Math.max(new Date(batch.cursor.at).getTime(), new Date(prior?.lastActivityAt || 0).getTime())),
+          userEvidence: batch.userEvidence,
+          evidenceTurns: batch.evidenceTurns,
+          lastActivityAt: new Date(
+            Math.max(
+              new Date(batch.cursor.at).getTime(),
+              new Date(prior?.lastActivityAt || 0).getTime(),
+            ),
+          ),
           asOf: batch.cursor.at,
           nightlyCursor: batch.cursor,
           source: 'nightly',

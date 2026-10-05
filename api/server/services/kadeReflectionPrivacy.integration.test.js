@@ -99,6 +99,81 @@ test('memory-off blocks relationship reads and writes, including an opt-out duri
       await writer.getRelationshipSummaryText('person', 'friend'),
       /private view/,
     );
+    await librechatApi.forgetRelationshipImpressions({
+      userId: 'person',
+      agentId: 'friend',
+      userEvidence: 'Please forget your private impressions of me.',
+      evidence: 'Please forget your private impressions of me.',
+    });
+    const oldEvidence = 'I knowingly lied to you.';
+    result =
+      'SUMMARY: Factual context from old history.\nMY TAKE: An erased private accusation.\nRELATIONSHIP: ' +
+      JSON.stringify({
+        trust: {
+          stance: 'negative',
+          confidence: 'tentative',
+          basis: 'dishonesty',
+          reason: 'An old accusation.',
+          evidence: oldEvidence,
+          provenance: 'interaction',
+        },
+      });
+    await writer.refreshSummaryFromText({
+      ...args,
+      userEvidence: oldEvidence,
+      evidenceTurns: [{ text: oldEvidence, at: '2000-01-01T00:00:00Z' }],
+    });
+    const reset = await getMemorySummary('person', 'friend');
+    assert.equal(reset.take, '');
+    assert.deepEqual(reset.relationship, {});
+    assert.equal(reset.impressionsReset, true);
+    const { setMemoryClearCutoff } = require('@librechat/data-schemas');
+    const cutoff = await setMemoryClearCutoff('person', 'friend');
+    const oldCalls = calls;
+    const freshAt = new Date(cutoff.getTime() + 1000);
+    const freshEvidence = 'I enjoy talking about music with you.';
+    assert.equal(
+      await writer.refreshSummaryFromText({
+        ...args,
+        lastActivityAt: freshAt,
+        userEvidence: oldEvidence,
+        evidenceTurns: [{ text: oldEvidence, at: '2000-01-01' }],
+      }),
+      null,
+    );
+    assert.equal(
+      await writer.refreshSummaryFromText({
+        ...args,
+        lastActivityAt: freshAt,
+        userEvidence: oldEvidence + freshEvidence,
+        evidenceTurns: [
+          { text: oldEvidence, at: '2000-01-01' },
+          { text: freshEvidence, at: freshAt },
+        ],
+      }),
+      null,
+    );
+    assert.equal(
+      await writer.refreshSummaryFromText({
+        ...args,
+        lastActivityAt: freshAt,
+        userEvidence: oldEvidence,
+        evidenceTurns: [{ text: oldEvidence, at: 'invalid' }],
+      }),
+      null,
+    );
+    assert.equal(calls, oldCalls, 'pre-Clear and mixed historical payloads incur no writer call');
+    result = 'SUMMARY: Fresh factual music context.\nMY TAKE: A fresh conversation.';
+    assert.equal(
+      await writer.refreshSummaryFromText({
+        ...args,
+        lastActivityAt: freshAt,
+        userEvidence: freshEvidence,
+        evidenceTurns: [{ text: freshEvidence, at: freshAt }],
+      }),
+      'Fresh factual music context.',
+    );
+    assert.equal(calls, oldCalls + 1);
   } finally {
     Module._load = original;
     await mongoose.disconnect();
