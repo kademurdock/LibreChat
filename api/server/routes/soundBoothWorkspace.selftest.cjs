@@ -4,7 +4,7 @@ const root=require('path').resolve(__dirname,'../../..');
 const output=process.env.SOUND_BOOTH_TEST_OUTPUT;
 if(output)fs.mkdirSync(output,{recursive:true});
 const shared=require(root+'/api/server/routes/kadePages.js').SHARED_HEAD;
-const context={module:{exports:{}},require:()=>({SHARED_HEAD:shared+'<script>async function getToken(){return "fixture"}</script>'})};
+const context={module:{exports:{}},require:(name)=>name==='./kadePages'?({SHARED_HEAD:shared+'<script>async function getToken(){return "fixture"}</script>'}):require(root+'/api/server/routes/'+name)};
 vm.runInNewContext(fs.readFileSync(root+'/api/server/routes/kadeSoundBoothPage.js','utf8'),context);
 const html=context.module.exports.soundBoothHtml;
 for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new Function(m[1]);
@@ -18,7 +18,7 @@ const sent=[],errors=[];
 let failNextRender=false, referenceResponse;
 const server=http.createServer((req,res)=>{
  if(req.url==='/sound-booth'){res.setHeader('Content-Type','text/html');res.end(html);return;}
- if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end('');return;}
+ if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end(req.url==='/assets/soundbooth/workbench.js'?fs.readFileSync(root+'/client/public/assets/soundbooth/workbench.js','utf8'):'');return;}
  res.setHeader('Content-Type','application/json');
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
  if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',lastError:'Missing worker component. Generation stopped.',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
@@ -27,7 +27,8 @@ const server=http.createServer((req,res)=>{
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
   const body=JSON.parse(raw||'{}');sent.push({url:req.url,body});
-  if(req.url.endsWith('/render'))res.end(JSON.stringify(body.estimateOnly?{estimate:{spoken:body.engine==='scenema'?'No reliable total price estimate. GPU time costs up to $1.22 per hour.':'Fixture price: eight cents.'}}:failNextRender?{queued:true,jobId:'fixture-failure',projectId:'failed-empty',estimate:{spoken:'Fixture queued'}}:{projectId:'music-fixture',spoken:'Fixture recording ready.'}));
+  if(req.url.endsWith('/carry'))res.end(JSON.stringify(require('./kadeSoundBoothCarry').carryOver(body.draft,body.engine)));
+  else if(req.url.endsWith('/render'))res.end(JSON.stringify(body.estimateOnly?{estimate:{spoken:body.engine==='scenema'?'No reliable total price estimate. GPU time costs up to $1.22 per hour.':'Fixture price: eight cents.'}}:failNextRender?{queued:true,jobId:'fixture-failure',projectId:'failed-empty',estimate:{spoken:'Fixture queued'}}:{projectId:'music-fixture',spoken:'Fixture recording ready.'}));
   else if(req.url.endsWith('/reference/lyrics'))res.end(JSON.stringify({transcript:'[Verse]\nTranscribed singing',warning:'Review the draft lyrics.'}));
   else if(req.url.endsWith('/script'))res.end(JSON.stringify({script:body.engine==='yue2'?'Warm folk with guitar\nLyrics:\n[Verse]\nHere are original words':'A newly written performance.',readback:'Fixture draft'}));
   else res.end(JSON.stringify({}));
@@ -41,8 +42,12 @@ const server=http.createServer((req,res)=>{
   await page.addInitScript(()=>{const original=window.setInterval;window.setInterval=(callback,ms,...args)=>original(callback,ms===15000?30:ms,...args);});
   await page.goto('http://127.0.0.1:'+server.address().port+'/sound-booth');
   await page.locator('#app').waitFor({state:'visible'});
+  assert.equal(await page.locator('#recentDrawer').getAttribute('open'),null);
+  await page.locator('#recentDrawer > summary').click();
   await page.getByRole('heading',{name:'Recoverable recording',exact:true}).waitFor();
-  assert.equal(await page.locator('#showFailed').isChecked(),true);
+  assert.equal(await page.locator('#showFailed').isChecked(),false);
+  assert.equal(await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).count(),0);
+  await page.locator('#showFailed').check();
   await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).waitFor();
   await page.locator('#showFailed').uncheck();
   await page.locator('#script').fill('Scenema spoken script');
@@ -147,11 +152,14 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#btnRender').isEnabled(),true,'failure allows another attempt');
   await page.locator('#script').fill('Keep my original idea');
   const beforeWriting=sent.length;
+  const previousIdea=await page.locator('#text').inputValue();
   await page.locator('#btnInspire').click();
-  assert.notEqual(await page.locator('#script').inputValue(),'Keep my original idea');
+  assert.equal(await page.locator('#script').inputValue(),'Keep my original idea');
+  assert.notEqual(await page.locator('#text').inputValue(),previousIdea);
   assert.equal(sent.length,beforeWriting,'inspiration is local and free');
   await page.locator('#btnUndoWriting').click();
   assert.equal(await page.locator('#script').inputValue(),'Keep my original idea');
+  assert.equal(await page.locator('#text').inputValue(),previousIdea);
   await page.locator('#btnDraft').click();
   await page.waitForFunction(()=>document.getElementById('script').value==='A newly written performance.');
   assert.equal(sent.at(-1).body.text,'Keep my original idea');
@@ -210,6 +218,7 @@ const server=http.createServer((req,res)=>{
   assert.equal(sent.at(-1).body.weirdness,70);
   assert.equal(sent.at(-1).body.guidance,1.4);
   assert.equal(sent.length,beforeCover+2,'one transcription, one batch request, no confirmation');
+  await page.locator('.proj').filter({has:page.getByRole('heading',{name:'Recoverable recording',exact:true})}).getByText('Rename saved work',{exact:true}).click();
   await page.locator('#rename_recoverable').fill('Renamed recording');
   await page.locator('[data-rename="recoverable"]').click();
   await page.locator('#status').filter({hasText:'Title saved: Renamed recording'}).waitFor();
@@ -252,6 +261,45 @@ const server=http.createServer((req,res)=>{
   await page.locator('[data-engine="stable"]').click();
   assert.equal(await page.locator('#trackTitle').inputValue(),'Rain at Home');
   assert.equal(await page.locator('#set_soundModel').inputValue(),'3_small_sfx');
+  await page.locator('[data-engine="yue2"]').click();
+  const originalYue=await page.locator('#script').inputValue(), copiedLyrics=await page.locator('#set_lyrics').inputValue();
+  const beforeCopy=sent.length;
+  await page.locator('#btnCopyDraft').click();
+  await page.locator('#status').filter({hasText:'Copied to Lyria'}).waitFor();
+  assert.equal(sent.length,beforeCopy+1);
+  assert.equal(sent.at(-1).url,'/api/kade/sound-booth/carry');
+  assert.equal(sent.at(-1).body.draft.script,originalYue);
+  assert.equal(await page.locator('#script').inputValue(),originalYue);
+  assert.equal(await page.locator('#set_lyrics').inputValue(),copiedLyrics);
+  assert.equal(await page.locator('.clips audio').count(),0,'Lyria receives no unsupported reference');
+  await page.locator('#btnUndoCopy').click();
+  assert.equal(await page.locator('#script').inputValue(),'Edited music direction');
+  assert.equal(await page.locator('#set_lyrics').inputValue(),'[Verse]\\nMy own lyrics'.replace('\\n','\n'));
+  await page.locator('[data-engine="yue2"]').click();
+  assert.equal(await page.locator('#script').inputValue(),originalYue,'source draft remains in its tab');
+  await page.locator('[data-engine="stable"]').click();
+  await page.getByText('Free audio workbench: trim, fade, and add a background',{exact:true}).click();
+  const silentWav=Buffer.alloc(44+88200);
+  silentWav.write('RIFF',0);silentWav.writeUInt32LE(silentWav.length-8,4);silentWav.write('WAVEfmt ',8);
+  silentWav.writeUInt32LE(16,16);silentWav.writeUInt16LE(1,20);silentWav.writeUInt16LE(1,22);
+  silentWav.writeUInt32LE(44100,24);silentWav.writeUInt32LE(88200,28);silentWav.writeUInt16LE(2,32);silentWav.writeUInt16LE(16,34);
+  silentWav.write('data',36);silentWav.writeUInt32LE(88200,40);
+  await page.locator('#mixStart').fill('0.5');
+  await page.locator('#mixMain').setInputFiles({name:'one-second.wav',mimeType:'audio/wav',buffer:silentWav});
+  await page.waitForFunction(()=>Number(document.getElementById('mixEnd').value)===1);
+  assert.equal(await page.locator('#mixStart').inputValue(),'0','choosing a new source clears stale trim start');
+  await page.locator('#mixBuild').click();await page.locator('#mixResult').waitFor({state:'visible'});
+  assert.match(await page.locator('#mixDownload').getAttribute('href'),/^blob:/);
+  await page.locator('#mixUse').click();
+  await page.locator('#status').filter({hasText:'This engine does not accept recordings'}).waitFor();
+  await page.locator('[data-engine="scenema"]').click();
+  await page.locator('[data-rmclip]').click();
+  await page.locator('#mixUse').click();
+  while(!referenceResponse)await new Promise(r=>setTimeout(r,10));
+  referenceResponse.end(JSON.stringify({url:'https://example.test/mix.wav',name:'sound-booth-mix.wav',seconds:1,spoken:'Mix imported.'}));referenceResponse=null;
+  await page.locator('.clips audio source').waitFor({state:'attached'});
+  assert.equal(await page.locator('.clips audio source').getAttribute('src'),'https://example.test/mix.wav');
+  await page.locator('[data-engine="stable"]').click();
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.locator('#btnRender').innerText(),'Generate sounds');
   assert.deepEqual(errors,[]);

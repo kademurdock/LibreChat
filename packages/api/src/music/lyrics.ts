@@ -338,11 +338,12 @@ export function musicFitTempoEnabled(env: NodeJS.ProcessEnv = process.env): bool
 }
 /** What a recording is checked for: `yueCover` for a YuE2 cover of a recording, the only use that
  * may run past six minutes; anything else (Sing it in my voice) keeps six minutes. */
-export type MusicReferenceUse = { yueCover?: boolean; env?: NodeJS.ProcessEnv };
+export type MusicReferenceUse = { yueCover?: boolean; speechEdit?: boolean; env?: NodeJS.ProcessEnv };
 /** The longest recording the booth accepts: 360 s, or for a YuE2 cover up to 400 s with
  * YUE_FIT_TEMPO=1. */
 export function musicReferenceMaxSeconds(use: MusicReferenceUse = {}): number {
   const env = use.env ?? process.env;
+  if (use.speechEdit) return 3600;
   if (use.yueCover !== true || !musicFitTempoEnabled(env)) return COVER_SECONDS;
   const said = Number(env.YUE_FIT_TEMPO_MAX_SECONDS);
   if (!env.YUE_FIT_TEMPO_MAX_SECONDS || !Number.isFinite(said)) return FIT_MAX_SECONDS;
@@ -366,6 +367,7 @@ export function musicReferenceError(
   if (seconds <= max) return;
   const rounded = Math.round(seconds);
   const length = `This recording is ${Math.floor(rounded / 60)} minutes ${rounded % 60} seconds long.`;
+  if (use.speechEdit) return `${length} Import a recording under one hour for speech editing.`;
   if (max <= COVER_SECONDS)
     return `${length} Covers support up to 6 minutes. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
   return `${length} Covers can be up to ${coverLength(max)}: a song over six minutes is sped up a little to fit, and past ${coverLength(max)} that would be too much. Import a shorter recording or an excerpt; your original will not be trimmed automatically.`;
@@ -458,7 +460,7 @@ export async function validateMusicReference(
       const audio = await axios.get<ArrayBuffer>(refreshed, {
         responseType: 'arraybuffer',
         maxRedirects: 0,
-        maxContentLength: 20 * 1024 * 1024,
+        maxContentLength: (use.speechEdit ? 256 : 20) * 1024 * 1024,
         timeout: 45000,
       });
       seconds = (await hooks.duration(Buffer.from(audio.data))) ?? undefined;

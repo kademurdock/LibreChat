@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, musicWritingPrompt, musicWritingSettings, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -23,6 +23,7 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
+const { planAukEdit, isAukStorageReference } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
@@ -172,8 +173,8 @@ router.use(createYueRouter({
     return rest;
   },
   project: async (user, input, sourceText) => {
-    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: input.style,
-      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input), ...(input.my_voice ? { my_voice: myVoiceAutoOptions.on } : {}) }, state: 'queued' });
+    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: yueMusicDirection(input.style),
+      sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, style_strength: input.style_strength, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input), ...(input.my_voice ? { my_voice: myVoiceAutoOptions.on } : {}) }, state: 'queued' });
     return String(p._id);
   },
   update: async job => {
@@ -637,11 +638,15 @@ function cleanLyrics(raw) {
 
 function systemPrompt({ engine, mode }) {
   const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
-  const grammar = engine === 'yue2' ? music + '\nFor YuE2, output a short style direction followed by a Lyrics: heading and complete original lyrics with verse and chorus tags. Always provide both. Do not include lyrics in the style paragraph.' : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
+  const yue = `YUE2 MUSIC FORMAT (the only format you may output):
+Write a concise style direction: language, genre, mood, instruments, lead vocal character and rhythmic feel. Keep production directions out of the lyrics. Do not use XML, dialogue notation, a Negative Tag Box, trained-style trigger words or a Lyria timeline. The lyrics and section layout determine the song's length; a prose duration is a creative aim, not an exact timing control.
+${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
+No code fence, no preamble, no headings other than Lyrics:.`;
+  const grammar = engine === 'yue2' ? yue : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2')
-        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the brief for them in the format below. If they did not say how long, make it a full song of about four minutes when it has sung words, or two minutes when it is instrumental, and say so in the technical line. If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
+        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the direction for them in the format below. If they did not say how long, aim for a full song of about four minutes when it has sung words, or two minutes when it is instrumental.${engine === 'lyria' ? ' Say the requested length in the technical line.' : ' Keep the style concise and use the lyric structure for a complete song.'} If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : engine === 'seed'
           ? `The user has given you a DESCRIPTION of a piece of audio they want made. Write the actual piece in the format below. Honor their requested form and length, including a short ident, jingle or a single narrated voice. When they ask for a story, scene or conversation with people, and have not asked for narration, a monologue or no dialogue, write a developed scene carried by sustained, natural dialogue, with a complete action and ending. Give the people distinct wants and concrete things to do; let their replies change what happens instead of narrating a synopsis of their conversation. Unless they ask for a short piece, use the available space: usually 1,600 to 2,000 characters including concise directions, within the 2,048-character cap. Vary the action and pacing to suit this particular idea; do not impose a two-turn exchange, an obligatory twist or a stock closing line. For music, ambience or effects without speech, keep it wordless and do not pad the description to reach that character range. Do not claim an exact output duration.`
           : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
@@ -1112,7 +1117,7 @@ const GUIDE = {
         { label: 'Separate speech from background', task: 'edit', text: 'Isolate the main speaking voice and remove background sounds and music. Preserve every spoken word.' },
       ],
       where: 'Runs on a rented GPU that sleeps between jobs. Your recording stays in your library.',
-      cost: 'Billed by GPU time, including startup and ten minutes awake after the last job. No total estimate yet.',
+      cost: 'Billed by GPU time, including startup and up to two minutes awake after the last job. No total estimate yet.',
       bestFor: ['expressive speech, in a described or imported voice', 'editing the words, mood, pitch or pace of a recording', 'removing noise or echo, or separating a voice'],
       notFor: ['a whole scene with sounds: use Seed Audio', 'exact accents or word edits without listening back'],
       howToWrite: [
@@ -1127,7 +1132,9 @@ const GUIDE = {
         { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit.', kind: 'text' },
         { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery, used when no reference is attached.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent; Edit changes the recording. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
-        { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Leave blank to keep the length; set it when changing speed or word count.', kind: 'number', min: 0.1, advanced: true },
+        { key: 'edit_start', label: 'Edit from second (optional)', hint: 'Leave blank to start at the beginning. Audio outside the selected section is kept.', kind: 'number', min: 0 },
+        { key: 'edit_end', label: 'Edit to second (optional)', hint: 'Leave blank to edit through the end. Select a short section for word, lyric or speaker edits.', kind: 'number', min: 0.1 },
+        { key: 'gen_seconds', label: 'Target seconds for edit', hint: 'Length of the edited section. Leave blank to keep its length; set it when changing speed or word count.', kind: 'number', min: 0.1, advanced: true },
         { key: 'pace', label: 'Speech pace allowance', hint: 'One is normal; higher is slower, lower is quicker.', kind: 'number', min: 0.5, max: 3, default: 1, advanced: true },
         { key: 'seed', label: 'Seed', hint: 'Reuse a number to repeat a take. A reference keeps a voice steadier than a seed.', kind: 'number', min: 0, max: 4294967295, advanced: true },
       ],
@@ -1146,7 +1153,10 @@ const GUIDE = {
         { key: 'abc', label: 'Optional composition (ABC)', hint: 'An ABC melody score, used instead of a recording.', kind: 'text', advanced: true },
         /* Part 295: the hint lives in packages/api music/yue.ts (yueStyleHint); /health greys the
          * choice out for anyone outside the Family feature pack (withStyleAccess). */
-        ...(yueStylesEnabled() ? [{ key: 'band', label: 'Style', hint: yueStyleHint, kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' }] : []),
+        ...(yueStylesEnabled() ? [
+          { key: 'band', label: 'Style', hint: yueStyleHint, kind: 'choice', options: ['none', ...Object.keys(yueStyles)], default: 'none' },
+          { key: 'style_strength', label: 'Style strength', hint: 'Lower the trained style if words sound unclear. 0 uses plain YuE2; 1 keeps the full style. Applies only when a trained Style is selected.', kind: 'number', min: 0, max: 1, step: 0.1, default: 1, advanced: true },
+        ] : []),
         /* Shown only while YUE_COVERS_V2 is off; with it on, Keep the original chords covers a score too (yue.ts). */
         { key: 'cot', label: 'Following a score (ABC only)', hint: 'Only for an ABC score; a recording always uses Melody. Melody follows the tune with a new arrangement; Full keeps the chords too.', kind: 'choice', options: ['melody','full'], default: 'melody', advanced: true },
         { key: 'count', label: 'Number of takes', hint: '1 to 4 variations; up to two are made at once. Each take uses more GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 1 },
@@ -1362,7 +1372,7 @@ function estimateFor(engine, script, factor = 1) {
     audioSeconds: seconds,
     renderSeconds,
     costUSD,
-    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${(Number(process.env.AUK_RATE_PER_HR || 1.22) * (factor || 1)).toFixed(2)} per hour, including startup, processing and ten minutes awake after the last job. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
+    spoken: `AuK HQ has no reliable total price estimate yet. GPU time costs up to $${(Number(process.env.AUK_RATE_PER_HR || 1.75) * (factor || 1)).toFixed(2)} per hour, including startup, processing and up to two minutes awake after the last job. This is time the GPU is active, not the length of your recording. Longer work runs in sections.`,
   };
 }
 
@@ -1762,7 +1772,9 @@ async function scriptHandler(req, res) {
     const mood = MOODS[b.mood] || null;
     const lines = [];
     lines.push(mode === 'write' ? `WHAT THEY WANT MADE:\n${text}` : `THEIR WORDS:\n${text}`);
-    if (['lyria', 'yue2'].includes(engine) && typeof b.lyrics === 'string' && b.lyrics.trim()) {
+    const instrumentalDraft = ['lyria', 'yue2'].includes(engine) && (b.instrumental === true || /^instrumental\b/i.test(String(b.singing || '')));
+    if (instrumentalDraft) lines.push('INSTRUMENTAL MODE IS SELECTED: write only the music direction. No singing, lyrics or lyric sections.');
+    if (['lyria', 'yue2'].includes(engine) && !instrumentalDraft && typeof b.lyrics === 'string' && b.lyrics.trim()) {
       lines.push(`THEIR EXISTING LYRICS: Keep these words exactly and shape the music around them.\n${b.lyrics.slice(0, 8000)}`);
     }
     /* Oct 2 2026: AuK's voice is a sentence she wrote (or picked off the voice wheel). The desk
@@ -1808,6 +1820,8 @@ async function scriptHandler(req, res) {
       /* The worker's reference mode says only "the same voice" and the words; voice= and any
        * direction are not read at all (auk_contract.py model_instruction). */
       lines.push('A REFERENCE CLIP WILL BE CLONED: the clip supplies the voice, accent and delivery. Write only the spoken words; voice= does not change that recording. Do not add per-line acting directions or promise an accent change.');
+    } else if (engine === 'yue2' && b.reference_voice_url) {
+      lines.push('A REFERENCE SONG IS ATTACHED: it supplies the melody for a new arrangement, not the identity of its singer. Describe the requested style and singing voice without promising a voice clone.');
     } else if (b.reference_voice_url) {
       lines.push('A REFERENCE CLIP WILL BE CLONED: the clip supplies the identity, so spend the voice= description on the CHARACTER and the emotional archetype rather than on physical timbre.');
     }
@@ -1817,7 +1831,7 @@ async function scriptHandler(req, res) {
     /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
      * lyrics are hers and are never scanned or touched. */
     const ownsLyrics = !!writingSettings.model && !(typeof b.lyrics === 'string' && b.lyrics.trim());
-    const wantsWords = ownsLyrics && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
+    const wantsWords = ownsLyrics && !instrumentalDraft && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
     /* Part 293 follow-up: a list of shapes in the prompt came back as one house shape
      * ([Final Chorus] in 10 of 10 songs), so the desk draws ONE section map per request,
      * seeded by the idea, who asked and when (asking again draws again), and the length
@@ -2222,6 +2236,38 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   const editing = engine === 'scenema' && b.auk_task === 'edit';
   if (editing && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
   if (editing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });
+  if (editing && ['edit_start', 'edit_end'].some(key => b[key] != null && (!Number.isFinite(b[key]) || b[key] < 0))) {
+    return res.status(400).json({ error: 'Edit start and end must be seconds inside the recording.' });
+  }
+  let editParts = null;
+  let editReferenceUrl = null;
+  if (editing) {
+    try {
+      if (!isAukStorageReference(b.reference_voice_url)) throw new Error('Import this recording into Sound Booth before editing it.');
+      const url = await validateMusicReference(String(req.user.id), b.reference_voice_url, {
+        ...musicReferenceHooks,
+        refresh: async source => {
+          if (!isAukStorageReference(source)) throw new Error('Import this recording into Sound Booth before editing it.');
+          const refreshed = await freshAssetUrl(source);
+          if (!isAukStorageReference(refreshed)) throw new Error('Import this recording into Sound Booth before editing it.');
+          return refreshed;
+        },
+        savedSources: async user => {
+          const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
+          return assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
+        },
+      }, { speechEdit: true });
+      editReferenceUrl = url;
+      let seconds = await musicReferenceSeconds(String(req.user.id), url);
+      if (!(seconds > 0)) {
+        const audio = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 256 * 1024 * 1024, headers: { 'User-Agent': UA } });
+        seconds = await require('./kadeSoundBoothStitch').durationOf(Buffer.from(audio.data));
+      }
+      editParts = planAukEdit(seconds, b);
+    } catch (error) {
+      return res.status(400).json({ error: errorText(error.message, { name: 'The edit', fallback: 'Import the recording again before editing.' }) });
+    }
+  }
   let script = String(editing ? b.instruction : b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
@@ -2301,9 +2347,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let projectLease = null;
   try {
     const opts = {};
-    if (editing) { opts.auk_task = 'edit'; opts.instruction = script; if (b.gen_seconds != null) opts.gen_seconds = b.gen_seconds; }
+    if (editing) { opts.auk_task = 'edit'; opts.instruction = script; for (const key of ['gen_seconds', 'edit_start', 'edit_end']) if (b[key] != null) opts[key] = b[key]; }
     const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
     if (isUrl(b.reference_voice_url)) opts.reference_voice_url = b.reference_voice_url;
+    if (editReferenceUrl) opts.reference_voice_url = editReferenceUrl;
     /* Seed takes up to three clips (@Audio1–3); AuK takes one. A single
      * imported clip is accepted under either name so the two screens can
      * share one import row. */
@@ -2411,6 +2458,28 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     project.lastRenderAt = new Date();
     project.lastError = undefined;
 
+    if (editing && editParts.length > 1) {
+      const sameOptions = Object.keys({ ...previousOptions, ...opts }).every(key =>
+        JSON.stringify(stableOption(previousOptions[key])) === JSON.stringify(stableOption(opts[key])));
+      const resume = ['failed', 'cancelled'].includes(project.state) && previousScript === script && sameOptions &&
+        project.parts?.length === editParts.length && project.parts.every((part, i) =>
+          part.script === script && part.editStart === editParts[i].editStart && part.editEnd === editParts[i].editEnd &&
+          part.targetSeconds === editParts[i].targetSeconds);
+      project.parts = editParts.map((part, index) => {
+        const previous = resume && project.parts[index];
+        return previous?.state === 'done' ? previous.toObject() : { ...part, index, script, state: 'pending' };
+      });
+      project.stitchedAssetId = undefined;
+      project.state = 'queued';
+      await project.save();
+      const step = await chain.advanceLocked(project);
+      if (step.state === 'failed') return res.status(400).json({ error: project.lastError, projectId: String(project._id) });
+      const spoken = `Editing in ${editParts.length} saved sections. Finished sections are kept if you stop or a later section fails. Keep the booth open to continue; reopening resumes it. Listen to the joins.`;
+      return res.json({ ok: true, jobId: step.jobId || null, projectId: String(project._id), engine, queued: step.state !== 'done',
+        voiceSeed: project.voiceSeed, resumed: resume, multipart: { total: editParts.length, index: 0 },
+        estimate: { ...estimateFor(engine, script, priceFactor(req.user)), spoken }, spoken });
+    }
+
     /* ---- Part 122: TOO LONG IS NO LONGER A REFUSAL ---------------------
      * This used to hand back "split it into parts" — work given to the person
      * least able to do it by eye. Now it cuts at sentence boundaries, renders
@@ -2500,6 +2569,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           agentName: 'Sound Booth',
           prompt: promptToSend,
           auk_task: opts.auk_task,
+          edit_start: opts.edit_start,
+          edit_end: opts.edit_end,
           instruction: opts.instruction,
           gen_seconds: opts.gen_seconds,
           reference_voice_url: opts.reference_voice_url,
@@ -3172,6 +3243,16 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
  * do because you did not like what you got, so what you did not like has to
  * still be there to compare against.
  */
+router.post('/carry', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
+  const body = req.body || {};
+  if (!body.draft || typeof body.draft !== 'object' || Array.isArray(body.draft)) {
+    return res.status(400).json({ error: 'Provide the current draft to copy.' });
+  }
+  const out = carry.carryOver(body.draft, String(body.engine || ''), { toScreenplay: speakToScreenplay });
+  if (!out.ok) return res.status(400).json({ error: out.why });
+  return res.json({ draft: out.draft, notes: out.notes, rewriteAdvised: out.rewriteAdvised });
+});
+
 router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) {
@@ -3365,7 +3446,7 @@ async function storeReference(req, { buffer, ext, engine, name, source }) {
     const norm = engine === 'seed' ? await normalizeReferenceClip(buffer, ext) : null;
     if (engine === 'scenema' || engine === 'yue2' || engine === 'myvoice') {
       clipSeconds = await durationOf(buffer);
-      clipAdvice = engine === 'myvoice' ? 'The original is kept as it is. Choose what is in the file, then Sing it in my voice.' : engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses a voice sample; editing uses the recording.';
+      clipAdvice = engine === 'myvoice' ? 'The original is kept as it is. Choose what is in the file, then Sing it in my voice.' : engine === 'yue2' ? 'The full original is kept. Choose Transcribe reference lyrics for an editable draft of the words. Singing can be misheard; review before generating.' : 'The full original recording is kept. Speech uses the first eight seconds as its voice sample. Editing uses the recording or your selected section.';
     }
     if (norm && norm.buffer && norm.buffer.length > 1000) {
       outBuffer = norm.buffer;

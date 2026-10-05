@@ -79,6 +79,13 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
      * AuK never speaks the description (her Oct 1 preview did). Worker
      * aa31fa8; KADE_AUK_VOICE_SAMPLE=0 turns it off. */
     voice_sample: process.env.KADE_AUK_VOICE_SAMPLE !== '0' && opts?.auk_task !== 'edit' && !opts?.reference_voice_url ? true : undefined,
+    auk_task: opts.auk_task,
+    instruction: opts.instruction,
+    gen_seconds: opts.gen_seconds,
+    edit_start: opts.edit_start,
+    edit_end: opts.edit_end,
+    preserve_before: opts.preserve_before,
+    preserve_after: opts.preserve_after,
   };
   const r = await axios.post(`${bridgeBase()}/audio/scenema/start`, body, {
     headers: { 'User-Agent': UA },
@@ -202,6 +209,13 @@ async function advanceLocked(project, { onStitched } = {}) {
   if (next) {
     try {
       const opts = { ...(project.options || {}) };
+      if (opts.auk_task === 'edit') {
+        opts.edit_start = next.editStart;
+        opts.edit_end = next.editEnd;
+        opts.gen_seconds = next.targetSeconds;
+        opts.preserve_before = next.preserveBefore;
+        opts.preserve_after = next.preserveAfter;
+      }
       const anchor = parts.find((p) => p.state === 'done' && p.audioEngine === 'auk' && p.url);
       if (!opts.reference_voice_url && anchor) opts.reference_voice_url = anchor.wavUrl || anchor.url;
       if (opts.reference_voice_url) opts.reference_voice_url = await freshPartUrl(opts.reference_voice_url);
@@ -215,7 +229,7 @@ async function advanceLocked(project, { onStitched } = {}) {
       next.jobId = jobId;
       next.state = 'queued';
       project.state = 'queued';
-      project.jobs = [...(project.jobs || []), jobId].slice(-40);
+      project.jobs = [...(project.jobs || []), jobId].slice(-160);
       await project.save();
       return { changed: true, state: 'queued', jobId, spoken: sayProgress(project, null) };
     } catch (e) {

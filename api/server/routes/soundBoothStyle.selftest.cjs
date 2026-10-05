@@ -107,6 +107,52 @@ test('a Soul song opens with the lead, runs score-free, and asks the worker for 
   });
 });
 
+test('style strength reaches the worker and zero makes the same request as plain YuE2', () => {
+  withEnv({ YUE_STYLES_ENABLED: '1' }, () => {
+    const song = { script: 'Warm soul, female lead, 80 BPM.', lyrics: '[verse]\nCarry these words home', band: 'soul', seed: 123 };
+    const softer = yue.yueInput({ ...song, style_strength: .5 }, {});
+    assert.equal(softer.lora_scale, .5);
+    assert.equal(softer.style_strength, .5);
+    assert.equal(softer.cot, 'off');
+    assert.match(softer.style, /^kdsoulr/);
+    const off = yue.yueInput({ ...song, style_strength: 0 }, {});
+    const plain = yue.yueInput({ ...song, band: 'none' }, {});
+    assert.equal(off.style_strength, 0);
+    for (const key of ['style', 'lyrics', 'cot', 'lora_key', 'lora_scale', 'seed']) {
+      assert.equal(off[key], plain[key], key);
+    }
+    for (const style_strength of [-.1, 1.1, NaN, Infinity, '0.5', true]) {
+      assert.throws(() => yue.yueInput({ ...song, style_strength }, {}), /Style strength/);
+    }
+    const cover = yue.yueInput({ ...song, style_strength: .5, reference_voice_url: 'https://audio.test/song.wav' }, {});
+    assert.equal(cover.lora_scale, .5);
+    assert.equal(cover.cot, 'melody');
+  });
+});
+
+test('style strength shares the trained-style access lock', () => {
+  const settings = [{ key: 'band', hint: yue.yueStyleHint }, { key: 'style_strength', hint: 'Strength' }];
+  const locked = yue.yueStyleAccess(settings, false, pack.FAMILY_PACK_NOTE);
+  assert.equal(locked[0].locked, pack.FAMILY_PACK_NOTE);
+  assert.equal(locked[1].locked, pack.FAMILY_PACK_NOTE);
+});
+
+test('reopening a styled song never accumulates training triggers or keeps one when style is off', () => {
+  withEnv({ YUE_STYLES_ENABLED: '1' }, () => {
+    const song = { script: 'Female lead, warm piano, 80 BPM.', lyrics: '[verse]\nCarry these words home', band: 'soul' };
+    const first = yue.yueInput(song, {});
+    const reopened = yue.yueInput({ ...song, script: first.style }, {});
+    assert.equal(reopened.style, first.style);
+    assert.equal(reopened.title, first.title);
+    const repeated = `${yue.yueStyles.soul.lead} ${yue.yueStyles.kids.lead} ${first.style}`;
+    assert.equal(yue.yueInput({ ...song, script: repeated }, {}).style, first.style);
+    assert.equal(yue.yueInput({ ...song, script: repeated, style_strength: 0 }, {}).style, song.script);
+    assert.equal(yue.yueInput({ ...song, script: repeated, band: 'none' }, {}).style, song.script);
+    assert.equal(yue.yueMusicDirection(first.style), song.script);
+    assert.equal(yue.yueMusicDirection('A singer describes kdsoulr in the middle.'), 'A singer describes kdsoulr in the middle.');
+  });
+});
+
 /* ---------------- the hint and the lock ----------------------------------- */
 test('the Style hint is true now and names no person or folder', () => {
   const hint = yue.yueStyleHint;

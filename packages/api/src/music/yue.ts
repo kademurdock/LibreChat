@@ -4,7 +4,7 @@ import type { Hooks, Input, InputBody, Output, Provider } from '../audio/jobs';
 import { createAudioRouter } from '../audio/jobs';
 
 export const yueCost =
-  'YuE2 does not deduct from your credit balance yet, and there is no per-song estimate. GPU time is billed by the second, including startup and ten minutes awake after the last job; extra takes and higher settings use more.';
+  'YuE2 does not deduct from your credit balance yet, and there is no per-song estimate. GPU time is billed by the second, including startup and two minutes awake after the last job; extra takes and higher settings use more.';
 
 /* Part 295: what a take costs depends on the card that ran it. RunPod serverless flex prices
  * per second (runpod.io/pricing, updated Sep 13 2026), matched against the worker's `gpu`
@@ -60,6 +60,20 @@ export const yueStyles: Record<string, { key: string; scale: number; lead: strin
     lead: 'kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul.',
   },
 };
+/** Older saved songs stored the worker's training trigger in the editable music direction. */
+export function yueMusicDirection(style: string): string {
+  const leads = [
+    ...Object.values(yueStyles).map((row) => row.lead),
+    'kdsona, in the style of kdsona. English, female lead vocal.',
+  ];
+  let direction = style.trim();
+  let prefix = leads.find((lead) => direction === lead || direction.startsWith(`${lead} `));
+  while (prefix) {
+    direction = direction.slice(prefix.length).trimStart();
+    prefix = leads.find((lead) => direction === lead || direction.startsWith(`${lead} `));
+  }
+  return direction;
+}
 export function yueStylesEnabled(): boolean {
   return process.env.YUE_STYLES_ENABLED === '1';
 }
@@ -88,7 +102,7 @@ export function yueStyleAccess<T extends { key: string; hint: string }>(
 ): Array<T | (T & { locked: string })> {
   if (allowed || !settings.some((setting) => setting.key === 'band')) return settings;
   return settings.map((setting) =>
-    setting.key === 'band'
+    setting.key === 'band' || setting.key === 'style_strength'
       ? { ...setting, hint: `${setting.hint}${yueStyleLockedSentence}`, locked: note }
       : setting,
   );
@@ -200,6 +214,8 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
   const instrumental = covers && yueInstrumentalChoice(body.singing);
   if (typeof body.script !== 'string' || body.script.trim().length < 3 || body.script.length > 3000)
     throw new Error('Describe the music in 3 to 3000 characters.');
+  const direction = yueMusicDirection(body.script);
+  if (direction.length < 3) throw new Error('Describe the music in 3 to 3000 characters.');
   if (instrumental) {
     if (body.lyrics != null && (typeof body.lyrics !== 'string' || body.lyrics.length > 8000))
       throw new Error('Keep Lyrics to 8000 characters. An instrumental sings none of them.');
@@ -236,7 +252,8 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
   const band = body.band && body.band !== 'none' ? body.band : undefined;
   if (band && (!yueStylesEnabled() || !Object.prototype.hasOwnProperty.call(yueStyles, band)))
     throw new Error('That trained style is not available. Choose None or another style.');
-  const trained = band ? yueStyles[band] : undefined;
+  const strength = number(body.style_strength, 1, 0, 1, 'Style strength', false);
+  const trained = band && strength > 0 ? yueStyles[band] : undefined;
   /* The worker refuses an instrumental without a score, and trained styles are singing styles
    * sent score-free, so the booth says so here instead of quietly changing either one. */
   if (trained && instrumental)
@@ -284,8 +301,8 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     !instrumental &&
     (body.my_voice === true || String(body.my_voice ?? '').trim().toLowerCase() === 'on');
   return {
-    style: trained ? `${trained.lead} ${body.script.trim()}`.slice(0, 3000) : body.script.trim(),
-    title: body.title?.trim() || body.script.trim().split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
+    style: trained ? `${trained.lead} ${direction}`.slice(0, 3000) : direction,
+    title: body.title?.trim() || direction.split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
     count: number(body.count, 1, 1, 4, 'Number of takes'),
     weirdness: number(body.weirdness, 50, 0, 100, 'Creative variation'),
     steps: number(body.steps, 32, 16, 64, 'Inference steps'),
@@ -304,8 +321,9 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
             ? 'off'
             : 'full',
     band,
+    ...(body.style_strength != null ? { style_strength: strength } : {}),
     lora_key: trained?.key,
-    lora_scale: trained?.scale,
+    lora_scale: trained ? trained.scale * strength : undefined,
     seed: body.seed ?? Math.floor(Math.random() * 2147483647),
     ...(covers ? coverFields(body, instrumental, keepChords, recording) : {}),
     ...syncFields((body.lyrics || '').trim(), recording, instrumental, env),

@@ -44,7 +44,7 @@ const ENGINES = {
     label: 'YuE2',
     kind: 'music',
     script: 'style',
-    keeps: ['lyrics', 'seed', 'count', 'reference_voice_url'],
+    keeps: ['lyrics', 'seed', 'count', 'reference_voice_url', 'singing'],
   },
   scenema: {
     label: 'AuK',
@@ -113,7 +113,7 @@ function canCarry(from, to) {
  * carrying a song, and it is exact rather than clever. */
 function splitLyricsBlock(brief) {
   const text = String(brief || '');
-  const m = text.match(/\n[ \t]*lyrics[ \t]*:[ \t]*\n?/i);
+  const m = text.match(/(?:^|\n)[ \t]*lyrics[ \t]*:[ \t]*\n?/i);
   if (!m) {
     return { prose: text.trim(), lyrics: '' };
   }
@@ -165,21 +165,6 @@ const SECTION_TAG =
   /\[\s*(intro|verse|chorus|pre-?chorus|bridge|hook|outro|refrain|interlude|breakdown|solo|drop)[^\]]*\]/i;
 function hasSectionTags(text) {
   return SECTION_TAG.test(String(text || ''));
-}
-
-function firstUrl(...values) {
-  for (const v of values) {
-    if (typeof v === 'string' && /^https?:\/\//i.test(v)) {
-      return v;
-    }
-    if (Array.isArray(v)) {
-      const hit = v.find((u) => typeof u === 'string' && /^https?:\/\//i.test(u));
-      if (hit) {
-        return hit;
-      }
-    }
-  }
-  return null;
 }
 
 /* Knobs whose meaning does not change when the engine does. Anything not on
@@ -255,7 +240,7 @@ function carryOver(project, to, helpers = {}) {
 
   /* ---- the words ------------------------------------------------------- */
   if (lyrics && dst.keeps.includes('lyrics')) {
-    options.lyrics = lyrics.slice(0, 8000);
+    options.lyrics = lyrics;
     notes.push(
       hasSectionTags(lyrics)
         ? 'Your lyrics and their section tags came across whole. Both engines read [Verse 1] and [Chorus] the same way.'
@@ -264,7 +249,13 @@ function carryOver(project, to, helpers = {}) {
   } else if (lyrics && !dst.keeps.includes('lyrics')) {
     notes.push(`${dst.label} has no place for lyrics, so the words stayed in the ${src.label} draft.`);
   }
-  if (to === 'yue2' && !options.lyrics) {
+  const instrumental = oldOpts.instrumental === true || /^instrumental\b/i.test(String(oldOpts.singing || ''));
+  if (src.kind === 'music' && dst.kind === 'music') {
+    if (to === 'yue2') options.singing = instrumental ? 'Instrumental, no singing' : 'Sung, with my lyrics';
+    if (to === 'lyria') options.instrumental = instrumental;
+    if (instrumental) notes.push('Instrumental mode came across. Any stored lyrics stay available but will not be sung.');
+  }
+  if (to === 'yue2' && !options.lyrics && !instrumental) {
     notes.push('YuE2 will not sing without words, so put something in Lyrics before you generate.');
   }
 
@@ -277,10 +268,11 @@ function carryOver(project, to, helpers = {}) {
       options[key] = oldOpts[key];
     }
   }
-  const clip = firstUrl(oldOpts.reference_voice_url, oldOpts.audio_urls);
+  const clips = [...new Set([oldOpts.reference_voice_url, ...(Array.isArray(oldOpts.audio_urls) ? oldOpts.audio_urls : [])].filter((url) => typeof url === 'string' && /^https?:\/\//i.test(url)))];
+  const clip = clips[0];
   if (clip) {
     if (dst.keeps.includes('audio_urls')) {
-      options.audio_urls = [clip];
+      options.audio_urls = clips.slice(0, 3);
     }
     if (dst.keeps.includes('reference_voice_url')) {
       options.reference_voice_url = clip;
@@ -290,6 +282,8 @@ function carryOver(project, to, helpers = {}) {
         ? 'The recording you imported came with it.'
         : `${dst.label} does not take an imported recording, so that stayed behind.`,
     );
+    const accepted = options.audio_urls ? options.audio_urls.length : options.reference_voice_url ? 1 : 0;
+    if (accepted && clips.length > accepted) notes.push(`${dst.label} accepts ${accepted === 1 ? 'one reference recording' : 'up to three reference recordings'}. The remaining recordings stay in the original draft.`);
   }
 
   /* ---- what was left behind, said out loud ------------------------------ */
@@ -306,7 +300,7 @@ function carryOver(project, to, helpers = {}) {
   if (oldOpts.guidance !== undefined && to !== 'yue2') {
     dropped.push('guidance');
   }
-  if (oldOpts.instrumental && !dst.keeps.includes('instrumental')) {
+  if (oldOpts.instrumental && dst.kind !== 'music' && !dst.keeps.includes('instrumental')) {
     dropped.push('instrumental switch');
   }
   if (oldOpts.duration !== undefined && !dst.keeps.includes('duration')) {
@@ -327,11 +321,11 @@ function carryOver(project, to, helpers = {}) {
     rewriteAdvised = true;
     if (dst.script === 'brief') {
       notes.push(
-        'Lyria wants a brief -- genre with an era, the instruments, the structure, who sings and a BPM line. What came across is shorter than that, so ask the desk to write it up before you generate.',
+        'Lyria reads a music description. Check the genre, instruments, voice, structure and requested length; you can edit the direction or ask the desk to expand it.',
       );
     } else if (dst.script === 'style' && src.script === 'brief') {
       notes.push(
-        'YuE2 reads a short style direction rather than a full brief, so the description came across long. Trim it, or let the desk shorten it.',
+        'YuE2 reads a concise style direction and separate lyrics. Check the direction for the genre, instruments and voice; you can shorten it or ask the desk to format it.',
       );
     } else if (dst.script === 'scene') {
       notes.push(

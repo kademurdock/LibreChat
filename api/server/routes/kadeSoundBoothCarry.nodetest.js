@@ -158,10 +158,23 @@ test('the destinations offered are only the ones that make sense', () => {
   }
 });
 
-test('YuE2 says plainly that it will not sing without words', () => {
+test('instrumental intent and stored lyrics survive both music-engine directions', () => {
   const out = carry.carryOver({ ...LYRIA, script: 'An instrumental.', options: { instrumental: true } }, 'yue2');
-  assert.ok(out.notes.some((n) => /will not sing without words/.test(n)), out.notes.join(' | '));
-  assert.ok(out.notes.some((n) => /instrumental switch/.test(n)), out.notes.join(' | '));
+  assert.equal(out.draft.options.singing, 'Instrumental, no singing');
+  assert.ok(!out.notes.some((n) => /will not sing without words|instrumental switch/.test(n)), out.notes.join(' | '));
+  const back = carry.carryOver({ ...out.draft, options: { ...out.draft.options, lyrics: LYRICS } }, 'lyria');
+  assert.equal(back.draft.options.instrumental, true);
+  assert.equal(back.draft.options.lyrics, LYRICS);
+  const sung = carry.carryOver({ ...LYRIA, script: 'A song.', options: {} }, 'yue2');
+  assert.ok(sung.notes.some((n) => /will not sing without words/.test(n)));
+});
+
+test('copying never truncates authored lyrics and reports incompatible extra references', () => {
+  const lyrics = 'My authored words\n'.repeat(600).trim();
+  assert.equal(carry.carryOver({ ...YUE, options: { lyrics } }, 'lyria').draft.options.lyrics, lyrics);
+  const out = carry.carryOver({ engine: 'seed', script: 'A scene.', options: { audio_urls: ['https://example.invalid/one.wav', 'https://example.invalid/two.wav'] } }, 'scenema');
+  assert.equal(out.draft.options.reference_voice_url, 'https://example.invalid/one.wav');
+  assert.match(out.notes.join(' '), /remaining recordings stay in the original draft/);
 });
 
 test('the title says where it went, and does not stack up over two hops', () => {

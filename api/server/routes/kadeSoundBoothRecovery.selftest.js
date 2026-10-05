@@ -9,9 +9,18 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { KadeSoundBoothProject: Project } = require('../../models/kadeSoundBoothProject');
 
+function loadEdit() {
+  const mod = { exports: {} };
+  const ts = require('typescript');
+  const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  vm.runInNewContext(code, { module: mod, exports: mod.exports, URL, process });
+  return mod.exports;
+}
+
 test('real project store: quoting, concurrent polls, stop, resume, and new takes', async (t) => {
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
+
   const remote = express(); remote.use(express.json());
   const starts = [], stops = [], uploaded = []; const jobs = new Map();
   remote.post('/audio/scenema/start', (req, res) => {
@@ -24,13 +33,21 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   remote.post('/audio/scenema/cancel', (req, res) => { stops.push(req.body.jobId); res.json({ ok: true, state: jobs.get(req.body.jobId)?.state === 'done' ? 'done' : 'cancelled' }); });
   const remoteServer = remote.listen(0, '127.0.0.1');
   await new Promise((resolve) => remoteServer.on('listening', resolve));
+  t.after(() => { remoteServer.closeAllConnections(); remoteServer.close(); });
   process.env.BRIDGE_URL = process.env.KADE_BRIDGE_URL = 'http://127.0.0.1:' + remoteServer.address().port;
   process.env.BRIDGE_SECRET = 'test-only';
+  const storageEnv = { AWS_ENDPOINT_URL: 'https://example.test', AWS_BUCKET_NAME: 'recordings' };
+  const editHelpers = loadEdit();
+  const validatedReferences = [];
+  let registeredReference;
   const user = new mongoose.Types.ObjectId();
   const module = { exports: {} };
   const localRequire = (name) => {
+    if (name === '~/server/services/kadeJevJudges' || name === '~/models') return {};
+    if (name === '~/server/utils/kadeSongAudience') return require('../utils/kadeSongAudience');
+    if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => express.Router(), guideFor: g => g };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
-    if (name === '@librechat/api') return { createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
+    if (name === '@librechat/api') return { createMyVoiceRouter: () => express.Router(), createLyricsRouter: () => express.Router(), createEffectsRouter: () => express.Router(), effectsGuide: {}, yueStylesEnabled: () => false, yueStyles: {}, validateMusicReference: async (_user, url, hooks) => { validatedReferences.push(url); return hooks.refresh(registeredReference || url); }, musicReferenceSeconds: async () => 61, registerMusicReference: async () => {}, ...editHelpers, isAukStorageReference: url => editHelpers.isAukStorageReference(url, storageEnv), createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
     if (name === './kadeSoundBoothStitch') return { ...require(name), durationOf: async () => 61, normalizeReferenceClip: async () => { throw new Error('Must not trim an AuK source'); } };
     if (name === '~/server/middleware') return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(user) }; next(); } };
     if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
@@ -118,7 +135,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   });
 
   await t.test('AuK edit preserves the instruction and source through quote and submit', async () => {
-    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Replace Tuesday with Thursday.', reference_voice_url: 'https://example.test/source.wav', gen_seconds: 8 };
+    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Replace Tuesday with Thursday.', reference_voice_url: 'https://example.test/recordings/source.wav', gen_seconds: 8 };
     let r = await call('/render', { ...edit, estimateOnly: true });
     assert.equal(r.status, 200); assert.equal(r.data.estimate.audioSeconds, 8);
     const before = starts.length;
@@ -131,6 +148,53 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     assert.equal(saved.script, edit.instruction); assert.equal(saved.options.auk_task, 'edit');
     r = await call('/render', { ...edit, reference_voice_url: undefined }); assert.equal(r.status, 400);
     r = await call('/render', { ...edit, gen_seconds: -1 }); assert.equal(r.status, 400);
+  });
+
+  await t.test('AuK edit rejects arbitrary URLs before fetching or starting a paid job', async () => {
+    const before = starts.length;
+    const checks = validatedReferences.length;
+    for (const reference_voice_url of ['https://127.0.0.1/private', 'https://example.test/another-bucket/source.wav', 'https://example.test.evil.test/recordings/source.wav']) {
+      const result = await call('/render', { engine: 'scenema', auk_task: 'edit', instruction: 'Make this softer.', reference_voice_url });
+      assert.equal(result.status, 400);
+      assert.match(result.data.error, /Import this recording/);
+    }
+    assert.equal(starts.length, before);
+    assert.equal(validatedReferences.length, checks);
+    registeredReference = 'https://169.254.169.254/private';
+    const result = await call('/render', { engine: 'scenema', auk_task: 'edit', instruction: 'Make this softer.', reference_voice_url: 'https://example.test/recordings/source.wav' });
+    registeredReference = undefined;
+    assert.equal(result.status, 400);
+    assert.match(result.data.error, /Import this recording/);
+    assert.equal(starts.length, before);
+  });
+
+  await t.test('long edit checkpoints and resumes only unfinished ranges', async () => {
+    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Make the voice softer.',
+      reference_voice_url: 'https://example.test/recordings/source.wav', seed: 18 };
+    const before = starts.length;
+    const begun = await call('/render', edit);
+    assert.equal(begun.status, 200);
+    assert.equal(begun.data.multipart.total, 2);
+    const first = starts.at(-1);
+    assert.equal(first.edit_start, 0); assert.equal(first.edit_end, 30.5);
+    assert.equal(first.preserve_before, true); assert.equal(first.preserve_after, false);
+    const firstJob = begun.data.jobId;
+    jobs.set(firstJob, { state: 'done', result: { url: 'https://example.test/edit1.mp3',
+      wavUrl: 'https://example.test/edit1.wav', durationS: 30.5, engine: 'auk' }, costUSD: 0.03 });
+    await call('/status/' + firstJob);
+    assert.equal(starts.length, before + 2);
+    assert.equal(starts.at(-1).edit_start, 30.5); assert.equal(starts.at(-1).edit_end, 61);
+    assert.equal(starts.at(-1).reference_voice_url, edit.reference_voice_url);
+    assert.equal(starts.at(-1).preserve_before, false); assert.equal(starts.at(-1).preserve_after, true);
+    let saved = await Project.findById(begun.data.projectId);
+    jobs.set(saved.parts[1].jobId, { state: 'failed', error: 'Provider stopped' });
+    await call('/status/' + firstJob);
+    const resumed = await call('/render', { ...edit, projectId: begun.data.projectId });
+    assert.equal(resumed.status, 200); assert.equal(resumed.data.resumed, true);
+    saved = await Project.findById(begun.data.projectId);
+    assert.equal(saved.parts[0].state, 'done'); assert.equal(saved.parts[0].wavUrl, 'https://example.test/edit1.wav');
+    assert.equal(starts.length, before + 3); assert.equal(starts.at(-1).edit_start, 30.5);
+    assert.equal(saved.costUSD, 0.03);
   });
 
   await t.test('long scripts retain their full text for recovery', async () => {

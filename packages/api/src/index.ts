@@ -160,6 +160,7 @@ export {
   yueCoverSettings,
   yueCoverOptions,
   yueSavedOptions,
+  yueMusicDirection,
   yueProjectWhy,
   yueTakeFacts,
   yueTakeCost,
@@ -327,6 +328,7 @@ export { createDescriptionWallet } from './description/wallet';
 export { createCommunityRouter } from './community/router';
 
 export { monthlyBooks, monthlyWindow, MonthlyWindowError } from './kade/monthly';
+export { planAukEdit, isAukStorageReference } from './speech/edit';
 export type { MonthlyBooksDependencies, MonthlyBooksReport, MonthlyWindow } from './kade/monthly';
 
 export {

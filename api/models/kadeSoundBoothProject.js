@@ -67,6 +67,11 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
         {
           index: { type: Number },
           script: { type: String },
+          editStart: { type: Number },
+          editEnd: { type: Number },
+          targetSeconds: { type: Number },
+          preserveBefore: { type: Boolean },
+          preserveAfter: { type: Boolean },
           jobId: { type: String },
           url: { type: String },
           wavUrl: { type: String },

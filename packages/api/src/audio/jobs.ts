@@ -18,6 +18,7 @@ export type Input = {
   reference_voice_url?: string;
   cot?: 'full' | 'melody' | 'off';
   band?: string;
+  style_strength?: number;
   lora_key?: string;
   lora_scale?: number;
   /* Part 295 YuE2 worker fields, sent only behind YUE_COVERS_V2 (music/yue.ts). */
@@ -204,6 +205,7 @@ export type InputBody = {
   abc?: string;
   cot?: string;
   band?: string;
+  style_strength?: number;
   seed?: number;
   reference_voice_url?: string;
   referenceExpected?: boolean;

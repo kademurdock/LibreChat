@@ -419,7 +419,7 @@ test('Part 230: the desk demands rhyme and one meter, counts syllables itself, a
   assert.doesNotMatch(prompt, /say it plain/i, 'Part 293: the old heading was sung back in a real song and is on her ban list');
   const wander = 'Pop.\n\nLyrics:\n[Verse 1]\nBar is half full and the jukebox is dying tonight again\nYou by the window\nSome fella walked in and he looked you up and he looked you down\nI got a beer\n[Chorus]\nLook at her\n\nREADBACK: x';
   const audit = lyricAuditRequest(wander, [], null);
-  assert.match(audit, /SING-ALONG, the gate this desk fails most/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
+  assert.match(audit, /SING-ALONG/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
   assert.match(audit, /\[Verse 1\] lines run \d+, \d+, \d+, \d+ syllables/);
   const even = 'Pop.\n\nLyrics:\n[Verse 1]\nI saw it lying on the ground\nThe best thing I have ever found\nYou threw the frisbee, I don\'t care\nI dropped it and I left it there\n\nREADBACK: x';
   assert.doesNotMatch(lyricAuditRequest(even, [], null), /Counted by the desk/);
@@ -435,7 +435,7 @@ test('Part 231: a duet line that opens with a singer cue is a sung line, so a re
   assert.ok(merged, 'four sung lines in, four sung lines out');
   assert.match(merged, /\[Her\] I saved you a seat by the door/);
   const audit = lyricAuditRequest(first, [], null);
-  assert.match(audit, /do NOT count syllables yourself/); assert.match(audit, /not a nursery rhyme either/);
+  assert.match(audit, /do not count syllables yourself/i); assert.match(audit, /not a nursery rhyme either/);
 });
 
 /* ---------------- Part 293 (Sep 25 2026): who the song is for, and her ChatGPT prompt ---------------- */
@@ -597,6 +597,43 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
 /* ---------------- Part 293 review fixes ---------------- */
 /** The real Sound Booth route in a sandbox. `reply(body, n)` answers the nth model call; every
  *  router registration is kept in order, so a test can see what runs before what. */
+test('rap audits keep deliberate cadence while melodic audits check uneven verses', () => {
+  const uneven = 'Modern hip-hop, conversational rap.\nLyrics:\n[Verse 1]\nWait\nI brought the invoice with the part you thought I would forget\nRead it\nEvery little number has a name you have not met\nREADBACK: A confrontation.';
+  const rap = lyricAuditRequest(uneven, [], null, [], 'Rap with shifting cadences');
+  assert.match(rap, /FLOW AND MEANING/);
+  assert.doesNotMatch(rap, /Counted by the desk|these verses cannot carry one tune/);
+  assert.match(musicWritingCraft, /Build this singer's own vocabulary and point of view/);
+  assert.match(musicWritingCraft, /GENRE CHOOSES THE TECHNIQUE/);
+});
+
+test('unsaved transfers use the real route without model calls or saved projects', async () => {
+  const booth = loadBooth();
+  const lyrics = '[Verse]\nEvery authored word stays here';
+  const source = { engine: 'yue2', script: 'English, folk, clear alto', title: 'Current edits', sourceText: 'Original idea', options: { lyrics, singing: 'Instrumental, no singing', reference_voice_url: 'https://example.test/song.wav' } };
+  const result = await booth.call('post/carry', { body: { engine: 'lyria', draft: source } });
+  assert.equal(result.code, 200);
+  assert.equal(result.body.draft.options.lyrics, lyrics);
+  assert.equal(result.body.draft.options.instrumental, true);
+  assert.equal(result.body.draft.sourceText, source.sourceText);
+  assert.equal(result.body.draft.id, undefined);
+  assert.equal(result.body.draft.projectId, undefined);
+  assert.equal(result.body.draft.options.reference_voice_url, undefined);
+  assert.match(result.body.notes.join(' '), /does not take an imported recording/);
+  assert.equal(booth.requests.length, 0);
+  assert.equal(booth.ledger.length, 0);
+  assert.equal((await booth.call('post/carry', { body: { engine: 'seed', draft: source } })).code, 400);
+  assert.equal((await booth.call('post/carry', { body: { engine: 'lyria' } })).code, 400);
+});
+
+test('instrumental settings override a sung idea without asking the writer to fill lyrics', async () => {
+  const booth = loadBooth({ reply: () => 'English folk instrumental, acoustic guitar and fiddle.\nREADBACK: A folk instrumental.' });
+  const result = await booth.call('post/script', { user: { id: 'writer-fixture' }, body: { engine: 'yue2', mode: 'write', text: 'A folk song about home', singing: 'Instrumental, no singing' } });
+  assert.equal(result.code, 200);
+  assert.equal(booth.requests.length, 1);
+  assert.match(booth.requests[0].messages[1].content, /INSTRUMENTAL MODE IS SELECTED/);
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /SECTION MAP/);
+});
+
 function loadBooth({ reply, api = {}, middleware, jev, clock, env = {} } = {}) {
   const url = new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), localRequire = createRequire(url);
   const handlers = new Map(), requests = [], ledger = [], registered = [];
@@ -689,7 +726,7 @@ test('Part 293 review: the writing lane\'s music grammar describes the voice, th
   const differing = MUSIC_GRAMMAR.split('\n').filter((line, i) => MUSIC_GRAMMAR_WRITE.split('\n')[i] !== line);
   assert.equal(differing.length, 3, 'exactly the three steps are replaced');
   assert.deepEqual(differing.map(l => l.slice(0, 2)), ['3.', '4.', '6.']);
-  for (const engine of ['yue2', 'lyria']) {
+  for (const engine of ['lyria']) {
     const write = systemPrompt({ engine, mode: 'write' });
     assert.ok(write.includes(MUSIC_GRAMMAR_WRITE), engine);
     assert.doesNotMatch(write, /warm alto|close to the microphone|belting|raspy|two-minute song|\[Intro\] -> \[Verse 1\]|piano alone/, `${engine}: no house voice, map or length`);
@@ -699,6 +736,11 @@ test('Part 293 review: the writing lane\'s music grammar describes the voice, th
     assert.ok(steps.every((at, i) => at > 0 && (i === 0 || at > steps[i - 1])), `${engine}: all six steps, in order`);
     assert.ok(systemPrompt({ engine, mode: 'format' }).includes(MUSIC_GRAMMAR), `${engine}: formatting her words keeps the grammar as it was`);
   }
+  const yue = systemPrompt({ engine: 'yue2', mode: 'write' });
+  assert.match(yue, /YUE2 MUSIC FORMAT/);
+  assert.doesNotMatch(yue, /LYRIA 3.5 MUSIC BRIEF FORMAT|THE TECHNICAL LINE last/);
+  assert.match(yue, /concise style direction/);
+  assert.match(systemPrompt({ engine: 'yue2', mode: 'format' }), /Never invent lyrics/);
 });
 
 test('Part 293 review: Surprise me for a clean audience never draws a dirty shelf idea or genre, and refuses a dirty pitch', async () => {

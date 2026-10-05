@@ -6,6 +6,7 @@
   const field = (name) => document.getElementById(name);
   let resultURL;
   let sourceURL;
+  let resultBlob;
 
   function number(name, min, max) {
     const n = Number(field(name).value);
@@ -49,11 +50,18 @@
     const file = field('mixMain').files[0]; if (!file) return;
     if (sourceURL) URL.revokeObjectURL(sourceURL);
     sourceURL = URL.createObjectURL(file); field('mixOriginal').src = sourceURL;
+    field('mixStart').value = '0';
     field('mixResult').hidden = true;
+    resultBlob = null;
     field('mixOriginal').onloadedmetadata = () => {
       const duration = field('mixOriginal').duration;
       if (Number.isFinite(duration)) { field('mixEnd').value = Math.min(300, duration).toFixed(3); note.textContent = file.name + ': ' + duration.toFixed(1) + ' seconds. Set the start and end of the portion to keep.'; }
     };
+  });
+  field('mixUse').addEventListener('click', () => {
+    if (!resultBlob) return;
+    if (resultBlob.size > 20 * 1024 * 1024) { note.textContent = 'This WAV is over the 20 MB reference limit. Select a shorter portion and make the mix again, or download it.'; return; }
+    window.dispatchEvent(new CustomEvent('soundbooth:use-mix', { detail: { file: new File([resultBlob], 'sound-booth-mix.wav', { type: 'audio/wav' }) } }));
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -79,10 +87,11 @@
       if (bed) track(context, bed, number('mixBedGain', -48, 0), 0, duration, fadeIn, fadeOut, field('mixLoop').checked);
       const output = await context.startRendering();
       if (resultURL) URL.revokeObjectURL(resultURL);
-      resultURL = URL.createObjectURL(wav(output));
+      resultBlob = wav(output);
+      resultURL = URL.createObjectURL(resultBlob);
       field('mixPlayer').src = resultURL; field('mixDownload').href = resultURL;
       field('mixResult').hidden = false;
-      note.textContent = 'Ready: ' + duration.toFixed(1) + ' seconds. Play the mix, then download the WAV. The original files are unchanged. This local mix is not saved to My Creations.';
+      note.textContent = 'Ready: ' + duration.toFixed(1) + ' seconds. Play the mix, download the WAV, or attach it as a reference. It stays on this device until you choose to upload it.';
     } catch (error) { note.textContent = error.name === 'EncodingError' ? 'That file could not be read as audio. Try WAV, MP3, or M4A.' : error.message; }
     finally { if (decoder) await decoder.close().catch(() => {}); button.disabled = false; }
   });
