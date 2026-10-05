@@ -8,7 +8,8 @@ const { effectsGuide } = require(root + '/packages/api/src/audio/effects.ts');
 const backend = fs.readFileSync(root + '/api/server/routes/kadeSoundBooth.js', 'utf8');
 const a = backend.indexOf('const GUIDE = ') + 14, b = backend.indexOf('\n};', a) + 2;
 const guide = vm.runInNewContext('(' + backend.slice(a, b) + ')', { effectsGuide, yueStylesEnabled: () => false, yueStyles: {}, SCREENPLAY_HELP: '', yueCost: '' });
-const context = { module: { exports: {} }, require: name => name === './kadePages' ? { SHARED_HEAD: '<script>async function getToken(){return "offline-fixture"}</script>' } : require(root + '/api/server/routes/' + name) };
+const OWNER = 'aaaaaaaaaaaaaaaaaaaaaaaa', OTHER_OWNER = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+const context = { module: { exports: {} }, require: name => name === './kadePages' ? { SHARED_HEAD: '<script>async function getToken(){return "offline."+btoa(JSON.stringify({id:localStorage.getItem("fixtureOwner")||"' + OWNER + '"}))+".fixture"}</script>' } : require(root + '/api/server/routes/' + name) };
 vm.runInNewContext(fs.readFileSync(root + '/api/server/routes/kadeSoundBoothPage.js', 'utf8'), context);
 const result = { title: 'Ribbon Thief', script: 'Playful folk, guitar and handclaps.\nLyrics:\n[Verse 1]\nA red kite clears the barn', readback: 'A playful kite jingle.' };
 let released = false, polls = 0;
@@ -18,7 +19,12 @@ const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
   if (req.url.endsWith('/health')) { res.end(JSON.stringify({ guide, moods: [] })); return; }
   if (req.url.endsWith('/projects')) { res.end('{"projects":[]}'); return; }
-  if (req.url.includes('/script/job/')) { polls++; res.end(JSON.stringify(released ? { state: 'done', result } : { state: 'working', seconds: 0 })); return; }
+  if (req.url.includes('/script/job/')) {
+    polls++;
+    const owner = JSON.parse(Buffer.from(req.headers.authorization.split('.')[1], 'base64').toString()).id;
+    if (owner !== OWNER) { res.statusCode = 404; res.end('{"error":"That draft is gone."}'); return; }
+    res.end(JSON.stringify(released ? { state: 'done', result } : { state: 'working', seconds: 0 })); return;
+  }
   if (req.method === 'GET') { res.end('{}'); return; }
   let raw = ''; req.on('data', c => raw += c); req.on('end', () => {
     const body = JSON.parse(raw || '{}'); sent.push({ url: req.url, body });
@@ -58,6 +64,38 @@ const server = http.createServer((req, res) => {
     await draft('My title', ''); assert.equal(await page.locator('#trackTitle').inputValue(), '', 'a manual title cleared while waiting is not silently restored');
     await draft(''); await page.locator('#btnUndoWriting').click(); assert.equal(await page.locator('#trackTitle').inputValue(), '');
     await draft(''); await page.locator('#trackTitle').fill('Edited after completion'); await page.locator('#btnUndoWriting').click(); assert.equal(await page.locator('#trackTitle').inputValue(), 'Edited after completion');
+    for (const edits of [['Typed and then cleared', ''], ['Custom title while waiting']]) {
+      await page.locator('#trackTitle').fill('Initial request title'); await page.locator('#script').fill('Another kite song.');
+      released = false; const beforePoll = polls; await page.locator('#btnDraft').click();
+      while (polls === beforePoll) await new Promise(resolve => setTimeout(resolve, 10));
+      for (const title of edits) await page.locator('#trackTitle').fill(title);
+      const beforePost = sent.filter(s => s.url.endsWith('/script')).length;
+      const saved = await page.evaluate(owner => JSON.parse(localStorage.getItem('kadeSoundBoothDraftJob:' + owner)), OWNER);
+      assert.equal(saved.title, edits.at(-1)); assert.equal(saved.titleEdited, true); assert.equal(saved.owner, OWNER); assert.ok(saved.titleRevision > 0);
+      await page.reload(); await page.locator('#app').waitFor({ state: 'visible' });
+      await page.waitForFunction(() => document.getElementById('btnDraft').disabled);
+      released = true; await page.locator('#status').filter({ hasText: 'Draft ready in the editor' }).waitFor();
+      assert.equal(await page.locator('#trackTitle').inputValue(), edits.at(-1), 'cold resume preserves the last manual title, including empty');
+      assert.equal(sent.filter(s => s.url.endsWith('/script')).length, beforePost, 'cold resume reuses the original writer job');
+      assert.equal(await page.evaluate(owner => localStorage.getItem('kadeSoundBoothDraftJob:' + owner), OWNER), null);
+    }
+    await page.evaluate(({ owner, other }) => {
+      localStorage.setItem('kadeSoundBoothDraftJob:' + owner, JSON.stringify({ owner, job: 'other-account-job', engine: 'lyria', title: 'Private account title', titleEdited: true }));
+      localStorage.setItem('kadeSoundBoothDraftJob:' + other, JSON.stringify({ owner, job: 'wrong-owner-record', engine: 'lyria', title: 'Another private title', titleEdited: true }));
+      localStorage.setItem('fixtureOwner', other);
+    }, { owner: OWNER, other: OTHER_OWNER });
+    const beforeAccountPoll = polls, beforeAccountPost = sent.filter(s => s.url.endsWith('/script')).length;
+    await page.reload(); await page.locator('#app').waitFor({ state: 'visible' }); await page.waitForTimeout(950);
+    assert.equal(await page.locator('#trackTitle').inputValue(), '');
+    assert.equal(polls, beforeAccountPoll, 'another account does not poll the saved job');
+    assert.equal(sent.filter(s => s.url.endsWith('/script')).length, beforeAccountPost);
+    assert.ok(await page.evaluate(owner => localStorage.getItem('kadeSoundBoothDraftJob:' + owner), OWNER), 'another account does not remove its saved draft');
+    await page.evaluate(() => localStorage.setItem('kadeSoundBoothDraftJob', 'offline-song|lyria'));
+    await page.reload(); await page.locator('#status').filter({ hasText: 'That draft is gone' }).waitFor();
+    assert.equal(await page.locator('#trackTitle').inputValue(), '', 'an unowned legacy job returns no title');
+    assert.equal(sent.filter(s => s.url.endsWith('/script')).length, beforeAccountPost, 'an unowned legacy job does not start another writer');
+    assert.equal(await page.evaluate(() => localStorage.getItem('kadeSoundBoothDraftJob')), 'offline-song|lyria', 'the other account retains its legacy pending job');
+    await page.evaluate(owner => { localStorage.setItem('fixtureOwner', owner); localStorage.removeItem('kadeSoundBoothDraftJob:' + owner); }, OWNER);
     released = true;
     await page.evaluate(() => { localStorage.setItem('kadeSoundBoothDraftJob', 'offline-song|lyria'); localStorage.setItem('kadeSoundBoothThinkMode', 'high'); });
     const posts = sent.filter(s => s.url.endsWith('/script')).length;
@@ -66,6 +104,6 @@ const server = http.createServer((req, res) => {
     assert.equal(await page.getByRole('button', { name: 'Writing thought: High', exact: true }).count(), 1);
     assert.equal(sent.filter(s => s.url.endsWith('/script')).length, posts, 'resume does not create a second writing request');
     assert.deepEqual(errors, []);
-    console.log('Booth title/High browser checks passed: async/manual/edited/cleared titles, undo, draft restoration, save payload, resume, persisted High and no duplicate writing request.');
+    console.log('Booth title/High browser checks passed: async/manual/edited/cleared titles, cold resume title edits/clears, account isolation, undo, draft restoration, save payload, legacy resume, persisted High and no duplicate writing request.');
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); server.closeAllConnections(); server.close(); process.exitCode = 1; });

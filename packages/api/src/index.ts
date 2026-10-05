@@ -235,7 +235,7 @@ export {
   lyricWritingModel,
   lyricAgentId,
 } from './music/writing';
-export { splitLyricTitle } from './music/title';
+export { splitLyricTitle, lyricTitleFromSong } from './music/title';
 export {
   songIdeaSparks,
   songIdeaSystem,

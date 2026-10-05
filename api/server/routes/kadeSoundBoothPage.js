@@ -234,7 +234,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function uploadEngine(){ var ks=Object.keys((state.guide&&state.guide.engines)||{}).filter(function(k){ return isUpload(k); }); return ks[0]||null; }
     function uploadUi(e){ var g=state.guide.engines[e||state.engine]||{}; return g.ui||{}; }
     function focusWork(){ if(!isUpload()){ document.getElementById('script').focus(); return; } var pick=document.querySelector('#settings input[type=file]'); (pick && !pick.disabled ? pick : document.getElementById('btnRender')).focus(); }
-    function invalidateQuote(event){ if(event&&event.target&&event.target.id==='trackTitle'){state.titleRevision++;return;}state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
+    function invalidateQuote(event){ if(event&&event.target&&event.target.id==='trackTitle'){state.titleRevision++;var kept=pendingDraft();if(kept&&!kept.legacy&&kept.engine===state.engine){kept.title=event.target.value;kept.titleEdited=true;kept.titleRevision=state.titleRevision;pendingDraft(kept);}return;}state.quoteRevision++; state.pendingRender=null; state.estimate=null; document.getElementById('btnRender').textContent=renderLabel(); }
     app.addEventListener('input', invalidateQuote);
     app.addEventListener('change', invalidateQuote);
 
@@ -716,9 +716,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.values.voice_description=data.voice_description; state.deskVoice=data.voice_description; renderSettings();
       return 'The voice it wrote for is now in Describe a new voice.';
     }
-    function takeDeskTitle(data, originalTitle, titleRevision){
+    function takeDeskTitle(data, originalTitle, titleRevision, titleEdited){
       var box=document.getElementById('trackTitle'), title=data&&typeof data.title==='string'?data.title.trim().slice(0,80):'';
-      if((state.engine!=='lyria'&&state.engine!=='yue2') || state.titleRevision!==titleRevision || String(originalTitle||'').trim() || box.value.trim() || !title)return '';
+      if((state.engine!=='lyria'&&state.engine!=='yue2') || titleEdited || state.titleRevision!==titleRevision || String(originalTitle||'').trim() || box.value.trim() || !title)return '';
       if(writingUndo){writingUndo.title=box.value;writingUndo.generatedTitle=title;}
       box.value=title;
       return 'Track title: '+title+'. ';
@@ -803,11 +803,30 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * page asks after it, so the writer can think for minutes. The job id is kept
      * in this browser so leaving the page and coming back finds the draft. */
     var DRAFT_KEY='kadeSoundBoothDraftJob';
-    function draftJob(v){try{if(v===undefined)return localStorage.getItem(DRAFT_KEY)||'';if(v)localStorage.setItem(DRAFT_KEY,v);else localStorage.removeItem(DRAFT_KEY);}catch(e){}return '';}
+    function draftOwner(){try{var encoded=token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'), claims=JSON.parse(atob(encoded));return typeof claims.id==='string'&&/^[a-f0-9]{24}$/i.test(claims.id)?claims.id:'';}catch(e){}return '';}
+    function pendingDraft(value){
+      var owner=draftOwner();if(!owner)return null;
+      var key=DRAFT_KEY+':'+owner;
+      try{
+        if(value===null){localStorage.removeItem(key);return null;}
+        if(value!==undefined){if(value.owner===owner)localStorage.setItem(key,JSON.stringify(value));return value;}
+        var saved=JSON.parse(localStorage.getItem(key)||'null');
+        if(saved&&saved.owner===owner&&/^[a-z0-9_-]{1,96}$/i.test(saved.job||'')&&['lyria','yue2'].indexOf(saved.engine)>=0&&typeof saved.title==='string')return saved;
+        var legacy=(localStorage.getItem(DRAFT_KEY)||'').split('|');
+        if(legacy.length===2&&/^[a-z0-9_-]{1,96}$/i.test(legacy[0])&&['lyria','yue2'].indexOf(legacy[1])>=0)return {job:legacy[0],engine:legacy[1],owner:owner,legacy:true};
+      }catch(e){}return null;
+    }
+    function draftJob(value, titleRevision){
+      if(value===undefined){var saved=pendingDraft();return saved?saved.job+'|'+saved.engine:'';}
+      if(!value){pendingDraft(null);return '';}
+      var parts=value.split('|');pendingDraft({owner:draftOwner(),job:parts[0],engine:parts[1],title:document.getElementById('trackTitle').value,titleEdited:state.titleRevision!==titleRevision,titleRevision:state.titleRevision});return '';
+    }
     async function waitDraft(id){
       var misses=0, lastSaid=0;
       for(var i=0;i<100;i++){
         var g=await get('/api/kade/sound-booth/script/job/'+encodeURIComponent(id));
+        var legacy=pendingDraft();
+        if(g.ok&&legacy&&legacy.legacy&&legacy.job===id){draftJob(id+'|'+legacy.engine,state.titleRevision);try{if(localStorage.getItem(DRAFT_KEY)===id+'|'+legacy.engine)localStorage.removeItem(DRAFT_KEY);}catch(e){}}
         if(g.status===404){draftJob('');return {ok:false,data:g.data};}
         if(!g.ok){misses++;if(misses>6)return {ok:false,data:{error:'Connection lost while waiting for the draft. Choose Help write this again to pick it back up.'}};}
         else if(g.data.state==='done'){draftJob('');return {ok:true,data:g.data.result||{}};}
@@ -822,7 +841,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Part 219: one press. Coming back to the page picks the waiting draft up by
        * itself (see the resume below); nobody presses this twice. */
       var resume=this.getAttribute('data-resume')==='1';this.removeAttribute('data-resume');
-      var box=document.getElementById('script'), original=box.value, originalTitle=document.getElementById('trackTitle').value, titleRevision=state.titleRevision;
+      var box=document.getElementById('script'), original=box.value, originalTitle=document.getElementById('trackTitle').value, titleRevision=state.titleRevision, keptTitle=pendingDraft(), titleEdited=!!(keptTitle&&!keptTitle.legacy&&keptTitle.titleEdited);
       var idea=document.getElementById('text').value.trim();
       var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&idea?idea:original.trim()||idea;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
@@ -840,7 +859,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||'')&&!resume)r=null;}
         if(!r){
           r=await post('/api/kade/sound-booth/script',body);
-          if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job+'|'+engine);r=await waitDraft(r.data.job);}
+          if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job+'|'+engine,titleRevision);r=await waitDraft(r.data.job);}
         }
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
         if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
@@ -848,16 +867,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
         var sorted=sortDraft(engine,r.data,result);
         changeWriting(sorted.result);document.getElementById('readback').textContent=r.data.readback||'';
-        var titleLead=takeDeskTitle(r.data,originalTitle,titleRevision);
+        var titleLead=takeDeskTitle(r.data,originalTitle,titleRevision,titleEdited);
         var voiceLead=takeDeskVoice(r.data,true);
         say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;showWritingThink();document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };
     setTimeout(function(){
-      var kept=draftJob().split('|');
-      if(!kept[0]||busy())return;
-      if((kept[1]==='lyria'||kept[1]==='yue2')&&state.engine!==kept[1]&&setEngine(kept[1])===false)return;
+      var kept=pendingDraft();
+      if(!kept||busy())return;
+      if(state.engine!==kept.engine&&setEngine(kept.engine)===false)return;
+      if(!kept.legacy&&state.titleRevision===0){document.getElementById('trackTitle').value=kept.title;state.titleRevision=Number.isSafeInteger(kept.titleRevision)&&kept.titleRevision>=0?kept.titleRevision:0;}
       var button=document.getElementById('btnDraft');button.setAttribute('data-resume','1');button.click();
     },800);
 

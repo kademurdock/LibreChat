@@ -63,6 +63,7 @@ function loadBooth({ saved, usage, assets, api: extraApi = {}, requires = {} }) 
          * this file exercises the writing desk's model, YuE2 or Stable Audio. */
         writingCost: () => ({ costUSD: 0, measured: false }),
         splitLyricTitle: titleHelpers.splitLyricTitle,
+        lyricTitleFromSong: titleHelpers.lyricTitleFromSong,
         musicWritingSettings: () => ({}),
         musicWritingBackground: () => false,
         labelReadback: (text) => text,

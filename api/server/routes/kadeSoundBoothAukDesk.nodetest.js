@@ -232,6 +232,27 @@ test('the writer supplies separate title metadata without changing a manual titl
   assert.match(yue, /TITLE: metadata line is an exception/);
 });
 
+test('missing or generic title metadata falls back to sung words, never the music direction', async () => {
+  const titles = loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts'));
+  const chorus = 'Warm folk with handclaps.\nLyrics:\n[Verse 1]\nA kite climbs over the barn\n[Chorus]\nRibbon thief, bring back my sky!\nREADBACK: A playful kite jingle.';
+  assert.equal(titles.lyricTitleFromSong(chorus), 'Ribbon thief, bring back my sky');
+  const buildup = 'Warm folk.\nLyrics:\n[Verse - chorus setup]\nThe barn is empty\n[Pre-Chorus]\nA bigger sky awaits\n[Post-Chorus]\nUp through the clouds\n[Final Chorus]\nRibbon thief, bring back my sky!\nREADBACK: A playful kite jingle.';
+  assert.equal(titles.lyricTitleFromSong(buildup), 'Ribbon thief, bring back my sky');
+  assert.equal(titles.lyricTitleFromSong('Warm folk.\nLyrics:\n[Verse 1]\nA red kite clears the barn.\nREADBACK: Descriptive prose.'), 'A red kite clears the barn');
+  assert.equal(titles.lyricTitleFromSong('Warm folk instrumental.'), undefined);
+  assert.equal(titles.lyricTitleFromSong('Warm folk.\nLyrics:\n[Verse 1]\n\nREADBACK: Descriptive prose.'), undefined);
+  for (const prefix of ['', 'TITLE: Untitled\n']) {
+    const draft = prefix + buildup;
+    const desk = booth([draft, draft], { KADE_LYRIC_REPEATS: '0' });
+    const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A short kite jingle.', thinkMode: 'low', notify: false });
+    let polled;
+    for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+    assert.equal(polled.result.state, 'done');
+    assert.equal(polled.result.result.title, 'Ribbon thief, bring back my sky');
+    assert.equal(desk.writerCalls.length, 2, 'only the existing draft and producer revision; fallback has no separate title inference');
+  }
+});
+
 test('a song that reaches the output ceiling is reported rather than returned as a complete draft', async () => {
   const desk = booth([{ text: 'TITLE: Ribbon Thief\nWarm folk.\nLyrics:\n[Verse 1]\nAn unfinished', finishReason: 'length' }]);
   const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A kite song.', thinkMode: 'high', notify: false });
