@@ -27,7 +27,8 @@ export function audioAssetDescription(asset: AudioDescriptionAsset, legacyEdit =
   const metadata = asset.metadata;
   if (metadata?.descriptionSource === 'user' || (metadata?.title && description === metadata.title)) return description;
   if (asset.kind === 'audio' && (metadata?.aukTask === 'edit' || (legacyEdit && legacyAukEditCandidate(asset)))) {
-    return aukEditDescription(metadata?.editInstruction || asset.prompt || '');
+    // A project can be edited again before its earlier take finishes filing.
+    return aukEditDescription(asset.prompt || metadata?.editInstruction || '');
   }
   return description;
 }

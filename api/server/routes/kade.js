@@ -1272,7 +1272,7 @@ router.post('/asset-event', async (req, res) => {
       return res.status(400).json({ error: 'userId, kind (video|image|audio|document) and an http(s) url are required' });
     }
     const { logKadeAsset } = require('~/models/kadeAsset');
-    const editMetadata = kind === 'audio' ? await require('./kadeSoundBoothAssetDescriptions').editMetadataForJob(String(userId), metadata?.jobId) : {};
+    const editMetadata = kind === 'audio' ? await require('./kadeSoundBoothAssetDescriptions').editMetadataForJob(String(userId), metadata?.jobId, prompt) : {};
     await logKadeAsset({
       userId: String(userId),
       kind: String(kind),

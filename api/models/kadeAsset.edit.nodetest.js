@@ -63,10 +63,10 @@ function fixture(env = {}, mirror = async () => null) {
   return { calls, log, enrichAsset };
 }
 
-test('AuK edit is labeled before detached enrichment and never described by a model', async () => {
+test('AuK edit uses the completed take prompt before mutable project metadata and never calls a model', async () => {
   const { calls, log, enrichAsset } = fixture();
   const doc = await log({ metadata: { aukTask: 'edit', editInstruction: '  Make it\n youthful  ' } });
-  assert.equal(doc.description, 'Edit requested: Make it youthful. The recording was processed. Listen to check whether the change worked.');
+  assert.equal(doc.description, 'Edit requested: Make the voice Irish. The recording was processed. Listen to check whether the change worked.');
   assert.equal(calls.scheduled.length, 1);
   assert.equal(calls.updates.length, 0);
   await enrichAsset(doc);
@@ -91,6 +91,8 @@ test('an edit without a prompt still gets an honest result label', async () => {
   const { log } = fixture();
   const doc = await log({ prompt: undefined });
   assert.equal(doc.description, 'Audio edit requested. The recording was processed. Listen to check whether the change worked.');
+  const fallback = await log({ prompt: undefined, metadata: { aukTask: 'edit', editInstruction: 'Make it youthful.' } });
+  assert.match(fallback.description, /^Edit requested: Make it youthful\./);
 });
 
 for (const metadata of [{ descriptionSource: 'user' }, { title: 'My own title' }]) {

@@ -329,7 +329,7 @@ async function logKadeAsset({ userId, kind, service, url, prompt, model, costUSD
       ...(typeof chargedUSD === 'number' ? { chargedUSD } : {}),
       metadata,
       ...(kind === 'audio' && metadata?.aukTask === 'edit'
-        ? { description: require('@librechat/api').aukEditDescription(metadata.editInstruction || prompt || '') }
+        ? { description: require('@librechat/api').aukEditDescription(prompt || metadata.editInstruction || '') }
         : {}),
     });
     // Enrichment runs detached; never blocks or throws into the caller.

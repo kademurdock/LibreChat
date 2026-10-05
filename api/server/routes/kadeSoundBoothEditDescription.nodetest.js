@@ -14,7 +14,7 @@ test('edit result wording distinguishes requests from observed effects and prese
   const asset = { kind: 'audio', service: 'auk_audio', prompt: 'Make the voice Irish.', description: 'An Irish voice speaks.' };
   assert.equal(descriptions.audioAssetDescription(asset), asset.description);
   assert.equal(descriptions.audioAssetDescription(asset, true), 'Edit requested: Make the voice Irish. The recording was processed. Listen to check whether the change worked.');
-  assert.equal(descriptions.audioAssetDescription({ ...asset, metadata: { aukTask: 'edit', editInstruction: 'Make it younger.' } }), descriptions.aukEditDescription('Make it younger.'));
+  assert.equal(descriptions.audioAssetDescription({ ...asset, metadata: { aukTask: 'edit', editInstruction: 'Make it younger.' } }), descriptions.aukEditDescription(asset.prompt));
   assert.equal(descriptions.audioAssetDescription({ ...asset, metadata: { aukTask: 'edit', descriptionSource: 'user' } }), asset.description);
   assert.equal(descriptions.audioAssetDescription({ ...asset, metadata: { title: asset.description } }, true), asset.description);
   assert.equal(descriptions.audioAssetDescription({ ...asset, prompt: '<speak>Hello.</speak>' }, true), asset.description);
@@ -56,6 +56,7 @@ test('actual gallery and asset-event routes label per-take edits without changin
   assert.equal(rows.find(row => row.id === second.id).description, descriptions.aukEditDescription(instruction2));
   assert.equal(rows.find(row => row.id === custom.id).description, 'My own title');
   assert.equal((await KadeAsset.findById(first.id)).description, first.description, 'presentation does not rewrite stored history');
+  await Project.updateOne({ _id: editProject._id }, { $set: { script: 'A newer draft instruction.', 'options.instruction': 'A newer draft instruction.' } });
   const post = userId => fetch(base + '/asset-event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ secret: 'fixture', userId, kind: 'audio', service: 'auk_audio', url: 'https://storage.test/finished.wav', prompt: instruction2, metadata: { jobId: 'current-edit' } }) });
   assert.equal((await post(String(user))).status, 200);
   assert.equal(logged[0].metadata.aukTask, 'edit'); assert.equal(logged[0].metadata.editInstruction, instruction2);

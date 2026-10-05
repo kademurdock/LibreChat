@@ -10,12 +10,12 @@ async function legacyEditAssetIds(assets, user) {
 }
 
 // Single renders arrive through the trusted bridge before detached description enrichment starts.
-async function editMetadataForJob(user, jobId) {
+async function editMetadataForJob(user, jobId, prompt) {
   if (typeof jobId !== 'string' || !jobId) return {};
   const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
   const project = await KadeSoundBoothProject.findOne({ user, engine: 'scenema', 'options.auk_task': 'edit', jobs: jobId,
     $expr: { $eq: [{ $arrayElemAt: ['$jobs', -1] }, jobId] } }).select('options.instruction script').lean();
-  return project ? { aukTask: 'edit', editInstruction: String(project.options?.instruction || project.script || '') } : {};
+  return project ? { aukTask: 'edit', editInstruction: String(prompt || project.options?.instruction || project.script || '') } : {};
 }
 
 module.exports = { legacyEditAssetIds, editMetadataForJob };
