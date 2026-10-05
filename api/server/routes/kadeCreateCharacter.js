@@ -34,7 +34,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, fluxCost } = require('~/models/kadeUsage');
-const { userPriceFactor } = require('~/server/services/kadeRealCost');
+const { userPriceFactor, openRouterCost } = require('~/server/services/kadeRealCost');
 const { SHARED_HEAD } = require('./kadePages');
 const {
   PERSONA_CRAFT,
@@ -587,18 +587,17 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
         .json({ error: 'The writer came back empty-handed. Try again — nothing was charged.' });
     }
 
-    /* MEASURE the cost, do not estimate it. The daily-consolidation decision
-     * printed 26 cents a month before it flipped; this prints the real number
-     * the same way. Usage is what the gateway reports; if it reports nothing,
-     * the fallback is a character-count estimate and it says so in the log. */
+    /* Retain the provider's actual cost, including cache and regional prices.
+     * When no USD cost is reported, label the token/character fallback as an estimate. */
     const usage = (r.data && r.data.usage) || {};
     const inTok = Number(usage.prompt_tokens || 0);
     const outTok = Number(usage.completion_tokens || 0);
-    const measured = inTok > 0 || outTok > 0;
-    const costUSD = measured
+    const reportedCost = openRouterCost(usage);
+    const measured = reportedCost !== null;
+    const costUSD = reportedCost ?? (inTok > 0 || outTok > 0
       ? (inTok * PERSONA_PRICE_IN + outTok * PERSONA_PRICE_OUT) / 1e6
       : ((userContent.length + PERSONA_CRAFT.length) / 4 * PERSONA_PRICE_IN +
-          (raw.length / 4) * PERSONA_PRICE_OUT) / 1e6;
+          (raw.length / 4) * PERSONA_PRICE_OUT) / 1e6);
 
     personaCounts.set(req.user.id, used + 1);
     logKadeUsage({
@@ -610,7 +609,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       metadata: { via: 'character-builder', model: PERSONA_MODEL, round, inTok, outTok, measured },
     }).catch(() => {});
     logger.info(
-      `[kadeBuilder] write-persona round=${round} model=${PERSONA_MODEL} in=${inTok} out=${outTok} cost=$${costUSD.toFixed(5)}${measured ? '' : ' (ESTIMATED — gateway reported no usage)'} ${Date.now() - started}ms ${parsed.instructions.length}ch`,
+      `[kadeBuilder] write-persona round=${round} model=${PERSONA_MODEL} in=${inTok} out=${outTok} cost=$${costUSD.toFixed(5)}${measured ? '' : ' (ESTIMATED — gateway reported no USD cost)'} ${Date.now() - started}ms ${parsed.instructions.length}ch`,
     );
 
     res.json({

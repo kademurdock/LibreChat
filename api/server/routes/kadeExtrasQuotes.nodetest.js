@@ -86,7 +86,7 @@ test('a finished Library description says what the asker paid (the real cost for
   assert.match(source, /chargedUSD = extraChargeUSD\(result\.costUSD, req\.user && req\.user\.role\)/, 'the done handler stores the charge');
 });
 
-function loadBuilder(logged) {
+function loadBuilder(logged, usage = { prompt_tokens: 10000, completion_tokens: 20000 }) {
   const handlers = {};
   const router = {
     use() {},
@@ -98,7 +98,7 @@ function loadBuilder(logged) {
     express,
     https: {},
     axios: {
-      post: async () => ({ data: { choices: [{ message: { content: 'draft' } }], usage: { prompt_tokens: 10000, completion_tokens: 20000 } } }),
+      post: async () => ({ data: { choices: [{ message: { content: 'draft' } }], usage } }),
     },
     '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } },
     '~/server/middleware': { requireJwtAuth() {} },
@@ -167,9 +167,26 @@ test("the character builder's portrait line and persona price are this person's 
     await handlers['POST /write-persona']({ user, body: { description: 'A warm, funny neighbour.' } }, res);
     return res.body;
   };
-  /* 10,000 in at $0.075/M and 20,000 out at $0.25/M: $0.00575 real. */
-  assert.equal((await write(AMBER)).costUSD, 0.0115, 'she is told what her balance paid');
-  assert.equal((await write(KADE)).costUSD, 0.00575, 'Kade is told the real cost');
+  /* Sol: 10,000 in at $2/M and 20,000 out at $10/M: $0.22 estimated. */
+  const regular = await write(AMBER);
+  assert.equal(regular.costUSD, 0.44, 'the regular-user estimate includes the contribution once');
+  assert.equal(regular.costMeasured, false, 'token counts alone are not measured USD cost');
+  assert.equal((await write(KADE)).costUSD, 0.22, 'Kade is told the provider estimate');
   assert.equal(logged.length, 2);
-  assert.ok(logged.every((r) => Math.abs(r.costUSD - 0.00575) < 1e-12), 'the row keeps the real cost; logKadeUsage charges the factor');
+  assert.ok(logged.every((r) => Math.abs(r.costUSD - 0.22) < 1e-12), 'the row keeps the provider estimate; logKadeUsage charges the factor');
+});
+
+test('persona drafts retain regional or cached measured cost rather than repricing their tokens', async () => {
+  for (const cost of [0.242, 0]) {
+    const logged = [];
+    const { handlers } = loadBuilder(logged, {
+      prompt_tokens: 10000, completion_tokens: 20000, cost,
+      is_byok: false, cost_details: { upstream_inference_cost: cost },
+    });
+    const res = response();
+    await handlers['POST /write-persona']({ user: AMBER, body: { description: 'A fictional neighbour.' } }, res);
+    assert.equal(res.body.costUSD, Number((cost * 2).toFixed(5)));
+    assert.equal(res.body.costMeasured, true);
+    assert.equal(logged[0].costUSD, cost, 'the restated upstream amount is not added twice');
+  }
 });
