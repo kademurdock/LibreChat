@@ -23,7 +23,7 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
-const { planAukEdit, isAukStorageReference } = require('@librechat/api');
+const { planAukEdit, isAukStorageReference, isAukOwnedReference } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
@@ -2244,18 +2244,29 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   if (editing) {
     try {
       if (!isAukStorageReference(b.reference_voice_url)) throw new Error('Import this recording into Sound Booth before editing it.');
-      const url = await validateMusicReference(String(req.user.id), b.reference_voice_url, {
+      const user = String(req.user.id);
+      let assetSources;
+      const savedSources = async () => {
+        if (!assetSources) {
+          const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
+          assetSources = assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
+        }
+        return assetSources;
+      };
+      const requireOwned = async source => {
+        if (isAukOwnedReference(user, source)) return;
+        if (!isAukOwnedReference(user, source, await savedSources())) throw new Error('That recording is not saved on your account. Import it again.');
+      };
+      await requireOwned(b.reference_voice_url);
+      const url = await validateMusicReference(user, b.reference_voice_url, {
         ...musicReferenceHooks,
         refresh: async source => {
-          if (!isAukStorageReference(source)) throw new Error('Import this recording into Sound Booth before editing it.');
+          await requireOwned(source);
           const refreshed = await freshAssetUrl(source);
-          if (!isAukStorageReference(refreshed)) throw new Error('Import this recording into Sound Booth before editing it.');
+          await requireOwned(refreshed);
           return refreshed;
         },
-        savedSources: async user => {
-          const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
-          return assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
-        },
+        savedSources,
       }, { speechEdit: true });
       editReferenceUrl = url;
       let seconds = await musicReferenceSeconds(String(req.user.id), url);

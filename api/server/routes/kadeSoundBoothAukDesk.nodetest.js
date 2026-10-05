@@ -271,7 +271,7 @@ test('Describe a new voice still wins at render, and now says so when the script
 test('an AuK edit is saved and shown as an edit, never as a script to hear', async () => {
   const instruction = 'Make the delivery cheerful. Preserve the words.';
   const desk = booth();
-  await desk.render({ auk_task: 'edit', instruction, reference_voice_url: 'https://example.invalid/recordings/take.wav', readback: 'Whatever the screen showed.' });
+  await desk.render({ auk_task: 'edit', instruction, reference_voice_url: 'https://example.invalid/recordings/audios/offline-owner/take.wav', readback: 'Whatever the screen showed.' });
   assert.equal(desk.bridgeCalls[0].auk_task, 'edit');
   assert.equal(desk.bridgeCalls[0].instruction, instruction);
   assert.equal(desk.saved.at(-1).readback, `Your imported recording, edited: ${instruction}`);

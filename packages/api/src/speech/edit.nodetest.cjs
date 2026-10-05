@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planAukEdit, isAukStorageReference } = (() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, 'edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process }); return mod.exports; })();
+const { planAukEdit, isAukStorageReference, isAukOwnedReference } = (() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(require('node:path').join(__dirname, 'edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process }); return mod.exports; })();
 
 test('edit references stay inside configured storage buckets, with signed URLs preserved', () => {
   const env = { AWS_ENDPOINT_URL: 'https://s3.us-west-004.backblazeb2.com', AWS_BUCKET_NAME: 'recordings', KADE_MEDIA_BUCKET: 'masters' };
@@ -50,6 +50,21 @@ test('B2 configured mixed-case bucket names retain exact path matching and DNS c
   assert.equal(isAukStorageReference('https://s3.us-east-005.backblazeb2.com/kademurdockchat/audio/take.wav', env), false);
   assert.equal(isAukStorageReference('https://s3.us-east-005.backblazeb2.com/Kademurdockchat-other/audio/take.wav', env), false);
   assert.equal(isAukStorageReference('https://Kademurdockchat.s3.us-east-005.backblazeb2.com.evil.test/audio/take.wav', env), false);
+});
+
+test('edit ownership comes from the import namespace or an owned asset, never a registered URL alone', () => {
+  const env = { AWS_ENDPOINT_URL: 'https://s3.us-east-005.backblazeb2.com', AWS_BUCKET_NAME: 'Kademurdockchat' };
+  const base = 'https://s3.us-east-005.backblazeb2.com/Kademurdockchat/';
+  assert.equal(isAukOwnedReference('owner', base + 'audios/owner/soundbooth-ref.wav?X-Amz-Signature=new', [], env), true);
+  assert.equal(isAukOwnedReference('owner', 'https://kademurdockchat.s3.us-east-005.backblazeb2.com/audios/owner/take.wav', [], env), true);
+  for (const key of ['audios/other/take.wav', 'audios/owner-other/take.wav', 'audios/owner', 'audios/owner/', 'auk/unowned.wav', 'audios/owner/../other/take.wav', 'audios/owner/%2e%2e/other/take.wav', 'audios/owner/%2e%2e%2fother/take.wav', 'audios/owner/%2f..%2fother/take.wav', 'audios/owner%2f..%2fother/take.wav', 'audios/owner/%5c..%5cother.wav', 'audios/owner/%252e%252e%252fother/take.wav', 'audios/owner/%25252e%25252e%25252fother/take.wav']) {
+    assert.equal(isAukOwnedReference('owner', base + key, [], env), false, key);
+  }
+  const master = base + 'auk/owned-master.wav?X-Amz-Signature=old';
+  assert.equal(isAukOwnedReference('owner', base + 'auk/owned-master.wav?X-Amz-Signature=new', [master], env), true);
+  assert.equal(isAukOwnedReference('owner', 'https://kademurdockchat.s3.us-east-005.backblazeb2.com/auk/owned-master.wav', [master], env), true);
+  assert.equal(isAukOwnedReference('owner', base + 'auk/other-master.wav', [master], env), false);
+  assert.equal(isAukOwnedReference('owner', base + 'audios/other/take.wav', [master], env), false);
 });
 
 test('long edits preserve the entire input once and bound each paid job', () => {

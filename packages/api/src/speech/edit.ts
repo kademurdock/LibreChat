@@ -12,33 +12,54 @@ export interface AukEditPart {
   preserveAfter: boolean;
 }
 
-/** Ownership is checked separately; this bounds every edit download to configured object storage. */
-export function isAukStorageReference(value: string, env: NodeJS.ProcessEnv = process.env): boolean {
+function aukStorageObject(value: string, env: NodeJS.ProcessEnv): { bucket: string; key: string } | null {
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || url.username || url.password || url.hash) return false;
+    if (url.protocol !== 'https:' || url.username || url.password || url.hash) return null;
     const buckets = [env.AWS_BUCKET_NAME, env.KADE_MEDIA_BUCKET].filter(
       (bucket): bucket is string => typeof bucket === 'string' && /^[a-z0-9][a-z0-9.-]*$/i.test(bucket),
     );
-    if (!buckets.length) return false;
+    if (!buckets.length) return null;
     const region = env.AWS_REGION || '';
     const suffix = region.startsWith('cn-') ? 'amazonaws.com.cn' : 'amazonaws.com';
     const endpoints = env.AWS_ENDPOINT_URL
       ? [new URL(env.AWS_ENDPOINT_URL)]
       : [`https://s3.${suffix}`, ...(region ? [`https://s3.${region}.${suffix}`, `https://s3-${region}.${suffix}`] : [])].map((endpoint) => new URL(endpoint));
-    return endpoints.some((endpoint) => {
-      if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || url.port !== endpoint.port) return false;
+    for (const endpoint of endpoints) {
+      if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || url.port !== endpoint.port) continue;
       const prefix = endpoint.pathname.replace(/\/+$/, '') + '/';
-      if (!url.pathname.startsWith(prefix)) return false;
+      if (!url.pathname.startsWith(prefix)) continue;
       const object = url.pathname.slice(prefix.length);
-      return buckets.some((bucket) =>
-        (url.hostname === endpoint.hostname && object.startsWith(bucket + '/') && object.length > bucket.length + 1) ||
-        (url.hostname === bucket.toLowerCase() + '.' + endpoint.hostname && object.length > 0),
+      const bucket = buckets.find((name) =>
+        (url.hostname === endpoint.hostname && object.startsWith(name + '/') && object.length > name.length + 1) ||
+        (url.hostname === name.toLowerCase() + '.' + endpoint.hostname && object.length > 0),
       );
-    });
+      if (!bucket) continue;
+      const key = decodeURIComponent(url.hostname === endpoint.hostname ? object.slice(bucket.length + 1) : object);
+      if (!key || /[\\\x00-\x1f]/.test(key) || /%(?:25)*(?:2e|2f|5c)/i.test(key) || key.split('/').some((segment) => segment === '.' || segment === '..')) return null;
+      return { bucket, key };
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Ownership is checked separately; this bounds every edit download to configured object storage. */
+export function isAukStorageReference(value: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  return aukStorageObject(value, env) !== null;
+}
+
+/** Legacy reference registries may contain caller-supplied project URLs; they cannot prove ownership. */
+export function isAukOwnedReference(user: string, value: string, assets: string[] = [], env: NodeJS.ProcessEnv = process.env): boolean {
+  const object = aukStorageObject(value, env);
+  if (!object || !/^[a-z0-9_-]+$/i.test(user)) return false;
+  const ownPrefix = `audios/${user}/`;
+  if (object.key.startsWith(ownPrefix) && object.key.length > ownPrefix.length) return true;
+  return assets.some((source) => {
+    const owned = aukStorageObject(source, env);
+    return owned?.bucket === object.bucket && owned.key === object.key;
+  });
 }
 
 /** Keep each paid job to at most three 28-second source-plus-target windows. */

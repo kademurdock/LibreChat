@@ -40,19 +40,22 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   const editHelpers = loadEdit();
   const validatedReferences = [];
   let registeredReference;
+  let resignedReference;
   const user = new mongoose.Types.ObjectId();
+  const importedReference = 'https://example.test/recordings/audios/' + user + '/source.wav';
+  let ownedAssets = [];
   const module = { exports: {} };
   const localRequire = (name) => {
     if (name === '~/server/services/kadeJevJudges' || name === '~/models') return {};
     if (name === '~/server/utils/kadeSongAudience') return require('../utils/kadeSongAudience');
     if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => express.Router(), guideFor: g => g };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
-    if (name === '@librechat/api') return { createMyVoiceRouter: () => express.Router(), createLyricsRouter: () => express.Router(), createEffectsRouter: () => express.Router(), effectsGuide: {}, yueStylesEnabled: () => false, yueStyles: {}, validateMusicReference: async (_user, url, hooks) => { validatedReferences.push(url); return hooks.refresh(registeredReference || url); }, musicReferenceSeconds: async () => 61, registerMusicReference: async () => {}, ...editHelpers, isAukStorageReference: url => editHelpers.isAukStorageReference(url, storageEnv), createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => false, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
+    if (name === '@librechat/api') return { createMyVoiceRouter: () => express.Router(), createLyricsRouter: () => express.Router(), createEffectsRouter: () => express.Router(), effectsGuide: {}, yueStylesEnabled: () => false, yueStyles: {}, validateMusicReference: async (_user, url, hooks) => { validatedReferences.push(url); return hooks.refresh(registeredReference || url); }, musicReferenceSeconds: async () => 61, registerMusicReference: async () => {}, ...editHelpers, isAukStorageReference: url => editHelpers.isAukStorageReference(url, storageEnv), isAukOwnedReference: (owner, url, assets) => editHelpers.isAukOwnedReference(owner, url, assets, storageEnv), createYueRouter: () => require('express').Router(), yueConfigured: () => false, needsRefresh: () => !!resignedReference, getNewS3URL: async () => resignedReference, saveBufferToS3: async (data) => { uploaded.push(data); return 'https://example.test/source.wav'; } };
     if (name === './kadeSoundBoothStitch') return { ...require(name), durationOf: async () => 61, normalizeReferenceClip: async () => { throw new Error('Must not trim an AuK source'); } };
     if (name === '~/server/middleware') return { requireJwtAuth: (req, _res, next) => { req.user = { id: String(user) }; next(); } };
     if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
     if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {} };
-    if (name === '~/models/kadeAsset') return { logKadeAsset: async () => {}, KadeAsset: { find: () => ({ lean: async () => [] }) } };
+    if (name === '~/models/kadeAsset') return { logKadeAsset: async () => {}, KadeAsset: { find: () => ({ lean: async () => ownedAssets, select: () => ({ lean: async () => ownedAssets }) }) } };
     return require(name);
   };
   const source = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
@@ -135,7 +138,7 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
   });
 
   await t.test('AuK edit preserves the instruction and source through quote and submit', async () => {
-    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Replace Tuesday with Thursday.', reference_voice_url: 'https://example.test/recordings/source.wav', gen_seconds: 8 };
+    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Replace Tuesday with Thursday.', reference_voice_url: importedReference, gen_seconds: 8 };
     let r = await call('/render', { ...edit, estimateOnly: true });
     assert.equal(r.status, 200); assert.equal(r.data.estimate.audioSeconds, 8);
     const before = starts.length;
@@ -161,16 +164,42 @@ test('real project store: quoting, concurrent polls, stop, resume, and new takes
     assert.equal(starts.length, before);
     assert.equal(validatedReferences.length, checks);
     registeredReference = 'https://169.254.169.254/private';
-    const result = await call('/render', { engine: 'scenema', auk_task: 'edit', instruction: 'Make this softer.', reference_voice_url: 'https://example.test/recordings/source.wav' });
+    const result = await call('/render', { engine: 'scenema', auk_task: 'edit', instruction: 'Make this softer.', reference_voice_url: importedReference });
     registeredReference = undefined;
     assert.equal(result.status, 400);
-    assert.match(result.data.error, /Import this recording/);
+    assert.match(result.data.error, /not saved on your account/);
     assert.equal(starts.length, before);
+  });
+
+  await t.test('edit ownership rejects poisoned same-bucket references and checks re-signed owned masters', async () => {
+    const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Make this softer.', estimateOnly: true };
+    const foreign = 'https://example.test/recordings/audios/another-user/private.wav';
+    const before = starts.length;
+    const checks = validatedReferences.length;
+    registeredReference = foreign;
+    let result = await call('/render', { ...edit, reference_voice_url: foreign });
+    assert.equal(result.status, 400);
+    assert.match(result.data.error, /not saved on your account/);
+    assert.equal(validatedReferences.length, checks, 'a forged registry entry cannot establish edit ownership');
+    result = await call('/render', { ...edit, reference_voice_url: importedReference });
+    assert.equal(result.status, 400, 'a poisoned registry refresh cannot change to another owner');
+    registeredReference = undefined;
+    const master = 'https://example.test/recordings/auk/owned-master.wav?X-Amz-Signature=old';
+    ownedAssets = [{ url: 'https://example.test/recordings/auk/owned-listening.mp3', metadata: { wavUrl: master } }];
+    resignedReference = foreign;
+    result = await call('/render', { ...edit, reference_voice_url: master });
+    assert.equal(result.status, 400, 'ownership is checked again after re-signing');
+    resignedReference = master.replace('=old', '=new');
+    result = await call('/render', { ...edit, reference_voice_url: master });
+    assert.equal(result.status, 200, 'an owned worker master remains editable after signature refresh');
+    resignedReference = undefined;
+    ownedAssets = [];
+    assert.equal(starts.length, before, 'quotes and rejected sources start no paid job');
   });
 
   await t.test('long edit checkpoints and resumes only unfinished ranges', async () => {
     const edit = { engine: 'scenema', auk_task: 'edit', instruction: 'Make the voice softer.',
-      reference_voice_url: 'https://example.test/recordings/source.wav', seed: 18 };
+      reference_voice_url: importedReference, seed: 18 };
     const before = starts.length;
     const begun = await call('/render', edit);
     assert.equal(begun.status, 200);
