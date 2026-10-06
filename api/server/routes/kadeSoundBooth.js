@@ -23,7 +23,7 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
-const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription } = require('@librechat/api');
+const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription, assertSeedScriptReply } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
 
@@ -720,7 +720,7 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
   );
   const out = r.data?.choices?.[0]?.message?.content;
   const usage = r.data?.usage || {};
-  return { text: String(out || ''), usage, finishReason: r.data?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
+  return { text: String(out || ''), refusal: r.data?.choices?.[0]?.message?.refusal, usage, finishReason: r.data?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */
@@ -1887,6 +1887,17 @@ async function scriptHandler(req, res) {
       user: lines.join('\n\n'),
       maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
     });
+    if (engine === 'seed') {
+      try {
+        assertSeedScriptReply(first);
+      } catch (error) {
+        if (error.code !== 'SOUNDBOOTH_WRITER_REFUSED') throw error;
+        logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: first.costUSD,
+          metadata: { engine, mode, costMeasured: first.measured, model: writingSettings.model, refused: 'writer refusal', ms: Date.now() - started, inTok: first.usage.prompt_tokens, outTok: first.usage.completion_tokens },
+        }).catch(() => {});
+        throw error;
+      }
+    }
     if (mode === 'write' && ['lyria', 'yue2'].includes(engine) && first.finishReason === 'length') {
       logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: first.costUSD,
         metadata: { engine, mode, costMeasured: first.measured, model: writingSettings.model, refused: 'output limit', ms: Date.now() - started, inTok: first.usage.prompt_tokens, outTok: first.usage.completion_tokens },
@@ -2147,14 +2158,21 @@ async function scriptHandler(req, res) {
           maxTokens: 16384,
           reasoning: { enabled: true, effort: 'low', exclude: true },
         });
-        const candidate = stripFence(shorter.text).trim();
         totalCost += shorter.costUSD;
         costMeasured = costMeasured && shorter.measured;
+        assertSeedScriptReply(shorter);
+        const candidate = stripFence(shorter.text).trim();
         if (candidate.length >= 200 && candidate.length < script.length && !/READBACK:/i.test(candidate)) {
           repairs = [...repairs, `cut to fit Seed's cap: ${script.length} → ${candidate.length} characters`];
           script = sanitizeSeed(candidate).script;
         }
       } catch (e) {
+        if (e.code === 'SOUNDBOOTH_WRITER_REFUSED') {
+          logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: totalCost,
+            metadata: { engine, mode, costMeasured, model: writingSettings.model || MODEL, refused: 'writer refusal during cut-to-fit', ms: Date.now() - started, inTok: usage.prompt_tokens, outTok: usage.completion_tokens },
+          }).catch(() => {});
+          throw e;
+        }
         logger.warn('[soundbooth/script] cut-to-fit pass failed (trimming instead): ' + e.message);
       }
       if (script.length > MAX_SEED_CHARS) {
@@ -2230,7 +2248,7 @@ async function scriptHandler(req, res) {
     logger.error('[soundbooth/script] failed:', error);
     return res
       .status(status)
-      .json({ error: status === 503 ? error.message : error.code === 'ECONNABORTED' ? 'The writer ran out of time on that one. Your idea is kept; nothing was recorded. Try again.' : 'The script desk had trouble. Try again.' });
+      .json({ error: status === 503 || error.code === 'SOUNDBOOTH_WRITER_REFUSED' ? error.message : error.code === 'ECONNABORTED' ? 'The writer ran out of time on that one. Your idea is kept; nothing was recorded. Try again.' : 'The script desk had trouble. Try again.' });
   }
 }
 

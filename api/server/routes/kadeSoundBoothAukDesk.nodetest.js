@@ -34,6 +34,8 @@ function loadTs(filename) {
 }
 const writing = loadTs(path.join(__dirname, '../../../packages/api/src/music/writing.ts'));
 const ideas = loadTs(path.join(__dirname, '../../../packages/api/src/music/idea.ts'));
+const scriptWriter = loadTs(path.join(__dirname, '../../../packages/api/src/audio/script.ts'));
+const writerPricing = loadTs(path.join(__dirname, '../../../packages/api/src/utils/writing.ts'));
 
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
 const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry'];
@@ -45,6 +47,7 @@ function booth(replies = [], env = {}) {
   const bridgeCalls = [];
   const saved = [];
   const warnings = [];
+  const usageLog = [];
   let project;
   class Project {
     constructor(fields) {
@@ -70,19 +73,20 @@ function booth(replies = [], env = {}) {
         writerCalls.push(body);
         const reply = replies[writerCalls.length - 1];
         assert.ok(reply !== undefined, 'the writer was asked more times than this test expected');
-        return { data: { choices: [{ message: { content: typeof reply === 'string' ? reply : reply.text }, finish_reason: typeof reply === 'string' ? 'stop' : reply.finishReason }], usage: { cost: 0 } } };
+        return { data: { choices: [{ message: { content: typeof reply === 'string' ? reply : reply.text, refusal: typeof reply === 'string' ? undefined : reply.refusal }, finish_reason: typeof reply === 'string' ? 'stop' : reply.finishReason }], usage: typeof reply === 'string' ? { cost: 0 } : reply.usage || { cost: 0 } } };
       } };
       if (name === 'crypto') return require(name);
       if (name === '@librechat/api') return {
-        writingCost: () => ({ costUSD: 0, measured: true }),
+        writingCost: writerPricing.writingCost,
         validateMusicReference: async (_user, url) => url, musicReferenceSeconds: async () => 10,
         ...(() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process: { env: { AWS_ENDPOINT_URL: 'https://example.invalid', AWS_BUCKET_NAME: 'recordings' } } }); return mod.exports; })(),
-        ...writing, ...ideas, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')), musicWritingPrompt: async (base) => base,
+        ...writing, ...ideas, ...scriptWriter, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')),
+        musicWritingPrompt: async (base, request, ...rest) => request.engine === 'seed' ? writing.musicWritingPrompt(base, request, ...rest) : base,
         yueStylesEnabled: () => false, yueStyles: {}, effectsGuide: {},
         createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {},
       };
       if (name === '@librechat/data-schemas') return { logger: { info() {}, warn: (message) => warnings.push(message), error: (message) => warnings.push(message) } };
-      if (name === '~/models/kadeUsage') return { logKadeUsage: async () => {} };
+      if (name === '~/models/kadeUsage') return { logKadeUsage: async (row) => { usageLog.push(row); } };
       if (name === '~/server/utils/kadeSongAudience') return { songAudience: async () => 'explicit', explicitSungLines: () => [] };
       if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
       if (name === './kadeSoundBoothChain') return { acquire: async () => 'fixture-lease', release: async () => {}, MAX_PARTS: 12 };
@@ -105,7 +109,7 @@ function booth(replies = [], env = {}) {
     return result;
   };
   return {
-    writerCalls, bridgeCalls, saved, warnings, request, internals: context.module.exports._internals,
+    writerCalls, bridgeCalls, saved, warnings, usageLog, request, internals: context.module.exports._internals,
     write: (body) => call('post/script', { engine: 'scenema', mode: 'write', text: 'A short story.', gender: 'female', ...body }),
     render: (body) => call('post/render', { engine: 'scenema', gender: 'female', ...body }),
   };
@@ -128,6 +132,100 @@ const WOMAN_XML = '<speak voice="A woman in her early thirties, hushed and intim
 const WOMAN_READBACK = 'READBACK: A woman in her early thirties tells, in hushed tones, how she found a key during a storm. About thirty seconds.';
 const GIRL_XML = `<speak voice="${GIRL}" gender="female">\nThe thunder went boom and I hid under the table with my bunny!\n</speak>`;
 const GIRL_READBACK = 'READBACK: A little girl about five tells how she hid from the thunder with her bunny. About ten seconds.';
+
+const KITTEN_BRIEF = '@audio1 and @audio2 host a professional liberal talk show with imaging and sounds. Interview an unnamed Bengal kitten about why he likes bad things. Dr Phil and Sally Jessy style, with an adorably tiny child-sounding kitten. Inspired by the Boondocks bit where Riley befriends a grandma-raised kid who likes bad things and hurting people, the kitten confesses stereotypical Bengal antics under one year old. Give the audience reactive Springer-style energy. The two host voice clips will be imported later.';
+const KITTEN_SCENE = '[Setting: A lively talk-show studio. Ba-da-bum ident, audience chatter.]\nHost One (adult broadcaster, the actor is @Audio1) says: "What did you do this morning?"\nKitten (fictional Bengal kitten, tiny high voice) says, proudly: "I knocked a cup down. It was looking at me."\nHost Two (adult broadcaster, the actor is @Audio2) says: "The cup was looking at you?"\n[Audience laughs.]\nKitten: "Then I stole a sock. No regrets."';
+
+test('the benign fictional kitten brief reaches the real Seed desk with original-show and future reference context', async () => {
+  const desk = booth([`${KITTEN_SCENE}\nREADBACK: Two original hosts interview a mischievous fictional kitten, with audience reactions.`]);
+  const out = await desk.write({ engine: 'seed', text: KITTEN_BRIEF });
+  const wire = desk.writerCalls[0];
+  assert.equal(wire.model, 'openai/gpt-6.1-sol');
+  assert.match(wire.messages[1].content, new RegExp(KITTEN_BRIEF.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.ok(wire.messages[0].content.includes(scriptWriter.seedSceneContext));
+  assert.match(wire.messages[0].content, /explicitly fictional animal with that voice is still that animal/);
+  assert.match(wire.messages[0].content, /style reference does not assign a real person's identity or voice/);
+  assert.match(wire.messages[0].content, /slots the person explicitly reserves for a later import/);
+  assert.match(wire.messages[0].content, /do not override safety requirements/);
+  assert.doesNotMatch(wire.messages[1].content, /REFERENCE CLIPS IMPORTED/);
+  assert.equal(out.script, KITTEN_SCENE);
+  assert.equal(out.problem, null);
+  assert.equal(desk.writerCalls.length, 1);
+  assert.equal(desk.bridgeCalls.length, 0);
+  assert.equal(desk.saved.length, 0);
+});
+
+test('actual imported Seed actors remain @Audio1 and @Audio2 with no writer listening request', async () => {
+  const desk = booth([KITTEN_SCENE]);
+  const out = await desk.write({ engine: 'seed', text: KITTEN_BRIEF, audio_urls: ['https://example.invalid/host1.wav', 'https://example.invalid/host2.wav'] });
+  assert.match(desk.writerCalls[0].messages[1].content, /REFERENCE CLIPS IMPORTED: 2\. Tag them to speakers in the script as @Audio1, @Audio2/);
+  assert.doesNotMatch(JSON.stringify(desk.writerCalls[0]), /example\.invalid\/host/);
+  assert.equal(out.script, KITTEN_SCENE);
+});
+
+test('bare refusal prose, including fenced output and quoted READBACK, fails as one writer call instead of a ready scene', async () => {
+  for (const text of ['Sorry I cannot assist with this request.', "I'm sorry, but I can't help you with this request.", '```text\nSorry, I cannot assist with this request.\nREADBACK: "No scene was written."\n```', 'I cannot help with that request.\nAlternative: "We can tell a different story."', 'I cannot help with this request.\n[Setting: Another idea.]', 'I can’t write that script.', 'I’m sorry, but I can’t generate a script involving that content.']) {
+    const desk = booth([{ text, usage: { cost: 0.01, prompt_tokens: 100, completion_tokens: 10 } }]);
+    const { status, result } = await desk.request('post/script', { engine: 'seed', mode: 'write', text: KITTEN_BRIEF });
+    assert.equal(status, 422);
+    assert.match(result.error, /writing model declined this request/);
+    assert.equal(result.script, undefined);
+    assert.equal(result.estimate, undefined);
+    assert.equal(desk.writerCalls.length, 1);
+    assert.equal(desk.bridgeCalls.length, 0);
+    assert.equal(desk.saved.length, 0);
+    assert.equal(desk.usageLog.length, 1);
+    assert.equal(desk.usageLog[0].costUSD, 0.01);
+    assert.equal(desk.usageLog[0].metadata.refused, 'writer refusal');
+  }
+});
+
+test('provider refusal and content_filter survive callModel and override otherwise scene-shaped text', async () => {
+  for (const flags of [{ refusal: 'The provider declined.' }, { finishReason: 'content_filter' }]) {
+    const desk = booth([{ text: KITTEN_SCENE, ...flags }]);
+    const { status, result } = await desk.request('post/script', { engine: 'seed', mode: 'write', text: KITTEN_BRIEF });
+    assert.equal(status, 422);
+    assert.equal(result.script, undefined);
+    assert.equal(desk.writerCalls.length, 1);
+    assert.equal(desk.bridgeCalls.length, 0);
+  }
+});
+
+test('refusal words in character dialogue and quoted narration are authored speech, not a bare model refusal', async () => {
+  for (const script of ['[Setting: A help desk.]\nAvery (tired adult) says: "Sorry, I cannot assist with this request."\nMorgan: "Then who can?"', 'Avery says: "I cannot help with this request."', '"I cannot assist with this request," the narrator reads from the old letter.']) {
+    const desk = booth([script]);
+    const out = await desk.write({ engine: 'seed', text: 'Perform the exact supplied dialogue.', mode: 'format' });
+    assert.equal(out.script, script);
+    assert.equal(out.problem, null);
+    assert.equal(desk.writerCalls.length, 1);
+  }
+});
+
+test('a Seed cut-to-fit refusal propagates before trimming, with no third call or audio', async () => {
+  const long = '[Setting: A garden.]\nAvery says: "' + 'This bench needs another plank. '.repeat(85) + '"';
+  const desk = booth([{ text: long, usage: { cost: 0.01 } }, { text: 'Sorry, I cannot assist with this request.', usage: { cost: 0.02 } }]);
+  const { status, result } = await desk.request('post/script', { engine: 'seed', mode: 'write', text: 'Write a garden scene.' });
+  assert.equal(status, 422);
+  assert.equal(result.script, undefined);
+  assert.equal(desk.writerCalls.length, 2);
+  assert.equal(desk.bridgeCalls.length, 0);
+  assert.equal(desk.saved.length, 0);
+  assert.equal(desk.usageLog.length, 1);
+  assert.equal(desk.usageLog[0].costUSD, 0.03);
+  assert.equal(desk.usageLog[0].metadata.refused, 'writer refusal during cut-to-fit');
+});
+
+test('scene context is Seed write-only; formatting, other engines and wordless pieces keep their contract', async () => {
+  for (const request of [{ engine: 'seed', mode: 'format' }, { engine: 'scenema', mode: 'write' }, { engine: 'lyria', mode: 'format' }, { engine: 'yue2', mode: 'format' }]) {
+    assert.equal(await writing.musicWritingPrompt('Existing contract.', request, async () => { throw new Error('No persona read expected.'); }), 'Existing contract.');
+  }
+  const speech = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
+  assert.equal((await speech.write({ voice_description: GIRL })).script, GIRL_XML);
+  assert.doesNotMatch(speech.writerCalls[0].messages[0].content, /SEED SCENE CONTEXT/);
+  const silence = '[Setting: An empty field.]\n[Soft wind, distant birds; no speech or music.]';
+  const seed = booth([silence]);
+  assert.equal((await seed.write({ engine: 'seed', text: 'Only wind and birds, no speech or music.' })).script, silence);
+});
 
 test('Sol writes and formats speech with the chosen thought, without unsupported sampling controls', async () => {
   for (const mode of ['write', 'format']) {

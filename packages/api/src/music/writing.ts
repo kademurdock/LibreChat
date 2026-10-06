@@ -1,5 +1,6 @@
 import type { IAgent } from '@librechat/data-schemas';
 import { hitWritingSystem } from './hitSystem';
+import { seedWritingPrompt } from '../audio/script';
 
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
 export const lyricWritingModel = 'openai/gpt-6.1-sol';
@@ -1503,7 +1504,7 @@ export async function musicWritingPrompt(
   readAgent: Reader,
   audience: SongAudience = null,
 ): Promise<string> {
-  if (!writesMusic(request)) return base;
+  if (!writesMusic(request)) return seedWritingPrompt(base, request.engine, request.mode);
   const note = audienceNote(audience);
   const direction = request.engine === 'yue2'
     ? 'YuE2 direction is 25 to 45 words in one or two compact sentences: language, genre, rhythmic feel, a few defining instruments and the lead vocal character. No section-by-section arrangement narrative, production essay, technical duration line or story summary. The full development belongs in the lyrics and section tags, not in a Lyria-style brief.'
