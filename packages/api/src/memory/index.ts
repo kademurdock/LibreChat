@@ -5,3 +5,4 @@ export * from './people';
 export * from './audience';
 export * from './privacy';
 export * from './relationship';
+export * from './evidence';

@@ -629,6 +629,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const databasePromise = response.databasePromise;
         delete response.databasePromise;
 
+        // The keeper can finish after FINAL and client disposal. Retain its
+        // actual artifacts on this exact saved reply without delaying chat.
+        require('@librechat/api').scheduleMemoryArtifactPersistence({
+          context: client.memoryArtifactContext,
+          memoryResult: client.memoryResult,
+          responseSaved: databasePromise,
+        });
+
         const { conversation: convoData = {} } = await databasePromise;
         const conversation = { ...convoData };
         conversation.title =
@@ -1171,6 +1179,12 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
     // Store database promise locally
     const databasePromise = response.databasePromise;
     delete response.databasePromise;
+
+    require('@librechat/api').scheduleMemoryArtifactPersistence({
+      context: client.memoryArtifactContext,
+      memoryResult: client.memoryResult,
+      responseSaved: databasePromise,
+    });
 
     // Resolve database-related data
     const { conversation: convoData = {} } = await databasePromise;

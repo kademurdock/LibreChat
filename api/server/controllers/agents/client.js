@@ -36,6 +36,8 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   createMemoryProcessor,
+  getMemoryEvidence,
+  captureMemoryArtifactContext,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -1186,7 +1188,23 @@ class AgentClient extends BaseClient {
 
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
+    const { memoryPolicyRevision } = require('@librechat/data-schemas');
+    this.memoryArtifactContext = captureMemoryArtifactContext({
+      userId,
+      agentId: activeAgentId,
+      messageId,
+      conversationId,
+      sourceAt: this.memorySourceAt,
+      revision: await memoryPolicyRevision(userId),
+      currentOffRecord: this.memoryOffRecord,
+      kind: 'conversation',
+    });
     const streamId = this.options.req?._resumableStreamId || null;
+    const { diaryChatOrigin } = require('@librechat/api');
+    const diaryOrigin = diaryChatOrigin({
+      isTemporary: this.options.req.body?.isTemporary,
+      toolPolicy: this.options.req.body?.kadeToolPolicy,
+    });
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       agentId: activeAgentId,
@@ -1215,11 +1233,6 @@ class AgentClient extends BaseClient {
         /* Part 112: the conversation rides along so the diary can keep ONE
          * entry per episode (her key choice) — injected here, never decided
          * by the keeper. See kadeDiary.js's episode block. */
-        const { diaryChatOrigin } = require('@librechat/api');
-        const origin = diaryChatOrigin({
-          isTemporary: this.options.req.body?.isTemporary,
-          toolPolicy: this.options.req.body?.kadeToolPolicy,
-        });
         const result = await logDiaryEntry({
           userId,
           agentId: activeAgentId,
@@ -1227,7 +1240,7 @@ class AgentClient extends BaseClient {
           scope,
           salience,
           conversationId,
-          origin,
+          origin: diaryOrigin,
         });
         if (result.ok) {
           this._kadeKeeperLogged = true;
@@ -1354,8 +1367,11 @@ class AgentClient extends BaseClient {
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
   async runMemory(messages) {
+    const keeperMessageId = this.responseMessageId;
+    const keeperConversationId = this.conversationId;
     try {
-      if (this.processMemory == null) {
+      const processMemory = this.processMemory;
+      if (processMemory == null) {
         return;
       }
       const appConfig = this.options.req.config;
@@ -1419,8 +1435,8 @@ class AgentClient extends BaseClient {
       if (isCharTruncated || wasTruncated) {
         logger.warn('[MemoryAgent] Memory input truncated before processing', {
           tokenCount,
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
+          messageId: keeperMessageId,
+          conversationId: keeperConversationId,
           maxInputTokens,
           wasTruncated,
           maxInputChars,
@@ -1428,6 +1444,7 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
+      const evidence = getMemoryEvidence(filteredMessages, limitedMemoryInput);
       /* Part 237 (Sep 20 2026) — THE KEEPER GATE IS LIVE. It skips the keeper.
        * Kade's word this session: "turn it on at the tested floor." Under the
        * floor the generative keeper does not run, which is the one Jev switch
@@ -1493,7 +1510,7 @@ class AgentClient extends BaseClient {
               attachments,
               failed,
               logged: this._kadeKeeperLogged === true,
-              messageId: this.responseMessageId,
+              messageId: keeperMessageId,
               log: (line) => logger.info(line),
             });
           }
@@ -1507,7 +1524,7 @@ class AgentClient extends BaseClient {
       }
       let attachments;
       try {
-        attachments = await this.processMemory([bufferMessage]);
+        attachments = await processMemory([bufferMessage], evidence);
       } catch (error) {
         gateDone(undefined, true, false);
         throw error;
@@ -2068,6 +2085,7 @@ class AgentClient extends BaseClient {
 
         if (this.processMemory) {
           memoryPromise = this.runMemory(memoryMessages);
+          this.memoryResult = memoryPromise;
         }
 
         /** Seed calibration state from previous run if encoding matches */

@@ -349,3 +349,10 @@ export {
   diaryWriteOrigin,
   diaryDiagnostic,
 } from './memory/diary';
+export {
+  captureMemoryArtifactContext,
+  canonicalMemoryArtifacts,
+  persistMemoryArtifacts,
+  scheduleMemoryArtifactPersistence,
+} from './memory/artifacts';
+export type { MemoryArtifactContext } from './memory/artifacts';

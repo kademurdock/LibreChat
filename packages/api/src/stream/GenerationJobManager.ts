@@ -1075,10 +1075,19 @@ class GenerationJobManagerClass {
    * In Redis mode, awaits the publish to guarantee event ordering.
    * This is critical for streaming deltas (tool args, message content) to arrive in order.
    */
-  async emitChunk(streamId: string, event: t.ServerSentEvent): Promise<void> {
+  async emitChunk(
+    streamId: string,
+    event: t.ServerSentEvent,
+    expectedResponseMessageId?: string,
+  ): Promise<void> {
     const runtime = this.runtimeState.get(streamId);
     if (!runtime || runtime.abortController.signal.aborted) {
       return;
+    }
+    if (expectedResponseMessageId) {
+      const current = await this.jobStore.getJob(streamId);
+      if (current?.responseMessageId !== expectedResponseMessageId ||
+        this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) return;
     }
 
     // Refresh job activity so the store's stale-job failsafe reaps on inactivity
@@ -1120,6 +1129,8 @@ class GenerationJobManagerClass {
       }
     }
 
+    if (expectedResponseMessageId &&
+      (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted)) return;
     await this.eventTransport.emitChunk(streamId, event);
   }
 

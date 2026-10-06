@@ -46,6 +46,7 @@ import {
 import { peopleOffRecord, hasPeoplePrivacyControl } from '../memory/privacy';
 import { forgetRelationshipImpressions } from '../memory/relationship';
 import type { MemoryBucket } from './memoryScope';
+import type { MemoryEvidence } from '../memory/evidence';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -939,7 +940,9 @@ ${memory ?? 'No existing memories'}`;
     });
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
-    const memoryCallback = createMemoryCallback({ res, artifactPromises, streamId });
+    const memoryCallback = createMemoryCallback({
+      res, artifactPromises, streamId, messageId, conversationId,
+    });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
     };
@@ -1064,7 +1067,12 @@ export async function createMemoryProcessor({
   logDiary?: DiaryLogFn;
   sourceAt?: string | Date;
   currentOffRecord?: boolean;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
+}): Promise<
+  [
+    string,
+    (messages: BaseMessage[], evidence?: MemoryEvidence) => Promise<(TAttachment | null)[] | undefined>,
+  ]
+> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
 
   /**
@@ -1138,26 +1146,32 @@ export async function createMemoryProcessor({
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+    async function (
+      messages: BaseMessage[],
+      evidence?: MemoryEvidence,
+    ): Promise<(TAttachment | null)[] | undefined> {
       if (currentOffRecord) return undefined;
       try {
         const offRecord = peopleOffRecord(
-          messages
-            .filter((message) => message._getType() === 'human')
-            .map((message) =>
-              typeof message.content === 'string'
-                ? message.content
-                : JSON.stringify(message.content),
-            ),
+          evidence
+            ? [evidence.actualUserEvidence]
+            : messages
+                .filter((message) => message._getType() === 'human')
+                .map((message) =>
+                  typeof message.content === 'string'
+                    ? message.content
+                    : JSON.stringify(message.content),
+                ),
         );
         const latestUser = messages
           .filter((message) => message._getType() === 'human')
           .slice(-1)[0];
         const latestText =
-          latestUser &&
-          (typeof latestUser.content === 'string'
-            ? latestUser.content
-            : JSON.stringify(latestUser.content));
+          evidence?.actualUserEvidence ??
+          (latestUser &&
+            (typeof latestUser.content === 'string'
+              ? latestUser.content
+              : JSON.stringify(latestUser.content)));
         if (
           agentId &&
           !offRecord &&
@@ -1178,6 +1192,8 @@ export async function createMemoryProcessor({
           userId,
           agentId,
           messages,
+          ...evidence,
+          currentOffRecord,
           sourceAt,
           validKeys: effectiveValidKeys,
           llmConfig,
@@ -1705,11 +1721,15 @@ async function handleMemoryArtifact({
   data,
   metadata,
   streamId = null,
+  messageId,
+  conversationId,
 }: {
   res: ServerResponse;
   data: ToolEndData;
   metadata?: ToolEndMetadata;
   streamId?: string | null;
+  messageId?: string;
+  conversationId?: string;
 }) {
   const output = data?.output as ToolMessage | undefined;
   if (!output) {
@@ -1728,16 +1748,22 @@ async function handleMemoryArtifact({
   const attachment: Partial<TAttachment> = {
     type: Tools.memory,
     toolCallId: output.tool_call_id,
-    messageId: metadata?.run_id ?? '',
-    conversationId: metadata?.thread_id ?? '',
+    messageId: messageId ?? metadata?.run_id ?? '',
+    conversationId: conversationId ?? metadata?.thread_id ?? '',
     [Tools.memory]: memoryArtifact,
   };
   if (!res.headersSent) {
     return attachment;
   }
   if (streamId) {
-    GenerationJobManager.emitChunk(streamId, { event: 'attachment', data: attachment });
-  } else {
+    // conversationId is reused as the stream id on the next turn. A late
+    // keeper receipt must never be delivered to that replacement generation.
+    await GenerationJobManager.emitChunk(
+      streamId,
+      { event: 'attachment', data: attachment },
+      attachment.messageId,
+    );
+  } else if (!res.writableEnded && !res.destroyed) {
     res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
   return attachment;
@@ -1755,10 +1781,14 @@ export function createMemoryCallback({
   res,
   artifactPromises,
   streamId = null,
+  messageId,
+  conversationId,
 }: {
   res: ServerResponse;
   artifactPromises: Promise<Partial<TAttachment> | null>[];
   streamId?: string | null;
+  messageId?: string;
+  conversationId?: string;
 }): ToolEndCallback {
   return async (data: ToolEndData, metadata?: Record<string, unknown>) => {
     const output = data?.output as ToolMessage | undefined;
@@ -1767,7 +1797,7 @@ export function createMemoryCallback({
       return;
     }
     artifactPromises.push(
-      handleMemoryArtifact({ res, data, metadata, streamId }).catch((error) => {
+      handleMemoryArtifact({ res, data, metadata, streamId, messageId, conversationId }).catch((error) => {
         logger.error('Error processing memory artifact content:', error);
         return null;
       }),

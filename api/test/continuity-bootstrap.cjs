@@ -42,4 +42,5 @@ localApi = {
   ...require(path.join(root, 'packages/api/src/memory/privacy.ts')),
   ...require(path.join(root, 'packages/api/src/memory/relationship.ts')),
   ...require(path.join(root, 'packages/api/src/memory/audience.ts')),
+  ...require(path.join(root, 'packages/api/src/memory/evidence.ts')),
 };
