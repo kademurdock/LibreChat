@@ -490,7 +490,10 @@ async function logDiaryEntry({
   }
 
   try {
-    await KadeDiaryEntry.create({
+    if (!(await memorySourceAllowed(memorySource))) {
+      return { ok: false, error: 'Memory policy changed during this write' };
+    }
+    const created = await KadeDiaryEntry.create({
       writeActivity: { [writeOrigin]: { createdAt: new Date() } },
       sourceConversationIds: (memorySource?.conversationIds || [conversationId]).filter(Boolean),
       userId: String(userId),
@@ -503,6 +506,14 @@ async function logDiaryEntry({
       salience: cleanSalience,
       conversationId: conversationId ? String(conversationId) : null,
     });
+    if (!(await memorySourceAllowed(memorySource))) {
+      await KadeDiaryEntry.deleteOne({
+        _id: created._id,
+        userId: String(userId),
+        agentId: effectiveAgentId,
+      });
+      return { ok: false, error: 'Memory policy changed during this write' };
+    }
     return { ok: true, date: effectiveDate };
   } catch (e) {
     logger.error('[kadeDiary] failed to save entry:', e.message);
