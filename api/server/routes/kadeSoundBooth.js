@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -2032,7 +2032,7 @@ async function scriptHandler(req, res) {
         const answer = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricRepeatRequest(raw, repeatsLeft),
+          user: lyricRepeatRequest(raw, repeatsLeft, text),
           maxTokens: writingSettings.maxTokens,
           reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
           timeoutMs: Math.min(repeatTime, 150000),
@@ -2068,7 +2068,7 @@ async function scriptHandler(req, res) {
       }).catch(() => {});
       return res.status(422).json({ error: 'This song has to be clean, and the draft came back with words it cannot have. Your idea is kept. Try again.' });
     }
-    if (ownsLyrics) raw = fixStageDirections(raw);
+    if (ownsLyrics) raw = formatGeneratedLyricsDraft(fixStageDirections(raw));
     const titled = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(raw) : { script: raw };
     const title = requestedTitle || titled.title || (mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(first.text).title : undefined)
       || (wantsWords ? lyricTitleFromSong(titled.script) : undefined);

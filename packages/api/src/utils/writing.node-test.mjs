@@ -5,13 +5,17 @@ import { stripTypeScriptTypes, createRequire } from 'node:module';
 import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
-const musicSource = hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '');
+const seedSource = stripTypeScriptTypes(readFileSync(new URL('../audio/script.ts', import.meta.url), 'utf8'));
+const musicSource = seedSource + '\n' + hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '').replace("import { seedWritingPrompt } from '../audio/script';", '');
+const { formatGeneratedLyricsDraft } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/format.ts', import.meta.url), 'utf8'))).toString('base64'));
+const { splitLyricTitle, lyricTitleFromSong } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/title.ts', import.meta.url), 'utf8'))).toString('base64'));
+const { assertSeedScriptReply, seedWritingPrompt } = await import('data:text/javascript;base64,' + Buffer.from(seedSource).toString('base64'));
 const { musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
  * test can set. */
-const bootStubs = { yueStylesEnabled: () => false, yueStyles: {} };
+const bootStubs = { yueStylesEnabled: () => false, yueStyles: {}, formatGeneratedLyricsDraft, splitLyricTitle, lyricTitleFromSong, assertSeedScriptReply };
 const audienceStub = { answer: 'explicit', calls: [] };
 /* The real word checks (Part 293 review: the route holds a clean song to clean with them); only
  * the account lookup is stood in for. */
@@ -25,12 +29,12 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
   assert.match(first, /Multisyllabic and mosaic rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /SYNTHETIC-VOCAL HIT-WRITING SYSTEM/); assert.match(first, /THE FOURTEEN TELLS/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /laid out on the section map the desk sends with the request/); assert.doesNotMatch(first, /\[Final Chorus\]|either three verses|two long verses/, 'Part 293 follow-up: no list of shapes in the prompt, and no [Final Chorus] unless the drawn map names it');
-  assert.match(first, /a named weekday \(Tuesday above all\)/); assert.match(first, /drinks are always coffee/);
+  assert.match(first, /SONGWRITING CRAFT FOR THE SOUND BOOTH/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /use the SECTION MAP sent with the request/); assert.doesNotMatch(first, /\[Final Chorus\]|either three verses|two long verses/, 'song shapes are supplied with the individual request');
+  assert.match(first, /drinks are always coffee/);
   assert.match(first, /There is no Lyrics Box, Tag Box or Negative Tag Box here/);
   assert.doesNotMatch(first, /begins with the words `Lyrics Box`|APPENDIX B: TAG BOX PRESETS|REVISION PROTOCOL|30 to 40 lines total/, 'the other product\'s output contract and short budget are not carried');
   assert.doesNotMatch(first, /It's Tuesday\./, 'the system must not seed the tell it bans');
-  assert.ok(first.indexOf(instructions) < first.indexOf('THE SEVEN LAWS') && first.indexOf('THE SEVEN LAWS') < first.indexOf('DESK NOTES FROM THE OWNER') && first.indexOf('DESK NOTES FROM THE OWNER') < first.indexOf('Sound Booth format'), 'persona, system, desk notes, format'); assert.match(first, /neon, shadows, whispers or echoes/);
+  assert.ok(first.indexOf(instructions) < first.indexOf('SONGWRITING CRAFT FOR THE SOUND BOOTH') && first.indexOf('SONGWRITING CRAFT FOR THE SOUND BOOTH') < first.indexOf('DESK NOTES FROM THE OWNER') && first.indexOf('DESK NOTES FROM THE OWNER') < first.indexOf('Sound Booth format'), 'persona, craft, desk notes, format'); assert.match(first, /neon, shadows, whispers or echoes/);
   assert.ok(first.indexOf(instructions) < first.indexOf('Sound Booth format'), 'persona leads, format closes');
   assert.match(first, /format below is the ONLY output format/);
   instructions = 'Updated saved persona: vivid narration with conversational phrasing.';
@@ -38,7 +42,7 @@ test('music drafting reads the current Lyric persona while formatting and speech
   assert.ok(updated.includes(instructions)); assert.ok(!updated.includes('First saved persona'));
   assert.deepEqual(reads, [{ id: lyricAgentId }, { id: lyricAgentId }]);
   for (const request of [{ engine: 'yue2', mode: 'format' }, { engine: 'seed', mode: 'write' }, { engine: 'scenema', mode: 'write' }]) {
-    assert.equal(await musicWritingPrompt('Original format', request, read), 'Original format');
+    assert.equal(await musicWritingPrompt('Original format', request, read), seedWritingPrompt('Original format', request.engine, request.mode));
   }
   assert.equal(reads.length, 2);
   await assert.rejects(() => musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => null), error => error.status === 503);
@@ -246,7 +250,7 @@ test('Part 216: the repair request names the exact lines and protects everything
   const ask = lyricRepairRequest(HER_SONG, lyricTells(HER_SONG));
   assert.match(ask, /1\. "I'm out of coffee, out of patience, but never out of luck" -- coffee/);
   assert.match(ask, /Rewrite ONLY those lines/); assert.match(ask, /change it the same way everywhere it appears/);
-  assert.match(ask, /find a better hook word and carry it through/);
+  assert.match(ask, /Keep any supplied title or hook intact/);
   assert.ok(ask.endsWith(HER_SONG));
 });
 
@@ -261,7 +265,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
-    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 || /supplied/.test(body.messages[1].content) ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
+    if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: requests.length === 1 ? draft : repaired } }], usage: { cost: 0.01 } } }; } };
     if (name === '@librechat/api') return { writingCost, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, lyricWritingModel, lyricAgentId, createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {}, effectsGuide: {}, ...bootStubs };
     if (name === '@librechat/data-schemas') return { logger: { info() {}, warn() {}, error() {} } };
     if (name === '~/models') return { getAgent: async () => ({ instructions: 'Saved Lyric persona.' }) };
@@ -282,7 +286,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   for (const call of requests) { assert.ok(call.messages[0].content.includes(SONG_CLEAN_NOTE)); assert.ok(!call.messages[0].content.includes(SONG_EXPLICIT_NOTE)); }
   assert.equal(requests[1].messages[0].content, requests[0].messages[0].content, 'the audit sees the same system prompt');
   audienceStub.answer = 'explicit';
-  assert.match(requests[1].messages[1].content, /be the producer who decides whether it gets cut/);
+  assert.match(requests[1].messages[1].content, /Make one focused producer edit/);
   assert.match(requests[1].messages[1].content, /"I poured my coffee on a Tuesday" -- a named weekday|-- coffee/);
   assert.match(result.script, /Tang the day the fair left town/); assert.doesNotMatch(result.script, /Tuesday/);
   assert.deepEqual([...result.repairs], ["second pass: the producer's audit", 'rewrote 1 line that leaned on stock images']);
@@ -384,23 +388,22 @@ test('Part 217: the website says it can wait and gets time for the audit; the ph
   assert.equal(musicWritingSettings({ engine: 'scenema', mode: 'write', patient: true }).model, lyricWritingModel, 'speech uses the same creative model');
 });
 
-test('Part 217: the audit asks for the turn, the hook and the spice, carries flagged lines, and stage directions never get sung', () => {
+test('the audit protects topic and phrasing, carries flagged lines, and stage directions never get sung', () => {
   const draft = 'Pop.\n\nLyrics:\n[Intro]\n(Whistling)\n[Verse 1]\nI poured my coffee slow\n(oh-oh)\n(Claps and bass only)\nREADBACK: x';
-  const ask = lyricAuditRequest(draft, lyricTells(draft), 'Add a [Verse 3].');
-  assert.match(ask, /THE TURN and the payoff/); assert.match(ask, /exactly one surprise/); assert.match(ask, /The spice\. Exactly one/);
-  assert.match(ask, /1\. "I poured my coffee slow" -- coffee/); assert.match(ask, /8\. Length\. Add a \[Verse 3\]\./); assert.ok(ask.endsWith(draft));
-  assert.doesNotMatch(lyricAuditRequest(draft, [], null), /must be rewritten|8\. Length/);
+  const ask = lyricAuditRequest(draft, lyricTells(draft), 'Add a [Verse 3].', [], 'A coping song');
+  assert.match(ask, /TOPIC AND MEANING/); assert.match(ask, /Keep supplied wording, repetitions and dialect exactly/);
+  assert.match(ask, /Do not demand a planted prop, plot turn, quirk or rewritten final chorus/);
+  assert.match(ask, /1\. "I poured my coffee slow" -- coffee/); assert.match(ask, /Length\. Add a \[Verse 3\]\./); assert.ok(ask.endsWith(draft));
+  assert.doesNotMatch(lyricAuditRequest(draft, [], null), /must be rewritten|Length\. Add/);
   const fixed = fixStageDirections(draft);
   assert.match(fixed, /^\[Whistling\]$/m); assert.match(fixed, /^\[Claps and bass only\]$/m);
   assert.match(fixed, /^\(oh-oh\)$/m, 'a sung ad-lib stays in parentheses');
 });
 
-test('Part 217: a line lifted from the system\'s own examples is flagged like any other tell', () => {
-  const copied = 'R&B.\nLyrics:\n[Verse 1]\nYou text at a decent hour now\nReal polite, like we ain\'t been through it\nI burned the toast and blamed the toaster\n[Outro - Vamp]\nMm. I saw it. I ain\'t answer.\n(I sleep fine)';
-  const tells = lyricTells(copied, 'r&b song about being over somebody');
-  assert.deepEqual(tells.map(t => t.line), ['You text at a decent hour now', "Real polite, like we ain't been through it", "Mm. I saw it. I ain't answer."]);
-  assert.ok(tells.every(t => /copied from the writing system/.test(t.tell)));
-  assert.equal(lyricTells('x\nLyrics:\nI paid the light bill twice this month and I ain\'t tell nobody').length, 1, 'FIX lines are examples too');
+test('the concise craft system contains no worked lyric samples to seed copies', () => {
+  assert.doesNotMatch(hitSource, /APPENDIX C|WORKED EXAMPLES|You text at a decent hour now|Real polite, like we ain't been through it/);
+  const unrelated = "R&B.\nLyrics:\n[Verse 1]\nYou text at a decent hour now\nReal polite, like we ain't been through it\nI burned the toast and blamed the toaster\n[Outro - Vamp]\nMm. I saw it. I ain't answer.\n(I sleep fine)";
+  assert.deepEqual(lyricTells(unrelated, 'r&b song about being over somebody'), [], 'removed worked samples do not blacklist ordinary wording');
   assert.equal(lyricTells('x\nLyrics:\nNow they know').length, 0, 'three common words are not ownable');
 });
 
@@ -434,17 +437,19 @@ test('Part 231: Surprise me writes ideas in her format, shows her list only as a
   assert.equal(tooCloseToShelf('Polka: A different idea entirely about a cashier who notices which customers fold their pay stubs.', [good]), true, 'so is one she was already shown');
 });
 
-test('the desk keeps melodic rhyme and meter guidance, counts syllables itself, and knows her pet hates', async () => {
+test('melodic meter review is advisory and preserves deliberate long-short phrasing', async () => {
   const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
-  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /This desk under-rhymes/); assert.match(prompt, /THE CHORUS STATES THE HOOK\. The verses can show; the chorus TELLS/);
-  assert.doesNotMatch(prompt, /say it plain/i, 'Part 293: the old heading was sung back in a real song and is on her ban list');
-  const wander = 'Pop.\n\nLyrics:\n[Verse 1]\nBar is half full and the jukebox is dying tonight again\nYou by the window\nSome fella walked in and he looked you up and he looked you down\nI got a beer\n[Chorus]\nLook at her\n\nREADBACK: x';
-  const audit = lyricAuditRequest(wander, [], null);
-  assert.match(audit, /SING-ALONG/); assert.doesNotMatch(audit, /one line rhymes with nothing/);
+  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /satisfying audible rhyme/); assert.match(prompt, /THE CHORUS STATES THE HOOK/);
+  assert.doesNotMatch(prompt, /say it plain/i);
+  const alternate = 'Soul, spacious female vocal.\n\nLyrics:\n[Verse 1]\nI have more on my mind than I can carry through tonight\nGive me a minute\nI can leave some things undone and still know what I need to do\nLet me begin it\n[Chorus]\nOne thing at a time\n\nREADBACK: A coping song.';
+  const audit = lyricAuditRequest(alternate, [], null, [], 'A soulful song about coping');
   assert.match(audit, /\[Verse 1\] lines run \d+, \d+, \d+, \d+ syllables/);
-  const even = 'Pop.\n\nLyrics:\n[Verse 1]\nI saw it lying on the ground\nThe best thing I have ever found\nYou threw the frisbee, I don\'t care\nI dropped it and I left it there\n\nREADBACK: x';
-  assert.doesNotMatch(lyricAuditRequest(even, [], null), /Counted by the desk/);
-  const tells = lyricTells('x\nLyrics:\n[Verse 1]\nThe heater hummin\' warm and low\nShe gave me that knowing look\nI know the way back home\n(Mm, mm)', '');
+  assert.match(audit, /Rough phrase-length observations, not a melody or timing verdict/); assert.match(audit, /Preserve intentional long-short patterns/);
+  assert.match(audit, /do not equalize them merely because these rough counts differ/);
+  assert.doesNotMatch(audit, /cannot carry one tune|within one syllable|every verse matches verse one|Even each verse out/);
+  const even = "Pop.\n\nLyrics:\n[Verse 1]\nI saw it lying on the ground\nThe best thing I have ever found\nYou threw the frisbee, I don't care\nI dropped it and I left it there\n\nREADBACK: x";
+  assert.doesNotMatch(lyricAuditRequest(even, [], null), /Rough phrase-length observations/);
+  const tells = lyricTells("x\nLyrics:\n[Verse 1]\nThe heater hummin' warm and low\nShe gave me that knowing look\nI know the way back home\n(Mm, mm)", '');
   assert.deepEqual(tells.map(t => t.tell), ['humming', '"knowing" as a mood']);
   assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true }).maxTokens, 16384);
 });
@@ -456,11 +461,11 @@ test('Part 231: a duet line that opens with a singer cue is a sung line, so a re
   assert.ok(merged, 'four sung lines in, four sung lines out');
   assert.match(merged, /\[Her\] I saved you a seat by the door/);
   const audit = lyricAuditRequest(first, [], null);
-  assert.match(audit, /do not count syllables yourself/i); assert.match(audit, /not a nursery rhyme either/);
+  assert.match(audit, /do not count syllables yourself/i); assert.match(audit, /Natural speech stress, plausible breaths/);
 });
 
 /* ---------------- Part 293 (Sep 25 2026): who the song is for, and her ChatGPT prompt ---------------- */
-const DESK_OPENING = "You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are in conversation. The HIT-WRITING SYSTEM after it is how every song at this desk is written; where the two differ about craft, the system wins. Then come the owner's desk notes and the delivery format the audio engine needs.";
+const DESK_OPENING = "You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below supplies your conversational character. The SONGWRITING CRAFT after it governs the actual lyric: where the persona demands a scene, rare repetition, fixed hook form or a story turn, the craft instructions win. Then come the owner's desk notes and the delivery format the audio engine needs.";
 
 test('Part 293: the audience note sits after the desk notes and before the delivery contract; READBACK stays last', async () => {
   const read = async () => ({ instructions: 'persona' });
@@ -477,7 +482,8 @@ test('Part 293: the audience note sits after the desk notes and before the deliv
     const at = prompt.indexOf(note);
     assert.ok(at >= prompt.indexOf(musicWritingCraft) + musicWritingCraft.length, `${audience}: after the owner's desk notes`);
     assert.ok(at < prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT'), `${audience}: before the delivery contract`);
-    assert.ok(prompt.lastIndexOf('READBACK: one or two plain sentences') > prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT') && prompt.endsWith(base), `${audience}: the READBACK rule stays last`);
+    assert.ok(prompt.indexOf(base) < prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT'), `${audience}: engine grammar precedes the final delivery contract`);
+    assert.match(prompt.slice(prompt.indexOf('SOUND BOOTH DELIVERY CONTRACT')), /followed by the required READBACK: line/, `${audience}: the final delivery contract keeps READBACK outside lyrics`);
     assert.equal(prompt.split(note).length, 2, `${audience}: said once`);
     assert.ok(!prompt.includes(other), `${audience}: never both`);
     assert.equal(prompt.replace(note + '\n\n', ''), before, `${audience}: the note is the only change`);
@@ -489,36 +495,30 @@ test('Part 293: the audience note sits after the desk notes and before the deliv
     assert.ok(SONG_EXPLICIT_NOTE.includes(words), words);
   for (const words of ['this song must be clean', 'No swearing, no sexual content or innuendo, no drug jokes, nothing gory', 'Keep the edge and lose the words', 'instead of bleeping or starring anything out'])
     assert.ok(SONG_CLEAN_NOTE.includes(words), words);
-  assert.match(before, /\[Solo\], \[Interlude\], \[Outro\]/, 'the system names [Solo]');
+  assert.match(before, /section tags stand alone/, 'section labels remain separate from performed words');
   assert.doesNotMatch(before, /Final Chorus\]/, 'Part 293 follow-up: [Final Chorus] comes only with the drawn map that has one');
 });
 
-test('Part 293: her ChatGPT prompt joins the desk notes as plain rules, with no example lines to copy', () => {
-  const at = musicWritingCraft.indexOf('WRITE IT LIKE A PERSON WROTE IT');
-  const end = musicWritingCraft.indexOf('- Do the SONG SPEC');
-  assert.ok(at > 0 && end > at, 'inside the owner notes, before the closing instruction');
-  const section = musicWritingCraft.slice(at, end);
-  for (const rule of ['Trust the listener', 'When a line lands, move on', 'Never explain a joke', 'one saying how sad the singer is', 'No lesson at the end', 'grief can stay grief, anger can stay anger', 'want the person they shouldn', 'Give the singer a personality', 'opinions, bad habits, pettiness, contradictions', 'do not have to be the good guy', 'Songs are not HR training videos', 'Every line earns its spot', 'could sit in 500 other songs', 'exists only for the rhyme', 'explains the line before it', 'only links two better lines', 'Plain words with a sharp observation beat fancy words', 'No thesaurus poetry', 'never turn a feeling into a person just to get a rhyme', 'take the premise seriously', 'Start with a believable version and escalate', 'callbacks and misdirection', 'set up an expectation and wreck it', 'Specific beats random', 'Never explain the punchline', 'a phrase, a question, a command, a ridiculous image, a repeated word or a punchline', 'Take the title from the hook or from the central joke', 'Punk and emo', 'hard consonants, specific grievances, not eyeliner and darkness', 'no vocabulary flexing and no generic bragging', 'only when something happens there', 'bodies and rooms', 'brutally clear in one sentence', 'Experimental may break the shape, never into nonsense'])
-    assert.ok(section.includes(rule), rule);
-  assert.doesNotMatch(section, /["“”]/, 'no worked example lines: the writer hands examples back');
-  assert.match(musicWritingCraft, /one focused silent craft revision/);
-  assert.match(musicWritingCraft, /unclear speaker, actor, object or sequence of events/);
-  assert.match(musicWritingCraft, /earlier detail return with a changed meaning/);
-  /* The conflicts, settled her way. */
-  assert.match(musicWritingCraft, /Never twist word order or grammar to land a rhyme/);
-  assert.match(musicWritingCraft, /melodic defaults, not rules for rap/);
-  assert.match(musicWritingCraft, /internal and cross-bar rhymes/);
-  assert.doesNotMatch(musicWritingCraft, /A listener must be able to guess|Every verse is built in couplets|At most ONE deliberately unrhymed line/);
-  assert.match(musicWritingCraft, /about four minutes, 45 to 65 sung lines/); assert.match(musicWritingCraft, /The desk draws a SECTION MAP for each song and sends it with the request, under the idea\. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent\./);
-  assert.doesNotMatch(musicWritingCraft, /Final Chorus|two long verses|three verses/, 'Part 293 follow-up: the shapes live in the drawn map, not in a list');
-  assert.match(musicWritingCraft, /No more than two observed details per verse, and each one something only this song could contain/);
-  assert.match(musicWritingCraft, /unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV/);
-  assert.doesNotMatch(musicWritingCraft, /what was on the plate|the chain that squeaks|kitchens|timestamps|unfinished drinks/, 'no prop list to copy');
-  assert.match(musicWritingCraft, /chooses the lead voice, its range and its delivery for this song and this genre\. There is no house voice at this desk\./);
-  assert.doesNotMatch(musicWritingCraft, /\balto\b|close to the microphone|\bbelt/i, 'the house default is never shown as something to copy');
-  assert.doesNotMatch(musicWritingCraft, /Lyrics Box|Tag Box|elite professional songwriter/, 'her ChatGPT output contract stays out');
+test('desk craft preserves broad songwriting choices without scene, quirk or ending recipes', () => {
+  const prompt = musicWritingCraft;
+  assert.match(prompt, /Preserve a supplied refrain, including its repeated words and dialect/);
+  assert.match(prompt, /Multisyllabic and mosaic rhymes/);
+  assert.match(prompt, /Reflective songs need no invented physical scene/);
+  assert.match(prompt, /Hope can be determination while things stay hard/);
+  assert.match(prompt, /Six to eight lines is a useful default/);
+  assert.match(prompt, /A sung word repeated for emphasis is allowed/);
+  assert.match(prompt, /No compulsory story turn or payoff/);
+  assert.match(prompt, /Each performed phrase occupies one line/);
+  assert.match(prompt, /one blank line between sections and none between the lines within a section/);
+  assert.match(prompt, /Keep a requested riff as a separate bracket cue/);
+  assert.match(prompt, /about four minutes, 45 to 65 sung lines/);
+  assert.match(prompt, /if the brief gives its own length or structure, the brief wins and no map is sent/);
+  assert.doesNotMatch(prompt, /what was on the plate|the chain that squeaks|what they would really drink|Every line earns its own identity|No more than two observed details/);
+  assert.doesNotMatch(prompt, /Lyrics Box|Tag Box|elite professional songwriter/);
+  assert.match(prompt, /there is no house voice/);
   const audit = lyricAuditRequest('Pop.\n\nLyrics:\n[Verse 1]\nOne line\n\nREADBACK: x', [], null);
-  assert.match(audit, /Does the last verse do new work\?/); assert.doesNotMatch(audit, /what was on the plate|the traffic was bad/);
+  assert.match(audit, /Do not demand a planted prop, plot turn, quirk or rewritten final chorus/);
+  assert.match(audit, /No compulsory syllable count, surprise, title flip or second hook/);
 });
 
 test('Part 293: the kill scan knows the rest of her ChatGPT ban list and leaves plain speech alone', () => {
@@ -626,9 +626,9 @@ test('rap audits keep deliberate cadence while melodic audits check uneven verse
   const uneven = 'Modern hip-hop, conversational rap.\nLyrics:\n[Verse 1]\nWait\nI brought the invoice with the part you thought I would forget\nRead it\nEvery little number has a name you have not met\nREADBACK: A confrontation.';
   const rap = lyricAuditRequest(uneven, [], null, [], 'Rap with shifting cadences');
   assert.match(rap, /FLOW AND MEANING/);
-  assert.doesNotMatch(rap, /Counted by the desk|these verses cannot carry one tune/);
-  assert.match(musicWritingCraft, /Build this singer's own vocabulary and point of view/);
-  assert.match(musicWritingCraft, /GENRE CHOOSES THE TECHNIQUE/);
+  assert.doesNotMatch(rap, /Rough phrase-length observations|these verses cannot carry one tune/);
+  assert.match(musicWritingCraft, /Rap can keep its own density, cadence and cross-bar rhyme/);
+  assert.match(musicWritingCraft, /Multisyllabic and mosaic rhymes are welcome/);
 });
 
 test('unsaved transfers use the real route without model calls or saved projects', async () => {
@@ -895,14 +895,15 @@ test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the
   const draft = 'Pop.\nLyrics:\n[Verse 1]\na1\na2\n[Chorus]\nc1\nc2\nc3\n[Verse 2]\nb1\nb2\n[Chorus]\nc1\nc2\nc3\n[Chorus - Belted]\nd1\nd2\n[Post-Chorus]\np1\np2\n[Outro]\no1\n(la la, fading)\no2\n\nREADBACK: x';
   assert.deepEqual(lyricEndingLines(draft), ['c2', 'c3', 'b1', 'b2', 'd1', 'd2', 'o1', 'o2'], 'each chorus pass (back-to-back passes apart), the last verse, the song; ad-libs and the post-chorus skipped; each line once');
   const ask = lyricAuditRequest(draft, [], null);
-  assert.ok(ask.includes('\n8. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "b1"\n   - "b2"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
-  assert.match(ask, /Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it/);
-  assert.ok(ask.indexOf('7. Singability') < ask.indexOf('8. THE ENDING') && ask.indexOf('8. THE ENDING') < ask.indexOf('Return the complete song'), 'last of the gates');
-  const gate = ask.slice(ask.indexOf('8. THE ENDING'), ask.indexOf('Return the complete song'));
+  assert.ok(ask.includes('\n7. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n   - "c2"\n   - "c3"\n   - "b1"\n   - "b2"\n   - "d1"\n   - "d2"\n   - "o1"\n   - "o2"\n'), ask.slice(0, 4000));
+  assert.match(ask, /Repair any unearned moral, cure or reversal/);
+  assert.match(ask, /Keep requested encouragement, direct emotional statements and the supplied hook/);
+  assert.ok(ask.indexOf('6. Singability') < ask.indexOf('7. THE ENDING') && ask.indexOf('7. THE ENDING') < ask.indexOf('Return the complete song'), 'last of the gates');
+  const gate = ask.slice(ask.indexOf('7. THE ENDING'), ask.indexOf('Return the complete song'));
   assert.equal((gate.match(/"/g) || []).length, 16, 'the only quotes are the pulled lines: the gate names the shape and never demonstrates one');
   assert.deepEqual(lyricEndingLines(draft.replace('[Post-Chorus]', '[Bridge]')), ['c2', 'c3', 'b1', 'b2', 'd1', 'd2', 'p1', 'p2', 'o1', 'o2'], 'the bridge too');
   const withShape = lyricAuditRequest(draft, lyricTells(draft), 'Add a [Verse 3].');
-  assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. THE ENDING\./);
+  assert.match(withShape, /\n7\. Length\. Add a \[Verse 3\]\.\n8\. THE ENDING\./);
   assert.doesNotMatch(lyricAuditRequest('An instrumental. Instrumental only, no vocals.', [], null), /THE ENDING/);
   const story = 'Folk.\nLyrics:\n[Verse 1]\nv1\nThat goat will never sleep\n[Verse 2]\nv2\nThat goat will never sleep\n\nREADBACK: x';
   assert.deepEqual(lyricEndingLines(story), ['That goat will never sleep', 'v2'], 'a story song with no chorus: the last two lines, in the order they first appear');
@@ -934,8 +935,8 @@ test('Part 293 follow-up: the route sends the drawn map under the idea, holds th
     const audit = booth.requests[1].messages[1].content;
     assert.match(audit, /"Turns out that I'm the lucky one" -- a tidy ending/, `${forced}: Jev vetoed every flag, the tidy ending is still flagged`);
     assert.match(audit, /THE ENDING\. These are the last two sung lines/);
-    if (forced === 'prePost') assert.doesNotMatch(audit, /8\. Length/, 'two verses of eight are this map');
-    else assert.match(audit, /8\. Length\. The song has only two verses, and the map for this song is three verses, a chorus after each, and a short bridge\. Add a \[Verse 3\]/);
+    if (forced === 'prePost') assert.doesNotMatch(audit, /7\. Length/, 'two verses of eight are this map');
+    else assert.match(audit, /7\. Length\. The song has only two verses, and the map for this song is three verses, a chorus after each, and a short bridge\. Add a \[Verse 3\]/);
     assert.doesNotMatch(out.body.script, /Turns out/); assert.match(out.body.script, /scratched the next one/);
   }
   const plainApi = { songSectionMap, sectionMapNote, lyricEndingTells };
@@ -959,6 +960,66 @@ test('Part 293 follow-up: the route sends the drawn map under the idea, holds th
  * these tests. */
 const chorusOf = (lines, tag = 'Chorus') => `Pop.\nLyrics:\n[${tag}]\n${lines.join('\n')}\n\nREADBACK: x`;
 const flagsOf = (script, brief = '') => lyricRepeatIssues(script, brief).flatMap(i => i.problems);
+
+const copingBrief = "A 1990s song with a soulful female lead vocal. The song is about all these struggles a person has to go through in life with the refrain, it's gon' be hard, hard, hard, ooo but we gon' make it happen. [riff] Or something like that. But I want it to be a song about coping skills.";
+const copingChorus = [
+  "it's gon' be hard, hard, hard",
+  "ooo but we gon' make it happen",
+  'Give me a minute before I reply',
+  'Let me deal with one thing at a time',
+  "it's gon' be hard, hard, hard",
+  "ooo but we gon' make it happen",
+  "it's gon' be hard, hard, hard",
+  "ooo but we gon' make it happen",
+  '[riff]',
+];
+
+test('coping context permits direct breathing and boundary choices without disabling stock-language checks', () => {
+  const flags = (line, brief) => lyricTells(`Soul.\nLyrics:\n[Verse 1]\n${line}\n\nREADBACK: x`, brief).map(t => t.tell);
+  for (const line of ['I learned to breathe', 'I learned to say no']) {
+    assert.deepEqual(flags(line, 'A soul song about a difficult week'), ['a lesson-learned line'], 'ordinary briefs retain the existing abstract-lesson scan');
+    for (const brief of [copingBrief, 'A song about handling stress', 'A song about patience', 'A song about setting boundaries']) {
+      assert.deepEqual(flags(line, brief), [], `${line}: explicitly requested coping language may belong`);
+    }
+  }
+  assert.deepEqual(flags('I found my voice', copingBrief), ['a greeting-card phrase'], 'coping does not disable unrelated stock phrases');
+  assert.deepEqual(flags('It happened on a Tuesday', copingBrief), ['a named weekday'], 'coping does not disable weekday checks');
+  assert.deepEqual(flags('I poured a coffee', copingBrief), ['coffee'], 'coping does not disable default-prop checks');
+});
+
+test('the actual coping brief preserves its repeated soul refrain through shaping and audit', () => {
+  assert.equal(chorusShapeFor(copingBrief, 'coping-regression', SECTION_MAPS.threeVerses), null, 'a supplied triple word needs no chant keyword to preserve its design');
+  const draft = chorusOf(copingChorus);
+  assert.ok(lyricRepeatIssues(draft, '').length, 'the fixture would trigger the default anti-padding gate');
+  assert.deepEqual(lyricRepeatIssues(draft, copingBrief), [], 'the designed refrain is left intact');
+  const audit = lyricAuditRequest(draft, [], null, [], copingBrief);
+  assert.ok(audit.includes(`ORIGINAL BRIEF: ${JSON.stringify(copingBrief)}`), 'the audit receives the entire original idea');
+  assert.match(audit, /Keep supplied wording, repetitions and dialect exactly/);
+  assert.match(audit, /The idea asked for this repetition/);
+  assert.doesNotMatch(audit, /once or twice in each chorus, never more|REPEATS, measured/);
+  assert.match(audit, /Encouragement can coexist with continuing difficulty/);
+  assert.match(audit, /Do not demand a planted prop, plot turn, quirk or rewritten final chorus/);
+  assert.ok(audit.endsWith(draft), 'the complete actual refrain is present in the producer request');
+});
+
+test('the real lyric route keeps the coping refrain and does not make a repetition rewrite', async () => {
+  const verse = ['Some days I answer sharper than I mean', 'I need a little room before I speak', 'I ask for help with what I cannot do', 'And leave a little room for somebody else too', 'There is more than I can settle in one day', 'I have to choose what needs me right away', 'I can feel it without giving it control', 'I take the next thing instead of taking the whole'];
+  const draft = `1990s soul, female lead vocal, warm electric piano, bass and a relaxed drum groove with an instrumental riff.\nLyrics:\n[Verse 1]\n${verse.join('\n')}\n\n[Chorus]\n${copingChorus.join('\n')}\n\n[Verse 2]\n${verse.join('\n')}\n\n[Chorus]\n${copingChorus.join('\n')}\n\n[Verse 3]\n${verse.join('\n')}\n\n[Chorus]\n${copingChorus.join('\n')}\n\nREADBACK: A soul song about responding to life's pressures.`;
+  const api = { songSectionMap: () => SECTION_MAPS.threeVerses, sectionMapNote, lyricEndingTells, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite };
+  const booth = loadBooth({ reply: () => draft, api });
+  const out = await booth.call('post/script', { user: { id: 'coping-regression' }, body: { engine: 'yue2', mode: 'write', text: copingBrief, patient: true } });
+  assert.equal(out.code, 200);
+  assert.equal(booth.requests.length, 2, 'one draft and one producer audit; no refrain rewrite');
+  assert.doesNotMatch(booth.requests[0].messages[1].content, /CHORUS SHAPE/);
+  assert.ok(booth.requests[1].messages[1].content.includes(`ORIGINAL BRIEF: ${JSON.stringify(copingBrief)}`));
+  assert.match(booth.requests[1].messages[1].content, /The idea asked for this repetition/);
+  assert.doesNotMatch(booth.requests[1].messages[1].content, /REPEATS, measured/);
+  assert.equal(out.body.script.split("it's gon' be hard, hard, hard").length - 1, 9, 'the words and dialect survive every chorus pass');
+  assert.equal(out.body.script.split("ooo but we gon' make it happen").length - 1, 9);
+  assert.equal(out.body.script.split('[riff]').length - 1, 3, 'the riff remains a separate cue');
+  assert.deepEqual({ ...booth.ledger[0].metadata.repeats }, { draft: 0, left: 0, rewrite: undefined });
+  assert.equal(booth.ledger[0].costUSD, 0.02, 'both text calls remain accounted for');
+});
 
 test('Part 296: the chorus gate finds a hook sung over and over and passes a chorus that develops', () => {
   const collapsed = chorusOf(['Fired on my birthday', 'Fired on my birthday', 'They took the paper crown right off my head', 'Fired on my birthday']);
@@ -1016,43 +1077,21 @@ test('Part 296: lines that open the same way and a line that stacks a list are f
   assert.match(flagsOf('Pop.\nLyrics:\n[Bridge]\nIt was the shuffle\nIt was the seat\nIt was the dog\n\nREADBACK: x').join('|'), /3 lines in a row open with "It was"/);
 });
 
-test('Part 296 follow-up: her hit-writing system asks for the hook once or twice in a chorus, and its worked examples do what it says', async () => {
-  /* Her word (Sep 27 2026): "You can fix the instructions and turn it on. Those instructions were written by an ai." */
+test('the craft source and markdown stay synchronized without fixed hook recipes or worked samples', async () => {
   const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
   const markdown = readFileSync(new URL('../music/hit-writing-system.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n').replace(/\n+$/, '');
-  assert.equal(hitWritingSystem, markdown, 'hitSystem.ts is regenerated from the markdown');
-  for (const old of [/says one thing eight times/, /One phrase, four passes/, /repeats its hook six times/, /repeat one phrase eight times/, /rhyme a word with itself if the cadence/, /two to four times inside the chorus, sometimes more/, /including internal repeats/, /One word repeated three times in a row/, /repeats five times/, /The title lands four to eight times\. /, /One line, four times, rising/])
-    assert.doesNotMatch(hitWritingSystem, old);
-  assert.match(hitWritingSystem, /Sing the hook phrase once or twice inside the chorus, and give every other chorus line a job: a turn, a concrete image, a consequence\. The title lands several times across the song because the chorus comes back\./);
-  assert.match(hitWritingSystem, /Choruses: 4 to 8 lines, the hook in one or two of them and something new in each of the others\./);
-  assert.match(hitWritingSystem, /9\. One word repeated for pressure, once in the song, never stretched into a list\./);
-  /* Review: the bridge toolkit's mantra asked for one line four times, which the desk's own gate flags
-   * (four lines ending on one word) and her Tier 2 bans. Built the way it now reads, a mantra bridge passes. */
-  assert.match(hitWritingSystem, /5\. \*\*The mantra\.\*\* One line sung twice, rising, with a new line answering it each time\./);
+  assert.equal(hitWritingSystem, markdown, 'the source and readable craft document describe the same active instructions');
+  assert.match(hitWritingSystem, /Repeated words in the user's phrase are part of its rhythm, not a writing defect/);
+  assert.match(hitWritingSystem, /every line need not introduce a new fact/);
+  assert.match(hitWritingSystem, /Preserve intentional repetitions, response lines, vamps and wordless syllables when requested/);
+  assert.match(hitWritingSystem, /Do not require a surprise, quirky detail, title flip, second hook or moral payoff/);
+  assert.match(hitWritingSystem, /Write every returning chorus in full/);
+  assert.doesNotMatch(hitWritingSystem, /APPENDIX|WORKED EXAMPLES|THE SEVEN LAWS|THE FOURTEEN TELLS|click syllable|roughly four to eight times/);
+  const chorus = chorusOf(['Fired on my birthday', 'Twenty minutes into the shift', 'They took the paper crown right off my head', 'Fired on my birthday']);
+  assert.deepEqual(lyricRepeatIssues(chorus, ''), [], 'the default anti-padding guard remains effective');
   const bridge = lines => `x\nLyrics:\n[Bridge]\n${lines.join('\n')}\n\nREADBACK: x`;
-  assert.deepEqual(lyricRepeatIssues(bridge(['I ain\'t coming back to town', 'Sold the truck to Randy for a hundred flat', 'I ain\'t coming back to town', 'Left the key inside your mama\'s welcome mat']), ''), []);
-  assert.equal(lyricRepeatIssues(bridge(Array(4).fill('I ain\'t coming back to town')), '').length, 1, 'one line four times is still flagged');
-  /* Everything else of hers stays, her own bans on the list shape included. */
-  assert.match(hitWritingSystem, /Self-declarative bridge repetition that just lists/);
-  assert.match(hitWritingSystem, /Forced self-rhyme: rhyming a word with itself as cadence padding\. Deliberate hook repetition is fine\./);
-  assert.match(hitWritingSystem, /Every repeated chorus is written out in full\./);
-  assert.match(hitWritingSystem, /Across a full song the title should land roughly four to eight times\./);
-  /* Her worked examples used to sing the hook three to five times in one chorus: each now passes the desk's own gate. */
-  const examples = hitWritingSystem.slice(hitWritingSystem.indexOf('## APPENDIX C: WORKED EXAMPLES'));
-  const choruses = [...examples.matchAll(/\[Chorus\]\n([\s\S]*?)\n\n/g)].map(m => m[1]);
-  assert.equal(choruses.length, 3);
-  for (const chorus of choruses) {
-    const script = `x\nLyrics:\n[Chorus]\n${chorus}\n\nREADBACK: x`;
-    assert.deepEqual(lyricRepeatIssues(script, ''), [], chorus);
-    assert.deepEqual(lyricTells(script, '').filter(t => !/copied from the writing system/.test(t.tell)), [], chorus);
-  }
-  /* The rewritten rules name the shape and never do it themselves. */
-  const rules = ['2. Repetition avoidance.', 'FIX: One hook, sung once', '**Repetition as feeling.**', '**Confidence in simplicity.**', 'Sing the hook phrase once or twice', '- Choruses: 4 to 8 lines', '9. One word repeated for pressure', '5. **The mantra.**']
-    .map(start => { const at = hitWritingSystem.indexOf(start); assert.ok(at !== -1, start); return hitWritingSystem.slice(at, hitWritingSystem.indexOf('\n', at)).replace(/ Pre-choruses:.*$/, ''); });
-  assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${rules.join(' ').split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), []);
-  /* Our own notes no longer point at advice the system has stopped giving. */
-  assert.doesNotMatch(musicWritingCraft, /pass after pass|sung three times for pressure/);
-  assert.match(musicWritingCraft, /One word repeated for pressure, once in a song, or a chant in a post-chorus, is not this\./);
+  assert.deepEqual(lyricRepeatIssues(bridge(["I ain't coming back to town", 'Sold the truck to Randy for a hundred flat', "I ain't coming back to town", "Left the key inside your mama's welcome mat"]), ''), [], 'paired bridge responses still pass');
+  assert.equal(lyricRepeatIssues(bridge(Array(4).fill("I ain't coming back to town")), '').length, 1, 'unrequested four-line bridge padding is still flagged');
 });
 
 test('Part 296: the desk draws one chorus shape in code and says it in words, never with a line to copy', () => {
@@ -1072,8 +1111,11 @@ test('Part 296: the desk draws one chorus shape in code and says it in words, ne
   for (const shape of Object.values(CHORUS_SHAPES)) {
     const note = chorusShapeNote(shape, SECTION_MAPS.threeVerses);
     assert.ok(note.startsWith(`CHORUS SHAPE, drawn by the desk for this song: ${shape.plan} `), shape.id);
-    assert.match(note, /the hook is sung no more than twice in one chorus, and every line that is not the hook says something the hook does not\. Other lines are never sung twice inside it/);
-    assert.match(note, /so the title still lands four to eight times across the song\.$/);
+    assert.match(note, /the hook is sung no more than twice in one chorus/);
+    assert.match(note, /Other lines are never sung twice inside it/);
+    assert.doesNotMatch(note, /new fact|picture only this song|every line that is not the hook says something/);
+    assert.match(note, /Supplied refrains and requested repetition win over this default/);
+    assert.match(note, /Six to eight lines by default/);
     assert.doesNotMatch(note, /["“”]/, `${shape.id}: names the shape, never demonstrates a line`);
     assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${note.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), [], `${shape.id}: the note does not do what it bans`);
   }
@@ -1082,35 +1124,29 @@ test('Part 296: the desk draws one chorus shape in code and says it in words, ne
   assert.doesNotMatch(chorusShapeNote(CHORUS_SHAPES.bookends, SECTION_MAPS.twoLong), /Chanting/);
 });
 
-test('Part 296: the desk notes and the audit say the four-to-eight count is for the whole song, and the audit gets what was measured', () => {
-  assert.doesNotMatch(musicWritingCraft, /Four to six lines plus repeats/);
-  assert.match(musicWritingCraft, /Four to six lines, and the hook is sung in them no more than twice/);
-  assert.match(musicWritingCraft, /The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus/);
-  assert.match(musicWritingCraft, /7\. NO LISTS OF LINES THAT OPEN THE SAME WAY/);
-  assert.doesNotMatch(musicWritingCraft, /Final Chorus|two long verses|three verses/, 'still no list of song shapes');
-  /* Her own words may be quoted; the shapes she hates are never demonstrated. */
-  const rules = musicWritingCraft.slice(musicWritingCraft.indexOf('3. THE CHORUS STATES THE HOOK'), musicWritingCraft.indexOf('4. SONG, NOT SHORT STORY')) + musicWritingCraft.slice(musicWritingCraft.indexOf('7. NO LISTS'), musicWritingCraft.indexOf('- WRITE IT LIKE A PERSON'));
-  assert.deepEqual(lyricRepeatIssues(`x\nLyrics:\n[Verse 1]\n${rules.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`, ''), []);
+test('the audit receives measured repeat issues without restoring novelty or fixed hook demands', () => {
+  assert.match(musicWritingCraft, /Six to eight lines is a useful default/);
+  assert.match(musicWritingCraft, /When the brief supplies repetition, a refrain, a chant, a vamp or call and response, preserve that design/);
   const draft = chorusOf(['Fired on my birthday', 'Fired on my birthday', 'They took the paper crown right off my head', 'Fired on my birthday']);
-  const plainAsk = lyricAuditRequest(draft, [], null);
-  assert.doesNotMatch(plainAsk, /repeated verbatim, title landing four to eight times/);
-  assert.match(plainAsk, /It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over\. Every other chorus line says something the hook does not\./);
-  assert.doesNotMatch(plainAsk.slice(plainAsk.indexOf('2. The hook.'), plainAsk.indexOf('3. Hook stew.')), /four to eight/, 'no song-wide count for a low-effort audit to verify (a count in a gate is where DeepSeek burns its budget)');
-  assert.match(plainAsk, /exactly one surprise/); assert.doesNotMatch(plainAsk, /REPEATS/);
+  const plain = lyricAuditRequest(draft, [], null);
+  assert.match(plain, /once or twice in each chorus/);
+  assert.match(plain, /No compulsory syllable count, surprise, title flip or second hook/);
+  assert.doesNotMatch(plain, /REPEATS, measured/);
   const issues = lyricRepeatIssues(draft, '');
   const ask = lyricAuditRequest(draft, [], null, issues);
-  assert.match(ask, /\n8\. REPEATS, measured by the desk\. \[Chorus\]: the hook "Fired on my birthday" is sung 3 times in one chorus; only 2 of its 4 lines are different; only 2 of its 4 lines say anything the hook does not; 3 of its lines end on the word "birthday"\. Fix each where it stands\./);
-  assert.match(ask, /\n9\. THE ENDING\./, 'the ending gate stays last');
+  assert.match(ask, /REPEATS, measured by the desk\. \[Chorus\]: the hook "Fired on my birthday" is sung 3 times in one chorus/);
+  assert.match(ask, /only 2 of its 4 lines are different/);
+  assert.match(ask, /3 of its lines end on the word "birthday"/);
+  assert.ok(ask.indexOf('REPEATS, measured') < ask.indexOf('THE ENDING'));
+  assert.doesNotMatch(ask, /every other line on something new|a picture only this song has|exactly one surprise/);
   const withShape = lyricAuditRequest(draft, [], 'Add a [Verse 3].', issues);
-  assert.match(withShape, /\n8\. Length\. Add a \[Verse 3\]\.\n9\. REPEATS, measured by the desk\./); assert.match(withShape, /\n10\. THE ENDING\./);
+  assert.ok(withShape.indexOf('Length. Add a [Verse 3].') < withShape.indexOf('REPEATS, measured'));
   assert.ok(ask.endsWith(draft));
-  /* Review: the audit never sees the idea, so a chant the idea asked for is said in gate 2 instead of cut to two. */
   const chant = lyricAuditRequest(draft, [], null, [], 'a repetitive chant for my softball team');
-  assert.match(chant, /2\. The hook\. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise\. The idea asked for this repetition \(a chant, or a chorus it spelled out itself\), so the chorus sings its hook as often as the idea does\. If the best line/);
-  assert.doesNotMatch(chant, /never more/);
+  assert.match(chant, /The idea asked for this repetition/);
+  assert.doesNotMatch(chant, /once or twice in each chorus, never more/);
   assert.match(lyricAuditRequest(draft, [], null, [], 'honky tonk song, the chorus goes: Last call, last call, the jukebox ate my dollar, last call'), /The idea asked for this repetition/);
   assert.match(lyricAuditRequest(draft, [], null, [], "breakup song, don't repeat the hook over and over"), /once or twice in each chorus, never more/);
-  assert.match(musicWritingCraft, /An idea that itself asks for a chant or for repetition gets what it asks for\./);
 });
 
 test('Part 296 review: a chorus written into her own idea is hers; a section flagged for its end words is told which lines, and never told to keep them', () => {
@@ -1350,31 +1386,22 @@ test('Part 296 follow-up: a kiss-off from her own idea is hers; asking for a kis
   assert.deepEqual(kissFlags('You can keep the recliner', "breakup song, I don't need him anymore"), [KISS_OFF_TELL], 'asking for one move is not asking for the other');
 });
 
-test('Part 296 follow-up: the desk notes and the audit name the kiss-off in words and never demonstrate it', async () => {
-  const eight = musicWritingCraft.slice(musicWritingCraft.indexOf('8. NO STOCK KISS-OFF'), musicWritingCraft.indexOf('- WRITE IT LIKE A PERSON'));
-  assert.match(eight, /tells the other person to keep their things, or offers the things up or sends them off with them, and the line about what the singer does not need/);
-  assert.match(eight, /A breakup, a quitting song or a brag still gets its kiss-off/);
-  assert.doesNotMatch(eight, /["“”]/, 'no example lines and no templates to copy');
+test('stock kiss-off flags remain targeted and their audit instructions do not seed example lyrics', () => {
+  assert.match(musicWritingCraft, /A stock kiss-off about handing back things or what the singer does not need is filler/);
   const song = 'Country.\nLyrics:\n[Verse 1]\nYou can keep the bass boat and the dog\nI sold the camper to a man from Joplin\n\nREADBACK: x';
   const audit = lyricAuditRequest(song, lyricTells(song), null);
   assert.match(audit, /1\. "You can keep the bass boat and the dog" -- the stock kiss-off/);
   assert.match(audit, /A line marked as the stock kiss-off needs a different move, not the same move in new words/);
   const other = song.replace('You can keep the bass boat and the dog', 'I drank a Tuesday');
-  assert.doesNotMatch(lyricAuditRequest(other, lyricTells(other), null), /stock kiss-off/, 'only when one is flagged');
-  /* What bans a shape must not do it: the scan and the repeat gate both read the note, the gate and the label clean. */
+  assert.doesNotMatch(lyricAuditRequest(other, lyricTells(other), null), /stock kiss-off/);
   const at = audit.indexOf('A line marked as the stock kiss-off');
   const gate = audit.slice(at, audit.indexOf('\n', at));
-  for (const text of [eight, gate, KISS_OFF_TELL]) {
+  for (const text of [gate, KISS_OFF_TELL]) {
     const asSong = `x\nLyrics:\n[Verse 1]\n${text.split(/(?<=[.:])\s+/).join('\n')}\n\nREADBACK: x`;
     assert.deepEqual(lyricKissOffTells(asSong), [], text.slice(0, 40));
     assert.deepEqual(lyricRepeatIssues(asSong, ''), [], text.slice(0, 40));
   }
-  /* Her worked examples no longer show the can-do-without (Example A's chorus did). */
-  const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
-  const examples = hitWritingSystem.slice(hitWritingSystem.indexOf('## APPENDIX C'));
-  assert.ok(examples.length > 1000);
-  assert.deepEqual(lyricKissOffTells(`x\nLyrics:\n${examples}`), []);
-  assert.match(examples, /Ain't bring a crowd, they lift the rope/);
+  assert.doesNotMatch(hitSource, /APPENDIX C|Ain't bring a crowd, they lift the rope/);
 });
 
 test('Part 296 follow-up: the route flags kiss-offs past a Jev veto, the audit rewrites them, and the ledger counts them', async () => {

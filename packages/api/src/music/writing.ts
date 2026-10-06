@@ -40,7 +40,8 @@ export function musicWritingSettings(request: Request): {
   reasoning?: { enabled: boolean; effort: 'low' | 'medium' | 'high'; exclude: boolean };
 } {
   const thinkMode = boothThinkMode(request);
-  const timeoutMs = musicWritingBackground(request) ? 600000 : request.patient ? 225000 : 112000;
+  const foregroundTimeoutMs = request.patient ? 225000 : 112000;
+  const timeoutMs = musicWritingBackground(request) ? 600000 : foregroundTimeoutMs;
   return {
     model: lyricWritingModel,
     maxTokens: thinkMode === 'high' ? 65536 : 16384,
@@ -53,30 +54,16 @@ export function musicWritingSettings(request: Request): {
   };
 }
 
-export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the system above where they differ)
-- Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them.
-- The songs have been coming out too short. Follow the desk's lyric budget: about four minutes, 45 to 65 sung lines counting every written-out chorus. The desk draws a SECTION MAP for each song and sends it with the request, under the idea. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent. Every verse is new story, verse two is not a shorter copy of verse one, and the last verse or the bridge carries the turn. End the song where the map ends it. Use the section tags the map names, each alone on its line.
-- Her named pet hates, in her words: "Everything's always a tuesday, drinks are always coffee, scenes are clean." Never name a weekday or a clock time, never reach for coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes, and never use clean, steady or scene as filler, unless her own brief used the word. Ask what THIS singer actually has in their hands, where exactly they are and what they would really drink, and write that.
-- The music direction chooses the lead voice, its range and its delivery for this song and this genre. There is no house voice at this desk.
-- ORIGINAL CRAFT AT THE HIGHEST LEVEL. Treat a request for virtuoso lyricism as a demand for precision, invention and emotional force, not an instruction to borrow an artist's persona, signature phrases or existing lyrics. Build this singer's own vocabulary and point of view. Give each verse a progression: a setup, a surprising development and a payoff or consequential turn. Use internal rhyme, multisyllabic rhyme, double meanings and callbacks when they deepen what the singer means; do not fill a bar merely to complete a rhyme chain. Keep the literal story understandable on first hearing and reward a second listen with another layer.
-- GENRE CHOOSES THE TECHNIQUE. The sing-along defaults below are defaults for melodic songs. Rap can sustain changing bar lengths, syncopation, enjambment and internal rhyme families with deliberate breath points; do not flatten it into uniform four-stress couplets. R&B needs vowel space and restraint, country needs conversational specificity and earned turns, punk needs sharp stresses and intent, and pop needs a memorable melodic hook. Carry the same originality and precision into every genre without forcing rapid-fire rap into all of them. Rhyme should feel satisfying when it lands, not telegraph the whole sentence in advance.
-- SING-ALONG FIRST FOR MELODIC SONGS. Her verdict on this desk's drafts (Sep 20 2026): "it's still not sounding like a song I would sing along to at all. It still feels like literary work." Rules 1 and 2 below are melodic defaults, not rules for rap, grime, drill or spoken-word bars; those use the genre-specific flow and internal rhyme guidance above. Hooks in every genre should feel good in the mouth:
-  1. RHYME YOU CAN HEAR. Melodic verses need a coherent, audible rhyme pattern, such as AABB, ABAB or XAXA; strong slant rhymes count when the sounds actually answer each other. Let the listener hear the pattern without making the next word inevitable. The chorus rhymes too, and the title line has a rhyme partner where the hook wants one. This desk under-rhymes, but substituting obvious end pairs for a thought is not a fix. Never twist word order or grammar to land a rhyme; rewrite the phrase around a fresher sound instead. Rap should also rhyme across phrase boundaries and inside bars, with multisyllabic sound families that carry meaning; a whole verse of easy last-word pairs is an unfinished draft.
-  2. A SINGABLE GROOVE PER SECTION. For melodic verses, keep stresses and phrase lengths compatible with the tune; repeating long-short patterns and deliberate pickups are welcome. For rap, vary the placement and density within the beat, preserve breath points, and let a sentence cross a bar when the thought needs it. Do not count syllables one by one while thinking; say the section against its groove once and move on. No rule here forces every genre into four stresses or a one-syllable line-length tolerance.
-  3. THE CHORUS STATES THE HOOK. The verses can show; the chorus TELLS. It is the singer saying the feeling straight out in words a ten year old knows, short lines, the title first or last, built to be shouted by a car full of people. Four to six lines, and the hook is sung in them no more than twice: every other line says something the hook does not (what happens because of it, what it costs, a picture, a comeback), and no other line is sung twice inside one chorus. The title lands four to eight times across the whole song because the chorus comes back, never four times inside one chorus. This desk over-repeats: her verdict on its choruses (Sep 27 2026) was a writer who "was lyrical for a minute" and then "ran out of ideas". The desk draws a CHORUS SHAPE with the section map; follow it. An idea that itself asks for a chant or for repetition gets what it asks for. No chorus made of description.
-  4. SONG, NOT SHORT STORY. No more than two observed details per verse, and each one something only this song could contain. Skip the props recent drafts keep reaching for, unless her brief names them: rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV. The rest is the singer talking, to someone, in plain sentences. Cut every line that only notices something unless the next line cashes it in. No understatement contests, no trailing off, no "and that's that". The opposite failure is just as dead: lines so general they could sit in a thousand songs. Plain words, exact facts. Verses this desk sizes itself run eight lines or more.
-  5. LET IT BE FUN. Jokes, stories where something happens, animals, kids, bragging, nonsense syllables, call and response, a bit the crowd does. A children's song or a comedy song gets the same craft and none of the melancholy.
-  6. More of her pet hates: humming or a hum of any kind (the heater, the fridge, the engine, a tune), "knowing" as a noun or a mood ("the knowing", "a knowing look"), anything done "slow", and the radio playing a song that comments on the scene.
-  7. NO LISTS OF LINES THAT OPEN THE SAME WAY. Three lines in a row that open with the same word or words, or one line that stacks three clauses on the same opening word, is the list she hears as machine writing (her words, Sep 27 2026: "very ai"), and her own system already bans lists that only repeat. Say the thing once, as a sentence, and spend the other lines on what happens. One word repeated for pressure, once in a song, or a chant in a post-chorus, is not this.
-  8. NO STOCK KISS-OFF. Her ear on the first songs after the chorus fix (Sep 27 2026): nearly the only machine tell left in them was the kiss-off that tells the other person to keep their things, or offers the things up or sends them off with them, and the line about what the singer does not need. One of those lines is a tell and a run of them is a list. A breakup, a quitting song or a brag still gets its kiss-off: make it something only this singer would say to this person, an action, a fact about the two of them or a comeback.
-- WRITE IT LIKE A PERSON WROTE IT. From the songwriting prompt she uses elsewhere; these hold alongside the rules above.
-  - Trust the listener. When a line lands, move on. Never explain a joke. Never follow a sad line with one saying how sad the singer is. No lesson at the end and no inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, a fight can stay unresolved, and the singer can still want the person they shouldn't.
-  - Give the singer a personality: opinions, bad habits, pettiness, contradictions, wants, and a way of talking you would recognise across a room. They do not have to be the good guy. Songs are not HR training videos.
-  - Every line earns its spot. Cut or rewrite any line that could sit in 500 other songs, exists only for the rhyme, explains the line before it, or only links two better lines. Plain words with a sharp observation beat fancy words with nothing behind them. No thesaurus poetry, and never turn a feeling into a person just to get a rhyme.
-  - Comedy: take the premise seriously enough for the joke to work. Start with a believable version and escalate. Use callbacks and misdirection; set up an expectation and wreck it. Specific beats random. Never explain the punchline.
-  - The hook can be a phrase, a question, a command, a ridiculous image, a repeated word or a punchline. Take the title from the hook or from the central joke.
-  - Genre, briefly. Punk and emo: shoutable lines, hard consonants, specific grievances, not eyeliner and darkness. Rap: cadence and internal rhyme, things a person would actually say, no vocabulary flexing and no generic bragging. Country and folk: a truck, a porch or a bottle shows up only when something happens there. R&B: desire lives in bodies and rooms more than in declarations, and the singer needs room to move. Pop: the idea is brutally clear in one sentence. Experimental may break the shape, never into nonsense.
-- Do the SONG SPEC and the hook lab silently before the first line. After drafting, make one focused silent craft revision: read the lyric as plain speech and repair any unclear speaker, actor, object or sequence of events; a prop cannot be offered, moved or revealed twice without a reason. Replace the weakest filler or predictable rhyme setups with phrases this character would actually say. In rap, find the important phrases that can share two or more stressed sounds across words, carry that sound through internal and cross-bar rhymes, and change cadence at a meaningful turn; keep the literal thought clear and the breaths performable. In a ballad or another melodic form, keep vowel space and let an action or changed hook earn the emotional turn. Make an earlier detail return with a changed meaning instead of explaining the moral or restating the premise. Check that the strongest image belongs to this particular song and that nothing copies an artist's phrases or persona. Keep the successful lines. Run the QUALITY GATES, then deliver the finished song; do not loop through an extended private essay or expose the revision.`;
+export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the saved persona where they differ)
+- Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them. Preserve a supplied refrain, including its repeated words and dialect.
+- SING-ALONG FIRST FOR MELODIC SONGS. The owner wants songs people can sing and recognize as lyrics on a track. Favor connected plain speech, natural stressed words, compatible phrase patterns, satisfying audible rhyme and room for the voice. Multisyllabic and mosaic rhymes are welcome when they carry the thought without forcing grammar or crowding the groove. Rap can keep its own density, cadence and cross-bar rhyme.
+- Follow the requested subject. R&B, a soulful female voice or a decade describes the sound, not a relationship plot. Reflective songs need no invented physical scene. Write a precise feeling, choice or consequence before reaching for an object. Her named pet hates include "Everything's always a tuesday, drinks are always coffee, scenes are clean." Skip named weekdays and clock times, coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes unless the brief makes them relevant. Do not substitute a stranger prop or an arbitrary birthday for a stock one. Keep every phrase understandable in ordinary language.
+- The songs have been coming out too short. When no length is given, aim for about four minutes, 45 to 65 sung lines counting every written-out chorus. This is a lyric budget, not measured duration. The desk draws a SECTION MAP for each song and sends it with the request, under the idea. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent. New verses add another thought, pressure, choice or event, not another wording of verse one. No compulsory story turn or payoff. Use the section tags the map names, each alone on its line.
+- THE CHORUS STATES THE HOOK. Let the singer say the central feeling directly. Six to eight lines is a useful default, with the brief and the groove deciding the form. The hook normally lands once or twice per chorus; surrounding lines deepen or answer it. A chorus should develop beyond its title instead of exhausting itself in repeated filler. When the brief supplies repetition, a refrain, a chant, a vamp or call and response, preserve that design. A sung word repeated for emphasis is allowed. The same chorus can return unchanged.
+- Trust the listener. Do not explain a joke or attach a moral to every verse. No inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, and the problem can remain unresolved. Hope can be determination while things stay hard. A song about coping can contain frustration and practical choices without becoming a worksheet, sermon, superiority speech or recovery story.
+- Details, humor, profanity, desire, darkness, tenderness and nonsense syllables are available when this song calls for them. Nobody needs to be a saint, and no flaw is compulsory. A funny or children's song gets real craft without compulsory melancholy. A stock kiss-off about handing back things or what the singer does not need is filler; write the actual thought instead.
+- Keep the music direction outside the lyrics. The lead voice, range and delivery fit this song; there is no house voice. Each performed phrase occupies one line. A supplied refrain with several phrases can span several lines while keeping every word in order; keep its line breaks too when the person explicitly requests them. Use one blank line between sections and none between the lines within a section. Parentheses contain audible backing words or ad-libs. Keep a requested riff as a separate bracket cue, with its sound described in the music direction; do not invent words to sing in its place.
+- Before delivering, silently check the whole song once: the requested meaning and supplied hook survive, every phrase makes sense, rhyme stays natural, the mouthfuls are manageable, the chorus develops, and the ending is believable. Repair weak lines and keep the successful ones. No example lyrics, analysis, score or promise of release quality in the output.`;
 
 /* Part 293 (Sep 25 2026). Her words: "Chat gpt is the only model besides like
  * Grok that will cuss in lyrics when I have it write songs... Can we incorporate
@@ -96,8 +83,10 @@ export const SONG_EXPLICIT_NOTE: string =
 export const SONG_CLEAN_NOTE: string =
   'CLEAN OR EXPLICIT: this song must be clean. No swearing, no sexual content or innuendo, no drug jokes, nothing gory. Keep the edge and lose the words: attitude, pettiness, jokes and big feelings all still belong. Write it clean from the start instead of bleeping or starring anything out.';
 
-const audienceNote = (audience: SongAudience | undefined): string =>
-  audience === 'explicit' ? SONG_EXPLICIT_NOTE : audience === 'clean' ? SONG_CLEAN_NOTE : '';
+const audienceNote = (audience: SongAudience | undefined): string => {
+  if (audience === 'explicit') return SONG_EXPLICIT_NOTE;
+  return audience === 'clean' ? SONG_CLEAN_NOTE : '';
+};
 
 /* Part 216 (Sep 19 2026). Her words: "Everything's always a tuesday, drinks are
  * always coffee, scenes are clean." The desk runs the writer on low reasoning so
@@ -110,18 +99,33 @@ const audienceNote = (audience: SongAudience | undefined): string =>
 const NEED_PIVOT = '"I don\'t need X, I need Y"';
 const LYRIC_TELLS: [string, RegExp][] = [
   ['a named weekday', /\b(?:mon|tues|wednes|thurs|fri|satur|sun)days?\b/i],
-  ['a stock clock time', /\b(?:two|three|four|2|3|4)\s?a\.?\s?m\b\.?|\bmidnight\b|\bgolden hour\b/i],
+  [
+    'a stock clock time',
+    /\b(?:two|three|four|2|3|4)\s?a\.?\s?m\b\.?|\bmidnight\b|\bgolden hour\b/i,
+  ],
   ['coffee', /\bcoffee\b|\bespresso\b|\blatte\b/i],
   ['the porch light', /\bporch ?lights?\b|\bfront porch\b/i],
   ['the kitchen table', /\bkitchen (?:table|floor|sink)\b/i],
-  ['a stock prop', /\b(?:cigarettes?|ashtrays?|whiske?y|rearview|voicemails?|missed calls?|polaroids?|mixtapes?|streetlights?|headlights?|city lights)\b/i],
-  ['neon, shadows, whispers or echoes', /\b(?:neon|shadows?|whisper(?:s|ed|ing)?|echo(?:es|ed|ing)?|ghosts?|embers?|ashes)\b/i],
+  [
+    'a stock prop',
+    /\b(?:cigarettes?|ashtrays?|whiske?y|rearview|voicemails?|missed calls?|polaroids?|mixtapes?|streetlights?|headlights?|city lights)\b/i,
+  ],
+  [
+    'neon, shadows, whispers or echoes',
+    /\b(?:neon|shadows?|whisper(?:s|ed|ing)?|echo(?:es|ed|ing)?|ghosts?|embers?|ashes)\b/i,
+  ],
   ['four walls', /\bfour walls\b/i],
   ['"clean" or "steady" as filler', /\b(?:clean|steady)\b/i],
   ['"scene" or "scenes"', /\bscenes?\b/i],
   ['humming', /\bhumm?(?:s|ed|ing|in['’]?)?\b/i],
-  ['"knowing" as a mood', /\b(?:the|a|that|this|some) knowing\b|\bknowing (?:look|smile|glance|eyes?)\b/i],
-  ['a stock phrase', /\b(?:clean slate|fresh start|moving on|turn(?:ed|ing)? the page|still standing|beautiful disaster|meant to be|what we had|weight of the world)\b/i],
+  [
+    '"knowing" as a mood',
+    /\b(?:the|a|that|this|some) knowing\b|\bknowing (?:look|smile|glance|eyes?)\b/i,
+  ],
+  [
+    'a stock phrase',
+    /\b(?:clean slate|fresh start|moving on|turn(?:ed|ing)? the page|still standing|beautiful disaster|meant to be|what we had|weight of the world)\b/i,
+  ],
   /* Part 293 (Sep 25 2026): the rest of the anti-AI list in the songwriting
    * prompt she uses with ChatGPT, where this scan had no pattern yet. Narrowed
    * where plain speech uses the same words: "found myself" only in the
@@ -142,12 +146,30 @@ const LYRIC_TELLS: [string, RegExp][] = [
    * comma or the end of the line follows ("a hollow by the creek", but "a
    * hollow heart" is flagged); and after a capitalised word (Possum Hollow),
    * which needs its own pattern without the i flag. */
-  ['a greeting-card phrase', /\b(?:break(?:ing|in['’]?|s)? (?:these|the|my|those) chains|war (?:inside|in) my head|battle scars?|beautiful mess|perfectly imperfect|shattered pieces|my truth|found my voice|ch(?:ose|oose|oosing) myself|finally free)\b/i],
-  ['a lesson-learned line', /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to (?:let (?:it |you |them |him |her |that |this )?go|love (?:myself|me|again)|breathe|fly(?=\s*(?:[.,!?;:()—–-]|$))|stand(?: tall| on my own)?|be (?:strong|free|me|myself|okay|ok|alone|brave|enough|happy)|live (?:again|without)|walk away|move on|forgive|heal|trust (?:myself|again)|smile again|shine|rise|survive|say no)\b|\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to(?=[\s.,!?;:—–-]*$)|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than| still| finally| always| already)? enough(?=\s*(?:[.,!?;:()—–-]|$)|\s+for (?:me|myself|you|anyone|them|him|her|us)\b|\s+(?:just )?as i am\b)|(?:\bfound myself|\bfinding myself|(?<=(?:\bto|\bgonna|\bgotta|['’]ll|\bwill|\bcan|\bmust|\bmight)\s)find myself|\bfind myself(?= again\b))(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i],
-  ["the desk's own filler", /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i],
-  ['a worn image word', /\bdemons\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|(?<!\b(?:radio|police|scanner|cb|ham|fm|am|shortwave|short-wave|emergency|fire|weather)\s)\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|(?<!\bthe\s)\belectric\b(?!['’]s\b)(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|compan(?:y|ies)|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter|pump|light|blue|cart|bike|scooter|motor|mower|train|wire|line|pole|shock|heat|oven|range|dryer|avenue|eel|kettle|toothbrush|smoker|grill|saw|truck|boat)(?:e?s)?\b)|(?<=\bthe\s)electric(?=\s+(?:feeling|touch|spark|sparks|charge|current|air|night|energy|love|kiss|pulse|thrill|rush|chemistry|glow|buzz|tension|connection|moment|vibes?)\b)/i],
-  ['a worn image word', /(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)(?<![A-Z][A-Za-z'’]*\s)\bHollow(?:ness)?\b|(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)\b(?:hollow(?:ness)?|HOLLOW(?:NESS)?)\b|(?<=\b[Aa]\s)(?:hollow|Hollow|HOLLOW)\b(?!['’]s\b|\s+(?:by|in|on|at|past|near|under|behind|below|beyond|where|down|up|off|out|over|beside|between|to|from|with)\b|\s*[,.;:!?)—–-]|\s*$)/],
-  [NEED_PIVOT, /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i],
+  [
+    'a greeting-card phrase',
+    /\b(?:break(?:ing|in['’]?|s)? (?:these|the|my|those) chains|war (?:inside|in) my head|battle scars?|beautiful mess|perfectly imperfect|shattered pieces|my truth|found my voice|ch(?:ose|oose|oosing) myself|finally free)\b/i,
+  ],
+  [
+    'a lesson-learned line',
+    /\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to (?:let (?:it |you |them |him |her |that |this )?go|love (?:myself|me|again)|breathe|fly(?=\s*(?:[.,!?;:()—–-]|$))|stand(?: tall| on my own)?|be (?:strong|free|me|myself|okay|ok|alone|brave|enough|happy)|live (?:again|without)|walk away|move on|forgive|heal|trust (?:myself|again)|smile again|shine|rise|survive|say no)\b|\bi(?:['’]ve)? learn(?:ed|t) (?:how )?to(?=[\s.,!?;:—–-]*$)|\bnow i know\b|\bi survived(?=\s*(?:[.,!?;:()—–-]|$|it all\b|the (?:storm|fire|worst)\b))|\bi(?:['’]m| am)(?: more than| still| finally| always| already)? enough(?=\s*(?:[.,!?;:()—–-]|$)|\s+for (?:me|myself|you|anyone|them|him|her|us)\b|\s+(?:just )?as i am\b)|(?:\bfound myself|\bfinding myself|(?<=(?:\bto|\bgonna|\bgotta|['’]ll|\bwill|\bcan|\bmust|\bmight)\s)find myself|\bfind myself(?= again\b))(?: again)?(?=[\s.,!?;:—–-]*(?:\([^)]*\)[\s.,!?;:—–-]*)?$)/i,
+  ],
+  [
+    "the desk's own filler",
+    /\b(?:(?:say|said|saying) it plain|on cue|the wild part|sitt?ing pretty|sittin['’]? pretty)\b/i,
+  ],
+  [
+    'a worn image word',
+    /\bdemons\b|\bshimmer(?:s|ed|ing)?\b|\bunfold(?:s|ed|ing)?\b(?!\s+(?:the|a|an|my|your|his|her|our|their|that|this|it|them|up)\b)|\bvalidation\b|\bvibrations?\b|(?<!\b(?:radio|police|scanner|cb|ham|fm|am|shortwave|short-wave|emergency|fire|weather)\s)\bfrequenc(?:y|ies)\b|(?<!\bin a\s)\bheartbeats?\b|(?<!\bthe\s)\belectric\b(?!['’]s\b)(?!\s+(?:guitar|piano|bass|keys|keyboard|organ|slide|bill|compan(?:y|ies)|co-?op|fence|chair|blanket|razor|can opener|drill|car|stove|fan|heater|meter|pump|light|blue|cart|bike|scooter|motor|mower|train|wire|line|pole|shock|heat|oven|range|dryer|avenue|eel|kettle|toothbrush|smoker|grill|saw|truck|boat)(?:e?s)?\b)|(?<=\bthe\s)electric(?=\s+(?:feeling|touch|spark|sparks|charge|current|air|night|energy|love|kiss|pulse|thrill|rush|chemistry|glow|buzz|tension|connection|moment|vibes?)\b)/i,
+  ],
+  [
+    'a worn image word',
+    /(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)(?<![A-Z][A-Za-z'’]*\s)\bHollow(?:ness)?\b|(?<!\b(?:[Tt]he|THE|[Tt]hat|THAT|[Tt]his|THIS|[Aa])\s)\b(?:hollow(?:ness)?|HOLLOW(?:NESS)?)\b|(?<=\b[Aa]\s)(?:hollow|Hollow|HOLLOW)\b(?!['’]s\b|\s+(?:by|in|on|at|past|near|under|behind|below|beyond|where|down|up|off|out|over|beside|between|to|from|with)\b|\s*[,.;:!?)—–-]|\s*$)/,
+  ],
+  [
+    NEED_PIVOT,
+    /\bi (?:don['’]?t|do not|ain['’]?t) need\b[^.!?]*?[,;:—–-]\s*(?:but )?(?:i (?:just |only |really )?|just |only )(?:need|want)\b/i,
+  ],
 ];
 
 export type LyricTell = { line: string; tell: string };
@@ -210,7 +232,12 @@ function sungLines(script: string): { line: string; section: string; pass: numbe
 function lastOf(lines: { line: string; section: string; pass: number }[], tag: RegExp): string[] {
   let pass = -1;
   for (const l of lines) if (tag.test(l.section)) pass = l.pass;
-  return pass === -1 ? [] : lines.filter((l) => l.pass === pass).slice(-2).map((l) => l.line);
+  return pass === -1
+    ? []
+    : lines
+        .filter((l) => l.pass === pass)
+        .slice(-2)
+        .map((l) => l.line);
 }
 
 const CHORUS_TAG = /^(?:final |last )?(?:chorus|hook|refrain)\b/i;
@@ -240,7 +267,11 @@ function changedLastChorus(lines: { line: string; section: string; pass: number 
  *  is theirs and is never flagged. */
 export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
   const lines = sungLines(script);
-  const scope = new Set([...lines.slice(-4).map((l) => l.line), ...lastOf(lines, /^verse/i), ...changedLastChorus(lines)]);
+  const scope = new Set([
+    ...lines.slice(-4).map((l) => l.line),
+    ...lastOf(lines, /^verse/i),
+    ...changedLastChorus(lines),
+  ]);
   const found: LyricTell[] = [];
   for (const { line } of lines) {
     if (!scope.has(line) || found.some((t) => t.line === line)) continue;
@@ -282,47 +313,184 @@ export function lyricEndingTells(script: string, brief = ''): LyricTell[] {
 export const KISS_OFF_TELL =
   'the stock kiss-off: telling them to keep, have or take back their things, or saying what the singer does not need';
 
-const KISS_LEAD =
-  String.raw`(?:(?:and|but|so|or|just|now|well|oh|then|hey|yeah|fine|okay|ok|please|baby|babe|honey|darlin'?|darling|girl|boy|go on(?: and)?|go ahead(?: and)?|you know what|(?:[a-z']+ )?(?:said|says|told [a-z']+|tell [a-z']+))\s+)*`;
+const KISS_LEAD = String.raw`(?:(?:and|but|so|or|just|now|well|oh|then|hey|yeah|fine|okay|ok|please|baby|babe|honey|darlin'?|darling|girl|boy|go on(?: and)?|go ahead(?: and)?|you know what|(?:[a-z']+ )?(?:said|says|told [a-z']+|tell [a-z']+))\s+)*`;
 const KISS_HAND_BACK = new RegExp(
   String.raw`^(${KISS_LEAD})(?:(you|ya|y'all|you all)\s+(?:(can|could|may|might as well|may as well|should|just|go on and|go ahead and|better|oughta|can just|could just|can go ahead and)\s+)?)?(keep|have|take)\s+(.+)$`,
 );
 const NEED_NOT = String.raw`(?:don't|dont|do not|ain't|aint|didn't|didnt|did not|never|no longer)\s+(?:(?:even|really|ever|never|sure|much|just|actually|honestly|truly)\s+)?need(?:ed|s)?`;
-const NEED_I = new RegExp(String.raw`\b(?:i|we)\s+(?:(?:sure|really|just|still|even|honestly|surely)\s+)?${NEED_NOT}\b\s*(\S*)`);
+const NEED_I = new RegExp(
+  String.raw`\b(?:i|we)\s+(?:(?:sure|really|just|still|even|honestly|surely)\s+)?${NEED_NOT}\b\s*(\S*)`,
+);
 const NEED_BARE = new RegExp(String.raw`^${KISS_LEAD}${NEED_NOT}\b\s*(\S*)`);
-const NEED_NOBODY = new RegExp(String.raw`\b${NEED_NOT}\b(?!\s+to\b).*\b(?:no|nobody|nobody's|no one|nothin'?|nothing|none)\b`);
+const NEED_NOBODY = new RegExp(
+  String.raw`\b${NEED_NOT}\b(?!\s+to\b).*\b(?:no|nobody|nobody's|no one|nothin'?|nothing|none)\b`,
+);
 const WHO_NEEDS = new RegExp(String.raw`^${KISS_LEAD}who needs\s+(\S+)`);
 /* What may follow need without it being a thing needed: need to + a verb, or a new clause
  * (a hat I didn't need and a pair of boots). */
-const NEED_NOT_A_THING = new Set("to from when if since until till 'til before after because 'cause cause cuz 'cuz and or but so then anyway anyhow at in on for with by of".split(' ').concat(''));
+const NEED_NOT_A_THING = new Set(
+  "to from when if since until till 'til before after because 'cause cause cuz 'cuz and or but so then anyway anyhow at in on for with by of"
+    .split(' ')
+    .concat(''),
+);
 const WHO_NEEDS_NOT_A_THING = new Set(['to', 'me', 'us', 'help']);
-const KISS_PRONOUNS = new Set(['it', 'them', "'em", 'em', 'that', 'this', 'him', 'her', 'everything', 'those', 'these', 'all']);
-const KISS_DETS = new Set(['your', "yo'", 'yo', 'the', 'all', 'every', 'whatever', 'his', 'her', 'their', 'those', 'these', 'this', 'that']);
+const KISS_PRONOUNS = new Set([
+  'it',
+  'them',
+  "'em",
+  'em',
+  'that',
+  'this',
+  'him',
+  'her',
+  'everything',
+  'those',
+  'these',
+  'all',
+]);
+const KISS_DETS = new Set([
+  'your',
+  "yo'",
+  'yo',
+  'the',
+  'all',
+  'every',
+  'whatever',
+  'his',
+  'her',
+  'their',
+  'those',
+  'these',
+  'this',
+  'that',
+]);
 /* Words that may close a hand-back after a pronoun: "you can keep it all", "keep it for all I care". */
-const KISS_TAIL = new Set(['all', 'both', 'too', 'then', 'now', 'baby', 'babe', 'boy', 'girl', 'honey', "darlin'", 'darlin', 'darling', 'anyway', 'anyhow', 'forever', 'for', 'good', 'i', 'care', 'yourself', 'yours']);
-const NP_SKIP = new Set(['of', 'the', 'your', "yo'", 'that', 'those', 'these', 'this', 'his', 'her', 'their', 'damn']);
-const NP_STOP = new Set(['and', 'or', 'but', 'i', "i'm", "i'll", "i've", "i'd", "'cause", 'cause', 'cuz', "'cuz", 'because', 'so', 'too', 'then', 'baby', 'babe', 'honey', 'girl', 'boy', "darlin'", "'til", 'till', 'until', 'while', 'you', 'we', 'now']);
+const KISS_TAIL = new Set([
+  'all',
+  'both',
+  'too',
+  'then',
+  'now',
+  'baby',
+  'babe',
+  'boy',
+  'girl',
+  'honey',
+  "darlin'",
+  'darlin',
+  'darling',
+  'anyway',
+  'anyhow',
+  'forever',
+  'for',
+  'good',
+  'i',
+  'care',
+  'yourself',
+  'yours',
+]);
+const NP_SKIP = new Set([
+  'of',
+  'the',
+  'your',
+  "yo'",
+  'that',
+  'those',
+  'these',
+  'this',
+  'his',
+  'her',
+  'their',
+  'damn',
+]);
+const NP_STOP = new Set([
+  'and',
+  'or',
+  'but',
+  'i',
+  "i'm",
+  "i'll",
+  "i've",
+  "i'd",
+  "'cause",
+  'cause',
+  'cuz',
+  "'cuz",
+  'because',
+  'so',
+  'too',
+  'then',
+  'baby',
+  'babe',
+  'honey',
+  'girl',
+  'boy',
+  "darlin'",
+  "'til",
+  'till',
+  'until',
+  'while',
+  'you',
+  'we',
+  'now',
+]);
 /* keep + a word that says how or where it is kept is an instruction, not a hand-back. */
 const KEEP_HOW = new Set(
-  "down up on off in out inside outside indoors shut open closed locked low high away back to from between close closer tight clean crossed steady still warm safe straight cool calm quiet together dry busy alive awake lit level where here there near at under over around 'round round handy ready hidden happy fed honest humble hungry sharp full fresh cold hot sweet simple light real right loose free short long neat tidy strong".split(' '),
+  "down up on off in out inside outside indoors shut open closed locked low high away back to from between close closer tight clean crossed steady still warm safe straight cool calm quiet together dry busy alive awake lit level where here there near at under over around 'round round handy ready hidden happy fed honest humble hungry sharp full fresh cold hot sweet simple light real right loose free short long neat tidy strong".split(
+    ' ',
+  ),
 );
 /* keep where it means hold to, not hold on to a thing. */
-const KEEP_IDIOMS = new Set('word promise promises vow vows cool head balance pace faith peace beat time tempo score count track watch distance company composure wits nerve calm shape spirits chin guard lid grip footing seat place'.split(' '));
-const ING_NOUNS = new Set('thing string spring wedding ceiling building feeling darling earring sibling sling swing bling offering everything nothing something anything clothing painting drawing morning evening bedding ending meeting blessing pudding stuffing filling awning lightning icing frosting topping dressing stocking sapling duckling herring sterling savings'.split(' '));
+const KEEP_IDIOMS = new Set(
+  'word promise promises vow vows cool head balance pace faith peace beat time tempo score count track watch distance company composure wits nerve calm shape spirits chin guard lid grip footing seat place'.split(
+    ' ',
+  ),
+);
+const ING_NOUNS = new Set(
+  'thing string spring wedding ceiling building feeling darling earring sibling sling swing bling offering everything nothing something anything clothing painting drawing morning evening bedding ending meeting blessing pudding stuffing filling awning lightning icing frosting topping dressing stocking sapling duckling herring sterling savings'.split(
+    ' ',
+  ),
+);
 const KEEP_DONE = new Set('swept set done paid known hid shown sworn'.split(' '));
 const ED_NOUNS = new Set('speed steed greed creed breed tweed hundred'.split(' '));
 /* take + a thing is a hand-back only when the thing is sent away with them, when it is it or
  * them with nothing after, or when the line hands two things over. */
-const TAKE_GO = new Set('go leave get git run walk split scram beat move roll head hit drive ride shove stick bounce disappear vanish'.split(' '));
-const TAKE_IDIOMS = new Set('time hand word shot chance turn seat place medicine advice cue lead pick bow aim breath step stand wheel long high low back short scenic stairs stage mic floor spotlight reins heat fall blame bait cake hit call road exit'.split(' '));
+const TAKE_GO = new Set(
+  'go leave get git run walk split scram beat move roll head hit drive ride shove stick bounce disappear vanish'.split(
+    ' ',
+  ),
+);
+const TAKE_IDIOMS = new Set(
+  'time hand word shot chance turn seat place medicine advice cue lead pick bow aim breath step stand wheel long high low back short scenic stairs stage mic floor spotlight reins heat fall blame bait cake hit call road exit'.split(
+    ' ',
+  ),
+);
 const TAKE_BARE = new Set(['it', 'them', "'em", 'em', 'everything']);
 /* The words before the thing needed, so a phrase reaches the thing itself. */
-const THING_DETS = new Set(['a', 'an', 'the', 'your', "yo'", 'yo', 'his', 'her', 'their', 'my', 'no', 'any', 'some', 'of', 'nobody', "nobody's"]);
+const THING_DETS = new Set([
+  'a',
+  'an',
+  'the',
+  'your',
+  "yo'",
+  'yo',
+  'his',
+  'her',
+  'their',
+  'my',
+  'no',
+  'any',
+  'some',
+  'of',
+  'nobody',
+  "nobody's",
+]);
 /* A line that carries on the singer's own sentence from the line above: "I'll drive it once
  * around and park it where it sat / And keep the keys forever after that" is the singer keeping
  * them. Only a subject whose verb can take "and keep" after it (I, we, they, anyone's 'll or
  * 'd, gonna); "I'm leavin' / and keep the ring" is still an order. */
-const GOES_ON = /^(?:(?:and|but|so|then|now|well|oh|yeah)\s+)*(?:i|we|they|(?:i|we|they|he|she)'(?:ll|d)|i'ma|imma|(?:i'm|we're|they're|he's|she's) (?:gonna|gon'?|fixin'? to|finna|about to|going to))(?:\s|$)/;
+const GOES_ON =
+  /^(?:(?:and|but|so|then|now|well|oh|yeah)\s+)*(?:i|we|they|(?:i|we|they|he|she)'(?:ll|d)|i'ma|imma|(?:i'm|we're|they're|he's|she's) (?:gonna|gon'?|fixin'? to|finna|about to|going to))(?:\s|$)/;
 
 type KissOff = { family: string; phrase: string };
 
@@ -332,7 +500,12 @@ const kissClauses = (line: string): string[] =>
     .replace(/[’‘`]/g, "'")
     .toLowerCase()
     .split(/[,;:!?.()"“”…]+|\s[—–-]+\s|[—–]/)
-    .map((c) => c.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .map((c) =>
+      c
+        .replace(/[^a-z0-9' ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
     .filter(Boolean);
 
 /** From a need to the thing needed ("don't need your cousin's boat" -> "don't need your cousin's"). */
@@ -351,7 +524,8 @@ function handBack(verb: string, rest: string[], offered = false): string | null 
   /* Seen in the first fresh song on this desk: "You can keep standin' there". Offered, keep
    * + an -ing word is the same dismissal; said plainly (you keep askin') it is not. */
   const going = (w: string): boolean => /[a-z]{2,}(?:ing|in')$/.test(w) && !ING_NOUNS.has(w);
-  if (verb === 'keep' && offered && (going(first) || (first === 'on' && going(after[0] || '')))) return `keep ${first}`;
+  if (verb === 'keep' && offered && (going(first) || (first === 'on' && going(after[0] || ''))))
+    return `keep ${first}`;
   if (verb === 'take') {
     /* Seen in the fix's first songs: "Go on and take it", "Take it, I think two years is
      * enough". It or them with nothing after is the hand-over; "take it back", "take it slow"
@@ -363,10 +537,21 @@ function handBack(verb: string, rest: string[], offered = false): string | null 
     while (i < after.length && NP_SKIP.has(after[i])) i += 1;
     if (!pronoun && TAKE_IDIOMS.has(after[i] || '')) return null;
     const near = after.slice(0, 8);
-    const goes = near.some((w, j) => (w === 'and' && TAKE_GO.has(near[j + 1] || '')) || w === 'outta' || (w === 'with' && near[j + 1] === 'you') || (w === 'out' && near[j + 1] === 'of') || (!pronoun && ((w === 'back' && j === i + 1) || w === 'elsewhere')));
+    const goes = near.some(
+      (w, j) =>
+        (w === 'and' && TAKE_GO.has(near[j + 1] || '')) ||
+        w === 'outta' ||
+        (w === 'with' && near[j + 1] === 'you') ||
+        (w === 'out' && near[j + 1] === 'of') ||
+        (!pronoun && ((w === 'back' && j === i + 1) || w === 'elsewhere')),
+    );
     return goes ? `take ${first}` : null;
   }
-  if (KISS_PRONOUNS.has(first) && after.every((w) => KISS_TAIL.has(w) || (verb === 'have' && w === 'back'))) return `${verb} ${first}`;
+  if (
+    KISS_PRONOUNS.has(first) &&
+    after.every((w) => KISS_TAIL.has(w) || (verb === 'have' && w === 'back'))
+  )
+    return `${verb} ${first}`;
   if (!KISS_DETS.has(first)) return null;
   let i = 0;
   while (i < after.length && NP_SKIP.has(after[i])) i += 1;
@@ -378,7 +563,18 @@ function handBack(verb: string, rest: string[], offered = false): string | null 
     /* "keep her safe", "keep that quiet": her, that and the like are the thing kept. */
     if (KISS_PRONOUNS.has(first) && KEEP_HOW.has(np[0])) return null;
     /* keep the engine running, the porch swept, the bills paid: how it is kept. */
-    if (np.slice(1).some((w) => KEEP_HOW.has(w) || KEEP_DONE.has(w) || going(w) || (/[a-z]{3,}ed$/.test(w) && !ED_NOUNS.has(w)))) return null;
+    if (
+      np
+        .slice(1)
+        .some(
+          (w) =>
+            KEEP_HOW.has(w) ||
+            KEEP_DONE.has(w) ||
+            going(w) ||
+            (/[a-z]{3,}ed$/.test(w) && !ED_NOUNS.has(w)),
+        )
+    )
+      return null;
   }
   return `${verb} ${first} ${np[0]}`;
 }
@@ -404,23 +600,27 @@ function kissOff(line: string, previous = ''): KissOff | null {
       if (!advice && !carried && (verb !== 'have' || offered || bareHave)) {
         const words = rest.split(' ');
         const phrase = handBack(verb, words, offered);
-        if (phrase && (!bareHave || phrase.split(' ').length === 2)) return { family: verb === 'take' ? 'take' : 'keep', phrase };
+        if (phrase && (!bareHave || phrase.split(' ').length === 2))
+          return { family: verb === 'take' ? 'take' : 'keep', phrase };
         /* A run of things handed over, each with take: "take the car, take the cable". */
         if (verb === 'take' && KISS_DETS.has(words[0])) {
           let i = 1;
           while (i < words.length && NP_SKIP.has(words[i])) i += 1;
-          if (words[i] && !TAKE_IDIOMS.has(words[i]) && !NP_STOP.has(words[i])) takes = [...takes, `take ${words[0]} ${words[i]}`];
+          if (words[i] && !TAKE_IDIOMS.has(words[i]) && !NP_STOP.has(words[i]))
+            takes = [...takes, `take ${words[0]} ${words[i]}`];
         }
       }
     }
     for (const pattern of [NEED_I, NEED_BARE]) {
       const hit = pattern.exec(clause);
-      if (hit && !NEED_NOT_A_THING.has(hit[1])) return { family: 'need', phrase: throughThing(clause, hit.index) };
+      if (hit && !NEED_NOT_A_THING.has(hit[1]))
+        return { family: 'need', phrase: throughThing(clause, hit.index) };
     }
     const nobody = NEED_NOBODY.exec(clause);
     if (nobody) return { family: 'need', phrase: nobody[0].trim() };
     const who = WHO_NEEDS.exec(clause);
-    if (who && !WHO_NEEDS_NOT_A_THING.has(who[1])) return { family: 'need', phrase: throughThing(clause, clause.indexOf('who needs')) };
+    if (who && !WHO_NEEDS_NOT_A_THING.has(who[1]))
+      return { family: 'need', phrase: throughThing(clause, clause.indexOf('who needs')) };
   }
   return takes.length >= 2 ? { family: 'take', phrase: takes[0] } : null;
 }
@@ -431,51 +631,119 @@ function kissOff(line: string, previous = ''): KissOff | null {
  * after a no, not, never, without, avoid, stop, skip, hate or ban a few words before. A note to
  * the writer about the song itself is not the move (keep it upbeat, keep the chorus short,
  * take it slow, don't need a bridge, I don't need it to rhyme). */
-const SONG_PARTS = new Set('song songs chorus choruses verse verses bridge bridges hook hooks intro outro tempo beat beats rhythm lyric lyrics word words language line lines tone vibe vibes mood energy pace rhyme rhymes rhyming melody melodies vocals vocal length story theme groove bpm key drums bass guitar piano part parts ending title listener listeners audience minute minutes swearing cussing cursing profanity style genre'.split(' '));
+const SONG_PARTS = new Set(
+  'song songs chorus choruses verse verses bridge bridges hook hooks intro outro tempo beat beats rhythm lyric lyrics word words language line lines tone vibe vibes mood energy pace rhyme rhymes rhyming melody melodies vocals vocal length story theme groove bpm key drums bass guitar piano part parts ending title listener listeners audience minute minutes swearing cussing cursing profanity style genre'.split(
+    ' ',
+  ),
+);
 const OFFERED_BY = new Set(['you', 'ya', "y'all", 'he', 'she', 'they']);
 const OFFER_VERBS = new Set(['can', 'could', 'may', 'gets', 'get']);
 const TOLD_BY = new Set(['tell', 'tells', 'telling', 'told']);
-const BRIEF_LEADS = new Set('and but so just now well oh then hey yeah fine okay ok please'.split(' '));
-const NEED_NEGATED = new Set(["don't", 'dont', "ain't", 'aint', "didn't", 'didnt', 'never', "doesn't", 'doesnt', "won't", 'wont']);
-const NEED_SOFT = new Set('even really ever never sure much just actually honestly truly'.split(' '));
-const BRIEF_NEGATIONS = new Set(['no', 'not', "don't", 'dont', 'never', 'without', 'avoid', 'stop', 'skip', 'hate', 'ban', 'less', 'fewer', 'none']);
+const BRIEF_LEADS = new Set(
+  'and but so just now well oh then hey yeah fine okay ok please'.split(' '),
+);
+const NEED_NEGATED = new Set([
+  "don't",
+  'dont',
+  "ain't",
+  'aint',
+  "didn't",
+  'didnt',
+  'never',
+  "doesn't",
+  'doesnt',
+  "won't",
+  'wont',
+]);
+const NEED_SOFT = new Set(
+  'even really ever never sure much just actually honestly truly'.split(' '),
+);
+const BRIEF_NEGATIONS = new Set([
+  'no',
+  'not',
+  "don't",
+  'dont',
+  'never',
+  'without',
+  'avoid',
+  'stop',
+  'skip',
+  'hate',
+  'ban',
+  'less',
+  'fewer',
+  'none',
+]);
 
 /** Her brief asks for the move at word i: its family and the word where the move starts. */
 function briefMoveAt(words: string[], i: number): { family: string; start: number } | null {
   const word = words[i];
-  const partAhead = (from: number): boolean => words.slice(from, from + 4).some((w) => SONG_PARTS.has(w));
+  const partAhead = (from: number): boolean =>
+    words.slice(from, from + 4).some((w) => SONG_PARTS.has(w));
   if (word === 'keep' || word === 'have' || word === 'take') {
     const j = words[i - 1] === 'to' ? i - 2 : i - 1;
     let start = -1;
     let offered = false;
-    if (OFFER_VERBS.has(words[j] || '') && OFFERED_BY.has(words[j - 1] || '')) [start, offered] = [j - 1, true];
+    if (OFFER_VERBS.has(words[j] || '') && OFFERED_BY.has(words[j - 1] || ''))
+      [start, offered] = [j - 1, true];
     else if (j >= 1 && TOLD_BY.has(words[j - 1])) [start, offered] = [j - 1, true];
     else if (words.slice(0, i).every((w) => BRIEF_LEADS.has(w))) start = 0;
     if (start === -1 || (word === 'have' && !offered)) return null;
-    return handBack(word, words.slice(i + 1), offered) && !partAhead(i + 1) ? { family: word === 'take' ? 'take' : 'keep', start } : null;
+    return handBack(word, words.slice(i + 1), offered) && !partAhead(i + 1)
+      ? { family: word === 'take' ? 'take' : 'keep', start }
+      : null;
   }
   if (!/^need(?:s|ed)?$/.test(word)) return null;
-  const j = !NEED_NEGATED.has(words[i - 1] || '') && NEED_SOFT.has(words[i - 1] || '') ? i - 2 : i - 1;
+  const j =
+    !NEED_NEGATED.has(words[i - 1] || '') && NEED_SOFT.has(words[i - 1] || '') ? i - 2 : i - 1;
   let start = -1;
   if (NEED_NEGATED.has(words[j] || '')) start = j;
   else if (words[j] === 'not' && ['do', 'does', 'did'].includes(words[j - 1] || '')) start = j - 1;
   else if (words[j] === 'longer' && words[j - 1] === 'no') start = j - 1;
-  else if (word === 'needs' && words[i - 1] === 'who' && words.slice(0, i - 1).every((w) => BRIEF_LEADS.has(w)) && !WHO_NEEDS_NOT_A_THING.has(words[i + 1] || '')) start = i - 1;
+  else if (
+    word === 'needs' &&
+    words[i - 1] === 'who' &&
+    words.slice(0, i - 1).every((w) => BRIEF_LEADS.has(w)) &&
+    !WHO_NEEDS_NOT_A_THING.has(words[i + 1] || '')
+  )
+    start = i - 1;
   const next = words[i + 1] || '';
-  if (start === -1 || NEED_NOT_A_THING.has(next) || partAhead(i + 1) || (next === 'it' && words[i + 2] === 'to')) return null;
+  if (
+    start === -1 ||
+    NEED_NOT_A_THING.has(next) ||
+    partAhead(i + 1) ||
+    (next === 'it' && words[i + 2] === 'to')
+  )
+    return null;
   return { family: 'need', start };
 }
 
 const bareWords = (text: string): string => sayable(text).split(' ').map(bare).join(' ');
 const briefKissOffs = (brief: string): Set<string> => {
   const asked = new Set<string>();
-  for (const sentence of String(brief || '').replace(/[’‘`]/g, "'").toLowerCase().split(/[.!?;\n]+/)) {
+  for (const sentence of String(brief || '')
+    .replace(/[’‘`]/g, "'")
+    .toLowerCase()
+    .split(/[.!?;\n]+/)) {
     const before: string[] = [];
     for (const clause of sentence.split(/[,:()…]+|\s[—–-]+\s|[—–]/)) {
-      const words = clause.replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').map(bare).filter(Boolean);
+      const words = clause
+        .replace(/[^a-z0-9' ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(' ')
+        .map(bare)
+        .filter(Boolean);
       for (let i = 0; i < words.length; i++) {
         const move = briefMoveAt(words, i);
-        if (move && !before.concat(words.slice(0, move.start)).slice(-6).some((w) => BRIEF_NEGATIONS.has(w))) asked.add(move.family);
+        if (
+          move &&
+          !before
+            .concat(words.slice(0, move.start))
+            .slice(-6)
+            .some((w) => BRIEF_NEGATIONS.has(w))
+        )
+          asked.add(move.family);
       }
       before.push(...words);
     }
@@ -500,7 +768,13 @@ export function lyricKissOffTells(script: string, brief = ''): LyricTell[] {
      * let any line through behind her "keep it upbeat" or "I don't need a bridge". */
     const phrase = bareWords(hit.phrase).split(' ');
     const last = phrase[phrase.length - 1];
-    if (phrase.length >= 3 && !KISS_PRONOUNS.has(last) && !THING_DETS.has(last) && said.includes(` ${phrase.join(' ')} `)) continue;
+    if (
+      phrase.length >= 3 &&
+      !KISS_PRONOUNS.has(last) &&
+      !THING_DETS.has(last) &&
+      said.includes(` ${phrase.join(' ')} `)
+    )
+      continue;
     found.push({ line, tell: KISS_OFF_TELL });
   }
   return found;
@@ -511,6 +785,8 @@ export function lyricKissOffTells(script: string, brief = ''): LyricTell[] {
 export function lyricTells(script: string, brief = ''): LyricTell[] {
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return [];
+  const copingBrief =
+    /\b(?:coping|cope|handling stress|managing stress|patience|boundaries)\b/i.test(brief);
   const found: LyricTell[] = [];
   const seen = new Set<string>();
   const endings = new Map(lyricEndingTells(script, brief).map((t) => [t.line, t]));
@@ -527,11 +803,18 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
     for (const [name, pattern] of LYRIC_TELLS) {
       const hit = pattern.exec(line);
       if (!hit || brief.toLowerCase().includes(hit[0].toLowerCase())) continue;
+      if (
+        copingBrief &&
+        name === 'a lesson-learned line' &&
+        /\bto (?:breathe|say no)$/i.test(hit[0])
+      )
+        continue;
       tell = name;
       break;
     }
     /* A kiss-off is named first: the fix is a new move, which takes a stock word out with it. */
-    if (kissOffs.has(line)) tell = tell && tell !== NEED_PIVOT ? `${KISS_OFF_TELL}, and ${tell}` : KISS_OFF_TELL;
+    if (kissOffs.has(line))
+      tell = tell && tell !== NEED_PIVOT ? `${KISS_OFF_TELL}, and ${tell}` : KISS_OFF_TELL;
     if (tell) {
       seen.add(line);
       found.push({ line, tell });
@@ -551,7 +834,11 @@ export function lyricTells(script: string, brief = ''): LyricTell[] {
  *  each distinct line once, in the order they first appear. */
 export function lyricEndingLines(script: string): string[] {
   const lines = sungLines(script);
-  const picked = new Set<string>([...lastOf(lines, /^verse/i), ...lastOf(lines, /^bridge/i), ...changedLastChorus(lines)]);
+  const picked = new Set<string>([
+    ...lastOf(lines, /^verse/i),
+    ...lastOf(lines, /^bridge/i),
+    ...changedLastChorus(lines),
+  ]);
   for (let i = 0; i < lines.length; i++) {
     const { section, pass } = lines[i];
     const lastOfPass = i === lines.length - 1 || lines[i + 1].pass !== pass;
@@ -561,7 +848,9 @@ export function lyricEndingLines(script: string): string[] {
     }
   }
   for (const { line } of lines.slice(-2)) picked.add(line);
-  return lines.map((l) => l.line).filter((line, i, all) => picked.has(line) && all.indexOf(line) === i);
+  return lines
+    .map((l) => l.line)
+    .filter((line, i, all) => picked.has(line) && all.indexOf(line) === i);
 }
 
 /* Part 293 follow-up (Sep 25 2026). Measured on ten briefs: with the desk's two
@@ -587,14 +876,14 @@ export const SECTION_MAPS: Record<string, SectionMap> = {
   threeVerses: {
     id: 'threeVerses',
     name: 'three verses, a chorus after each, and a short bridge',
-    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Verse 3] -> [Chorus]. Verses of eight to twelve lines. The bridge is two to four lines and comes before verse three, which is the payoff. The song ends on that last chorus: no outro.',
+    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Verse 3] -> [Chorus]. Verses of eight to twelve lines. The bridge is two to four lines and comes before verse three, which adds another aspect of the subject. The song ends on that last chorus: no outro.',
     twoVerseLines: Infinity,
     addVerse: 'after the bridge and before the last chorus',
   },
   twoLong: {
     id: 'twoLong',
     name: 'two long verses, a bridge and a final chorus',
-    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Final Chorus] -> [Outro]. Each verse runs twelve to sixteen lines and moves the story on. The bridge is two to six lines. The [Final Chorus] changes one word or one line so it reads differently now. The outro is two to four lines.',
+    plan: '[Verse 1] -> [Chorus] -> [Verse 2] -> [Chorus] -> [Bridge] -> [Final Chorus] -> [Outro]. Each verse runs twelve to sixteen lines and develops the subject. The bridge is two to six lines. The [Final Chorus] can repeat unchanged or make a change the song earns. The outro is two to four lines.',
     twoVerseLines: 12,
     addVerse: 'before the bridge',
   },
@@ -631,13 +920,16 @@ export const SECTION_MAPS: Record<string, SectionMap> = {
 /** The brief set its own length or structure: theirs wins, no map is drawn and
  *  the length check stands down. */
 const briefSetsShape = (brief: string): boolean =>
-  /\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|no chorus|one verse|two verses|bars|pre-chorus|post-chorus|refrain|song structure|sections?)\b/i.test(brief);
+  /\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|no chorus|one verse|two verses|bars|pre-chorus|post-chorus|refrain|song structure|sections?)\b/i.test(
+    brief,
+  );
 
 /* Genre decides which maps are in the hat: the drop and breakdown only for a
  * dance style; a chorus-less story song not for pop, a girl group or the club. */
 const DANCE_STYLE =
   /\b(?:edm|techno|trance|disco|dubstep|drum (?:and|&|n['’]?) bass|dnb|eurodance|hyperpop|reggaeton|dancehall|jersey club|crunk|rave|(?:deep|tech|acid|progressive|electro|future|tropical) house|house (?:music|track|song|banger)|club (?:song|track|banger|anthem|mix|remix|hit)|dance (?:song|track|pop|anthem|banger|floor|music|remix)|dancefloor|four[- ]on[- ]the[- ]floor)\b/i;
-const BIG_CHORUS_STYLE = /\b(?:pop|girl group|boy band|anthem|arena|stadium|k-?pop|j-?pop|power ballad)\b/i;
+const BIG_CHORUS_STYLE =
+  /\b(?:pop|girl group|boy band|anthem|arena|stadium|k-?pop|j-?pop|power ballad)\b/i;
 
 /** FNV-1a, then mulberry32: the same request always draws the same map. */
 function seededUnit(text: string): number {
@@ -698,11 +990,11 @@ export const CHORUS_SHAPES: Record<string, ChorusShape> = {
   },
   answer: {
     id: 'answer',
-    plan: 'the hook is the first line and comes back once, as the third. The second line answers it with a new fact, and the lines after the third raise the stakes and land hardest on the last.',
+    plan: 'the hook is the first line and comes back once, as the third. The second line answers its thought, and the lines after the third raise the stakes and land hardest on the last.',
   },
   build: {
     id: 'build',
-    plan: 'the chorus climbs to the hook. Each line before it adds a new fact or pushes the feeling further, and the hook lands on the last line. It may also open the chorus, and that is its only other time.',
+    plan: 'the chorus climbs to the hook. The lines before it develop the thought or push the feeling further, and the hook lands on the last line. It may also open the chorus, and that is its only other time.',
   },
 };
 
@@ -716,17 +1008,22 @@ export const CHORUS_SHAPES: Record<string, ChorusShape> = {
  *  stands just before it in the same sentence, and a word about repeating counts
  *  only next to a word for a part of the song. A sea shanty is call and response
  *  by definition. */
-const REPEAT_FORM = /\b(?:repetitive|chant(?:s|ed|ing)?|mantra|call[- ]and[- ]response|hook only|chorus only|(?:sea )?shant(?:y|ies))\b/gi;
-const REPEAT_WORD = /\b(?:repeat(?:s|ed|ing)?|on repeat|over and over|again and again|loop(?:s|ed|ing)?)\b/gi;
-const SONG_PART = /\b(?:hook|chorus(?:es)?|refrain|lines?|phrase|title|words?|lyrics?|sings?|sung)\b/i;
-const NEGATED_BEFORE = /\b(?:no|not|don['’]?t|do not|never|without|less|too|stop|avoid|instead of|rather than|hate|isn['’]?t|shouldn['’]?t|won['’]?t)\b[^.!?;\n]{0,30}$/i;
+const REPEAT_FORM =
+  /\b(?:repetitive|chant(?:s|ed|ing)?|mantra|call[- ]and[- ]response|hook only|chorus only|(?:sea )?shant(?:y|ies))\b/gi;
+const REPEAT_WORD =
+  /\b(?:repeat(?:s|ed|ing)?|on repeat|over and over|again and again|loop(?:s|ed|ing)?)\b/gi;
+const SONG_PART =
+  /\b(?:hook|chorus(?:es)?|refrain|lines?|phrase|title|words?|lyrics?|sings?|sung)\b/i;
+const NEGATED_BEFORE =
+  /\b(?:no|not|don['’]?t|do not|never|without|less|too|stop|avoid|instead of|rather than|hate|isn['’]?t|shouldn['’]?t|won['’]?t)\b[^.!?;\n]{0,30}$/i;
 const briefWantsRepeats = (brief: string): boolean => {
   const text = String(brief || '');
   const asks = (pattern: RegExp, near: boolean): boolean => {
     for (const hit of text.matchAll(pattern)) {
       const at = hit.index || 0;
       if (NEGATED_BEFORE.test(text.slice(0, at))) continue;
-      if (near && !SONG_PART.test(text.slice(Math.max(0, at - 40), at + hit[0].length + 40))) continue;
+      if (near && !SONG_PART.test(text.slice(Math.max(0, at - 40), at + hit[0].length + 40)))
+        continue;
       return true;
     }
     return false;
@@ -737,9 +1034,20 @@ const briefWantsRepeats = (brief: string): boolean => {
 /** This request's chorus shape; null for a map with no chorus (the story song's
  *  refrain is one line by design) or when the brief asks for repetition or for
  *  no chorus. Drawn with the same salt as the map, so asking again draws again. */
-export function chorusShapeFor(brief: string, salt = '', map: SectionMap | null = null): ChorusShape | null {
+export function chorusShapeFor(
+  brief: string,
+  salt = '',
+  map: SectionMap | null = null,
+): ChorusShape | null {
   const text = String(brief || '').trim();
-  if (!text || briefWantsRepeats(text) || briefRepeatsItself(text) || /\bno chorus\b/i.test(text) || map?.id === 'storyRefrain') return null;
+  if (
+    !text ||
+    briefWantsRepeats(text) ||
+    briefRepeatsItself(text) ||
+    /\bno chorus\b/i.test(text) ||
+    map?.id === 'storyRefrain'
+  )
+    return null;
   const pool = Object.values(CHORUS_SHAPES);
   return pool[Math.floor(seededUnit(`${text}\nchorus\n${salt}`) * pool.length)];
 }
@@ -747,8 +1055,12 @@ export function chorusShapeFor(brief: string, salt = '', map: SectionMap | null 
 /** The line the writer gets under the section map. */
 export function chorusShapeNote(shape: ChorusShape | null, map: SectionMap | null = null): string {
   if (!shape) return '';
-  const chant = map?.id === 'dance' ? ' Chanting one short phrase belongs to the [Drop], not to the chorus.' : map?.id === 'prePost' ? ' Chanting one short phrase belongs to the [Post-Chorus], not to the chorus.' : '';
-  return `CHORUS SHAPE, drawn by the desk for this song: ${shape.plan} Whatever the shape, the hook is sung no more than twice in one chorus, and every line that is not the hook says something the hook does not. Other lines are never sung twice inside it, two lines in a row never open with the same words, and a word ends two of its lines at most. Four to six lines. The same chorus comes back each time, so the title still lands four to eight times across the song.${chant}`;
+  const chants: Record<string, string> = {
+    dance: ' Chanting one short phrase belongs to the [Drop], not to the chorus.',
+    prePost: ' Chanting one short phrase belongs to the [Post-Chorus], not to the chorus.',
+  };
+  const chant = map ? chants[map.id] || '' : '';
+  return `CHORUS SHAPE, drawn by the desk for this song: ${shape.plan} Whatever the shape, the hook is sung no more than twice in one chorus, and surrounding lines deepen or answer the central thought without filler. Other lines are never sung twice inside it, two lines in a row never open with the same words, and a word ends two of its lines at most. Six to eight lines by default, with room for vocal phrasing. Supplied refrains and requested repetition win over this default. The same chorus can come back unchanged.${chant}`;
 }
 
 /** The second, surgical request: replace the flagged lines and nothing else. */
@@ -763,7 +1075,11 @@ export function chorusShapeNote(shape: ChorusShape | null, map: SectionMap | nul
  *  map: three verses pass any map (the writer may take another shape), and two
  *  pass only where the map has two, each long enough. Without a map (a caller
  *  that drew none) it is the check it was. */
-export function lyricShapeIssue(script: string, brief = '', map?: SectionMap | null): string | null {
+export function lyricShapeIssue(
+  script: string,
+  brief = '',
+  map?: SectionMap | null,
+): string | null {
   if (briefSetsShape(brief)) return null;
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return null;
@@ -779,13 +1095,17 @@ export function lyricShapeIssue(script: string, brief = '', map?: SectionMap | n
     } else if (inVerse && line && !/^\(.*\)$/.test(line)) lengths[lengths.length - 1] += 1;
   }
   const verses = lengths.length;
-  const tail = 'It must turn the story: pay off a detail planted earlier, or say what the narrator has been avoiding. New events, not a summary.';
+  const tail =
+    'Develop the requested subject with another aspect, pressure, choice, consequence or event. Preserve supplied phrases; do not invent a scene, life lesson or reversal merely to extend the song.';
   if (map) {
     if (verses === 0 || verses >= 3) return null;
     const need = map.twoVerseLines;
     if (verses === 2 && Math.min(...lengths) >= need) return null;
     if (verses === 2 && need !== Infinity) {
-      const which = lengths.map((n, i) => (n < need ? `[Verse ${i + 1}] has ${n}` : '')).filter(Boolean).join(' and ');
+      const which = lengths
+        .map((n, i) => (n < need ? `[Verse ${i + 1}] has ${n}` : ''))
+        .filter(Boolean)
+        .join(' and ');
       return `The map for this song is ${map.name}, and each verse needs at least ${need} sung lines: ${which}. Lengthen each short verse to ${need} lines or more with what happens next, in the same voice and meter. ${tail}`;
     }
     const lines = need !== Infinity && need > 8 ? `${need} to ${need + 4}` : 'eight to twelve';
@@ -793,18 +1113,24 @@ export function lyricShapeIssue(script: string, brief = '', map?: SectionMap | n
   }
   if (verses === 0 || verses >= 3) return null;
   if (verses === 2 && Math.min(...lengths) >= 12) return null;
-  const short = verses === 1 ? 'one verse' : Math.max(...lengths) >= 12 ? 'two verses, one of them short,' : 'two short verses';
+  let short = 'one verse';
+  if (verses !== 1)
+    short = Math.max(...lengths) >= 12 ? 'two verses, one of them short,' : 'two short verses';
   return `The song has only ${short} and this desk writes three verses, or two long ones of twelve to sixteen lines each. Add a [Verse ${verses + 1}] of eight to twelve sung lines in the same voice, placed after the bridge if there is one and before the final chorus, otherwise before the last chorus. ${tail}`;
 }
 
-export function lyricRepairRequest(script: string, tells: LyricTell[], shape: string | null = null): string {
+export function lyricRepairRequest(
+  script: string,
+  tells: LyricTell[],
+  shape: string | null = null,
+): string {
   if (!tells.length && shape)
     return `Your draft is below. It is good and it stays, word for word. One thing is missing. ${shape} Every existing line, the music direction, the section tags and the READBACK line must come back exactly as they are. Return the complete draft in the same format and nothing else.\n\n${script}`;
   return `Your draft is below. It is good and it stays. Only these lines lean on stock images that the owner of this desk hears as machine writing:
 
 ${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}
 ${shape ? `\nAlso: ${shape}\n` : ''}
-Rewrite ONLY those lines. For each, ask what this narrator actually has in their hands, where exactly they are, what they would really drink, and what day or hour it is for someone with their life, and write that: a specific nobody has heard in a song. Keep each new line's rhyme sound, stress count and approximate length so it still sings in the same slot, and keep the joke or the turn if the old line had one. If a flagged line repeats (a chorus or a hook), change it the same way everywhere it appears. If the flagged word is the song's title or hook word, find a better hook word and carry it through. Do not swap one stock image for another from the desk's list. Every other line, the music direction, the section tags and the READBACK line must come back exactly as they are. Return the complete corrected draft in the same format and nothing else.
+Rewrite ONLY those lines with a clear thought that belongs to the requested subject and this singer's language. Specificity can be a feeling, choice or consequence; do not add objects, a scene or stranger props merely to replace a stock image. Keep each new line's rhyme sound, stress count and approximate length so it still sings in the same slot, and keep the joke or the turn if the old line had one. If a flagged line repeats (a chorus or a hook), change it the same way everywhere it appears. Keep any supplied title or hook intact. If a generated hook word needs repair, carry the repair through its returning lines. Do not swap one stock image for another from the desk's list. Every other line, the music direction, the section tags and the READBACK line must come back exactly as they are. Return the complete corrected draft in the same format and nothing else.
 
 ${script}`;
 }
@@ -813,7 +1139,8 @@ ${script}`;
  *  sung by the generator as words. Seen: "(Whistling)", "(Claps and bass only)".
  *  Turn those into bracket cues; leave real ad-libs and echoes alone. */
 export function fixStageDirections(script: string): string {
-  const cue = /^\s*\(([^()]*\b(?:whistl\w*|instrumental|solo|fades?|fading|band|guitars?|bass|drums?|claps?|piano|strings|horns?|beat|music|spoken|humming|hummed)\b[^()]*)\)\s*$/i;
+  const cue =
+    /^\s*\(([^()]*\b(?:whistl\w*|instrumental|solo|fades?|fading|band|guitars?|bass|drums?|claps?|piano|strings|horns?|beat|music|spoken|humming|hummed)\b[^()]*)\)\s*$/i;
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return script;
   const body = script
@@ -834,11 +1161,7 @@ export function fixStageDirections(script: string): string {
  *  seconds, which no web request survives. A fast draft followed by ONE fast
  *  audit gets most of that: the writer is handed its own draft and the gates
  *  that matter most, and fixes in place. Flagged tells ride in the same call. */
-/* Sep 20 2026. Models cannot count syllables, and "hold one meter" in a prompt
- * changed nothing measurable. So the desk counts (roughly: vowel groups, silent
- * final e dropped) and hands the audit the numbers for every verse whose lines
- * wander by more than four syllables. Rough is fine; the instruction is to even
- * the lines out, and a miscount of one does not change that. */
+/** Rough counts identify passages to review by ear, never a measured meter failure. */
 const syllables = (line: string): number =>
   line
     .toLowerCase()
@@ -847,14 +1170,20 @@ const syllables = (line: string): number =>
     .split(/\s+/)
     .filter(Boolean)
     .reduce((n, word) => {
-      const w = word.replace(/'/g, '').replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+      const w = word
+        .replace(/'/g, '')
+        .replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '')
+        .replace(/^y/, '');
       return n + Math.max(1, (w.match(/[aeiouy]{1,2}/g) || []).length);
     }, 0);
 
 export function lyricMeterNote(script: string, brief = ''): string {
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return '';
-  if (/\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(brief + '\n' + script.slice(0, at))) return '';
+  if (
+    /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(brief + '\n' + script.slice(0, at))
+  )
+    return '';
   const uneven: string[] = [];
   let tag = '';
   let counts: number[] = [];
@@ -874,7 +1203,7 @@ export function lyricMeterNote(script: string, brief = ''): string {
   }
   close();
   return uneven.length
-    ? `\n\nCounted by the desk (roughly), these verses cannot carry one tune: ${uneven.join('; ')}. Even each verse out so lines in the same position match within one syllable, and so every verse matches verse one.`
+    ? `\n\nRough phrase-length observations, not a melody or timing verdict: ${uneven.join('; ')}. Review only genuinely crowded or awkward phrases by ear. Alternating long-short lines, pickups, held notes and varied verse patterns can work; do not equalize them merely because these rough counts differ.`
     : '';
 }
 
@@ -897,15 +1226,18 @@ export function lyricMeterNote(script: string, brief = ''): string {
  * whole-line (ad-libs) are backing vocals. A word from her brief is hers. */
 const STOP_WORDS = new Set(
   (
-    "i me my mine you your yours we us our he him his she her it its they them their a an the and or but so if of to in on at by for with from up down out off over into onto is am are was were be been being do does did done have has had " +
+    'i me my mine you your yours we us our he him his she her it its they them their a an the and or but so if of to in on at by for with from up down out off over into onto is am are was were be been being do does did done have has had ' +
     "i'm you're it's that's don't can't won't ain't i'll you'll i've i'd you'd we're they're she's he's gonna wanna gotta just like that this these those what when where who how why all no not yeah oh ooh ah hey uh na la whoa baby babe girl boy yo ay now then too very some any got get come go let's lets mm hmm huh"
   ).split(/\s+/),
 );
 /* Openings too common in speech to count as a list on their own (two shared words still do). */
 const COMMON_OPENINGS = new Set(
-  "i i'm i've i'd i'll you you're you've you'd you'll he he's she she's it it's we we're we've they they're they've that's there's the a an and but so then or if when my your our his her their".split(' '),
+  "i i'm i've i'd i'll you you're you've you'd you'll he he's she she's it it's we we're we've they they're they've that's there's the a an and but so then or if when my your our his her their".split(
+    ' ',
+  ),
 );
-const EXEMPT_SECTION = /^(?:post[- ]?chorus|drop|intro|outro|chant|vamp|tag|interlude|instrumental|solo)\b/i;
+const EXEMPT_SECTION =
+  /^(?:post[- ]?chorus|drop|intro|outro|chant|vamp|tag|interlude|instrumental|solo)\b/i;
 
 const sayable = (line: string): string =>
   line
@@ -929,20 +1261,30 @@ const phrasesOf = (line: string): { said: string; raw: string }[] =>
     .map((raw) => ({ said: sayable(raw), raw: raw.trim() }))
     .filter((p) => p.said.includes(' '));
 /* A voice tic at the end of a line ("..., yeah") is breath, not the rhyme word. */
-const TAIL_TICS = new Set('yeah yea oh ooh ah hey uh whoa baby babe na la mm yo ay huh now'.split(' '));
+const TAIL_TICS = new Set(
+  'yeah yea oh ooh ah hey uh whoa baby babe na la mm yo ay huh now'.split(' '),
+);
 const endWord = (line: string): string => {
   const words = sayable(line).split(' ').map(bare).filter(Boolean);
   while (words.length > 1 && TAIL_TICS.has(words[words.length - 1])) words.pop();
   return words[words.length - 1] || '';
 };
-const hasWords = (brief: string, words: string): boolean => ` ${sayable(brief)} `.includes(` ${words} `);
+const hasWords = (brief: string, words: string): boolean =>
+  ` ${sayable(brief)} `.includes(` ${words} `);
 
 /** Part 296 review: the idea spells out its own chorus, repeats and all ("the chorus
  *  goes: ..."), when a two-word phrase with a real word in it comes three times in
  *  it. That repetition is hers: no chorus shape is drawn against it, and the audit is
  *  told to keep it (the gate itself leaves alone a hook the brief sings that often). */
 function briefRepeatsItself(brief: string): boolean {
-  const words = sayable(String(brief || '')).split(' ').map(bare).filter(Boolean);
+  const words = sayable(String(brief || ''))
+    .split(' ')
+    .map(bare)
+    .filter(Boolean);
+  for (let i = 0; i + 2 < words.length; i++) {
+    if (words[i] === words[i + 1] && words[i] === words[i + 2] && contentWords(words[i]).length)
+      return true;
+  }
   const pairs = new Map<string, number>();
   for (let i = 0; i + 1 < words.length; i++) {
     const pair = `${words[i]} ${words[i + 1]}`;
@@ -986,7 +1328,12 @@ function timesSung(phrase: string, lines: string[]): number {
   let hits = 0;
   for (const line of lines) {
     const words = ` ${sayable(line)} `;
-    for (let from = words.indexOf(` ${phrase} `); from !== -1; from = words.indexOf(` ${phrase} `, from + phrase.length + 1)) hits += 1;
+    for (
+      let from = words.indexOf(` ${phrase} `);
+      from !== -1;
+      from = words.indexOf(` ${phrase} `, from + phrase.length + 1)
+    )
+      hits += 1;
   }
   return hits;
 }
@@ -997,9 +1344,16 @@ function timesSung(phrase: string, lines: string[]): number {
 function chorusHook(lines: string[]): { hook: string; shown: string; hits: number } {
   const shown = new Map<string, string>();
   for (const line of lines) {
-    const whole = { said: sayable(line), raw: line.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim() };
+    const whole = {
+      said: sayable(line),
+      raw: line
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    };
     for (const { said, raw } of [...phrasesOf(line), whole])
-      if (said.includes(' ') && contentWords(said).length && !shown.has(said)) shown.set(said, raw.replace(/[,;:!?.]+$/, ''));
+      if (said.includes(' ') && contentWords(said).length && !shown.has(said))
+        shown.set(said, raw.replace(/[,;:!?.]+$/, ''));
   }
   let hook = '';
   let hits = 0;
@@ -1019,14 +1373,21 @@ function linesWithNews(lines: string[]): number {
     const words = contentWords(sayable(line));
     const fresh = words.filter((w) => !seen.has(w));
     words.forEach((w) => seen.add(w));
-    if (fresh.length >= 2 || (words.length > 0 && fresh.length > 0 && fresh.length / words.length >= 0.5)) news += 1;
+    if (
+      fresh.length >= 2 ||
+      (words.length > 0 && fresh.length > 0 && fresh.length / words.length >= 0.5)
+    )
+      news += 1;
   }
   return news;
 }
 
 /** The longest run of three or more consecutive, different lines that open the
  *  same way: two shared opening words, or one when it is not a common opening. */
-function openingRun(lines: string[], brief: string): { run: number; from: number; key: string } | null {
+function openingRun(
+  lines: string[],
+  brief: string,
+): { run: number; from: number; key: string } | null {
   let best: { run: number; from: number; key: string } | null = null;
   for (const width of [2, 1]) {
     let run = 1;
@@ -1048,7 +1409,13 @@ function openingRun(lines: string[], brief: string): { run: number; from: number
         continue;
       }
       if (run >= 3 && !hasWords(brief, key) && (!best || run > best.run)) {
-        const opening = lines[i - 1].replace(/\([^)]*\)/g, ' ').trim().split(/\s+/).slice(0, width).join(' ').replace(/[,;:!?.]+$/, '');
+        const opening = lines[i - 1]
+          .replace(/\([^)]*\)/g, ' ')
+          .trim()
+          .split(/\s+/)
+          .slice(0, width)
+          .join(' ')
+          .replace(/[,;:!?.]+$/, '');
         best = { run, from: i - run, key: opening };
       }
       run = 1;
@@ -1070,14 +1437,21 @@ function stackedLine(line: string, brief: string): { n: number; key: string } | 
     .replace(/\([^)]*\)/g, ' ')
     .split(/,|;|—|–|\band\b|\bor\b/i)
     .map((part) => ({ said: sayable(part), raw: part.trim() }))
-    .filter((p, i, all) => p.said.includes(' ') && contentWords(p.said).length && all.findIndex((q) => q.said === p.said) === i);
+    .filter(
+      (p, i, all) =>
+        p.said.includes(' ') &&
+        contentWords(p.said).length &&
+        all.findIndex((q) => q.said === p.said) === i,
+    );
   /* Different clauses only: one phrase sung three times is a chant (the chorus
    * gate counts it there), not a list of things. */
   const counts = new Map<string, { n: number; raw: string }>();
   for (const { said, raw } of parts) {
     const words = said.split(' ');
     const rawWords = raw.split(/\s+/);
-    const keys: [string, string][] = [[words.slice(0, 2).join(' '), rawWords.slice(0, 2).join(' ')]];
+    const keys: [string, string][] = [
+      [words.slice(0, 2).join(' '), rawWords.slice(0, 2).join(' ')],
+    ];
     if (!COMMON_OPENINGS.has(bare(words[0]))) keys.push([words[0], rawWords[0]]);
     if (bare(words[0]) === 'the') {
       const after = words.slice(1, 3).join(' ');
@@ -1092,7 +1466,8 @@ function stackedLine(line: string, brief: string): { n: number; key: string } | 
     }
   }
   let best: { n: number; key: string } | null = null;
-  for (const [key, { n, raw }] of counts) if (n >= 3 && !hasWords(brief, key) && (!best || n > best.n)) best = { n, key: raw };
+  for (const [key, { n, raw }] of counts)
+    if (n >= 3 && !hasWords(brief, key) && (!best || n > best.n)) best = { n, key: raw };
   return best;
 }
 
@@ -1116,7 +1491,11 @@ export type RepeatIssue = {
 };
 
 /** Measures one section pass. */
-function sectionRepeats(tag: string, lines: string[], brief: string): { hook: string; problems: string[]; weight: number } {
+function sectionRepeats(
+  tag: string,
+  lines: string[],
+  brief: string,
+): { hook: string; problems: string[]; weight: number } {
   const problems: string[] = [];
   let weight = 0;
   let hook = '';
@@ -1136,15 +1515,21 @@ function sectionRepeats(tag: string, lines: string[], brief: string): { hook: st
     const repeated = [...counts].filter(([said, n]) => n >= 2 && briefSings(said) < 2);
     const distinct = counts.size;
     /* Her own repeated lines are not held against the count of different lines. */
-    const hersExtra = [...counts].filter(([said, n]) => n >= 2 && briefSings(said) >= 2).reduce((more, [, n]) => more + n - 1, 0);
+    const hersExtra = [...counts]
+      .filter(([said, n]) => n >= 2 && briefSings(said) >= 2)
+      .reduce((more, [, n]) => more + n - 1, 0);
     if (found.hits > 2 && !hersHook) {
       problems.push(`the hook "${found.shown}" is sung ${found.hits} times in one chorus`);
       weight += found.hits - 2;
     }
     /* A line sung twice that does not carry the hook (lines that do are counted above). */
-    const others = repeated.filter(([said]) => !found.hook || !` ${said} `.includes(` ${found.hook} `)).map(([said]) => worded.find((line) => sayable(line) === said) || said);
+    const others = repeated
+      .filter(([said]) => !found.hook || !` ${said} `.includes(` ${found.hook} `))
+      .map(([said]) => worded.find((line) => sayable(line) === said) || said);
     if (others.length) {
-      problems.push(`besides the hook, ${others.map((line) => `"${line}"`).join(' and ')} ${others.length === 1 ? 'is' : 'are'} sung more than once in it`);
+      problems.push(
+        `besides the hook, ${others.map((line) => `"${line}"`).join(' and ')} ${others.length === 1 ? 'is' : 'are'} sung more than once in it`,
+      );
       weight += others.length;
     }
     if ((distinct + hersExtra) / worded.length < 0.75 && !hersHook) {
@@ -1153,7 +1538,8 @@ function sectionRepeats(tag: string, lines: string[], brief: string): { hook: st
     }
     if (problems.length) {
       const news = linesWithNews(worded);
-      if (news <= worded.length / 2) problems.push(`only ${news} of its ${worded.length} lines say anything the hook does not`);
+      if (news <= worded.length / 2)
+        problems.push(`only ${news} of its ${worded.length} lines say anything the hook does not`);
     }
   }
   const ends = new Map<string, number>();
@@ -1165,19 +1551,28 @@ function sectionRepeats(tag: string, lines: string[], brief: string): { hook: st
     if (n < 3 || hasWords(brief, word)) continue;
     /* Part 296 review: outside a chorus the rewrite changes only the lines it is shown,
      * so they are quoted (the chorus is rewritten whole and needs no list). */
-    const which = chorus ? '' : ` (${[...new Set(worded.filter((line) => endWord(line) === word))].map((line) => `"${line}"`).join(', ')})`;
+    const which = chorus
+      ? ''
+      : ` (${[...new Set(worded.filter((line) => endWord(line) === word))].map((line) => `"${line}"`).join(', ')})`;
     problems.push(`${n} of its lines end on the word "${word}"${which}`);
     weight += n - 2;
   }
   const run = openingRun([...lines], brief);
   if (run) {
-    problems.push(`${run.run} lines in a row open with "${run.key}" (${lines.slice(run.from, run.from + run.run).map((line) => `"${line}"`).join(', ')})`);
+    problems.push(
+      `${run.run} lines in a row open with "${run.key}" (${lines
+        .slice(run.from, run.from + run.run)
+        .map((line) => `"${line}"`)
+        .join(', ')})`,
+    );
     weight += run.run - 2;
   }
   for (const line of [...new Set(lines)]) {
     const stack = stackedLine(line, brief);
     if (!stack) continue;
-    problems.push(`the line "${line}" stacks ${stack.n} clauses that each open with "${stack.key}"`);
+    problems.push(
+      `the line "${line}" stacks ${stack.n} clauses that each open with "${stack.key}"`,
+    );
     weight += stack.n - 2;
   }
   return { hook, problems, weight };
@@ -1195,7 +1590,7 @@ export function lyricRepeatIssues(script: string, brief = ''): RepeatIssue[] {
    * that chant and is left alone whole. Standing down only the hook count still sent
    * a requested chant to the rewrite for its openings and end words, and the rewrite
    * of a chorus sings the hook twice at most. The verses are still measured. */
-  const chantAsked = briefWantsRepeats(brief);
+  const chantAsked = briefWantsRepeats(brief) || briefRepeatsItself(brief);
   for (const pass of passes) {
     if (!pass.lines.length || EXEMPT_SECTION.test(pass.tag)) continue;
     const chorus = CHORUS_TAG.test(pass.tag);
@@ -1215,7 +1610,16 @@ export function lyricRepeatIssues(script: string, brief = ''): RepeatIssue[] {
     let label = name;
     for (let n = 2; labels.has(label.toLowerCase()); n++) label = `${name} (version ${n})`;
     labels.add(label.toLowerCase());
-    const issue: RepeatIssue = { tag: name, label, passes: [pass.tagAt], chorus, lines: pass.lines, hook: measured.hook, problems: measured.problems, weight: measured.weight };
+    const issue: RepeatIssue = {
+      tag: name,
+      label,
+      passes: [pass.tagAt],
+      chorus,
+      lines: pass.lines,
+      hook: measured.hook,
+      problems: measured.problems,
+      weight: measured.weight,
+    };
     byContent.set(key, issue);
     issues.push(issue);
   }
@@ -1227,12 +1631,13 @@ export function lyricRepeatWeight(script: string, brief = ''): number {
   return lyricRepeatIssues(script, brief).reduce((n, issue) => n + issue.weight, 0);
 }
 
-const passCount = (issue: RepeatIssue): string => (issue.passes.length > 1 ? `, sung ${issue.passes.length} times` : '');
+const passCount = (issue: RepeatIssue): string =>
+  issue.passes.length > 1 ? `, sung ${issue.passes.length} times` : '';
 
 /** The audit's gate for what the desk measured. Empty when nothing repeats. */
 function repeatGate(issues: RepeatIssue[], number: number): string {
   if (!issues.length) return '';
-  return `\n${number}. REPEATS, measured by the desk. ${issues.map((issue) => `[${issue.tag}]${passCount(issue)}: ${issue.problems.join('; ')}.`).join(' ')} Fix each where it stands. A chorus sings its hook word for word no more than twice and spends every other line on something new: what happens, what it costs, a picture only this song has, or a comeback; change it the same way every time it comes back. Lines that open the same way get new openings, a word that ends too many lines gives way to other words on the same rhyme sound, and a line that stacks a list becomes one plain thought. Keep the hook, the rhyme sounds and the length.`;
+  return `\n${number}. REPEATS, measured by the desk. ${issues.map((issue) => `[${issue.tag}]${passCount(issue)}: ${issue.problems.join('; ')}.`).join(' ')} Fix each where it stands. A chorus normally sings its hook word for word once or twice and develops the central thought with surrounding answers or consequences, leaving room for phrasing; change it the same way every time it comes back. Lines that open the same way get new openings, a word that ends too many lines gives way to other words on the same rhyme sound, and a line that stacks a list becomes one plain thought. Keep the hook, the rhyme sounds and the length.`;
 }
 
 type RepeatPart = RepeatIssue & {
@@ -1248,9 +1653,16 @@ type RepeatPart = RepeatIssue & {
  *  The request and the step that writes the answer in both build this list, so
  *  their labels agree. */
 function repeatParts(script: string, issues: RepeatIssue[]): RepeatPart[] {
-  const choruses = lyricPasses(script).passes.filter((pass) => pass.lines.length && CHORUS_TAG.test(pass.tag));
+  const choruses = lyricPasses(script).passes.filter(
+    (pass) => pass.lines.length && CHORUS_TAG.test(pass.tag),
+  );
   const firstAt = choruses.length ? choruses[0].tagAt : NaN;
-  const parts: RepeatPart[] = issues.map((issue) => ({ ...issue, passes: [...issue.passes], later: issue.chorus && !issue.passes.includes(firstAt), companion: false }));
+  const parts: RepeatPart[] = issues.map((issue) => ({
+    ...issue,
+    passes: [...issue.passes],
+    later: issue.chorus && !issue.passes.includes(firstAt),
+    companion: false,
+  }));
   const main = parts.find((part) => part.chorus && part.passes.includes(firstAt));
   if (!main) return parts;
   const covered = new Set(parts.flatMap((part) => part.passes));
@@ -1267,7 +1679,18 @@ function repeatParts(script: string, issues: RepeatIssue[]): RepeatPart[] {
     let label = pass.tag;
     for (let n = 2; labels.has(label.toLowerCase()); n++) label = `${pass.tag} (version ${n})`;
     labels.add(label.toLowerCase());
-    const part: RepeatPart = { tag: pass.tag, label, passes: [pass.tagAt], chorus: true, lines: pass.lines, hook: main.hook, problems: [], weight: 0, later: true, companion: true };
+    const part: RepeatPart = {
+      tag: pass.tag,
+      label,
+      passes: [pass.tagAt],
+      chorus: true,
+      lines: pass.lines,
+      hook: main.hook,
+      problems: [],
+      weight: 0,
+      later: true,
+      companion: true,
+    };
     byContent.set(key, part);
     parts.push(part);
   }
@@ -1277,7 +1700,7 @@ function repeatParts(script: string, issues: RepeatIssue[]): RepeatPart[] {
 /** Part 296: the one targeted rewrite when a section still repeats after the
  *  audit. Only the named sections come back; the desk writes them in, a new
  *  chorus into every pass that carried the old one. */
-export function lyricRepeatRequest(script: string, issues: RepeatIssue[]): string {
+export function lyricRepeatRequest(script: string, issues: RepeatIssue[], brief = ''): string {
   const parts = repeatParts(script, issues);
   const main = parts.find((part) => part.chorus && !part.later);
   const many = parts.length > 1;
@@ -1289,13 +1712,18 @@ export function lyricRepeatRequest(script: string, issues: RepeatIssue[]): strin
        * changed line is quoted and kept. */
       const first = new Set(main.lines.map(sayable));
       const changed = [...new Set(part.lines.filter((line) => !first.has(sayable(line))))];
-      const keep = changed.length && changed.length <= 2 ? ` Its changed line${changed.length > 1 ? 's' : ''} ${changed.map((line) => `"${line}"`).join(' and ')} ${changed.length > 1 ? 'stay' : 'stays'} word for word, in the same place in the chorus; everything else is your new [${main.label}].` : ` Write it as your new [${main.label}] with that same change carried over, and nothing else different.`;
+      const keep =
+        changed.length && changed.length <= 2
+          ? ` Its changed line${changed.length > 1 ? 's' : ''} ${changed.map((line) => `"${line}"`).join(' and ')} ${changed.length > 1 ? 'stay' : 'stays'} word for word, in the same place in the chorus; everything else is your new [${main.label}].`
+          : ` Write it as your new [${main.label}] with that same change carried over, and nothing else different.`;
       return `${head}: a later chorus that changed from the first one${part.companion ? '' : ', with the same problems'}.${keep}`;
     }
     const said = `${head}: ${part.problems.join('; ')}.`;
     if (part.chorus) {
-      const later = part.later ? ' It is a later chorus: keep it as close to the first chorus of the song as it already is, with its own change.' : '';
-      return `${said}\n   Rewrite it as a real chorus. Keep the hook${part.hook ? ` "${part.hook}"` : ''} word for word and sing it no more than twice: open and close on it, or sing it first and third. Every other line says something the hook does not: what happens because of it, what it costs, a picture only this song has, or a comeback. Other lines are never sung twice, two lines in a row never open with the same words, and a word ends two of its lines at most. Keep about ${part.lines.length} lines, the same beat and a rhyme a listener can hear, and keep the lines short enough to shout: none longer than the longest line it has now.${part.passes.length > 1 ? ` It is sung every time the chorus comes back, so it has to hold up ${part.passes.length} times.` : ''}${later}`;
+      const later = part.later
+        ? ' It is a later chorus: keep it as close to the first chorus of the song as it already is, with its own change.'
+        : '';
+      return `${said}\n   Rewrite it as a real chorus. Keep the hook${part.hook ? ` "${part.hook}"` : ''} word for word and sing it no more than twice: open and close on it, or sing it first and third. Surrounding lines should deepen or answer the thought without filler. Do not require new facts or a physical image in every line. Other lines are never sung twice, two lines in a row never open with the same words, and a word ends two of its lines at most. Keep about ${part.lines.length} lines, the same beat and a rhyme a listener can hear, and keep the lines short enough to shout: none longer than the longest line it has now.${part.passes.length > 1 ? ` It is sung every time the chorus comes back, so it has to hold up ${part.passes.length} times.` : ''}${later}`;
     }
     /* Part 296 review: this used to say "keep its last word where you can", which a
      * section flagged for one word ending three lines could only obey by failing. */
@@ -1305,6 +1733,8 @@ export function lyricRepeatRequest(script: string, issues: RepeatIssue[]): strin
 
 ${asks.join('\n\n')}
 
+ORIGINAL BRIEF: ${JSON.stringify(brief)}
+Keep every supplied lyric phrase, its repeated words and its dialect. Stay on the requested subject without adding a physical scene or moral payoff.
 Keep the song's voice, its story, its attitude and who it is for. Return ONLY the rewritten part${many ? 's' : ''}, each under its label in square brackets exactly as written above (${parts.map((part) => `[${part.label}]`).join(', ')}), every line written out. Nothing else: no music direction, no other sections, no READBACK, no notes.
 
 ${script}`;
@@ -1318,11 +1748,19 @@ ${script}`;
  *  answer is missing or fails, so the song keeps one chorus. The music
  *  direction, the tags, every other line and the READBACK stay as written.
  *  Null when nothing usable came back. */
-export function applyRepeatRewrite(script: string, reply: string, issues: RepeatIssue[], brief = ''): string | null {
+export function applyRepeatRewrite(
+  script: string,
+  reply: string,
+  issues: RepeatIssue[],
+  brief = '',
+): string | null {
   const blocks = new Map<string, string[]>();
   let open: string[] | null = null;
   for (const raw of String(reply || '').split('\n')) {
-    const line = raw.trim().replace(/^[*_#]+\s*|\s*[*_]+$/g, '').trim();
+    const line = raw
+      .trim()
+      .replace(/^[*_#]+\s*|\s*[*_]+$/g, '')
+      .trim();
     if (/^READBACK\b/i.test(line) || /^lyrics\s*:\s*$/i.test(line)) {
       open = null;
       continue;
@@ -1391,7 +1829,7 @@ export function applyRepeatRewrite(script: string, reply: string, issues: Repeat
 function endingGate(script: string, number: number): string {
   const lines = lyricEndingLines(script);
   if (!lines.length) return '';
-  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Rewrite any that states a lesson, a turnaround, a verdict on the story or a sum-up of it, so it lands on something that happens or gets said in the moment instead: an action, a concrete detail, a joke, a line said to somebody, or the hook itself. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
+  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Repair any unearned moral, cure or reversal. Keep requested encouragement, direct emotional statements and the supplied hook when they fit the subject; an unresolved problem can coexist with determination. Do not add a physical scene or new prop to prove the ending is concrete. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
 }
 
 /* Part 296: gate 2 used to say the hook is "repeated verbatim, title landing four
@@ -1403,14 +1841,23 @@ function endingGate(script: string, number: number): string {
  * chant or for repetition, or spelled out a chorus that repeats (`brief`), gate 2
  * says so instead of cutting the hook to two, or the audit itself would flatten
  * what she asked for. */
-export function lyricAuditRequest(script: string, tells: LyricTell[], shape: string | null = null, repeats: RepeatIssue[] = [], brief = ''): string {
-  const rapped = /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(brief + '\n' + script.split(/^\s*lyrics\s*:/im)[0]);
+export function lyricAuditRequest(
+  script: string,
+  tells: LyricTell[],
+  shape: string | null = null,
+  repeats: RepeatIssue[] = [],
+  brief = '',
+): string {
+  const rapped = /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(
+    brief + '\n' + script.split(/^\s*lyrics\s*:/im)[0],
+  );
   const cadence = rapped
     ? '5. FLOW AND MEANING. Check the bars against the requested groove, with internal and multisyllabic rhyme, deliberate stress placement, changes of cadence and usable breath points. Preserve intentional enjambment and unequal bar lengths. Do not force rap into four-stress couplets or predictable end rhymes. Every rhyme must serve the sentence, the character or the payoff; remove filler wordplay. Keep hooks memorable in the form the brief asks for.'
-    : '5. SING-ALONG. Read the verses aloud against their groove. Preserve a coherent rhyme pattern and melodic stresses; prefer surprising but natural rhyme partners over predictable stock pairs. Do not count syllables yourself. If the desk flags uneven lines, check them by ear and change only lines that lose the groove, keeping deliberate pickups and held notes. The chorus needs a clear feeling and a memorable hook in this singer\'s own words. No worn rhyme pairs (fire and desire, heart and apart, love and above).';
-  const hookCount = briefWantsRepeats(brief) || briefRepeatsItself(brief)
-    ? 'The idea asked for this repetition (a chant, or a chorus it spelled out itself), so the chorus sings its hook as often as the idea does.'
-    : 'It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over. Every other chorus line says something the hook does not.';
+    : "5. SING-ALONG. Read the verses aloud against their groove. Preserve a coherent rhyme pattern and melodic stresses; prefer surprising but natural rhyme partners over predictable stock pairs. Do not count syllables yourself. If the desk flags uneven lines, check them by ear and change only lines that lose the groove, keeping deliberate pickups and held notes. The chorus needs a clear feeling and a memorable hook in this singer's own words. No worn rhyme pairs (fire and desire, heart and apart, love and above).";
+  const hookCount =
+    briefWantsRepeats(brief) || briefRepeatsItself(brief)
+      ? 'The idea asked for this repetition (a chant, or a chorus it spelled out itself), so the chorus sings its hook as often as the idea does.'
+      : 'It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over. Every other chorus line says something the hook does not.';
   /* Part 296 follow-up: a kiss-off line is fixed by a new move, not by new words for the same
    * one, or the rewrite hands the same things back in other words. Named, never shown. */
   const kissOffs = tells.some((t) => t.tell.startsWith(KISS_OFF_TELL))
@@ -1419,18 +1866,19 @@ export function lyricAuditRequest(script: string, tells: LyricTell[], shape: str
   const flagged = tells.length
     ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}${kissOffs}`
     : '';
-  return `Think briefly: decide what fails, fix it, and write the song out. Your first draft is below. Now be the producer who decides whether it gets cut. Run the QUALITY GATES on it silently and return the upgraded song. Fix in place: keep the story, the hook and every line that already sings, and do not paraphrase a working song into a different one. The exception is gate 5: if the verses do not rhyme or do not hold a meter, rewriting their line endings throughout is the job, not a liberty.
+  return `Make one focused producer edit of the draft below. Keep working lines, the requested subject, the singer's language, and every supplied lyric phrase. Do not invent a different song to demonstrate improvement.
+
+ORIGINAL BRIEF: ${JSON.stringify(brief)}
 
 Check, in this order, and change only what fails:
-1. THE TURN and the payoff. Does the last verse do new work? Plant one concrete detail in verse one and bring it back loaded in the last verse or the bridge, or let one new fact make the last chorus mean something it did not mean the first time. On the final chorus, change exactly one word or one line if that lands the turn.
-2. The hook. Plain speech, six to eight syllables, its click syllable on an open vowel, exactly one surprise. ${hookCount} If the best line in the song is hiding in a verse, it is the hook in the wrong seat.
-3. Hook stew. A near-wordless second hook (a post-chorus chant or run) if the genre wants one.
-4. The spice. Exactly one from the list, visible.
+1. TOPIC AND MEANING. Does the whole song answer the actual brief? Genre and vocal identity do not imply a romance. Reflective subjects need no invented physical scene. Every line should have a clear ordinary-language meaning; fix unclear pronouns, unrelated images and thoughts added only for rhyme. Personal context need not become the narrator's biography.
+2. The hook. Keep supplied wording, repetitions and dialect exactly. ${hookCount} Let surrounding lines deepen or answer the feeling and leave room for the voice. Six to eight lines is a useful chorus default, not a quota. No compulsory syllable count, surprise, title flip or second hook.
+3. DEVELOPMENT. Verses add another aspect, pressure, choice, consequence or event. A bridge may change perspective or phrasing. Do not demand a planted prop, plot turn, quirk or rewritten final chorus. For coping, let practical responses remain human language instead of clinical labels, and let frustration coexist with care.
+4. EMOTIONAL HONESTY. Preserve the stance requested in the brief. Encouragement can coexist with continuing difficulty. No unearned cure, superiority speech, guaranteed victory or fairy-tale ending. A good chorus can return unchanged.
 ${cadence}
-6. Song, not short story, and not a nursery rhyme either. Each verse keeps one or two details so exact that only this song could contain them, never the props recent drafts keep reaching for (rain on the window, a swing and its chain, doors, windows, plates, a phone, the TV) unless the brief named them, and the rest is plain talk. Cut any line that only notices something, and replace any line so general it could sit in a thousand songs. A verse this desk sized itself runs eight lines or more. Moment and voice. Happening now, one attitude in every line, a first line that grabs in eight words, no retrospective wisdom, no Tier 1 structure anywhere.
-7. Singability. Open vowels under held notes, a breath in every long line, no stacked sibilants or consonant pileups on stressed beats, parentheses only for sung ad-libs and echoes, never stage directions.${shape ? `\n8. Length. ${shape}` : ''}${repeatGate(repeats, shape ? 9 : 8)}${endingGate(script, 8 + (shape ? 1 : 0) + (repeats.length ? 1 : 0))}${flagged}${lyricMeterNote(script, brief)}
+6. Singability. Natural speech stress, plausible breaths, manageable phrases and room for held notes. Preserve intentional long-short patterns, pickups and expressive repeats. Parentheses are sung ad-libs; production cues stay separate. Without a melody, do not claim exact timing or force equal syllable counts.${shape ? `\n7. Length. ${shape}` : ''}${repeatGate(repeats, shape ? 8 : 7)}${endingGate(script, 7 + (shape ? 1 : 0) + (repeats.length ? 1 : 0))}${flagged}${lyricMeterNote(script, brief)}
 
-Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. Nothing else.
+Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. One performed phrase per line, no blank lines within a section, one blank line between sections. Nothing else.
 
 ${script}`;
 }
@@ -1446,10 +1894,13 @@ ${script}`;
 function dropTrailingProse(words: string): string {
   const blocks = words.trim().split(/\n\s*\n/);
   const prose = (block: string): boolean => {
-    const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+    const lines = block
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
     if (!lines.length) return true;
     if (/^[*_#\s]*read\s?back\b/i.test(lines[0])) return true;
-    return lines.every((l) => l.length >= 110 && !/^[\[(]/.test(l) && /[.!?]["')*_]*$/.test(l));
+    return lines.every((l) => l.length >= 110 && !/^[[(]/.test(l) && /[.!?]["')*_]*$/.test(l));
   };
   while (blocks.length > 1 && prose(blocks[blocks.length - 1])) blocks.pop();
   return blocks.join('\n\n').trim();
@@ -1488,12 +1939,15 @@ export function mergeRepairedLyrics(original: string, repaired: string): string 
  *  readback; give it its label back. Leaves a labelled draft alone. */
 export function labelReadback(raw: string): string {
   // "Readback:", "**READBACK:**" and the like are the same label; the splitter only knows one spelling.
-  raw = raw.replace(/^[ \t]*[*_#]*[ \t]*read\s?back[ \t]*[*_]*[ \t]*:[ \t]*[*_]*[ \t]*/im, 'READBACK: ');
+  raw = raw.replace(
+    /^[ \t]*[*_#]*[ \t]*read\s?back[ \t]*[*_]*[ \t]*:[ \t]*[*_]*[ \t]*/im,
+    'READBACK: ',
+  );
   if (raw.includes('READBACK:') || !/^\s*lyrics\s*:/im.test(raw)) return raw;
   const lines = raw.trimEnd().split('\n');
   const last = lines[lines.length - 1].trim();
   const before = (lines[lines.length - 2] || '').trim();
-  const prose = last.length >= 120 && /[.!?]["')]?$/.test(last) && !/^\s*[\[(]/.test(last);
+  const prose = last.length >= 120 && /[.!?]["')]?$/.test(last) && !/^\s*[[(]/.test(last);
   if (!prose || before !== '') return raw;
   return `${lines.slice(0, -1).join('\n').trimEnd()}\n\nREADBACK: ${last}`;
 }
@@ -1506,9 +1960,10 @@ export async function musicWritingPrompt(
 ): Promise<string> {
   if (!writesMusic(request)) return seedWritingPrompt(base, request.engine, request.mode);
   const note = audienceNote(audience);
-  const direction = request.engine === 'yue2'
-    ? 'YuE2 direction is 25 to 45 words in one or two compact sentences: language, genre, rhythmic feel, a few defining instruments and the lead vocal character. No section-by-section arrangement narrative, production essay, technical duration line or story summary. The full development belongs in the lyrics and section tags, not in a Lyria-style brief.'
-    : 'Lyria direction is music production prose: genre, BPM and feel, instrumentation, the lead voice, backing vocals and arrangement dynamics as appropriate. Keep story and theme in the lyrics. Follow the engine format below for section shape and the technical line.';
+  const direction =
+    request.engine === 'yue2'
+      ? 'YuE2 direction is 25 to 45 words in one or two compact sentences: language, genre, rhythmic feel, a few defining instruments and the lead vocal character. No section-by-section arrangement narrative, production essay, technical duration line or story summary. The full development belongs in the lyrics and section tags, not in a Lyria-style brief.'
+      : 'Lyria direction is music production prose: genre, BPM and feel, instrumentation, the lead voice, backing vocals and arrangement dynamics as appropriate. Keep story and theme in the lyrics. Follow the engine format below for section shape and the technical line.';
   const agent = await readAgent({ id: lyricAgentId });
   if (!agent?.instructions?.trim())
     throw Object.assign(
@@ -1518,7 +1973,7 @@ export async function musicWritingPrompt(
       { status: 503 },
     );
 
-  return `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below is who you are in conversation. The HIT-WRITING SYSTEM after it is how every song at this desk is written; where the two differ about craft, the system wins. Then come the owner's desk notes and the delivery format the audio engine needs.
+  return `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth. Your saved persona below supplies your conversational character. The SONGWRITING CRAFT after it governs the actual lyric: where the persona demands a scene, rare repetition, fixed hook form or a story turn, the craft instructions win. Then come the owner's desk notes and the delivery format the audio engine needs.
 
 LYRIC'S CURRENT SONGWRITING PERSONA
 
@@ -1533,7 +1988,7 @@ ${base}
 ${note ? `${note}\n\n` : ''}SOUND BOOTH DELIVERY CONTRACT
 This is a single text-only writing request, not a conversation. Do not ask questions; make the creative choices and deliver. Do not access conversation history, personal memory, other agents, or audio tools.
 Keep supplied lyrics exactly as the request instructs; do not rewrite them merely to improve their rhymes. Formatting-only work must preserve authored words.
-The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here. ${direction} Start with one TITLE: line containing ${request.title?.trim() ? `the person's chosen title, exactly: ${JSON.stringify(request.title.trim().slice(0, 80))}` : 'a specific, original song title of at most 80 characters, taken from this song\'s hook, central joke or defining image; never a generic label such as Untitled or Your Song'}. Then output the music direction, a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. The TITLE: line is metadata, never a sung line or music direction. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
+The Sound Booth format below is the ONLY output format. There is no Lyrics Box, Tag Box or Negative Tag Box here. ${direction} Start with one TITLE: line containing ${request.title?.trim() ? `the person's chosen title, exactly: ${JSON.stringify(request.title.trim().slice(0, 80))}` : "a specific, original song title of at most 80 characters, taken from this song's hook, central joke or defining image; never a generic label such as Untitled or Your Song"}. Then output the music direction, a Lyrics: heading and the complete sung words when lyrics are requested, followed by the required READBACK: line. The TITLE: line is metadata, never a sung line or music direction. Never output commentary, a critique, rhyme annotations, a greeting or an offer to continue. Keep production instructions out of sung lines. Do not add lyrics to an instrumental request.
 The TITLE: metadata line is an exception to the engine's direction-first, no-other-headings or direction-only instructions above. For an instrumental, return TITLE: followed by the music direction, with no Lyrics: heading or sung words.
-Length check, when you wrote the lyrics yourself and the person gave no length: the sections follow the SECTION MAP sent with the request, every verse sized by the genre's density tier, ${request.engine === 'lyria' ? 'the technical line says about four minutes, ' : ''}and a short verse gets what happened next, not another way of saying the same thing. Then run the Tier 2 scan against Appendix A one more time. This check is private; the answer is always the complete draft in the format above, never a description of it.`;
+Length check, when you wrote the lyrics yourself and the person gave no length: use the SECTION MAP sent with the request unless the brief needs another form, with enough lyric development for a complete song, ${request.engine === 'lyria' ? 'the technical line says about four minutes, ' : ''}and a short verse gains another relevant thought, choice or event rather than padding. Check topic, meaning, phrase space and supplied words once more. This check is private; the answer is always the complete draft in the format above, never a description of it.`;
 }

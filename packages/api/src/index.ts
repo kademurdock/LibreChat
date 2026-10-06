@@ -242,6 +242,7 @@ export {
   lyricAgentId,
 } from './music/writing';
 export { splitLyricTitle, lyricTitleFromSong } from './music/title';
+export { formatGeneratedLyricsDraft } from './music/format';
 export {
   songIdeaSparks,
   songIdeaSystem,
