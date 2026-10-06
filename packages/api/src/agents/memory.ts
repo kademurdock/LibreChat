@@ -941,7 +941,11 @@ ${memory ?? 'No existing memories'}`;
 
     const artifactPromises: Promise<TAttachment | null>[] = [];
     const memoryCallback = createMemoryCallback({
-      res, artifactPromises, streamId, messageId, conversationId,
+      res,
+      artifactPromises,
+      streamId,
+      messageId,
+      conversationId,
     });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
@@ -1070,7 +1074,10 @@ export async function createMemoryProcessor({
 }): Promise<
   [
     string,
-    (messages: BaseMessage[], evidence?: MemoryEvidence) => Promise<(TAttachment | null)[] | undefined>,
+    (
+      messages: BaseMessage[],
+      evidence?: MemoryEvidence,
+    ) => Promise<(TAttachment | null)[] | undefined>,
   ]
 > {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
@@ -1797,10 +1804,12 @@ export function createMemoryCallback({
       return;
     }
     artifactPromises.push(
-      handleMemoryArtifact({ res, data, metadata, streamId, messageId, conversationId }).catch((error) => {
-        logger.error('Error processing memory artifact content:', error);
-        return null;
-      }),
+      handleMemoryArtifact({ res, data, metadata, streamId, messageId, conversationId }).catch(
+        (error) => {
+          logger.error('Error processing memory artifact content:', error);
+          return null;
+        },
+      ),
     );
   };
 }

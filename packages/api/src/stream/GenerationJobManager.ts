@@ -1086,8 +1086,12 @@ class GenerationJobManagerClass {
     }
     if (expectedResponseMessageId) {
       const current = await this.jobStore.getJob(streamId);
-      if (current?.responseMessageId !== expectedResponseMessageId ||
-        this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted) return;
+      if (
+        current?.responseMessageId !== expectedResponseMessageId ||
+        this.runtimeState.get(streamId) !== runtime ||
+        runtime.abortController.signal.aborted
+      )
+        return;
     }
 
     // Refresh job activity so the store's stale-job failsafe reaps on inactivity
@@ -1129,8 +1133,11 @@ class GenerationJobManagerClass {
       }
     }
 
-    if (expectedResponseMessageId &&
-      (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted)) return;
+    if (
+      expectedResponseMessageId &&
+      (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted)
+    )
+      return;
     await this.eventTransport.emitChunk(streamId, event);
   }
 

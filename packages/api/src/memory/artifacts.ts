@@ -11,16 +11,20 @@ import { Tools } from 'librechat-data-provider';
 
 export type MemoryArtifactResult = readonly (Partial<TAttachment> | null)[] | undefined;
 
-export type MemoryArtifactContext = Readonly<MemorySource & {
-  messageId: string;
-  currentOffRecord: boolean;
-  tenant: Readonly<TenantContext>;
-}>;
+export type MemoryArtifactContext = Readonly<
+  MemorySource & {
+    messageId: string;
+    currentOffRecord: boolean;
+    tenant: Readonly<TenantContext>;
+  }
+>;
 
-export function captureMemoryArtifactContext(source: MemorySource & {
-  messageId: string;
-  currentOffRecord?: boolean;
-}): MemoryArtifactContext {
+export function captureMemoryArtifactContext(
+  source: MemorySource & {
+    messageId: string;
+    currentOffRecord?: boolean;
+  },
+): MemoryArtifactContext {
   return Object.freeze({
     ...source,
     currentOffRecord: source.currentOffRecord === true,
@@ -29,8 +33,14 @@ export function captureMemoryArtifactContext(source: MemorySource & {
 }
 
 function usableId(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256 && value.trim() === value &&
-    value !== 'undefined' && value !== 'null';
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    value.trim() === value &&
+    value !== 'undefined' &&
+    value !== 'null'
+  );
 }
 
 /** Actual keeper receipts only; late tool metadata never chooses the target row. */
@@ -43,8 +53,14 @@ export function canonicalMemoryArtifacts(
   const result: Partial<TAttachment>[] = [];
   for (const attachment of attachments.slice(0, 32)) {
     const memory = attachment?.memory;
-    if (!memory || !['update', 'delete', 'error'].includes(memory.type) ||
-      !usableId(memory.key) || !usableId(attachment.toolCallId) || seen.has(attachment.toolCallId)) continue;
+    if (
+      !memory ||
+      !['update', 'delete', 'error'].includes(memory.type) ||
+      !usableId(memory.key) ||
+      !usableId(attachment.toolCallId) ||
+      seen.has(attachment.toolCallId)
+    )
+      continue;
     seen.add(attachment.toolCallId);
     result.push({
       type: Tools.memory,
@@ -56,7 +72,8 @@ export function canonicalMemoryArtifacts(
         type: memory.type,
         ...(typeof memory.value === 'string' ? { value: memory.value } : {}),
         ...(typeof memory.tokenCount === 'number' && Number.isFinite(memory.tokenCount)
-          ? { tokenCount: memory.tokenCount } : {}),
+          ? { tokenCount: memory.tokenCount }
+          : {}),
       },
     });
   }
@@ -68,10 +85,15 @@ export async function persistMemoryArtifacts(
   context: MemoryArtifactContext,
   attachments: MemoryArtifactResult,
 ): Promise<number> {
-  if (context.currentOffRecord || !usableId(context.userId) ||
-    !usableId(context.messageId) || !usableId(context.conversationId) ||
+  if (
+    context.currentOffRecord ||
+    !usableId(context.userId) ||
+    !usableId(context.messageId) ||
+    !usableId(context.conversationId) ||
     context.tenant.tenantId === SYSTEM_TENANT_ID ||
-    (context.tenant.userId && context.tenant.userId !== context.userId)) return 0;
+    (context.tenant.userId && context.tenant.userId !== context.userId)
+  )
+    return 0;
   const receipts = canonicalMemoryArtifacts(context, attachments);
   if (!receipts.length) return 0;
   return tenantStorage.run({ ...context.tenant }, async () => {
@@ -87,13 +109,23 @@ export async function persistMemoryArtifacts(
       tenantId: context.tenant.tenantId ?? null,
     };
     if (!(await Conversation.exists(scope))) return 0;
-    const removeReceipts = () => Message.updateOne(
-      { ...scope, messageId: context.messageId, isCreatedByUser: false },
-      { $pull: { attachments: { type: Tools.memory, toolCallId: {
-        $in: receipts.flatMap((receipt) => receipt.toolCallId ? [receipt.toolCallId] : []),
-      } } } },
-      { upsert: false },
-    );
+    const removeReceipts = () =>
+      Message.updateOne(
+        { ...scope, messageId: context.messageId, isCreatedByUser: false },
+        {
+          $pull: {
+            attachments: {
+              type: Tools.memory,
+              toolCallId: {
+                $in: receipts.flatMap((receipt) =>
+                  receipt.toolCallId ? [receipt.toolCallId] : [],
+                ),
+              },
+            },
+          },
+        },
+        { upsert: false },
+      );
     let written = 0;
     for (const receipt of receipts) {
       if (!(await memorySourceAllowed(context))) break;
