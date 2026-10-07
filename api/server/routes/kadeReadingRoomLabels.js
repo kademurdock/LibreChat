@@ -79,6 +79,7 @@ function typeLabel(item) {
     const path = String(it.path || '');
     if (/^newspaper(?:_|$)/i.test(sourceKind) || /(?:^|\/)Newspapers?(?:\/|$)/i.test(path)) return 'Newspaper';
     if (/^yearbook(?:_|$)/i.test(sourceKind) || /(?:^|\/)Yearbooks?(?:\/|$)/i.test(path)) return 'Yearbook';
+    if (/^(?:station_)?newsletter(?:_|$)/i.test(sourceKind) || /(?:^|\/)Newsletters?(?:\/|$)/i.test(path)) return 'Newsletter';
     return 'Book';
   }
   const category = String(it.category || 'other');

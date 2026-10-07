@@ -13,6 +13,7 @@ test('reviewed newspaper and yearbook editions are named by their source kind wi
   assert.equal(L.typeLabel({ kind: 'text', path: 'Books/Radio History', meta: { sourceKind: 'newspaper_article' } }), 'Newspaper');
   assert.equal(L.typeLabel({ kind: 'text', meta: { sourceKind: 'newspaper_page' } }), 'Newspaper');
   assert.equal(L.typeLabel({ kind: 'text', path: 'Books/Yearbooks/1970s' }), 'Yearbook');
+  assert.equal(L.typeLabel({ kind: 'text', meta: { sourceKind: 'station_newsletter' } }), 'Newsletter');
   assert.equal(L.typeLabel({ kind: 'text', path: 'Books/Newspaper Fiction', title: 'A novel about a newspaper' }), 'Book');
 });
 

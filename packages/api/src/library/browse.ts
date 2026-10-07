@@ -152,6 +152,20 @@ export function browsePipeline(
                 },
                 then: 'yearbook',
               },
+              {
+                case: {
+                  $or: [
+                    {
+                      $regexMatch: {
+                        input: text('$meta.sourceKind'),
+                        regex: /^(?:station_)?newsletter(?:_|$)/i,
+                      },
+                    },
+                    { $regexMatch: { input: '$path', regex: /(?:^|\/)Newsletters?(?:\/|$)/i } },
+                  ],
+                },
+                then: 'newsletter',
+              },
               { case: { $eq: ['$kind', 'text'] }, then: 'book' },
             ],
             default: { $ifNull: ['$category', '$kind'] },

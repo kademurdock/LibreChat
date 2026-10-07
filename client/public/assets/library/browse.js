@@ -19,6 +19,7 @@
         var names = {
           book: 'Books',
           newspaper: 'Newspapers',
+          newsletter: 'Newsletters',
           yearbook: 'Yearbooks',
           audiobook: 'Audiobooks',
           commercials: 'Commercials',
