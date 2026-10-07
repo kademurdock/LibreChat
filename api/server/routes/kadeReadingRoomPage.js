@@ -135,51 +135,61 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   <section id="shelf">
     <div class="kade-art alcove-art"><img id="alcoveArt" alt="${ALCOVE_ART.alt}" width="1440" height="481" loading="lazy" decoding="async" draggable="false"></div>
-    <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your shelf is yours; put something in the library and everyone can check it out.</p>
+    <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your uploads stay yours. Shared items are available to members with the Family feature pack.</p>
 
-    <h2 id="h-search">Find something</h2>
-    <div class="row">
-      <label class="field" for="searchBox" style="margin:0">Search the library</label>
-      <input type="text" id="searchBox" style="flex:1 1 14rem" placeholder="A title, a channel, a brand, a year…">
-      <button class="act" id="searchBtn" type="button">Search</button>
-    </div>
-    <ul class="plain" id="searchList" aria-labelledby="h-search"></ul>
-    <button class="act quiet" id="searchMore" type="button" hidden>More search results</button>
-
-    <h2 id="h-archive">Browse the library</h2><label for="libraryScope">Show</label><select id="libraryScope"><option value="public">Family library</option><option value="mine">Your uploads</option></select>
-    <p class="hint">Books, Audio, and Videos. Your uploads stay yours to manage; only shared items appear in the family library.</p>
+    <h2 id="h-browse">Browse the library</h2>
+    <p class="hint">One shelf for books, newspapers, recordings and videos. Choose a type or decade, or search across the collection.</p>
+    <form id="browseForm">
+      <label class="field" for="searchBox">Search the library</label>
+      <div class="row"><input type="text" id="searchBox" style="flex:1 1 14rem" placeholder="A title, a place, a brand, a year…"><button class="act" id="searchBtn" type="submit">Search</button></div>
+      <div class="controls">
+        <div><label class="field" for="libraryScope">Collection</label><select id="libraryScope"><option value="public">Family library</option><option value="mine">Your uploads</option></select></div>
+        <div><label class="field" for="browseKind">Format</label><select id="browseKind"><option value="">All formats</option><option value="text">Text</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
+        <div><label class="field" for="browseType">Type</label><select id="browseType"><option value="">All types</option></select></div>
+        <div><label class="field" for="browseDecade">Decade</label><select id="browseDecade"><option value="">All decades</option></select></div>
+        <div><label class="field" for="browseSort">Order</label><select id="browseSort"><option value="recent">Recently added</option><option value="title">Title</option></select></div>
+        <div style="align-self:end"><button class="act quiet" id="browseClear" type="button">Clear filters</button></div>
+      </div>
+      <input id="browsePath" type="hidden" value="">
+    </form>
+    <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
+    <p id="browseCount" class="hint">Loading…</p>
+    <ul class="plain" id="browseList" aria-labelledby="h-browse"></ul>
+    <button class="act quiet" id="browseMore" type="button" hidden>Load more items</button>
+    <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
     <section aria-labelledby="h-local" style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
       <h3 id="h-local">Springfield, the Ozarks &amp; Missouri</h3>
       <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
       <div class="row" id="discoveryLinks">
         <button type="button" class="act" data-folder="Videos/Missouri">Explore Missouri</button>
-        <button type="button" class="act quiet" data-query="Springfield Ozarks">Springfield &amp; Ozarks</button>
+        <button type="button" class="act quiet" data-query="Springfield">Springfield &amp; Ozarks</button>
         <button type="button" class="act quiet" data-folder="Videos/Commercials">Commercials by subject</button>
         <button type="button" class="act quiet" data-folder="Videos/TV Shows">TV shows &amp; familiar bumpers</button>
         <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
       </div>
     </section>
+    <details id="folderBrowse"><summary>Browse folders and manage filing</summary>
+    <h2 id="h-archive">Folders</h2>
     <div class="kade-art shelf-art" id="shelfArtBox" hidden><img id="shelfArt" alt="" width="1152" height="648" loading="lazy" fetchpriority="low" decoding="async" draggable="false"></div>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
     <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
 
+    </details>
+    <details><summary>Your playlists</summary>
     <h2 id="h-collections">Collections</h2>
     <p class="hint">Playlists you put together from anything in the library — yours until you share them.</p>
     <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
     <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
 
+    </details>
+    <details><summary>Your saved shelf and uploads</summary>
     <h2 id="h-mine">Your shelf</h2>
-    <p class="hint">Everything you have donated and everything you have opened, in folders. Removing something from your shelf never removes it from the library.</p>
+    <p class="hint">Everything you have donated and everything you have opened, together. Removing something from your shelf never removes it from the library.</p>
     <div id="mineList" aria-labelledby="h-mine"><p class="muted">Loading…</p></div>
     <ul class="plain hidden" id="borrowedList"></ul>
 
-    <h2 id="h-library">The library</h2>
-    <div class="row" role="group" aria-label="Show only">
-      <label class="field" for="catFilter" style="margin:0">Show</label>
-      <select id="catFilter" style="width:auto"><option value="">Everything</option></select>
-    </div>
-    <ul class="plain" id="libraryList" aria-labelledby="h-library"><li class="muted">Loading…</li></ul>
+    </details>
 
     <h2 id="h-submit">Submit something for the library</h2>
     <div class="card">
@@ -369,6 +379,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   </section>
 
+<script src="/assets/library/browse.js?v=20261007"></script>
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
 <script src="/assets/library/access.js?v=20260928"></script>
@@ -392,7 +403,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     opts = opts || {};
     var h = opts.headers || {}; h['Authorization'] = 'Bearer ' + token;
     if (opts.json) { h['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
-    var r = await fetch(API + path, { method: opts.method || (opts.body ? 'POST' : 'GET'), headers: h, body: opts.body });
+    var r = await fetch(API + path, { method: opts.method || (opts.body ? 'POST' : 'GET'), headers: h, body: opts.body, signal: opts.signal });
     var j = null; try { j = await r.json(); } catch(e) {}
     if (!r.ok) throw new Error((j && j.error) || ('HTTP ' + r.status));
     return j;
@@ -429,39 +440,21 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!items.length) { ul.innerHTML = '<li class="muted">' + empty + '</li>'; return; }
     items.forEach(function(b){ ul.appendChild(bookLi(b, where)); });
   }
-  /* the shelf as folders: Books, Recordings, Video, Archive clips — donated and checked-out alike */
-  /* Sep 12 2026, her word: videos were showing up as books. The archive files a
-     movie as kind 'video'; every 'is it a recording?' check here now asks
-     'is it not text?' so audio and video share the player, the describe
-     controls and the category names. */
-  function shelfFolder(b){ return b.kind === 'text' ? 'Books' : b.kind === 'video' ? 'Videos' : 'Audio'; }
   function renderShelf(mine, borrowed){
     var box = $('mineList'); box.innerHTML = '';
-    var all = mine.map(function(b){ b._where = 'mine'; return b; }).concat(borrowed.map(function(b){ b._where = 'borrowed'; return b; }));
-    if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Donate a book or a recording below, open anything in the library, or share a file from another app to Kade-AI.</p>'; return; }
-    var groups = {}; all.forEach(function(b){ var g = shelfFolder(b); (groups[g] = groups[g] || []).push(b); });
-    ['Books', 'Audio', 'Videos'].forEach(function(g){
-      if (!groups[g]) return;
-      var d = document.createElement('details'); d.open = true;
-      var sm = document.createElement('summary'); sm.textContent = '📁 ' + g + ' (' + groups[g].length + ')'; d.appendChild(sm);
-      var ul = document.createElement('ul'); ul.className = 'plain';
-      groups[g].forEach(function(b){
-        var li = bookLi(b, b._where);
-        if (b._where === 'borrowed') {
-          var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove from my shelf'; rm.setAttribute('aria-label', 'Remove ' + b.title + ' from my shelf');
-          rm.onclick = async function(){ try { await api('/book/' + b.id + '/return', { method: 'POST' }); say('Removed from your shelf. It stays in the library.'); loadShelf(); } catch(e) { say(e.message); } };
-          li.appendChild(rm);
-        }
-        ul.appendChild(li);
-      });
-      d.appendChild(ul); box.appendChild(d);
+    var all = mine.map(function(b){ return {book:b, where:'mine'}; }).concat(borrowed.map(function(b){ return {book:b, where:'borrowed'}; }));
+    if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Open something in the library or add a file below.</p>'; return; }
+    var ul = document.createElement('ul'); ul.className = 'plain';
+    all.forEach(function(entry){
+      var b = entry.book, li = bookLi(b, entry.where);
+      if (entry.where === 'borrowed') {
+        var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove from my shelf'; rm.setAttribute('aria-label', 'Remove ' + b.title + ' from my shelf');
+        rm.onclick = async function(){ try { await api('/book/' + b.id + '/return', { method: 'POST' }); say('Removed from your shelf. It stays in the library.'); loadShelf(); } catch(e) { say(e.message); } };
+        li.appendChild(rm);
+      }
+      ul.appendChild(li);
     });
-  }
-  function renderLibrary(){
-    var cat = $('catFilter').value;
-    var items = (shelfData.library || []).filter(function(b){ return !cat || (b.kind !== 'text' ? b.category : 'book') === cat; });
-    var filed = shelfData.libraryFiled || 0;
-    renderList('libraryList', items, 'library', cat ? 'Nothing on that shelf yet.' : (filed ? 'Everything shared so far (' + filed + ' items) is filed on the shelves under Browse the library above — Books, Audio and Videos. Loose donations would be listed here.' : 'The library is empty — donate something from your shelf.'));
+    box.appendChild(ul);
   }
   async function loadShelf(){
     try {
@@ -470,45 +463,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
       $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
       if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
-      var sel = $('catFilter'); var cur = sel.value; sel.innerHTML = '<option value="">Everything</option>';
-      var present = {}; (shelfData.library || []).forEach(function(b){ present[b.kind !== 'text' ? b.category : 'book'] = 1; });
-      Object.keys(present).forEach(function(c){ var o = document.createElement('option'); o.value = c; o.textContent = catName(c); sel.appendChild(o); });
-      sel.value = cur;
-      renderLibrary();
+      $('familyHistoryLink').hidden = shelfData.familyLibrary !== true;
     } catch(e) { say('Could not load the shelf: ' + e.message); }
   }
-  $('catFilter').onchange = renderLibrary;
-
-  /* search */
-  var searchPage = 0, searchQuery = '', searchScope = '', searchRun = 0;
-  async function doSearch(more){
-    var append = more === true, q = $('searchBox').value.trim(), scope = $('libraryScope').value;
-    if (append && (q !== searchQuery || scope !== searchScope)) append = false;
-    if (!append) { searchPage = 0; searchQuery = q; searchScope = scope; $('searchList').innerHTML = ''; }
-    var run = ++searchRun, ul = $('searchList'); $('searchMore').hidden = true;
-    if (!q) return;
-    try {
-      var j = await api('/search?q=' + encodeURIComponent(q) + '&scope=' + scope + '&page=' + searchPage);
-      if (run !== searchRun || scope !== $('libraryScope').value) return;
-      if (!j.items.length && !append) { ul.innerHTML = '<li class="muted">Nothing matched.</li>'; say('Nothing matched ' + q + '.'); return; }
-      var firstNew = ul.children.length;
-      j.items.forEach(function(b){ ul.appendChild(bookLi(b, b.path ? 'archive' : 'library')); });
-      if (append && ul.children[firstNew]) { var nextButton = ul.children[firstNew].querySelector('button'); if (nextButton) nextButton.focus(); }
-      searchPage++; $('searchMore').hidden = !j.more;
-      say(ul.children.length + ' results loaded for ' + q + (j.more ? '. More results are available.' : '.'));
-    } catch(e) { say(e.message); }
-  }
-  $('searchMore').onclick = function(){ doSearch(true); };
-  $('discoveryLinks').onclick = function(ev){
-    var button = ev.target.closest('button'); if (!button) return;
-    if (button.dataset.folder) loadArchive(button.dataset.folder, 0);
-    else { $('searchBox').value = button.dataset.query; doSearch(); }
-  };
-  $('searchBtn').onclick = doSearch;
-  $('searchBox').addEventListener('keydown', function(ev){ if (ev.key === 'Enter') { ev.preventDefault(); doSearch(); } });
-
   /* the archive */
-  var archivePath = '', archivePage = 0;
+  var archivePath = '', archivePage = 0, archiveRun = 0;
 
   /* pictures (Sep 25 2026 art batch): the reading-alcove banner on the shelf
      screen, and a still picture over the Radio and Music shelves that changes
@@ -575,12 +534,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('alcoveArt').setAttribute('data-src', ${JSON.stringify(ALCOVE_ART.src)});
   fillArt($('alcoveArt'));
   if (artHiddenWhen) { if (artHiddenWhen.addEventListener) artHiddenWhen.addEventListener('change', refillArt); else if (artHiddenWhen.addListener) artHiddenWhen.addListener(refillArt); }
-  $('libraryScope').onchange = function(){ searchRun++; $('searchList').innerHTML = ''; $('searchMore').hidden = true; loadArchive('', 0); };
+  $('folderBrowse').ontoggle = function(){ if (this.open) loadArchive(undefined, 0); };
   async function loadArchive(path, page){
+    var run = ++archiveRun, scope = $('libraryScope').value;
     archivePath = path || ''; archivePage = page || 0;
     var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
     try {
-      var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + $('libraryScope').value);
+      var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + scope);
+      if (run !== archiveRun || scope !== $('libraryScope').value) return;
       var crumbs = $('crumbs'); crumbs.innerHTML = '';
       var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
       var parts = archivePath ? archivePath.split('/') : [];
@@ -1477,7 +1438,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); loadArchive(undefined, 0); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
   })();
 })();
 </script>

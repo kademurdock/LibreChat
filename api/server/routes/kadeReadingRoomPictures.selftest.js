@@ -68,7 +68,7 @@ test('the shelf picture waits, hidden, in its reserved box for its shelf', () =>
   const at = readingRoomHtml.indexOf('<div class="kade-art shelf-art"');
   assert.ok(at < readingRoomHtml.indexOf('<nav class="crumbs" id="crumbs"'));
   assert.ok(at > readingRoomHtml.indexOf('<h3 id="h-local">'));
-  assert.match(readingRoomHtml.slice(at - 20, at), /<\/section>\s*$/, 'right after the local section closes');
+  assert.ok(at > readingRoomHtml.indexOf('<details id="folderBrowse">'), 'the folder picture stays inside the optional folder view');
   assert.match(readingRoomHtml, /\.shelf-art \{[^}]*aspect-ratio:16 \/ 9;/);
 });
 
@@ -114,7 +114,7 @@ test('the head check marks the page for data saving and very large text before a
 test('no block of picture words, no extra heading, no live region: only the alt text', () => {
   const { readingRoomHtml } = load();
   assert.doesNotMatch(readingRoomHtml, /kade-pictures|Pictures on this page|picturesOnPage|shelfArtWords/, 'the end-of-page pictures block is gone');
-  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 15, 'the same fifteen headings as before the pictures');
+  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 14, 'the unified catalog removes duplicate library headings; pictures add none');
   assert.equal((readingRoomHtml.match(/aria-live=/g) || []).length, 1, 'still ONE live region');
   assert.equal((readingRoomHtml.match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is hidden');
   // each sentence is said once, as alt text: the alcove's in its <img>, the shelves' only in the script that sets them
@@ -174,7 +174,7 @@ test('each shelf picture ships small, 16:9, in both sizes the page asks for, fro
 function artRig({ saveData = false, artOff = false, narrow = false } = {}) {
   const { readingRoomHtml } = load();
   const start = readingRoomHtml.indexOf('  /* pictures (Sep 25 2026 art batch)');
-  const end = readingRoomHtml.indexOf("  $('libraryScope').onchange", start);
+  const end = readingRoomHtml.indexOf("  $('folderBrowse').ontoggle", start);
   assert.ok(start > 0 && end > start);
   const els = {};
   function classList() {

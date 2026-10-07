@@ -148,7 +148,7 @@ export function familyHistoryArchivesRouter(
 ): Router {
   const router = Router();
   const noAuth: RequestHandler = (_req, _res, next) => next();
-  const defaultRouter = familyHistoryRouter({ ...deps, auth: noAuth });
+  const defaultRouter = familyHistoryRouter({ ...deps, auth: noAuth, packGuests: true });
   let revision = '';
   let definitions: readonly FamilyArchiveDefinition[] = [];
   const scoped = new Map<string, Router>();
@@ -183,7 +183,7 @@ export function familyHistoryArchivesRouter(
   router.get('/archives', (req, res) => {
     const user = account(req);
     const archives = [
-      ...(familyHistoryCandidate(user, deps.ownerUserId?.())
+      ...(familyHistoryCandidate(user, deps.ownerUserId?.(), true)
         ? [{ id: 'default', title: options.defaultTitle || 'My family history' }]
         : []),
       ...read()
@@ -219,6 +219,7 @@ export function familyHistoryArchivesRouter(
         ownerUserId: () => definition.ownerUserId,
         ownerIsTreePerson: (account, bundle) => account.kadeFamilyTreePerson === bundle.owner,
         sensitiveReadAllowed: () => false,
+        packGuests: false,
         findUsers: async () => [],
         setUserFields: async () => {
           throw new Error('Separate archive bindings are managed in private configuration');

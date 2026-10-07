@@ -74,7 +74,13 @@ const VIDEO_WORDS = { tv: 'TV recording', psa: 'Public service announcement', vh
 function typeLabel(item) {
   const it = item || {};
   const kind = it.kind || 'text';
-  if (kind === 'text') return 'Book';
+  if (kind === 'text') {
+    const sourceKind = String(it.meta && it.meta.sourceKind || '');
+    const path = String(it.path || '');
+    if (/^newspaper(?:_|$)/i.test(sourceKind) || /(?:^|\/)Newspapers?(?:\/|$)/i.test(path)) return 'Newspaper';
+    if (/^yearbook(?:_|$)/i.test(sourceKind) || /(?:^|\/)Yearbooks?(?:\/|$)/i.test(path)) return 'Yearbook';
+    return 'Book';
+  }
   const category = String(it.category || 'other');
   const path = String(it.path || '');
   const title = String(it.title || '');

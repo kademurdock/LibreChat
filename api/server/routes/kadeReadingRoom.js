@@ -1423,6 +1423,33 @@ const byTitle = [{ $addFields: { _titleKey: { $toLower: { $ifNull: ['$title', ''
 /** A listed item needs its summary, not a described video's every scene or its recaps. */
 const listFields = { $project: { 'tracks.description.scenes': 0, 'tracks.recaps': 0 } };
 
+router.get('/browse', requireJwtAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const { browseInput, browsePipeline, browseCursor } = require('@librechat/api');
+    const input = browseInput(Object.fromEntries(Object.entries(req.query).filter(([, value]) => typeof value === 'string')));
+    const reader = { id: String(req.user.id), hidden: libraryHiddenFrom(req), child: await isChild(req) };
+    const [result] = await KadeBook.aggregate(browsePipeline(reader, input, libraryPathExpression())).option({ maxTimeMS: 20000 });
+    const rows = result?.items || [];
+    const more = rows.length > 60;
+    if (more) rows.pop();
+    const progress = rows.length ? await KadeReadingProgress.find({ user: req.user.id, book: { $in: rows.map((item) => item._id) } }).lean() : [];
+    const places = new Map(progress.map((place) => [String(place.book), place]));
+    const last = rows.at(-1);
+    res.json({
+      items: rows.map((item) => ({ ...summary(item, places.get(String(item._id)) || null), decade: item._browseDecade })),
+      total: result?.total?.[0]?.count || 0,
+      types: result?.types || [],
+      decades: result?.decades || [],
+      next: more && last ? browseCursor(input, String(last._id), input.sort === 'title' ? last._browseTitle : last._browseRecent.toISOString()) : null,
+      familyLibrary: !reader.hidden,
+    });
+  } catch (error) {
+    logger.error('[library/browse] error:', error);
+    res.status(500).json({ error: 'Could not load the library. Please try again.' });
+  }
+});
+
 router.get('/archive', requireJwtAuth, async (req, res) => {
   try {
     const hidden = libraryHiddenFrom(req); // the reviewer seat sees only its own uploads

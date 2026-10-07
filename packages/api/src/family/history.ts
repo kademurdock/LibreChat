@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { Router, json } from 'express';
 import type { Request, RequestHandler, Response } from 'express';
 import type { LibraryAccount } from '../library/access';
-import { libraryReviewSeat, libraryTestSeat } from '../library/access';
+import { familyLibraryMember, libraryReviewSeat, libraryTestSeat } from '../library/access';
 import type { FamilyAudience } from './util';
 import {
   FAMILY_MONTH_NAMES,
@@ -46,7 +46,11 @@ import { familyPlacesPayload, familyTimelinePayload } from './timeline';
 import { familyPlayPayload } from './play';
 import type { FamilyNote } from './inbox';
 import type { FamilyResearchNote } from './research-notes';
-import { FAMILY_RESEARCH_NOTE_NOTICE, familyResearchNoteAuthor, familyResearchNoteRequest } from './research-notes';
+import {
+  FAMILY_RESEARCH_NOTE_NOTICE,
+  familyResearchNoteAuthor,
+  familyResearchNoteRequest,
+} from './research-notes';
 import {
   FAMILY_NOTES_PER_DAY,
   FAMILY_NOTE_KIND_TEXT,
@@ -647,6 +651,8 @@ export interface FamilyHistoryMatch {
 
 export interface FamilyHistoryDependencies {
   auth: RequestHandler;
+  /** The owner's default archive admits Family pack guests; separate archives opt out. */
+  packGuests?: boolean;
   /** The object's bytes (gunzipped for *.gz keys), or null when it does not exist. */
   loadObject: (key: string) => Promise<Buffer | null>;
   signGet: (key: string, mime: string, seconds: number) => Promise<string>;
@@ -729,9 +735,16 @@ export function familySensitiveReader(
   if (!raw) return false;
   try {
     const ids: unknown = JSON.parse(raw);
-    if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id))) return false;
+    if (
+      !Array.isArray(ids) ||
+      ids.length > 200 ||
+      ids.some((id) => typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id))
+    )
+      return false;
     return ids.some((id: string) => id.toLowerCase() === accountIdOf(user).toLowerCase());
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 const RETRY_MS = 60 * 1000;
@@ -815,6 +828,7 @@ export function familyHistoryViewer(
   user: FamilyHistoryAccount | null | undefined,
   bundle: FamilyBundle,
   ownerUserId: string = familyOwnerUserId(),
+  packGuests: boolean = false,
 ): FamilyHistoryViewer | null {
   if (!user || libraryReviewSeat(user) || libraryTestSeat(user)) return null;
   const admin = user.role === 'ADMIN';
@@ -829,7 +843,12 @@ export function familyHistoryViewer(
   }
   if (matched) return { personId: matched, mode: 'family' };
   if (user.kadeFamilyHistory === 'guest') return { personId: bundle.owner, mode: 'guest' };
+  if (packGuests && familyPackGuest(user)) return { personId: bundle.owner, mode: 'guest' };
   return null;
+}
+
+function familyPackGuest(user: FamilyHistoryAccount): boolean {
+  return user.kadeFamilyHistory !== 'none' && familyLibraryMember(user);
 }
 
 /** May this account use the owner's pages (/accounts, /match, /notes)? The owner's account, or,
@@ -901,11 +920,13 @@ export function familyRowDetail(
 export function familyHistoryCandidate(
   user: FamilyHistoryAccount | null | undefined,
   ownerUserId: string = familyOwnerUserId(),
+  packGuests: boolean = false,
 ): boolean {
   if (!user || libraryReviewSeat(user) || libraryTestSeat(user)) return false;
   return (
     !!user.kadeFamilyTreePerson ||
     user.kadeFamilyHistory === 'guest' ||
+    (packGuests && familyPackGuest(user)) ||
     (user.role === 'ADMIN' && (!ownerUserId || accountIdOf(user) === ownerUserId))
   );
 }
@@ -1385,7 +1406,7 @@ export function familyHistoryLocked(
   if (libraryTestSeat(user)) return 'Test accounts are always kept out of the family history.';
   if (user.role === 'ADMIN') {
     return ownerUserId && accountIdOf(user) !== ownerUserId
-      ? 'An administrator is not matched here: only an explicit tree or guest grant allows access for a non-owner.'
+      ? 'An administrator reads the default history as a Family pack guest unless already matched to the tree.'
       : 'The configured owner has server-managed access; administrators with an existing tree binding remain family readers.';
   }
   return null;
@@ -1396,7 +1417,7 @@ export function familyHistoryAccountRow(
   bundle: FamilyBundle,
 ): FamilyHistoryAccountRow {
   const personId = user.kadeFamilyTreePerson || null;
-  const access = familyHistoryViewer(user, bundle)?.mode || 'none';
+  const access = familyHistoryViewer(user, bundle, familyOwnerUserId(), true)?.mode || 'none';
   return {
     userId: accountIdOf(user),
     name: String(user.name || '').trim(),
@@ -1663,18 +1684,22 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
   const v2 = (req: Request): boolean => queryText(req.query.v) === '2';
   /** May this viewer see sensitive findings and stories (KADE_FH_DNA_FINDINGS, read now)? */
   const mysteries = (ctx: FamilyContext): boolean =>
-    familyMysteriesAllowed(ctx.viewer.mode, familyDnaFindingsSetting(),
-      (deps.sensitiveReadAllowed || familySensitiveReader)(ctx.user));
+    familyMysteriesAllowed(
+      ctx.viewer.mode,
+      familyDnaFindingsSetting(),
+      (deps.sensitiveReadAllowed || familySensitiveReader)(ctx.user),
+    );
   const authorPersonId = (ctx: FamilyContext): string | null =>
     ctx.viewer.mode === 'guest' ||
     (ctx.viewer.mode === 'owner' && deps.ownerIsTreePerson?.(ctx.user, ctx.bundle) === false)
-      ? null : ctx.viewer.personId;
+      ? null
+      : ctx.viewer.personId;
   const expires = (): string => new Date(now() + FAMILY_HISTORY_MEDIA_SECONDS * 1000).toISOString();
 
   /** The viewer and their view, null when refused; throws when the bundle or views cannot load. */
   const contextFor = async (user: FamilyHistoryAccount): Promise<FamilyContext | null> => {
     const state = await store.loaded();
-    const viewer = familyHistoryViewer(user, state.bundle, ownerUserId());
+    const viewer = familyHistoryViewer(user, state.bundle, ownerUserId(), deps.packGuests === true);
     if (!viewer) return null;
     const ownerView = (): Promise<FamilyView | null> => store.view(state, state.bundle.owner);
     const mine = viewer.mode === 'guest' ? null : await store.view(state, viewer.personId);
@@ -1718,11 +1743,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       now,
     );
     const person = own(ctx.bundle.people, ctx.viewer.personId);
+    const fallbackName = ctx.viewer.mode === 'guest' ? 'there' : familyFirstName(person?.name);
     const accountFirst = String(ctx.user.name || '').trim()
       ? familyFirstName(ctx.user.name)
-      : ctx.viewer.mode === 'guest'
-        ? 'there'
-        : familyFirstName(person?.name);
+      : fallbackName;
     return {
       pc: familyPresenter(lens, prefix, signer, ctx.audience),
       lens,
@@ -1808,7 +1832,8 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     (handler: FamilyHandler): RequestHandler =>
     async (req, res) => {
       const user = signedIn(req);
-      if (!user || !familyHistoryCandidate(user, ownerUserId())) return deny(res, user);
+      if (!user || !familyHistoryCandidate(user, ownerUserId(), deps.packGuests === true))
+        return deny(res, user);
       let ctx: FamilyContext | null = null;
       try {
         ctx = await contextFor(user);
@@ -1853,11 +1878,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       const relationToOwner = perspectiveOnly
         ? null
         : (ownerView && own(ownerView.relations, ctx.viewer.personId)) || null;
+      const fallbackName = ctx.viewer.mode === 'guest' ? 'there' : familyFirstName(person.name);
       const accountFirst = String(ctx.user.name || '').trim()
         ? familyFirstName(ctx.user.name)
-        : ctx.viewer.mode === 'guest'
-          ? 'there'
-          : familyFirstName(person.name);
+        : fallbackName;
       res.json({
         access: true,
         viewer: {
@@ -1892,7 +1916,11 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     const user = signedIn(req);
     let refusal = familyHistoryRefusal(user, now());
     try {
-      if (user && familyHistoryCandidate(user, ownerUserId()) && (await contextFor(user))) {
+      if (
+        user &&
+        familyHistoryCandidate(user, ownerUserId(), deps.packGuests === true) &&
+        (await contextFor(user))
+      ) {
         res.status(403).json({ error: 'This account can already open the family history.' });
         return;
       }
@@ -2268,7 +2296,9 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     json({ limit: '16kb' }),
     family(async (req, res, ctx) => {
       if (ctx.viewer.mode === 'guest') {
-        res.status(403).json({ error: 'Research notes require a matched account or the archive steward.' });
+        res
+          .status(403)
+          .json({ error: 'Research notes require a matched account or the archive steward.' });
         return;
       }
       if (!putObject || !deps.listKeys) {
@@ -2291,16 +2321,27 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       const counted = `${author.userId} research ${day}`;
       const sent = sentToday.get(counted) || 0;
       if (sent >= FAMILY_NOTES_PER_DAY) {
-        res.status(429).json({ error: `That is ${FAMILY_NOTES_PER_DAY} research notes today. Send more tomorrow.` });
+        res.status(429).json({
+          error: `That is ${FAMILY_NOTES_PER_DAY} research notes today. Send more tomorrow.`,
+        });
         return;
       }
       const id = familyNoteId(at, randomBytes(4).toString('hex'));
       const note: FamilyResearchNote = {
-        id, at: new Date(at).toISOString(), kind: 'unverified-recollection',
-        status: 'needs-source-review', author, personId, text: asked.text,
+        id,
+        at: new Date(at).toISOString(),
+        kind: 'unverified-recollection',
+        status: 'needs-source-review',
+        author,
+        personId,
+        text: asked.text,
         notice: FAMILY_RESEARCH_NOTE_NOTICE,
       };
-      await putObject(`${prefix}/research-notes/${id}.json`, Buffer.from(JSON.stringify(note)), 'application/json');
+      await putObject(
+        `${prefix}/research-notes/${id}.json`,
+        Buffer.from(JSON.stringify(note)),
+        'application/json',
+      );
       for (const old of sentToday.keys()) if (!old.endsWith(day)) sentToday.delete(old);
       sentToday.set(counted, sent + 1);
       res.status(201).json({ ok: true, note });
@@ -2310,7 +2351,9 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
     '/research-notes',
     family(async (_req, res, ctx) => {
       if (ctx.viewer.mode === 'guest') {
-        res.status(403).json({ error: 'Research notes require a matched account or the archive steward.' });
+        res
+          .status(403)
+          .json({ error: 'Research notes require a matched account or the archive steward.' });
         return;
       }
       if (!deps.listKeys) {
@@ -2319,21 +2362,44 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
       }
       const folder = `${prefix}/research-notes/`;
       const userId = accountIdOf(ctx.user);
-      const keys = (await deps.listKeys(folder)).filter((key) =>
-        key.startsWith(folder) && familyNoteIdValid(key.slice(folder.length, -5)) && key.endsWith('.json'));
-      const notes = (await Promise.all(keys.map(async (key): Promise<FamilyResearchNote | null> => {
-        const raw = await deps.loadObject(key);
-        if (!raw) return null;
-        try {
-          const note = JSON.parse(unpacked(raw).toString('utf8')) as FamilyResearchNote;
-          if (note.kind !== 'unverified-recollection' || note.status !== 'needs-source-review' ||
-              typeof note.text !== 'string' || typeof note.at !== 'string' || !note.author?.userId ||
-              !familyNoteIdValid(note.id) || key !== `${folder}${note.id}.json`) return null;
-          return ctx.viewer.mode === 'owner' || note.author.userId === userId ? note : null;
-        } catch { return null; }
-      }))).filter((note): note is FamilyResearchNote => note !== null)
-        .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id)).slice(0, 200);
-      res.json({ notes, notice: FAMILY_RESEARCH_NOTE_NOTICE, audience: 'author-and-archive-steward' });
+      const keys = (await deps.listKeys(folder)).filter(
+        (key) =>
+          key.startsWith(folder) &&
+          familyNoteIdValid(key.slice(folder.length, -5)) &&
+          key.endsWith('.json'),
+      );
+      const notes = (
+        await Promise.all(
+          keys.map(async (key): Promise<FamilyResearchNote | null> => {
+            const raw = await deps.loadObject(key);
+            if (!raw) return null;
+            try {
+              const note = JSON.parse(unpacked(raw).toString('utf8')) as FamilyResearchNote;
+              if (
+                note.kind !== 'unverified-recollection' ||
+                note.status !== 'needs-source-review' ||
+                typeof note.text !== 'string' ||
+                typeof note.at !== 'string' ||
+                !note.author?.userId ||
+                !familyNoteIdValid(note.id) ||
+                key !== `${folder}${note.id}.json`
+              )
+                return null;
+              return ctx.viewer.mode === 'owner' || note.author.userId === userId ? note : null;
+            } catch {
+              return null;
+            }
+          }),
+        )
+      )
+        .filter((note): note is FamilyResearchNote => note !== null)
+        .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id))
+        .slice(0, 200);
+      res.json({
+        notes,
+        notice: FAMILY_RESEARCH_NOTE_NOTICE,
+        audience: 'author-and-archive-steward',
+      });
     }),
   );
 
@@ -2357,7 +2423,7 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
           from: { userId: note.from?.userId || '', name: note.from?.name || 'Someone' },
           kind: note.kind,
           kindText: own(FAMILY_NOTE_KIND_TEXT, note.kind) || 'A note',
-          about: person ? { person } : image ? { image } : null,
+          about: (person && { person }) || (image && { image }) || null,
           text: note.text,
           done: !!note.done,
           doneAt: note.doneAt || null,
@@ -2546,8 +2612,10 @@ export function familyHistoryRouter(deps: FamilyHistoryDependencies): Router {
           key = `${prefix}/${file}`;
           mime = familyFileMime(file);
           const entry = item.sizeFiles ? own(item.sizeFiles, size) : undefined;
-          w = typeof entry?.w === 'number' ? entry.w : typeof item.w === 'number' ? item.w : null;
-          h = typeof entry?.h === 'number' ? entry.h : typeof item.h === 'number' ? item.h : null;
+          const originalWidth = typeof item.w === 'number' ? item.w : null;
+          const originalHeight = typeof item.h === 'number' ? item.h : null;
+          w = typeof entry?.w === 'number' ? entry.w : originalWidth;
+          h = typeof entry?.h === 'number' ? entry.h : originalHeight;
         }
       } else if (visible) {
         const object = familyMediaObject(ctx.bundle, prefix, id);

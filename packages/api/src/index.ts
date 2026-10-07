@@ -257,6 +257,7 @@ export { tubeVaultHints, validTubeVaultItems } from './library/tubevault';
 
 export { descriptionBatchRouter } from './library/descriptions';
 export { readLibraryCatalog, catalogProjection, libraryAccess } from './library/catalog';
+export { browseInput, browsePipeline, browseCursor } from './library/browse';
 export {
   libraryRequestService,
   libraryRequestRouter,
