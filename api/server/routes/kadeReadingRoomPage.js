@@ -1377,7 +1377,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     } else ed.classList.add('hidden');
     if (book.mine || librarian) {
       ow.classList.remove('hidden'); bw.classList.add('hidden');
-      $('shareBtn').textContent = book.shared ? 'Take it out of the library' : (librarian ? 'Put it in the library for everyone' : 'Submit this for the library');
+      $('shareBtn').textContent = book.shared ? 'Take it out of the library' : (librarian ? 'Put it in the family library' : 'Submit this for the library');
       $('grownBtn').textContent = book.grownUpsOnly ? 'Grown-ups only: on (tap to allow kids)' : 'Grown-ups only: off (tap to hide from kids)';
     } else { ow.classList.add('hidden'); bw.classList.remove('hidden'); }
   }
@@ -1391,7 +1391,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('bookTitle').textContent = book.title; say('Saved.');
     } catch(e) { say(e.message); }
   };
-  $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(j.pending ? 'Submitted for the library. The librarian will look at it and you will be told.' : (book.shared ? 'It is in the library now. Everyone will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.')); } catch(e) { say(e.message); } };
+  $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(j.pending ? 'Submitted for the library. The librarian will look at it and you will be told.' : (book.shared ? 'It is in the family library now. Family library members will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.')); } catch(e) { say(e.message); } };
   $('grownBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { grownUpsOnly: !book.grownUpsOnly } }); book.grownUpsOnly = j.book.grownUpsOnly; renderOwner(); say(book.grownUpsOnly ? 'Hidden from the kids.' : 'The kids can see it.'); } catch(e) { say(e.message); } };
   $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
   $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); location.search = ''; } catch(e) { say(e.message); } };
