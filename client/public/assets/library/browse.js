@@ -115,13 +115,17 @@
         more.hidden = !next;
         get('browseCount').textContent =
           result.total +
-          ' items' +
+          (result.total === 1 ? ' item' : ' items') +
           (result.items.length ? ' · ' + list.children.length + ' loaded' : '');
         if (append && list.children[first]) {
           var button = list.children[first].querySelector('button');
           if (button) button.focus();
         }
-        say(result.total + ' items match.' + (next ? ' More items are available.' : ''));
+        say(
+          result.total +
+            (result.total === 1 ? ' item matches.' : ' items match.') +
+            (next ? ' More items are available.' : ''),
+        );
       } catch (error) {
         if (request !== run || error.name === 'AbortError') return;
         get('browseCount').textContent = 'The library could not be loaded.';

@@ -700,11 +700,11 @@ export const FAMILY_HISTORY_REFUSAL_WORDS: Readonly<
 > = {
   review: {
     detail: 'Private to one family',
-    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to accounts matched to a person in that family's tree.",
+    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to approved family readers and Family feature pack guests in the owner's default history.",
   },
   test: {
     detail: 'Private to one family',
-    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to accounts matched to a person in that family's tree.",
+    hint: "Photos, records, a family tree, maps and stories from one family's research. Open to approved family readers and Family feature pack guests in the owner's default history.",
   },
   unmatched: {
     detail: 'Not linked to the tree yet',
