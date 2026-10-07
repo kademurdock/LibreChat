@@ -125,7 +125,6 @@ async function geminiLyrics(buffer: Buffer, mime: string, seconds: number): Prom
         },
       ],
       generationConfig: {
-        temperature: 0.1,
         maxOutputTokens: 8192,
         thinkingConfig: { thinkingLevel: 'low' },
       },

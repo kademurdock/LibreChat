@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 // Exercise the real recall service AND vector ranking. Only storage, embedding,
 // and ancillary services are replaced; no model calls or family data are used.
-function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed, focused = false } = {}) {
+function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed, queryVector = [1, 0], focused = false } = {}) {
   const reads = [];
   const audits = [];
   const timers = [];
@@ -23,7 +23,7 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
   };
   class Schema { index() {} }
   const diary = {
-    embedText: async () => { if (beforeEmbed) await beforeEmbed(); return [1, 0]; }, currentEmbedModel: () => 'fixture-model',
+    embedText: async () => { if (beforeEmbed) await beforeEmbed(); return queryVector; }, currentEmbedModel: () => 'fixture-model',
     countEntries: async () => diarySearch ? 1 : 0, searchDiary: diarySearch || (async () => []),
   };
   const load = (file, deps, env = {}) => {
@@ -177,4 +177,39 @@ test('a failed diary lookup does not consume a nudge selected earlier in recall'
   fail = false;
   assert.match((await f.run()).block || '', /Open loop/);
   assert.equal(f.timers.length, 0);
+});
+
+test('failed query embedding does not ask diary search to embed again', async () => {
+  let embeds = 0;
+  let diaryCalls = 0;
+  const f = fixture({
+    queryVector: null,
+    beforeEmbed: () => { embeds++; },
+    diarySearch: async (options) => {
+      diaryCalls++;
+      assert.equal(options.query, null);
+      assert.equal(options.queryVector, undefined);
+      return [];
+    },
+  });
+  await f.run();
+  assert.equal(embeds, 1);
+  assert.equal(diaryCalls, 1);
+});
+
+test('successful query embedding remains available to diary search', async () => {
+  let embeds = 0;
+  let diaryCalls = 0;
+  const f = fixture({
+    beforeEmbed: () => { embeds++; },
+    diarySearch: async (options) => {
+      diaryCalls++;
+      assert.equal(options.query, 'Tell me about the telescope project.');
+      assert.deepEqual(options.queryVector, [1, 0]);
+      return [];
+    },
+  });
+  await f.run();
+  assert.equal(embeds, 1);
+  assert.equal(diaryCalls, 1);
 });

@@ -82,6 +82,10 @@ test('prompt: Gemini is asked for section tags only where the music marks a sect
   assert.equal(got.model, 'gemini-3.8-flash');
   assert.match(asked.url, /\/models\/gemini-3\.8-flash:generateContent$/);
   assert.deepEqual(asked.body.generationConfig.thinkingConfig, { thinkingLevel: 'low' });
+  assert.deepEqual(asked.body.generationConfig, {
+    maxOutputTokens: 8192,
+    thinkingConfig: { thinkingLevel: 'low' },
+  });
   const prompt = asked.body.contents[0].parts[1].text;
   assert.match(prompt, /^Transcribe the complete sung lyrics from this audio/);
   assert.match(prompt, /fill gaps from memory/);

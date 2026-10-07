@@ -836,7 +836,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         const hits = await searchDiary({
           userId,
           agentId,
-          query: text.slice(0, 1500),
+          query: qv ? text.slice(0, 1500) : null,
           queryVector: qv || undefined,
           limit: focused ? 2 : DIARY_TOP_K,
           minScore: DIARY_MIN_SCORE,
