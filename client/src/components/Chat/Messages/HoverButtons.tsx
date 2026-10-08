@@ -151,13 +151,23 @@ const HoverButtons = ({
     isEditableEndpoint,
   } = generationCapabilities;
 
-  if (!conversation) {
-    return null;
-  }
-
   const { isCreatedByUser, error } = message;
 
   if (error === true) {
+    const savedConversationId = message.metadata?.kadeSavedConversationId;
+    if (
+      typeof savedConversationId === 'string' &&
+      /^[A-Za-z0-9_-]{8,128}$/.test(savedConversationId)
+    ) {
+      return (
+        <a
+          className="inline-flex min-h-11 items-center rounded px-3 underline focus-visible:outline"
+          href={`/c/${encodeURIComponent(savedConversationId)}`}
+        >
+          {localize('com_ui_open_saved_reply')}
+        </a>
+      );
+    }
     const requestId = message.metadata?.kadeRequestId;
     if (typeof requestId === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(requestId)) {
       return (
@@ -169,6 +179,7 @@ const HoverButtons = ({
         </a>
       );
     }
+    if (!conversation) return null;
     return (
       <div className="visible flex justify-center self-end lg:justify-start">
         {regenerateEnabled && (
@@ -182,6 +193,10 @@ const HoverButtons = ({
         )}
       </div>
     );
+  }
+
+  if (!conversation) {
+    return null;
   }
 
   const onEdit = () => {
