@@ -67,3 +67,13 @@ test('invalid controls and cursor content stay bounded and never widen authorize
   const plan = browsePipeline({ ...reader, hidden: true }, { after: 'bad' }, '$path');
   assert.deepEqual(plan[0], { $match: { state: 'ready', owner: new Types.ObjectId(reader.id) } });
 });
+
+test('a year query searches normalized metadata even when the title has no date', () => {
+  const plan = browsePipeline(reader, { q: '1998' }, '$path').at(-1);
+  assert.ok(plan && '$facet' in plan);
+  const search = plan.$facet.items[0];
+  assert.ok('$match' in search && Array.isArray(search.$match.$and));
+  assert.ok(
+    search.$match.$and[0].$or.some((row: Record<string, unknown>) => '_browseYear.match' in row),
+  );
+});

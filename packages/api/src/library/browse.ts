@@ -95,6 +95,7 @@ export function browsePipeline(
         'meta.brand',
         'meta.callSign',
         'meta.sourceDescription',
+        '_browseYear.match',
       ].map((field) => ({ [field]: pattern })),
     });
   }
