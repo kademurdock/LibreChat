@@ -144,7 +144,7 @@ async function logKadeCall({
     }
     const doc = await KadeCallTranscript.create({
       user,
-      surface: surface === 'phone' ? 'phone' : 'conversation',
+      surface: ['phone', 'web', 'conversation'].includes(surface) ? surface : 'conversation',
       agentId,
       agentName,
       callerName,
