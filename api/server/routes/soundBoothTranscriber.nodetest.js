@@ -89,6 +89,10 @@ test('prompt: Gemini is asked for section tags only where the music marks a sect
   const prompt = asked.body.contents[0].parts[1].text;
   assert.match(prompt, /^Transcribe the complete sung lyrics from this audio/);
   assert.match(prompt, /fill gaps from memory/);
+  assert.match(prompt, /clearly separate backing, harmony, response, or secondary vocal phrase in parentheses/);
+  assert.match(prompt, /Do not add another copy of the lead words merely because the lead is doubled or harmonized/);
+  assert.match(prompt, /When the voices cannot be distinguished, leave the words unparenthesized/);
+  assert.match(prompt, /Do not infer or invent backing words/);
   assert.match(prompt, /only where the music audibly marks a new section: \[Verse\], \[Pre-Chorus\], \[Chorus\], \[Post-Chorus\], \[Bridge\], \[Intro\] or \[Outro\]\./);
   assert.match(prompt, /A block whose words come back as a refrain is \[Chorus\]\. Do not number the labels\./);
   assert.match(prompt, /Return only the lyric transcript with those labels, with no commentary or timestamps\.$/);
@@ -108,6 +112,17 @@ test('tags: only the allowed labels survive, unnumbered and in their proper case
   assert.equal(tidy('[Interlude]\n[Solo]'), '');
 });
 
+test('backing vocal cues become parentheses without adding words or reclassifying ambiguous lead lines', () => {
+  const tidy = lyrics.tidySectionTags;
+  assert.equal(
+    tidy('[Chorus]\nI am coming home (come home)\nBacking vocals: stay with me\n[Backing Vocals]\nOoh, ooh\nLead line\n\n[Verse]\nKeep walking'),
+    '[Chorus]\nI am coming home (come home)\n(stay with me)\n(Ooh, ooh)\nLead line\n\n[Verse]\nKeep walking',
+  );
+  assert.equal(tidy('[Backing Vocals]\n[Verse]\nThe only audible words'), '[Verse]\nThe only audible words');
+  assert.equal(tidy('Backing vocals: [unclear]\n[Secondary vocals: ah-ah]\nHarmony vocals: (ooh)'), '([unclear])\n(ah-ah)\n(ooh)');
+  assert.equal(tidy('[unclear]\nIt might be one singer'), '[unclear]\nIt might be one singer');
+});
+
 test('tags: a draft that was nothing but labels is no draft, and the backup transcriber is used', async () => {
   gemini = () => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '[Instrumental]\n\n[Interlude]' }] } }] });
   const got = await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30);
@@ -115,14 +130,16 @@ test('tags: a draft that was nothing but labels is no draft, and the backup tran
   assert.match(fallbackLine()[1], /reason=finish:STOP-empty /);
 });
 
-test('warning: Gemini tags are guesses to check; the backup draft says plainly it has no tags', () => {
+test('warning: Gemini backing roles and tags are guesses; the backup draft cannot reliably mark them', () => {
   const fromGemini = lyrics.lyricsWarning('gemini-3.8-flash');
   assert.match(fromGemini, /wrong or missing words/);
+  assert.match(fromGemini, /Parentheses for separate backing vocals and the section tags are guesses from the music/);
   assert.match(fromGemini, /the section tags are guesses from the music/);
-  assert.match(fromGemini, /correct the words and the tags in the Lyrics box before generating\.$/);
+  assert.match(fromGemini, /correct the words, parentheses and tags in the Lyrics box before generating\.$/);
   const fromBackup = lyrics.lyricsWarning('scribe_v2');
   assert.match(fromBackup, /^Draft lyrics from the backup transcriber, so they have no section tags\. Add tags such as \[Verse\] and \[Chorus\] yourself\./);
   assert.match(fromBackup, /wrong or missing words/);
+  assert.match(fromBackup, /cannot reliably mark separate backing vocals in parentheses/);
   assert.doesNotMatch(fromBackup, /guesses/);
   // An unknown or missing model is never promised tags.
   assert.equal(lyrics.lyricsWarning(undefined), fromBackup);
