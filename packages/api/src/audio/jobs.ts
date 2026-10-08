@@ -132,6 +132,7 @@ export type Take = {
   id: string;
   seed: number;
   providerId?: string;
+  submittedAt?: Date;
   statusUrl?: string;
   responseUrl?: string;
   cancelUrl?: string;
@@ -184,6 +185,8 @@ export type Config = {
   submit: (input: Input) => Promise<Provider>;
   status: (take: Take, input: Input) => Promise<Provider>;
   cancel: (take: Take) => Promise<void>;
+  /** Provider job lifetime, used only to retire a confirmed missing job after expiry. */
+  providerTtlMs?: number;
   working: string;
   stopping: string;
   /** A short sentence about one finished take, said when the batch is done; '' for none. */
@@ -245,6 +248,7 @@ const takeSchema = new mongoose.Schema<Take>(
     id: String,
     seed: Number,
     providerId: String,
+    submittedAt: Date,
     statusUrl: String,
     responseUrl: String,
     cancelUrl: String,
@@ -291,6 +295,14 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
     });
   }
   const activeStates = ['queued', 'running', 'saving'];
+  const providerTtlGraceMs = 5 * 60 * 1000;
+  function providerJobExpired(error: unknown, take: Take, job: Job): boolean {
+    const status = (error as { response?: { status?: number } } | null)?.response?.status;
+    if (status !== 404 || !config.providerTtlMs) return false;
+    const submittedAt = new Date(take.submittedAt || job.createdAt).getTime();
+    return Number.isFinite(submittedAt) &&
+      Date.now() - submittedAt >= config.providerTtlMs + providerTtlGraceMs;
+  }
   function takesFor(job: Job): Take[] {
     return (
       job.takes || [
@@ -388,22 +400,32 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
           if (!activeStates.includes(take.state)) continue;
           if (take.state !== 'saving') {
             if (!take.providerId) continue;
-            const response = await config.status(take, job.input);
-            if (response.status === 'COMPLETED' && response.output?.url && !response.output.error) {
-              take.state = 'saving';
-              take.output = response.output;
-            } else if (
-              ['FAILED', 'CANCELLED', 'TIMED_OUT', 'COMPLETED'].includes(response.status || '')
-            ) {
-              take.state = response.status === 'CANCELLED' ? 'cancelled' : 'failed';
-              take.error =
-                response.output?.error ||
-                response.error ||
-                'The sound provider did not finish. Your writing is saved.';
-            } else {
-              take.state = response.status === 'IN_PROGRESS' ? 'running' : 'queued';
+            try {
+              const response = await config.status(take, job.input);
+              if (response.status === 'COMPLETED' && response.output?.url && !response.output.error) {
+                take.state = 'saving';
+                take.output = response.output;
+              } else if (
+                ['FAILED', 'CANCELLED', 'TIMED_OUT', 'COMPLETED'].includes(response.status || '')
+              ) {
+                take.state = response.status === 'CANCELLED' ? 'cancelled' : 'failed';
+                take.error =
+                  response.output?.error ||
+                  response.error ||
+                  'The sound provider did not finish. Your writing is saved.';
+              } else {
+                take.state = response.status === 'IN_PROGRESS' ? 'running' : 'queued';
+              }
+              take.costUSD = response.costUSD || 0;
+            } catch (error) {
+              if (take.output?.url && !take.output.error) {
+                take.state = 'saving';
+              } else if (providerJobExpired(error, take, job)) {
+                take.state = 'failed';
+                take.error =
+                  'The sound provider no longer has this request. Your writing is saved. No new paid request was sent.';
+              } else throw error;
             }
-            take.costUSD = response.costUSD || 0;
             await Jobs.updateOne({ id }, { $set: { takes } });
           }
           if (take.state === 'saving') {
@@ -535,6 +557,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
             const response = await config.submit({ ...input, seed: take.seed });
             if (!response.id) throw new Error('Missing job id');
             take.providerId = response.id;
+            take.submittedAt = new Date();
             take.statusUrl = response.statusUrl;
             take.responseUrl = response.responseUrl;
             take.cancelUrl = response.cancelUrl;

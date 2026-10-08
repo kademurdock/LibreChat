@@ -90,6 +90,7 @@ for (const lib of [require('node:http'), require('node:https')]) {
 
 /* RunPod, answered here. Each endpoint keeps what it was sent and answers with the status and output a test sets. */
 const rp = {};
+const missingRunpodJobs = new Set();
 for (const ep of ['yueep', 'voiceep'])
   rp[ep] = {
     runs: [],
@@ -109,6 +110,8 @@ axios.defaults.adapter = async (config) => {
     ep.runs.push((typeof config.data === 'string' ? JSON.parse(config.data) : config.data).input);
     data = { id: `${m[1]}-${ep.runs.length}` };
   } else {
+    if (m[2] === 'status' && missingRunpodJobs.has(url.split('/').pop()))
+      throw Object.assign(new Error('provider job not found'), { response: { status: 404 } });
     data = {
       status: ep.status,
       executionTime: ep.executionTime,
@@ -975,6 +978,59 @@ test('Sing it in my voice through the real booth', async (t) => {
       assert.doesNotMatch(JSON.stringify(listed), /Kade/);
     },
   );
+
+  await t.test('expired missing YuE2 job releases the queue without retrying; saved output survives', async () => {
+    const SOMEONE = '6a0000000000000000000004';
+    const Jobs = mongoose.model('KadeYueJob');
+    rp.yueep.status = 'IN_QUEUE';
+    const started = await call('/render', {
+      user: SOMEONE,
+      body: { engine: 'yue2', script: 'Warm acoustic song', lyrics: '[Verse]\nHello again' },
+    });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const jobId = started.data.jobId;
+    const take = (await Jobs.findOne({ id: jobId }).lean()).takes[0];
+    assert.ok(take.submittedAt, 'provider acceptance time is saved for each take');
+    missingRunpodJobs.add(take.providerId);
+    let nextProviderId;
+    try {
+      const before = rp.yueep.runs.length;
+      const early = await call('/status/' + jobId, { user: SOMEONE });
+      assert.equal(early.data.state, 'queued', 'a temporary 404 before TTL does not lose a request');
+      assert.equal((await Jobs.findOne({ id: jobId }).lean()).active, true);
+      assert.equal(rp.yueep.runs.length, before, 'status checks never submit another paid take');
+
+      await Jobs.updateOne({ id: jobId }, {
+        $set: { 'takes.0.submittedAt': new Date(Date.now() - 2 * 60 * 60 * 1000 - 6 * 60 * 1000) },
+      });
+      const expired = await call('/status/' + jobId, { user: SOMEONE });
+      assert.equal(expired.data.state, 'failed');
+      assert.match(expired.data.error, /no longer has this request/i);
+      const retired = await Jobs.findOne({ id: jobId }).lean();
+      assert.equal(retired.active, false, 'the unique active-job slot is released');
+      assert.equal(retired.takes[0].state, 'failed');
+      assert.equal(rp.yueep.runs.length, before, 'expiry does not retry a paid take');
+
+      const next = await call('/render', {
+        user: SOMEONE,
+        body: { engine: 'yue2', script: 'A fresh acoustic song', lyrics: '[Verse]\nA new start' },
+      });
+      assert.equal(next.status, 200, JSON.stringify(next.data));
+      assert.equal(rp.yueep.runs.length, before + 1, 'only an explicit render makes a new request');
+      nextProviderId = (await Jobs.findOne({ id: next.data.jobId }).lean()).takes[0].providerId;
+      missingRunpodJobs.add(nextProviderId);
+      await Jobs.updateOne({ id: next.data.jobId }, {
+        $set: { 'takes.0.output': { url: 'https://assets.test/yue2/recovered.mp3', duration_s: 19 } },
+      });
+      const recovered = await call('/status/' + next.data.jobId, { user: SOMEONE });
+      assert.equal(recovered.data.state, 'done', 'a durable local output is saved even when provider status is gone');
+      assert.equal(rp.yueep.runs.length, before + 1);
+      assert.ok(await Asset.findOne({ user: SOMEONE, url: 'https://assets.test/yue2/recovered.mp3' }));
+    } finally {
+      missingRunpodJobs.delete(take.providerId);
+      if (nextProviderId) missingRunpodJobs.delete(nextProviderId);
+    }
+  });
 
   await t.test('with the flag off, even the owner sees and reaches nothing', async () => {
     process.env.MY_VOICE_ENABLED = '0';

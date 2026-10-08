@@ -726,6 +726,8 @@ async function provider(
   return response.data;
 }
 
+const YUE_PROVIDER_TTL_MS = 7200000;
+
 export function createYueRouter(hooks: Hooks): Router {
   return createAudioRouter(hooks, {
     engine: 'yue2',
@@ -738,7 +740,7 @@ export function createYueRouter(hooks: Hooks): Router {
       spoken: `${input.count} take${input.count === 1 ? '' : 's'}. ${yueCost}`,
     }),
     submit: ({ my_voice: _myVoice, ...input }) =>
-      provider('run', { input, policy: { executionTimeout: 1200000, ttl: 7200000 } }),
+      provider('run', { input, policy: { executionTimeout: 1200000, ttl: YUE_PROVIDER_TTL_MS } }),
     status: async (take) => {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
       /* RunPod reports how long the job waited for a GPU (delayTime) and how long
@@ -754,6 +756,7 @@ export function createYueRouter(hooks: Hooks): Router {
     cancel: async (take) => {
       await provider(`cancel/${encodeURIComponent(take.providerId || '')}`);
     },
+    providerTtlMs: YUE_PROVIDER_TTL_MS,
     working: 'YuE2 is composing. Up to two takes can run together when GPUs are available.',
     stopping:
       'Stop requested for unfinished takes. Finished takes are kept. GPU time already used is still billed.',
