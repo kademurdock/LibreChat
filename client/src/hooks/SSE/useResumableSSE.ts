@@ -69,6 +69,8 @@ const getRequestId = (submission: TSubmission): string => {
   return id;
 };
 type GenerationStart = { streamId: string; resume?: boolean; taskId?: string };
+const savedReplyConversationId = (receipt: Agents.TaskReceipt): string | null =>
+  receipt.status === 'completed' && receipt.canOpenConversation ? receipt.conversationId : null;
 const START_GENERATION_NETWORK_RETRIES = 3;
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
@@ -868,21 +870,41 @@ export default function useResumableSSE(
           responseCode === 409 ||
           (responseCode === 404 && currentSubmission.requestId)
         ) {
+          if (sseRef.current !== sse) return;
           sse.close();
           removeActiveJob(currentStreamId);
           resetLive({ ...currentSubmission, userMessage });
           clearStepMaps();
-          errorHandler({
-            data: {
-              text: localize('com_ui_request_check_before_retry'),
-              metadata: { kadeRequestId: currentSubmission.requestId },
-            } as TResData,
-            submission: currentSubmission as EventSubmission,
-          });
           setIsSubmitting(false);
           setShowStopButton(false);
           setStreamId(null);
           reconnectAttemptRef.current = 0;
+          let savedConversationId: string | null = null;
+          if (responseCode !== 403 && currentSubmission.requestId) {
+            try {
+              const receipt = await dataService.getAgentTask(currentSubmission.requestId);
+              savedConversationId = savedReplyConversationId(receipt);
+            } catch {
+              // The receipt may be unavailable; retain the request-check fallback.
+            }
+          }
+          if (sseRef.current !== sse) return;
+          errorHandler({
+            data: {
+              text: localize(
+                responseCode === 403
+                  ? 'com_ui_request_access_denied'
+                  : savedConversationId
+                    ? 'com_ui_request_reply_saved'
+                    : 'com_ui_request_check_before_retry',
+              ),
+              metadata: {
+                kadeRequestId: currentSubmission.requestId,
+                ...(savedConversationId && { kadeSavedConversationId: savedConversationId }),
+              },
+            } as unknown as TResData,
+            submission: currentSubmission as EventSubmission,
+          });
           return;
         }
 
@@ -1169,6 +1191,7 @@ export default function useResumableSSE(
 
       let lastError: unknown = null;
       let needsRecovery = false;
+      let savedConversationId: string | null = null;
       let requestAttempts = 0;
       let networkAttempts = 0;
       let readinessAttempts = 0;
@@ -1195,6 +1218,7 @@ export default function useResumableSSE(
             if (receipt.streamAvailable) {
               return { streamId: receipt.conversationId, resume: true, taskId: requestId };
             }
+            savedConversationId = savedReplyConversationId(receipt);
             break;
           }
           return { ...data, taskId: requestId };
@@ -1217,6 +1241,7 @@ export default function useResumableSSE(
               if (receipt.streamAvailable) {
                 return { streamId: receipt.conversationId, resume: true, taskId: requestId };
               }
+              savedConversationId = savedReplyConversationId(receipt);
               break;
             } catch (lookupError) {
               if (signal?.aborted) return null;
@@ -1268,9 +1293,16 @@ export default function useResumableSSE(
       errorHandler({
         data: needsRecovery
           ? ({
-              text: localize('com_ui_request_check_before_retry'),
-              metadata: markStreamStartFailedMetadata({ kadeRequestId: requestId }),
-            } as TResData)
+              text: localize(
+                savedConversationId
+                  ? 'com_ui_request_reply_saved'
+                  : 'com_ui_request_check_before_retry',
+              ),
+              metadata: markStreamStartFailedMetadata({
+                kadeRequestId: requestId,
+                ...(savedConversationId && { kadeSavedConversationId: savedConversationId }),
+              }),
+            } as unknown as TResData)
           : getStreamStartFailureData(errorData),
         submission: currentSubmission as EventSubmission,
       });

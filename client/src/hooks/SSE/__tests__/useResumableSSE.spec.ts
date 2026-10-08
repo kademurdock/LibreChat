@@ -22,6 +22,11 @@ interface MockSSEInstance {
 
 const mockSSEInstances: MockSSEInstance[] = [];
 
+jest.mock('~/components/Chat/character/voice-playback.mjs', () => ({
+  stopWatchingVoiceAudio: jest.fn(),
+  watchVoiceAudio: jest.fn(() => jest.fn()),
+}));
+
 jest.mock('sse.js', () => ({
   SSE: jest.fn().mockImplementation(() => {
     const listeners: Record<string, SSEEventListener> = {};
@@ -963,6 +968,7 @@ describe('useResumableSSE - 404 error path', () => {
       conversationId: 'old-chat',
       streamAvailable: false,
       status: 'completed',
+      canOpenConversation: true,
     });
     const submission = { ...buildSubmission(), requestId: 'finished-request' };
     const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
@@ -972,7 +978,45 @@ describe('useResumableSSE - 404 error path', () => {
     expect(mockErrorHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          metadata: { streamStartFailed: true, kadeRequestId: 'finished-request' },
+          text: expect.stringContaining('reply was saved'),
+          metadata: {
+            streamStartFailed: true,
+            kadeRequestId: 'finished-request',
+            kadeSavedConversationId: 'old-chat',
+          },
+        }),
+      }),
+    );
+    unmount();
+  });
+
+  it('finds a saved reply after an ambiguous POST failure without sending the request again', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('offline'), { code: 'ERR_NETWORK' }),
+    );
+    (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+      taskId: 'saved-request',
+      conversationId: 'saved-chat',
+      streamAvailable: false,
+      status: 'completed',
+      canOpenConversation: true,
+    });
+    const submission = { ...buildSubmission(), requestId: 'saved-request' };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    await advanceRetryTimer(8500);
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(dataService.getAgentTask).toHaveBeenCalledWith('saved-request');
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          text: expect.stringContaining('reply was saved'),
+          metadata: {
+            streamStartFailed: true,
+            kadeRequestId: 'saved-request',
+            kadeSavedConversationId: 'saved-chat',
+          },
         }),
       }),
     );
@@ -1011,8 +1055,8 @@ describe('useResumableSSE - 404 error path', () => {
     expect(mockErrorHandler).not.toHaveBeenCalled();
   });
 
-  it.each([403, 409])(
-    'does not reconnect a refused or replaced stream (%s)',
+  it.each([403, 409, 404])(
+    'does not reconnect a refused, replaced or missing request stream (%s)',
     async (responseCode) => {
       jest.useFakeTimers();
       const submission = { ...buildSubmission(), requestId: 'original-request' };
@@ -1021,16 +1065,52 @@ describe('useResumableSSE - 404 error path', () => {
       await act(async () => {
         getLastSSE()._emit('error', { responseCode });
       });
+      await flushMicrotasks();
       await advanceRetryTimer(60000);
       expect(mockSSEInstances).toHaveLength(1);
+      expect(dataService.getAgentTask).toHaveBeenCalledTimes(responseCode === 403 ? 0 : 1);
       expect(mockErrorHandler).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ metadata: { kadeRequestId: 'original-request' } }),
         }),
       );
+      const message = mockErrorHandler.mock.calls[0]?.[0]?.data?.text;
+      expect(message).toContain(responseCode === 403 ? 'current access' : 'may already have run');
       unmount();
     },
   );
+
+  it('opens a saved reply when the job finishes before the browser attaches its stream', async () => {
+    (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+      taskId: 'fast-request',
+      conversationId: 'saved-chat',
+      streamAvailable: false,
+      status: 'completed',
+      canOpenConversation: true,
+    });
+    const submission = { ...buildSubmission(), requestId: 'fast-request' };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+    });
+    await flushMicrotasks();
+    expect(request.post).toHaveBeenCalledTimes(1);
+    expect(dataService.getAgentTask).toHaveBeenCalledWith('fast-request');
+    expect(mockSSEInstances).toHaveLength(1);
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          text: expect.stringContaining('reply was saved'),
+          metadata: {
+            kadeRequestId: 'fast-request',
+            kadeSavedConversationId: 'saved-chat',
+          },
+        }),
+      }),
+    );
+    unmount();
+  });
 
   it('continues retrying chat start while the server reports startup readiness pending', async () => {
     jest.useFakeTimers();

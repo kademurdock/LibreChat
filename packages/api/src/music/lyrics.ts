@@ -6,16 +6,16 @@ import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Router } from 'express';
 import type { MediaSite } from '../description/links';
 
-/* v2 (Part 293, Sep 25 2026): Gemini now writes section tags, so untagged v1 drafts are not
- * served from the cache any more. */
-const transcriptVersion = 'gemini38-tags-scribe2-lyrics-v2';
+/* A new request for an imported recording should use the backing-vocal notation prompt instead
+ * of returning a lyric draft cached before that instruction existed. */
+const transcriptVersion = 'gemini38-tags-backing-scribe2-lyrics-v3';
 /* Flash on low thinking: the Sep 25 check found no word-accuracy gain from medium or Pro, and
  * medium once spent 7,863 thought tokens and hit MAX_TOKENS. */
 const geminiModel = 'gemini-3.8-flash';
 /* The tag instruction is TAG_PROMPT from the Sep 25 check (no accuracy loss detected; every
  * chorus tagged), with [Post-Chorus] added to the allowed labels. */
 const lyricPrompt =
-  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Put a section label on its own line before a section only where the music audibly marks a new section: [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Intro] or [Outro]. A block whose words come back as a refrain is [Chorus]. Do not number the labels. Return only the lyric transcript with those labels, with no commentary or timestamps.';
+  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Write the lead vocal without parentheses. Put the words of a clearly separate backing, harmony, response, or secondary vocal phrase in parentheses. If it overlaps a lead phrase, put its parentheses after that lead phrase; if it sings alone, use its own line. Do not add another copy of the lead words merely because the lead is doubled or harmonized. When the voices cannot be distinguished, leave the words unparenthesized. Do not infer or invent backing words. Do not use vocal-role labels in the lyric transcript. Put a section label on its own line before a section only where the music audibly marks a new section: [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Intro] or [Outro]. A block whose words come back as a refrain is [Chorus]. Do not number the labels. Return only the lyric transcript with those labels, with no commentary or timestamps.';
 type Transcript = {
   transcript: string;
   seconds: number;
@@ -52,18 +52,48 @@ const sectionTags = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Post-Chorus', 'B
 const sectionTagByName = new Map(
   sectionTags.map((tag) => [tag.toLowerCase().replace(/[^a-z]/g, ''), `[${tag}]`]),
 );
+const backingRole = '(?:backing|background|secondary|harmony)\\s+vocals?';
+const backingCue = new RegExp(`^\\s*(?:\\[\\s*)?${backingRole}\\s*(?:\\])?\\s*:?\\s*$`, 'i');
+const backingPhrase = new RegExp(
+  `^\\s*(?:\\[\\s*)?${backingRole}\\s*(?:\\])?\\s*:\\s*(.+?)\\s*$`,
+  'i',
+);
+const bracketedBackingPhrase = new RegExp(`^\\s*\\[\\s*${backingRole}\\s*:\\s*(.+)\\]\\s*$`, 'i');
+const parenthesizeBacking = (words: string): string => {
+  const phrase = words.trim();
+  return /^\(.+\)$/.test(phrase) ? phrase : `(${phrase})`;
+};
 
 /**
  * Keeps Gemini's labels to the allowed list: "[verse 2]" becomes "[Verse]", a label outside the
- * list ("[Interlude]") is dropped, and "[unclear]" on its own line stays. Lyric lines are never
- * touched.
+ * list ("[Interlude]") is dropped, and "[unclear]" on its own line stays. An explicit backing-
+ * vocal cue from the model is rendered as parentheses without changing the sung words.
  */
 export function tidySectionTags(transcript: string): string {
+  let nextBackingLine = false;
   return transcript
     .split('\n')
     .flatMap((line) => {
+      const rolePhrase = bracketedBackingPhrase.exec(line) || backingPhrase.exec(line);
+      if (rolePhrase) {
+        nextBackingLine = false;
+        return [parenthesizeBacking(rolePhrase[1])];
+      }
+      if (backingCue.test(line)) {
+        nextBackingLine = true;
+        return [];
+      }
+      if (!line.trim()) {
+        nextBackingLine = false;
+        return [line];
+      }
       const label = /^\s*\[([^\]\n]{1,40})\]\s*$/.exec(line);
-      if (!label) return [line];
+      if (!label) {
+        if (!nextBackingLine) return [line];
+        nextBackingLine = false;
+        return [parenthesizeBacking(line)];
+      }
+      nextBackingLine = false;
       const name = label[1]
         .toLowerCase()
         .replace(/\s*(?:x\s*\d+|\d+\s*x|\d+)$/, '')
@@ -314,8 +344,8 @@ type Hooks = {
  */
 export function lyricsWarning(model: string | undefined): string {
   if (typeof model === 'string' && model.startsWith('gemini'))
-    return 'Draft lyrics only: singing, backing vocals and instruments can cause wrong or missing words, and the section tags are guesses from the music. Listen, then correct the words and the tags in the Lyrics box before generating.';
-  return 'Draft lyrics from the backup transcriber, so they have no section tags. Add tags such as [Verse] and [Chorus] yourself. Singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating.';
+    return 'Draft lyrics only: singing, backing vocals and instruments can cause wrong or missing words. Parentheses for separate backing vocals and the section tags are guesses from the music. Listen, then correct the words, parentheses and tags in the Lyrics box before generating.';
+  return 'Draft lyrics from the backup transcriber, so they have no section tags. Add tags such as [Verse] and [Chorus] yourself. It cannot reliably mark separate backing vocals in parentheses. Singing, backing vocals and instruments can cause wrong or missing words. Listen and correct the Lyrics box before generating.';
 }
 
 /* Fit by tempo (worker feature fit-tempo), behind YUE_FIT_TEMPO=1. YuE2 sings up to six minutes

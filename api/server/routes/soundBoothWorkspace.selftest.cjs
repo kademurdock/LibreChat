@@ -15,14 +15,15 @@ const backend=fs.readFileSync(root+'/api/server/routes/kadeSoundBooth.js','utf8'
 const a=backend.indexOf('const GUIDE = ')+14,b=backend.indexOf('\n};',a)+2;
 const guide=vm.runInNewContext('('+backend.slice(a,b)+')',{effectsGuide,yueStylesEnabled:()=>false,yueStyles:{},SCREENPLAY_HELP:'Actor directions in brackets; spoken text outside brackets.',yueCost:'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance.'});
 const sent=[],errors=[];
-let failNextRender=false, referenceResponse;
+let failNextRender=false, referenceResponse, stuckGeneration=false;
 const server=http.createServer((req,res)=>{
  if(req.url==='/sound-booth'){res.setHeader('Content-Type','text/html');res.end(html);return;}
  if(req.url.startsWith('/assets/')){res.setHeader('Content-Type','application/javascript');res.end(req.url==='/assets/soundbooth/workbench.js'?fs.readFileSync(root+'/client/public/assets/soundbooth/workbench.js','utf8'):'');return;}
  res.setHeader('Content-Type','application/json');
  if(req.url.endsWith('/health')){res.end(JSON.stringify({guide,moods:[{key:'joyful',label:'Joyful'}]}));return;}
- if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',lastError:'Missing worker component. Generation stopped.',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
- if(req.url.includes('/status/')){res.end(JSON.stringify({state:'failed',error:'Fixture worker failure',spoken:'Generation stopped. Fixture worker failure.'}));return;}
+ if(req.url.endsWith('/projects')){res.end(JSON.stringify({projects:[...(stuckGeneration?[{id:'stuck-yue2',title:'YuE2 render still waiting',engine:'yue2',state:'queued',jobs:['stuck-job'],takes:[]}]:[]),{id:'failed-empty',title:'Failed empty attempt',engine:'scenema',state:'failed',lastError:'Missing worker component. Generation stopped.',takes:[]},{id:'recoverable',title:'Recoverable recording',engine:'scenema',state:'failed',hasRecoverableAudio:true,takes:[{id:'take-1',url:'https://example.test/take.mp3',masterUrl:'https://example.test/take.wav'}]}]}));return;}
+ if(req.url.includes('/status/')){res.end(JSON.stringify(req.url.endsWith('/stuck-job')?{state:'queued',spoken:'YuE2 render still waiting.'}:{state:'failed',error:'Fixture worker failure',spoken:'Generation stopped. Fixture worker failure.'}));return;}
+ if(req.url.endsWith('/cancel/stuck-job')){stuckGeneration=false;res.end(JSON.stringify({state:'cancelled',spoken:'Stopped the waiting YuE2 render.'}));return;}
  if(req.url.endsWith('/reference')){req.resume();referenceResponse=res;return;}
  if(req.method==='GET'){res.end('{}');return;}
  let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{
@@ -307,6 +308,28 @@ const server=http.createServer((req,res)=>{
   referenceResponse.end(JSON.stringify({url:'https://example.test/mix.wav',name:'sound-booth-mix.wav',seconds:1,spoken:'Mix imported.'}));referenceResponse=null;
   await page.locator('.clips audio source').waitFor({state:'attached'});
   assert.equal(await page.locator('.clips audio source').getAttribute('src'),'https://example.test/mix.wav');
+  await page.locator('[data-engine="stable"]').click();
+  stuckGeneration=true;
+  const sentBeforeReload=sent.length;
+  await page.reload();
+  await page.locator('#btnCancel').waitFor({state:'visible'});
+  assert.equal(await page.locator('[data-engine="scenema"]').getAttribute('aria-pressed'),'true','reload starts on AuK while a saved YuE2 job is pending');
+  assert.equal(await page.locator('#btnRender').isDisabled(),true,'reattached job disables another generation');
+  const navigationMessage=await page.locator('[data-engine="lyria"]').evaluate(el=>{el.click();return document.getElementById('status').textContent;});
+  assert.match(navigationMessage,/YuE2 render is still being checked/,'the waiting job is named even when another tab is open');
+  assert.equal(await page.locator('[data-engine="lyria"]').getAttribute('aria-pressed'),'true','a pending YuE2 job must not trap the engine cards');
+  await page.locator('#script').fill('An uncharged Lyria draft while YuE2 is waiting');
+  await page.locator('[data-engine="yue2"]').click();
+  assert.equal(await page.locator('[data-engine="yue2"]').getAttribute('aria-pressed'),'true');
+  await page.locator('#script').fill('An uncharged YuE2 draft while its earlier render is waiting');
+  await page.locator('[data-engine="lyria"]').click();
+  assert.equal(await page.locator('#script').inputValue(),'An uncharged Lyria draft while YuE2 is waiting','switching preserves each tab draft');
+  assert.equal(await page.locator('#btnRender').isDisabled(),true,'switching cannot start a second paid render');
+  assert.equal(await page.locator('#btnCancel').isVisible(),true,'Stop stays available on every tab');
+  assert.equal(sent.length,sentBeforeReload,'browsing tabs spends nothing');
+  await page.locator('#btnCancel').click();
+  await page.waitForFunction(()=>!document.getElementById('btnRender').disabled);
+  assert.equal(await page.locator('#btnRender').isEnabled(),true,'stopping the stuck job re-enables generation');
   await page.locator('[data-engine="stable"]').click();
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.locator('#btnRender').innerText(),'Generate sounds');
