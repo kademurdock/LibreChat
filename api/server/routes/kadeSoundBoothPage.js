@@ -208,7 +208,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
 
     var drafts = {}, copyUndo = {};
-    var state = { importError:'', quoteRevision:0, titleRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
+    var state = { importError:'', quoteRevision:0, titleRevision:0, engine:'scenema', mode:'easy', pendingRender:null, jobId:null, jobEngine:null, projectId:null, poll:null, guide:null, clips:[], values:{}, lastWait:null, cancelArmed:null, voiceSeed:null, rerollVoice:false };
     var writingThink='auto';try{var savedThink=localStorage.getItem('kadeSoundBoothThinkMode');if(['auto','low','medium','high'].indexOf(savedThink)>=0)writingThink=savedThink;}catch(e){}
     function nextWritingThink(mode){var modes=['auto','low','medium','high'];return modes[(modes.indexOf(mode)+1)%modes.length];}
     function showWritingThink(){state.writingThink=writingThink;var label='Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1),button=document.getElementById('btnThink');button.textContent=label.replace('Writing thought','Think');button.setAttribute('aria-label',label);button.title=label;button.disabled=!!state.writing;}
@@ -255,7 +255,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       b.type='button'; b.className='engcard'; b.setAttribute('aria-pressed', k===state.engine); b.dataset.engine=k;
       b.innerHTML = '<strong>'+esc(g.name)+'</strong><p>'+esc(g.tagline)+'</p>';
       b.setAttribute('aria-label', g.name+'. '+g.tagline);
-      b.onclick = function(){ setEngine(k); };
+      b.onclick = function(){ setEngine(k, false, true); };
       engBox.appendChild(b);
     });
     var ch = state.guide.chooser;
@@ -324,8 +324,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       drafts[engine]=previous;state.engine='';setEngine(engine,true);
       say('Previous draft restored in '+state.guide.engines[engine].name+'.');focusWork();
     };
-    function setEngine(e, quiet){
-      if(busy()){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
+    function setEngine(e, quiet, browse){
+      if(busy() && (!browse || !state.jobId || state.writing || state.importing || state.copying)){say('Finish the current operation or stop the render before switching workspaces.',true);return false;}
       if(e!==state.engine){
         if(state.engine)saveDraft();
         var d=drafts[e]||{};state.engine=e;
@@ -343,7 +343,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
       invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
       if(isUpload(e)){ document.getElementById('settingsDrawer').open=true; if(!quiet) say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
-      say(g.name+'. '+(e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='yue2'?'Describe the style, add lyrics, then choose Make music.':e==='stable'?'Describe your sounds, then choose Generate sounds.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
+      var waitingName=state.jobEngine&&state.guide.engines[state.jobEngine]&&state.guide.engines[state.jobEngine].name;
+      say(g.name+'. '+(state.jobId?(waitingName||'Another engine')+' render is still being checked. You can edit this draft or stop that render before generating here.':e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='yue2'?'Describe the style, add lyrics, then choose Make music.':e==='stable'?'Describe your sounds, then choose Generate sounds.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
     }
     function updateRenderControls(){
       var blocked=!!(state.importing || state.importError || state.writing || state.rendering || state.jobId || state.copying);
@@ -946,6 +947,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(Number.isInteger(r.data.voiceSeed)) state.voiceSeed = r.data.voiceSeed;
       if(r.data.queued){
         state.jobId = r.data.jobId;
+        state.jobEngine = state.engine;
         state.previewJob = !!preview;
         document.getElementById('btnCancel').hidden = false;
         say((preview?'Voice sample queued. ':'Queued. ') + ((r.data.estimate && r.data.estimate.spoken) || '') + ' The page will say when it is ready.');
@@ -994,7 +996,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!result.ok){ say(result.data.error || 'Stop did not reach the render service. Still checking its status.',true); return; }
       if(result.data.state==='done'){ say(result.data.spoken || 'That take just finished. Checking its result.'); return; }
       stopPoll(); state.lastWait = null; state.cancelArmed = null;
-      state.jobId=null;updateRenderControls(); say(result.data.spoken || 'Stopped. Completed takes are kept. GPU time already used may still be charged.');
+      state.jobId=null;state.jobEngine=null;updateRenderControls(); say(result.data.spoken || 'Stopped. Completed takes are kept. GPU time already used may still be charged.');
       document.getElementById('btnCancel').hidden = true; loadLibrary();
     };
 
@@ -1019,7 +1021,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var finished = (s === 'done' || s === 'failed' || s === 'cancelled');
         if(s !== last || finished || ticks % 2 === 0){ last = s; say(r.data.spoken || s, s === 'failed'); }
         if(finished){
-          stopPoll(); state.jobId = null;updateRenderControls(); state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
+          stopPoll(); state.jobId = null;state.jobEngine = null;updateRenderControls(); state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
           if(s === 'failed'){
             document.getElementById('showFailed').checked=true;
             document.getElementById('recentDrawer').open=true;
@@ -1159,7 +1161,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         };
       });
       var listen = ps.filter(function(p){ return p.state === 'queued' || p.state === 'running'; })[0];
-      if(listen && listen.jobs && listen.jobs.length && !state.jobId){ state.jobId = listen.jobs[listen.jobs.length-1]; document.getElementById('btnCancel').hidden = false; startPoll(); }
+      if(listen && listen.jobs && listen.jobs.length && !state.jobId){ state.jobId = listen.jobs[listen.jobs.length-1]; state.jobEngine = listen.engine; document.getElementById('btnCancel').hidden = false; updateRenderControls(); say(((state.guide.engines[listen.engine]||{}).name||'A saved')+' render is still being checked. You can switch engines and edit drafts; new generation waits until this render finishes or you stop it.'); startPoll(); }
     }
     var starters=state.guide.starters||[];
 
