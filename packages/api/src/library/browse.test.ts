@@ -73,7 +73,7 @@ test('a year query searches normalized metadata even when the title has no date'
   assert.ok(plan && '$facet' in plan);
   const search = plan.$facet.items[0];
   assert.ok('$match' in search && Array.isArray(search.$match.$and));
-  assert.ok(
-    search.$match.$and[0].$or.some((row: Record<string, unknown>) => '_browseYear.match' in row),
-  );
+  const choices = search.$match.$and[0].$or;
+  assert.ok(choices);
+  assert.ok(choices.some((row: Record<string, unknown>) => '_browseYear.match' in row));
 });
