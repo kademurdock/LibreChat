@@ -15,20 +15,35 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeCallTranscript, logKadeCall } = require('~/models/kadeCallTranscript');
 const { callsHtml } = require('./kadeCallsPage');
-const { mintConversationFromTranscript, backfillPhoneTranscripts } = require('~/server/services/kadeCallMerge');
+const {
+  mintConversationFromTranscript,
+  backfillPhoneTranscripts,
+} = require('~/server/services/kadeCallMerge');
 const { extractMemoryFromCall } = require('~/server/services/kadeCallMemoryWrite');
 const { refreshSummaryFromCall } = require('~/server/services/kadeMemorySummary');
 const { runSummarySweep } = require('~/server/services/kadeMemorySummarySweep');
+const { createDesktopCallsRouter, webCallSessionId } = require('@librechat/api');
 
 const router = express.Router();
 
 const uidOf = (req) => String((req.user && (req.user.id || req.user._id)) || '');
 
+router.use(
+  createDesktopCallsRouter({
+    auth: requireJwtAuth,
+    userId: uidOf,
+    bridgeUrl: process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app',
+    secret: process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '',
+    secretHeader: process.env.NOTIFY_AGENT_SECRET ? 'x-notify-secret' : 'x-bridge-secret',
+  }),
+);
+
 function preview(turns) {
   if (!Array.isArray(turns) || !turns.length) {
     return '';
   }
-  const first = turns.find((t) => t && t.role === 'user' && t.text) || turns.find((t) => t && t.text);
+  const first =
+    turns.find((t) => t && t.role === 'user' && t.text) || turns.find((t) => t && t.text);
   const text = first && first.text ? String(first.text) : '';
   return text.length > 140 ? text.slice(0, 139).trimEnd() + '…' : text;
 }
@@ -44,6 +59,7 @@ router.get('/', requireJwtAuth, async (req, res) => {
       .lean();
     const calls = docs.map((d) => ({
       id: String(d._id),
+      callSid: webCallSessionId(d.metadata?.callSid),
       surface: d.surface || 'conversation',
       agentName: d.agentName || 'Kiana',
       callerName: d.callerName || null,
@@ -86,6 +102,7 @@ router.get('/:id', requireJwtAuth, async (req, res) => {
     }
     res.json({
       id: String(doc._id),
+      callSid: webCallSessionId(doc.metadata?.callSid),
       surface: doc.surface || 'conversation',
       agentName: doc.agentName || 'Kiana',
       callerName: doc.callerName || null,
@@ -147,7 +164,8 @@ router.post('/ingest', async (req, res) => {
        * schema's existing conversationId link-back field and turns the mint
        * into an append (see kadeCallMerge). Length-capped, shape-checked. */
       conversationId:
-        typeof b.targetConversationId === 'string' && /^[0-9a-f-]{8,64}$/i.test(b.targetConversationId)
+        typeof b.targetConversationId === 'string' &&
+        /^[0-9a-f-]{8,64}$/i.test(b.targetConversationId)
           ? b.targetConversationId
           : undefined,
       metadata: b.metadata,
@@ -299,7 +317,9 @@ router.post('/merge-one', async (req, res) => {
     const b = req.body || {};
     const doc = b.id
       ? await KadeCallTranscript.findById(b.id).lean()
-      : await KadeCallTranscript.findOne({ surface: { $in: ['phone', 'web'] } }).sort({ createdAt: -1 }).lean();
+      : await KadeCallTranscript.findOne({ surface: { $in: ['phone', 'web'] } })
+          .sort({ createdAt: -1 })
+          .lean();
     if (!doc) {
       return res.json({ ok: true, found: false });
     }
