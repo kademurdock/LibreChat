@@ -6,11 +6,13 @@ import vm from 'node:vm';
 const source = stripTypeScriptTypes(readFileSync(new URL('./writing.ts', import.meta.url), 'utf8'));
 const hitSource = stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8')).replace('export const hitWritingSystem', 'const hitWritingSystem');
 const seedSource = stripTypeScriptTypes(readFileSync(new URL('../audio/script.ts', import.meta.url), 'utf8'));
-const musicSource = seedSource + '\n' + hitSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '').replace("import { seedWritingPrompt } from '../audio/script';", '');
+const rhymeLexiconSource = stripTypeScriptTypes(readFileSync(new URL('../music/rhymeLexicon.ts', import.meta.url), 'utf8'));
+const rhymeSource = stripTypeScriptTypes(readFileSync(new URL('../music/rhyme.ts', import.meta.url), 'utf8')).replace("import { rhymeKeyTable, rhymeWordTable } from './rhymeLexicon';", '');
+const musicSource = seedSource + '\n' + hitSource + '\n' + rhymeLexiconSource + '\n' + rhymeSource + '\n' + stripTypeScriptTypes(readFileSync(new URL('../music/writing.ts', import.meta.url), 'utf8')).replace("import { hitWritingSystem } from './hitSystem';", '').replace(/import \{[^}]*\} from '\.\/rhyme';/, '').replace("import { seedWritingPrompt } from '../audio/script';", '');
 const { formatGeneratedLyricsDraft } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/format.ts', import.meta.url), 'utf8'))).toString('base64'));
 const { splitLyricTitle, lyricTitleFromSong } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/title.ts', import.meta.url), 'utf8'))).toString('base64'));
 const { assertSeedScriptReply, seedWritingPrompt } = await import('data:text/javascript;base64,' + Buffer.from(seedSource).toString('base64'));
-const { musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, rhymeRelation, rhymeKeyOf, rhymeSyllables } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
@@ -28,8 +30,8 @@ test('music drafting reads the current Lyric persona while formatting and speech
   const read = async filter => { reads.push(filter); return { instructions }; };
   const first = await musicWritingPrompt('Sound Booth format', { engine: 'yue2', mode: 'write' }, read);
   assert.ok(first.includes(instructions));
-  assert.match(first, /Multisyllabic and mosaic rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
-  assert.match(first, /SONGWRITING CRAFT FOR THE SOUND BOOTH/); assert.match(first, /about four minutes, 45 to 65 sung lines/); assert.match(first, /use the SECTION MAP sent with the request/); assert.doesNotMatch(first, /\[Final Chorus\]|either three verses|two long verses/, 'song shapes are supplied with the individual request');
+  assert.match(first, /multisyllabic, mosaic and internal rhymes/); assert.match(first, /Keep supplied lyrics exactly/);
+  assert.match(first, /SONGWRITING CRAFT FOR THE SOUND BOOTH/); assert.match(first, /about four minutes, 50 to 70 sung lines/); assert.match(first, /use the SECTION MAP sent with the request/); assert.doesNotMatch(first, /\[Final Chorus\]|either three verses|two long verses/, 'song shapes are supplied with the individual request');
   assert.match(first, /drinks are always coffee/);
   assert.match(first, /There is no Lyrics Box, Tag Box or Negative Tag Box here/);
   assert.doesNotMatch(first, /begins with the words `Lyrics Box`|APPENDIX B: TAG BOX PRESETS|REVISION PROTOCOL|30 to 40 lines total/, 'the other product\'s output contract and short budget are not carried');
@@ -502,7 +504,7 @@ test('Part 293: the audience note sits after the desk notes and before the deliv
 test('desk craft preserves broad songwriting choices without scene, quirk or ending recipes', () => {
   const prompt = musicWritingCraft;
   assert.match(prompt, /Preserve a supplied refrain, including its repeated words and dialect/);
-  assert.match(prompt, /Multisyllabic and mosaic rhymes/);
+  assert.match(prompt, /multisyllabic, mosaic and internal rhymes/);
   assert.match(prompt, /Reflective songs need no invented physical scene/);
   assert.match(prompt, /Hope can be determination while things stay hard/);
   assert.match(prompt, /Six to eight lines is a useful default/);
@@ -511,7 +513,7 @@ test('desk craft preserves broad songwriting choices without scene, quirk or end
   assert.match(prompt, /Each performed phrase occupies one line/);
   assert.match(prompt, /one blank line between sections and none between the lines within a section/);
   assert.match(prompt, /Keep a requested riff as a separate bracket cue/);
-  assert.match(prompt, /about four minutes, 45 to 65 sung lines/);
+  assert.match(prompt, /about four minutes, 50 to 70 sung lines/);
   assert.match(prompt, /if the brief gives its own length or structure, the brief wins and no map is sent/);
   assert.doesNotMatch(prompt, /what was on the plate|the chain that squeaks|what they would really drink|Every line earns its own identity|No more than two observed details/);
   assert.doesNotMatch(prompt, /Lyrics Box|Tag Box|elite professional songwriter/);
@@ -628,7 +630,7 @@ test('rap audits keep deliberate cadence while melodic audits check uneven verse
   assert.match(rap, /FLOW AND MEANING/);
   assert.doesNotMatch(rap, /Rough phrase-length observations|these verses cannot carry one tune/);
   assert.match(musicWritingCraft, /Rap can keep its own density, cadence and cross-bar rhyme/);
-  assert.match(musicWritingCraft, /Multisyllabic and mosaic rhymes are welcome/);
+  assert.match(musicWritingCraft, /multisyllabic, mosaic and internal rhymes/);
 });
 
 test('unsaved transfers use the real route without model calls or saved projects', async () => {
@@ -1473,4 +1475,191 @@ test('Part 296 follow-up review: the singer carrying on a sentence keeps the thi
     'Take the high road, take the long way home', 'Take your time, take your turn', 'Take my hand, take my name', "Take it all back, you know you lied", 'Have them call me after five',
   ];
   for (const line of plainSpeech) assert.deepEqual(kissFlags(line), [], line);
+});
+
+/* ---------- Part 320 (Oct 8 2026): thin sections, backing vocals, rhyme sounds, lift and pet words ---------- */
+const song = (...blocks) => `Pop.\nLyrics:\n${blocks.join('\n\n')}\n\nREADBACK: x`;
+const block = (tag, lines) => `[${tag}]\n${lines.join('\n')}`;
+const filler = (n, tail = 'one') => Array.from({ length: n }, (_, i) => `Line ${i + 1} of the ${tail} goes on`);
+
+test('rhyme sounds: perfect, slant, two-syllable and homophone answers come from the word table', () => {
+  assert.equal(rhymeRelation('fire', 'desire'), 'perfect');
+  assert.equal(rhymeRelation('night', 'tonight'), 'perfect');
+  assert.equal(rhymeRelation('killing', 'billing'), 'perfect');
+  assert.equal(rhymeRelation('cope', 'microscope'), 'perfect');
+  assert.equal(rhymeRelation('home', 'alone'), 'slant');
+  assert.equal(rhymeRelation('here', 'hear'), null, 'homophones are the same word, not a rhyme');
+  assert.equal(rhymeRelation('door', 'door'), null);
+  assert.equal(rhymeRelation('table', 'xyzzyq'), null, 'an unknown word answers nothing');
+  assert.equal(rhymeRelation('truck', 'shoe'), null);
+  assert.equal(rhymeKeyOf("nothin'"), rhymeKeyOf('nothing'), "-in' is read as -ing");
+  assert.ok(rhymeSyllables(rhymeKeyOf('killing')) >= 2 && rhymeSyllables(rhymeKeyOf('night')) === 1);
+});
+
+test('Part 320: sections too thin to carry a melody are measured, and a brief that sets its own shape wins', () => {
+  const thin = song(block('Verse 1', filler(8)), block('Pre-Chorus', filler(2, 'pre')), block('Chorus', filler(6, 'hook')), block('Post-Chorus', ['Oh, I miss you', 'Oh, I miss you']), block('Verse 2', filler(8)), block('Pre-Chorus', filler(2, 'pre')), block('Bridge', filler(3, 'bridge')), block('Outro', filler(2, 'out')));
+  const found = lyricThinSections(thin, 'a sad song');
+  assert.deepEqual(found.map((s) => `${s.kind}:${s.lines}/${s.need}x${s.times}`), ['prechorus:2/4x2', 'postchorus:2/3x1', 'bridge:3/4x1', 'outro:2/3x1']);
+  assert.deepEqual(lyricThinSections(thin, 'a short song with a very short bridge'), [], 'the brief sets the shape');
+  const full = song(block('Verse 1', filler(8)), block('Pre-Chorus', filler(4)), block('Chorus', filler(6)), block('Bridge', filler(4)), block('Outro', filler(3)));
+  assert.deepEqual(lyricThinSections(full, ''), []);
+  const chant = song(block('Verse 1', filler(8)), block('Chorus', ['Hey', 'Hey', 'Hey', 'Hey']));
+  assert.equal(lyricThinSections(chant, 'a chant for my softball team').length, 0, 'a chant the brief asks for is not thin');
+  assert.equal(lyricThinSections(chant, 'a song about softball').length, 1);
+  assert.deepEqual(lyricThinSections(song(block('Verse 1', filler(8)), block('Chorus', filler(6)), '[riff]', block('Verse 2', filler(8))), ''), [], 'a bracket cue is not a section');
+});
+
+test('Part 320: backing vocals are counted, directions in parentheses are caught, and a brief can ask for none', () => {
+  const bare = song(block('Verse 1', filler(8)), block('Chorus', filler(6)), block('Verse 2', filler(8)), block('Chorus', filler(6)));
+  const issue = lyricBackingIssue(bare, 'a song');
+  assert.equal(issue.total, 0);
+  assert.ok(issue.need >= 6);
+  assert.deepEqual(issue.choruses, [0, 0]);
+  assert.equal(lyricBackingIssue(bare, 'an a cappella song'), null);
+  assert.equal(lyricBackingIssue(song(block('Verse 1', filler(4))), 'a song'), null, 'too short to be a full song');
+  const echo = (n) => Array.from({ length: n }, (_, i) => `Echo line ${i + 1} (hey)`);
+  const backed = song(block('Verse 1', filler(8)), block('Chorus', [...echo(3), '(oh-oh)', ...filler(2)]), block('Verse 2', [...echo(2), ...filler(6)]), block('Chorus', [...echo(3), '(oh-oh)', ...filler(2)]));
+  assert.equal(lyricBackingIssue(backed, 'a song'), null, 'inline and whole-line backing both count');
+  const directed = song(block('Verse 1', filler(8)), block('Chorus', [...echo(3), '(softly)', '(guitar solo)', ...filler(2)]), block('Verse 2', [...echo(3), ...filler(5)]), block('Chorus', [...echo(3), ...filler(3)]));
+  assert.deepEqual(lyricBackingIssue(directed, 'a song').directions, ['(softly)', '(guitar solo)']);
+  assert.equal(lyricBackingIssue(song(block('Verse 1', [...echo(8)]), block('Chorus', [...echo(6), '(oh, softly now)'])), ''), null, 'a sung part with real words is not a direction, and this is backed enough');
+});
+
+test('Part 320: the rhyme report names lines with no partner, repeated end words, worn pairs and plain couplets', () => {
+  const rhymed = song(
+    block('Verse 1', ['I locked the door and lost the key', 'You laughed and said it was on me', 'The landlord came to see the mess', 'And all I had to show was less', 'We argued over who was wrong', 'Then sang along to the same old song', 'You packed a bag and checked the time', 'I kept the clock and kept the rhyme']),
+    block('Chorus', ['Nobody told us it would end like this', 'Now every room I enter has a ghost I miss', 'I killing time, you billing me for rent', 'Both of us wondering where the money went']),
+  );
+  const good = lyricRhymeReport(rhymed, 'a breakup song');
+  assert.ok(good, 'enough known words to judge');
+  assert.equal(good.lonely.length, 0);
+  assert.ok(good.creative >= 2, JSON.stringify(good));
+  const loose = song(block('Verse 1', ['The kitchen smelled like burnt toast', 'A dog barked at the garbage truck', 'My sister called about the car', 'Nobody answered the phone again', 'The curtain was a funny color', 'Somebody left a window open', 'The cat looked down from the stairs', 'It started raining sideways']), block('Chorus', ['Take me home tonight', 'Where the light is bright', 'Hold me close and tight', 'Tell me it is right']));
+  const bad = lyricRhymeReport(loose, '');
+  assert.ok(bad.lonely.length >= 6, 'a verse that rhymes with almost nothing is named line by line');
+  assert.ok(bad.lonely[0].line && bad.lonely[0].tag === 'Verse 1');
+  assert.ok(bad.worn.some((w) => w.pair === 'right/tonight'), JSON.stringify(bad.worn));
+  const again = song(block('Verse 1', ['She walked away', 'I let her walk away', 'He looked away', 'We all looked away', 'The sky was gray', 'It was a dull day', 'Nothing left to say', 'The end of the day']), block('Chorus', ['Take it slow', 'Let it go', 'Down below', 'Say hello']));
+  const rep = lyricRhymeReport(again, '');
+  assert.ok(rep.repeatedEnds.some((e) => e.word === 'away'), JSON.stringify(rep.repeatedEnds));
+  assert.equal(lyricRhymeReport(song(block('Verse 1', filler(8))), ''), null, 'too few known words to judge');
+  assert.equal(lyricRhymeReport(rhymed, 'free verse, no rhymes please'), null, 'the brief asks for no rhyme');
+  assert.equal(lyricRhymeWeight(null), 0);
+  assert.ok(lyricRhymeWeight(bad) > lyricRhymeWeight(good));
+});
+
+test('Part 320: a pasted final chorus and pet words are measured', () => {
+  const same = ['The hook line goes here', 'And the second line follows', '(hook line!)', 'And the third one lands'];
+  const pasted = song(block('Verse 1', filler(4)), block('Chorus', same), block('Verse 2', filler(4)), block('Chorus', same), block('Bridge', filler(4)), block('Chorus', same));
+  assert.equal(lyricLiftIssue(pasted, 'a song'), true);
+  const lifted = song(block('Verse 1', filler(4)), block('Chorus', same), block('Verse 2', filler(4)), block('Chorus', same), block('Bridge', filler(4)), block('Chorus', [...same, 'And the last one lands harder', '(hook line! hook line!)']));
+  assert.equal(lyricLiftIssue(lifted, 'a song'), false);
+  const backingOnly = song(block('Verse 1', filler(4)), block('Chorus', same), block('Verse 2', filler(4)), block('Chorus', same), block('Bridge', filler(4)), block('Chorus', [...same, '(hook line! hook line!)']));
+  assert.equal(lyricLiftIssue(backingOnly, 'a song'), true, 'more backing vocals on the same words are not a change in what the chorus says');
+  assert.equal(lyricLiftIssue(pasted, 'a chant that repeats the hook'), false, 'a requested chant stays a chant');
+  assert.equal(lyricLiftIssue(song(block('Chorus', same), block('Verse 1', filler(4)), block('Chorus', same)), ''), false, 'two choruses are not a final-chorus problem');
+  const little = song(block('Verse 1', ['A little rain fell', 'A little hope grew', 'One little step more', 'The road ran on']), block('Chorus', ['Hold on', 'Hold on', 'Hold on', 'Hold on']));
+  assert.deepEqual(lyricPetWords(little, 'a song').map((p) => p.word), ['little']);
+  assert.deepEqual(lyricPetWords(little, 'a song about a little rain'), [], 'a word from the brief is the person');
+  assert.deepEqual(lyricTells(song(block('Verse 1', ['I almost called you up', 'The room to breathe is gone'])), '').map((t) => t.tell), ['a worn phrase', 'a worn phrase']);
+});
+
+test('Part 320: the audit is handed the measured gates, in order, and none when nothing is wrong', () => {
+  const draft = song(block('Verse 1', filler(8)), block('Pre-Chorus', filler(2, 'pre')), block('Chorus', filler(6)), block('Verse 2', filler(8)), block('Chorus', filler(6)));
+  const thin = lyricThinSections(draft, '');
+  const backing = lyricBackingIssue(draft, '');
+  const plainAsk = lyricAuditRequest(draft, [], null, [], '');
+  assert.doesNotMatch(plainAsk, /SECTION SIZES|BACKING VOCALS, measured|RHYME, measured|LIFT, WORDS AND LINE LENGTH/);
+  const ask = lyricAuditRequest(draft, [], null, [], '', { thin, backing, lift: true, pets: [{ word: 'little', lines: ['A little rain', 'A little hope', 'One little step'] }] });
+  assert.match(ask, /7\. SECTION SIZES, measured by the desk\. These sections are too thin to carry a melody: \[Pre-Chorus\] has 2 lead lines and wants at least 4/);
+  assert.match(ask, /8\. BACKING VOCALS, measured by the desk\. The draft has 0 backing parts/);
+  assert.match(ask, /9\. LIFT, WORDS AND LINE LENGTH, measured by the desk\. The last chorus says exactly what the first one said/);
+  assert.match(ask, /The word "little" fills 3 or more different lines/);
+  assert.ok(ask.indexOf('SECTION SIZES') < ask.indexOf('BACKING VOCALS') && ask.indexOf('BACKING VOCALS') < ask.indexOf('LIFT, WORDS AND LINE LENGTH') && ask.indexOf('LIFT, WORDS AND LINE LENGTH') < ask.indexOf('THE ENDING'));
+  assert.match(ask, /Last, find the three weakest lines/);
+  assert.ok(ask.endsWith(draft));
+  const withDirections = lyricAuditRequest(draft, [], null, [], '', { backing: { total: 9, need: 8, choruses: [3, 4], directions: ['(softly)'] } });
+  assert.match(withDirections, /These parentheses hold directions, and a generator sings them aloud: "\(softly\)"/);
+  assert.doesNotMatch(withDirections, /A song this size wants about/, 'enough backing parts: only the directions are raised');
+  const loose8 = ['The kitchen smelled like burnt toast', 'A dog barked at the garbage truck', 'My sister called about the car', 'Nobody answered the phone again', 'The curtain was a funny color', 'Somebody left a window open', 'The cat looked down from the stairs', 'It started raining sideways'];
+  const rhyme = lyricRhymeReport(song(block('Verse 1', loose8), block('Verse 2', loose8.slice().reverse().map((l) => `${l} now`))), '');
+  assert.ok(rhyme && rhyme.lonely.length >= 6);
+  const rhymeAsk = lyricAuditRequest(draft, [], null, [], '', { rhyme });
+  assert.match(rhymeAsk, /7\. RHYME, measured by the desk from the sounds of the words\. These lines rhyme with nothing within three lines of them: \[Verse 1\]/);
+});
+
+test('Part 320: a merged audit may grow past the usual cap only when it was asked to add lines', () => {
+  const original = song(block('Verse 1', filler(8)), block('Chorus', filler(6))).replace('READBACK: x', 'READBACK: Pop song.');
+  const grown = song(block('Verse 1', filler(8)), block('Pre-Chorus', filler(4, 'pre')), block('Chorus', filler(6)), block('Bridge', filler(6, 'bridge'))).replace('READBACK: x', 'READBACK: Pop song.');
+  assert.equal(mergeRepairedLyrics(original, grown), null, 'the usual cap refuses a song that grew by 70 percent');
+  assert.ok(mergeRepairedLyrics(original, grown, 1.9), 'a gate that asked for lines allows it');
+});
+
+test('Part 320: the craft names rhyme technique, backing vocals and section sizes without a lyric to copy', async () => {
+  const { hitWritingSystem } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/hitSystem.ts', import.meta.url), 'utf8'))).toString('base64'));
+  for (const piece of [/RHYME AND SOUND/, /Mosaic rhymes/, /Internal rhymes/, /Chain rhymes/, /BACKING VOCALS AND AD-LIBS/, /Everything inside parentheses is sung aloud/, /SECTIONS AND LINE COUNTS/, /Pre-chorus: four lines/, /last chorus lifts/])
+    assert.match(hitWritingSystem, piece);
+  assert.doesNotMatch(hitWritingSystem, /["“”]/, 'the craft shows no quoted sample line');
+  const words = hitWritingSystem.split(/\s+/).length;
+  assert.ok(words < 2000, `the craft stays compact (${words} words)`);
+});
+
+test('Part 320: a backing part in parentheses is never chosen as the fallback title', () => {
+  const draft = 'Pop.\nLyrics:\n[Verse 1]\n(Hey, hey)\nOne in the morning (yeah)\nTwo for the road\n\n[Chorus]\nSing it back (sing it back)\nSing it back\n\nREADBACK: x';
+  assert.equal(lyricTitleFromSong(draft), 'Sing it back');
+  assert.equal(lyricTitleFromSong('Pop.\nLyrics:\n[Verse 1]\n(Hey, hey)\nOne in the morning (yeah)\n\nREADBACK: x'), 'One in the morning');
+});
+
+test('Part 320: the route hands the audit its measured gates and names what they changed in plain words', async () => {
+  const verse = (word) => Array.from({ length: 8 }, (_, i) => `Verse ${word} line ${i + 1} walks by`).join('\n');
+  const chorus = Array.from({ length: 6 }, (_, i) => `Chorus line ${i + 1} stays`).join('\n');
+  const draft = `Pop and R&B, warm piano.\n\nLyrics:\n[Verse 1]\n${verse('one')}\n\n[Pre-Chorus]\nShort one\nShort two\n\n[Chorus]\n${chorus}\n\n[Verse 2]\n${verse('two')}\n\nREADBACK: A short pop song.`;
+  const audited = draft.replace('[Pre-Chorus]\nShort one\nShort two', '[Pre-Chorus]\nShort one (one)\nShort two\nShort three (three)\nShort four');
+  const booth = loadBooth({ reply: (_b, n) => (n === 1 ? draft : audited), api: { lyricThinSections, lyricBackingIssue } });
+  audienceStub.answer = 'explicit';
+  const out = await booth.call('post/script', { user: { id: 'gates-1' }, body: { engine: 'yue2', mode: 'write', text: 'a pop song about a long walk' } });
+  assert.equal(out.code, 200);
+  assert.equal(booth.requests.length, 2, 'one draft, one audit');
+  const ask = booth.requests[1].messages[1].content;
+  assert.match(ask, /SECTION SIZES, measured by the desk\. These sections are too thin to carry a melody: \[Pre-Chorus\] has 2 lead lines/);
+  assert.match(ask, /BACKING VOCALS, measured by the desk\. The draft has 0 backing parts/);
+  assert.ok(out.body.repairs.includes('filled out sections that were too short'), JSON.stringify(out.body.repairs));
+  assert.ok(out.body.repairs.includes('added backing vocals'), JSON.stringify(out.body.repairs));
+  assert.equal(JSON.stringify(booth.ledger[0].metadata.gates), JSON.stringify({ draft: { thin: 1, backing: 0 }, left: { thin: 0, backing: 2 } }));
+  audienceStub.answer = null;
+  const off = loadBooth({ reply: (_b, n) => (n === 1 ? draft : audited), api: { lyricThinSections, lyricBackingIssue }, env: { KADE_LYRIC_GATES: '0' } });
+  await off.call('post/script', { user: { id: 'gates-2' }, body: { engine: 'yue2', mode: 'write', text: 'a pop song about a long walk' } });
+  assert.doesNotMatch(off.requests[1].messages[1].content, /SECTION SIZES|BACKING VOCALS, measured/, 'the kill switch stands the gates down');
+});
+
+test('Part 320: echo-only backing, suffix-rhyme stacks, all-couplet songs and long lines are measured', () => {
+  const lead = ['The kitchen light is on tonight', 'I tell myself it is alright', 'You left your coat behind the door', 'It does not fit me anymore', 'I wash the cups and dry the plates', 'The radio plays the same old tapes', 'I count the days until it ends', 'And then I call my oldest friends'];
+  const echoed = lead.map((l) => `${l} (${l.split(' ').slice(-2).join(' ')})`);
+  const echoSong = song(block('Verse 1', echoed), block('Chorus', echoed.slice(0, 6)), block('Verse 2', echoed), block('Chorus', echoed.slice(0, 6)));
+  const issue = lyricBackingIssue(echoSong, 'a sad song');
+  assert.ok(issue && issue.parts >= 20 && issue.echoes / issue.parts > 0.9, JSON.stringify(issue));
+  const ask = lyricAuditRequest(echoSong, [], null, [], '', { backing: issue });
+  assert.match(ask, /BACKING VOCALS, measured by the desk\. \d+ of the \d+ backing parts only repeat the last words of the lead line/);
+  assert.doesNotMatch(ask, /A song this size wants about/, 'enough backing parts: only the echo habit is raised');
+  const replies = lead.map((l, i) => `${l} (${['Oh no', 'You sure?', 'Not again', 'Mm-hmm'][i % 4]})`);
+  assert.equal(lyricBackingIssue(song(block('Verse 1', replies), block('Chorus', replies.slice(0, 6)), block('Verse 2', replies), block('Chorus', replies.slice(0, 6))), 'a sad song'), null, 'replies are not echoes');
+
+  const stacked = song(block('Verse 1', ['We argue about the celebration', 'We lose the thread of the conversation', 'You ask for a little explanation', 'I give you no consideration', 'The kettle sings and then it stops', 'You count the cracks along the tops', 'I fold the cloth and fix the chair', 'You stand there with your hair in the air']), block('Chorus', ['Take it slow', 'Let it go', 'Down below', 'Say hello']));
+  const rep = lyricRhymeReport(stacked, '');
+  assert.ok(rep && rep.suffixStacks.length === 1 && /tion/.test(rep.suffixStacks[0].family), JSON.stringify(rep && rep.suffixStacks));
+  assert.match(lyricAuditRequest(stacked, [], null, [], '', { rhyme: rep }), /closes \d+ or more lines on words that rhyme only because they share the ending -tion or -sion/);
+
+  const couplets = (a, b, c, d) => block('Verse', [a, b, c, d]);
+  const four = [couplets('She walked the dog around the block', 'He sat there watching the clock', 'The rain came down upon the street', 'I tapped my feet to the beat'), couplets('The coffee cooled beside the bed', 'She read the note again and said', 'The bus went by without a sound', 'We both stood still on the ground'), couplets('The window frame was painted blue', 'I knew that this was nothing new', 'The mail arrived a day too late', 'Outside I heard the garden gate'), couplets('The moon came up behind the hill', 'The kitchen smelled like cooking still', 'We danced around the broken chair', 'And left the porch light in the air')];
+  const plainSong = song(...four);
+  assert.ok(lyricRhymeReport(plainSong, 'a love song').couplets, 'every section in couplets is named');
+  assert.equal(lyricRhymeReport(plainSong, 'a rap about the neighborhood').couplets, null, 'rap lives on couplets');
+  assert.equal(lyricRhymeReport(plainSong, 'a silly kids song').couplets, null, 'a children song lives on couplets');
+
+  const long = ['I knocked my drink against him and I did not blink or glare at all', 'Short line here'];
+  assert.deepEqual(lyricLongLines(song(block('Verse 1', long)), 'a pop song'), [long[0]]);
+  assert.deepEqual(lyricLongLines(song(block('Verse 1', long)), 'a rap about it'), [], 'a rap line may run to seventeen');
+  const gate = lyricAuditRequest(draftFor(), [], null, [], '', { longLines: ['One line that is far too long to sing at any tempo you could name today', 'Another line that is far too long to sing at any tempo anybody could name'] });
+  assert.match(gate, /LIFT, WORDS AND LINE LENGTH, measured by the desk\. These lines are too long to sing at tempo/);
+  function draftFor() { return song(block('Verse 1', filler(8)), block('Chorus', filler(6))); }
 });

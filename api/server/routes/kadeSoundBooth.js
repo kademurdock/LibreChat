@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -638,7 +638,7 @@ function systemPrompt({ engine, mode }) {
   const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
   const yue = `YUE2 MUSIC FORMAT (the only format you may output):
 Write a concise style direction in 25 to 45 words, one or two compact sentences: language, genre, mood, defining instruments, lead vocal character and rhythmic feel. Do not narrate the arrangement section by section. Keep production directions out of the lyrics. Do not use XML, dialogue notation, a Negative Tag Box, trained-style trigger words or a Lyria timeline. The lyrics and section layout determine the song's length; a prose duration is a creative aim, not an exact timing control.
-${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
+${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. Backing vocals and ad-libs go in (parentheses): after the lead phrase on the same line, or on their own line when the backing voice sings alone. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
 No code fence, no preamble, no headings other than Lyrics:.`;
   const grammar = engine === 'yue2' ? yue : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
@@ -1974,6 +1974,21 @@ async function scriptHandler(req, res) {
       tells = [...tells, ...swearing(raw).filter((t) => !flagged.has(t.line))];
     }
     const shape = wantsWords ? lyricShapeIssue(raw, text, sectionMap) : null;
+    /* Part 320: sections too thin to carry a melody, and backing vocals that are missing or are
+     * directions a generator would sing. Measured in code and handed to the audit as gates; the
+     * audit gave the draft back unchanged in 10 of 12 songs when it was only asked to "change what
+     * fails". KADE_LYRIC_GATES=0 stands them down. */
+    const gatesOn = wantsWords && process.env.KADE_LYRIC_GATES !== '0';
+    const gateWeight = (script) => {
+      const thin = gatesOn && typeof lyricThinSections === 'function' ? lyricThinSections(script, text) : [];
+      const backing = gatesOn && typeof lyricBackingIssue === 'function' ? lyricBackingIssue(script, text) : null;
+      const rhyme = gatesOn && typeof lyricRhymeReport === 'function' ? lyricRhymeReport(script, text) : null;
+      const lift = gatesOn && typeof lyricLiftIssue === 'function' ? lyricLiftIssue(script, text) : false;
+      const pets = gatesOn && typeof lyricPetWords === 'function' ? lyricPetWords(script, text) : [];
+      const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text) : [];
+      return { thin, backing, rhyme, lift, pets, longLines, weight: thin.length + (backing ? 1 + backing.directions.length : 0) + (rhyme ? lyricRhymeWeight(rhyme) : 0) + (lift ? 1 : 0) + pets.length + Math.max(0, longLines.length - 1) };
+    };
+    const gatesInDraft = gateWeight(raw);
     /* Part 296: what repeats instead of saying something, measured in code, rides into the
      * audit as its own gate (the audit used to be told the hook lands four to eight times
      * and left every collapsed chorus alone). */
@@ -1987,7 +2002,7 @@ async function scriptHandler(req, res) {
         const fixed = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text),
+          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text, { thin: gatesInDraft.thin, backing: gatesInDraft.backing, rhyme: gatesInDraft.rhyme, lift: gatesInDraft.lift, pets: gatesInDraft.pets, longLines: gatesInDraft.longLines }),
           maxTokens: writingSettings.maxTokens,
           /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
           reasoning: { enabled: true, effort: 'low', exclude: true },
@@ -1997,13 +2012,15 @@ async function scriptHandler(req, res) {
         costMeasured = costMeasured && fixed.measured;
         /* Only the sung words come from the repair; her direction and READBACK
          * stay exactly as first written (the repair is careless with them). */
-        const merged = mergeRepairedLyrics(raw, fixed.text);
+        /* Asked to add lines or backing parts, the audit may grow the song well past the usual cap. */
+        const merged = mergeRepairedLyrics(raw, fixed.text, gatesInDraft.weight ? 1.9 : 1.4);
+        const gatesAfter = merged ? gateWeight(merged) : gatesInDraft;
         const swore = swearing(raw).length;
         const stillSwears = merged ? swearing(merged).length : swore;
         const remaining = merged ? lyricTells(merged, text).length + stillSwears : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text, sectionMap);
-        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} kissoff ${kissOffsInDraft.length}->${merged ? kissOffsOf(merged).length : kissOffsInDraft.length} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} ${Date.now() - started}ms`);
-        if (merged && remaining <= tells.length) {
+        logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} kissoff ${kissOffsInDraft.length}->${merged ? kissOffsOf(merged).length : kissOffsInDraft.length} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} thin ${gatesInDraft.thin.length}->${gatesAfter.thin.length} rhyme ${gatesInDraft.rhyme ? lyricRhymeWeight(gatesInDraft.rhyme) : 'na'}->${gatesAfter.rhyme ? lyricRhymeWeight(gatesAfter.rhyme) : 'na'} creative ${gatesInDraft.rhyme ? gatesInDraft.rhyme.creative : 'na'}->${gatesAfter.rhyme ? gatesAfter.rhyme.creative : 'na'} backing ${gatesInDraft.backing ? gatesInDraft.backing.total + '/' + gatesInDraft.backing.need : 'ok'}->${gatesAfter.backing ? gatesAfter.backing.total + '/' + gatesAfter.backing.need : 'ok'} ${Date.now() - started}ms`);
+        if (merged && remaining <= tells.length && gatesAfter.weight <= gatesInDraft.weight) {
           const versesBefore = verseCount(raw);
           const versesAfter = verseCount(merged);
           raw = merged;
@@ -2011,6 +2028,11 @@ async function scriptHandler(req, res) {
           const stock = tells.length - swore - (remaining - stillSwears);
           if (stock > 0) repairs = [...repairs, `rewrote ${stock} line${stock === 1 ? '' : 's'} that leaned on stock images`];
           if (stillSwears < swore) repairs = [...repairs, `made ${swore - stillSwears} line${swore - stillSwears === 1 ? '' : 's'} clean`];
+          /* Part 320: say what the measured gates changed, in plain words she can hear. */
+          if (gatesAfter.thin.length < gatesInDraft.thin.length) repairs = [...repairs, 'filled out sections that were too short'];
+          if (gatesInDraft.backing && (!gatesAfter.backing || gatesAfter.backing.total > gatesInDraft.backing.total)) repairs = [...repairs, 'added backing vocals'];
+          if (gatesInDraft.rhyme && gatesAfter.rhyme && lyricRhymeWeight(gatesAfter.rhyme) < lyricRhymeWeight(gatesInDraft.rhyme)) repairs = [...repairs, 'tightened the rhymes'];
+          if (gatesInDraft.lift && !gatesAfter.lift) repairs = [...repairs, 'lifted the last chorus'];
           /* Two short verses grown into two long ones is not a third verse (review). */
           if (grew) repairs = [...repairs, versesAfter <= versesBefore ? 'lengthened the verses' : versesAfter - versesBefore > 1 ? 'added verses' : versesAfter === 3 ? 'added a third verse' : 'added a verse'];
         }
@@ -2206,6 +2228,8 @@ async function scriptHandler(req, res) {
         repeats: measuresRepeats ? { draft: repeatsInDraft.length, left: repeatsLeft.length, rewrite: repeatRewrite } : undefined,
         /* Part 296 follow-up: stock kiss-off lines in the first draft and in what she gets. */
         kissOffs: wantsWords && typeof lyricKissOffTells === 'function' ? { draft: kissOffsInDraft.length, left: kissOffsOf(raw).length } : undefined,
+        /* Part 320: thin sections and missing backing vocals, in the first draft and in what she gets. */
+        gates: gatesOn ? { draft: { thin: gatesInDraft.thin.length, backing: gatesInDraft.backing ? gatesInDraft.backing.total : 'ok' }, left: { thin: gateWeight(raw).thin.length, backing: gateWeight(raw).backing ? gateWeight(raw).backing.total : 'ok' } } : undefined,
         model: writingSettings.model || MODEL,
         /* Oct 2 2026, AuK with a chosen voice: ok, rewritten (the second ask fixed it), off, or
          * clip (a reference clip is the voice, so nothing was checked). */

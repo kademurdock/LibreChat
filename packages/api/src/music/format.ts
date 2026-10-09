@@ -1,10 +1,22 @@
 const SECTION_TAG =
   /\[[ \t]*(?:(?:final|last)[ \t]+)?(?:intro|verse|pre[- ]?chorus|post[- ]?chorus|chorus|bridge|outro|hook|refrain|interlude|breakdown|solo|drop|instrumental|vamp|coda)(?=[ \t\d:—–-]|\])[^\]\r\n]*\]/gi;
 
+/** Plain punctuation for a sung line, because a generator sings the text as written: straight
+ *  quotes and apostrophes, no semicolons, and a dash becomes a comma (a trailing one goes). */
+function plainPunctuation(line: string): string {
+  return line
+    .replace(/[“”„]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/…/g, '...')
+    .replace(/\s*[—–]\s*$/, '')
+    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/\s*;\s*/g, ', ');
+}
+
 function formatLines(lyrics: string): string {
   const lines: string[] = [];
   const appendWords = (words: string): void => {
-    const line = words.trim();
+    const line = plainPunctuation(words.trim()).trim();
     if (line) lines.push(line);
   };
 

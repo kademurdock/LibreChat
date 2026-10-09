@@ -80,7 +80,7 @@ function booth(replies = [], env = {}) {
         writingCost: writerPricing.writingCost,
         validateMusicReference: async (_user, url) => url, musicReferenceSeconds: async () => 10,
         ...(() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process: { env: { AWS_ENDPOINT_URL: 'https://example.invalid', AWS_BUCKET_NAME: 'recordings' } } }); return mod.exports; })(),
-        ...writing, ...ideas, ...scriptWriter, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')),
+        ...writing, ...ideas, ...scriptWriter, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')), ...loadTs(path.join(__dirname, '../../../packages/api/src/music/format.ts')),
         musicWritingPrompt: async (base, request, ...rest) => request.engine === 'seed' ? writing.musicWritingPrompt(base, request, ...rest) : base,
         yueStylesEnabled: () => false, yueStyles: {}, effectsGuide: {},
         createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {},

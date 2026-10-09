@@ -33,8 +33,11 @@ export function lyricTitleFromSong(draft: string): string | undefined {
       hook = /^\[\s*(?:(?:final|last)\s+)?(?:chorus|hook|refrain)\b/i.test(line);
       continue;
     }
+    /* A backing part in parentheses is never a title, alone on its line or after the lead phrase. */
+    if (/^\(.*\)$/.test(line)) continue;
     const words = line
       .replace(/^(?:\[[^\]]*\]\s*)+/, '')
+      .replace(/\s*\([^()]*\)\s*$/, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!words || /^(?:untitled|your song|song title|title)$/i.test(words)) continue;

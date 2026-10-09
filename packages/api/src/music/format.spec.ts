@@ -46,6 +46,15 @@ describe('formatGeneratedLyricsDraft', () => {
     );
   });
 
+  it('gives a sung line plain punctuation: straight quotes, no semicolons, a dash becomes a comma', () => {
+    const draft =
+      'Lyrics:\n[Verse]\nI said “No”, it’s fine—really\nShe left—\nOne thing; then another\nWait… what\n\n[Outro - Vamp]\nOoo-ooo';
+
+    expect(formatGeneratedLyricsDraft(draft)).toBe(
+      'Lyrics:\n[Verse]\nI said "No", it\'s fine, really\nShe left\nOne thing, then another\nWait... what\n\n[Outro - Vamp]\nOoo-ooo',
+    );
+  });
+
   it('is stable when formatting an already formatted draft again', () => {
     const draft = 'Lyrics:\n[Verse]\nOne step\n\n[Chorus]\nOne more try\n\nREADBACK: A soul song.';
 
