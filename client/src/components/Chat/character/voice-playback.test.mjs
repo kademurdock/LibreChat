@@ -25,6 +25,27 @@ test('element reuse replaces identity and detaches old listeners',()=>{
  watchVoiceAudio(a,'two');assert.equal(voicePlayback.snapshot().messageId,'two');
  a.fire('emptied');assert.equal(voicePlayback.snapshot(),null);stopWatchingVoiceAudio(a);
 });
+test('an old seek completion or repeated observer cannot reclaim the current character', () => {
+  const a = new Audio(), b = new Audio();
+  watchVoiceAudio(a, 'one'); a.paused = false; a.fire('playing');
+  watchVoiceAudio(b, 'two'); b.paused = false; b.fire('playing');
+  a.fire('seeked');
+  assert.equal(voicePlayback.snapshot().messageId, 'two');
+  watchVoiceAudio(a, 'one');
+  assert.equal(voicePlayback.snapshot().messageId, 'two');
+  stopWatchingVoiceAudio(a); stopWatchingVoiceAudio(b);
+});
+test('buffering survives observer refresh and a seek without playable data', () => {
+  const a = new Audio();
+  watchVoiceAudio(a, 'one'); a.paused = false; a.fire('playing');
+  a.fire('waiting'); watchVoiceAudio(a, 'one');
+  assert.equal(voicePlayback.snapshot().phase, 'waiting');
+  a.readyState = 2; a.fire('seeked');
+  assert.equal(voicePlayback.snapshot().phase, 'waiting');
+  a.readyState = 4; a.fire('playing');
+  assert.equal(voicePlayback.snapshot().phase, 'playing');
+  stopWatchingVoiceAudio(a);
+});
 test('only recorded authors select a character; no selected-chat or user-name guessing',()=>{
  assert.equal(messageCharacterId({model:'agent_della'}),'agent_della');
  assert.equal(messageCharacterId({agent_id:'agent_lilly',model:'agent_kiana'}),'agent_lilly');
