@@ -106,6 +106,15 @@ const EYES = [
   { kind: 'blink', from: [0.518, 0.219, 0.125, 0.08], to: [0.518, 0.219, 0.125, 0.08] },
 ];
 
+/**
+ * @typedef {{ kind: string, from: number[], to: number[] }} PortraitFeature
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ id: string, portrait: string, atlas?: string, blink?: string,
+ *   features?: PortraitFeature[], eyeFeatures?: PortraitFeature[], expression?: string,
+ *   browFeatures?: PortraitFeature[], sheet?: { expressions: string, mouths: string,
+ *   face: number[], mouth: number[], eyes: number[] }, onReady?: () => void,
+ *   onFailure?: () => void }} options
+ */
 export function createPortraitRig(
   canvas,
   {

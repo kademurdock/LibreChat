@@ -19,14 +19,16 @@ export function watchVoiceAudio(audio, messageId) {
     if (audio.ended || !audio.currentSrc && !audio.src) return clear();
     // A paused element that has never played must not steal another portrait.
     if (audio.paused && current?.audio !== audio) return;
-    const phase = audio.paused ? 'paused' : stalled ? 'waiting' : 'playing';
+    const phase = audio.paused ? 'paused' : stalled || audio.seeking || audio.readyState < 3 ? 'waiting' : 'playing';
     if (current?.audio === audio && current.messageId === messageId && current.phase === phase) return;
     emit({ audio, messageId, phase });
   };
   const clear = () => { if (current?.audio === audio) emit(null); };
   const playing = () => { stalled = false; publish(true); };
   const waiting = () => { stalled = true; publish(); };
-  const events = { playing, play: waiting, pause: publish, waiting, seeking: waiting, seeked: playing,
+  const refresh = () => publish();
+  const seeked = () => { stalled = audio.readyState < 3; publish(); };
+  const events = { playing, play: waiting, pause: refresh, waiting, seeking: waiting, seeked,
     ended: clear, emptied: clear, error: clear, abort: clear };
   for (const [event, handler] of Object.entries(events)) audio.addEventListener(event, handler);
   const dispose = () => {
@@ -35,7 +37,7 @@ export function watchVoiceAudio(audio, messageId) {
     if (observed.get(audio)?.dispose === dispose) observed.delete(audio);
     clear();
   };
-  observed.set(audio, { messageId, dispose, refresh: playing });
+  observed.set(audio, { messageId, dispose, refresh });
   publish(!audio.paused);
   return dispose;
 }
