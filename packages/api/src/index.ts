@@ -365,3 +365,4 @@ export {
   scheduleMemoryArtifactPersistence,
 } from './memory/artifacts';
 export type { MemoryArtifactContext } from './memory/artifacts';
+export { createDesktopCallsRouter, webCallSessionId } from './calls/desktop';
