@@ -1,7 +1,7 @@
 {
-  "versionCode": 121,
-  "versionName": "2.16.1",
-  "notes": "Public beta 2.16.1: every Library shelf and search shows its first page; your listening place is saved on every pause and at the end, with your speed; an expired sign-in renews instead of signing you out; Spotter notice fix.",
+  "versionCode": 123,
+  "versionName": "2.16.3",
+  "notes": "Public beta 2.16.3: smoother character expressions and on-demand portrait descriptions; conversation search and return to a running call; call transcripts, Answer and Not now notices, clearer Spotter reconnecting, and headphone/hearing-aid routing. Sign-in details and web cookies stay out of backups.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "053b82517f8e784b918bc015b667fe7e2b7b9e875107a45ba9d29adf76534248"
+  "sha256": "35960415085ec7a65f15583116763504374a0cae36df2a3a876370b3a4557a21"
 }
