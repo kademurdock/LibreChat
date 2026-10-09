@@ -1,4 +1,5 @@
 import {
+  ANGEL_ID,
   DELLA_ID,
   HARLEY_ID,
   KIANA_ID,
@@ -10,6 +11,7 @@ import {
 
 const descriptions = new Map(
   Object.entries({
+    [ANGEL_ID]: 'com_ui_character_appearance_angel',
     [KIANA_ID]: 'com_ui_character_appearance_kiana',
     [DELLA_ID]: 'com_ui_character_appearance_della',
     [HARLEY_ID]: 'com_ui_character_appearance_harley',

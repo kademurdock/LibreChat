@@ -123,6 +123,7 @@ export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance 
   return {
     characterId: id,
     active: true,
+    time,
     expression,
     face,
     viseme: visemeAt(time, strength, sibilance, seed),

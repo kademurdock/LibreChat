@@ -70,6 +70,7 @@ function PortraitSurface({
   }, [playback.phase]);
   const element = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const fallbackImage = useRef<HTMLImageElement>(null);
   const latest = useRef(playback);
   latest.current = playback;
   // The character's own %%%directions%%%, placed along the audio once its
@@ -148,6 +149,10 @@ function PortraitSurface({
             rigFailed = true;
             refresh();
           },
+          onVisibilityChange: (show) => {
+            if (fallbackImage.current)
+              fallbackImage.current.style.visibility = show ? 'hidden' : '';
+          },
         });
       if (usable && prepared) void readEnvelope(audio);
       const level = envelope?.levels[Math.floor(audio.currentTime / envelope.step)] || 0;
@@ -167,7 +172,8 @@ function PortraitSurface({
         cues: schedule.current.cues,
       });
       rig?.render(pose);
-      surface.style.transform = `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
+      surface.style.transform =
+        prepared?.vector === 'angel' ? '' : `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
       // Rig also moves its canvas; neutralize the duplicate transform.
       target.style.transform = '';
       lastTick = now;
@@ -233,6 +239,7 @@ function PortraitSurface({
         <div aria-hidden="true" className="pointer-events-none">
           <div ref={element} className="relative aspect-square overflow-hidden rounded-2xl">
             <img
+              ref={fallbackImage}
               src={path}
               alt=""
               onError={() => setFailed(true)}
