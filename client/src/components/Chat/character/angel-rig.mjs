@@ -174,11 +174,10 @@ function drawGroup(context, group, sparkle) {
   const paint = (name) => {
     if (paints.has(name)) return paints.get(name);
     const source = art.gradients[name];
-    const result = !source
-      ? name
-      : source.kind === 'radial'
-        ? gradient(context, source.stops, source.center, source.center, source.radius)
-        : gradient(context, source.stops, source.start, source.end);
+    let result = name;
+    if (source?.kind === 'radial')
+      result = gradient(context, source.stops, source.center, source.center, source.radius);
+    else if (source) result = gradient(context, source.stops, source.start, source.end);
     paints.set(name, result);
     return result;
   };

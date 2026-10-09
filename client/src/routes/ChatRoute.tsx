@@ -1,8 +1,14 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { Spinner, useToastContext } from '@librechat/client';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  useLocation,
+  useNavigate,
+  useNavigationType,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 import {
   Constants,
   EModelEndpoint,
@@ -11,6 +17,7 @@ import {
 } from 'librechat-data-provider';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import type { TPreset } from 'librechat-data-provider';
+import type { AgentChatLaunch } from './agent-chat-launch';
 import {
   mergeQuerySettingsWithSpec,
   processValidSettings,
@@ -41,6 +48,7 @@ import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
+import { agentChatLaunch, needsAgentChatLaunch } from './agent-chat-launch';
 
 const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
@@ -63,6 +71,10 @@ export default function ChatRoute() {
   const index = 0;
   const [searchParams, setSearchParams] = useSearchParams();
   const { conversationId = '' } = useParams();
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const consumedAgentLaunch = useRef<AgentChatLaunch | null>(null);
+  const requestedAgentLaunch = agentChatLaunch(conversationId, location.search, location.key);
   const projectIdParam = searchParams.get('projectId');
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
@@ -201,10 +213,16 @@ export default function ChatRoute() {
       : conversation?.chatProjectId != null;
     const newConvoNeedsInit =
       isNewConvo && (!conversation || (isDraftNewConvo && draftProjectMismatch));
+    const explicitAgentNeedsInit = needsAgentChatLaunch(
+      requestedAgentLaunch,
+      consumedAgentLaunch.current,
+      navigationType,
+    );
     const shouldSetConvo =
       (startupConfig &&
+        isAuthenticated &&
         rolesLoaded &&
-        (!hasSetConversation.current || newConvoNeedsInit) &&
+        (!hasSetConversation.current || newConvoNeedsInit || explicitAgentNeedsInit) &&
         !modelsQuery.data?.initial) ??
       false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
@@ -228,7 +246,7 @@ export default function ChatRoute() {
          Priority: admin model spec → last stored agent → agents endpoint
          (the selector effect then fills in the newest conversation's agent
          from the server — see useSelectorEffects). */
-      let basePreset = specPreset;
+      let basePreset: TPreset | undefined = specPreset;
       if (!basePreset) {
         try {
           const { lastConversationSetup } = getLocalStorageItems();
@@ -260,6 +278,7 @@ export default function ChatRoute() {
 
     if (isNewConvo && endpointsQuery.data && modelsQuery.data) {
       const preset = getNewConvoPreset();
+      consumedAgentLaunch.current = requestedAgentLaunch;
 
       logger.log('conversation', 'ChatRoute, new convo effect', conversation);
       clearMessagesCache(queryClient, conversation?.conversationId);
@@ -308,6 +327,7 @@ export default function ChatRoute() {
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
       const preset = getNewConvoPreset();
+      consumedAgentLaunch.current = requestedAgentLaunch;
 
       logger.log('conversation', 'ChatRoute new convo, assistants effect', conversation);
       clearMessagesCache(queryClient, conversation?.conversationId);
@@ -333,6 +353,10 @@ export default function ChatRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     roles,
+    isAuthenticated,
+    location.key,
+    location.search,
+    navigationType,
     startupConfig,
     initialConvoQuery.data,
     initialConvoQuery.isError,
