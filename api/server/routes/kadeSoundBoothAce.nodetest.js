@@ -562,3 +562,30 @@ test('an ACE take is a valid YuE2 cover source: its MP3 and its WAV master are o
   assert.match(mp3, /^[a-z0-9]+\/[0-9a-f-]{36}\/master\.mp3$/);
   assert.match(WORKER_ANSWER.key, /^ace\/[^/]+\/master\.mp3$/);
 });
+
+test('the App Review seat never gets ACE, whether admin-only is on or off', () => {
+  const OPEN = { ...ON, ACE_ADMIN_ONLY: '0' };
+  const CLOSED = 'ACE-Step XL is not open to your account yet.';
+  const byId ={ id: '6a6125d73939d20b95251078', role: 'USER' };
+  const byMongoId = { _id: { toString: () => '6a6125d73939d20b95251078' }, role: 'USER' };
+  const byEmail = { id: 'x1', email: 'KadeAI.Vischeck722@Gmail.com', role: 'USER' };
+  const closed = { ok: false, error: CLOSED };
+  for (const seat of [byId, byMongoId, byEmail]) {
+    assert.deepEqual(ace.aceAccess(seat, ON), closed, JSON.stringify(seat));
+    assert.deepEqual(ace.aceAccess(seat, OPEN), closed, JSON.stringify(seat));
+    assert.equal(ace.aceAllowed(seat, OPEN), false);
+    assert.equal(ace.aceGuide && ace.withAceGuide({ engines: {} }, seat, OPEN).engines.ace, undefined, 'no card in the guide');
+  }
+  assert.deepEqual(ace.aceAccess({ ...byId, role: 'ADMIN' }, OPEN), closed, 'even a seat marked admin');
+  const member = { id: 'someone-else', email: 'a@example.test', role: 'USER' };
+  assert.deepEqual(ace.aceAccess(member, OPEN), { ok: true }, 'an ordinary member still gets it');
+  assert.deepEqual(ace.aceAccess(member, ON), closed, 'and is still closed out while admin-only is on');
+  const before = process.env.KADE_APP_REVIEW_USER_IDS;
+  process.env.KADE_APP_REVIEW_USER_IDS = 'listed-seat-id';
+  try {
+    assert.deepEqual(ace.aceAccess({ id: 'listed-seat-id', role: 'USER' }, OPEN), closed, 'a seat named in KADE_APP_REVIEW_USER_IDS');
+  } finally {
+    if (before === undefined) delete process.env.KADE_APP_REVIEW_USER_IDS;
+    else process.env.KADE_APP_REVIEW_USER_IDS = before;
+  }
+});

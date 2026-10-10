@@ -1,9 +1,11 @@
 import axios from 'axios';
 import type { Router } from 'express';
 import type { Hooks, Input, InputBody, Output, Provider } from '../audio/jobs';
+import type { LibraryAccount } from '../library/access';
 import type { YueGuideSetting } from './yue';
 import { yueInstrumentalChoice, yueSinging, yueTakeCost } from './yue';
 import { createAudioRouter } from '../audio/jobs';
+import { libraryReviewSeat } from '../library/access';
 
 /* ACE-Step 1.5 XL: the booth's second song engine, beside YuE2. It runs on its own RunPod endpoint
  * (ACE_ENDPOINT_ID) and is off until ACE_ENABLED=1. While ACE_ADMIN_ONLY is on (the default) only an
@@ -12,7 +14,7 @@ import { createAudioRouter } from '../audio/jobs';
  * answer sits at the top level, so the shared audio router reads it exactly like a YuE2 answer. */
 
 export type AceModel = 'xl-turbo' | 'xl-sft';
-export type AceUser = { role?: string | null } | null | undefined;
+export type AceUser = LibraryAccount | null | undefined;
 export type AceVerdict = { ok: true } | { ok: false; error: string };
 
 /** What RunPod receives as the job's `input`. Always one take; another take is another request. */
@@ -110,10 +112,10 @@ export function aceMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isInteger(said) && said >= 60 && said <= 600 ? said : DEFAULT_MAX_SECONDS;
 }
 
-/** Whether this account may use ACE-Step XL now, and the plain sentence when it may not. */
+/** Whether this account may use ACE-Step XL now, and the plain sentence when it may not. The App Review seat never may. */
 export function aceAccess(user: AceUser, env: NodeJS.ProcessEnv = process.env): AceVerdict {
   if (!aceEnabled(env)) return { ok: false, error: ACE_OFF };
-  if (!user) return { ok: false, error: ACE_CLOSED };
+  if (!user || libraryReviewSeat(user)) return { ok: false, error: ACE_CLOSED };
   if (!aceAdminOnly(env)) return { ok: true };
   const admin = String(user.role ?? '').toUpperCase() === 'ADMIN';
   return admin ? { ok: true } : { ok: false, error: ACE_CLOSED };
