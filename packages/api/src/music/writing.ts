@@ -2563,9 +2563,10 @@ export async function musicWritingPrompt(
 ): Promise<string> {
   if (!writesMusic(request)) return seedWritingPrompt(base, request.engine, request.mode);
   const note = audienceNote(audience);
+  const songName = request.engine === 'ace' ? 'ACE-Step XL' : 'YuE2';
   const direction =
     request.engine === 'yue2' || request.engine === 'ace'
-      ? (request.engine === 'ace' ? 'ACE-Step XL' : 'YuE2') +
+      ? songName +
         ' direction is 25 to 45 words in one or two compact sentences: language, genre, rhythmic feel, a few defining instruments and the lead vocal character. No section-by-section arrangement narrative, production essay, technical duration line or story summary. The full development belongs in the lyrics and section tags, not in a Lyria-style brief. In the lyrics, mix the two forms of backing vocal: echoes in parentheses after a lead phrase, and a few replies or fills on a line of their own in parentheses.'
       : "Lyria direction is music production prose: genre, BPM and feel, instrumentation, the lead voice, backing vocals and arrangement dynamics as appropriate. Keep story and theme in the lyrics. Follow the engine format below for section shape and the technical line. In the lyrics, write backing vocals in parentheses after the lead phrase on the same line, which is the form Lyria's own prompt guide documents; a whole line in parentheses is for a wordless run or a fill.";
   const agent = await readAgent({ id: lyricAgentId });
