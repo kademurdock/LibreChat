@@ -37,6 +37,11 @@ export type Input = {
   fit_score_touchup?: boolean;
   /* Fit by tempo, sent only for a cover of a recording behind YUE_FIT_TEMPO (music/yue.ts). */
   fit_tempo?: boolean;
+  /* ACE-Step XL fields (music/ace.ts): the quality as the worker names it, a tempo found in Music direction, and the
+   * Length choice as the guide words it so the project reopens on it. `duration` and `instrumental` are shared. */
+  model?: 'xl-turbo' | 'xl-sft';
+  bpm?: number;
+  length_choice?: string;
   seed: number;
 };
 type LyricFitRow = {
@@ -86,6 +91,16 @@ type TempoFitReport = {
   /* Each BPM Music direction named, [as written, as sung]. */
   style_bpm?: number[][];
 };
+type AceTakeReport = {
+  index?: number;
+  seed?: number;
+  key?: string;
+  wav_key?: string;
+  url?: string;
+  wav_url?: string;
+  duration_s?: number;
+  bytes?: number;
+};
 export type Output = {
   url?: string;
   wav_url?: string;
@@ -115,6 +130,19 @@ export type Output = {
   meter_check?: { style_meter?: string; score_meter?: string } | null;
   /* Worker feature fit-tempo: a score too long for six minutes sung faster to fit (its Q: line only). */
   tempo_fit?: TempoFitReport | null;
+  /* The ACE-Step XL worker's report (music/ace.ts). Take 0 sits at the top level (url, wav_url, seed, ...) so the shared
+   * router reads it like a YuE2 answer; `takes` lists every take. */
+  engine?: string;
+  model?: string;
+  key?: string;
+  wav_key?: string;
+  seed?: number;
+  processing_ms?: number;
+  takes?: AceTakeReport[];
+  timing?: { model_load_s?: number; plan_s?: number; render_s?: number; encode_s?: number; upload_s?: number };
+  memory?: { render_peak_gib?: number };
+  versions?: { ace_step_commit?: string; torch?: string; worker?: string };
+  plan?: { bpm?: number; keyscale?: string; duration?: number };
 };
 export type Provider = {
   id?: string;
@@ -213,6 +241,9 @@ export type InputBody = {
   reference_voice_url?: string;
   referenceExpected?: boolean;
   singing?: string | boolean;
+  /* ACE-Step XL: the Quality choice (Fast or Best) and the Length choice (music/ace.ts). */
+  quality?: string;
+  length?: string | number;
   keep_chords?: string | boolean;
   /* Sing it in my voice: YuE2's automatic choice, and the voice engine's own settings. */
   my_voice?: string | boolean;

@@ -172,6 +172,42 @@ export {
   yueTakeFacts,
   yueTakeCost,
 } from './music/yue';
+/* ACE-Step XL, the booth's second song engine (behind ACE_ENABLED). */
+export {
+  createAceRouter,
+  aceEnabled,
+  aceAdminOnly,
+  aceConfigured,
+  aceDefaultModel,
+  aceMaxSeconds,
+  aceAccess,
+  aceAllowed,
+  aceCaption,
+  aceLyricSeconds,
+  aceLength,
+  aceModelChoice,
+  aceInput,
+  aceRequest,
+  aceEstimate,
+  aceProjectOptions,
+  aceProjectWhy,
+  aceTakeFacts,
+  aceCost,
+  aceGuide,
+  aceQuality,
+  aceMatchLyrics,
+  withAceGuide,
+} from './music/ace';
+export type {
+  AceModel,
+  AceUser,
+  AceVerdict,
+  AceRequest,
+  AceProjectOptions,
+  AceTakeFacts,
+  AceGuideEntry,
+  AceGuideSetting,
+} from './music/ace';
 export { notifyMusic } from './music/notify';
 export {
   createLyricsRouter,
