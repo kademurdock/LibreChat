@@ -82,7 +82,7 @@ const ENGINE_KEYS = Object.keys(ENGINES);
 /** Whether this caller may see the engine at all. A gated engine (ACE-Step XL) is open only to a
  *  person the route says may use it (`opts.ace`); without that it is as good as absent, so with
  *  ACE off every list and every answer here is exactly what it was before it existed. */
-function open(engine, opts) {
+function available(engine, opts) {
   const known = ENGINES[engine];
   return !!known && (!known.gated || !!(opts && opts.ace === true));
 }
@@ -93,12 +93,12 @@ function open(engine, opts) {
  *  `opts.ace` is true for a person who may use ACE-Step XL; for anyone else it is never offered. */
 function destinationsFor(engine, opts = {}) {
   const from = ENGINES[engine];
-  if (!from || !open(engine, opts)) {
+  if (!from || !available(engine, opts)) {
     return [];
   }
   const sound = new Set(['voice', 'effects']);
   return ENGINE_KEYS.filter((k) => {
-    if (k === engine || !open(k, opts)) {
+    if (k === engine || !available(k, opts)) {
       return false;
     }
     const to = ENGINES[k];
@@ -107,10 +107,10 @@ function destinationsFor(engine, opts = {}) {
 }
 
 function canCarry(from, to, opts = {}) {
-  if (!open(from, opts)) {
+  if (!available(from, opts)) {
     return { ok: false, why: 'That project was not made by an engine this can carry.' };
   }
-  if (!open(to, opts)) {
+  if (!available(to, opts)) {
     return { ok: false, why: 'There is no engine by that name.' };
   }
   if (from === to) {
