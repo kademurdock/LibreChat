@@ -38,16 +38,6 @@ class SafeBoundary extends Component<{ children: ReactNode }, { failed: boolean 
   }
 }
 
-type KadeScanTextPlugin = { start: () => Promise<void>; stop: () => Promise<void> };
-declare global {
-  interface Window {
-    Capacitor?: {
-      isNativePlatform?: () => boolean;
-      Plugins?: { KadeScanText?: KadeScanTextPlugin };
-    };
-  }
-}
-
 function isNativeScanAvailable(): boolean {
   try {
     return (
