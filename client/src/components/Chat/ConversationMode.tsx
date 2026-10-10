@@ -2250,7 +2250,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       return;
     }
     if (e.key !== 'Tab') return;
-    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])');
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('summary, button:not([disabled])');
     if (!nodes || nodes.length === 0) return;
     const list = Array.from(nodes);
     const first = list[0];
