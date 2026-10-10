@@ -74,6 +74,8 @@ const MIN_SECONDS = 30;
 const DEFAULT_MAX_SECONDS = 360;
 const MATCH_CEILING_SECONDS = 300;
 const INSTRUMENTAL_SECONDS = 120;
+/** What the worker reads as "no singing". */
+const INSTRUMENTAL_TAG = '[Instrumental]';
 /* Match my lyrics: 20 seconds for the intro and outro, 3.7 for each sung line, to the nearest five
  * (the desk aims for about four minutes at 50 to 70 lines). A starting point for the first listening
  * test, not a measurement; the tests pin a table so a change is deliberate. */
@@ -122,9 +124,9 @@ export function aceAllowed(user: AceUser, env: NodeJS.ProcessEnv = process.env):
 
 /* ---------- Music direction -> caption and tempo ---------- */
 
-/* "88 BPM", "~88 bpm", "around 88 BPM", "at 88bpm", and a range such as "88-92 BPM" (two values). */
+/* "88 BPM", "~88 bpm", "around 88 BPM", "at 88bpm", "a 90-BPM groove", and a range such as "88-92 BPM" (two values). */
 const BPM_PHRASE =
-  /(?:\b(?:around|about|roughly|approximately|at)\s+|~\s*)?\b(\d{2,3}(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d{2,3}(?:\.\d+)?)?)\s*bpm\b/i;
+  /(?:\b(?:around|about|roughly|approximately|at)\s+|~\s*)?\b(\d{2,3}(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d{2,3}(?:\.\d+)?)?)[\s-]*bpm\b/i;
 const BPM_PHRASE_ALL = new RegExp(BPM_PHRASE.source, 'gi');
 const NUMBER = /\d+(?:\.\d+)?/g;
 
@@ -318,12 +320,12 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
 
 /** The worker job for one take. The sheet goes through whole (never cut); an instrumental sends the tag the worker reads. */
 export function aceRequest(input: Input): AceRequest {
-  const lyrics = input.instrumental ? '' : (input.lyrics ?? '');
+  const sung = input.instrumental ? '' : (input.lyrics ?? '');
   return {
     model: input.model ?? 'xl-turbo',
     caption: aceCaption(input.style).caption,
-    lyrics: input.instrumental ? '[Instrumental]' : lyrics,
-    duration: input.duration ?? aceLyricSeconds(lyrics),
+    lyrics: input.instrumental ? INSTRUMENTAL_TAG : sung,
+    duration: input.duration ?? aceLyricSeconds(sung),
     seed: input.seed,
     batch_size: 1,
     ...(input.bpm ? { bpm: input.bpm } : {}),

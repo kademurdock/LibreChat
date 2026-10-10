@@ -15,6 +15,7 @@ require.extensions['.ts'] = (mod, filename) =>
   );
 const ace = require('../../../packages/api/src/music/ace.ts');
 const { yueSinging, yueTakeCost } = require('../../../packages/api/src/music/yue.ts');
+const { isOwnedAudioReference } = require('../../../packages/api/src/speech/edit.ts');
 
 const SUNG = yueSinging.sung;
 const INSTRUMENTAL = yueSinging.instrumental;
@@ -87,6 +88,8 @@ test('caption: a tempo moves into the bpm field, everything else stays', () => {
     ['Funk, 88.4 BPM', 'Funk', 88],
     ['Slow soul\n88 BPM\nRhodes and brushed drums', 'Slow soul Rhodes and brushed drums', 88],
     ['Slow  88 BPM  groove', 'Slow groove', 88],
+    ['a 90-BPM groove', 'a groove', 90],
+    ['a 90 - bpm groove', 'a groove', 90],
     ['30 BPM drone', 'drone', 30],
     ['drone 300 BPM', 'drone', 300],
   ];
@@ -499,4 +502,22 @@ test('the contract names: a worker answer is read by the shared router through t
   assert.equal(WORKER_ANSWER.takes[0].wav_url, WORKER_ANSWER.wav_url);
   assert.equal(WORKER_ANSWER.takes[0].seed, WORKER_ANSWER.seed);
   assert.equal(WORKER_ANSWER.takes.length, 1, 'the booth asks for one take');
+});
+
+test('an ACE take is a valid YuE2 cover source: its MP3 and its WAV master are owned by the account that made it', () => {
+  /* The complete hook stores the MP3 as the asset's url and the WAV master as metadata.wavUrl, which is what the cover
+   * check reads (the booth's audioReferenceGuard.savedSources). The worker writes to the same bucket as YuE2 does. */
+  const env = { AWS_BUCKET_NAME: 'booth-bucket', AWS_ENDPOINT_URL: 'https://s3.example.test', AWS_REGION: 'us-east-1' };
+  const signed = (key, signature) => `https://s3.example.test/booth-bucket/${key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=${signature}`;
+  const mp3 = 'ace/3f2c9a0e-5b1d-4c7a-9e11-0a6d2b7c8e44/master.mp3';
+  const wav = 'ace/3f2c9a0e-5b1d-4c7a-9e11-0a6d2b7c8e44/master.wav';
+  const saved = [signed(mp3, 'aaa'), signed(wav, 'aaa')];
+  for (const value of [signed(mp3, 'aaa'), signed(wav, 'aaa'), signed(mp3, 'bbb'), signed(wav, 'ccc')])
+    assert.equal(isOwnedAudioReference('someone', value, saved, env), true, value);
+  assert.equal(isOwnedAudioReference('someone', signed('ace/11111111-5b1d-4c7a-9e11-0a6d2b7c8e44/master.mp3', 'aaa'), saved, env), false, 'another take is not theirs');
+  assert.equal(isOwnedAudioReference('someone', signed(mp3, 'aaa'), [], env), false, 'an account with no such take');
+  assert.equal(isOwnedAudioReference('someone', `http://s3.example.test/booth-bucket/${mp3}`, saved, env), false, 'https only');
+  /* The same worker key shape that YuE2 uses (three parts), so the library re-signs it like any YuE2 take. */
+  assert.match(mp3, /^[a-z0-9]+\/[0-9a-f-]{36}\/master\.mp3$/);
+  assert.match(WORKER_ANSWER.key, /^ace\/[^/]+\/master\.mp3$/);
 });

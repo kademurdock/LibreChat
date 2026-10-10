@@ -256,7 +256,7 @@ test('repayment validation', () => {
 test('services land on the right feature', () => {
   const cases = {
     voice_chat: 'voice', phone: 'phone', tts: 'speech', inworld_tts: 'speech', flux: 'pictures', fal_image: 'pictures',
-    fal_video: 'video', fal_audio: 'audio', google_lyria: 'audio', soundbooth_script: 'audio', runpod_yue2: 'audio',
+    fal_video: 'video', fal_audio: 'audio', google_lyria: 'audio', soundbooth_script: 'audio', runpod_yue2: 'audio', runpod_ace: 'audio',
     describe: 'describe', 'describe-uncertain': 'describe', tavily: 'search', game_table: 'rooms', clubhouse_bot: 'rooms',
     kade_make_file: 'other',
   };
