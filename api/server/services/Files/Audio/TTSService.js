@@ -1,6 +1,11 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { genAzureEndpoint, logAxiosError, applyAxiosProxyConfig } = require('@librechat/api');
+const {
+  genAzureEndpoint,
+  logAxiosError,
+  applyAxiosProxyConfig,
+  pipeSpeechAudio,
+} = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { scrubForSpeech } = require('./scrubForSpeech');
@@ -460,7 +465,6 @@ class TTSService {
         tenantId: req.user?.tenantId,
       }));
     try {
-      res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider(appConfig);
       const ttsSchema = appConfig?.speech?.tts?.[provider];
       const voice = await this.getVoice(ttsSchema, requestVoice, provider);
@@ -474,7 +478,7 @@ class TTSService {
           sessionKey: req.user && req.user.id,
           kadeStream,
         });
-        response.data.pipe(res);
+        await pipeSpeechAudio(response.data, res, response.headers?.['content-type']);
         return;
       }
 
@@ -492,10 +496,12 @@ class TTSService {
           });
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
-          await new Promise((resolve) => {
-            response.data.pipe(res, { end: chunk.isFinished });
-            response.data.on('end', resolve);
-          });
+          await pipeSpeechAudio(
+            response.data,
+            res,
+            response.headers?.['content-type'],
+            chunk.isFinished,
+          );
 
           if (chunk.isFinished) {
             break;
@@ -531,7 +537,6 @@ class TTSService {
    * @returns {Promise<void>}
    */
   async streamAudio(req, res) {
-    res.setHeader('Content-Type', 'audio/mpeg');
     const appConfig =
       req.config ??
       (await getAppConfig({
@@ -585,10 +590,12 @@ class TTSService {
             kadeTtsChars += (update && update.text ? update.text.length : 0); // [KadeUsage]
 
             logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
-            await new Promise((resolve) => {
-              response.data.pipe(res, { end: update.isFinished });
-              response.data.on('end', resolve);
-            });
+            await pipeSpeechAudio(
+              response.data,
+              res,
+              response.headers?.['content-type'],
+              update.isFinished,
+            );
 
             if (update.isFinished) {
               shouldContinue = false;

@@ -8,6 +8,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { cn, logger } from '~/utils';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useVoiceAudition } from '~/components/Audio/useVoiceAudition';
+import { speechAudioBlob } from '~/hooks/Audio/speech';
 import store from '~/store';
 import {
   saveAgentVoicePreference,
@@ -184,12 +185,8 @@ function useVoicePreview() {
         return;
       }
 
-      // The backend hardcodes Content-Type: audio/mpeg, but the Inworld proxy
-      // actually returns WAV bytes. Re-wrap the blob as audio/wav so the browser
-      // decodes it instead of firing onerror (which was untoggling the button).
-      const rawBlob = await res.blob();
-      const wavBlob = new Blob([rawBlob], { type: 'audio/wav' });
-      const url = URL.createObjectURL(wavBlob);
+      const audioBlob = await speechAudioBlob(await res.blob());
+      const url = URL.createObjectURL(audioBlob);
       urlRef.current = url;
 
       audio.onended = () => {

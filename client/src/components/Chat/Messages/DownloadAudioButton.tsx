@@ -6,6 +6,7 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation } from '~/data-provider';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
+import { speechAudioFile } from '~/hooks/Audio/speech';
 
 type RenderProps = {
   onClick: () => void;
@@ -29,7 +30,7 @@ async function shareOrDownload(blob: Blob, filename: string): Promise<void> {
     share?: (data?: { files?: File[]; title?: string }) => Promise<void>;
   };
   try {
-    const file = new File([blob], filename, { type: 'audio/mpeg' });
+    const file = new File([blob], filename, { type: blob.type });
     if (nav.canShare?.({ files: [file] }) === true && nav.share) {
       await nav.share({ files: [file], title: filename });
       return;
@@ -63,7 +64,8 @@ export default function DownloadAudioButton({
   const { mutate } = useTextToSpeechMutation({
     onSuccess: async (data: ArrayBuffer) => {
       try {
-        await shareOrDownload(new Blob([data], { type: 'audio/mpeg' }), 'voice-clip.mp3');
+        const { blob, extension } = speechAudioFile(data);
+        await shareOrDownload(blob, `voice-clip.${extension}`);
       } catch (e) {
         showToast({ message: `Could not save clip: ${(e as Error).message}`, status: 'error' });
       } finally {
@@ -72,7 +74,10 @@ export default function DownloadAudioButton({
     },
     onError: (error: unknown) => {
       setLoading(false);
-      showToast({ message: `Could not generate clip: ${(error as Error).message}`, status: 'error' });
+      showToast({
+        message: `Could not generate clip: ${(error as Error).message}`,
+        status: 'error',
+      });
     },
   });
 

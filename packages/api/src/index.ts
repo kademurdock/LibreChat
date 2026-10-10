@@ -64,6 +64,7 @@ export * from './endpoints';
 export * from './files';
 /* Storage */
 export * from './storage';
+export { pipeSpeechAudio } from './audio/speech';
 /* Tools */
 export * from './tools';
 /* web search */

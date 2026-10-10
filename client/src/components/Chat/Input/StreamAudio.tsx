@@ -10,16 +10,9 @@ import { getLatestText, logger } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
+import { consumeSpeechAudio, speechAudioBlob } from '~/hooks/Audio/speech';
+import { useSpeechRequest } from '~/hooks/Audio/request';
 import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
-
-function timeoutPromise(ms: number, message?: string) {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(message ?? 'Promise timed out')), ms),
-  );
-}
-
-const promiseTimeoutMessage = 'Reader promise timed out';
-const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
   const { token } = useAuthContext();
@@ -44,6 +37,9 @@ export default function StreamAudio({ index = 0 }) {
 
   const { conversationId: paramId } = useParams();
   const queryParam = paramId === 'new' ? paramId : (latestMessage?.conversationId ?? paramId ?? '');
+
+  const onCancelled = useCallback(() => setIsFetching(false), [setIsFetching]);
+  const speechRequest = useSpeechRequest(queryParam, activeRunId, voiceCallActive, onCancelled);
 
   const queryClient = useQueryClient();
   const getMessages = useCallback(
@@ -85,6 +81,7 @@ export default function StreamAudio({ index = 0 }) {
     }
 
     async function fetchAudio() {
+      const controller = speechRequest.begin();
       setIsFetching(true);
 
       try {
@@ -97,11 +94,13 @@ export default function StreamAudio({ index = 0 }) {
         let cacheKey = latestMessage?.text ?? '';
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
+        if (!speechRequest.isCurrent(controller)) return;
 
         setAudioRunId(activeRunId);
         if (cachedResponse) {
           logger.log('Audio found in cache');
-          const audioBlob = await cachedResponse.blob();
+          const audioBlob = await speechAudioBlob(await cachedResponse.blob());
+          if (!speechRequest.isCurrent(controller)) return;
           const blobUrl = URL.createObjectURL(audioBlob);
           setGlobalAudioURL(blobUrl);
           setIsFetching(false);
@@ -111,6 +110,7 @@ export default function StreamAudio({ index = 0 }) {
         logger.log('Fetching audio...', navigator.userAgent);
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
+          signal: controller.signal,
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             messageId: latestMessage?.messageId,
@@ -128,72 +128,47 @@ export default function StreamAudio({ index = 0 }) {
           throw new Error('Null Response body');
         }
 
-        const reader = response.body.getReader();
+        let streamed = false;
+        const audioBlob = await consumeSpeechAudio(response, {
+          cache: cacheTTS,
+          signal: controller.signal,
+          openStream: (type) => {
+            if (!speechRequest.isCurrent(controller))
+              throw new DOMException('Audio request cancelled', 'AbortError');
+            if (typeof MediaSource === 'undefined' || !MediaSource.isTypeSupported(type))
+              return null;
+            const mediaSource = new MediaSourceAppender(type);
+            streamed = true;
+            setGlobalAudioURL(mediaSource.mediaSourceUrl);
+            return {
+              append: (data) => mediaSource.addData(data),
+              close: () => mediaSource.close(),
+              cancel: () => mediaSource.cancel(),
+            };
+          },
+        });
 
-        const type = 'audio/mpeg';
-        const browserSupportsType =
-          typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported(type);
-        let mediaSource: MediaSourceAppender | undefined;
-        if (browserSupportsType) {
-          mediaSource = new MediaSourceAppender(type);
-          setGlobalAudioURL(mediaSource.mediaSourceUrl);
-        }
-
-        let done = false;
-        const chunks: ArrayBuffer[] = [];
-
-        while (!done) {
-          const readPromise = reader.read();
-          const { value, done: readerDone } = (await Promise.race([
-            readPromise,
-            timeoutPromise(maxPromiseTime, promiseTimeoutMessage),
-          ])) as ReadableStreamReadResult<ArrayBuffer>;
-
-          if (cacheTTS && value) {
-            chunks.push(value);
-          }
-          if (value && mediaSource) {
-            mediaSource.addData(value);
-          }
-          done = readerDone;
-        }
-
-        if (chunks.length) {
-          logger.log('Adding audio to cache');
+        if (!speechRequest.isCurrent(controller)) return;
+        if (audioBlob && cacheTTS) {
           const latestMessages = getMessages() ?? [];
           const targetMessage = latestMessages.find(
             (msg) => msg.messageId === latestMessage?.messageId,
           );
           cacheKey = targetMessage?.text ?? '';
-          if (!cacheKey) {
-            throw new Error('Cache key not found');
-          }
-          const audioBlob = new Blob(chunks, { type });
-          const cachedResponse = new Response(audioBlob);
-          await cache.put(cacheKey, cachedResponse);
-          if (!browserSupportsType) {
-            const unconsumedResponse = await cache.match(cacheKey);
-            if (!unconsumedResponse) {
-              throw new Error('Failed to fetch audio from cache');
-            }
-            const audioBlob = await unconsumedResponse.blob();
-            const blobUrl = URL.createObjectURL(audioBlob);
-            setGlobalAudioURL(blobUrl);
-          }
-          setIsFetching(false);
+          if (cacheKey) await cache.put(cacheKey, new Response(audioBlob));
+        }
+        if (audioBlob && !streamed && speechRequest.isCurrent(controller)) {
+          setGlobalAudioURL(URL.createObjectURL(audioBlob));
         }
 
         logger.log('Audio stream reading ended');
       } catch (error) {
-        if (error?.['message'] !== promiseTimeoutMessage) {
-          logger.log(promiseTimeoutMessage);
-          return;
-        }
+        if (!speechRequest.isCurrent(controller)) return;
         logger.error('Error fetching audio:', error);
         setIsFetching(false);
         setGlobalAudioURL(null);
       } finally {
-        setIsFetching(false);
+        if (speechRequest.finish(controller)) setIsFetching(false);
       }
     }
 
@@ -213,7 +188,9 @@ export default function StreamAudio({ index = 0 }) {
     cacheTTS,
     audioRef,
     voice,
+    voiceSpeed,
     token,
+    speechRequest,
   ]);
 
   useEffect(() => {
@@ -289,8 +266,8 @@ export default function StreamAudio({ index = 0 }) {
   return (
     // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
-      onPlaying={event => watchVoiceAudio(event.currentTarget, latestMessage?.messageId)}
-      onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
+      onPlaying={(event) => watchVoiceAudio(event.currentTarget, latestMessage?.messageId)}
+      onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
       ref={audioRef}
       controls
       controlsList="nodownload nofullscreen noremoteplayback"

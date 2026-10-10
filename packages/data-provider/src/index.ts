@@ -48,6 +48,7 @@ export { dataService };
 import * as dataService from './data-service';
 /* general helpers */
 export * from './utils';
+export * from './audio/format';
 export * from './actions';
 export { default as createPayload } from './createPayload';
 // /* react query hooks */
