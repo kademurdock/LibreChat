@@ -3325,8 +3325,9 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
     const takes = await takesFor(rows, req.user.id, !isKade(req.user));
     const factor = priceFactor(req.user);
     const references = audioReferenceGuard(String(req.user.id));
+    const access = { ace: aceOn(req.user) };
     const projects = await Promise.all(rows.map(async (r) => {
-      const v = projectView(r, factor, { ace: aceOn(req.user) });
+      const v = projectView(r, factor, access);
       await refreshReferences(v, references);
       v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
       return v;
