@@ -192,6 +192,7 @@ export {
   aceProjectOptions,
   aceProjectWhy,
   aceTakeFacts,
+  aceOutput,
   aceCost,
   aceGuide,
   aceQuality,

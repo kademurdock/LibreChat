@@ -392,6 +392,20 @@ const WORKER_ANSWER = {
   plan: { bpm: 88, keyscale: 'A minor', duration: 31 },
 };
 
+test('a worker answer is read with take 0 at the top level; the top level wins when it is there', () => {
+  assert.equal(ace.aceOutput(WORKER_ANSWER), WORKER_ANSWER, 'an answer shaped like the contract is the very same object');
+  const { key: _key, wav_key: _wavKey, url: _url, wav_url: _wavUrl, duration_s: _seconds, bytes: _bytes, seed: _seed, ...listed } = WORKER_ANSWER;
+  const lifted = ace.aceOutput(listed);
+  const [first] = WORKER_ANSWER.takes;
+  assert.deepEqual([lifted.key, lifted.wav_key, lifted.url, lifted.wav_url, lifted.duration_s, lifted.bytes, lifted.seed], [first.key, first.wav_key, first.url, first.wav_url, first.duration_s, first.bytes, first.seed]);
+  assert.equal(lifted.gpu, WORKER_ANSWER.gpu, 'everything else is kept');
+  assert.deepEqual(lifted.takes, WORKER_ANSWER.takes);
+  assert.equal(ace.aceOutput({ ...listed, seed: 9 }).seed, 9, 'a seed the worker reported at the top is kept');
+  const other = { ...WORKER_ANSWER, takes: [{ ...first, url: 'https://assets.test/ace/other/master.mp3' }] };
+  assert.equal(ace.aceOutput(other).url, WORKER_ANSWER.url, 'the top level wins');
+  for (const same of [{ error: 'The music model ran out of memory.' }, { takes: [] }, { takes: [{ index: 0, seed: 1 }] }, {}]) assert.equal(ace.aceOutput(same), same, JSON.stringify(same));
+});
+
 test('a finished take keeps the card, the checkpoint and what the planner chose, only when the worker said', () => {
   const input = ace.aceInput(base, {});
   assert.deepEqual(ace.aceTakeFacts(WORKER_ANSWER, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', bpm: 88, keyscale: 'A minor' });

@@ -378,6 +378,26 @@ export function aceTakeFacts(output: Output | undefined, input: Input): AceTakeF
   return facts;
 }
 
+/**
+ * A worker answer as the shared router reads it: take 0 at the top level, where `url` marks a finished take. The
+ * worker already answers that way; an answer that lists its takes but leaves take 0 out of the top level is lifted,
+ * so a drift between the two never turns a finished song into a failed one. The top level wins when it is there.
+ */
+export function aceOutput(output: Output): Output {
+  const first = output.takes?.[0];
+  if (output.url || !first?.url) return output;
+  return {
+    ...output,
+    key: first.key,
+    wav_key: first.wav_key,
+    url: first.url,
+    wav_url: first.wav_url,
+    duration_s: first.duration_s,
+    bytes: first.bytes,
+    seed: output.seed ?? first.seed,
+  };
+}
+
 /* ---------- the guide ---------- */
 
 /** The ACE-Step XL card for the booth guide: the settings in the order they are shown. */
@@ -494,7 +514,7 @@ export function createAceRouter(hooks: Hooks): Router {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
       /* How long the job waited for a GPU and how long it ran, kept beside the take as for YuE2. */
       const output = result.output && {
-        ...result.output,
+        ...aceOutput(result.output),
         queue_ms: result.delayTime,
         execution_ms: result.executionTime,
       };

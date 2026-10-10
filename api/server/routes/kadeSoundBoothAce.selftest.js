@@ -547,6 +547,21 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal(ace.aceProjectWhy(project.options), 'ACE-Step XL — an instrumental made on the sleeping music GPU');
   });
 
+  await t.test('an answer that lists its takes without take 0 at the top level still finishes as a song', async () => {
+    const res = await call('/render', { body: { ...song, seed: 61 }, user: id(), role: 'ADMIN' });
+    assert.equal(res.status, 200);
+    const { key: _key, wav_key: _wavKey, url: _url, wav_url: _wavUrl, duration_s: _seconds, bytes: _bytes, seed: _seed, ...listed } = workerAnswer(61);
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: listed, executionTime: 20000 });
+    const rows = assetRows.length;
+    const owner = (await Project.findById(res.data.projectId).lean()).user;
+    const status = await call(`/status/${res.data.jobId}`, { user: String(owner), role: 'ADMIN' });
+    assert.equal(status.data.state, 'done');
+    assert.equal(assetRows.length, rows + 1);
+    assert.equal(assetRows.at(-1).url, workerAnswer(61).takes[0].url, 'take 0 of the list is the song');
+    assert.equal(assetRows.at(-1).metadata.wavUrl, workerAnswer(61).takes[0].wav_url);
+    assert.equal(assetRows.at(-1).metadata.seconds, 95);
+  });
+
   await t.test('Stop cancels the RunPod job and keeps what is finished', async () => {
     const res = await call('/render', { body: { ...song, seed: 40 }, user: MEMBER_2, role: 'USER' }).then(async (blocked) => {
       assert.equal(blocked.status, 403);
