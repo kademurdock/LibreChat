@@ -246,3 +246,31 @@ test('with No singing on, the render body gets no words back', () => {
   assert.equal(held.lyrics, LYRICS);
   assert.match(held.note, /will not be sung until you turn it off/);
 });
+
+/* ACE-Step XL (Oct 10 2026) reads a direction and separate words like YuE2, so a three-box paste rendered straight away is sorted
+ * for it too. Whether a person may use ACE-Step XL is the route's gate, which runs before this guard (kadeSoundBoothAceGate.selftest.js). */
+test('the render guard sorts a pasted song for ACE-Step XL exactly as for YuE2, and leaves the other engines alone', () => {
+  for (const engine of ['yue2', 'ace']) {
+    const body = { engine, script: threeBox({ eol: '\r\n' }), lyrics: '[Verse]\nsomething older' };
+    const r = paste.applySongPasteToBody(body);
+    assert.ok(r, engine);
+    assert.equal(body.script, TAGS, engine);
+    assert.equal(body.lyrics, LYRICS, `${engine}: a pasted song brings its own words`);
+    assert.doesNotMatch(JSON.stringify(body), /no autotune|Tag Box|```/, engine);
+    assert.match(r.note, /Negative Tag Box was left out/);
+    assert.match(r.note, /replaced what was in the lyrics box/);
+    assert.deepEqual({ script: r.script, lyrics: r.lyrics, field: r.field }, { script: TAGS, lyrics: LYRICS, field: 'script' });
+    const inLyrics = { engine, script: '', lyrics: threeBox() };
+    assert.equal(paste.applySongPasteToBody(inLyrics).field, 'lyrics');
+    assert.equal(inLyrics.script, TAGS, `${engine}: an empty direction takes the Tag Box`);
+    assert.equal(inLyrics.lyrics, LYRICS);
+    const plain = { engine, script: 'A slow soul record.', lyrics: '[Verse]\nmine' };
+    assert.equal(paste.applySongPasteToBody(plain), null, `${engine}: ordinary text is not a paste`);
+    assert.equal(plain.lyrics, '[Verse]\nmine');
+  }
+  for (const engine of ['scenema', 'seed', 'stable', 'myvoice', 'ACE', '']) {
+    const body = { engine, script: threeBox() };
+    assert.equal(paste.applySongPasteToBody(body), null, `only the music engines are touched: ${engine}`);
+    assert.equal(body.script, threeBox());
+  }
+});
