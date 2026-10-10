@@ -12,6 +12,7 @@ const {
   monthlyBooks,
   monthlyWindow,
   MonthlyWindowError,
+  createAnnouncementRouter,
   diaryDiagnostic,
 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -2245,6 +2246,17 @@ router.post('/nudges/ingest', async (req, res) => {
  * can manage check-in schedules. Non-admins only ever see/touch their own.
  * -------------------------------------------------------------------------- */
 const BRIDGE_URL = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+router.use('/admin', createAnnouncementRouter({
+  db: () => mongoose.connection.db,
+  secret: () => process.env.BRIDGE_SECRET,
+  configured: () => require('~/server/services/kadeNudges').isPushConfigured(),
+  excludedUser: (id) => require('~/server/services/kadeNudges').isTestUser(id),
+  readBan: async (id) => {
+    if (!['true', '1'].includes(String(process.env.BAN_VIOLATIONS || '').toLowerCase())) return null;
+    return require('~/cache').getLogStores('ban').get(id);
+  },
+  send: (subscription, payload) => require('web-push').sendNotification(subscription, payload, { TTL: 86400, timeout: 15000 }),
+}));
 
 function bridgeSecretOk(res) {
   if (!process.env.BRIDGE_SECRET) {
