@@ -4,7 +4,11 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { watchVoiceAudio, stopWatchingVoiceAudio } from '~/components/Chat/character/voice-playback.mjs';
+import { speechAudioFile, speechAudioBlob } from '~/hooks/Audio/speech';
+import {
+  watchVoiceAudio,
+  stopWatchingVoiceAudio,
+} from '~/components/Chat/character/voice-playback.mjs';
 
 const createFormData = (text: string, voice: string, speed?: number) => {
   const formData = new FormData();
@@ -88,10 +92,10 @@ function useTextToSpeechExternal({
     promiseAudioRef.current = newAudio;
   };
 
-  const downloadAudio = (blobUrl: string) => {
+  const downloadAudio = (blobUrl: string, extension: string) => {
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = 'audio.mp3';
+    a.download = `audio.${extension}`;
     a.click();
     setDownloadFile(false);
   };
@@ -109,7 +113,7 @@ function useTextToSpeechExternal({
     onSuccess: async (data: ArrayBuffer, variables) => {
       try {
         const inputText = (variables.get('input') ?? '') as string;
-        const audioBlob = new Blob([data], { type: 'audio/mpeg' });
+        const { blob: audioBlob, extension } = speechAudioFile(data);
 
         if (cacheTTS && inputText) {
           const cache = await caches.open('tts-responses');
@@ -120,7 +124,7 @@ function useTextToSpeechExternal({
 
         const blobUrl = URL.createObjectURL(audioBlob);
         if (downloadFile) {
-          downloadAudio(blobUrl);
+          downloadAudio(blobUrl, extension);
         }
         autoPlayAudio(blobUrl);
       } catch (error) {
@@ -157,10 +161,11 @@ function useTextToSpeechExternal({
     if (!cachedResponse) {
       return startMutation(text, download);
     }
-    const audioBlob = await cachedResponse.blob();
+    const audioBlob = await speechAudioBlob(await cachedResponse.blob());
     const blobUrl = URL.createObjectURL(audioBlob);
     if (download) {
-      downloadAudio(blobUrl);
+      const { extension } = speechAudioFile(await audioBlob.arrayBuffer(), audioBlob.type);
+      downloadAudio(blobUrl, extension);
     } else {
       playAudioPromise(blobUrl);
     }
