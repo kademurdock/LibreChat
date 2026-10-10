@@ -478,15 +478,15 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal(row.why, 'ACE-Step XL — a song made on the sleeping music GPU, best quality');
     assert.deepEqual(row.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, seed: 5 });
     assert.equal(row.script, DIRECTION);
-    assert.deepEqual(row.carryTo, [], 'carry to and from ACE belongs to the next stage');
+    assert.deepEqual(row.carryTo.map((d) => d.engine), ['lyria', 'yue2'], 'an admin can carry an ACE project to the other song engines');
     assert.equal(row.takes.length, 1);
     assert.equal(row.takes[0].url, assetRows[0].url);
     assert.equal(row.takes[0].masterUrl, assetRows[0].metadata.wavUrl);
     assert.equal(row.takes[0].seconds, 95);
     assert.equal(row.takes[0].note, '');
     assert.equal(row.takes[0].title, 'Rain song');
-    assert.deepEqual(list.data.projects.find((p) => p.engine === 'yue2').carryTo.map((d) => d.engine), ['lyria'], 'YuE2 still carries only to Lyria');
-    assert.deepEqual(list.data.projects.find((p) => p.engine === 'lyria').carryTo.map((d) => d.engine), ['yue2']);
+    assert.deepEqual(list.data.projects.find((p) => p.engine === 'yue2').carryTo.map((d) => d.engine), ['lyria', 'ace'], 'and a YuE2 project can be carried to ACE, for this admin only');
+    assert.deepEqual(list.data.projects.find((p) => p.engine === 'lyria').carryTo.map((d) => d.engine), ['yue2', 'ace']);
     const one = await call(`/projects/${row.id}`, asAdmin());
     assert.equal(one.data.project.engine, 'ace');
     /* Her family are charged the platform factor; ACE is a trial Kade pays for, like YuE2, so it is quoted real. */

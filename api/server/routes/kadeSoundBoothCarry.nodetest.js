@@ -267,3 +267,170 @@ test('every copy of the trigger goes, wherever it sits, and a Lyrics heading kee
   const out = carry.carryOver({ ...YUE, script: lead + 'Warm neo-soul, ' + lead + 'Rhodes.' }, 'lyria');
   assert.strictEqual(out.draft.script, 'Warm neo-soul, Rhodes.');
 });
+
+/* ---------- ACE-Step XL (Oct 10 2026): behind ACE_ENABLED and the admin gate ---------- */
+const ACE_ON = { ace: true };
+const ACE = {
+  _id: 'ace987',
+  engine: 'ace',
+  title: 'The Long Way',
+  mode: 'easy',
+  sourceText: 'a slow country song about somebody driving home late',
+  script: 'Slow country ballad, 88 BPM, female alto lead, pedal steel.',
+  options: { quality: 'Best', length: '3:00', singing: 'Sung, with my lyrics', lyrics: LYRICS, seed: 42 },
+};
+const said = (out) => out.notes.join(' ');
+
+test('ACE-Step XL is invisible to everyone the route has not said may use it', () => {
+  assert.ok(carry.ENGINE_KEYS.includes('ace'), 'the table has it');
+  for (const opts of [undefined, {}, { ace: false }, { ace: 'yes' }, { ace: 1 }]) {
+    assert.deepStrictEqual(carry.destinationsFor('lyria', opts).map((d) => d.engine), ['yue2'], JSON.stringify(opts));
+    assert.deepStrictEqual(carry.destinationsFor('yue2', opts).map((d) => d.engine), ['lyria'], JSON.stringify(opts));
+    assert.deepStrictEqual(carry.destinationsFor('ace', opts), [], 'and it offers nothing of its own');
+    assert.deepStrictEqual(carry.canCarry('yue2', 'ace', opts), { ok: false, why: 'There is no engine by that name.' });
+    assert.deepStrictEqual(carry.canCarry('ace', 'yue2', opts), { ok: false, why: 'That project was not made by an engine this can carry.' });
+  }
+  for (const [project, to] of [[YUE, 'ace'], [LYRIA, 'ace'], [ACE, 'yue2'], [ACE, 'lyria']]) {
+    for (const helpers of [undefined, {}, { ace: false }, { toScreenplay: () => 'x' }]) {
+      const out = carry.carryOver(project, to, helpers);
+      assert.strictEqual(out.ok, false, `${project.engine} -> ${to} was allowed without access`);
+      assert.strictEqual(out.draft, undefined, 'and no draft came out');
+    }
+  }
+  /* The listing the library sends is what it was: no ace anywhere. */
+  for (const from of ['lyria', 'yue2', 'scenema', 'seed', 'stable']) {
+    assert.ok(!carry.destinationsFor(from).some((d) => d.engine === 'ace'), from);
+  }
+});
+
+test('with access it is on offer between the two song engines, and nowhere near a sound engine', () => {
+  assert.deepStrictEqual(carry.destinationsFor('lyria', ACE_ON).map((d) => d.engine), ['yue2', 'ace']);
+  assert.deepStrictEqual(carry.destinationsFor('yue2', ACE_ON).map((d) => d.engine), ['lyria', 'ace']);
+  assert.deepStrictEqual(carry.destinationsFor('ace', ACE_ON).map((d) => d.engine), ['lyria', 'yue2']);
+  assert.deepStrictEqual(carry.destinationsFor('ace', ACE_ON).map((d) => d.label), ['Lyria', 'YuE2']);
+  assert.deepStrictEqual(carry.destinationsFor('scenema', ACE_ON).map((d) => d.engine).sort(), ['seed', 'stable']);
+  assert.deepStrictEqual(carry.destinationsFor('stable', ACE_ON).map((d) => d.engine).sort(), ['scenema', 'seed']);
+  for (const from of carry.ENGINE_KEYS) {
+    for (const d of carry.destinationsFor(from, ACE_ON)) {
+      assert.strictEqual(carry.canCarry(from, d.engine, ACE_ON).ok, true, `${from} offered ${d.engine} but refuses it`);
+    }
+  }
+  const trade = carry.canCarry('ace', 'stable', ACE_ON);
+  assert.strictEqual(trade.ok, false);
+  assert.match(trade.why, /ACE-Step XL makes music and Stable Audio makes sound/);
+  assert.strictEqual(carry.canCarry('ace', 'ace', ACE_ON).ok, false);
+  assert.match(carry.canCarry('ace', 'ace', ACE_ON).why, /already a ACE-Step XL project/);
+});
+
+test('YuE2 to ACE keeps the words, their tags and the seed, and says what stayed behind', () => {
+  const before = JSON.stringify(YUE);
+  const out = carry.carryOver({ ...YUE, options: { ...YUE.options, reference_voice_url: 'https://example.invalid/cover.wav', singing: 'Sung, with my lyrics' } }, 'ace', ACE_ON);
+  assert.strictEqual(out.ok, true, out.why);
+  assert.strictEqual(out.draft.engine, 'ace');
+  assert.strictEqual(out.draft.options.lyrics, LYRICS, 'the words changed on the way');
+  assert.match(out.draft.options.lyrics, /\[Verse 1\][\s\S]*\[Chorus\]/, 'the section tags did not survive');
+  assert.strictEqual(out.draft.options.seed, 42);
+  assert.strictEqual(out.draft.options.singing, 'Sung, with my lyrics');
+  assert.strictEqual(out.draft.script, YUE.script, 'the style line comes across as it was');
+  assert.strictEqual(out.draft.sourceText, YUE.sourceText);
+  assert.strictEqual(out.draft.title, 'The Long Way (on ACE-Step XL)');
+  assert.strictEqual(out.draft.state, 'draft');
+  assert.deepStrictEqual(out.draft.options.carriedFrom, { project: 'def456', engine: 'yue2' });
+  for (const key of ['band', 'abc', 'weirdness', 'guidance', 'count', 'reference_voice_url', 'quality', 'length']) {
+    assert.strictEqual(out.draft.options[key], undefined, `${key} was carried to an engine that has no such thing`);
+  }
+  const text = said(out);
+  assert.match(text, /Your lyrics and their section tags came across whole/);
+  for (const word of ['trained style', 'composition score', 'weirdness', 'guidance']) assert.ok(text.includes(word), `nothing told her ${word} was left behind`);
+  assert.match(text, /ACE-Step XL has no trained style, which only YuE2 has, no composition score, no weirdness, no guidance, so those were left behind\./);
+  assert.match(text, /ACE-Step XL makes one take at a time, so the 2 takes you asked for became one\./);
+  assert.match(text, /ACE-Step XL does not take an imported recording, so that stayed behind\./);
+  assert.strictEqual(out.rewriteAdvised, false, 'both read a style line and separate words');
+  assert.strictEqual(JSON.stringify(YUE), before, 'the original project was touched');
+});
+
+test('ACE to YuE2 keeps the words, their tags and the seed, and says which of its own choices were left', () => {
+  const before = JSON.stringify(ACE);
+  const out = carry.carryOver(ACE, 'yue2', ACE_ON);
+  assert.strictEqual(out.ok, true, out.why);
+  assert.strictEqual(out.draft.engine, 'yue2');
+  assert.strictEqual(out.draft.options.lyrics, LYRICS);
+  assert.strictEqual(out.draft.options.seed, 42);
+  assert.strictEqual(out.draft.options.singing, 'Sung, with my lyrics');
+  assert.strictEqual(out.draft.script, ACE.script);
+  assert.strictEqual(out.draft.title, 'The Long Way (on YuE2)');
+  assert.deepStrictEqual(out.draft.options.carriedFrom, { project: 'ace987', engine: 'ace' });
+  assert.strictEqual(out.draft.options.quality, undefined);
+  assert.strictEqual(out.draft.options.length, undefined);
+  const text = said(out);
+  assert.match(text, /Your lyrics and their section tags came across whole/);
+  assert.match(text, /YuE2 has no quality choice, no length choice, so those were left behind\./);
+  assert.strictEqual(JSON.stringify(ACE), before, 'the original project was touched');
+  /* The usual Fast and Match my lyrics are not worth a sentence; a count above one is only ACE's to drop. */
+  const plain = carry.carryOver({ ...ACE, options: { ...ACE.options, quality: 'Fast', length: 'Match my lyrics' } }, 'yue2', ACE_ON);
+  assert.doesNotMatch(said(plain), /quality choice|length choice|left behind/);
+  const onlyLength = carry.carryOver({ ...ACE, options: { ...ACE.options, quality: 'Fast' } }, 'lyria', ACE_ON);
+  assert.match(said(onlyLength), /Lyria has no length choice, so that was left behind\./);
+  assert.doesNotMatch(said(carry.carryOver({ ...YUE, options: { ...YUE.options, count: 3 } }, 'lyria')), /one take at a time/);
+});
+
+test('ACE to Lyria and Lyria to ACE: the words come out of, and go back into, the right place', () => {
+  const toLyria = carry.carryOver(ACE, 'lyria', ACE_ON);
+  assert.strictEqual(toLyria.ok, true, toLyria.why);
+  assert.strictEqual(toLyria.draft.options.lyrics, LYRICS);
+  assert.strictEqual(toLyria.draft.options.seed, 42);
+  assert.strictEqual(toLyria.draft.options.instrumental, false);
+  assert.strictEqual(toLyria.rewriteAdvised, true, 'a style line is not a Lyria brief');
+  const fromLyria = carry.carryOver(LYRIA, 'ace', ACE_ON);
+  assert.strictEqual(fromLyria.ok, true, fromLyria.why);
+  assert.strictEqual(fromLyria.draft.options.lyrics, LYRICS, 'the lyrics heading was split out of the brief');
+  assert.doesNotMatch(fromLyria.draft.script, /Lyrics:/i);
+  assert.match(fromLyria.draft.script, /pedal steel/);
+  assert.strictEqual(fromLyria.draft.options.seed, 42);
+  assert.strictEqual(fromLyria.draft.options.singing, 'Sung, with my lyrics');
+  assert.strictEqual(fromLyria.rewriteAdvised, true);
+  assert.match(said(fromLyria), /ACE-Step XL reads a concise style direction and separate lyrics\. Check the direction for the genre, instruments and voice; you can shorten it or ask the desk to format it\./);
+  /* The YuE2 sentence is the one it always was. */
+  assert.match(said(carry.carryOver(LYRIA, 'yue2')), /YuE2 reads a concise style direction and separate lyrics\. Check the direction for the genre, instruments and voice; you can shorten it or ask the desk to format it\./);
+});
+
+test('an instrumental crosses in both directions, and a song with no words is warned in its own engine’s name', () => {
+  const instrumental = { ...ACE, script: 'A slow instrumental theme.', options: { singing: 'Instrumental, no singing', lyrics: LYRICS, quality: 'Fast', length: 'Match my lyrics' } };
+  const toYue = carry.carryOver(instrumental, 'yue2', ACE_ON);
+  assert.strictEqual(toYue.draft.options.singing, 'Instrumental, no singing');
+  assert.strictEqual(toYue.draft.options.lyrics, LYRICS, 'stored lyrics stay available');
+  assert.doesNotMatch(said(toYue), /will not sing without words/);
+  assert.match(said(toYue), /Instrumental mode came across/);
+  const toLyria = carry.carryOver(instrumental, 'lyria', ACE_ON);
+  assert.strictEqual(toLyria.draft.options.instrumental, true);
+  const fromLyria = carry.carryOver({ ...LYRIA, script: 'An instrumental.', options: { instrumental: true } }, 'ace', ACE_ON);
+  assert.strictEqual(fromLyria.draft.options.singing, 'Instrumental, no singing');
+  assert.doesNotMatch(said(fromLyria), /will not sing without words|instrumental switch/);
+  const fromYue = carry.carryOver({ ...YUE, options: { singing: 'Instrumental, no singing' } }, 'ace', ACE_ON);
+  assert.strictEqual(fromYue.draft.options.singing, 'Instrumental, no singing');
+  /* No words and not an instrumental: each engine is warned by its own name. */
+  assert.match(said(carry.carryOver({ ...LYRIA, script: 'A song.', options: {} }, 'ace', ACE_ON)), /ACE-Step XL will not sing without words, so put something in Lyrics before you generate\./);
+  assert.match(said(carry.carryOver({ ...LYRIA, script: 'A song.', options: {} }, 'yue2', ACE_ON)), /YuE2 will not sing without words, so put something in Lyrics before you generate\./);
+});
+
+test('a carry to or from ACE never touches the original and never carries an engine-private word', () => {
+  const frozen = JSON.parse(JSON.stringify(ACE));
+  const deep = (value) => { Object.freeze(value); for (const v of Object.values(value)) if (v && typeof v === 'object') deep(v); return value; };
+  for (const project of [deep(structuredClone(ACE)), deep(structuredClone(YUE)), deep(structuredClone(LYRIA))]) {
+    for (const to of ['ace', 'yue2', 'lyria']) {
+      if (to === project.engine) continue;
+      const out = carry.carryOver(project, to, ACE_ON);
+      assert.strictEqual(out.ok, true, `${project.engine} -> ${to}: ${out.why}`);
+      assert.strictEqual(out.draft.state, 'draft');
+      for (const key of ['assets', 'jobs', 'parts', 'costUSD', 'lastRenderAt', 'stitchedAssetId']) assert.strictEqual(out.draft[key], undefined, key);
+      assert.strictEqual(out.draft.sourceText, project.sourceText, 'her typed words survive the hop');
+    }
+  }
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ACE)), frozen);
+  /* steps is still not shared: YuE2's number would mean nothing to ACE. */
+  assert.strictEqual(carry.carryOver({ ...YUE, options: { ...YUE.options, steps: 1800 } }, 'ace', ACE_ON).draft.options.steps, undefined);
+  /* A project made by ACE then carried round the loop keeps its title tidy. */
+  const there = carry.carryOver(ACE, 'yue2', ACE_ON);
+  const back = carry.carryOver({ ...YUE, title: there.draft.title }, 'ace', ACE_ON);
+  assert.strictEqual(back.draft.title, 'The Long Way (on ACE-Step XL)');
+});

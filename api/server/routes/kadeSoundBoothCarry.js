@@ -46,6 +46,17 @@ const ENGINES = {
     script: 'style',
     keeps: ['lyrics', 'seed', 'count', 'reference_voice_url', 'singing'],
   },
+  /* ACE-Step XL (Oct 10 2026): the same shape as YuE2 (a style line, separate lyrics, a Singing
+   * choice) with no covers and one take per request. `gated` means it is behind ACE_ENABLED and the
+   * admin gate (packages/api music/ace.ts): it is invisible, and refused, unless the caller passes
+   * `{ ace: true }` for a person who may use it. */
+  ace: {
+    label: 'ACE-Step XL',
+    kind: 'music',
+    script: 'style',
+    keeps: ['lyrics', 'seed', 'singing'],
+    gated: true,
+  },
   scenema: {
     label: 'AuK',
     kind: 'voice',
@@ -68,17 +79,26 @@ const ENGINES = {
 
 const ENGINE_KEYS = Object.keys(ENGINES);
 
+/** Whether this caller may see the engine at all. A gated engine (ACE-Step XL) is open only to a
+ *  person the route says may use it (`opts.ace`); without that it is as good as absent, so with
+ *  ACE off every list and every answer here is exactly what it was before it existed. */
+function open(engine, opts) {
+  const known = ENGINES[engine];
+  return !!known && (!known.gated || !!(opts && opts.ace === true));
+}
+
 /** Which engines it makes sense to offer, given where she is now. Music and
  *  sound are separate trades; nothing useful comes of turning a song into a
- *  door slam, and pretending otherwise would be a menu full of wrong answers. */
-function destinationsFor(engine) {
+ *  door slam, and pretending otherwise would be a menu full of wrong answers.
+ *  `opts.ace` is true for a person who may use ACE-Step XL; for anyone else it is never offered. */
+function destinationsFor(engine, opts = {}) {
   const from = ENGINES[engine];
-  if (!from) {
+  if (!from || !open(engine, opts)) {
     return [];
   }
   const sound = new Set(['voice', 'effects']);
   return ENGINE_KEYS.filter((k) => {
-    if (k === engine) {
+    if (k === engine || !open(k, opts)) {
       return false;
     }
     const to = ENGINES[k];
@@ -86,17 +106,17 @@ function destinationsFor(engine) {
   }).map((k) => ({ engine: k, label: ENGINES[k].label }));
 }
 
-function canCarry(from, to) {
-  if (!ENGINES[from]) {
+function canCarry(from, to, opts = {}) {
+  if (!open(from, opts)) {
     return { ok: false, why: 'That project was not made by an engine this can carry.' };
   }
-  if (!ENGINES[to]) {
+  if (!open(to, opts)) {
     return { ok: false, why: 'There is no engine by that name.' };
   }
   if (from === to) {
     return { ok: false, why: `That is already a ${ENGINES[to].label} project.` };
   }
-  if (destinationsFor(from).some((d) => d.engine === to)) {
+  if (destinationsFor(from, opts).some((d) => d.engine === to)) {
     return { ok: true };
   }
   const trade = (k) => (ENGINES[k].kind === 'music' ? 'music' : 'sound and speech');
@@ -190,14 +210,16 @@ const SHARED_KNOBS = [
  *
  * @param {object} project  { engine, title, sourceText, script, options, voiceSeed }
  * @param {string} to       the destination engine key
- * @param {object} helpers  { toScreenplay } -- AuK XML is unreadable to every
+ * @param {object} helpers  { toScreenplay, ace } -- AuK XML is unreadable to every
  *                          other engine and to a person, so the route hands in
  *                          the converter it already has rather than this file
- *                          growing an XML parser.
+ *                          growing an XML parser. `ace` is true only for a person
+ *                          who may use ACE-Step XL; without it that engine is
+ *                          neither a source nor a destination.
  */
 function carryOver(project, to, helpers = {}) {
   const from = String((project && project.engine) || '');
-  const check = canCarry(from, to);
+  const check = canCarry(from, to, helpers);
   if (!check.ok) {
     return { ok: false, why: check.why };
   }
@@ -251,12 +273,12 @@ function carryOver(project, to, helpers = {}) {
   }
   const instrumental = oldOpts.instrumental === true || /^instrumental\b/i.test(String(oldOpts.singing || ''));
   if (src.kind === 'music' && dst.kind === 'music') {
-    if (to === 'yue2') options.singing = instrumental ? 'Instrumental, no singing' : 'Sung, with my lyrics';
+    if (to === 'yue2' || to === 'ace') options.singing = instrumental ? 'Instrumental, no singing' : 'Sung, with my lyrics';
     if (to === 'lyria') options.instrumental = instrumental;
     if (instrumental) notes.push('Instrumental mode came across. Any stored lyrics stay available but will not be sung.');
   }
-  if (to === 'yue2' && !options.lyrics && !instrumental) {
-    notes.push('YuE2 will not sing without words, so put something in Lyrics before you generate.');
+  if ((to === 'yue2' || to === 'ace') && !options.lyrics && !instrumental) {
+    notes.push(`${dst.label} will not sing without words, so put something in Lyrics before you generate.`);
   }
 
   /* ---- the knobs that mean the same thing on both sides ---------------- */
@@ -300,6 +322,14 @@ function carryOver(project, to, helpers = {}) {
   if (oldOpts.guidance !== undefined && to !== 'yue2') {
     dropped.push('guidance');
   }
+  /* ACE-Step XL's own choices (its Quality and Length) mean nothing to the engines it can go to. The
+   * ones left at the usual Fast and Match my lyrics are not worth a sentence. */
+  if (from === 'ace' && oldOpts.quality !== undefined && oldOpts.quality !== 'Fast') {
+    dropped.push('quality choice');
+  }
+  if (from === 'ace' && oldOpts.length !== undefined && oldOpts.length !== 'Match my lyrics') {
+    dropped.push('length choice');
+  }
   if (oldOpts.instrumental && dst.kind !== 'music' && !dst.keeps.includes('instrumental')) {
     dropped.push('instrumental switch');
   }
@@ -314,6 +344,10 @@ function carryOver(project, to, helpers = {}) {
       `${dst.label} has no ${dropped.join(', no ')}, so ${dropped.length === 1 ? 'that was' : 'those were'} left behind.`,
     );
   }
+  /* ACE-Step XL makes one take per request (another take is another request), so a count above one is not kept. */
+  if (to === 'ace' && Number(oldOpts.count) > 1) {
+    notes.push(`${dst.label} makes one take at a time, so the ${Number(oldOpts.count)} takes you asked for became one. Make music again for another.`);
+  }
 
   /* ---- whether the style paragraph is worth rewriting ------------------- */
   let rewriteAdvised = false;
@@ -325,7 +359,7 @@ function carryOver(project, to, helpers = {}) {
       );
     } else if (dst.script === 'style' && src.script === 'brief') {
       notes.push(
-        'YuE2 reads a concise style direction and separate lyrics. Check the direction for the genre, instruments and voice; you can shorten it or ask the desk to format it.',
+        `${dst.label} reads a concise style direction and separate lyrics. Check the direction for the genre, instruments and voice; you can shorten it or ask the desk to format it.`,
       );
     } else if (dst.script === 'scene') {
       notes.push(

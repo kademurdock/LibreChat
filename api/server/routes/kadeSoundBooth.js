@@ -65,6 +65,37 @@ function withSongPasteNote(data, applied) {
   out.pasteSorted = { script: applied.script, lyrics: typeof applied.lyrics === 'string' ? applied.lyrics : null };
   return out;
 }
+/* ============== ACE-Step XL (Oct 10 2026; packages/api music/ace.ts) ==============
+ * A second song engine beside YuE2 on its own RunPod endpoint. ACE_ENABLED=1 turns it on, and while
+ * ACE_ADMIN_ONLY is on (the default) only an admin account sees or uses it; with the flag unset the guide, every
+ * request and every answer is exactly as before. Like MY_VOICE_READY, a harness with its own @librechat/api
+ * stand-in simply has no ACE: nothing is mounted and every check answers no. */
+const ACE_READY = [createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
+const aceOn = (user) => ACE_READY && aceAllowed(user);
+/* The router (its Mongo model and indexes, its 20 second timer) is only created when ACE is switched on or an endpoint is
+ * set. With neither, which is how it ships, nothing of it exists. An endpoint without the flag still mounts it, so takes
+ * already queued keep being followed after ACE_ENABLED is turned off. */
+const ACE_MOUNT = ACE_READY && (aceEnabled() || aceConfigured());
+/* A request for engine ace is answered here, in a plain sentence, before any router: an unknown engine would otherwise
+ * fall through to the main /render and be performed as an AuK speech script. It is the FIRST thing a render meets, ahead of
+ * the paste sorting below, so a person without access gets the refusal and nothing of theirs is sorted, quoted or queued. */
+if (ACE_READY) router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
+  if (!req.body || req.body.engine !== 'ace') return next();
+  return requireJwtAuth(req, res, () => {
+    const verdict = aceAccess(req.user);
+    if (verdict.ok && ACE_MOUNT) return next();
+    const error = verdict.ok ? 'ACE-Step XL is not configured yet.' : verdict.error;
+    logger.warn(`[soundbooth/render] ace REFUSED user=${req.user && req.user.id}: ${error}`);
+    return res.status(verdict.ok ? 503 : 403).json({ error });
+  });
+});
+/* The same plain sentence for every other way in that names ACE-Step XL: the writing desk (/script) and the carry routes.
+ * null when this person may use it (or the booth has no ACE and the caller handles the engine as unknown). */
+function aceRefusal(user) {
+  if (!ACE_READY) return null;
+  const verdict = aceAccess(user);
+  return verdict.ok ? null : verdict.error;
+}
 router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   const applied = songPaste.applySongPasteToBody(req.body);
   if (applied) {
@@ -217,31 +248,9 @@ router.use(createYueRouter({
   },
 }));
 
-/* ============== ACE-Step XL (Oct 10 2026; packages/api music/ace.ts) ==============
- * A second song engine beside YuE2 on its own RunPod endpoint. ACE_ENABLED=1 turns it on, and while
- * ACE_ADMIN_ONLY is on (the default) only an admin account sees or uses it; with the flag unset the guide, every
- * request and every answer is exactly as before. Like MY_VOICE_READY, a harness with its own @librechat/api
- * stand-in simply has no ACE: nothing is mounted and every check answers no. */
-const ACE_READY = [createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
-const aceOn = (user) => ACE_READY && aceAllowed(user);
-/* The router (its Mongo model and indexes, its 20 second timer) is only created when ACE is switched on or an endpoint is
- * set. With neither, which is how it ships, nothing of it exists. An endpoint without the flag still mounts it, so takes
- * already queued keep being followed after ACE_ENABLED is turned off. */
-const ACE_MOUNT = ACE_READY && (aceEnabled() || aceConfigured());
+/* ============== ACE-Step XL, the router (the gate and the checks are above, before the paste sorting) ============== */
 /* A job the project row shows as another word: an unconfirmed take is failed, one being saved is still running. */
 const ACE_PROJECT_STATE = { uncertain: 'failed', saving: 'running' };
-/* A request for engine ace is answered here, in a plain sentence, before any router: an unknown engine would otherwise
- * fall through to the main /render and be performed as an AuK speech script. */
-if (ACE_READY) router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
-  if (!req.body || req.body.engine !== 'ace') return next();
-  return requireJwtAuth(req, res, () => {
-    const verdict = aceAccess(req.user);
-    if (verdict.ok && ACE_MOUNT) return next();
-    const error = verdict.ok ? 'ACE-Step XL is not configured yet.' : verdict.error;
-    logger.warn(`[soundbooth/render] ace REFUSED user=${req.user && req.user.id}: ${error}`);
-    return res.status(verdict.ok ? 503 : 403).json({ error });
-  });
-});
 if (ACE_MOUNT) router.use(createAceRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
@@ -699,14 +708,16 @@ function cleanLyrics(raw) {
 
 function systemPrompt({ engine, mode }) {
   const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
-  const yue = `YUE2 MUSIC FORMAT (the only format you may output):
+  /* ACE-Step XL takes the YuE2 desk path unchanged (the same style line, Lyrics: heading and section tags); only the
+   * name in the heading differs, and the YuE2 text below is byte-identical to what it was. */
+  const yue = `${engine === 'ace' ? 'ACE-STEP XL' : 'YUE2'} MUSIC FORMAT (the only format you may output):
 Write a concise style direction in 25 to 45 words, one or two compact sentences: language, genre, mood, defining instruments, lead vocal character and rhythmic feel. Do not narrate the arrangement section by section. Keep production directions out of the lyrics. Do not use XML, dialogue notation, a Negative Tag Box, trained-style trigger words or a Lyria timeline. The lyrics and section layout determine the song's length; a prose duration is a creative aim, not an exact timing control.
 ${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. Backing vocals and ad-libs go in (parentheses): after the lead phrase on the same line, or on their own line when the backing voice sings alone. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
 No code fence, no preamble, no headings other than Lyrics:.`;
-  const grammar = engine === 'yue2' ? yue : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
+  const grammar = engine === 'yue2' || engine === 'ace' ? yue : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
     mode === 'write'
-      ? (engine === 'lyria' || engine === 'yue2')
+      ? (engine === 'lyria' || engine === 'yue2' || engine === 'ace')
         ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the direction for them in the format below. If they did not say how long, aim for a full song of about four minutes when it has sung words, or two minutes when it is instrumental.${engine === 'lyria' ? ' Say the requested length in the technical line.' : ' Keep the style concise and use the lyric structure for a complete song.'} If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : engine === 'seed'
           ? `The user has given you a DESCRIPTION of a piece of audio they want made. Write the actual piece in the format below. Honor their requested form and length, including a short ident, jingle or a single narrated voice. When they ask for a story, scene or conversation with people, and have not asked for narration, a monologue or no dialogue, write a developed scene carried by sustained, natural dialogue, with a complete action and ending. Give the people distinct wants and concrete things to do; let their replies change what happens instead of narrating a synopsis of their conversation. Unless they ask for a short piece, use the available space: usually 1,600 to 2,000 characters including concise directions, within the 2,048-character cap. Vary the action and pacing to suit this particular idea; do not impose a two-turn exchange, an obligatory twist or a stock closing line. For music, ambience or effects without speech, keep it wordless and do not pad the description to reach that character range. Do not claim an exact output duration.`
@@ -1716,6 +1727,15 @@ async function notifyDraft(userId, ok) {
 
 router.post('/script', requireJwtAuth, express.json({ limit: '128kb' }), (req, res) => {
   const b = req.body || {};
+  /* ACE-Step XL's desk is the song desk (below), so a person without access is refused here, before a draft job, a writing
+   * call or a "draft did not finish" notice: an unknown engine would otherwise be written up as an AuK speech script. */
+  if (b.engine === 'ace') {
+    const refused = aceRefusal(req.user);
+    if (refused) {
+      logger.warn(`[soundbooth/script] ace REFUSED user=${req.user && req.user.id}: ${refused}`);
+      return res.status(403).json({ error: refused });
+    }
+  }
   if (b.thinkMode !== undefined && !['auto', 'low', 'medium', 'high'].includes(b.thinkMode)) {
     return res.status(400).json({ error: 'Choose Auto, Low, Medium or High for writing thought.' });
   }
@@ -1783,14 +1803,14 @@ function songPasteScriptResult(engine, mode, pasted, b, field = 'script', factor
   const readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
   const problem = engine === 'lyria'
     ? checkMusic(placed.script, placed.lyrics)
-    : !placed.lyrics.trim() ? 'YuE2 will not sing without words, and the paste had no Lyrics Box. Add the words under Lyrics before you generate.' : null;
+    : !placed.lyrics.trim() ? `${engine === 'ace' ? 'ACE-Step XL' : 'YuE2'} will not sing without words, and the paste had no Lyrics Box. Add the words under Lyrics before you generate.` : null;
   return {
     engine,
     mode,
     script: draft,
     screenplay: draft,
     readback,
-    estimate: engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', placed.script, factor),
+    estimate: engine === 'yue2' || engine === 'ace' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor('lyria', placed.script, factor),
     problem,
     repairs: [],
     mismatch: null,
@@ -1818,14 +1838,17 @@ function verseCount(script) {
 async function scriptHandler(req, res) {
   try {
     let b = req.body || {};
-    const engine = ['seed', 'lyria', 'yue2'].includes(b.engine) ? b.engine : 'scenema';
+    /* The song engines: Lyria and YuE2, and ACE-Step XL for a person who may use it (the route has already refused
+     * anyone else who named it). ACE takes the YuE2 desk path: the same style line, Lyrics: heading and section tags. */
+    const songEngines = ['lyria', 'yue2', ...(aceOn(req.user) ? ['ace'] : [])];
+    const engine = ['seed', ...songEngines].includes(b.engine) ? b.engine : 'scenema';
     const mode = b.mode === 'write' ? 'write' : 'format';
     /* A whole song pasted into the lyrics box: with no idea to write up it is
      * answered as a paste; with one, the writer gets only the Lyrics Box as her
      * words (never the headings or the negative tags), and the answer says so
      * and hands back the sorted words (`pasteSorted`). */
     let lyricsPaste = null;
-    if (engine === 'lyria' || engine === 'yue2') {
+    if (songEngines.includes(engine)) {
       const pasted = songPaste.splitSongPaste(b.text);
       if (pasted) {
         logger.info(`[soundbooth/script] ${engine}/${mode} user=${req.user.id} pasted song sorted without the writer: boxes=${pasted.boxes.join(',')}`);
@@ -1864,9 +1887,9 @@ async function scriptHandler(req, res) {
     const mood = MOODS[b.mood] || null;
     const lines = [];
     lines.push(mode === 'write' ? `WHAT THEY WANT MADE:\n${text}` : `THEIR WORDS:\n${text}`);
-    const instrumentalDraft = ['lyria', 'yue2'].includes(engine) && (b.instrumental === true || /^instrumental\b/i.test(String(b.singing || '')));
+    const instrumentalDraft = songEngines.includes(engine) && (b.instrumental === true || /^instrumental\b/i.test(String(b.singing || '')));
     if (instrumentalDraft) lines.push('INSTRUMENTAL MODE IS SELECTED: write only the music direction. No singing, lyrics or lyric sections.');
-    if (['lyria', 'yue2'].includes(engine) && !instrumentalDraft && typeof b.lyrics === 'string' && b.lyrics.trim()) {
+    if (songEngines.includes(engine) && !instrumentalDraft && typeof b.lyrics === 'string' && b.lyrics.trim()) {
       lines.push(`THEIR EXISTING LYRICS: Keep these words exactly and shape the music around them.\n${b.lyrics.slice(0, 8000)}`);
     }
     /* Oct 2 2026: AuK's voice is a sentence she wrote (or picked off the voice wheel). The desk
@@ -1922,7 +1945,7 @@ async function scriptHandler(req, res) {
     const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true || b.deepWrite === true, thinkMode: b.thinkMode });
     /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
      * lyrics are hers and are never scanned or touched. */
-    const ownsLyrics = mode === 'write' && ['lyria', 'yue2'].includes(engine) && !(typeof b.lyrics === 'string' && b.lyrics.trim());
+    const ownsLyrics = mode === 'write' && songEngines.includes(engine) && !(typeof b.lyrics === 'string' && b.lyrics.trim());
     const wantsWords = ownsLyrics && !instrumentalDraft && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
     /* Part 293 follow-up: a list of shapes in the prompt came back as one house shape
      * ([Final Chorus] in 10 of 10 songs), so the desk draws ONE section map per request,
@@ -1941,7 +1964,7 @@ async function scriptHandler(req, res) {
      * are welcome; the child, the App Review seat, the Kids choir style and
      * anyone unknown get a clean note. Never throws; fails clean. The audit
      * below reuses this same system prompt, so it keeps the same note. */
-    const audience = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
+    const audience = mode === 'write' && songEngines.includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
     const requestedTitle = typeof b.title === 'string' ? b.title.trim().slice(0, 80) : '';
     const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode, title: requestedTitle }, getAgent, audience);
     const first = await callModel({
@@ -1961,7 +1984,7 @@ async function scriptHandler(req, res) {
         throw error;
       }
     }
-    if (mode === 'write' && ['lyria', 'yue2'].includes(engine) && first.finishReason === 'length') {
+    if (mode === 'write' && songEngines.includes(engine) && first.finishReason === 'length') {
       logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: first.costUSD,
         metadata: { engine, mode, costMeasured: first.measured, model: writingSettings.model, refused: 'output limit', ms: Date.now() - started, inTok: first.usage.prompt_tokens, outTok: first.usage.completion_tokens },
       }).catch(() => {});
@@ -2059,7 +2082,10 @@ async function scriptHandler(req, res) {
     const repeatsInDraft = measuresRepeats ? lyricRepeatIssues(raw, text) : [];
     const timeLeft = (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000;
     /* Part 217: every originated song gets the producer's audit when there is time
-     * for it; flagged tells and a missing verse ride in the same call. */
+     * for it; flagged tells and a missing verse ride in the same call.
+     * ACE-Step XL (Oct 10 2026) runs this same audit unchanged, on the YuE2 desk path. If its lyrics ever need an audit of
+     * their own, this is the place: a check for what ACE reads badly (very long lines, a section tag it does not know,
+     * more than 4096 characters, which aceInput refuses) would be one more gate beside the ones above, with no new call. */
     if (wantsWords && timeLeft >= 45000) {
       try {
         const fixed = await callModel({
@@ -2154,8 +2180,8 @@ async function scriptHandler(req, res) {
       return res.status(422).json({ error: 'This song has to be clean, and the draft came back with words it cannot have. Your idea is kept. Try again.' });
     }
     if (ownsLyrics) raw = formatGeneratedLyricsDraft(fixStageDirections(raw));
-    const titled = mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(raw) : { script: raw };
-    const title = requestedTitle || titled.title || (mode === 'write' && ['lyria', 'yue2'].includes(engine) ? splitLyricTitle(first.text).title : undefined)
+    const titled = mode === 'write' && songEngines.includes(engine) ? splitLyricTitle(raw) : { script: raw };
+    const title = requestedTitle || titled.title || (mode === 'write' && songEngines.includes(engine) ? splitLyricTitle(first.text).title : undefined)
       || (wantsWords ? lyricTitleFromSong(titled.script) : undefined);
     let { script, readback } = splitScriptAndReadback(titled.script);
     /* Sep 25 2026: when she gave Lyria her own words, her lyrics box keeps
@@ -2183,7 +2209,7 @@ async function scriptHandler(req, res) {
     }
     /* Part 216: she hears the readback before she spends on a render. When the
      * writer gives none, say the music direction's opening instead of nothing. */
-    if (!readback && mode === 'write' && ['lyria', 'yue2'].includes(engine)) {
+    if (!readback && mode === 'write' && songEngines.includes(engine)) {
       const direction = script.split(/^\s*lyrics\s*:/im)[0].replace(/\[[^\]]*\]|->/g, ' ').replace(/\s+/g, ' ').trim();
       readback = (direction.match(/^(?:[^.!?]+[.!?]){1,2}/) || [direction])[0].trim().slice(0, 400);
     }
@@ -2270,9 +2296,9 @@ async function scriptHandler(req, res) {
      * this", so a voice still off after the second ask is said on either path, and beside a
      * structural problem rather than instead of it (review 1). */
     const voiceWarning = aukVoiceWarning(voiceOff, mode);
-    const problem = ['lyria', 'yue2'].includes(engine) ? null : engine === 'seed' ? checkSeed(script)
+    const problem = songEngines.includes(engine) ? null : engine === 'seed' ? checkSeed(script)
       : [checkScenema(script), voiceWarning].filter(Boolean).join(' ') || null;
-    const estimate = engine === 'yue2' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script, priceFactor(req.user));
+    const estimate = engine === 'yue2' || engine === 'ace' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script, priceFactor(req.user));
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -2283,7 +2309,7 @@ async function scriptHandler(req, res) {
         engine,
         mode,
         costMeasured,
-        writingPersona: mode === 'write' && ['lyria', 'yue2'].includes(engine) ? lyricAgentId : undefined,
+        writingPersona: mode === 'write' && songEngines.includes(engine) ? lyricAgentId : undefined,
         audience: audience || undefined,
         sectionMap: sectionMap ? sectionMap.id : undefined,
         chorusShape: chorusShape ? chorusShape.id : undefined,
@@ -3407,7 +3433,11 @@ router.post('/carry', requireJwtAuth, express.json({ limit: '128kb' }), (req, re
   if (!body.draft || typeof body.draft !== 'object' || Array.isArray(body.draft)) {
     return res.status(400).json({ error: 'Provide the current draft to copy.' });
   }
-  const out = carry.carryOver(body.draft, String(body.engine || ''), { toScreenplay: speakToScreenplay });
+  const to = String(body.engine || '');
+  /* ACE-Step XL is neither a source nor a destination for a person without access: the same plain sentence as a render. */
+  const refused = to === 'ace' || body.draft.engine === 'ace' ? aceRefusal(req.user) : null;
+  if (refused) return res.status(403).json({ error: refused });
+  const out = carry.carryOver(body.draft, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user) });
   if (!out.ok) return res.status(400).json({ error: out.why });
   return res.json({ draft: out.draft, notes: out.notes, rewriteAdvised: out.rewriteAdvised });
 });
@@ -3420,7 +3450,9 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
     const source = await KadeSoundBoothProject.findOne({ _id: req.params.id, user: req.user.id }).lean();
     if (!source) return res.status(404).json({ error: 'No such project.' });
     const to = String((req.body || {}).engine || '');
-    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay });
+    const refused = to === 'ace' || source.engine === 'ace' ? aceRefusal(req.user) : null;
+    if (refused) return res.status(403).json({ error: refused });
+    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user) });
     if (!out.ok) return res.status(400).json({ error: out.why });
 
     const notes = [...out.notes];
@@ -3450,12 +3482,12 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
          * carried a Lyria brief keeps the desk's block, as before. */
         const parts = carry.splitLyricsBlock(split.script);
         const carriedWords = !!(draft.options || {}).lyrics;
-        const rewritten = carriedWords || to === 'yue2' ? parts.prose : split.script;
+        const rewritten = carriedWords || to === 'yue2' || to === 'ace' ? parts.prose : split.script;
         if (rewritten && !carry.isBrokenScript(rewritten)) {
           draft.script = rewritten;
           draft.readback = split.readback;
           notes.push('The desk rewrote the description in the new engine\u2019s format. Your lyrics were not sent to it.');
-          if (to === 'yue2' && !carriedWords && parts.lyrics) {
+          if ((to === 'yue2' || to === 'ace') && !carriedWords && parts.lyrics) {
             notes.push('The desk also made up words for it. They were left out of the style and out of Lyrics, because they are not yours. Add your own words under Lyrics, or use Write my song idea to draft them.');
           }
         } else {

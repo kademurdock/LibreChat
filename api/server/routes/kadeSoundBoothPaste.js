@@ -243,7 +243,9 @@ function placeSongPaste(pasted, ctx) {
  */
 function applySongPasteToBody(body) {
   if (!body || typeof body !== 'object') return null;
-  if (body.engine !== 'lyria' && body.engine !== 'yue2') return null;
+  /* 'ace' (ACE-Step XL, Oct 10 2026) reads a direction and separate words like YuE2. Whether a person may use it is
+   * decided by the route's gate, which runs before this: a render the gate refuses is never sorted. */
+  if (body.engine !== 'lyria' && body.engine !== 'yue2' && body.engine !== 'ace') return null;
   const script = typeof body.script === 'string' ? body.script : '';
   const lyrics = typeof body.lyrics === 'string' ? body.lyrics : '';
   let field = 'script';
