@@ -331,7 +331,12 @@ const announcementsHtml = `<!doctype html><html lang="en"><head><title>Announcem
     status.textContent = rows.length + ' announcement' + (rows.length===1?'':'s') + '.';
     rows.forEach(function(b){ var card = document.createElement('article'); card.className = 'card'; var h = document.createElement('h2'); h.style.marginTop = '0';
       var d = b.ts || b.at || b.createdAt; h.textContent = (b.title || 'Kade-AI') + (d ? ' — ' + new Date(d).toLocaleString([], {dateStyle:'medium', timeStyle:'short'}) : '');
-      var p = document.createElement('p'); p.textContent = b.body || b.text || b.message || ''; card.appendChild(h); card.appendChild(p); list.appendChild(card); });
+      var p = document.createElement('p'); p.textContent = b.body || b.text || b.message || ''; card.appendChild(h); card.appendChild(p);
+      if(b.kadeRoute === 'agent-chat' && /^agent_[A-Za-z0-9_-]{1,100}$/.test(b.kadeAgentId || '')){
+        var link=document.createElement('a'); link.textContent='Chat with ' + (b.agentName || 'this character');
+        link.href='/c/new?agent_id=' + encodeURIComponent(b.kadeAgentId); link.style.minHeight='44px'; link.style.display='inline-flex'; link.style.alignItems='center'; card.appendChild(link);
+      }
+      list.appendChild(card); });
   }catch(e){ status.textContent = 'Could not load announcements.'; }
 })();
 </script>

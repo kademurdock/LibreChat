@@ -17,7 +17,9 @@
  * Transcripts land in Call History server-side (bridge ingest, surface 'web')
  * — callers of this hook must NOT also POST /api/kade/calls/mine.
  */
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
+import type { CallAudioIdentity, CallPresentation } from './character/call-presentation.mjs';
+import { characterAudioIdentity } from './character/call-presentation.mjs';
 
 export type StreamStatus = 'connecting' | 'listening' | 'thinking' | 'speaking';
 
@@ -44,6 +46,7 @@ export interface StreamingStartArgs {
   ctx: AudioContext;
   /** Existing output analyser (drives the orb pulse); already wired to destination. */
   analyser: AnalyserNode | null;
+  presentation?: CallPresentation;
   token?: string | null;
   /** KADE Aug 14 2026 (call continuity, finishing the July 22 wiring): the id
    *  of the conversation the call is being placed FROM. The bridge seeds the
@@ -60,36 +63,49 @@ const TARGET_RATE = 16000;
 const SEND_CHUNK_MS = 100;
 
 export default function useStreamingCall() {
-  const wsRef         = useRef<WebSocket | null>(null);
-  const micStreamRef  = useRef<MediaStream | null>(null);
-  const micCtxRef     = useRef<AudioContext | null>(null);
-  const micNodeRef    = useRef<AudioWorkletNode | ScriptProcessorNode | null>(null);
-  const outCtxRef     = useRef<AudioContext | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micCtxRef = useRef<AudioContext | null>(null);
+  const micNodeRef = useRef<AudioWorkletNode | ScriptProcessorNode | null>(null);
+  const outCtxRef = useRef<AudioContext | null>(null);
   const outAnalyserRef = useRef<AnalyserNode | null>(null);
-  const nextTimeRef   = useRef(0);
-  const sourcesRef    = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const nextTimeRef = useRef(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const decodeChainRef = useRef<Promise<void>>(Promise.resolve());
-  const activeRef     = useRef(false);
+  const activeRef = useRef(false);
   const endedFiredRef = useRef(false);
-  const byeSentRef    = useRef(false);
-  const floatBufRef   = useRef<Float32Array[]>([]);
-  const floatLenRef   = useRef(0);
+  const byeSentRef = useRef(false);
+  const floatBufRef = useRef<Float32Array[]>([]);
+  const floatLenRef = useRef(0);
   // Bumped on every flush: an in-flight decode from BEFORE a barge-in must
   // never schedule its (now stale) clip after the flush.
-  const flushSeqRef   = useRef(0);
+  const flushSeqRef = useRef(0);
+  const presentationRef = useRef<CallPresentation | null>(null);
+  const pendingCharacterRef = useRef<CallAudioIdentity | null>(null);
+  const sessionRef = useRef(0);
 
   const flushPlayback = useCallback(() => {
     flushSeqRef.current += 1;
-    sourcesRef.current.forEach((s) => { try { s.stop(); } catch { /* stopped */ } });
+    sourcesRef.current.forEach((s) => {
+      try {
+        s.stop();
+      } catch {
+        /* stopped */
+      }
+    });
     sourcesRef.current.clear();
     nextTimeRef.current = 0;
     decodeChainRef.current = Promise.resolve();
+    pendingCharacterRef.current = null;
+    presentationRef.current?.clear();
   }, []);
 
   // Decode + schedule serially so clips can never play out of order (the same
   // reserve-your-slot-synchronously lesson enqueueAudio learned on July 4).
-  const enqueueWav = useCallback((ab: ArrayBuffer) => {
+  const enqueueWav = useCallback((ab: ArrayBuffer, character: CallAudioIdentity | null) => {
     const seq = flushSeqRef.current;
+    const presentation = presentationRef.current;
+    const presentationToken = presentation?.token();
     const chain = decodeChainRef.current.then(async () => {
       if (!activeRef.current || seq !== flushSeqRef.current) return;
       const ctx = outCtxRef.current;
@@ -106,12 +122,25 @@ export default function useStreamingCall() {
       src.buffer = buf;
       src.connect(outAnalyserRef.current ?? ctx.destination);
       const t = Math.max(ctx.currentTime + 0.03, nextTimeRef.current || 0);
-      try { src.start(t); } catch { return; }
+      try {
+        src.start(t);
+      } catch {
+        return;
+      }
+      const clip =
+        presentationToken == null
+          ? null
+          : (presentation?.schedule(presentationToken, t, buf.duration, character) ?? null);
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
-      src.onended = () => sourcesRef.current.delete(src);
+      src.onended = () => {
+        sourcesRef.current.delete(src);
+        presentation?.finish(clip);
+      };
     });
-    decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });
+    decodeChainRef.current = chain.catch(() => {
+      /* keep the chain alive */
+    });
   }, []);
 
   // LIVE lane (July 16 2026): raw 24kHz PCM16 chunks from the bridge's Gemini
@@ -123,6 +152,8 @@ export default function useStreamingCall() {
   const LIVE_PCM_RATE = 24000;
   const enqueueLivePcm = useCallback((ab: ArrayBuffer) => {
     const seq = flushSeqRef.current;
+    const presentation = presentationRef.current;
+    const presentationToken = presentation?.token();
     const chain = decodeChainRef.current.then(async () => {
       if (!activeRef.current || seq !== flushSeqRef.current) return;
       const ctx = outCtxRef.current;
@@ -137,12 +168,25 @@ export default function useStreamingCall() {
       src.buffer = buf;
       src.connect(outAnalyserRef.current ?? ctx.destination);
       const t = Math.max(ctx.currentTime + 0.03, nextTimeRef.current || 0);
-      try { src.start(t); } catch { return; }
+      try {
+        src.start(t);
+      } catch {
+        return;
+      }
+      const clip =
+        presentationToken == null
+          ? null
+          : (presentation?.schedule(presentationToken, t, buf.duration, null) ?? null);
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
-      src.onended = () => sourcesRef.current.delete(src);
+      src.onended = () => {
+        sourcesRef.current.delete(src);
+        presentation?.finish(clip);
+      };
     });
-    decodeChainRef.current = chain.catch(() => { /* keep the chain alive */ });
+    decodeChainRef.current = chain.catch(() => {
+      /* keep the chain alive */
+    });
   }, []);
 
   // Linear resample whatever the mic context runs at down to 16k PCM16.
@@ -156,7 +200,10 @@ export default function useStreamingCall() {
     if (floatLenRef.current === 0) return;
     const all = new Float32Array(floatLenRef.current);
     let off = 0;
-    for (const c of floatBufRef.current) { all.set(c, off); off += c.length; }
+    for (const c of floatBufRef.current) {
+      all.set(c, off);
+      off += c.length;
+    }
     floatBufRef.current = [];
     floatLenRef.current = 0;
     const outLen = Math.floor((all.length * TARGET_RATE) / srcRate);
@@ -169,18 +216,26 @@ export default function useStreamingCall() {
       const i1 = Math.min(i0 + 1, all.length - 1);
       const frac = pos - i0;
       let v = all[i0] * (1 - frac) + all[i1] * frac;
-      if (v > 1) v = 1; else if (v < -1) v = -1;
+      if (v > 1) v = 1;
+      else if (v < -1) v = -1;
       pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
     }
-    try { ws.send(pcm.buffer); } catch { /* socket raced closed */ }
+    try {
+      ws.send(pcm.buffer);
+    } catch {
+      /* socket raced closed */
+    }
   }, []);
 
-  const pushMicChunk = useCallback((chunk: Float32Array) => {
-    if (!activeRef.current) return;
-    floatBufRef.current.push(chunk);
-    floatLenRef.current += chunk.length;
-    drainMicBuffer(false);
-  }, [drainMicBuffer]);
+  const pushMicChunk = useCallback(
+    (chunk: Float32Array) => {
+      if (!activeRef.current) return;
+      floatBufRef.current.push(chunk);
+      floatLenRef.current += chunk.length;
+      drainMicBuffer(false);
+    },
+    [drainMicBuffer],
+  );
 
   const stopMic = useCallback(() => {
     try {
@@ -188,213 +243,347 @@ export default function useStreamingCall() {
       if (node) {
         if (node.port && node.port.onmessage) node.port.onmessage = null;
         if ('onaudioprocess' in node) node.onaudioprocess = null;
-        try { node.disconnect(); } catch { /* ignore */ }
+        try {
+          node.disconnect();
+        } catch {
+          /* ignore */
+        }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     micNodeRef.current = null;
-    try { micStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch { /* ignore */ }
+    try {
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* ignore */
+    }
     micStreamRef.current = null;
-    try { void micCtxRef.current?.close(); } catch { /* ignore */ }
+    try {
+      void micCtxRef.current?.close();
+    } catch {
+      /* ignore */
+    }
     micCtxRef.current = null;
     floatBufRef.current = [];
     floatLenRef.current = 0;
   }, []);
 
-  const startMic = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
-    micStreamRef.current = stream;
-    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx: AudioContext = new Ctor();
-    micCtxRef.current = ctx;
-    if (ctx.state === 'suspended') { try { await ctx.resume(); } catch { /* ignore */ } }
-    const source = ctx.createMediaStreamSource(stream);
-    let attached = false;
-    if (typeof (ctx as any).audioWorklet?.addModule === 'function') {
-      try {
-        const workletSrc =
-          'class KadePcm extends AudioWorkletProcessor{process(inputs){' +
-          'const ch=inputs[0]&&inputs[0][0];if(ch&&ch.length)this.port.postMessage(ch.slice(0));return true}}' +
-          "registerProcessor('kade-pcm',KadePcm);";
-        const url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
-        await ctx.audioWorklet.addModule(url);
-        URL.revokeObjectURL(url);
-        const node = new AudioWorkletNode(ctx, 'kade-pcm', { numberOfInputs: 1, numberOfOutputs: 0 });
-        node.port.onmessage = (e: MessageEvent) => pushMicChunk(e.data as Float32Array);
-        source.connect(node);
-        micNodeRef.current = node;
-        attached = true;
-      } catch (err) {
-        console.warn('[StreamingCall] AudioWorklet unavailable, falling back:', err);
+  const startMic = useCallback(
+    async (session: number) => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      if (!activeRef.current || session !== sessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
       }
-    }
-    if (!attached) {
-      // ScriptProcessor is deprecated but still everywhere; it only fires
-      // when routed to the destination, so route it through zero gain.
-      const sp = ctx.createScriptProcessor(4096, 1, 1);
-      sp.onaudioprocess = (e) => pushMicChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
-      const mute = ctx.createGain();
-      mute.gain.value = 0;
-      source.connect(sp);
-      sp.connect(mute).connect(ctx.destination);
-      micNodeRef.current = sp;
-    }
-  }, [pushMicChunk]);
-
-  const stop = useCallback((graceful = true) => {
-    const ws = wsRef.current;
-    activeRef.current = false;
-    if (ws) {
-      try {
-        if (graceful && ws.readyState === WebSocket.OPEN && !byeSentRef.current) {
-          byeSentRef.current = true;
-          drainMicBuffer(true);
-          ws.send(JSON.stringify({ type: 'bye' }));
+      micStreamRef.current = stream;
+      const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx: AudioContext = new Ctor();
+      micCtxRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          /* ignore */
         }
-      } catch { /* ignore */ }
-      try { ws.close(1000, 'bye'); } catch { /* ignore */ }
-      wsRef.current = null;
-    }
-    stopMic();
-    flushPlayback();
-  }, [drainMicBuffer, stopMic, flushPlayback]);
+      }
+      if (!activeRef.current || session !== sessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        void ctx.close();
+        return;
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      let attached = false;
+      if (typeof (ctx as any).audioWorklet?.addModule === 'function') {
+        try {
+          const workletSrc =
+            'class KadePcm extends AudioWorkletProcessor{process(inputs){' +
+            'const ch=inputs[0]&&inputs[0][0];if(ch&&ch.length)this.port.postMessage(ch.slice(0));return true}}' +
+            "registerProcessor('kade-pcm',KadePcm);";
+          const url = URL.createObjectURL(
+            new Blob([workletSrc], { type: 'application/javascript' }),
+          );
+          try {
+            await ctx.audioWorklet.addModule(url);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+          if (!activeRef.current || session !== sessionRef.current) return;
+          const node = new AudioWorkletNode(ctx, 'kade-pcm', {
+            numberOfInputs: 1,
+            numberOfOutputs: 0,
+          });
+          node.port.onmessage = (e: MessageEvent) => {
+            if (session === sessionRef.current) pushMicChunk(e.data as Float32Array);
+          };
+          source.connect(node);
+          micNodeRef.current = node;
+          attached = true;
+        } catch (err) {
+          console.warn('[StreamingCall] AudioWorklet unavailable, falling back:', err);
+        }
+      }
+      if (!attached) {
+        if (!activeRef.current || session !== sessionRef.current) return;
+        // ScriptProcessor is deprecated but still everywhere; it only fires
+        // when routed to the destination, so route it through zero gain.
+        const sp = ctx.createScriptProcessor(4096, 1, 1);
+        sp.onaudioprocess = (e) => {
+          if (session === sessionRef.current)
+            pushMicChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+        };
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        source.connect(sp);
+        sp.connect(mute).connect(ctx.destination);
+        micNodeRef.current = sp;
+      }
+    },
+    [pushMicChunk],
+  );
+
+  const stop = useCallback(
+    (graceful = true) => {
+      const ws = wsRef.current;
+      sessionRef.current += 1;
+      activeRef.current = false;
+      if (ws) {
+        try {
+          if (graceful && ws.readyState === WebSocket.OPEN && !byeSentRef.current) {
+            byeSentRef.current = true;
+            drainMicBuffer(true);
+            ws.send(JSON.stringify({ type: 'bye' }));
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          ws.close(1000, 'bye');
+        } catch {
+          /* ignore */
+        }
+        wsRef.current = null;
+      }
+      stopMic();
+      flushPlayback();
+    },
+    [drainMicBuffer, stopMic, flushPlayback],
+  );
 
   const barge = useCallback(() => {
     flushPlayback();
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify({ type: 'barge' })); } catch { /* ignore */ }
+      try {
+        ws.send(JSON.stringify({ type: 'barge' }));
+      } catch {
+        /* ignore */
+      }
     }
   }, [flushPlayback]);
 
-  const start = useCallback(async ({ agentId, spotterDirect, ctx, analyser, token, conversationId, handlers }: StreamingStartArgs) => {
-    if (activeRef.current) return;
-    activeRef.current = true;
-    endedFiredRef.current = false;
-    byeSentRef.current = false;
-    outCtxRef.current = ctx;
-    outAnalyserRef.current = analyser;
-    nextTimeRef.current = 0;
-    handlers.onStatus('connecting');
+  const start = useCallback(
+    async ({
+      agentId,
+      spotterDirect,
+      ctx,
+      analyser,
+      presentation,
+      token,
+      conversationId,
+      handlers,
+    }: StreamingStartArgs) => {
+      if (activeRef.current) return;
+      const session = ++sessionRef.current;
+      const ownsSession = () => activeRef.current && session === sessionRef.current;
+      activeRef.current = true;
+      endedFiredRef.current = false;
+      byeSentRef.current = false;
+      outCtxRef.current = ctx;
+      outAnalyserRef.current = analyser;
+      presentationRef.current = presentation ?? null;
+      presentationRef.current?.clear();
+      pendingCharacterRef.current = null;
+      nextTimeRef.current = 0;
+      handlers.onStatus('connecting');
 
-    let ticket = '';
-    let wsUrl = '';
-    try {
-      const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
-      const resp = await fetch(`/api/kade/web-voice/ticket${q}`, {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        credentials: 'include',
-      });
-      if (!resp.ok) throw new Error(`ticket ${resp.status}`);
-      const j = await resp.json();
-      ticket = j.ticket;
-      wsUrl = j.wsUrl;
-      if (!ticket || !wsUrl) throw new Error('ticket payload incomplete');
-    } catch (err: any) {
-      activeRef.current = false;
-      throw new Error(`Could not start the streaming call (${err?.message || 'ticket error'}).`);
-    }
-
-    try {
-      await startMic();
-    } catch (err) {
-      activeRef.current = false;
-      throw new Error('Microphone access is blocked. Enable mic permission, then end and start the call again.');
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const fail = (msg: string) => {
-        if (settled) return;
-        settled = true;
-        stop(false);
-        reject(new Error(msg));
-      };
-      const connectTimer = setTimeout(() => fail('The streaming call timed out while connecting.'), 15000);
-      let ws: WebSocket;
+      let ticket = '';
+      let wsUrl = '';
       try {
-        ws = new WebSocket(wsUrl);
-      } catch {
-        clearTimeout(connectTimer);
-        fail('Could not open the call connection.');
-        return;
+        const q = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+        const resp = await fetch(`/api/kade/web-voice/ticket${q}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: 'include',
+        });
+        if (!resp.ok) throw new Error(`ticket ${resp.status}`);
+        const j = await resp.json();
+        if (!ownsSession()) return;
+        ticket = j.ticket;
+        wsUrl = j.wsUrl;
+        if (!ticket || !wsUrl) throw new Error('ticket payload incomplete');
+      } catch (err: any) {
+        if (!ownsSession()) return;
+        activeRef.current = false;
+        throw new Error(`Could not start the streaming call (${err?.message || 'ticket error'}).`);
       }
-      wsRef.current = ws;
-      ws.binaryType = 'arraybuffer';
-      ws.onopen = () => {
-        try {
-          ws.send(JSON.stringify({
-            type: 'hello',
-            ticket,
-            spotterDirect: spotterDirect === true,
-            ...(conversationId ? { conversationId } : {}),
-          }));
-        } catch { /* ignore */ }
-      };
-      ws.onmessage = (ev: MessageEvent) => {
-        if (ev.data instanceof ArrayBuffer) {
-          const u8 = new Uint8Array(ev.data);
-          // "LIVE" = raw live-lane PCM chunk; anything else (RIFF...) = WAV clip.
-          if (u8.length > 4 && u8[0] === 0x4c && u8[1] === 0x49 && u8[2] === 0x56 && u8[3] === 0x45) {
-            enqueueLivePcm(ev.data);
+
+      try {
+        await startMic(session);
+      } catch {
+        if (!ownsSession()) return;
+        activeRef.current = false;
+        throw new Error(
+          'Microphone access is blocked. Enable mic permission, then end and start the call again.',
+        );
+      }
+      if (!ownsSession()) return;
+
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const fail = (msg: string) => {
+          if (settled) return;
+          settled = true;
+          if (!ownsSession()) {
+            resolve();
             return;
           }
-          enqueueWav(ev.data);
+          stop(false);
+          reject(new Error(msg));
+        };
+        const connectTimer = setTimeout(
+          () => fail('The streaming call timed out while connecting.'),
+          15000,
+        );
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(wsUrl);
+        } catch {
+          clearTimeout(connectTimer);
+          fail('Could not open the call connection.');
           return;
         }
-        let m: any;
-        try { m = JSON.parse(String(ev.data)); } catch { return; }
-        switch (m.type) {
-          case 'ready':
-            if (!settled) { settled = true; clearTimeout(connectTimer); resolve(); }
-            handlers.onStatus('listening');
-            break;
-          case 'state':
-            handlers.onStatus(
-              m.state === 'speaking' ? 'speaking' : m.state === 'thinking' ? 'thinking' : 'listening',
+        wsRef.current = ws;
+        ws.binaryType = 'arraybuffer';
+        ws.onopen = () => {
+          if (!ownsSession()) return;
+          try {
+            ws.send(
+              JSON.stringify({
+                type: 'hello',
+                ticket,
+                spotterDirect: spotterDirect === true,
+                ...(conversationId ? { conversationId } : {}),
+              }),
             );
-            break;
-          case 'caption':
-            if (m.role === 'user') handlers.onUserCaption(String(m.text || ''));
-            else handlers.onAgentCaption(String(m.text || ''));
-            break;
-          case 'clear':
+          } catch {
+            /* ignore */
+          }
+        };
+        ws.onmessage = (ev: MessageEvent) => {
+          if (!ownsSession()) return;
+          if (ev.data instanceof ArrayBuffer) {
+            const character = pendingCharacterRef.current;
+            pendingCharacterRef.current = null;
+            const u8 = new Uint8Array(ev.data);
+            // "LIVE" = raw live-lane PCM chunk; anything else (RIFF...) = WAV clip.
+            if (
+              u8.length > 4 &&
+              u8[0] === 0x4c &&
+              u8[1] === 0x49 &&
+              u8[2] === 0x56 &&
+              u8[3] === 0x45
+            ) {
+              enqueueLivePcm(ev.data);
+              return;
+            }
+            enqueueWav(ev.data, character);
+            return;
+          }
+          let m: any;
+          try {
+            m = JSON.parse(String(ev.data));
+          } catch {
+            pendingCharacterRef.current = null;
+            return;
+          }
+          switch (m.type) {
+            case 'character-audio':
+              pendingCharacterRef.current = characterAudioIdentity(m);
+              break;
+            case 'ready':
+              if (!settled) {
+                settled = true;
+                clearTimeout(connectTimer);
+                resolve();
+              }
+              handlers.onStatus('listening');
+              break;
+            case 'state':
+              handlers.onStatus(
+                m.state === 'speaking' || m.state === 'thinking' ? m.state : 'listening',
+              );
+              break;
+            case 'caption':
+              if (m.role === 'user') handlers.onUserCaption(String(m.text || ''));
+              else handlers.onAgentCaption(String(m.text || ''));
+              break;
+            case 'clear':
+              flushPlayback();
+              break;
+            case 'table':
+              if (handlers.onTable && m.id) handlers.onTable(String(m.id));
+              break;
+            case 'video-notice':
+            case 'video-state':
+            case 'live-notice':
+            case 'live-state':
+              handlers.onVideo?.(m);
+              break;
+            case 'error':
+              handlers.onError(String(m.message || 'Call error.'));
+              if (!settled) {
+                settled = true;
+                clearTimeout(connectTimer);
+                stop(false);
+                reject(new Error(String(m.message || 'Call error.')));
+              }
+              break;
+            default:
+              break; // 'cue' and future events: ignore quietly
+          }
+        };
+        ws.onerror = () => fail('The call connection failed.');
+        ws.onclose = () => {
+          clearTimeout(connectTimer);
+          if (!ownsSession()) {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+            return;
+          }
+          const wasGraceful = byeSentRef.current;
+          if (!settled) {
+            fail('The call connection closed before it was ready.');
+            return;
+          }
+          if (activeRef.current && !endedFiredRef.current) {
+            endedFiredRef.current = true;
+            activeRef.current = false;
+            stopMic();
             flushPlayback();
-            break;
-          case 'table':
-            if (handlers.onTable && m.id) handlers.onTable(String(m.id));
-            break;
-          case 'video-notice':
-          case 'video-state':
-          case 'live-notice':
-          case 'live-state':
-            handlers.onVideo?.(m);
-            break;
-          case 'error':
-            handlers.onError(String(m.message || 'Call error.'));
-            if (!settled) { settled = true; clearTimeout(connectTimer); stop(false); reject(new Error(String(m.message || 'Call error.'))); }
-            break;
-          default:
-            break; // 'cue' and future events: ignore quietly
-        }
-      };
-      ws.onerror = () => fail('The call connection failed.');
-      ws.onclose = () => {
-        clearTimeout(connectTimer);
-        const wasGraceful = byeSentRef.current;
-        if (!settled) { fail('The call connection closed before it was ready.'); return; }
-        if (activeRef.current && !endedFiredRef.current) {
-          endedFiredRef.current = true;
-          activeRef.current = false;
-          stopMic();
-          flushPlayback();
-          handlers.onEnded(wasGraceful);
-        }
-      };
-    });
-  }, [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm]);
+            handlers.onEnded(wasGraceful);
+          }
+        };
+      });
+    },
+    [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm],
+  );
+
+  useEffect(() => () => stop(false), [stop]);
 
   const isActive = useCallback(() => activeRef.current, []);
 
@@ -402,9 +591,16 @@ export default function useStreamingCall() {
   const sendJson = useCallback((obj: Record<string, unknown>) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      try { ws.send(JSON.stringify(obj)); } catch { /* socket raced closed */ }
+      try {
+        ws.send(JSON.stringify(obj));
+      } catch {
+        /* socket raced closed */
+      }
     }
   }, []);
 
-  return { start, stop, barge, isActive, sendJson };
+  return useMemo(
+    () => ({ start, stop, barge, isActive, sendJson }),
+    [start, stop, barge, isActive, sendJson],
+  );
 }

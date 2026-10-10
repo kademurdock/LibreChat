@@ -366,3 +366,5 @@ export {
 } from './memory/artifacts';
 export type { MemoryArtifactContext } from './memory/artifacts';
 export { createDesktopCallsRouter, webCallSessionId } from './calls/desktop';
+export { createAnnouncementRouter, announcementURL, announcementPayloadHash } from './announcements/router';
+export type { AnnouncementDependencies } from './announcements/router';

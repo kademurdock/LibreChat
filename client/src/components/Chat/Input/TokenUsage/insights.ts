@@ -5,7 +5,13 @@ import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
  * localization key so the phrase stays translatable. Thresholds are on the
  * 0–100 `percent` the view already clamps.
  */
-export function fullnessKey(percent: number): string {
+export function fullnessKey(
+  percent: number,
+):
+  | 'com_ui_context_full_nearly'
+  | 'com_ui_context_full_getting_full'
+  | 'com_ui_context_full_filling'
+  | 'com_ui_context_full_plenty' {
   if (percent >= 90) {
     return 'com_ui_context_full_nearly';
   }

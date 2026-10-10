@@ -6,8 +6,8 @@ import * as portraits from './portrait-rig.mjs';
 
 const translations = JSON.parse(readFileSync(new URL('../../../locales/en/translation.json', import.meta.url)));
 
-test('all six registered appearances have readable localized descriptions', () => {
-  for (const name of ['KIANA', 'DELLA', 'HARLEY', 'LILLY', 'LILLY_PUBLIC', 'WITHERSPOON']) {
+test('all seven registered appearances have readable localized descriptions', () => {
+  for (const name of ['ANGEL', 'KIANA', 'DELLA', 'HARLEY', 'LILLY', 'LILLY_PUBLIC', 'WITHERSPOON']) {
     const id = portraits[name + '_ID'];
     const path = '/uploads/' + portraits[name + '_PORTRAIT_FILE'];
     const key = characterAppearanceKey(id, path);

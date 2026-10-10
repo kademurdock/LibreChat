@@ -43,6 +43,7 @@ import type { VoiceCategory } from '~/hooks/Audio/useVoiceCatalog';
  * component there would be circular). Re-exported here so picker code keeps
  * one import site for voice-list helpers. */
 export { normalizeVoiceLabel } from '~/utils/voiceLabels';
+import { normalizeVoiceLabel } from '~/utils/voiceLabels';
 
 /** Split an (already filtered/sorted) voice list into ordered picker sections.
  * Voices missing from every category land in a trailing "More voices" group;

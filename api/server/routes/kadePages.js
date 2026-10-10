@@ -1259,6 +1259,11 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
         var p=document.createElement('p');
         var when=a.ts?new Date(a.ts).toLocaleString('en-US'):'';
         p.innerHTML='<strong>'+esc(a.title||'Kade-AI')+'</strong> <span class="muted">('+esc(when)+')</span><br>'+esc(a.body||'');
+        if(a.kadeRoute === 'agent-chat' && /^agent_[A-Za-z0-9_-]{1,100}$/.test(a.kadeAgentId || '')){
+          var link=document.createElement('a'); link.textContent='Chat with ' + (a.agentName || 'this character');
+          link.href='/c/new?agent_id=' + encodeURIComponent(a.kadeAgentId); link.style.minHeight='44px'; link.style.display='inline-flex'; link.style.alignItems='center';
+          p.appendChild(document.createElement('br')); p.appendChild(link);
+        }
         wrap.appendChild(p);
       });
     }catch(e){ /* non-fatal */ }

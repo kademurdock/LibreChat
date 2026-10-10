@@ -36,7 +36,7 @@ export type AgentForm = {
   description: string | null;
   instructions: string | null;
   model: string | null;
-  model_parameters: AgentModelParameters;
+  model_parameters: AgentModelParameters & { reasoning_effort?: string };
   tools?: string[];
   /** Per-tool configuration options (deferred loading, allowed callers, etc.) */
   tool_options?: AgentToolOptions;

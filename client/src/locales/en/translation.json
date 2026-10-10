@@ -2049,6 +2049,12 @@
   "com_auth_signup_code_label": "Signup code (Kade gives you this)",
   "com_auth_phone_optional": "Phone number (optional)",
   "com_auth_phone_optional_label": "Phone number (optional — so the AI knows you when you call in)",
+  "com_ui_call_camera_on": "Turn camera on",
+  "com_ui_call_not_now": "Not now",
+  "com_ui_call_put_them_on": "Put them on",
+  "com_ui_call_agent": "Agent",
+  "com_nav_stop_voice_preview": "Stop voice preview",
+  "com_nav_preview_voice": "Preview voice",
   "com_ui_character_describe": "Describe character",
   "com_ui_voice_portrait_paused": "Paused",
   "com_ui_voice_portrait_waiting": "Buffering",
@@ -2057,5 +2063,6 @@
   "com_ui_character_appearance_della": "In her current portrait, Della is an older Black woman with short silver curls, small gold hoop earrings, and a warm expression. She wears a plum-purple cardigan over a cream blouse, against a teal background.",
   "com_ui_character_appearance_harley": "In his current portrait, Harley has swept-back dark hair, a short salt-and-pepper beard, and an easy smile. He wears faded blue denim over a white T-shirt, with a warmly lit room behind him.",
   "com_ui_character_appearance_lilly": "In her current illustrated portrait, Lilly has long chestnut-brown hair and a lilac hoodie. She laughs with her eyes closed while two orange tabby cats peek out near her shoulders, against a glowing pink background.",
-  "com_ui_character_appearance_witherspoon": "In her current portrait, Witherspoon has loosely pinned gray-brown hair, oval glasses, and a calm expression. She wears a forest-green cardigan over a cream blouse with a small open-book pin; bookshelves are behind her."
+  "com_ui_character_appearance_witherspoon": "In her current portrait, Witherspoon has loosely pinned gray-brown hair, oval glasses, and a calm expression. She wears a forest-green cardigan over a cream blouse with a small open-book pin; bookshelves are behind her.",
+  "com_ui_character_appearance_angel": "In her current illustrated portrait, Angel is a tiny cherub girl with chestnut curls, big hazel eyes and rosy cheeks. She wears a high-neck ivory robe with pastel opals, pearl beads and jewel stars. Her little hands are clasped near her heart, white feathered wings frame her shoulders, and a pearl-studded gold halo floats above her curls."
 }

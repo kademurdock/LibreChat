@@ -1,6 +1,8 @@
 // A stationary portrait with registered, feathered local facial layers.
 // Never swap the full generated frames: their backgrounds/head poses drift.
 import { createFaceSheetRig } from './face-sheet-rig.mjs';
+import { ANGEL_ID, ANGEL_PORTRAIT_FILE, createAngelRig } from './angel-rig.mjs';
+export { ANGEL_ID, ANGEL_PORTRAIT_FILE } from './angel-rig.mjs';
 // Regions inside one sheet panel, 0..1: the brow-to-chin oval, the mouth, the eyes.
 // Registered by eye against each character's own sheets, Sep 19 2026.
 const SHEETS = {
@@ -37,6 +39,8 @@ export function hasPreparedPortrait(id, url) {
 export function preparedPortrait(id, url) {
   try {
     const file = new URL(url, 'https://local.invalid').pathname.split('/').pop();
+    if (id === ANGEL_ID && file === ANGEL_PORTRAIT_FILE)
+      return { portrait: url, vector: 'angel' };
     if (id === WITHERSPOON_ID && file === WITHERSPOON_PORTRAIT_FILE)
       return { portrait: '/assets/characters/witherspoon/portrait.png', sheet: SHEETS.witherspoon };
     if (id === HARLEY_ID && file === HARLEY_PORTRAIT_FILE)
@@ -113,7 +117,8 @@ const EYES = [
  *   features?: PortraitFeature[], eyeFeatures?: PortraitFeature[], expression?: string,
  *   browFeatures?: PortraitFeature[], sheet?: { expressions: string, mouths: string,
  *   face: number[], mouth: number[], eyes: number[] }, onReady?: () => void,
- *   onFailure?: () => void }} options
+ *   onFailure?: () => void, vector?: string,
+ *   onVisibilityChange?: (show: boolean) => void }} options
  */
 export function createPortraitRig(
   canvas,
@@ -130,6 +135,7 @@ export function createPortraitRig(
     onFailure = () => {},
   },
 ) {
+  if (arguments[1]?.vector === 'angel') return createAngelRig(canvas, arguments[1]);
   // Characters with expression sheets get the full face; the patch rig below
   // remains for anyone who only has the older art.
   if (arguments[1]?.sheet) return createFaceSheetRig(canvas, arguments[1]);

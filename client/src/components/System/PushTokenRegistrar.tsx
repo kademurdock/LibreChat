@@ -7,7 +7,6 @@ const BRIDGE_URL = 'https://kade-ai-bridge-production.up.railway.app';
 
 declare global {
   interface Window {
-    Capacitor?: { isNativePlatform?: () => boolean };
     __kadeaiPushToken?: string;
   }
 }
