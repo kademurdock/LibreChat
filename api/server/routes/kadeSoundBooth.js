@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -214,6 +214,63 @@ router.use(createYueRouter({
         logger.warn('[soundbooth/myvoice] could not queue a voice version: ' + (error && error.message));
       }
     }
+  },
+}));
+
+/* ============== ACE-Step XL (Oct 10 2026; packages/api music/ace.ts) ==============
+ * A second song engine beside YuE2 on its own RunPod endpoint. ACE_ENABLED=1 turns it on, and while
+ * ACE_ADMIN_ONLY is on (the default) only an admin account sees or uses it; with the flag unset the guide, every
+ * request and every answer is exactly as before. Like MY_VOICE_READY, a harness with its own @librechat/api
+ * stand-in simply has no ACE: nothing is mounted and every check answers no. */
+const ACE_READY = [createAceRouter, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
+const aceOn = (user) => ACE_READY && aceAllowed(user);
+/* A request for engine ace is refused here, in a plain sentence, before any router: an unknown engine would otherwise
+ * fall through to the main /render and be performed as an AuK speech script. */
+if (ACE_READY) router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
+  if (!req.body || req.body.engine !== 'ace') return next();
+  return requireJwtAuth(req, res, () => {
+    const verdict = aceAccess(req.user);
+    if (verdict.ok) return next();
+    logger.warn(`[soundbooth/render] ace REFUSED user=${req.user && req.user.id}: ${verdict.error}`);
+    return res.status(403).json({ error: verdict.error });
+  });
+});
+if (ACE_READY) router.use(createAceRouter({
+  auth: requireJwtAuth,
+  user: req => String(req.user.id),
+  project: async (user, input, sourceText) => {
+    const p = await KadeSoundBoothProject.create({ user, engine: 'ace', title: input.title, script: input.style,
+      sourceText: sourceText.slice(0, 8000), options: aceProjectOptions(input), state: 'queued' });
+    return String(p._id);
+  },
+  update: async job => {
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, {
+      $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
+        lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
+    });
+  },
+  notify: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const completed = (job.takes || []).filter(take => take.state === 'done').length;
+    const receipt = await notifyMusic(job.user, project?.title || job.input.title || 'Your song', completed, job.takes?.length || 1, job.state !== 'done');
+    logger.info(`[soundbooth/music] notification job=${job.id} accepted=${receipt.accepted} deferred=${receipt.deferred === true} blocked=${receipt.blocked || 'none'}`);
+    return receipt;
+  },
+  /* The same asset shape as a YuE2 take (url is the MP3, wavUrl the master), so an ACE take already works wherever a
+   * YuE2 take does. job.id here is the TAKE id, which keys the asset: a take saved twice after a crash is saved once.
+   * An instrumental keeps no lyrics on the asset: its sheet was not sung. */
+  complete: async job => {
+    const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
+    const title = project?.title || job.input.title || job.input.style.slice(0, 80);
+    const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_ace', 'metadata.jobId': job.id }, {
+      $setOnInsert: { user: job.user, service: 'runpod_ace', kind: 'audio', url: job.output.url,
+        model: 'ACE-Step 1.5 XL', prompt: job.input.style, description: title, costUSD: job.costUSD || 0,
+        metadata: { title, seed: job.input.seed, jobId: job.id, projectId: job.projectId, via: 'sound-booth',
+          wavUrl: job.output.wav_url, seconds: Math.round(job.output.duration_s || 0), lyrics: job.input.instrumental ? '' : job.input.lyrics,
+          truncated: job.output.truncated, costScope: 'execution estimate; startup and idle are additional',
+          ...aceTakeFacts(job.output, job.input) } },
+    }, { upsert: true, new: true });
+    await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
   },
 }));
 
@@ -1329,7 +1386,7 @@ function priceFactor(user) {
     return 1;
   }
 }
-const KADE_PAYS_ENGINES = ['yue2', 'stable', 'myvoice'];
+const KADE_PAYS_ENGINES = ['yue2', 'ace', 'stable', 'myvoice'];
 const isKade = (user) => String((user && user.role) || '').toUpperCase() === 'ADMIN';
 const priced = (usd, factor) => Math.round(usd * (factor || 1) * 1000) / 1000;
 
@@ -1545,7 +1602,7 @@ async function takesFor(projects, userId, paid = false) {
   return map;
 }
 
-function projectView(p, factor = 1) {
+function projectView(p, factor = 1, access = {}) {
   /* Part 295: stored costs are real; a person is shown what they paid (not for Kade's trials). */
   const paid = KADE_PAYS_ENGINES.includes(p.engine) ? 1 : factor;
   /* Sep 25 2026: a Lyria row saved before sungLyrics existed keeps the sung
@@ -1577,7 +1634,7 @@ function projectView(p, factor = 1) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'myvoice' ? myVoiceProjectWhy(p.options) : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'lyria'
+    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'myvoice' ? myVoiceProjectWhy(p.options) : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'ace' && ACE_READY ? aceProjectWhy(p.options) : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
@@ -1590,7 +1647,7 @@ function projectView(p, factor = 1) {
     /* Part 296: a YuE2 score opens with its chords choice under Keep the original chords (yue.ts). */
     options: p.engine === 'stable' ? { ...p.options, soundModel: p.options?.soundModel || '3_small_sfx' } : p.engine === 'yue2' ? yueSavedOptions(p.options || {}) : p.options || {},
     /* Where this one could go next, so a client never has to know the rules. */
-    carryTo: carry.destinationsFor(p.engine),
+    carryTo: carry.destinationsFor(p.engine, access),
     carriedFrom: (p.options || {}).carriedFrom || null,
     voiceSeed: p.voiceSeed,
     hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
@@ -3263,7 +3320,7 @@ router.get('/projects', requireJwtAuth, async (req, res) => {
     const factor = priceFactor(req.user);
     const references = audioReferenceGuard(String(req.user.id));
     const projects = await Promise.all(rows.map(async (r) => {
-      const v = projectView(r, factor);
+      const v = projectView(r, factor, { ace: aceOn(req.user) });
       await refreshReferences(v, references);
       v.takes = (r.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
       return v;
@@ -3284,7 +3341,7 @@ router.get('/projects/:id', requireJwtAuth, async (req, res) => {
     if (!p) return res.status(404).json({ error: 'No such project.' });
     await linkJobAssets([p], req.user.id);
     const takes = await takesFor([p], req.user.id, !isKade(req.user));
-    const v = projectView(p, priceFactor(req.user));
+    const v = projectView(p, priceFactor(req.user), { ace: aceOn(req.user) });
     await refreshReferences(v, audioReferenceGuard(String(req.user.id)));
     v.takes = (p.assets || []).map((id) => takes.get(String(id))).filter(Boolean).reverse();
     return res.json({ project: v });
@@ -3314,7 +3371,7 @@ router.patch('/projects/:id', requireJwtAuth, express.json({ limit: '64kb' }), a
       const voiced = voiceVersionTitle(p.title);
       await KadeAsset.updateMany({ ...inProject, 'metadata.voiceOf': { $exists: true } }, { $set: { 'metadata.title': voiced, description: voiced } });
     }
-    return res.json({ project: projectView(p, priceFactor(req.user)) });
+    return res.json({ project: projectView(p, priceFactor(req.user), { ace: aceOn(req.user) }) });
   } catch (error) {
     logger.error('[soundbooth/project patch] failed:', error);
     return res.status(500).json({ error: "Couldn't save that." });
@@ -3406,7 +3463,7 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
     const created = await KadeSoundBoothProject.create({ user: req.user.id, ...draft });
     logger.info(`[soundbooth/carry] ${source.engine} -> ${to} user=${req.user.id} from=${source._id} to=${created._id} rewrite=${(req.body || {}).rewrite === true}`);
     return res.json({
-      project: projectView(created.toObject ? created.toObject() : created, priceFactor(req.user)),
+      project: projectView(created.toObject ? created.toObject() : created, priceFactor(req.user), { ace: aceOn(req.user) }),
       from: { id: String(source._id), engine: source.engine, title: source.title },
       notes,
       rewriteAdvised: out.rewriteAdvised,
@@ -3755,6 +3812,7 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
 router.get('/health', requireJwtAuth, async (req, res) => {
   /* Sing it in my voice: null for every account without a voice model, and then nothing below mentions it. */
   const myVoice = await myVoiceOwner(req.user.id);
+  const guide = (MY_VOICE_READY ? withMyVoiceGuide : (g) => g)(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice);
   return res.json({
     /* Part 293: per person. The YuE2 cover field carries `link` only with the
      * Family feature pack; everyone else gets `lockedLink`, shown greyed out
@@ -3763,7 +3821,8 @@ router.get('/health', requireJwtAuth, async (req, res) => {
      * GET /api/kade/features answers. */
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
-    guide: (MY_VOICE_READY ? withMyVoiceGuide : (g) => g)(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice),
+    /* ACE-Step XL: its card is added last, and only for an account that may use it (ace.ts withAceGuide returns the very same guide otherwise). */
+    guide: ACE_READY ? withAceGuide(guide, req.user) : guide,
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
@@ -3772,6 +3831,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: priced(LYRIA_USD_PER_SONG, priceFactor(req.user)), model: LYRIA_MODEL },
       ...(myVoice ? { myvoice: { configured: true, queued: true, model: 'RVC v2' } } : {}),
+      ...(aceOn(req.user) ? { ace: { configured: aceConfigured(), queued: true, model: 'ACE-Step 1.5 XL' } } : {}),
     },
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     lyricWritingPersona: 'Lyric',
@@ -3784,5 +3844,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, aceOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

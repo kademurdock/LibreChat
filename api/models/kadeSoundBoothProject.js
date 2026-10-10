@@ -23,6 +23,8 @@ const mongoose = require('mongoose');
  *                        not speech. Same shape as 'seed': one render, one
  *                        asset, no job id. Its `options` carry no clips and no
  *                        voice settings, because it has none.
+ *   - engine 'ace'     : ACE-Step XL (Oct 10 2026), QUEUED like 'yue2' on its own
+ *                        endpoint; `options` are its Quality, Length, Singing, lyrics, seed.
  *
  * Collection name is `kadeplayground` deliberately: the plan that ordered this
  * work called the screen the Playground and specced the rows under that name.
@@ -34,7 +36,9 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
     title: { type: String, default: 'Untitled' },
     /** 'myvoice' (Sep 27 2026): Sing it in my voice, only ever on the rows of an account with a voice model. */
-    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2', 'stable', 'myvoice'], default: 'scenema', index: true },
+    /** 'ace' (Oct 10 2026): ACE-Step XL, a second song engine beside 'yue2', behind ACE_ENABLED. Without it here
+     * hooks.project cannot save the row and every ACE render answers "Could not save the draft". */
+    engine: { type: String, enum: ['scenema', 'seed', 'lyria', 'yue2', 'ace', 'stable', 'myvoice'], default: 'scenema', index: true },
     /** 'easy' or 'advanced' -- which side of the screen she was on. Kept so the
      * app can reopen a project in the mode it was written in. */
     mode: { type: String, enum: ['easy', 'advanced'], default: 'easy' },
