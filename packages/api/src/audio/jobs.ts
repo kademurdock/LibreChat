@@ -274,6 +274,10 @@ function sayTakeNotes(takes: Take[], input: Input, note?: Config['takeNote']): s
     return ` ${finished.length > 1 ? said[0].text.replace(/\bthis take\b/g, 'each take') : said[0].text}`;
   return ` ${said.map((take) => `Take ${take.number}: ${take.text}`).join(' ')}`;
 }
+/** "a YuE2", "an ACE-Step XL": the article follows the first letter of the engine's name. */
+export function withArticle(name: string): string {
+  return `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`;
+}
 const takeSchema = new mongoose.Schema<Take>(
   {
     id: String,
@@ -557,7 +561,7 @@ export function createAudioRouter(hooks: Hooks, config: Config): Router {
         const duplicate = error instanceof Error && 'code' in error && error.code === 11000;
         return res.status(duplicate ? 409 : 503).json({
           error: duplicate
-            ? `You already have a ${config.name} request in progress. Wait for it before making another.`
+            ? `You already have ${withArticle(config.name)} request in progress. Wait for it before making another.`
             : 'The sound queue is unavailable. No request was sent.',
         });
       }

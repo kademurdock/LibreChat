@@ -213,6 +213,18 @@ function clock(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
+/** "2 minutes 50 seconds" for 170: in words, since a screen reader reads "2:50" as digits. */
+function spokenLength(seconds: number): string {
+  const whole = Math.round(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  const parts = [
+    minutes ? `${minutes} minute${minutes === 1 ? '' : 's'}` : '',
+    rest ? `${rest} second${rest === 1 ? '' : 's'}` : '',
+  ].filter(Boolean);
+  return parts.join(' ') || '0 seconds';
+}
+
 /**
  * Match my lyrics: the song's length from the lyric lines that are sung (tag lines and blank lines
  * are not). 20 seconds plus 3.7 a line, to the nearest five, from 30 seconds up to 5 minutes or the
@@ -338,7 +350,7 @@ export function aceEstimate(input: Input): string {
   const note = aceCaption(input.style).trimmed
     ? ` Only the first part of Music direction fits; ACE-Step XL reads ${CAPTION_LIMIT} characters.`
     : '';
-  return `About ${clock(input.duration ?? 0)} of music, ${quality.toLowerCase()} quality.${note} ${aceCost}`;
+  return `About ${spokenLength(input.duration ?? 0)} of music, ${quality.toLowerCase()} quality.${note} ${aceCost}`;
 }
 
 /* ---------- the project row and the library asset ---------- */
@@ -418,7 +430,7 @@ export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
     ],
     notFor: ['covers of a recording: use YuE2', 'cloning a singer’s voice'],
     howToWrite: [
-      'Describe the style, instruments and singing voice in Music direction. A tempo such as 88 BPM is read out for you.',
+      'Describe the style, instruments and singing voice in Music direction. A tempo such as 88 BPM is picked out and sent on its own.',
       'Put the exact words under Lyrics, with [Verse] and [Chorus] tags. Words in (parentheses) are sung as backing vocals.',
       'Leave Length on Match my lyrics, or choose a length. Quality Best is slower and costs more.',
     ],

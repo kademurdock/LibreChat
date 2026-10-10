@@ -356,7 +356,7 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal(quote.status, 200);
     assert.equal(quote.data.ok, true);
     assert.equal(quote.data.estimate.spoken, ace.aceEstimate(ace.aceInput({ ...song }, process.env)));
-    assert.match(quote.data.estimate.spoken, /^About 0:30 of music, fast quality\. ACE-Step XL does not deduct from your credit balance/);
+    assert.match(quote.data.estimate.spoken, /^About 30 seconds of music, fast quality\. ACE-Step XL does not deduct from your credit balance/);
     assert.equal(quote.data.queued, undefined, 'a quote queues nothing');
     await nothingStarted();
   });
@@ -414,7 +414,7 @@ test('ACE-Step XL through the booth route', async (t) => {
   await t.test('a second request from the same person waits; another person is not held up', async () => {
     const again = await call('/render', { body: song, ...asAdmin() });
     assert.equal(again.status, 409);
-    assert.match(again.data.error, /already have a ACE-Step XL request in progress/);
+    assert.match(again.data.error, /^You already have an ACE-Step XL request in progress\. Wait for it before making another\.$/);
     assert.equal(runpod.runs.length, 1);
     const other = await call('/render', { body: { ...song, seed: 6 }, user: ADMIN_2, role: 'ADMIN' });
     assert.equal(other.status, 200, 'one active job per person, not per engine');

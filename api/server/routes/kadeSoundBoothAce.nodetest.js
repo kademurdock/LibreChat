@@ -336,14 +336,41 @@ test('request: exactly the worker contract, one take, no custom style, no key or
 
 test('estimate: length, quality, a note when the direction is cut, then the cost; no names, no figures', () => {
   const said = ace.aceEstimate(ace.aceInput({ ...base, length: '3:00' }, {}));
-  assert.equal(said, `About 3:00 of music, fast quality. ${ace.aceCost}`);
-  assert.equal(ace.aceEstimate(ace.aceInput({ ...base, quality: 'Best' }, {})), `About 0:30 of music, best quality. ${ace.aceCost}`);
-  assert.equal(ace.aceEstimate(ace.aceInput({ ...base, lyrics: sheet(40) }, {})), `About 2:50 of music, fast quality. ${ace.aceCost}`);
+  assert.equal(said, `About 3 minutes of music, fast quality. ${ace.aceCost}`);
+  assert.equal(ace.aceEstimate(ace.aceInput({ ...base, quality: 'Best' }, {})), `About 30 seconds of music, best quality. ${ace.aceCost}`);
+  assert.equal(ace.aceEstimate(ace.aceInput({ ...base, lyrics: sheet(40) }, {})), `About 2 minutes 50 seconds of music, fast quality. ${ace.aceCost}`);
   const cut = ace.aceEstimate(ace.aceInput({ ...base, script: `Soul ${'warm '.repeat(150)}` }, {}));
-  assert.match(cut, /^About 0:30 of music, fast quality\. Only the first part of Music direction fits; ACE-Step XL reads 512 characters\. ACE-Step XL does not deduct/);
+  assert.match(cut, /^About 30 seconds of music, fast quality\. Only the first part of Music direction fits; ACE-Step XL reads 512 characters\. ACE-Step XL does not deduct/);
   assert.doesNotMatch(said, /Kade|\$|\d+\s*cents/);
   assert.match(ace.aceCost, /does not deduct from your credit balance/);
   assert.match(ace.aceCost, /billed by the second, including startup and two minutes awake after the last job; Best uses more\.$/);
+});
+
+test('the estimate says the length in words, never as a clock a screen reader would read as digits', () => {
+  const spoken = {
+    '0:30': '30 seconds',
+    '1:00': '1 minute',
+    '1:01': '1 minute 1 second',
+    '2:00': '2 minutes',
+    '2:50': '2 minutes 50 seconds',
+    '3:05': '3 minutes 5 seconds',
+    '5:00': '5 minutes',
+    '6:00': '6 minutes',
+  };
+  for (const [length, words] of Object.entries(spoken)) {
+    const said = ace.aceEstimate(ace.aceInput({ ...base, length }, {}));
+    assert.ok(said.startsWith(`About ${words} of music, fast quality.`), `${length} -> ${said}`);
+    assert.doesNotMatch(said.slice(0, said.indexOf('quality')), /\d:\d\d/, length);
+  }
+  const labels = ace.aceGuide({}).settings.find((setting) => setting.key === 'length').options;
+  assert.ok(labels.includes('3:00') && labels.includes('6:00'), 'the Length choice keeps its M:SS labels');
+});
+
+test('the "already in progress" sentence takes a or an from the engine name; the other engines keep "a"', () => {
+  const { withArticle } = require('../../../packages/api/src/audio/jobs.ts');
+  assert.equal(withArticle('ACE-Step XL'), 'an ACE-Step XL');
+  assert.equal(withArticle('YuE2'), 'a YuE2');
+  assert.equal(withArticle('Stable Audio'), 'a Stable Audio');
 });
 
 test('the project keeps the settings in the words the guide shows, and the library line says what it is', () => {
@@ -438,7 +465,7 @@ const EXPECTED_CARD = {
   bestFor: ['songs with your own lyrics', 'a quick draft to hear an idea', 'a longer song in one pass'],
   notFor: ['covers of a recording: use YuE2', 'cloning a singer’s voice'],
   howToWrite: [
-    'Describe the style, instruments and singing voice in Music direction. A tempo such as 88 BPM is read out for you.',
+    'Describe the style, instruments and singing voice in Music direction. A tempo such as 88 BPM is picked out and sent on its own.',
     'Put the exact words under Lyrics, with [Verse] and [Chorus] tags. Words in (parentheses) are sung as backing vocals.',
     'Leave Length on Match my lyrics, or choose a length. Quality Best is slower and costs more.',
   ],
