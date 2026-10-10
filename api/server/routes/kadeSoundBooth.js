@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -222,20 +222,27 @@ router.use(createYueRouter({
  * ACE_ADMIN_ONLY is on (the default) only an admin account sees or uses it; with the flag unset the guide, every
  * request and every answer is exactly as before. Like MY_VOICE_READY, a harness with its own @librechat/api
  * stand-in simply has no ACE: nothing is mounted and every check answers no. */
-const ACE_READY = [createAceRouter, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
+const ACE_READY = [createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
 const aceOn = (user) => ACE_READY && aceAllowed(user);
-/* A request for engine ace is refused here, in a plain sentence, before any router: an unknown engine would otherwise
+/* The router (its Mongo model and indexes, its 20 second timer) is only created when ACE is switched on or an endpoint is
+ * set. With neither, which is how it ships, nothing of it exists. An endpoint without the flag still mounts it, so takes
+ * already queued keep being followed after ACE_ENABLED is turned off. */
+const ACE_MOUNT = ACE_READY && (aceEnabled() || aceConfigured());
+/* A job the project row shows as another word: an unconfirmed take is failed, one being saved is still running. */
+const ACE_PROJECT_STATE = { uncertain: 'failed', saving: 'running' };
+/* A request for engine ace is answered here, in a plain sentence, before any router: an unknown engine would otherwise
  * fall through to the main /render and be performed as an AuK speech script. */
 if (ACE_READY) router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   if (!req.body || req.body.engine !== 'ace') return next();
   return requireJwtAuth(req, res, () => {
     const verdict = aceAccess(req.user);
-    if (verdict.ok) return next();
-    logger.warn(`[soundbooth/render] ace REFUSED user=${req.user && req.user.id}: ${verdict.error}`);
-    return res.status(403).json({ error: verdict.error });
+    if (verdict.ok && ACE_MOUNT) return next();
+    const error = verdict.ok ? 'ACE-Step XL is not configured yet.' : verdict.error;
+    logger.warn(`[soundbooth/render] ace REFUSED user=${req.user && req.user.id}: ${error}`);
+    return res.status(verdict.ok ? 503 : 403).json({ error });
   });
 });
-if (ACE_READY) router.use(createAceRouter({
+if (ACE_MOUNT) router.use(createAceRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
   project: async (user, input, sourceText) => {
@@ -245,8 +252,7 @@ if (ACE_READY) router.use(createAceRouter({
   },
   update: async job => {
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, {
-      $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
-        lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
+      $set: { state: ACE_PROJECT_STATE[job.state] || job.state, lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
     });
   },
   notify: async job => {
@@ -1634,12 +1640,12 @@ function projectView(p, factor = 1, access = {}) {
     /* A Lyria row is a brief, not a script; there is no screenplay view of it. */
     /* Part 126 (carried ask): a library row says what made it and why, so an
      * old project explains itself instead of leaving her to guess. */
-    why: p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'myvoice' ? myVoiceProjectWhy(p.options) : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'ace' && ACE_READY ? aceProjectWhy(p.options) : p.engine === 'lyria'
+    why: (p.engine === 'ace' && ACE_READY && aceProjectWhy(p.options)) || (p.engine === 'stable' ? effectsVariant(p.options).name + ' — sound effects and ambience' : p.engine === 'myvoice' ? myVoiceProjectWhy(p.options) : p.engine === 'yue2' ? yueProjectWhy(p.options) : p.engine === 'lyria'
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
       : aukEdit ? 'AuK — an edit of an imported recording'
-      : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : ''),
+      : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : '')),
     /* Edits saved before Oct 2 2026 kept the bare instruction here. */
     readback: oldSungReadback ? '' : aukEdit && p.readback && flatText(p.readback) === flatText(instruction) ? editReadback(instruction) : p.readback,
     /* Lyria: the words the latest take sang ("Words it sang" on the web). */
@@ -3844,5 +3850,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { ACE_READY, aceOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

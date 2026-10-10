@@ -111,8 +111,9 @@ export function aceMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
 /** Whether this account may use ACE-Step XL now, and the plain sentence when it may not. */
 export function aceAccess(user: AceUser, env: NodeJS.ProcessEnv = process.env): AceVerdict {
   if (!aceEnabled(env)) return { ok: false, error: ACE_OFF };
+  if (!user) return { ok: false, error: ACE_CLOSED };
   if (!aceAdminOnly(env)) return { ok: true };
-  const admin = String(user?.role ?? '').toUpperCase() === 'ADMIN';
+  const admin = String(user.role ?? '').toUpperCase() === 'ADMIN';
   return admin ? { ok: true } : { ok: false, error: ACE_CLOSED };
 }
 export function aceAllowed(user: AceUser, env: NodeJS.ProcessEnv = process.env): boolean {
@@ -230,6 +231,7 @@ function wantsLyricLength(choice: string | number | undefined): boolean {
 
 function chosenSeconds(choice: string | number): number | undefined {
   if (typeof choice === 'number') return Number.isFinite(choice) ? Math.round(choice) : undefined;
+  if (typeof choice !== 'string') return undefined;
   const form = /^(\d{1,2}):([0-5]\d)$/.exec(choice.trim());
   return form ? Number(form[1]) * 60 + Number(form[2]) : undefined;
 }
@@ -261,7 +263,8 @@ export function aceModelChoice(
   value: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): AceModel {
-  const said = lowered(typeof value === 'string' ? value : undefined);
+  if (value == null) return aceDefaultModel(env);
+  const said = typeof value === 'string' ? lowered(value) : '?';
   if (!said) return aceDefaultModel(env);
   if (said === lowered(aceQuality.fast)) return 'xl-turbo';
   if (said === lowered(aceQuality.best)) return 'xl-sft';
