@@ -86,7 +86,10 @@ export function createCallPresentation() {
       const tail = clips.at(-1);
       if (clips.length >= 64 || (tail && start < tail.start + tail.duration - 0.000001))
         return null;
-      const clip = { start, duration, identity, token: ++serial };
+      const observedIdentity = identity
+        ? Object.freeze({ ...identity })
+        : null;
+      const clip = Object.freeze({ start, duration, identity: observedIdentity, token: ++serial });
       clips.push(clip);
       return clip.token;
     },

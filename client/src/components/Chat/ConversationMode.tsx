@@ -42,7 +42,6 @@ import {
   StopCircle,
   Camera,
   CameraOff,
-  ScanEye,
   Radio,
   Flashlight,
   FlashlightOff,
@@ -151,6 +150,7 @@ class SentenceStreamer {
     'ltd',
     'corp',
   ]);
+
   onsentence?: (s: string) => void;
 
   push(token: string) {
@@ -729,13 +729,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             stopCamera();
             setVideoMode('off');
           }
-          setVideoInfo(
-            m.message
-              ? String(m.message)
-              : m.reason === 'cap'
-                ? 'Out of live minutes for today — the regular call continues as normal.'
-                : 'Your Spotter is off the line — your character is back. Tap the camera button if you want regular video.',
-          );
+          const fallback =
+            m.reason === 'cap'
+              ? 'Out of live minutes for today — the regular call continues as normal.'
+              : 'Your Spotter is off the line — your character is back. Tap the camera button if you want regular video.';
+          setVideoInfo(m.message ? String(m.message) : fallback);
         }
         return;
       }
@@ -773,13 +771,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         }
         stopCamera();
         setVideoMode('off');
-        setVideoInfo(
-          m.message
-            ? String(m.message)
-            : m.reason === 'cap'
-              ? 'Out of video minutes for today — voice continues as normal.'
-              : 'Video off.',
-        );
+        const fallback =
+          m.reason === 'cap'
+            ? 'Out of video minutes for today — voice continues as normal.'
+            : 'Video off.';
+        setVideoInfo(m.message ? String(m.message) : fallback);
       }
     },
     [startCamera, stopCamera, streamingEngine],
@@ -1001,6 +997,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // shouldn't drive the speaking pulse. Fail-soft: a fetch/decode hiccup
   // just means a silent call start, never a blocked one.
   const playPickupSound = useCallback(async () => {
+    const serial = portraitCallSerialRef.current;
     try {
       const ctx = getAudioCtx();
       if (!pickupBufferRef.current) {
@@ -1008,6 +1005,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         const raw = await resp.arrayBuffer();
         pickupBufferRef.current = await ctx.decodeAudioData(raw);
       }
+      if (
+        !callActiveRef.current ||
+        serial !== portraitCallSerialRef.current ||
+        audioCtxRef.current !== ctx
+      )
+        return;
       const src = ctx.createBufferSource();
       src.buffer = pickupBufferRef.current;
       const gain = ctx.createGain();
@@ -1026,6 +1029,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // same fail-soft rule as pickup: a fetch/decode hiccup just means a
   // silent hang-up, never a blocked one.
   const playHangupSound = useCallback(async () => {
+    const serial = portraitCallSerialRef.current;
     try {
       const ctx = getAudioCtx();
       if (!hangupBufferRef.current) {
@@ -1033,6 +1037,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         const raw = await resp.arrayBuffer();
         hangupBufferRef.current = await ctx.decodeAudioData(raw);
       }
+      if (serial !== portraitCallSerialRef.current || audioCtxRef.current !== ctx) return;
       const src = ctx.createBufferSource();
       src.buffer = hangupBufferRef.current;
       const gain = ctx.createGain();
@@ -1638,6 +1643,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
   const startListening = useCallback(() => {
     if (abortRef.current) return;
+    const serial = portraitCallSerialRef.current;
+    const turn = turnIdRef.current;
     const stream = micStreamRef.current;
     if (!stream || typeof (window as any).MediaRecorder === 'undefined') {
       setError('Recording is not available in this browser.');
@@ -1649,9 +1656,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       mediaRecorderRef.current = rec;
       rec.addEventListener('dataavailable', (e: BlobEvent) => {
+        if (serial !== portraitCallSerialRef.current || mediaRecorderRef.current !== rec) return;
         if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       });
       rec.addEventListener('stop', () => {
+        if (serial !== portraitCallSerialRef.current || mediaRecorderRef.current !== rec) return;
         void handleUtteranceRef.current(rec.mimeType || mime);
       });
       rec.start(100);
@@ -1659,7 +1668,15 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       monitorSilence();
     } catch (err) {
       console.error('[ConvMode] startListening error:', err);
-      if (!abortRef.current) setTimeout(() => startListeningRef.current(), 900);
+      if (!abortRef.current)
+        setTimeout(() => {
+          if (
+            !abortRef.current &&
+            serial === portraitCallSerialRef.current &&
+            turn === turnIdRef.current
+          )
+            startListeningRef.current();
+        }, 900);
     }
   }, [monitorSilence]);
   useEffect(() => {
@@ -1715,6 +1732,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     callActiveRef.current = true;
     callPresentation.clear();
     const portraitCallSerial = ++portraitCallSerialRef.current;
+    const ownsCall = () =>
+      callActiveRef.current &&
+      !abortRef.current &&
+      portraitCallSerial === portraitCallSerialRef.current;
     portraitCacheRef.current.clear();
     portraitCallAgentRef.current = agentId ?? null;
     portraitAgentRef.current = agentId ?? null;
@@ -1806,14 +1827,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((a) => {
+          if (!ownsCall()) return;
           const fp = a?.avatar?.filepath;
-          if (fp && !abortRef.current && portraitCallSerial === portraitCallSerialRef.current) {
+          if (fp) {
             if (agentId) portraitCacheRef.current.set(agentId, String(fp));
             if (portraitAgentRef.current === agentId) setAvatarUrl(String(fp));
           }
           laStart(String(a?.name || 'Your AI'));
         })
         .catch(() => {
+          if (!ownsCall()) return;
           laStart('Your AI'); /* keep the orb */
         });
     } else {
@@ -1849,7 +1872,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           conversationId: conversationIdRef.current,
           handlers: {
             onStatus: (st) => {
-              if (!abortRef.current) setStatus(st);
+              if (!ownsCall()) return;
+              setStatus(st);
               // Spotter direct call: first moment the line is live, ask for them.
               if (st === 'listening' && spotterAutoRef.current) {
                 spotterAutoRef.current = false;
@@ -1857,37 +1881,38 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               }
             },
             onUserCaption: (t) => {
-              if (!abortRef.current) {
+              if (ownsCall()) {
                 setTranscript(t);
                 setAiText('');
               }
             },
             onAgentCaption: (t) => {
-              if (!abortRef.current) setAiText((prev) => (prev ? `${prev} ${t}` : t));
+              if (ownsCall()) setAiText((prev) => (prev ? `${prev} ${t}` : t));
             },
             onError: (m) => {
-              if (!abortRef.current) setError(m);
+              if (ownsCall()) setError(m);
             },
             onTable: (id) => {
               // Same widget classic mode draws; every event = one move = one
               // refetch (seq bump). GameTable is fail-soft, so a table the
               // signed-in user can't see (bridge games run under the admin
               // session — the known phone-guest caveat) renders nothing.
-              if (abortRef.current || !id) return;
+              if (!ownsCall() || !id) return;
               tableSeqRef.current += 1;
               setLiveTable({ id, seq: tableSeqRef.current });
             },
             onVideo: (m) => {
-              if (!abortRef.current) onVideoEvent(m);
+              if (ownsCall()) onVideoEvent(m);
             },
             onEnded: (graceful) => {
-              if (abortRef.current || !callActiveRef.current) return;
+              if (!ownsCall()) return;
               if (!graceful) setError('The call connection dropped. End the call and try again.');
             },
           },
         });
         return; // streaming call is live
       } catch (err: any) {
+        if (!ownsCall()) return;
         // Ticket/WS/mic trouble: fall back to the classic engine in the SAME
         // call so the phone button always works. (If the mic itself is
         // blocked, classic will surface its own clear error below.)
@@ -1916,20 +1941,34 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         },
         video: false,
       });
-      if (abortRef.current) {
+      if (!ownsCall()) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
       micStreamRef.current = stream;
       setupAnalyser(stream);
-      setTimeout(() => startListeningRef.current(), 200);
+      setTimeout(() => {
+        if (ownsCall()) startListeningRef.current();
+      }, 200);
     } catch (err) {
+      if (!ownsCall()) return;
       console.error('[ConvMode] mic permission error:', err);
       setError(
         'Microphone access is blocked. Enable mic permission, then end and start the call again.',
       );
     }
-  }, [getAudioCtx, setupAnalyser, setVoiceCallActive, pauseGlobalAudio, callPresentation]);
+  }, [
+    agentId,
+    token,
+    getAudioCtx,
+    setupAnalyser,
+    setVoiceCallActive,
+    pauseGlobalAudio,
+    callPresentation,
+    playPickupSound,
+    streamingEngine,
+    onVideoEvent,
+  ]);
 
   // Mirror the call status onto the Live Activity (both engines funnel
   // through setStatus, so one effect covers streaming and classic).
@@ -1945,6 +1984,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   }, [status]);
 
   const endCall = useCallback(() => {
+    const endedSerial = ++portraitCallSerialRef.current;
     void playHangupSound(); // soft "receiver down" cue -- fires immediately, mirrors playPickupSound on start
     callActiveRef.current = false;
     spotterAutoRef.current = false;
@@ -2021,12 +2061,17 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
      * line, leaving iOS pinned in the call-style session. So ~1.5s later
      * (receiver-down cue done) fully CLOSE the context and drop the refs.
      * getAudioCtx() builds a fresh context the next time anything plays. */
+    const endedContext = audioCtxRef.current;
     setTimeout(() => {
-      if (callActiveRef.current) {
+      if (
+        callActiveRef.current ||
+        portraitCallSerialRef.current !== endedSerial ||
+        audioCtxRef.current !== endedContext
+      ) {
         return;
       } // a new call took over — leave audio alone
       try {
-        void audioCtxRef.current?.close();
+        void endedContext?.close();
       } catch {
         /* ignore */
       }
@@ -2053,12 +2098,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       const startedAtMs = callStartedRef.current ? Date.parse(callStartedRef.current) : 0;
       if (startedAtMs > 0) {
         const tryLand = (attempt: number) => {
+          if (portraitCallSerialRef.current !== endedSerial) return;
           fetch('/api/convos?pageNumber=1', {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             credentials: 'include',
           })
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
+              if (portraitCallSerialRef.current !== endedSerial) return;
               const list = (data && (data.conversations ?? data)) as Array<{
                 conversationId?: string;
                 updatedAt?: string;
@@ -2100,6 +2147,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     stopCamera,
     navigate,
     callPresentation,
+    streamingEngine,
   ]);
 
   // Stop AI mid-speech and hand the mic back immediately.
@@ -2118,6 +2166,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       return;
     }
     turnIdRef.current += 1;
+    const interruptedTurn = turnIdRef.current;
+    const interruptedCall = portraitCallSerialRef.current;
     try {
       void sseReaderRef.current?.cancel();
     } catch {
@@ -2132,23 +2182,52 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     currentSourceRef.current = null;
     playQueueRef.current = Promise.resolve();
     setTimeout(() => {
-      if (abortRef.current) return; // call ended meanwhile
+      if (
+        abortRef.current ||
+        !callActiveRef.current ||
+        interruptedTurn !== turnIdRef.current ||
+        interruptedCall !== portraitCallSerialRef.current
+      )
+        return;
       setAiText('');
       setStatus('listening');
       startListeningRef.current();
     }, 150);
-  }, [callPresentation]);
+  }, [callPresentation, streamingEngine]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       abortRef.current = true;
+      portraitCallSerialRef.current += 1;
+      turnIdRef.current += 1;
       callPresentation.clear();
       callActiveRef.current = false;
       setVoiceCallActive(false);
+      streamingEngine.stop(false);
+      try {
+        void sseReaderRef.current?.cancel();
+      } catch {
+        /* already closed */
+      }
+      sseReaderRef.current = null;
+      try {
+        currentSourceRef.current?.stop();
+      } catch {
+        /* already stopped */
+      }
+      currentSourceRef.current = null;
+      playQueueRef.current = Promise.resolve();
       teardownMic();
+      try {
+        void audioCtxRef.current?.close();
+      } catch {
+        /* already closed */
+      }
+      audioCtxRef.current = null;
+      outputAnalyserRef.current = null;
     };
-  }, [teardownMic, setVoiceCallActive, callPresentation]);
+  }, [teardownMic, setVoiceCallActive, callPresentation, streamingEngine]);
 
   // Modal focus management: into the dialog on open, back to trigger on close.
   useEffect(() => {
@@ -2208,17 +2287,44 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
    * audible by design (typing sound = thinking, her voice = speaking, quiet =
    * your turn). Only the one-time 'Connecting' survives, so a blind caller
    * still knows the tap worked. The VISIBLE label keeps all states. */
-  const srStatus = error ? '' : status === 'connecting' ? 'Connecting' : '';
-  const visibleStatus =
-    status === 'listening'
-      ? 'Listening'
-      : status === 'thinking'
-        ? thinkingLabel
-        : status === 'speaking'
-          ? 'Speaking'
-          : status === 'connecting'
-            ? 'Connecting'
-            : 'Starting';
+  const srStatus = !error && status === 'connecting' ? 'Connecting' : '';
+  const visibleStatus = {
+    listening: 'Listening',
+    thinking: thinkingLabel,
+    speaking: 'Speaking',
+    connecting: 'Connecting',
+    idle: 'Starting',
+  }[status];
+  const callUnavailableTitle = agentId
+    ? 'Voice call mode'
+    : 'Open a conversation to use voice call mode';
+  const spotterUnavailableTitle = agentId
+    ? 'Call your Spotter (live mode)'
+    : 'Open a conversation to call your Spotter';
+  const ringClass = {
+    listening: cn('ring-4 ring-blue-500/40', !preparedCallPortrait && 'animate-kade-nod scale-105'),
+    thinking: 'ring-4 ring-amber-500/40',
+    speaking: cn('ring-4 ring-green-500/40', !preparedCallPortrait && 'scale-110'),
+    connecting: '',
+    idle: '',
+  }[status];
+  const backgroundClass = {
+    listening: 'bg-blue-500/20',
+    thinking: 'bg-amber-500/20',
+    speaking: 'bg-green-500/20',
+    connecting: 'bg-white/5',
+    idle: 'bg-white/5',
+  }[status];
+  const badgeClass = {
+    listening: 'bg-blue-500/90',
+    thinking: 'bg-amber-500/90',
+    speaking: 'bg-green-600/90',
+    connecting: 'bg-gray-700/90',
+    idle: 'bg-gray-700/90',
+  }[status];
+  const interruptionHelp = streamingRef.current
+    ? 'Just start talking to interrupt · Red to end call'
+    : 'Tap amber to interrupt · Red to end call';
 
   // KADE July 16 2026 (?kade=call): hands-free call start for the Action
   // Button / Siri path. Fires once, only when the trigger button below WOULD
@@ -2257,9 +2363,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           title={
             !mediaAvail
               ? 'Voice calls need a browser with microphone recording support'
-              : agentId
-                ? 'Voice call mode'
-                : 'Open a conversation to use voice call mode'
+              : callUnavailableTitle
           }
           disabled={!agentId || !mediaAvail}
           className={cn(
@@ -2286,9 +2390,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           title={
             !mediaAvail
               ? 'Voice calls need a browser with microphone recording support'
-              : agentId
-                ? 'Call your Spotter (live mode)'
-                : 'Open a conversation to call your Spotter'
+              : spotterUnavailableTitle
           }
           disabled={!agentId || !mediaAvail}
           className={cn(
@@ -2313,7 +2415,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       ref={dialogRef}
       tabIndex={-1}
       onKeyDown={onDialogKeyDown}
-      className="bg-gray-950/97 fixed inset-0 z-50 flex flex-col items-center justify-center focus:outline-none"
+      className="bg-gray-950/97 fixed inset-0 z-50 flex flex-col items-center overflow-y-auto px-4 py-6 focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="Voice conversation. Escape or End call to hang up."
@@ -2346,28 +2448,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       <div
         ref={orbRef}
         className={cn(
-          'relative mb-6 flex items-center justify-center transition-all duration-300',
-          preparedCallPortrait && !liveMode && 'h-64 w-64 max-w-full rounded-2xl',
+          'relative mb-6 mt-auto flex shrink-0 items-center justify-center transition-all duration-300',
+          preparedCallPortrait && !liveMode && 'aspect-square w-64 max-w-full rounded-2xl',
           (!preparedCallPortrait || liveMode) &&
             (avatarUrl ? 'h-44 w-44 rounded-full' : 'h-28 w-28 rounded-full'),
-          liveMode
-            ? 'ring-4 ring-emerald-500/60'
-            : status === 'listening'
-              ? cn('ring-4 ring-blue-500/40', !preparedCallPortrait && 'animate-kade-nod scale-105')
-              : status === 'thinking'
-                ? 'ring-4 ring-amber-500/40'
-                : status === 'speaking'
-                  ? cn('ring-4 ring-green-500/40', !preparedCallPortrait && 'scale-110')
-                  : '',
-          avatarUrl
-            ? 'bg-white/5'
-            : status === 'listening'
-              ? 'bg-blue-500/20'
-              : status === 'thinking'
-                ? 'bg-amber-500/20'
-                : status === 'speaking'
-                  ? 'bg-green-500/20'
-                  : 'bg-white/5',
+          liveMode ? 'ring-4 ring-emerald-500/60' : ringClass,
+          avatarUrl ? 'bg-white/5' : backgroundClass,
         )}
         aria-hidden="true"
       >
@@ -2377,7 +2463,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-10 h-full w-full rounded-2xl"
         />
-        {liveMode ? (
+        {liveMode && (
           /* SPOTTER orb (July 16 2026): while live, a different SOMEBODY has
              the call — showing the character's face would be a lie. Emerald
              radio orb instead; the rAF pulse still breathes with the
@@ -2385,7 +2471,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           <div className="flex h-full w-full items-center justify-center rounded-full bg-emerald-600/25">
             <Radio size={avatarUrl ? 64 : 44} aria-hidden="true" className="text-emerald-300" />
           </div>
-        ) : avatarUrl ? (
+        )}
+        {!liveMode && avatarUrl && (
           <>
             {/* FaceTime Lite: the character's face IS the orb. The rAF
                 speaking pulse scales this whole container, so the photo
@@ -2404,13 +2491,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             <span
               className={cn(
                 'absolute -bottom-1 -right-1 z-20 flex h-11 w-11 items-center justify-center rounded-full border-2 border-gray-950',
-                status === 'listening'
-                  ? 'bg-blue-500/90'
-                  : status === 'thinking'
-                    ? 'bg-amber-500/90'
-                    : status === 'speaking'
-                      ? 'bg-green-600/90'
-                      : 'bg-gray-700/90',
+                badgeClass,
               )}
             >
               {status === 'listening' && <Mic size={20} className="animate-pulse text-white" />}
@@ -2422,7 +2503,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               )}
             </span>
           </>
-        ) : (
+        )}
+        {!liveMode && !avatarUrl && (
           <>
             {status === 'listening' && <Mic size={44} className="animate-pulse text-blue-400" />}
             {status === 'thinking' && (
@@ -2476,7 +2558,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               onClick={() => requestVideo(videoNotice.mode, true)}
               className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
             >
-              Turn camera on
+              {localize('com_ui_call_camera_on')}
             </button>
             <button
               onClick={() => {
@@ -2485,7 +2567,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               }}
               className="flex-1 rounded-full bg-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
-              Not now
+              {localize('com_ui_call_not_now')}
             </button>
           </div>
         </div>
@@ -2505,7 +2587,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               onClick={() => streamingEngine.sendJson({ type: 'live', on: true, ack: true })}
               className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
             >
-              Put them on
+              {localize('com_ui_call_put_them_on')}
             </button>
             <button
               onClick={() => {
@@ -2514,7 +2596,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               }}
               className="flex-1 rounded-full bg-white/10 px-3 py-2 text-sm text-gray-200 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-gray-400"
             >
-              Not now
+              {localize('com_ui_call_not_now')}
             </button>
           </div>
         </div>
@@ -2533,16 +2615,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           <GameTable gameId={liveTable.id} refreshKey={liveTable.seq} compact />
         </div>
       )}
-      <div className="min-h-[7rem] w-full max-w-xs space-y-3 px-4" aria-hidden="true">
+      <div className="min-h-[7rem] w-full max-w-xs shrink-0 space-y-3 px-4" aria-hidden="true">
         {transcript && (
           <div className="rounded-2xl bg-blue-950/60 px-4 py-3 text-sm leading-relaxed">
-            <span className="mb-1 block text-xs uppercase tracking-wider text-blue-300">You</span>
+            <span className="mb-1 block text-xs uppercase tracking-wider text-blue-300">
+              {localize('com_ui_you')}
+            </span>
             <span className="text-blue-100">{transcript}</span>
           </div>
         )}
         {aiText && (
           <div className="rounded-2xl bg-white/5 px-4 py-3 text-sm leading-relaxed">
-            <span className="mb-1 block text-xs uppercase tracking-wider text-gray-300">Agent</span>
+            <span className="mb-1 block text-xs uppercase tracking-wider text-gray-300">
+              {localize('com_ui_call_agent')}
+            </span>
             {/* aiText accumulates the raw streamed reply, which may carry an
                 invisible TTS-2 voice performance tag (see utils/voiceTags.ts)
                 meant only for the audio path -- strip it for this caption.
@@ -2554,7 +2640,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       </div>
 
       {/* Controls */}
-      <div className="mt-10 flex items-center gap-6">
+      <div className="mt-10 flex shrink-0 flex-wrap items-center justify-center gap-6">
         {(status === 'speaking' || status === 'thinking') && (
           <button
             onClick={interruptAI}
@@ -2654,11 +2740,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         </button>
       </div>
 
-      <p className="mt-5 text-xs text-gray-400" aria-hidden="true">
+      <p className="mb-auto mt-5 shrink-0 text-xs text-gray-400" aria-hidden="true">
         {status === 'speaking' || status === 'thinking'
-          ? streamingRef.current
-            ? 'Just start talking to interrupt · Red to end call'
-            : 'Tap amber to interrupt · Red to end call'
+          ? interruptionHelp
           : 'Red button ends the call'}
       </p>
     </div>

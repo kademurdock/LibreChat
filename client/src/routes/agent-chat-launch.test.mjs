@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { agentChatLaunch, needsAgentChatLaunch } from './agent-chat-launch.ts';
+import { agentChatLaunch, needsAgentChatLaunch, unambiguousAgentId } from './agent-chat-launch.ts';
 import { getPostLoginRedirect, persistRedirectToSession } from '../utils/redirect.ts';
 
 const agentId = 'agent_NkG_Fb8_xLz8HFJyx4gNv';
@@ -36,6 +36,14 @@ test('old conversation paths and malformed identities are not launch commands', 
   assert.equal(agentChatLaunch('old-conversation', `?agent_id=${agentId}`, 'a'), null);
   for (const search of ['', '?agent_id=Angel', '?agent_id=agent_', '?agent_id=agent_%2Fwrong'])
     assert.equal(agentChatLaunch('new', search, 'a'), null);
+});
+
+test('duplicate agent IDs cannot classify one character and select another preset', () => {
+  for (const suffix of [agentId, 'agent_another', '']) {
+    const search = `?agent_id=${agentId}&agent_id=${suffix}`;
+    assert.equal(agentChatLaunch('new', search, 'a'), null);
+    assert.equal(unambiguousAgentId(new URLSearchParams(search)), null);
+  }
 });
 
 test('sign-in continuation preserves the exact new-chat agent query through URL and stored redirects', () => {

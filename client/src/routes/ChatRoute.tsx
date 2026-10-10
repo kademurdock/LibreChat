@@ -48,7 +48,7 @@ import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
 import store from '~/store';
-import { agentChatLaunch, needsAgentChatLaunch } from './agent-chat-launch';
+import { agentChatLaunch, needsAgentChatLaunch, unambiguousAgentId } from './agent-chat-launch';
 
 const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
@@ -264,6 +264,7 @@ export default function ChatRoute() {
 
       const queryParams: Record<string, string> = {};
       searchParams.forEach((value, key) => {
+        if (key === 'agent_id' && !unambiguousAgentId(searchParams)) return;
         if (key !== 'prompt' && key !== 'q' && key !== 'submit' && key !== 'projectId') {
           queryParams[key] = value;
         }

@@ -17,7 +17,7 @@
  * Transcripts land in Call History server-side (bridge ingest, surface 'web')
  * — callers of this hook must NOT also POST /api/kade/calls/mine.
  */
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CallAudioIdentity, CallPresentation } from './character/call-presentation.mjs';
 import { characterAudioIdentity } from './character/call-presentation.mjs';
 
@@ -82,6 +82,7 @@ export default function useStreamingCall() {
   const flushSeqRef = useRef(0);
   const presentationRef = useRef<CallPresentation | null>(null);
   const pendingCharacterRef = useRef<CallAudioIdentity | null>(null);
+  const sessionRef = useRef(0);
 
   const flushPlayback = useCallback(() => {
     flushSeqRef.current += 1;
@@ -268,61 +269,86 @@ export default function useStreamingCall() {
     floatLenRef.current = 0;
   }, []);
 
-  const startMic = useCallback(async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
-    micStreamRef.current = stream;
-    const Ctor = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx: AudioContext = new Ctor();
-    micCtxRef.current = ctx;
-    if (ctx.state === 'suspended') {
-      try {
-        await ctx.resume();
-      } catch {
-        /* ignore */
+  const startMic = useCallback(
+    async (session: number) => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      if (!activeRef.current || session !== sessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
       }
-    }
-    const source = ctx.createMediaStreamSource(stream);
-    let attached = false;
-    if (typeof (ctx as any).audioWorklet?.addModule === 'function') {
-      try {
-        const workletSrc =
-          'class KadePcm extends AudioWorkletProcessor{process(inputs){' +
-          'const ch=inputs[0]&&inputs[0][0];if(ch&&ch.length)this.port.postMessage(ch.slice(0));return true}}' +
-          "registerProcessor('kade-pcm',KadePcm);";
-        const url = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
-        await ctx.audioWorklet.addModule(url);
-        URL.revokeObjectURL(url);
-        const node = new AudioWorkletNode(ctx, 'kade-pcm', {
-          numberOfInputs: 1,
-          numberOfOutputs: 0,
-        });
-        node.port.onmessage = (e: MessageEvent) => pushMicChunk(e.data as Float32Array);
-        source.connect(node);
-        micNodeRef.current = node;
-        attached = true;
-      } catch (err) {
-        console.warn('[StreamingCall] AudioWorklet unavailable, falling back:', err);
+      micStreamRef.current = stream;
+      const Ctor = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx: AudioContext = new Ctor();
+      micCtxRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch {
+          /* ignore */
+        }
       }
-    }
-    if (!attached) {
-      // ScriptProcessor is deprecated but still everywhere; it only fires
-      // when routed to the destination, so route it through zero gain.
-      const sp = ctx.createScriptProcessor(4096, 1, 1);
-      sp.onaudioprocess = (e) => pushMicChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
-      const mute = ctx.createGain();
-      mute.gain.value = 0;
-      source.connect(sp);
-      sp.connect(mute).connect(ctx.destination);
-      micNodeRef.current = sp;
-    }
-  }, [pushMicChunk]);
+      if (!activeRef.current || session !== sessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        void ctx.close();
+        return;
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      let attached = false;
+      if (typeof (ctx as any).audioWorklet?.addModule === 'function') {
+        try {
+          const workletSrc =
+            'class KadePcm extends AudioWorkletProcessor{process(inputs){' +
+            'const ch=inputs[0]&&inputs[0][0];if(ch&&ch.length)this.port.postMessage(ch.slice(0));return true}}' +
+            "registerProcessor('kade-pcm',KadePcm);";
+          const url = URL.createObjectURL(
+            new Blob([workletSrc], { type: 'application/javascript' }),
+          );
+          try {
+            await ctx.audioWorklet.addModule(url);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+          if (!activeRef.current || session !== sessionRef.current) return;
+          const node = new AudioWorkletNode(ctx, 'kade-pcm', {
+            numberOfInputs: 1,
+            numberOfOutputs: 0,
+          });
+          node.port.onmessage = (e: MessageEvent) => {
+            if (session === sessionRef.current) pushMicChunk(e.data as Float32Array);
+          };
+          source.connect(node);
+          micNodeRef.current = node;
+          attached = true;
+        } catch (err) {
+          console.warn('[StreamingCall] AudioWorklet unavailable, falling back:', err);
+        }
+      }
+      if (!attached) {
+        if (!activeRef.current || session !== sessionRef.current) return;
+        // ScriptProcessor is deprecated but still everywhere; it only fires
+        // when routed to the destination, so route it through zero gain.
+        const sp = ctx.createScriptProcessor(4096, 1, 1);
+        sp.onaudioprocess = (e) => {
+          if (session === sessionRef.current)
+            pushMicChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+        };
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        source.connect(sp);
+        sp.connect(mute).connect(ctx.destination);
+        micNodeRef.current = sp;
+      }
+    },
+    [pushMicChunk],
+  );
 
   const stop = useCallback(
     (graceful = true) => {
       const ws = wsRef.current;
+      sessionRef.current += 1;
       activeRef.current = false;
       if (ws) {
         try {
@@ -371,6 +397,8 @@ export default function useStreamingCall() {
       handlers,
     }: StreamingStartArgs) => {
       if (activeRef.current) return;
+      const session = ++sessionRef.current;
+      const ownsSession = () => activeRef.current && session === sessionRef.current;
       activeRef.current = true;
       endedFiredRef.current = false;
       byeSentRef.current = false;
@@ -392,28 +420,36 @@ export default function useStreamingCall() {
         });
         if (!resp.ok) throw new Error(`ticket ${resp.status}`);
         const j = await resp.json();
+        if (!ownsSession()) return;
         ticket = j.ticket;
         wsUrl = j.wsUrl;
         if (!ticket || !wsUrl) throw new Error('ticket payload incomplete');
       } catch (err: any) {
+        if (!ownsSession()) return;
         activeRef.current = false;
         throw new Error(`Could not start the streaming call (${err?.message || 'ticket error'}).`);
       }
 
       try {
-        await startMic();
-      } catch (err) {
+        await startMic(session);
+      } catch {
+        if (!ownsSession()) return;
         activeRef.current = false;
         throw new Error(
           'Microphone access is blocked. Enable mic permission, then end and start the call again.',
         );
       }
+      if (!ownsSession()) return;
 
       await new Promise<void>((resolve, reject) => {
         let settled = false;
         const fail = (msg: string) => {
           if (settled) return;
           settled = true;
+          if (!ownsSession()) {
+            resolve();
+            return;
+          }
           stop(false);
           reject(new Error(msg));
         };
@@ -432,6 +468,7 @@ export default function useStreamingCall() {
         wsRef.current = ws;
         ws.binaryType = 'arraybuffer';
         ws.onopen = () => {
+          if (!ownsSession()) return;
           try {
             ws.send(
               JSON.stringify({
@@ -446,6 +483,7 @@ export default function useStreamingCall() {
           }
         };
         ws.onmessage = (ev: MessageEvent) => {
+          if (!ownsSession()) return;
           if (ev.data instanceof ArrayBuffer) {
             const character = pendingCharacterRef.current;
             pendingCharacterRef.current = null;
@@ -485,11 +523,7 @@ export default function useStreamingCall() {
               break;
             case 'state':
               handlers.onStatus(
-                m.state === 'speaking'
-                  ? 'speaking'
-                  : m.state === 'thinking'
-                    ? 'thinking'
-                    : 'listening',
+                m.state === 'speaking' || m.state === 'thinking' ? m.state : 'listening',
               );
               break;
             case 'caption':
@@ -524,6 +558,13 @@ export default function useStreamingCall() {
         ws.onerror = () => fail('The call connection failed.');
         ws.onclose = () => {
           clearTimeout(connectTimer);
+          if (!ownsSession()) {
+            if (!settled) {
+              settled = true;
+              resolve();
+            }
+            return;
+          }
           const wasGraceful = byeSentRef.current;
           if (!settled) {
             fail('The call connection closed before it was ready.');
@@ -542,6 +583,8 @@ export default function useStreamingCall() {
     [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm],
   );
 
+  useEffect(() => () => stop(false), [stop]);
+
   const isActive = useCallback(() => activeRef.current, []);
 
   /** Send a JSON control message on the live call socket (video toggles, frames). */
@@ -556,5 +599,8 @@ export default function useStreamingCall() {
     }
   }, []);
 
-  return { start, stop, barge, isActive, sendJson };
+  return useMemo(
+    () => ({ start, stop, barge, isActive, sendJson }),
+    [start, stop, barge, isActive, sendJson],
+  );
 }

@@ -74,6 +74,17 @@ test('barge-in, clear and new calls invalidate queued and still-decoding old cli
   assert.notEqual(controller.schedule(controller.token(), 10, 3, identity()), null);
 });
 
+test('queued speaker metadata cannot be changed by later caller mutation', () => {
+  const controller = createCallPresentation();
+  const observed = identity();
+  controller.schedule(controller.token(), 10, 3, observed);
+  observed.speakerId = KIANA_ID;
+  observed.speech = false;
+  assert.ok(sample(controller).mouth > 0);
+  assert.equal(controller.current(11).identity.speakerId, ANGEL_ID);
+  assert.throws(() => { controller.current(11).identity.speakerId = KIANA_ID; }, TypeError);
+});
+
 test('silence, game sounds, missing metadata, Spotter, suspended contexts and motion policy cannot produce a speech mouth', () => {
   for (const meta of [null, { ...identity(), speech: false }]) {
     const controller = createCallPresentation();
