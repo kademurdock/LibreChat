@@ -24,6 +24,8 @@ const {
   lyricTells,
   mergeRepairedLyrics,
   lyricShapeIssue,
+  lyricStructureIssue,
+  briefIsInstrumental,
   lyricThinSections,
   lyricBackingIssue,
   lyricRhymeReport,
@@ -2037,7 +2039,7 @@ async function scriptHandler(req, res) {
     /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
      * lyrics are hers and are never scanned or touched. */
     const ownsLyrics = mode === 'write' && songEngines.includes(engine) && !(typeof b.lyrics === 'string' && b.lyrics.trim());
-    const wantsWords = ownsLyrics && !instrumentalDraft && !/\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(text);
+    const wantsWords = ownsLyrics && !instrumentalDraft && !briefIsInstrumental(text);
     /* Part 293 follow-up: a list of shapes in the prompt came back as one house shape
      * ([Final Chorus] in 10 of 10 songs), so the desk draws ONE section map per request,
      * seeded by the idea, who asked and when (asking again draws again), and the length
@@ -2108,7 +2110,7 @@ async function scriptHandler(req, res) {
         logger.warn('[soundbooth/script] retry for missing lyrics failed: ' + e.message);
       }
     }
-    if (ownsLyrics) raw = labelReadback(raw);
+    if (ownsLyrics) raw = formatGeneratedLyricsDraft(labelReadback(raw));
     let tells = ownsLyrics && typeof lyricTells === 'function' ? lyricTells(raw, text) : [];
     /* Part 238: Jev reads the same sung lines and gives the word list a second
      * opinion — it vetoes a flag on a line that is plainly hers ("I scrubbed
@@ -2150,6 +2152,7 @@ async function scriptHandler(req, res) {
       const flagged = new Set(tells.map((t) => t.line));
       tells = [...tells, ...swearing(raw).filter((t) => !flagged.has(t.line))];
     }
+    const structure = wantsWords ? lyricStructureIssue(raw, text) : null;
     const shape = wantsWords ? lyricShapeIssue(raw, text, sectionMap) : null;
     /* Part 320: sections too thin to carry a melody, and backing vocals that are missing or are
      * directions a generator would sing. Measured in code and handed to the audit as gates; the
@@ -2182,7 +2185,21 @@ async function scriptHandler(req, res) {
         const fixed = await callModel({
           ...writingSettings,
           system: musicLyricEditorSystem(audience),
-          user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text, { thin: gatesInDraft.thin, backing: gatesInDraft.backing, rhyme: gatesInDraft.rhyme, lift: gatesInDraft.lift, pets: gatesInDraft.pets, longLines: gatesInDraft.longLines }),
+          user: lyricAuditRequest(
+            raw,
+            tells,
+            [structure, shape].filter(Boolean).join(' ') || null,
+            repeatsInDraft,
+            text,
+            {
+              thin: gatesInDraft.thin,
+              backing: gatesInDraft.backing,
+              rhyme: gatesInDraft.rhyme,
+              lift: gatesInDraft.lift,
+              pets: gatesInDraft.pets,
+              longLines: gatesInDraft.longLines,
+            },
+          ),
           maxTokens: writingSettings.maxTokens,
           /* Keep the editorial pass on low reasoning for bounded latency; it can rebuild weak generated passages. */
           reasoning: { enabled: true, effort: 'low', exclude: true },
@@ -2194,6 +2211,7 @@ async function scriptHandler(req, res) {
          * stay exactly as first written (the repair is careless with them). */
         /* Asked to add lines or backing parts, the audit may grow the song well past the usual cap. */
         const addsParts =
+          structure ||
           shape ||
           gatesInDraft.thin.length ||
           (gatesInDraft.backing &&
@@ -2400,9 +2418,24 @@ async function scriptHandler(req, res) {
      * this", so a voice still off after the second ask is said on either path, and beside a
      * structural problem rather than instead of it (review 1). */
     const voiceWarning = aukVoiceWarning(voiceOff, mode);
-    const problem = songEngines.includes(engine) ? null : engine === 'seed' ? checkSeed(script)
-      : [checkScenema(script), voiceWarning].filter(Boolean).join(' ') || null;
-    const estimate = engine === 'yue2' || engine === 'ace' ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' } : estimateFor(engine, script, priceFactor(req.user));
+    const structureWarning = wantsWords ? lyricStructureIssue(script, text) : null;
+    let problem = structureWarning;
+    if (!songEngines.includes(engine)) {
+      problem =
+        engine === 'seed'
+          ? checkSeed(script)
+          : [checkScenema(script), voiceWarning].filter(Boolean).join(' ') || null;
+    }
+    const readyEstimate =
+      engine === 'yue2' || engine === 'ace'
+        ? { spoken: 'The draft is ready. Generating the song is a separate paid action.' }
+        : estimateFor(engine, script, priceFactor(req.user));
+    const estimate = structureWarning
+      ? {
+          spoken:
+            'The partial draft is saved for review. Check the missing sections before generating the song.',
+        }
+      : readyEstimate;
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -2416,6 +2449,9 @@ async function scriptHandler(req, res) {
         writingPersona: mode === 'write' && songEngines.includes(engine) ? lyricAgentId : undefined,
         audience: audience || undefined,
         sectionMap: sectionMap ? sectionMap.id : undefined,
+        ...(wantsWords
+          ? { structure: { draft: structure || null, left: structureWarning || null } }
+          : {}),
         chorusShape: chorusShape ? chorusShape.id : undefined,
         /* Part 296: sections that repeated in the draft, still repeat in what she gets, and what the rewrite did. */
         repeats: measuresRepeats ? { draft: repeatsInDraft.length, left: repeatsLeft.length, rewrite: repeatRewrite } : undefined,
@@ -2466,7 +2502,10 @@ async function scriptHandler(req, res) {
       problem: problem || null,
       repairs,
       mismatch: mismatch ? mismatch.question : null,
-      note: [lyricsPaste && lyricsPaste.note, lyricsKeptNote, voiceWarning].filter(Boolean).join(' ') || null,
+      note:
+        [lyricsPaste && lyricsPaste.note, lyricsKeptNote, voiceWarning, structureWarning]
+          .filter(Boolean)
+          .join(' ') || null,
       /* only when a song pasted into the lyrics box was sorted: the words to
        * put in the lyrics box (script null: the draft above is the direction) */
       pasteSorted: lyricsPaste ? { script: null, lyrics: lyricsPaste.lyrics } : undefined,

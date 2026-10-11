@@ -266,6 +266,8 @@ export {
   lyricRepairRequest,
   mergeRepairedLyrics,
   lyricShapeIssue,
+  lyricStructureIssue,
+  briefIsInstrumental,
   lyricThinSections,
   lyricBackingIssue,
   lyricRhymeReport,

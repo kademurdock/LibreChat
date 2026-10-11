@@ -101,7 +101,7 @@ Find the song's emotional reason for being. What makes this declaration, accusat
 
 The chorus should deliver one compelling thought around the hook. Its supporting lines need musical or emotional force, not merely relevance to the topic. A supplied hook cannot do all the work while the rest of the chorus says things any song could say. Keep every supplied lyric phrase, its wording, repeated words and dialect. Do not add a second premise or explain the hook. A changed rhyme family, setup or whole generated passage is allowed when that is what fixes the content. Preserve strong lines and their character; do not flatten the entire song into generic sincerity.
 
-Read each section in order. Verse two should reveal, intensify or complicate something, not offer another list of examples. A bridge changes the angle or musical pressure without inventing an unrelated situation. Distinguish actual development from the singer announcing that something is deeper or more real. Keep the song complete and use its existing section order. Remove a weak pair by writing a better passage in its place, not by leaving a hole.
+Read each section in order. Verse two should reveal, intensify or complicate something, not offer another list of examples. A bridge changes the angle or musical pressure without inventing an unrelated situation. Distinguish actual development from the singer announcing that something is deeper or more real. Keep the song complete and retain existing sections in their relative order; insert required missing sections when the completeness check asks for them. Remove a weak pair by writing a better passage in its place, not by leaving a hole.
 
 After the thought works, make the words feel good in the mouth: meaningful stresses, connected phrases, confident rhyme, inventive internal or multi-syllable sound where natural, and room for a vocalist. Avoid stiff idioms or unnatural actions that only exist to finish a rhyme. A pronunciation-table count is a clue, never a verdict. Backing parts support harmony, rhythm and the hook; echoes and sung syllables need no witty sidekick. Preserve backing in the choruses and any section sung entirely by backing voices unless the brief requests no backing.
 
@@ -944,19 +944,89 @@ export const SECTION_MAPS: Record<string, SectionMap> = {
   },
 };
 
-/** The brief set its own length or structure: theirs wins, no map is drawn and
- *  the length check stands down. */
+const SHAPE_NUMBER =
+  '(?:\\d+(?:\\.\\d+)?|one|two|three|four|five|six|eight|twelve|sixteen|thirty|sixty|ninety)';
+const BRIEF_SECTION =
+  '(?:\\[?\\s*(?:(?:[1-9]|one|two|three|four)\\s+)?(?:final\\s+)?(?:pre[- ]?chorus|post[- ]?chorus|chorus|verses?|bridge|intro|outro|hook|refrain|drop|breakdown)(?:\\s+(?:[1-9]|one|two|three|four))?\\s*\\]?)';
+
+function requestedSections(brief: string): string[] {
+  const separator = '(?:\\s*(?:->|→|[-–—,/]|\\band\\b|\\bthen\\b|\\bfollowed by\\b)\\s*|\\s+)';
+  const sequence = new RegExp(
+    `\\b${BRIEF_SECTION}(?:${separator}(?:a\\s+|the\\s+)?${BRIEF_SECTION})+`,
+    'i',
+  ).exec(brief);
+  if (!sequence) return [];
+  const counts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
+  return Array.from(sequence[0].matchAll(new RegExp(BRIEF_SECTION, 'gi'))).flatMap((match) => {
+    if (
+      sectionKind(match[0]) === 'chorus' &&
+      requestsNoChorus(brief) &&
+      /\b(?:no|without|omit|skip|exclude|avoid)\s+(?:a\s+|any\s+|the\s+)?$/i.test(
+        brief.slice(0, sequence.index + match.index).trimEnd() + ' ',
+      )
+    )
+      return [];
+    const count = /^\[?\s*([1-9]|one|two|three|four)\s+/i.exec(match[0]);
+    return Array<string>(count ? counts[count[1].toLowerCase()] || Number(count[1]) : 1).fill(
+      sectionKind(match[0]),
+    );
+  });
+}
+
+export function briefIsInstrumental(brief: string): boolean {
+  const wholeSong = /\b(?:song|track|lyrics|vocals?|singing|sung)\b/i.test(brief)
+    ? brief.replace(
+        /\binstrumental\s+(?:solo|break|intro|outro|bridge|interlude|section)s?\b/gi,
+        '',
+      )
+    : brief;
+  return /\binstrumental\b|\bno (?:vocals|singing|lyrics)\b/i.test(wholeSong);
+}
+
+function requestsNoChorus(brief: string): boolean {
+  const request =
+    /\b(?:(?:no|without|omit|skip|exclude|avoid)\s+(?:a\s+|any\s+|the\s+)?chorus|chorusless|strophic|through[- ]composed)\b/gi;
+  return Array.from(brief.matchAll(request)).some(
+    (match) =>
+      !/\b(?:not|never|don['’]t|do not|isn['’]t|is not)\s+(?:(?:make|write|want|use|choose|be|give|it|me|a|an|the|song|track|that|is|with)\s+){0,6}$/i.test(
+        brief.slice(0, match.index),
+      ) &&
+      !/^\s+(?:until|before|yet|during|in\s+the|for\s+the)\b/i.test(
+        brief.slice(match.index + match[0].length),
+      ),
+  );
+}
+
+function excerptSection(brief: string): string | null {
+  const part =
+    /\b(?:(?:just|only)\s+(?:an?\s+|the\s+)?(?:(?:single|one|final|last)\s+)?(?:verse|chorus|hook|bridge|intro|outro)|(?:(?:final|last)\s+)?(?:verse|chorus|hook|bridge|intro|outro)\s+only)\b/i.exec(
+      brief,
+    );
+  return part ? sectionKind(part[0]) : null;
+}
+
+function briefIsExcerpt(brief: string): boolean {
+  return (
+    !!excerptSection(brief) ||
+    /\bjingle\b/i.test(brief) ||
+    (new RegExp(`\\b${SHAPE_NUMBER}[- ]+bars?\\b`, 'i').test(brief) &&
+      !/\bverses?\b|\b(?:full|complete)\s+(?:rap\s+)?(?:song|track)\b/i.test(brief))
+  );
+}
+
+/** Only explicit length or arrangement requests stand down the default length check. */
 const briefSetsShape = (brief: string): boolean =>
-  /\b(?:verses?|minutes?|seconds?|short|brief|quick|jingle|hook only|chorus only|no chorus|one verse|two verses|bars|pre-chorus|post-chorus|refrain|song structure|sections?)\b/i.test(
+  requestedSections(brief).length > 0 ||
+  requestsNoChorus(brief) ||
+  briefIsExcerpt(brief) ||
+  new RegExp(`\\b${SHAPE_NUMBER}[- ]+(?:verses?|minutes?|seconds?)\\b`, 'i').test(brief) ||
+  /\b(?:short|brief|quick)\s+(?:song|track|jingle|ditty)\b|\b(?:with|include|add|use)\s+(?:a\s+|the\s+)?(?:pre[- ]chorus|post[- ]chorus|refrain)\b|\b(?:song structure|section order)\s*:/i.test(
     brief,
   );
 
-/* Genre decides which maps are in the hat: the drop and breakdown only for a
- * dance style; a chorus-less story song not for pop, a girl group or the club. */
+/* Drops are genre-specific. A chorusless arrangement requires an explicit request. */
 const DANCE_STYLE =
   /\b(?:edm|techno|trance|disco|dubstep|drum (?:and|&|n['’]?) bass|dnb|eurodance|hyperpop|reggaeton|dancehall|jersey club|crunk|rave|(?:deep|tech|acid|progressive|electro|future|tropical) house|house (?:music|track|song|banger)|club (?:song|track|banger|anthem|mix|remix|hit)|dance (?:song|track|pop|anthem|banger|floor|music|remix)|dancefloor|four[- ]on[- ]the[- ]floor)\b/i;
-const BIG_CHORUS_STYLE =
-  /\b(?:pop|girl group|boy band|anthem|arena|stadium|k-?pop|j-?pop|power ballad)\b/i;
 
 /** FNV-1a, then mulberry32: the same request always draws the same map. */
 function seededUnit(text: string): number {
@@ -975,10 +1045,9 @@ function seededUnit(text: string): number {
 /** The maps this brief can draw from. */
 export function sectionMapPool(brief: string): SectionMap[] {
   const m = SECTION_MAPS;
+  if (requestsNoChorus(brief)) return [m.storyRefrain];
   if (DANCE_STYLE.test(brief)) return [m.dance, m.dance, m.prePost, m.hookFirst];
-  const pool = [m.threeVerses, m.twoLong, m.prePost, m.hookFirst];
-  if (!BIG_CHORUS_STYLE.test(brief)) pool.push(m.storyRefrain);
-  return pool;
+  return [m.threeVerses, m.twoLong, m.prePost, m.hookFirst];
 }
 
 /** Draws this request's section map; null when the brief sets its own shape.
@@ -1155,7 +1224,7 @@ export function lyricShapeIssue(
  * both things in code and gives the audit the numbers: the sections that are too thin, and the
  * backing vocals that are missing or are directions the generator would sing aloud. */
 const SECTION_START =
-  /^(?:final |last |second |third )?(?:pre[- ]?chorus|post[- ]?chorus|chorus|verse|bridge|outro|intro|hook|refrain|drop|breakdown|interlude|vamp|coda|tag|middle)\b/i;
+  /^(?:final |last |second |third |spoken |instrumental )?(?:pre[- ]?chorus|post[- ]?chorus|chorus|verse|bridge|outro|intro|hook|refrain|drop|breakdown|interlude|solo|vamp|coda|tag|middle)\b/i;
 
 type SectionPass = {
   tag: string;
@@ -1226,6 +1295,38 @@ function sectionPasses(script: string): SectionPass[] {
     }
   }
   return passes;
+}
+
+/** Presence is independent of verse length, rhyme diagnostics and the optional audit budget. */
+export function lyricStructureIssue(script: string, brief = ''): string | null {
+  const requested = requestedSections(brief);
+  const sung = sectionPasses(script).filter(
+    (pass) =>
+      pass.leads.some((line) => /[\p{L}\p{N}]/u.test(line)) ||
+      pass.ownLines.some((line) => /[\p{L}\p{N}]/u.test(line) && !isDirection(line.slice(1, -1))),
+  );
+  if (!sung.length) return 'This generated draft is incomplete: it has no sung words.';
+  const excerpt = excerptSection(brief);
+  if (!requested.length && !excerpt && (requestsNoChorus(brief) || briefIsExcerpt(brief)))
+    return null;
+  const defaults = excerpt ? [excerpt] : ['verse', 'chorus'];
+  const required = requested.length ? requested : defaults;
+  let at = 0;
+  const missing = required.filter((kind) => {
+    if (!requested.length) return !sung.some((pass) => pass.kind === kind);
+    const found = sung.findIndex((pass, index) => index >= at && pass.kind === kind);
+    if (found < 0) return true;
+    at = found + 1;
+    return false;
+  });
+  if (!missing.length) return null;
+  const labels: Record<string, string> = {
+    verse: '[Verse]',
+    chorus: '[Chorus] (or [Hook]/[Refrain])',
+    prechorus: '[Pre-Chorus]',
+    postchorus: '[Post-Chorus]',
+  };
+  return `This generated draft is incomplete: it needs sung words in ${missing.map((kind) => labels[kind] || `[${kind}]`).join(' and ')}${requested.length ? ' in the requested section order' : ''}.`;
 }
 
 const SECTION_FLOOR: Record<string, number> = {
@@ -2450,7 +2551,7 @@ export function lyricAuditRequest(
   const repeatText = repeatGate(repeats, next);
   if (repeatText) next += 1;
   const endings = endingGate(script, next);
-  return `Edit the draft for a record. Preserve its brief, singer, strong lines and every supplied lyric phrase. Generated passages with weak content can be rebuilt, including their rhyme family; do not protect an idea merely because the first draft used it. Keep the existing section order and complete arrangement.
+  return `Edit the draft for a record. Preserve its brief, singer, strong lines and every supplied lyric phrase. Generated passages with weak content can be rebuilt, including their rhyme family; do not protect an idea merely because the first draft used it. Retain existing sections in their relative order and insert required missing sections when the completeness check asks for them.
 
 ORIGINAL BRIEF: ${JSON.stringify(brief)}
 

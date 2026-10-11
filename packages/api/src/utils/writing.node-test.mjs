@@ -12,12 +12,12 @@ const musicSource = seedSource + '\n' + hitSource + '\n' + rhymeLexiconSource + 
 const { formatGeneratedLyricsDraft } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/format.ts', import.meta.url), 'utf8'))).toString('base64'));
 const { splitLyricTitle, lyricTitleFromSong } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/title.ts', import.meta.url), 'utf8'))).toString('base64'));
 const { assertSeedScriptReply, seedWritingPrompt } = await import('data:text/javascript;base64,' + Buffer.from(seedSource).toString('base64'));
-const { musicWritingPrompt, musicLyricEditorSystem, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, rhymeRelation, rhymeKeyOf, rhymeSyllables } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
+const { musicWritingPrompt, musicLyricEditorSystem, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricStructureIssue, briefIsInstrumental, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, rhymeRelation, rhymeKeyOf, rhymeSyllables } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
  * test can set. */
-const bootStubs = { musicLyricEditorSystem, yueStylesEnabled: () => false, yueStyles: {}, formatGeneratedLyricsDraft, splitLyricTitle, lyricTitleFromSong, assertSeedScriptReply };
+const bootStubs = { musicLyricEditorSystem, lyricStructureIssue, briefIsInstrumental, yueStylesEnabled: () => false, yueStyles: {}, formatGeneratedLyricsDraft, splitLyricTitle, lyricTitleFromSong, assertSeedScriptReply };
 const audienceStub = { answer: 'explicit', calls: [] };
 /* The real word checks (Part 293 review: the route holds a clean song to clean with them); only
  * the account lookup is stood in for. */
@@ -841,8 +841,8 @@ test('Part 293 follow-up: the desk draws one real section map per request, and o
   assert.equal(songSectionMap(brief, 'kade\n1758000000000').id, songSectionMap(brief, 'kade\n1758000000000').id, 'the same request draws the same map');
   const counts = {};
   for (let i = 0; i < 1000; i++) { const id = songSectionMap(brief, `kade\n${1758000000000 + i * 977}`).id; counts[id] = (counts[id] || 0) + 1; }
-  assert.deepEqual(Object.keys(counts).sort(), ['hookFirst', 'prePost', 'storyRefrain', 'threeVerses', 'twoLong'], 'asking again can draw every map in the hat');
-  assert.ok(Math.max(...Object.values(counts)) < 300, `no house shape: ${JSON.stringify(counts)}`);
+  assert.deepEqual(Object.keys(counts).sort(), ['hookFirst', 'prePost', 'threeVerses', 'twoLong'], 'asking again can draw every map in the hat');
+  assert.ok(Math.max(...Object.values(counts)) < 340, `no house shape: ${JSON.stringify(counts)}`);
   assert.ok(new Set(EVAL_BRIEFS.map(b => songSectionMap(b).id)).size >= 3, 'different ideas draw different maps');
   for (const b of [EVAL_BRIEFS[0], 'deep house track about a lost earring', 'EDM banger about a parking ticket', 'a disco song about my roller skates']) {
     const pool = sectionMapPool(b).map(m => m.id);
@@ -1777,4 +1777,108 @@ test('an explicit edit cannot be accepted for a clean audience by removing more 
   assert.doesNotMatch(out.body.script, /Fuck/);
   assert.equal(booth.requests.length, 2);
   audienceStub.answer = 'explicit';
+});
+
+
+test('ordinary genre requests always draw a full song map with a chorus', () => {
+  const briefs = [
+    "A 90s feel good production. The only fallin' I wanna do is fallin' in love with you.",
+    'R&B song about a reunion', 'soul song about starting again',
+    'rap song about my reputation', 'country song about my hometown',
+    'gospel song about doubt', 'dance song for my friends',
+    'a song about my quick wit and short temper', "a song, don't make it short",
+    'not a chorusless song', "don't make it chorusless", 'not a song without a chorus',
+    'no chorus until after verse two', "don't omit the chorus", 'not without a chorus',
+  ];
+  for (const brief of briefs) {
+    const pool = sectionMapPool(brief);
+    assert.ok(pool.every(map => /\[(?:Final )?Chorus\]/.test(map.plan)), brief);
+    for (let salt = 0; salt < 128; salt++) {
+      const map = songSectionMap(brief, String(salt));
+      assert.ok(map && pool.includes(map), `${brief}: ${salt}`);
+      assert.notEqual(map.id, 'storyRefrain', brief);
+    }
+  }
+});
+
+test('explicit custom shapes and chorusless or excerpt requests keep their own arrangement', () => {
+  const chorusless = 'Folk.\nLyrics:\n[Verse 1]\nYou kept the letter\n[Verse 2]\nI read it again\n[Bridge]\nThe date was wrong\nREADBACK: Folk.';
+  for (const brief of ['a song with no chorus', 'a chorusless soul song', 'a strophic song', 'a through-composed song', 'verse-verse-bridge', 'verse verse bridge', '[Verse 1] -> [Verse 2] -> [Bridge]']) {
+    assert.equal(songSectionMap(brief), null, brief);
+    assert.equal(lyricStructureIssue(chorusless, brief), null, brief);
+  }
+  for (const brief of ['only a chorus', 'a hook only', 'just one verse', 'sixteen bars about my dog', 'a short jingle']) {
+    assert.equal(songSectionMap(brief), null, brief);
+    assert.equal(lyricStructureIssue('Lyrics:\n[Verse 1]\nThese are the words\n[Chorus]\nThese are the words', brief), null, brief);
+  }
+  assert.match(lyricStructureIssue(chorusless.replace('[Bridge]', '[Outro]'), 'verse-verse-bridge'), /\[bridge\].*requested section order/);
+  assert.match(lyricStructureIssue(chorusless, 'a two verse song'), /\[Chorus\]/, 'a verse count does not request removal of the chorus');
+  assert.equal(lyricStructureIssue('Lyrics:\n[Final Chorus]\nThese are the words', 'only a final chorus'), null);
+  assert.equal(lyricStructureIssue('Lyrics:\n[Bridge]\nThese are the words', 'Write only a bridge'), null);
+  assert.equal(lyricStructureIssue('Lyrics:\n[Outro]\nThese are the words', 'Just an outro'), null);
+  assert.match(lyricStructureIssue('Lyrics:\n[Verse]\nThese are the words', 'Write only a chorus'), /\[Chorus\]/);
+  assert.match(lyricStructureIssue('Lyrics:\n[Verse]\nThese are the words\n[Chorus]\n[Spoken interlude]\nI am talking', 'A song'), /\[Chorus\]/);
+  assert.match(lyricStructureIssue('Lyrics:\n[Chorus]', 'write only a chorus'), /no sung words/);
+  assert.match(lyricStructureIssue('Lyrics:\n[Verse 1]\nSome words\n[Bridge]\nMore words', 'Only two verses and a bridge'), /\[Verse\]/);
+  assert.equal(lyricStructureIssue(chorusless, 'Only two verses and a bridge'), null);
+  assert.equal(lyricStructureIssue(chorusless + '\n[Verse 3]\nOne more thought', 'No chorus, two verses'), null);
+  assert.equal(lyricStructureIssue(chorusless.replace('[Bridge]', '[Verse 3]'), 'No chorus, three verses'), null);
+  for (const brief of ['instrumental solo', 'an instrumental song', 'a song with no vocals', 'an instrumental track with an instrumental solo']) assert.equal(briefIsInstrumental(brief), true, brief);
+  for (const brief of ['a rock song with an instrumental solo', 'a song with an instrumental break']) assert.equal(briefIsInstrumental(brief), false, brief);
+  assert.match(lyricStructureIssue(chorusless, 'a song with 16-bar verses'), /\[Chorus\]/);
+  assert.match(lyricStructureIssue(chorusless, 'a short song'), /\[Chorus\]/, 'duration does not remove the hook');
+  assert.match(lyricStructureIssue(chorusless, 'no chorus until after verse two'), /\[Chorus\]/, 'a late chorus is still required');
+});
+
+test('section presence catches chorusless full songs independently of verse counts and empty tags', () => {
+  const verse = n => `[Verse ${n}]\n` + Array.from({ length: 8 }, (_, i) => `Our singer has something to say ${n} ${i}`).join('\n');
+  const body = [verse(1), verse(2), verse(3), '[Bridge]\nAnother point of view\nI still remember you', verse(4)].join('\n');
+  const draft = `Soul. STRUCTURE: Verse, Chorus, Verse, Chorus, Bridge, Chorus.\nLyrics:\n${body}\nREADBACK: A full soul song.`;
+  assert.equal(lyricShapeIssue(draft, 'a soul song'), null, 'the former verse-only check passes the bad historical arrangement');
+  assert.match(lyricStructureIssue(draft, 'a soul song'), /\[Chorus\]/);
+  assert.match(lyricStructureIssue(draft.replace('[Bridge]', '[Chorus]\n[Bridge]')), /\[Chorus\]/, 'an empty chorus tag is not a sung chorus');
+  assert.match(lyricStructureIssue(draft.replace('[Bridge]', '[Chorus]\n(instrumental solo)\n[Bridge]')), /\[Chorus\]/, 'a production direction is not a sung chorus');
+  for (const tag of ['Chorus', 'Final Chorus', 'Hook', 'Refrain']) {
+    const fixed = draft.replace('[Bridge]', `[${tag}]\n${Array.from({ length: 10 }, (_, i) => `A complete chorus phrase ${i}`).join('\n')}\n[Bridge]`);
+    assert.equal(lyricStructureIssue(fixed), null, `${tag}: a long chorus stays valid`);
+    const merged = mergeRepairedLyrics(draft, fixed, 1.9);
+    assert.ok(merged, `${tag}: the audit can insert the missing section without deleting verses`);
+    assert.equal(lyricStructureIssue(merged), null);
+    assert.equal(merged.split('\n').filter(line => line.startsWith('A complete chorus phrase')).length, 10);
+  }
+  assert.match(lyricStructureIssue('Lyrics:\nNo tags here'), /\[Verse\].*\[Chorus\]/);
+  assert.match(lyricStructureIssue('Lyrics:\n[Chorus]\nA hook without a verse'), /\[Verse\]/);
+});
+
+test('the existing audit can repair a missing chorus and otherwise returns the partial draft with a warning', async () => {
+  const verse = n => `[Verse ${n}]\n` + Array.from({ length: 8 }, (_, i) => `Our singer has something to say ${n} ${i}`).join('\n');
+  const draft = `Soul production.\nLyrics:\n${[verse(1), verse(2), verse(3), '[Bridge]\nAnother point of view\nI still remember you', verse(4)].join('\n')}\nREADBACK: A soul song.`;
+  const repaired = draft.replace('[Bridge]', '[Chorus]\nYou waited on the platform\nI took the early train\n[Bridge]');
+  const api = { songSectionMap: () => SECTION_MAPS.threeVerses, sectionMapNote, createAceRouter: () => () => {}, aceEnabled: () => false, aceConfigured: () => false, aceAllowed: () => true, aceAccess: () => ({}), withAceGuide: guide => guide, aceProjectOptions: () => ({}), aceProjectWhy: () => '', aceTakeFacts: () => ({}) };
+  for (const engine of ['lyria', 'yue2', 'ace']) {
+    for (const fixed of [false, true]) {
+      const booth = loadBooth({ api, reply: (_body, n) => n === 1 || !fixed ? draft : repaired });
+      const result = await booth.call('post/script', { user: { id: `structure-${engine}-${fixed}` }, body: { engine, mode: 'write', text: 'a soul song about a reunion with an instrumental solo' } });
+      assert.equal(result.code, 200);
+      assert.equal(booth.requests.length, 2, 'one draft plus the existing audit; no new retry');
+      assert.match(booth.requests[1].messages[1].content, /incomplete.*\[Chorus\]/);
+      assert.ok(result.body.script.includes(verse(4)), 'all existing verses remain available');
+      if (fixed) {
+        assert.equal(result.body.problem, null);
+        assert.match(result.body.script, /You waited on the platform/);
+      } else {
+        assert.match(result.body.problem, /incomplete.*\[Chorus\]/);
+        assert.ok(result.body.note.includes(result.body.problem));
+        assert.doesNotMatch(result.body.estimate.spoken, /draft is ready/i);
+        assert.equal(booth.ledger[0].metadata.structure.left, result.body.problem);
+      }
+    }
+  }
+  for (const extra of [{ lyrics: 'My own verse-only words' }, { instrumental: true }, { mode: 'format' }]) {
+    const booth = loadBooth({ api, reply: () => draft });
+    const result = await booth.call('post/script', { user: { id: 'structure-owned' }, body: { engine: 'lyria', mode: 'write', text: 'a soul song', ...extra } });
+    assert.equal(result.code, 200);
+    assert.equal(result.body.problem, null, JSON.stringify(extra));
+    assert.equal(booth.requests.length, 1, 'supplied words, instrumental mode and formatting bypass lyric repair');
+  }
 });
