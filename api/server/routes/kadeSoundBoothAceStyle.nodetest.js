@@ -188,6 +188,21 @@ test('a Soul song: forced Best, the adapter, its strength, English, and the capt
   assert.deepEqual(ace.aceRequest(JSON.parse(JSON.stringify(input))), asked, 'a request rebuilt from the stored job is the same');
 });
 
+test('the adapter is only ever the registry\'s: a request cannot name its own lora_key, scale, language or model', () => {
+  const sneaky = { lora_key: 'ace-loras/someone-elses-v1', lora_scale: 1.5, vocal_language: 'fr', model: 'xl-turbo', lora: 'x' };
+  for (const env of [{}, ON]) {
+    const plain = request(base, env);
+    assert.deepEqual(request({ ...base, ...sneaky }, env), plain, `plain request, ${JSON.stringify(env)}`);
+    assert.equal(JSON.stringify(request({ ...base, ...sneaky, band: 'none' }, env)), JSON.stringify(plain));
+  }
+  const styled = request({ ...base, band: 'soul' });
+  assert.deepEqual(request({ ...base, ...sneaky, band: 'soul' }), styled, 'a styled request still takes the registry\'s key, scale and English');
+  assert.equal(styled.lora_key, 'ace-loras/soul-real-v1');
+  assert.equal(styled.lora_scale, 1);
+  assert.equal(styled.vocal_language, 'en');
+  assert.equal(styled.model, 'xl-sft');
+});
+
 test('a Style forces Best whatever Quality said, and the dials still work on it', () => {
   for (const quality of [undefined, 'Fast', 'Best', 'fast']) {
     const sent = request({ ...base, band: 'soul', ...(quality === undefined ? {} : { quality }) });
@@ -227,6 +242,8 @@ test('Style strength: scaled by the registry, 0 is a plain take, and the registr
   try {
     row.scale = 0.7;
     assert.equal(request({ ...base, band: 'soul', style_strength: 0.3 }).lora_scale, 0.21);
+    for (const [strength, scale] of [[0.1, 0.07], [0.2, 0.14], [0.4, 0.28], [0.7, 0.49], [0.8, 0.56]])
+      assert.equal(request({ ...base, band: 'soul', style_strength: strength }).lora_scale, scale, `0.7 x ${strength} has no floating-point tail (0.7 x ${strength} is ${0.7 * strength} unrounded)`);
     assert.equal(request({ ...base, band: 'soul' }).lora_scale, 0.7);
     row.scale = 1.5;
     assert.equal(request({ ...base, band: 'soul' }).lora_scale, 1.5);
