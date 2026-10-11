@@ -132,6 +132,10 @@ function styleAllowed(user) {
     return false;
   }
 }
+/* Whether this person has a live Style choice on each song card: the engine's style flag and the Family feature pack. The
+ * carry points at the other card's Style choice only when there is one for them to use. */
+const aceStyleChoice = (user) => aceStylesOn() && styleAllowed(user);
+const yueStyleChoice = (user) => typeof yueStylesEnabled === 'function' && yueStylesEnabled() && styleAllowed(user);
 router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   if (!asksForStyle(req.body)) return next();
   return requireJwtAuth(req, res, () => {
@@ -3445,7 +3449,7 @@ router.post('/carry', requireJwtAuth, express.json({ limit: '128kb' }), (req, re
   /* ACE-Step XL is neither a source nor a destination for a person without access: the same plain sentence as a render. */
   const refused = to === 'ace' || body.draft.engine === 'ace' ? aceRefusal(req.user) : null;
   if (refused) return res.status(403).json({ error: refused });
-  const out = carry.carryOver(body.draft, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStylesOn() });
+  const out = carry.carryOver(body.draft, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStyleChoice(req.user), yueStyles: yueStyleChoice(req.user) });
   if (!out.ok) return res.status(400).json({ error: out.why });
   return res.json({ draft: out.draft, notes: out.notes, rewriteAdvised: out.rewriteAdvised });
 });
@@ -3460,7 +3464,7 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
     const to = String((req.body || {}).engine || '');
     const refused = to === 'ace' || source.engine === 'ace' ? aceRefusal(req.user) : null;
     if (refused) return res.status(403).json({ error: refused });
-    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStylesOn() });
+    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStyleChoice(req.user), yueStyles: yueStyleChoice(req.user) });
     if (!out.ok) return res.status(400).json({ error: out.why });
 
     const notes = [...out.notes];
@@ -3870,7 +3874,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
     /* ACE-Step XL: its card is added last, and only for an account that may use it (ace.ts withAceGuide returns the very same guide otherwise). */
     /* Its Style choice (ACE_STYLES_ENABLED) is live only for the Family feature pack and greyed out for everyone else, as the YuE2 one is. */
-    guide: ACE_READY ? withAceGuide(guide, req.user, process.env, aceStylesOn() && styleAllowed(req.user)) : guide,
+    guide: ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide,
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },

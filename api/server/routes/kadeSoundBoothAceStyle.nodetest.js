@@ -236,6 +236,27 @@ test('Style strength: scaled by the registry, 0 is a plain take, and the registr
   assert.equal(request({ ...base, band: 'soul', style_strength: 0, quality: 'Best' }).model, 'xl-sft');
   assert.deepEqual([zero.band, zero.style_strength, 'lora_key' in zero], ['soul', 0, false], 'but it remembers what she set');
   assert.equal(ace.aceTakeNote({ url: 'x' }, zero), '', 'a plain take has no style note');
+  /* A strength so small that the scale sent would round to 0 is the same plain take: the worker reads a scale of 0 as plain, so
+   * sending it as Best with an adapter would charge Best for nothing and then report that the style was not confirmed. */
+  for (const tiny of [0.00001, 0.00004, 0.000049, Number.MIN_VALUE]) {
+    const input = ace.aceInput({ ...base, band: 'soul', style_strength: tiny }, ON);
+    assert.equal(JSON.stringify(ace.aceRequest(input)), BEFORE_THE_STYLES[0][1], String(tiny));
+    assert.equal(input.model, 'xl-turbo', `${tiny}: Fast stays Fast`);
+    for (const key of ['lora_key', 'lora_scale']) assert.equal(key in input, false, `${tiny}: ${key}`);
+    assert.deepEqual([input.band, input.style_strength], ['soul', tiny], 'but it remembers what she set');
+    assert.equal(ace.aceTakeNote({ url: 'x' }, input), '', 'a plain take has no style note');
+    assert.equal(ace.aceEstimate(input), `About 30 seconds of music, fast quality. Style strength is too low, so the Soul style is not used. ${ace.aceCost}`);
+    assert.equal(request({ ...base, band: 'soul', style_strength: tiny, quality: 'Best' }).model, 'xl-sft', 'Best only when she asked for it');
+    assert.equal(ace.aceInput({ script: 'Banjo', singing: INSTRUMENTAL, band: 'soul', style_strength: tiny, seed: 1 }, ON).instrumental, true, 'no style, so an instrumental is not refused');
+    assert.equal(ace.aceProjectWhy(ace.aceProjectOptions(input)), 'ACE-Step XL — a song made on the sleeping music GPU', 'the library line does not claim a style');
+  }
+  /* The smallest strength that still counts is sent, as the worker takes it. */
+  for (const [strength, scale] of [[0.00005, 0.0001], [0.0001, 0.0001], [0.0004, 0.0004]]) {
+    const sent = request({ ...base, band: 'soul', style_strength: strength });
+    assert.equal(sent.lora_scale, scale, String(strength));
+    assert.equal(sent.model, 'xl-sft');
+    assert.equal(sent.vocal_language, 'en');
+  }
   /* A registry row with another scale multiplies and rounds. */
   const row = ace.aceStyles.soul;
   const saved = row.scale;
@@ -302,6 +323,9 @@ test('the library line says the style only when one was really used', () => {
   assert.equal(why({ band: 'soul' }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Soul style');
   assert.equal(why({ band: 'soul', style_strength: 0.5 }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Soul style');
   assert.equal(why({ band: 'soul', style_strength: 0 }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality', 'strength 0 is a plain take');
+  assert.equal(why({ band: 'soul', style_strength: 0.00004 }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality', 'so is one too small to count');
+  assert.equal(why({ band: 'soul', style_strength: 0.0001 }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Soul style', 'the smallest that counts');
+  assert.equal(why({ band: 'soul', style_strength: 'x' }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Soul style', 'defensive: a saved value that is not a number reads as the full style, as it did');
   for (const band of ['none', '', 'kids', undefined, 5, 'constructor']) assert.equal(why({ band }), 'ACE-Step XL — a song made on the sleeping music GPU, best quality', String(band));
   assert.equal(ace.aceProjectWhy({ singing: INSTRUMENTAL, band: 'soul' }), 'ACE-Step XL — an instrumental made on the sleeping music GPU, in the Soul style', 'defensive: the line follows the saved options');
 });
@@ -373,6 +397,25 @@ test('a styled take the worker did not confirm says so, and nothing the worker s
   assert.equal(ace.aceTakeNote(STYLED_ANSWER, plain), '');
 });
 
+test('a plain take\'s asset says nothing of a style, however the Style was left: None with a strength moved, strength 0, or one too small', () => {
+  const answer = { url: 'x', gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', plan: { bpm: 88, keyscale: 'A minor' } };
+  const plainFacts = ace.aceTakeFacts(answer, ace.aceInput(base, {}));
+  const STYLE_FIELDS = ['band', 'style_strength', 'lora_key', 'lora_scale', 'style', 'takeNote'];
+  for (const extra of [{ style_strength: 0.4 }, { style_strength: 0 }, { style_strength: 1 }, { band: 'none', style_strength: 0.4 }, { band: '', style_strength: 0.4 }, { band: 'soul', style_strength: 0 }, { band: 'soul', style_strength: 0.00004 }, { band: 'soul', style_strength: 0, quality: 'Best' }]) {
+    const input = ace.aceInput({ ...base, ...extra }, ON);
+    const facts = ace.aceTakeFacts(answer, input);
+    for (const key of STYLE_FIELDS) assert.equal(key in facts, false, `${JSON.stringify(extra)}: ${key}`);
+    assert.deepEqual(facts, plainFacts, `${JSON.stringify(extra)}: the same facts as a take with no Style at all`);
+    /* She set it, so the project still remembers it, and Open in the booth puts it back. */
+    const options = ace.aceProjectOptions(input);
+    assert.equal(options.style_strength, extra.style_strength, JSON.stringify(extra));
+    assert.equal(options.band, extra.band === 'soul' ? 'soul' : undefined, JSON.stringify(extra));
+  }
+  /* A take that was sent an adapter still keeps all of them. */
+  const styled = ace.aceTakeFacts({ ...answer, model: 'xl-sft', style: STYLED_ANSWER.style }, ace.aceInput({ ...base, band: 'soul', style_strength: 0.5 }, ON));
+  for (const key of STYLE_FIELDS) assert.equal(key in styled, true, key);
+});
+
 /* ---------- the card ---------- */
 
 test('the card with styles on: Style after Quality, Style strength under More settings, the YuE2 card\'s keys and ranges', () => {
@@ -394,13 +437,18 @@ test('the card with styles on: Style after Quality, Style strength under More se
   const hint = (guide, key) => guide.settings.find((s) => s.key === key).hint;
   assert.equal(hint(live, 'singing'), 'Instrumental plays the tune on instruments and ignores any lyrics. Choose None under Style for an instrumental.');
   assert.equal(hint(live, 'quality'), 'Fast is quick. Best is slower and costs more. A Style always uses Best.');
+  /* Prompt guidance is for Best only, and a Style is always Best: a Style hint that says Fast ignores it would contradict that. */
+  assert.equal(hint(live, 'guidance'), 'Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural. A Style always uses Best, so this applies to it.');
   /* The rest of the card is the card it was. */
   const was = ace.aceGuide({}, true);
   const { settings: _a, ...liveRest } = live;
   const { settings: _b, ...wasRest } = was;
   assert.deepEqual(liveRest, wasRest, 'tagline, cost, how to write: untouched');
-  for (const key of ['lyrics', 'length', 'weirdness', 'guidance', 'seed'])
+  for (const key of ['lyrics', 'length', 'weirdness', 'seed'])
     assert.deepEqual(live.settings.find((s) => s.key === key), was.settings.find((s) => s.key === key), key);
+  assert.deepEqual({ ...live.settings.find((s) => s.key === 'guidance'), hint: '' }, { ...was.settings.find((s) => s.key === 'guidance'), hint: '' }, 'guidance: only its hint is longer');
+  assert.ok(hint(live, 'guidance').startsWith(hint(was, 'guidance')), 'the plain hint is still the front of it');
+  for (const setting of live.settings) assert.ok(setting.hint.length <= 240, `${setting.key}: a hint stays about a sentence or two`);
 });
 
 test('the card for an account outside the pack: the choice is there, every option kept, greyed out with the pack note', () => {
@@ -504,16 +552,40 @@ test('carry, YuE2 to ACE-Step XL with styles off: the sentence it always was', (
   }
 });
 
-test('carry, ACE-Step XL to YuE2: the style name does not come across, and it says so', () => {
-  for (const helpers of [{ ace: true, aceStyles: true }, { ace: true }]) {
-    const out = carry.carryOver(aceSoul(), 'yue2', helpers);
-    assert.equal(out.ok, true);
-    for (const key of STYLE_KEYS) assert.equal(key in out.draft.options, false, `${key} stays behind`);
-    assert.equal(out.draft.options.lyrics, LYRICS);
-    assert.equal(out.draft.options.seed, 7);
-    assert.ok(out.notes.includes('YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.'), out.notes.join(' | '));
-    assert.doesNotMatch(out.notes.join(' '), /quality choice/, 'Best was the style\'s doing, and the style is already said');
-    assert.equal(out.draft.script, 'Slow soul, Rhodes', 'no trigger word is written into her words');
+test('carry, ACE-Step XL to YuE2: the style name does not come across, and it says so where YuE2 has a Style choice to point to', () => {
+  const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.';
+  const out = carry.carryOver(aceSoul(), 'yue2', { ace: true, aceStyles: true, yueStyles: true });
+  assert.equal(out.ok, true);
+  for (const key of STYLE_KEYS) assert.equal(key in out.draft.options, false, `${key} stays behind`);
+  assert.equal(out.draft.options.lyrics, LYRICS);
+  assert.equal(out.draft.options.seed, 7);
+  assert.ok(out.notes.includes(OWN), out.notes.join(' | '));
+  assert.doesNotMatch(out.notes.join(' '), /quality choice/, 'Best was the style\'s doing, and the style is already said');
+  assert.equal(out.draft.script, 'Slow soul, Rhodes', 'no trigger word is written into her words');
+  /* YuE2 has no Style choice for this person (its flag is off, or she is outside the pack): it is still said that the style was
+   * left behind, but nothing points her at a choice that is not there. */
+  for (const helpers of [{ ace: true, aceStyles: true }, { ace: true, aceStyles: true, yueStyles: false }, { ace: true, aceStyles: true, yueStyles: 'yes' }]) {
+    const none = carry.carryOver(aceSoul(), 'yue2', helpers);
+    assert.ok(none.notes.includes('YuE2 has no trained style, which only ACE-Step XL has, so that was left behind.'), `${JSON.stringify(helpers)}: ${none.notes.join(' | ')}`);
+    assert.doesNotMatch(none.notes.join(' '), /Choose Style|own Style choice|quality choice/, JSON.stringify(helpers));
+    for (const key of STYLE_KEYS) assert.equal(key in none.draft.options, false);
+  }
+});
+
+test('carry, ACE-Step XL to YuE2 with ACE styles off for this person: the answer it always gave, whatever a hand-made draft names', () => {
+  /* ACE-Step XL has no Style choice with the flag off or outside the pack; a draft that names one anyway (a hand-made body)
+   * is carried exactly as before ACE-Step XL had styles: no sentence about a style, the quality choice said as it was. */
+  const bare = { ...aceSoul(), options: { ...aceSoul().options } };
+  delete bare.options.band;
+  delete bare.options.style_strength;
+  for (const helpers of [{ ace: true }, { ace: true, aceStyles: false }, { ace: true, aceStyles: 'yes' }, { ace: true, yueStyles: true }, { ace: true, aceStyles: false, yueStyles: true }]) {
+    const toYue = carry.carryOver(aceSoul(), 'yue2', helpers);
+    assert.deepEqual(toYue.notes, carry.carryOver(bare, 'yue2', helpers).notes, `${JSON.stringify(helpers)}: not one new sentence for YuE2`);
+    assert.deepEqual(toYue.draft.options, carry.carryOver(bare, 'yue2', helpers).draft.options);
+    assert.ok(toYue.notes.includes('YuE2 has no quality choice, so that was left behind.'), 'Best was her choice as far as this carry can tell');
+    const toLyria = carry.carryOver(aceSoul(), 'lyria', helpers);
+    assert.ok(toLyria.notes.includes('Lyria has no trained style, which only YuE2 has, no quality choice, so those were left behind.'), `${JSON.stringify(helpers)}: ${toLyria.notes.join(' | ')}`);
+    assert.doesNotMatch(toLyria.notes.join(' '), /ACE-Step XL have/);
   }
 });
 
@@ -527,11 +599,20 @@ test('carry: the style is said accurately for every other destination, and a pla
   const plainAce = { ...aceSoul(), options: { quality: 'Fast', length: 'Match my lyrics', singing: SUNG, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 7 } };
   const noneAce = { ...aceSoul(), options: { ...plainAce.options, band: 'none' } };
   const zero = { ...aceSoul(), options: { ...plainAce.options, band: 'soul', style_strength: 0 } };
-  for (const project of [plainAce, noneAce]) for (const to of ['yue2', 'lyria']) {
-    const out = carry.carryOver(project, to, { ace: true, aceStyles: true });
+  for (const project of [plainAce, noneAce]) for (const to of ['yue2', 'lyria']) for (const yueStyles of [true, false]) {
+    const out = carry.carryOver(project, to, { ace: true, aceStyles: true, yueStyles });
     assert.doesNotMatch(out.notes.join(' '), /[Ss]tyle/, `${to}: ${out.notes.join(' | ')}`);
   }
-  assert.ok(carry.carryOver(zero, 'yue2', { ace: true, aceStyles: true }).notes.some((n) => /ACE-Step XL style was left behind/.test(n)), 'what was set is said, even at strength 0');
+  /* A Style at strength 0 was a plain take: no adapter was used, so there is no style to say was left behind. */
+  for (const to of ['yue2', 'lyria']) for (const yueStyles of [true, false]) {
+    const out = carry.carryOver(zero, to, { ace: true, aceStyles: true, yueStyles });
+    assert.doesNotMatch(out.notes.join(' '), /[Ss]tyle/, `${to}: strength 0 is a plain take (${out.notes.join(' | ')})`);
+    for (const key of STYLE_KEYS) assert.equal(key in out.draft.options, false);
+  }
+  const zeroBest = { ...aceSoul(), options: { ...zero.options, quality: 'Best' } };
+  assert.ok(carry.carryOver(zeroBest, 'yue2', { ace: true, aceStyles: true, yueStyles: true }).notes.includes('YuE2 has no quality choice, so that was left behind.'), 'Best was her own pick on a plain take, so it is said');
+  /* While ACE-Step XL has no Style for this person, strength 0 is not looked at: the carry is the one it always was. */
+  assert.ok(carry.carryOver(zero, 'lyria', { ace: true }).notes.some((n) => n.startsWith('Lyria has no trained style, which only YuE2 has')));
   const plainYue = { ...yueSoul(), options: { lyrics: LYRICS, seed: 4 } };
   assert.doesNotMatch(carry.carryOver(plainYue, 'ace', { ace: true, aceStyles: true }).notes.join(' '), /[Ss]tyle/);
   /* Strength never crosses by itself either, in either direction. */

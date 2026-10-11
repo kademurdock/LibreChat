@@ -401,6 +401,8 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     for (const extra of [{ band: 'soul' }, { band: 'soul', quality: 'Fast' }, { band: 'soul', quality: 'Best' }]) await settle(await send(extra, { ...head, ...tail }), who);
     await settle(await send({ band: 'soul', style_strength: 0.5 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.5, vocal_language: 'en' }), who);
     await settle(await send({ band: 'soul', style_strength: 0 }, { ...head, model: 'xl-turbo' }), who);
+    await settle(await send({ band: 'soul', style_strength: 0.00004 }, { ...head, model: 'xl-turbo' }), who);
+    await settle(await send({ band: 'soul', style_strength: 0.00005 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.0001, vocal_language: 'en' }), who);
     await settle(await send({ band: 'none', style_strength: 0.5 }, { ...head, model: 'xl-turbo' }), who);
     await settle(await send({ band: 'soul', length: '3:00', weirdness: 70, guidance: 2 }, { ...head, duration: 180, lm_temperature: 1.03, guidance_scale: 10, ...tail }), who);
     styled = await send({ band: 'soul', style_strength: 0.6, length: '3:00', seed: 9 }, { ...head, duration: 180, seed: 9, lora_key: tail.lora_key, lora_scale: 0.6, vocal_language: 'en' });
@@ -486,6 +488,20 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(plainStatus.data.spoken, '1 of 1 takes ready. Open your library to compare them.');
     assert.equal('takeNote' in assetRows.at(-1).metadata, false);
     assert.equal('style' in assetRows.at(-1).metadata, false);
+
+    /* Style None with a strength she moved, a Style at strength 0, and one too small to count are plain takes: the asset names no
+     * style (the project still remembers what she set), and the worker was sent no adapter. */
+    for (const [seed, extra] of [[44, { band: 'none', style_strength: 0.4 }], [45, { style_strength: 0.4 }], [46, { band: 'soul', style_strength: 0 }], [47, { band: 'soul', style_strength: 0.00004 }]]) {
+      const made = await call('/render', { body: { ...song, seed, ...extra }, who });
+      assert.equal(made.status, 200, made.text);
+      assert.equal(runpod.runs.at(-1).body.input.model, 'xl-turbo', JSON.stringify(extra));
+      for (const key of ['lora_key', 'lora_scale', 'vocal_language']) assert.equal(key in runpod.runs.at(-1).body.input, false, `${JSON.stringify(extra)}: ${key} is not sent`);
+      Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(seed, { model: 'xl-turbo' }), executionTime: 60000 });
+      const done = await call(`/status/${made.data.jobId}`, { who });
+      assert.equal(done.data.spoken, '1 of 1 takes ready. Open your library to compare them.', JSON.stringify(extra));
+      for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale', 'style', 'takeNote']) assert.equal(key in assetRows.at(-1).metadata, false, `${JSON.stringify(extra)}: ${key} is not in the asset`);
+      assert.equal((await Project.findById(made.data.projectId).lean()).options.style_strength, extra.style_strength, `${JSON.stringify(extra)}: the project remembers what she set`);
+    }
   });
 
   await t.test('switching styles off while a styled take is queued: it still finishes, and the next request is plain', async () => {
@@ -521,11 +537,54 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(toAce.data.project.options.lyrics, LYRICS);
     assert.equal(toAce.data.project.options.seed, 4);
     assert.ok(toAce.data.notes.includes('ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.'), toAce.data.notes.join(' | '));
+    /* YuE2's own Style choice is behind YUE_STYLES_ENABLED. Without it there is no choice to "choose Style" on, and the carry says
+     * only that the style was left behind. */
+    const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.';
+    const NO_YUE_STYLE = 'YuE2 has no trained style, which only ACE-Step XL has, so that was left behind.';
     const toYue = await call(`/projects/${aceProject._id}/carry`, { body: { engine: 'yue2' }, who });
     assert.equal(toYue.status, 200, toYue.text);
     for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toYue.data.project.options, false, `ACE to YuE2: ${key}`);
-    assert.ok(toYue.data.notes.includes('YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.'), toYue.data.notes.join(' | '));
-    assert.doesNotMatch(toYue.data.notes.join(' '), /quality choice/);
+    assert.ok(toYue.data.notes.includes(NO_YUE_STYLE), toYue.data.notes.join(' | '));
+    assert.doesNotMatch(toYue.data.notes.join(' '), /Choose Style|quality choice/);
+    const draftNoChoice = await call('/carry', { body: { engine: 'yue2', draft: { engine: 'ace', title: 'Draft', script: 'Slow soul', options: { quality: 'Best', lyrics: LYRICS, band: 'soul' } } }, who });
+    assert.equal(draftNoChoice.status, 200, draftNoChoice.text);
+    assert.ok(draftNoChoice.data.notes.includes(NO_YUE_STYLE), `the page's own draft carry says the same: ${draftNoChoice.data.notes.join(' | ')}`);
+    assert.doesNotMatch(draftNoChoice.data.notes.join(' '), /Choose Style|quality choice/);
+    setEnv({ YUE_STYLES_ENABLED: '1' });
+    try {
+      const withChoice = await call(`/projects/${aceProject._id}/carry`, { body: { engine: 'yue2' }, who });
+      assert.equal(withChoice.status, 200, withChoice.text);
+      assert.ok(withChoice.data.notes.includes(OWN), withChoice.data.notes.join(' | '));
+      assert.doesNotMatch(withChoice.data.notes.join(' '), /quality choice/);
+      for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in withChoice.data.project.options, false, `ACE to YuE2: ${key}`);
+      /* The page's own draft carry, from a Style at strength 0 (a plain take): nothing is left behind, so nothing is said. */
+      const draftOf = (options) => ({ engine: 'ace', title: 'Draft', script: 'Slow soul', options: { quality: 'Fast', length: 'Match my lyrics', singing: yue.yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 7, ...options } });
+      const zero = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ band: 'soul', style_strength: 0 }) }, who });
+      assert.equal(zero.status, 200, zero.text);
+      assert.doesNotMatch(zero.data.notes.join(' '), /[Ss]tyle/, zero.data.notes.join(' | '));
+      const styledDraft = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ band: 'soul', quality: 'Best' }) }, who });
+      assert.ok(styledDraft.data.notes.includes(OWN), styledDraft.data.notes.join(' | '));
+      /* A person outside the pack has no Style choice on either card, so a hand-made draft that names one is carried as it always was. */
+      const outsider = kinds.outsider();
+      const handMade = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ band: 'soul', quality: 'Best' }) }, who: outsider });
+      const bare = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ quality: 'Best' }) }, who: outsider });
+      assert.equal(handMade.status, 200, handMade.text);
+      assert.deepEqual(handMade.data.notes, bare.data.notes, 'no new sentence about a style');
+      assert.doesNotMatch(handMade.data.notes.join(' '), /[Ss]tyle/);
+      /* The same with ACE-Step XL styles switched off: the draft that names one gets what it always got. */
+      setEnv({ ACE_STYLES_ENABLED: undefined });
+      try {
+        const off = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ band: 'soul', quality: 'Best' }) }, who });
+        const offBare = await call('/carry', { body: { engine: 'yue2', draft: draftOf({ quality: 'Best' }) }, who });
+        assert.deepEqual(off.data.notes, offBare.data.notes, 'no new sentence about a style');
+        assert.doesNotMatch(off.data.notes.join(' '), /[Ss]tyle/);
+        assert.match(off.data.notes.join(' '), /quality choice/);
+      } finally {
+        setEnv({ ACE_STYLES_ENABLED: '1' });
+      }
+    } finally {
+      setEnv({ YUE_STYLES_ENABLED: undefined });
+    }
     /* The original projects are untouched. */
     assert.equal((await Project.findById(yueProject._id).lean()).options.band, 'soul');
     assert.equal((await Project.findById(aceProject._id).lean()).options.band, 'soul');
@@ -534,6 +593,12 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(draft.status, 200);
     assert.equal('band' in draft.data.draft.options, false);
     assert.ok(draft.data.notes.some((n) => /YuE2 style was left behind/.test(n)));
+    /* Someone outside the pack (a style draft from before the pack was taken away, say) has no Style choice on the ACE-Step XL card,
+     * so the carry does not point at one: it says what it always said. */
+    const outside = await call('/carry', { body: { engine: 'ace', draft: { engine: 'yue2', title: 'Draft', script: 'Slow soul', options: { lyrics: LYRICS, band: 'soul', style_strength: 1 } } }, who: kinds.outsider() });
+    assert.equal(outside.status, 200, outside.text);
+    assert.ok(outside.data.notes.includes('ACE-Step XL has no trained style, which only YuE2 has, so that was left behind.'), outside.data.notes.join(' | '));
+    assert.doesNotMatch(outside.data.notes.join(' '), /Choose Style/);
     /* With styles off the sentence is the one it always was, and a person without ACE still cannot carry to or from it. */
     setEnv({ ACE_STYLES_ENABLED: undefined });
     try {

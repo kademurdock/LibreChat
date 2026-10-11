@@ -216,15 +216,18 @@ const SHARED_KNOBS = [
  *
  * @param {object} project  { engine, title, sourceText, script, options, voiceSeed }
  * @param {string} to       the destination engine key
- * @param {object} helpers  { toScreenplay, ace, aceStyles } -- AuK XML is unreadable to every
+ * @param {object} helpers  { toScreenplay, ace, aceStyles, yueStyles } -- AuK XML is unreadable to every
  *                          other engine and to a person, so the route hands in
  *                          the converter it already has rather than this file
  *                          growing an XML parser. `ace` is true only for a person
  *                          who may use ACE-Step XL; without it that engine is
- *                          neither a source nor a destination. `aceStyles` is true
- *                          while ACE-Step XL has a Style choice of its own
- *                          (ACE_STYLES_ENABLED), so a YuE2 style can be said to be
- *                          left for it instead of missing from it.
+ *                          neither a source nor a destination. `aceStyles` and
+ *                          `yueStyles` are true only for a person who has a Style
+ *                          choice on that card (the engine's style flag and the
+ *                          Family feature pack), so a style can be said to be left
+ *                          for the other card's choice instead of missing from it.
+ *                          Without them a draft is carried as it was before
+ *                          ACE-Step XL had styles.
  */
 function carryOver(project, to, helpers = {}) {
   const from = String((project && project.engine) || '');
@@ -320,16 +323,27 @@ function carryOver(project, to, helpers = {}) {
   /* ---- what was left behind, said out loud ------------------------------ */
   const dropped = [];
   /* Trained styles are adapters taught to one engine: YuE2's Soul and ACE-Step XL's Soul are different files for different
-   * models, so a Style name never crosses between them (it is not in any `keeps` list) and a carry says so. With
-   * ACE_STYLES_ENABLED off ACE-Step XL has no Style choice, and the sentence is the one it always was. */
-  const styled = !!oldOpts.band && oldOpts.band !== 'none';
-  const ownStyles = (from === 'yue2' && to === 'ace' && helpers.aceStyles === true) || (from === 'ace' && to === 'yue2');
-  if (styled && ownStyles) {
+   * models, so a Style name never crosses between them (it is not in any `keeps` list) and a carry says so. ACE-Step XL's
+   * Style is only real for a person who has it (helpers.aceStyles: ACE_STYLES_ENABLED and the Family feature pack). Without
+   * that, a draft that names one is carried exactly as it always was, and the sentence is the one it always was. With it, a
+   * Style at strength 0 was a plain take, so there is nothing to say; and "choose Style on the card" is said only when the
+   * card it points to has a Style choice for this person (helpers.yueStyles for YuE2). */
+  const aceStyled = from === 'ace' && helpers.aceStyles === true;
+  const styled = !!oldOpts.band && oldOpts.band !== 'none' && !(aceStyled && oldOpts.style_strength === 0);
+  if (styled && from === 'yue2' && to === 'ace' && helpers.aceStyles === true) {
     notes.push(
       `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} style was left behind. Choose Style on the ${dst.label} card to use one.`,
     );
+  } else if (styled && aceStyled && to === 'yue2') {
+    if (helpers.yueStyles === true) {
+      notes.push(
+        `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} style was left behind. Choose Style on the ${dst.label} card to use one.`,
+      );
+    } else {
+      dropped.push('trained style, which only ACE-Step XL has');
+    }
   } else if (styled && to !== 'yue2') {
-    dropped.push(from === 'ace' ? 'trained style, which only YuE2 and ACE-Step XL have' : 'trained style, which only YuE2 has');
+    dropped.push(aceStyled ? 'trained style, which only YuE2 and ACE-Step XL have' : 'trained style, which only YuE2 has');
   }
   if (oldOpts.abc && to !== 'yue2') {
     dropped.push('composition score');
@@ -345,7 +359,7 @@ function carryOver(project, to, helpers = {}) {
   /* ACE-Step XL's own choices (its Quality and Length) mean nothing to the engines it can go to. The
    * ones left at the usual Fast and Match my lyrics are not worth a sentence. */
   /* A styled take is Best because the style needs it, not because she picked it; the style is already said above. */
-  if (from === 'ace' && oldOpts.quality !== undefined && oldOpts.quality !== 'Fast' && !(styled && oldOpts.quality === 'Best')) {
+  if (from === 'ace' && oldOpts.quality !== undefined && oldOpts.quality !== 'Fast' && !(aceStyled && styled && oldOpts.quality === 'Best')) {
     dropped.push('quality choice');
   }
   if (from === 'ace' && oldOpts.length !== undefined && oldOpts.length !== 'Match my lyrics') {

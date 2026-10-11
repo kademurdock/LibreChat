@@ -55,7 +55,13 @@ export type AceProjectOptions = {
 };
 
 /** What the worker reported about the adapter it applied; every field optional because only what the worker really said is kept. */
-export type AceStyleReport = { key?: string; name?: string; scale?: number; tag?: string; sha256?: string };
+export type AceStyleReport = {
+  key?: string;
+  name?: string;
+  scale?: number;
+  tag?: string;
+  sha256?: string;
+};
 
 /**
  * What the asset keeps about a finished take. The card, checkpoint and planner choices are only what the worker
@@ -198,6 +204,7 @@ export const aceStyleLockedSentence: string =
 const STYLE_STRENGTH_HINT =
   'Lower it to blend the style with plain ACE-Step XL. 0 is plain; 1 is the full style. Applies only when a Style is selected.';
 const STYLE_QUALITY_HINT = ' A Style always uses Best.';
+const STYLE_GUIDANCE_HINT = ' A Style always uses Best, so this applies to it.';
 const STYLE_INSTRUMENTAL_HINT = ' Choose None under Style for an instrumental.';
 const STYLE_UNAVAILABLE = 'That trained style is not available. Choose None or another style.';
 const STYLE_SINGING =
@@ -495,8 +502,19 @@ function styleChoice(band: string | undefined, env: NodeJS.ProcessEnv): string |
   return band;
 }
 
+/**
+ * The strength the worker is sent: the registry's scale times the strength she set, to four places. The worker reads a
+ * strength of 0 as a plain song, so a product that rounds to 0 (a strength of 0.00004, say) is no style here either,
+ * and is never sent as Best with an adapter that does nothing.
+ */
+function styleScale(row: AceStyle, strength: number): number {
+  return roundedTo(row.scale * strength, 4);
+}
+
 /** What the request carries for a styled job, and nothing for any other. */
-function aceStyleFields(input: Input): Pick<AceRequest, 'lora_key' | 'lora_scale' | 'vocal_language'> {
+function aceStyleFields(
+  input: Input,
+): Pick<AceRequest, 'lora_key' | 'lora_scale' | 'vocal_language'> {
   if (!input.lora_key) return {};
   return {
     lora_key: input.lora_key,
@@ -549,7 +567,8 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     'Prompt guidance',
     false,
   );
-  /* The Style choice, read only while styles are on. Strength 0 is plain ACE-Step XL, as at YuE2: no adapter, so no Best. */
+  /* The Style choice, read only while styles are on. Strength 0 is plain ACE-Step XL, as at YuE2: no adapter, so no Best. So is
+   * a strength so small that the scale sent to the worker would round to 0, which the worker reads as plain too. */
   const styles = aceStylesEnabled(env);
   const band = styleChoice(body.band, env);
   const strength = styles
@@ -562,7 +581,9 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
         false,
       )
     : STYLE_STRENGTH_DEFAULT;
-  const trained = band && strength > 0 ? aceStyles[band] : undefined;
+  const row = band ? aceStyles[band] : undefined;
+  const scale = row ? styleScale(row, strength) : 0;
+  const trained = row && scale > 0 ? row : undefined;
   if (trained && instrumental) throw new Error(STYLE_SINGING);
   const direction = body.script.trim();
   const asked = aceModelChoice(body.quality, env);
@@ -585,9 +606,7 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     seed: body.seed ?? Math.floor(Math.random() * SEED_LIMIT),
     ...(band ? { band } : {}),
     ...(styles && body.style_strength != null ? { style_strength: strength } : {}),
-    ...(trained
-      ? { lora_key: trained.key, lora_scale: roundedTo(trained.scale * strength, 4) }
-      : {}),
+    ...(trained ? { lora_key: trained.key, lora_scale: scale } : {}),
   };
 }
 
@@ -626,14 +645,14 @@ export function aceEstimate(input: Input): string {
     model !== 'xl-sft' && moved(input.guidance, GUIDANCE_DEFAULT)
       ? ` Prompt guidance only works with Quality ${aceQuality.best}, so ${aceQuality.fast} ignores it.`
       : '';
-  /* A style is said first, with the quality it forces. Strength 0 is a plain take, and says that it is. */
+  /* A style is said first, with the quality it forces. Strength 0 (or one too small to count) is a plain take, and says that it is. */
   const length = spokenLength(input.duration ?? 0);
   const lead = input.lora_key
     ? `About ${length} of music in the ${styleLabel(input.band)} style, which always uses ${quality.toLowerCase()} quality.`
     : `About ${length} of music, ${quality.toLowerCase()} quality.`;
   const plain =
     input.band && !input.lora_key
-      ? ` Style strength is 0, so the ${styleLabel(input.band)} style is not used.`
+      ? ` Style strength is ${input.style_strength === 0 ? '0' : 'too low'}, so the ${styleLabel(input.band)} style is not used.`
       : '';
   return `${lead}${plain}${cut}${idle} ${aceCost}`;
 }
@@ -659,10 +678,13 @@ export function aceProjectWhy(options?: Partial<AceProjectOptions>): string {
   const made = options?.singing === yueSinging.instrumental ? 'an instrumental' : 'a song';
   const best = options?.quality === aceQuality.best ? ', best quality' : '';
   const band = options?.band;
+  const said = options?.style_strength;
+  const strength =
+    typeof said === 'number' && Number.isFinite(said) ? said : STYLE_STRENGTH_DEFAULT;
   const styled =
     typeof band === 'string' &&
     Object.prototype.hasOwnProperty.call(aceStyles, band) &&
-    options?.style_strength !== 0
+    styleScale(aceStyles[band], strength) > 0
       ? `, in the ${styleLabel(band)} style`
       : '';
   return `ACE-Step XL — ${made} made on the sleeping music GPU${best}${styled}`;
@@ -725,9 +747,11 @@ export function aceTakeFacts(output: Output | undefined, input: Input): AceTakeF
   facts.guidance = input.guidance ?? GUIDANCE_DEFAULT;
   if (sent.lm_temperature !== undefined) facts.lm_temperature = sent.lm_temperature;
   if (sent.guidance_scale !== undefined) facts.guidance_scale = sent.guidance_scale;
+  /* Only a take that was sent an adapter keeps the Style fields. Style None with a strength she moved, and a Style at strength 0,
+   * are plain takes: the project remembers what she set, but the asset must not read as if a style had been used. */
+  if (!input.lora_key) return facts;
   if (input.band) facts.band = input.band;
   if (typeof input.style_strength === 'number') facts.style_strength = input.style_strength;
-  if (!input.lora_key) return facts;
   facts.lora_key = input.lora_key;
   if (typeof input.lora_scale === 'number') facts.lora_scale = input.lora_scale;
   const report = styleReport(output);
@@ -807,7 +831,7 @@ function aceStyleSettings(): AceGuideSetting[] {
  * The ACE-Step XL card for the booth guide: the settings in the order they are shown. With ACE_STYLES_ENABLED unset it is
  * the card it always was. With it set, Style (and Style strength, under More settings) follow Quality, and
  * `stylesAllowed` (the Family feature pack) decides whether the choice is live: left out, it is greyed out. Only someone
- * who can use a Style is told, in the Singing and Quality hints, what a Style does to them.
+ * who can use a Style is told, in the Singing, Quality and Prompt guidance hints, what a Style does to them.
  */
 export function aceGuide(
   env: NodeJS.ProcessEnv = process.env,
@@ -883,7 +907,7 @@ export function aceGuide(
       {
         key: 'guidance',
         label: 'Prompt guidance',
-        hint: 'Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural.',
+        hint: `Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural.${hinted ? STYLE_GUIDANCE_HINT : ''}`,
         kind: 'range',
         min: GUIDANCE_MIN,
         max: GUIDANCE_MAX,
