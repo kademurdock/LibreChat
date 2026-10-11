@@ -14,8 +14,8 @@ import { FAMILY_PACK_NOTE } from '../family/pack';
  * request or an answer. The worker's request and answer shapes are in the ACE contract; take 0 of its
  * answer sits at the top level, so the shared audio router reads it exactly like a YuE2 answer.
  *
- * Trained styles (the Style choice) are one flag further in: ACE_STYLES_ENABLED=1, off by default. With it unset the
- * card, every request and every answer are exactly what they were without styles. */
+ * Trained styles (the Style choice: Soul and Suno, see aceStyles) are one flag further in: ACE_STYLES_ENABLED=1, off by
+ * default. With it unset the card, every request and every answer are exactly what they were without styles. */
 
 export type AceModel = 'xl-turbo' | 'xl-sft';
 export type AceUser = LibraryAccount | null | undefined;
@@ -181,23 +181,31 @@ export type AceStyle = { key: string; scale: number };
 /* Each row is a LoRA taught to the Best (xl-sft) decoder from real recordings, kept in the private bucket under `key` (a B2
  * prefix) and folded in by the worker for one song. The worker owns the trigger word: it reads it from the adapter's own files,
  * plans on the plain Music direction, and hands the decoder the tagged one. So nothing here puts a word in front of Music
- * direction, and a song's saved direction is exactly what she typed. The adapter was taught on English words, so a styled
- * request names that language (aceStyleFields).
+ * direction, and a song's saved direction is exactly what she typed. Every adapter was taught on English words, so a styled
+ * request names that language (aceStyleFields). A row, and a clause in aceStyleHint (a test holds the hint to saying every row),
+ * is all the booth needs to add a style: the Style options, the strength product, the quote, the notes, the library line and
+ * the asset facts all read the row's name and nothing else.
  * Soul (Oct 11 2026): taught from real soul and R&B records (PEFT rank 64, alpha 128). Trained on commercial records, so the
- * whole Style choice is part of the Family feature pack (aceStyleAccess), as the YuE2 Style choice is. These styles are not
- * YuE2's: a different model, a different adapter, which is why the two menus never share a value (see the carry module).
+ * whole Style choice is part of the Family feature pack (aceStyleAccess), as the YuE2 Style choice is.
+ * Suno (Oct 11 2026): taught from 375 songs made with Suno. It stays behind the same pack as Soul: one gate for the whole Style
+ * choice, not one per style. Smoke-tested on the live worker through the same fields as Soul, so the worker needs no change.
+ * These styles are not YuE2's: a different model, a different adapter, even where the two menus use the same name (both have a
+ * soul, and they are different files), which is why a style never crosses between the engines (see the carry module, which
+ * drops the Style fields by key and never compares names).
  * The key must match the worker's ^ace-loras/[A-Za-z0-9._-]{1,60}$ and `scale` stays inside its 0.0 to 1.5. Nothing here names
  * a person or a private folder: this menu is read by everyone who uses the booth. */
 export const aceStyles: Record<string, AceStyle> = {
   soul: { key: 'ace-loras/soul-real-v1', scale: 1 },
+  suno: { key: 'ace-loras/suno-v1', scale: 1 },
 };
 export function aceStylesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.ACE_STYLES_ENABLED === '1';
 }
 
-/** The Style choice's hint on the card (the `band` setting). It names no person and no folder. */
+/** The Style choice's hint on the card (the `band` setting): what each style was taught from, in registry order. It names no
+ * person and no folder, and a test holds it to saying every style the registry has. */
 export const aceStyleHint: string =
-  'A singing style taught to ACE-Step XL from real soul and R&B records. Uses the Best quality. None is plain ACE-Step XL.';
+  'A singing style taught to ACE-Step XL. Soul learned from real soul and R&B records; Suno from songs made with Suno. Uses the Best quality. None is plain ACE-Step XL.';
 /** Added to the Style hints for an account outside the Family feature pack, so a client that does not read `locked` yet still says why the choice does nothing there. */
 export const aceStyleLockedSentence: string =
   ' Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL.';
@@ -485,7 +493,7 @@ function dial(
 
 /* ---------- the Style choice ---------- */
 
-/** "Soul" for the registry's `soul`: the word the Style choice shows. */
+/** The word the Style choice shows for a registry name: "Soul" for `soul`, "Suno" for `suno`. */
 function styleLabel(band: string | undefined): string {
   const word = String(band ?? '').trim();
   return word ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : 'chosen';

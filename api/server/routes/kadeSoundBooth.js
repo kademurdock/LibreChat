@@ -209,9 +209,10 @@ router.use(createLyricsRouter(musicReferenceHooks));
  * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
  * still shows it live is refused here, on the server, before the YuE2 router queues anything,
  * with words that say what to change. An unreadable pack answer counts as outside the pack.
- * Oct 11 2026: the ACE-Step XL Style choice (Soul, taught from the same kind of records) is the same pack feature, behind
- * ACE_STYLES_ENABLED. Its card is greyed out by withAceGuide(..., styleAllowed(user)) and a direct request is refused here,
- * with the very same sentence, before the ACE router (mounted further down) sees it. */
+ * Oct 11 2026: the ACE-Step XL Style choice (Soul, taught from the same kind of records, and Suno) is the same pack feature,
+ * behind ACE_STYLES_ENABLED: one gate for the whole choice, whatever style is named. Its card is greyed out by
+ * withAceGuide(..., styleAllowed(user)) and a direct request is refused here, with the very same sentence, before the ACE
+ * router (mounted further down) sees it. */
 /** Any Style but None, for YuE2: yueInput's own reading of `band`. For ACE-Step XL it is the same reading, but only while
  * ACE_STYLES_ENABLED is on: with styles off ACE ignores `band` as it always did, so asking for one is not asking for a style. */
 function asksForStyle(body) {
