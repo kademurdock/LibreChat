@@ -249,11 +249,11 @@ test("a YuE2 trained style's trigger words do not ride into another engine's des
 });
 
 test("the Suno style's trigger goes the same way, and its style is said to be left behind", () => {
-  assert.strictEqual(carry.stripTrainedLead('kdsuno, in the style of kdsuno. English. Warm folk, male lead vocal.'), 'English. Warm folk, male lead vocal.');
+  assert.strictEqual(carry.stripTrainedLead('kdsuno, in the style of kdsuno. English, Warm folk, male lead vocal.'), 'English, Warm folk, male lead vocal.');
   const lead = 'kdsuno, in the style of kdsuno. ';
-  assert.strictEqual(carry.stripTrainedLead(lead + lead + 'English. Warm folk.'), 'English. Warm folk.');
+  assert.strictEqual(carry.stripTrainedLead(lead + lead + 'English, Warm folk.'), 'English, Warm folk.');
   for (const to of ['lyria', 'ace']) {
-    const out = carry.carryOver({ ...YUE, script: lead + 'English. Warm folk.', options: { ...(YUE.options || {}), band: 'suno', style_strength: 0.5 } }, to, ACE_ON);
+    const out = carry.carryOver({ ...YUE, script: lead + 'English, Warm folk.', options: { ...(YUE.options || {}), band: 'suno', style_strength: 0.5 } }, to, ACE_ON);
     assert.strictEqual(out.ok, true, to);
     assert.doesNotMatch(out.draft.script, /kdsuno/, to);
     for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.strictEqual(out.draft.options[key], undefined, `${to}: ${key} stays behind`);

@@ -218,7 +218,7 @@ async function covers(post, base, sentInputs, provider) {
         }
         const suno = yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'suno', reference_voice_url: recording }, ON);
         assert.equal(suno.lora_key, 'yue2-loras/suno-step600.pt'); assert.equal(suno.lora_scale, 1);
-        assert.equal(suno.style, 'kdsuno, in the style of kdsuno. English. Lullaby');
+        assert.equal(suno.style, 'kdsuno, in the style of kdsuno. English, Lullaby');
     } finally {
         if (before === undefined) delete process.env.YUE_STYLES_ENABLED; else process.env.YUE_STYLES_ENABLED = before;
     }

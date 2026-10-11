@@ -32,7 +32,7 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
   return (ms / 1000) * (row ? row.usdPerSecond : yueFallbackUsdPerSecond);
 }
 
-/* Trained styles: each is an AR LoRA trained on real recordings, kept in the private
+/* Trained styles: each is an AR LoRA trained on recordings, kept in the private
  * bucket and folded into the composer by the worker for one song. The lead sentence is the
  * caption its LoRA was trained under, trigger word first, so it has to open the style text.
  * They were trained score-free, so a new song in a style asks the worker for cot off.
@@ -51,9 +51,14 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
  * screen also ranked best).
  * Its training captions were "kdsuno, in the style of kdsuno. English, <genre>, <pace>,
  * <female|male|both> lead vocal, <sound words>, <N> BPM.", one per song (female lead 220, male
- * lead 89, both 25, no singer named 36), so the lead stops at the language and leaves the genre
- * and the singer to Music direction. The songs are AI-made, but the style is still part of the
- * Family feature pack with the rest of the Style choice. Removing its row is the rollback.
+ * lead 89, both 25, no singer named 36). The lead stops at the language, comma included, so
+ * Music direction carries the caption on the way the captions did, and the genre and the
+ * singer are hers to choose.
+ * These songs are AI-made, so the commercial-records reason above does not cover them. This
+ * style sits behind the Family feature pack for a different reason: Suno's terms are read as
+ * restricting use of its output to build competing models, so it is a private style tool for
+ * the family. The pack gate must stay for it (yueStyleAccess and the render refusal gate every
+ * row at once); do not open the Style choice to every account. Removing its row is the rollback.
  * Nothing here names a person or a private folder: this menu is read by everyone who uses the
  * booth. */
 export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
@@ -70,7 +75,7 @@ export const yueStyles: Record<string, { key: string; scale: number; lead: strin
   suno: {
     key: 'yue2-loras/suno-step600.pt',
     scale: 1,
-    lead: 'kdsuno, in the style of kdsuno. English.',
+    lead: 'kdsuno, in the style of kdsuno. English,',
   },
 };
 /** Older saved songs stored the worker's training trigger in the editable music direction. */
@@ -92,11 +97,11 @@ export function yueStylesEnabled(): boolean {
 }
 
 /** The Style choice's hint in the booth guide (the `band` setting). Kids and Soul were taught from
- * real recordings and Suno from songs made with Suno, so the first sentence says only
- * "recordings"; it names no person and no folder. Each style gets its own sentence, and the
+ * real recordings and Suno from songs made with Suno, so the opening says only "recordings";
+ * it names no person and no folder. The first sentence gives each style one clause, and the
  * voice sentence names exactly the styles whose training captions named a singer. */
 export const yueStyleHint: string =
-  'A singing style taught to YuE2 from recordings. Soul learned from soul and R&B records. Suno learned from songs made with Suno. For Soul or Suno, write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir. None is plain YuE2. Works for new songs and covers.';
+  'A singing style taught to YuE2 from recordings: Soul from soul and R&B records, Suno from songs made with Suno, Kids from a children’s choir. For Soul or Suno, write female lead vocal or male lead vocal in Music direction. None is plain YuE2. Works for new songs and covers.';
 /** Added to the Style hint for an account outside the Family feature pack, so a client that
  * does not read `locked` yet still says why the choice does nothing there. */
 export const yueStyleLockedSentence: string =

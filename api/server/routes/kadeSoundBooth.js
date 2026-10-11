@@ -204,7 +204,10 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
 });
 router.use(createLyricsRouter(musicReferenceHooks));
 /* Part 295 (Sep 27 2026): the trained styles are part of the Family feature pack. The Soul style
- * was taught from commercial soul and R&B records, so only an account with the pack
+ * was taught from commercial soul and R&B records. A style taught from songs made with Suno
+ * (Oct 2026) is not covered by that reason; it sits behind the same gate because Suno's terms are
+ * read as restricting use of its output to build competing models, so the gate must stay. Only
+ * an account with the pack
  * (familyFeatures(user).trainedStyles; never the App Review seats) may render in a style. The
  * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
  * still shows it live is refused here, on the server, before the YuE2 router queues anything,

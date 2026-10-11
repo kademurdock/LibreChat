@@ -107,10 +107,12 @@ test('Suno is the composer LoRA taught from songs made with Suno; its lead stops
   assert.deepEqual(suno, {
     key: 'yue2-loras/suno-step600.pt',
     scale: 1,
-    lead: 'kdsuno, in the style of kdsuno. English.',
+    lead: 'kdsuno, in the style of kdsuno. English,',
   });
-  // Training captions: "kdsuno, in the style of kdsuno. English, <genre>, <pace>, <female|male|both> lead vocal, ... <N> BPM."
-  assert.match(suno.lead, /^kdsuno, in the style of kdsuno\. English\.$/);
+  /* Training captions: "kdsuno, in the style of kdsuno. English, <genre>, <pace>, <female|male|both> lead vocal, ... <N> BPM."
+   * (every one of the 370, and the samples that were heard). The lead ends with the comma the captions had after the language, so
+   * Music direction carries the caption on; "English." followed by free text is a shape no caption and no sample ever had. */
+  assert.match(suno.lead, /^kdsuno, in the style of kdsuno\. English,$/);
   assert.doesNotMatch(suno.lead, /\b(fe)?male\b|\bwoman\b|\bman\b|\bboth\b/i, 'the captions named the singer per song, so the lead forces no voice');
   assert.doesNotMatch(suno.key, /decoder|soundstage/i, 'never a decoder file under yue2-loras/');
   assert.match(suno.key, /^yue2-loras\/[A-Za-z0-9._-]{1,80}\.pt$/, 'the worker folds only keys of this shape');
@@ -179,7 +181,7 @@ const request = (body, env = {}) => withEnv({ YUE_STYLES_ENABLED: '1', ...env },
 
 test('a Suno song opens with the lead, runs score-free, and asks the worker for its own file', () => {
   const suno = request({ band: 'suno' });
-  assert.equal(suno.style, `kdsuno, in the style of kdsuno. English. ${DIRECTION}`);
+  assert.equal(suno.style, `kdsuno, in the style of kdsuno. English, ${DIRECTION}`);
   assert.equal(suno.lora_key, 'yue2-loras/suno-step600.pt');
   assert.equal(suno.lora_scale, 1);
   assert.equal(suno.cot, 'off');
@@ -188,10 +190,10 @@ test('a Suno song opens with the lead, runs score-free, and asks the worker for 
   const half = request({ band: 'suno', style_strength: 0.5 });
   assert.equal(half.lora_scale, 0.5);
   assert.equal(half.style_strength, 0.5);
-  assert.match(half.style, /^kdsuno, in the style of kdsuno\. English\. Slow tempo/);
+  assert.match(half.style, /^kdsuno, in the style of kdsuno\. English, Slow tempo/);
   // Her singer choice rides in Music direction, after the lead: nothing in the lead picks a voice.
   const male = request({ band: 'suno', script: 'Mid-tempo, male lead vocal, acoustic guitar, 96 BPM.' });
-  assert.equal(male.style, 'kdsuno, in the style of kdsuno. English. Mid-tempo, male lead vocal, acoustic guitar, 96 BPM.');
+  assert.equal(male.style, 'kdsuno, in the style of kdsuno. English, Mid-tempo, male lead vocal, acoustic guitar, 96 BPM.');
 });
 
 test('None makes the request the previous commit made, and so do Kids and Soul; each style differs from plain only in its own fields', () => {
@@ -273,6 +275,23 @@ test('with the Style choice switched off, every style, Suno included, gets the o
   assert.equal(JSON.stringify(off), JSON.stringify(expectedRequest(undefined)), 'with styles off a plain song is the previous commit\'s request');
 });
 
+test('a band that is only a name every object has (constructor, toString, __proto__ ...) is not a style, and is refused like any unknown one', () => {
+  withEnv({ YUE_STYLES_ENABLED: '1' }, () => {
+    const names = ['constructor', 'toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__proto__', '__defineGetter__', '__lookupGetter__', 'a-style-that-was-removed'];
+    for (const band of names) {
+      assert.throws(
+        () => yue.yueInput({ script: DIRECTION, lyrics: '[Verse]\nWords', seed: 7, band }, {}),
+        { message: 'That trained style is not available. Choose None or another style.' },
+        band,
+      );
+    }
+    // The lookup refuses the inherited names only: every real style on the menu still goes through.
+    for (const band of Object.keys(yue.yueStyles)) {
+      assert.equal(yue.yueInput({ script: DIRECTION, lyrics: '[Verse]\nWords', seed: 7, band }, {}).band, band);
+    }
+  });
+});
+
 test('style strength reaches the worker and zero makes the same request as plain YuE2', () => {
   withEnv({ YUE_STYLES_ENABLED: '1' }, () => {
     const song = { script: 'Warm soul, female lead, 80 BPM.', lyrics: '[verse]\nCarry these words home', band: 'soul', seed: 123 };
@@ -352,12 +371,12 @@ test('reopening a styled song never accumulates triggers for any style, Suno inc
 /* ---------------- the hint and the lock ----------------------------------- */
 test('the Style hint is true now and names no person or folder', () => {
   const hint = yue.yueStyleHint;
-  assert.match(hint, /^A singing style taught to YuE2 from recordings\./, 'Suno was taught from songs made with Suno, so not "real recordings"');
+  assert.match(hint, /^A singing style taught to YuE2 from recordings: /, 'Suno was taught from songs made with Suno, so not "real recordings"');
   assert.doesNotMatch(hint, /real recordings/);
-  assert.match(hint, /Soul learned from soul and R&B records\./);
-  assert.match(hint, /Suno learned from songs made with Suno\./);
-  assert.match(hint, /For Soul or Suno, write female lead vocal or male lead vocal in Music direction to choose the voice\./);
-  assert.match(hint, /Kids sings with a children’s choir\./, 'Part 296: shorter');
+  assert.match(hint, /Soul from soul and R&B records[,.]/);
+  assert.match(hint, /Suno from songs made with Suno[,.]/);
+  assert.match(hint, /Kids from a children’s choir\./);
+  assert.match(hint, /For Soul or Suno, write female lead vocal or male lead vocal in Music direction\./);
   assert.doesNotMatch(hint, /clean/i, 'Sep 27 2026: no clean-lyrics rule for the Kids style');
   assert.match(hint, /None is plain YuE2\./);
   assert.ok(hint.split(/\s+/).length <= 60, 'the hint stays short');
@@ -367,11 +386,14 @@ test('the Style hint is true now and names no person or folder', () => {
   }
 });
 
-test('the Style hint describes every style on the menu in a sentence of its own, and the voice sentence names only styles whose captions named a singer', () => {
+test('the Style hint says what every style on the menu was taught from, once each, and the voice sentence names only styles whose captions named a singer', () => {
   const sentences = yue.yueStyleHint.split(/(?<=\.)\s+/);
+  /* The first sentence gives each style one clause, "Soul from soul and R&B records", in registry order. */
   for (const name of Object.keys(yue.yueStyles)) {
-    const own = sentences.filter((sentence) => new RegExp(`^${name}\\b`, 'i').test(sentence));
-    assert.equal(own.length, 1, `${name} has exactly one sentence of its own in the hint`);
+    const word = `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+    const own = sentences[0].match(new RegExp(`\\b${word} from [^,.]+`, 'g')) || [];
+    assert.equal(own.length, 1, `${name} has exactly one clause of its own in the hint`);
+    assert.equal(sentences.slice(1).filter((sentence) => new RegExp(`^${word}\\b`).test(sentence)).length, 0, `${name} is not described a second time`);
   }
   const voice = sentences.filter((sentence) => /lead vocal/.test(sentence));
   assert.equal(voice.length, 1);
@@ -380,7 +402,7 @@ test('the Style hint describes every style on the menu in a sentence of its own,
   assert.doesNotMatch(voice[0], /\bKids\b/, 'the choir style has no single singer to choose');
   /* The training captions of the Suno style, counted when the set was built: 220 named a female lead, 89 a male lead, 25 both,
    * 36 no singer. The first two are what the sentence promises. */
-  assert.match(yue.yueStyles.suno.lead, /^kdsuno, in the style of kdsuno\. English\.$/);
+  assert.match(yue.yueStyles.suno.lead, /^kdsuno, in the style of kdsuno\. English,$/);
 });
 
 test('yueStyleAccess: the pack keeps the choice; everyone else sees it greyed out with every option', () => {
@@ -473,6 +495,28 @@ function loadBooth(state) {
   });
   return mod.exports;
 }
+
+test('the booth route with the Style choice switched off: the YuE2 card has neither Style setting for anyone, and nothing else in the guide differs', () => {
+  const internals = (flag, trainedStyles) => withEnv({ YUE_STYLES_ENABLED: flag, KADE_SOUNDBOOTH_YT_LINKS: undefined }, () => {
+    const state = { user: { id: 'u1' }, features: () => ({ trainedStyles }), warnings: [], auths: 0 };
+    return loadBooth(state)._internals;
+  });
+  const STYLE_SETTINGS = ['band', 'style_strength'];
+  const keysOf = (guide) => [...guide.engines.yue2.settings.map((setting) => setting.key)];
+  const withoutStyle = (guide) => JSON.stringify({ ...guide, engines: { ...guide.engines, yue2: { ...guide.engines.yue2, settings: guide.engines.yue2.settings.filter((setting) => !STYLE_SETTINGS.includes(setting.key)) } } });
+  const on = internals('1', true);
+  for (const key of STYLE_SETTINGS) assert.ok(keysOf(on.GUIDE).includes(key), `${key} is on the card with the flag on`);
+  // Only '1' turns the choice on: unset, '0', 'true' and an empty value are all off.
+  for (const flag of [undefined, '0', 'true', '']) {
+    for (const trainedStyles of [true, false]) {
+      const off = internals(flag, trainedStyles);
+      for (const key of STYLE_SETTINGS) assert.equal(keysOf(off.GUIDE).includes(key), false, `YUE_STYLES_ENABLED=${flag}: no ${key} on the card`);
+      assert.equal(JSON.stringify(off.GUIDE), withoutStyle(on.GUIDE), `YUE_STYLES_ENABLED=${flag}: the guide is the flag-on guide minus exactly the two Style settings`);
+      // Nothing to grey out, so the guide goes out as it is, for a member and a stranger alike.
+      for (const user of [{ id: 'family' }, { id: 'bob' }, null]) assert.equal(off.withStyleAccess(off.GUIDE, user), off.GUIDE, `YUE_STYLES_ENABLED=${flag}`);
+    }
+  }
+});
 
 test('the booth route: the guide greys Style out per person, and /render refuses a style outside the pack', async () => {
   await withEnv({ YUE_STYLES_ENABLED: '1', KADE_SOUNDBOOTH_YT_LINKS: undefined }, async () => {
@@ -695,7 +739,12 @@ test('the carry never moves a style name between YuE2 and ACE-Step XL, for any n
           assert.equal(out.draft.options.lyrics, CARRY_LYRICS, `${why}: her words and tags come across whole`);
           assert.equal(out.draft.options.seed, expectedSeed, why);
           assert.doesNotMatch(JSON.stringify(out.draft), triggers, `${why}: no trigger word is written into her draft`);
-          assert.doesNotMatch(out.notes.join(' '), /\b(soul|suno|kids)\b/i, `${why}: the notes talk about "the style", never a name that belongs to the other engine`);
+          /* A note may say which style stayed behind ("the YuE2 style was left behind", or "the YuE2 Kids style ..." when it names
+           * the one she had), because that is the person's own choice and it is the SOURCE engine's. Take that one phrase out and no
+           * style name is left: no note tells her to pick a named style on the other card, whose menu is a different one. */
+          const said = out.notes.join(' ').replace(/\bthe (?:YuE2|ACE-Step XL)(?: [A-Za-z0-9_-]+)? style was left behind\b/g, '');
+          assert.doesNotMatch(said, /\b(soul|suno|kids)\b/i, `${why}: the notes never name a style on the other engine's menu`);
+          assert.doesNotMatch(out.notes.join(' '), /\bkd[a-z0-9]+\b|\b(?:yue2|ace)-loras\b|\.pt\b|\blora_(?:key|scale)\b/i, `${why}: the notes name no trigger word, adapter file or lora field`);
           /* A saved YuE2 direction can still carry its lead; the carry takes the trigger sentence off and keeps her words. */
           assert.ok(out.draft.script.endsWith('Slow soul, Rhodes'), `${why}: ${out.draft.script}`);
         }
@@ -743,7 +792,12 @@ test('the carry says a style was left behind, for any style, and only points at 
     const toLyria = carry.carryOver(project, 'lyria', { ace: true, aceStyles: true });
     assert.ok(toLyria.notes.some((note) => /^Lyria has no trained style, which only YuE2 has/.test(note)), `${band}: ${toLyria.notes.join(' | ')}`);
     const toAce = carry.carryOver(project, 'ace', { ace: true, aceStyles: true });
-    assert.ok(toAce.notes.includes("ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one."), `${band}: ${toAce.notes.join(' | ')}`);
+    /* "... so the YuE2 style was left behind." or, when the carry names the style she had, "... so the YuE2 Kids style was left
+     * behind." Either is the same sentence; a name, when it is there, must be the style she had. */
+    const LEFT_BEHIND = /^ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2( [A-Za-z0-9_-]+)? style was left behind\. Choose Style on the ACE-Step XL card to use one\.$/;
+    const said = toAce.notes.map((note) => LEFT_BEHIND.exec(note)).find(Boolean);
+    assert.ok(said, `${band}: ${toAce.notes.join(' | ')}`);
+    if (said[1]) assert.equal(said[1].trim().toLowerCase(), band, `${band}: a name in the sentence is the style she had`);
     const withoutChoice = carry.carryOver(project, 'ace', { ace: true });
     assert.ok(withoutChoice.notes.includes('ACE-Step XL has no trained style, which only YuE2 has, so that was left behind.'), `${band}: ${withoutChoice.notes.join(' | ')}`);
     // A plain project (no Style, or None) says nothing about styles.
