@@ -194,12 +194,18 @@ export {
   aceProjectOptions,
   aceProjectWhy,
   aceTakeFacts,
+  aceTakeNote,
   aceOutput,
   aceCost,
   aceGuide,
   aceQuality,
   aceMatchLyrics,
   withAceGuide,
+  aceStyles,
+  aceStylesEnabled,
+  aceStyleHint,
+  aceStyleLockedSentence,
+  aceStyleAccess,
 } from './music/ace';
 export type {
   AceModel,
@@ -208,6 +214,8 @@ export type {
   AceRequest,
   AceProjectOptions,
   AceTakeFacts,
+  AceStyle,
+  AceStyleReport,
   AceGuideEntry,
   AceGuideSetting,
 } from './music/ace';

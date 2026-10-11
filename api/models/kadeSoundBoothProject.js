@@ -25,7 +25,8 @@ const mongoose = require('mongoose');
  *                        voice settings, because it has none.
  *   - engine 'ace'     : ACE-Step XL (Oct 10 2026), QUEUED like 'yue2' on its own
  *                        endpoint; `options` are its Quality, Length, Singing, lyrics,
- *                        weirdness (Creative variation), guidance (Prompt guidance), seed.
+ *                        weirdness (Creative variation), guidance (Prompt guidance), seed, and
+ *                        band / style_strength (Style, Style strength) when a Style was set.
  *
  * Collection name is `kadeplayground` deliberately: the plan that ordered this
  * work called the screen the Playground and specced the rows under that name.

@@ -40,7 +40,9 @@ export type Input = {
   /* ACE-Step XL fields (music/ace.ts): the quality as the worker names it, a tempo found in Music direction, and the
    * Length choice as the guide words it so the project reopens on it. `duration` and `instrumental` are shared, and so
    * are `weirdness` and `guidance` above: the booth's two dials, which ACE-Step XL turns into the planner temperature
-   * and (for Best only) the guidance scale at request time, so the job keeps what she set, not the worker's numbers. */
+   * and (for Best only) the guidance scale at request time, so the job keeps what she set, not the worker's numbers.
+   * `band`, `style_strength`, `lora_key` and `lora_scale` are the Style choice's, the same fields YuE2 uses: for ACE-Step XL
+   * they are set only behind ACE_STYLES_ENABLED, and a job with a `lora_key` is always a Best (xl-sft) job. */
   model?: 'xl-turbo' | 'xl-sft';
   bpm?: number;
   length_choice?: string;
@@ -145,6 +147,8 @@ export type Output = {
   memory?: { render_peak_gib?: number };
   versions?: { ace_step_commit?: string; torch?: string; worker?: string };
   plan?: { bpm?: number; keyscale?: string; duration?: number };
+  /* A styled ACE-Step XL take (music/ace.ts aceStyles): the adapter the worker really applied. Absent from a plain take. */
+  style?: { key?: string; name?: string; scale?: number; tag?: string; sha256?: string };
 };
 export type Provider = {
   id?: string;

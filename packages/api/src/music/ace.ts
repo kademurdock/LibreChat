@@ -6,12 +6,16 @@ import type { YueGuideSetting } from './yue';
 import { yueInstrumentalChoice, yueSinging, yueTakeCost } from './yue';
 import { createAudioRouter } from '../audio/jobs';
 import { libraryReviewSeat } from '../library/access';
+import { FAMILY_PACK_NOTE } from '../family/pack';
 
 /* ACE-Step 1.5 XL: the booth's second song engine, beside YuE2. It runs on its own RunPod endpoint
  * (ACE_ENDPOINT_ID) and is off until ACE_ENABLED=1. While ACE_ADMIN_ONLY is on (the default) only an
  * admin account sees it or may start a take. With the flag unset nothing here changes a guide, a
  * request or an answer. The worker's request and answer shapes are in the ACE contract; take 0 of its
- * answer sits at the top level, so the shared audio router reads it exactly like a YuE2 answer. */
+ * answer sits at the top level, so the shared audio router reads it exactly like a YuE2 answer.
+ *
+ * Trained styles (the Style choice) are one flag further in: ACE_STYLES_ENABLED=1, off by default. With it unset the
+ * card, every request and every answer are exactly what they were without styles. */
 
 export type AceModel = 'xl-turbo' | 'xl-sft';
 export type AceUser = LibraryAccount | null | undefined;
@@ -30,6 +34,10 @@ export type AceRequest = {
   lm_temperature?: number;
   /** The DiT guidance scale. Sent only for Best, and only when Prompt guidance is off its default (see aceGuidanceScale). */
   guidance_scale?: number;
+  /** A styled take only (see aceStyles): the adapter's B2 prefix, how strongly the worker folds it in, and the language it was taught in. */
+  lora_key?: string;
+  lora_scale?: number;
+  vocal_language?: string;
 };
 
 /** The settings as saved on the project, in the words the guide shows, so Open in the booth restores them. */
@@ -41,7 +49,13 @@ export type AceProjectOptions = {
   weirdness: number;
   guidance: number;
   seed: number;
+  /** The Style choice and its strength, saved only when she set them (ACE_STYLES_ENABLED), like the YuE2 project does. */
+  band?: string;
+  style_strength?: number;
 };
+
+/** What the worker reported about the adapter it applied; every field optional because only what the worker really said is kept. */
+export type AceStyleReport = { key?: string; name?: string; scale?: number; tag?: string; sha256?: string };
 
 /**
  * What the asset keeps about a finished take. The card, checkpoint and planner choices are only what the worker
@@ -58,9 +72,22 @@ export type AceTakeFacts = {
   guidance?: number;
   lm_temperature?: number;
   guidance_scale?: number;
+  /** A styled take: the Style and strength she set, what the worker was sent, what it said it applied, and one plain sentence. */
+  band?: string;
+  style_strength?: number;
+  lora_key?: string;
+  lora_scale?: number;
+  style?: AceStyleReport;
+  takeNote?: string;
 };
 
-export type AceGuideSetting = YueGuideSetting & { min?: number; max?: number; step?: number };
+/** `locked` is the Family feature pack's note on a setting an account outside the pack sees greyed out (see aceStyleAccess). */
+export type AceGuideSetting = YueGuideSetting & {
+  min?: number;
+  max?: number;
+  step?: number;
+  locked?: string;
+};
 export type AceGuideEntry = {
   name: string;
   tagline: string;
@@ -140,6 +167,46 @@ export function aceMaxSeconds(env: NodeJS.ProcessEnv = process.env): number {
   const said = Number(String(env.ACE_MAX_SECONDS ?? '').trim());
   return Number.isInteger(said) && said >= 60 && said <= 600 ? said : DEFAULT_MAX_SECONDS;
 }
+
+/* ---------- trained styles: the Style choice (ACE_STYLES_ENABLED, off by default) ---------- */
+
+export type AceStyle = { key: string; scale: number };
+
+/* Each row is a LoRA taught to the Best (xl-sft) decoder from real recordings, kept in the private bucket under `key` (a B2
+ * prefix) and folded in by the worker for one song. The worker owns the trigger word: it reads it from the adapter's own files,
+ * plans on the plain Music direction, and hands the decoder the tagged one. So nothing here puts a word in front of Music
+ * direction, and a song's saved direction is exactly what she typed. The adapter was taught on English words, so a styled
+ * request names that language (aceStyleFields).
+ * Soul (Oct 11 2026): taught from real soul and R&B records (PEFT rank 64, alpha 128). Trained on commercial records, so the
+ * whole Style choice is part of the Family feature pack (aceStyleAccess), as the YuE2 Style choice is. These styles are not
+ * YuE2's: a different model, a different adapter, which is why the two menus never share a value (see the carry module).
+ * The key must match the worker's ^ace-loras/[A-Za-z0-9._-]{1,60}$ and `scale` stays inside its 0.0 to 1.5. Nothing here names
+ * a person or a private folder: this menu is read by everyone who uses the booth. */
+export const aceStyles: Record<string, AceStyle> = {
+  soul: { key: 'ace-loras/soul-real-v1', scale: 1 },
+};
+export function aceStylesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.ACE_STYLES_ENABLED === '1';
+}
+
+/** The Style choice's hint on the card (the `band` setting). It names no person and no folder. */
+export const aceStyleHint: string =
+  'A singing style taught to ACE-Step XL from real soul and R&B records. Uses the Best quality. None is plain ACE-Step XL.';
+/** Added to the Style hints for an account outside the Family feature pack, so a client that does not read `locked` yet still says why the choice does nothing there. */
+export const aceStyleLockedSentence: string =
+  ' Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL.';
+const STYLE_STRENGTH_HINT =
+  'Lower it to blend the style with plain ACE-Step XL. 0 is plain; 1 is the full style. Applies only when a Style is selected.';
+const STYLE_QUALITY_HINT = ' A Style always uses Best.';
+const STYLE_INSTRUMENTAL_HINT = ' Choose None under Style for an instrumental.';
+const STYLE_UNAVAILABLE = 'That trained style is not available. Choose None or another style.';
+const STYLE_SINGING =
+  'Styles are for singing, so an instrumental cannot use one. Set Style to None, or choose Sung under Singing or instrumental.';
+const STYLE_STRENGTH_DEFAULT = 1;
+const STYLE_STRENGTH_MIN = 0;
+const STYLE_STRENGTH_MAX = 1;
+/** The language every adapter was taught in; a styled request names it so the planner and the decoder both read English. */
+const STYLE_LANGUAGE = 'en';
 
 /** Whether this account may use ACE-Step XL now, and the plain sentence when it may not. The App Review seat never may. */
 export function aceAccess(user: AceUser, env: NodeJS.ProcessEnv = process.env): AceVerdict {
@@ -365,6 +432,11 @@ function moved(value: number | undefined, normal: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value !== normal;
 }
 
+/** The checkpoint a job really runs on. A styled job (one with a lora_key) is always Best: the adapter was taught on that decoder. */
+function effectiveModel(input: Input): AceModel {
+  return input.lora_key ? 'xl-sft' : (input.model ?? 'xl-turbo');
+}
+
 /**
  * The worker fields the two dials set. Each is there only when its dial is off the default, and the guidance only
  * when the take is Best, so a request at the defaults carries neither and is the job it always was.
@@ -402,6 +474,35 @@ function dial(
   )
     throw new Error(`${label} must be ${whole ? 'a whole number ' : ''}from ${low} to ${high}.`);
   return value;
+}
+
+/* ---------- the Style choice ---------- */
+
+/** "Soul" for the registry's `soul`: the word the Style choice shows. */
+function styleLabel(band: string | undefined): string {
+  const word = String(band ?? '').trim();
+  return word ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : 'chosen';
+}
+
+/**
+ * The Style she chose, when styles are on and it is not None. A name the registry does not have is refused in YuE2's
+ * sentence. With ACE_STYLES_ENABLED unset a `band` is ignored, which is what ACE always did with it.
+ */
+function styleChoice(band: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  if (!aceStylesEnabled(env) || !band || band === 'none') return undefined;
+  if (typeof band !== 'string' || !Object.prototype.hasOwnProperty.call(aceStyles, band))
+    throw new Error(STYLE_UNAVAILABLE);
+  return band;
+}
+
+/** What the request carries for a styled job, and nothing for any other. */
+function aceStyleFields(input: Input): Pick<AceRequest, 'lora_key' | 'lora_scale' | 'vocal_language'> {
+  if (!input.lora_key) return {};
+  return {
+    lora_key: input.lora_key,
+    lora_scale: input.lora_scale ?? STYLE_STRENGTH_DEFAULT,
+    vocal_language: STYLE_LANGUAGE,
+  };
 }
 
 /* ---------- the request ---------- */
@@ -448,8 +549,25 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     'Prompt guidance',
     false,
   );
+  /* The Style choice, read only while styles are on. Strength 0 is plain ACE-Step XL, as at YuE2: no adapter, so no Best. */
+  const styles = aceStylesEnabled(env);
+  const band = styleChoice(body.band, env);
+  const strength = styles
+    ? dial(
+        body.style_strength,
+        STYLE_STRENGTH_DEFAULT,
+        STYLE_STRENGTH_MIN,
+        STYLE_STRENGTH_MAX,
+        'Style strength',
+        false,
+      )
+    : STYLE_STRENGTH_DEFAULT;
+  const trained = band && strength > 0 ? aceStyles[band] : undefined;
+  if (trained && instrumental) throw new Error(STYLE_SINGING);
   const direction = body.script.trim();
-  const model = aceModelChoice(body.quality, env);
+  const asked = aceModelChoice(body.quality, env);
+  /* A style is taught on the Best decoder, so a styled take is a Best take whatever Quality says; the quote says so. */
+  const model: AceModel = trained ? 'xl-sft' : asked;
   const song = aceLength(body.length, lyrics, instrumental, aceMaxSeconds(env));
   const { bpm } = aceCaption(direction);
   return {
@@ -465,6 +583,11 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     weirdness,
     guidance,
     seed: body.seed ?? Math.floor(Math.random() * SEED_LIMIT),
+    ...(band ? { band } : {}),
+    ...(styles && body.style_strength != null ? { style_strength: strength } : {}),
+    ...(trained
+      ? { lora_key: trained.key, lora_scale: roundedTo(trained.scale * strength, 4) }
+      : {}),
   };
 }
 
@@ -472,10 +595,13 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
  * The worker job for one take. The sheet goes through whole (never cut); an instrumental sends the tag the worker reads.
  * lm_temperature and guidance_scale come after bpm and only when a dial was moved (guidance only for Best); a job saved
  * before the dials existed has neither dial and is the request it always was.
+ * A styled job adds lora_key, lora_scale and vocal_language last, and is always sent as Best. The caption stays Music
+ * direction as she wrote it: the worker plans on it as it is, and puts the adapter's trigger word in front for the decoder.
+ * A job with no lora_key, which is every job unless ACE_STYLES_ENABLED is on and a Style was chosen, is the request it was.
  */
 export function aceRequest(input: Input): AceRequest {
   const sung = input.instrumental ? '' : (input.lyrics ?? '');
-  const model = input.model ?? 'xl-turbo';
+  const model = effectiveModel(input);
   return {
     model,
     caption: aceCaption(input.style).caption,
@@ -485,56 +611,110 @@ export function aceRequest(input: Input): AceRequest {
     batch_size: 1,
     ...(input.bpm ? { bpm: input.bpm } : {}),
     ...aceDialFields(model, input),
+    ...aceStyleFields(input),
   };
 }
 
 /** What is said before anything is spent: the length, the quality, a note if the direction was cut or a dial will do nothing, then the cost. */
 export function aceEstimate(input: Input): string {
-  const quality = input.model === 'xl-sft' ? aceQuality.best : aceQuality.fast;
+  const model = effectiveModel(input);
+  const quality = model === 'xl-sft' ? aceQuality.best : aceQuality.fast;
   const cut = aceCaption(input.style).trimmed
     ? ` Only the first part of Music direction fits; ACE-Step XL reads ${CAPTION_LIMIT} characters.`
     : '';
   const idle =
-    input.model !== 'xl-sft' && moved(input.guidance, GUIDANCE_DEFAULT)
+    model !== 'xl-sft' && moved(input.guidance, GUIDANCE_DEFAULT)
       ? ` Prompt guidance only works with Quality ${aceQuality.best}, so ${aceQuality.fast} ignores it.`
       : '';
-  return `About ${spokenLength(input.duration ?? 0)} of music, ${quality.toLowerCase()} quality.${cut}${idle} ${aceCost}`;
+  /* A style is said first, with the quality it forces. Strength 0 is a plain take, and says that it is. */
+  const length = spokenLength(input.duration ?? 0);
+  const lead = input.lora_key
+    ? `About ${length} of music in the ${styleLabel(input.band)} style, which always uses ${quality.toLowerCase()} quality.`
+    : `About ${length} of music, ${quality.toLowerCase()} quality.`;
+  const plain =
+    input.band && !input.lora_key
+      ? ` Style strength is 0, so the ${styleLabel(input.band)} style is not used.`
+      : '';
+  return `${lead}${plain}${cut}${idle} ${aceCost}`;
 }
 
 /* ---------- the project row and the library asset ---------- */
 
 export function aceProjectOptions(input: Input): AceProjectOptions {
   return {
-    quality: input.model === 'xl-sft' ? aceQuality.best : aceQuality.fast,
+    quality: effectiveModel(input) === 'xl-sft' ? aceQuality.best : aceQuality.fast,
     length: input.length_choice ?? aceMatchLyrics,
     singing: input.instrumental ? yueSinging.instrumental : yueSinging.sung,
     lyrics: input.lyrics ?? '',
     weirdness: input.weirdness ?? WEIRDNESS_DEFAULT,
     guidance: input.guidance ?? GUIDANCE_DEFAULT,
     seed: input.seed,
+    ...(input.band ? { band: input.band } : {}),
+    ...(typeof input.style_strength === 'number' ? { style_strength: input.style_strength } : {}),
   };
 }
 
-/** A library row's reason line. */
+/** A library row's reason line; a take made in a style says which. */
 export function aceProjectWhy(options?: Partial<AceProjectOptions>): string {
   const made = options?.singing === yueSinging.instrumental ? 'an instrumental' : 'a song';
   const best = options?.quality === aceQuality.best ? ', best quality' : '';
-  return `ACE-Step XL — ${made} made on the sleeping music GPU${best}`;
+  const band = options?.band;
+  const styled =
+    typeof band === 'string' &&
+    Object.prototype.hasOwnProperty.call(aceStyles, band) &&
+    options?.style_strength !== 0
+      ? `, in the ${styleLabel(band)} style`
+      : '';
+  return `ACE-Step XL — ${made} made on the sleeping music GPU${best}${styled}`;
 }
 
 function finiteNumber(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+/** The adapter the worker says it applied, field by field as it said them; undefined when it said nothing usable. */
+function styleReport(output: Output | undefined): AceStyleReport | undefined {
+  const said = output?.style;
+  if (!said || typeof said !== 'object') return undefined;
+  const report: AceStyleReport = {};
+  if (typeof said.key === 'string') report.key = said.key;
+  if (typeof said.name === 'string') report.name = said.name;
+  const scale = finiteNumber(said.scale);
+  if (scale !== undefined) report.scale = scale;
+  if (typeof said.tag === 'string') report.tag = said.tag;
+  if (typeof said.sha256 === 'string') report.sha256 = said.sha256;
+  return Object.keys(report).length ? report : undefined;
+}
+
+/**
+ * One plain sentence about a styled take, from what the worker reported: made in the style (and how strongly, when she
+ * turned it down), or that the worker did not confirm the adapter it was asked for, so the take may be plain. Nothing for
+ * any other take, which keeps a plain take's notes exactly as they were.
+ */
+export function aceTakeNote(output: Output | undefined, input: Input): string {
+  if (!output || !input.lora_key) return '';
+  const name = styleLabel(input.band);
+  const report = styleReport(output);
+  if (!report || (report.key !== undefined && report.key !== input.lora_key))
+    return `The ${name} style was not confirmed for this take, so it may sound like plain ACE-Step XL.`;
+  const softer =
+    typeof input.style_strength === 'number' && input.style_strength < STYLE_STRENGTH_DEFAULT
+      ? ` at strength ${input.style_strength}`
+      : '';
+  return `Made in the ${name} style${softer}.`;
+}
+
 /**
  * What the asset keeps about a finished take: the card, the checkpoint and what the planner chose, when the worker said;
- * then the two dials as she set them and the worker fields they became (only the ones that were sent).
+ * then the two dials as she set them and the worker fields they became (only the ones that were sent). A styled take
+ * also keeps the Style and strength she set, the adapter and scale that were sent, what the worker said it applied, and
+ * the one-sentence note.
  */
 export function aceTakeFacts(output: Output | undefined, input: Input): AceTakeFacts {
   if (!output) return {};
   const facts: AceTakeFacts = {};
   const bpm = finiteNumber(output.plan?.bpm);
-  const sent = aceDialFields(input.model ?? 'xl-turbo', input);
+  const sent = aceDialFields(effectiveModel(input), input);
   if (typeof output.gpu === 'string') facts.gpu = output.gpu;
   if (typeof output.model === 'string') facts.model = output.model;
   if (typeof output.instrumental === 'boolean') facts.instrumental = output.instrumental;
@@ -545,6 +725,14 @@ export function aceTakeFacts(output: Output | undefined, input: Input): AceTakeF
   facts.guidance = input.guidance ?? GUIDANCE_DEFAULT;
   if (sent.lm_temperature !== undefined) facts.lm_temperature = sent.lm_temperature;
   if (sent.guidance_scale !== undefined) facts.guidance_scale = sent.guidance_scale;
+  if (input.band) facts.band = input.band;
+  if (typeof input.style_strength === 'number') facts.style_strength = input.style_strength;
+  if (!input.lora_key) return facts;
+  facts.lora_key = input.lora_key;
+  if (typeof input.lora_scale === 'number') facts.lora_scale = input.lora_scale;
+  const report = styleReport(output);
+  if (report) facts.style = report;
+  facts.takeNote = aceTakeNote(output, input);
   return facts;
 }
 
@@ -570,13 +758,69 @@ export function aceOutput(output: Output): Output {
 
 /* ---------- the guide ---------- */
 
-/** The ACE-Step XL card for the booth guide: the settings in the order they are shown. */
-export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
+/**
+ * The Style choice for one person. With the Family feature pack (`allowed`) the settings come back unchanged. Without it
+ * the `band` and `style_strength` settings stay, with every option, and gain `locked` (the pack's note, "Part of the Family
+ * feature pack") plus a sentence on their hints: clients show them greyed out, never hidden (Apple's 2.3.1). It is
+ * yueStyleAccess for the ACE card, with ACE-Step XL's own words. The booth route refuses a style from such an account on
+ * its own (kadeSoundBooth.js), so an older client that shows the choice live gets a plain answer instead of a song.
+ */
+export function aceStyleAccess<T extends { key: string; hint: string }>(
+  settings: T[],
+  allowed: boolean,
+  note: string = FAMILY_PACK_NOTE,
+): Array<T | (T & { locked: string })> {
+  if (allowed || !settings.some((setting) => setting.key === 'band')) return settings;
+  return settings.map((setting) =>
+    setting.key === 'band' || setting.key === 'style_strength'
+      ? { ...setting, hint: `${setting.hint}${aceStyleLockedSentence}`, locked: note }
+      : setting,
+  );
+}
+
+/** The two settings of the Style choice, with the keys, labels and ranges of the YuE2 card so every screen draws them alike. */
+function aceStyleSettings(): AceGuideSetting[] {
+  return [
+    {
+      key: 'band',
+      label: 'Style',
+      hint: aceStyleHint,
+      kind: 'choice',
+      options: ['none', ...Object.keys(aceStyles)],
+      default: 'none',
+    },
+    {
+      key: 'style_strength',
+      label: 'Style strength',
+      hint: STYLE_STRENGTH_HINT,
+      kind: 'number',
+      min: STYLE_STRENGTH_MIN,
+      max: STYLE_STRENGTH_MAX,
+      step: 0.1,
+      default: STYLE_STRENGTH_DEFAULT,
+      advanced: true,
+    },
+  ];
+}
+
+/**
+ * The ACE-Step XL card for the booth guide: the settings in the order they are shown. With ACE_STYLES_ENABLED unset it is
+ * the card it always was. With it set, Style (and Style strength, under More settings) follow Quality, and
+ * `stylesAllowed` (the Family feature pack) decides whether the choice is live: left out, it is greyed out. Only someone
+ * who can use a Style is told, in the Singing and Quality hints, what a Style does to them.
+ */
+export function aceGuide(
+  env: NodeJS.ProcessEnv = process.env,
+  stylesAllowed: boolean = false,
+): AceGuideEntry {
   const max = aceMaxSeconds(env);
   const minutes = Array.from({ length: Math.floor(max / 60) }, (_, index) =>
     clock((index + 1) * 60),
   );
-  return {
+  const styles = aceStylesEnabled(env);
+  /* The hints that speak of a Style are for someone who can use one; an account outside the pack sees the plain hints. */
+  const hinted = styles && stylesAllowed;
+  const card: AceGuideEntry = {
     name: 'ACE-Step XL',
     tagline: 'Songs with your own lyrics, in the style you describe.',
     where: 'Runs on a music GPU that sleeps between songs.',
@@ -596,7 +840,7 @@ export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
       {
         key: 'singing',
         label: 'Singing or instrumental',
-        hint: 'Instrumental plays the tune on instruments and ignores any lyrics.',
+        hint: `Instrumental plays the tune on instruments and ignores any lyrics.${hinted ? STYLE_INSTRUMENTAL_HINT : ''}`,
         kind: 'choice',
         options: [yueSinging.sung, yueSinging.instrumental],
         default: yueSinging.sung,
@@ -610,11 +854,12 @@ export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
       {
         key: 'quality',
         label: 'Quality',
-        hint: 'Fast is quick. Best is slower and costs more.',
+        hint: `Fast is quick. Best is slower and costs more.${hinted ? STYLE_QUALITY_HINT : ''}`,
         kind: 'choice',
         options: [aceQuality.fast, aceQuality.best],
         default: aceDefaultModel(env) === 'xl-sft' ? aceQuality.best : aceQuality.fast,
       },
+      ...(styles ? aceStyleSettings() : []),
       {
         key: 'length',
         label: 'Length',
@@ -657,19 +902,23 @@ export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
       },
     ],
   };
+  return styles ? { ...card, settings: aceStyleAccess(card.settings, stylesAllowed) } : card;
 }
 
 /**
  * The guide for one person. Someone who may use ACE-Step XL gets its card last; everyone else gets
- * the very same object back, so with ACE_ENABLED unset the guide is untouched.
+ * the very same object back, so with ACE_ENABLED unset the guide is untouched. `stylesAllowed` is whether
+ * this person has the Family feature pack (the booth asks familyFeatures); a caller that does not say gets
+ * the Style choice greyed out, never live.
  */
 export function withAceGuide<T extends { engines: Record<string, object> }>(
   guide: T,
   user: AceUser,
   env: NodeJS.ProcessEnv = process.env,
+  stylesAllowed: boolean = false,
 ): T {
   if (!guide || !guide.engines || !aceAllowed(user, env)) return guide;
-  return { ...guide, engines: { ...guide.engines, ace: aceGuide(env) } };
+  return { ...guide, engines: { ...guide.engines, ace: aceGuide(env, stylesAllowed === true) } };
 }
 
 /* ---------- the router ---------- */
@@ -703,6 +952,7 @@ export function createAceRouter(hooks: Hooks): Router {
         input: aceRequest(input),
         policy: { executionTimeout: ACE_EXECUTION_TIMEOUT_MS, ttl: ACE_PROVIDER_TTL_MS },
       }),
+    takeNote: aceTakeNote,
     status: async (take) => {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
       /* How long the job waited for a GPU and how long it ran, kept beside the take as for YuE2. */

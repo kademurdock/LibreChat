@@ -10,7 +10,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts } = require('@librechat/api');
+const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts, aceStylesEnabled } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -72,6 +72,9 @@ function withSongPasteNote(data, applied) {
  * stand-in simply has no ACE: nothing is mounted and every check answers no. */
 const ACE_READY = [createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts].every((f) => typeof f === 'function');
 const aceOn = (user) => ACE_READY && aceAllowed(user);
+/* The ACE-Step XL Style choice (ACE_STYLES_ENABLED, off by default; packages/api music/ace.ts aceStyles). A stand-in
+ * @librechat/api without aceStylesEnabled has no styles: every check below answers no and the booth is as it was. */
+const aceStylesOn = () => ACE_READY && typeof aceStylesEnabled === 'function' && aceStylesEnabled();
 /* The router (its Mongo model and indexes, its 20 second timer) is only created when ACE is switched on or an endpoint is
  * set. With neither, which is how it ships, nothing of it exists. An endpoint without the flag still mounts it, so takes
  * already queued keep being followed after ACE_ENABLED is turned off. */
@@ -111,11 +114,16 @@ router.use(createLyricsRouter(musicReferenceHooks));
  * (familyFeatures(user).trainedStyles; never the App Review seats) may render in a style. The
  * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
  * still shows it live is refused here, on the server, before the YuE2 router queues anything,
- * with words that say what to change. An unreadable pack answer counts as outside the pack. */
-/** Any Style but None, for YuE2: yueInput's own reading of `band`. */
+ * with words that say what to change. An unreadable pack answer counts as outside the pack.
+ * Oct 11 2026: the ACE-Step XL Style choice (Soul, taught from the same kind of records) is the same pack feature, behind
+ * ACE_STYLES_ENABLED. Its card is greyed out by withAceGuide(..., styleAllowed(user)) and a direct request is refused here,
+ * with the very same sentence, before the ACE router (mounted further down) sees it. */
+/** Any Style but None, for YuE2: yueInput's own reading of `band`. For ACE-Step XL it is the same reading, but only while
+ * ACE_STYLES_ENABLED is on: with styles off ACE ignores `band` as it always did, so asking for one is not asking for a style. */
 function asksForStyle(body) {
   const b = body || {};
-  return b.engine === 'yue2' && !!b.band && b.band !== 'none';
+  if (!b.band || b.band === 'none') return false;
+  return b.engine === 'yue2' || (b.engine === 'ace' && aceStylesOn());
 }
 function styleAllowed(user) {
   try {
@@ -3437,7 +3445,7 @@ router.post('/carry', requireJwtAuth, express.json({ limit: '128kb' }), (req, re
   /* ACE-Step XL is neither a source nor a destination for a person without access: the same plain sentence as a render. */
   const refused = to === 'ace' || body.draft.engine === 'ace' ? aceRefusal(req.user) : null;
   if (refused) return res.status(403).json({ error: refused });
-  const out = carry.carryOver(body.draft, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user) });
+  const out = carry.carryOver(body.draft, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStylesOn() });
   if (!out.ok) return res.status(400).json({ error: out.why });
   return res.json({ draft: out.draft, notes: out.notes, rewriteAdvised: out.rewriteAdvised });
 });
@@ -3452,7 +3460,7 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
     const to = String((req.body || {}).engine || '');
     const refused = to === 'ace' || source.engine === 'ace' ? aceRefusal(req.user) : null;
     if (refused) return res.status(403).json({ error: refused });
-    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user) });
+    const out = carry.carryOver(source, to, { toScreenplay: speakToScreenplay, ace: aceOn(req.user), aceStyles: aceStylesOn() });
     if (!out.ok) return res.status(400).json({ error: out.why });
 
     const notes = [...out.notes];
@@ -3861,7 +3869,8 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     /* Part 295: price lines and prices at this person's factor (real for Kade). */
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
     /* ACE-Step XL: its card is added last, and only for an account that may use it (ace.ts withAceGuide returns the very same guide otherwise). */
-    guide: ACE_READY ? withAceGuide(guide, req.user) : guide,
+    /* Its Style choice (ACE_STYLES_ENABLED) is live only for the Family feature pack and greyed out for everyone else, as the YuE2 one is. */
+    guide: ACE_READY ? withAceGuide(guide, req.user, process.env, aceStylesOn() && styleAllowed(req.user)) : guide,
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
@@ -3883,5 +3892,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

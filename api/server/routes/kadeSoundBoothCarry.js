@@ -50,7 +50,8 @@ const ENGINES = {
    * choice) with no covers and one take per request. `gated` means it is behind ACE_ENABLED and the
    * admin gate (packages/api music/ace.ts): it is invisible, and refused, unless the caller passes
    * `{ ace: true }` for a person who may use it. Its Creative variation (weirdness) and Prompt guidance are the same
-   * two dials, with the same keys and ranges, as YuE2's, so they cross between the two song engines as they are. */
+   * two dials, with the same keys and ranges, as YuE2's, so they cross between the two song engines as they are. Its Style
+   * choice (band, style_strength) is in no `keeps` list, on purpose: the two engines' styles are different adapters. */
   ace: {
     label: 'ACE-Step XL',
     kind: 'music',
@@ -215,12 +216,15 @@ const SHARED_KNOBS = [
  *
  * @param {object} project  { engine, title, sourceText, script, options, voiceSeed }
  * @param {string} to       the destination engine key
- * @param {object} helpers  { toScreenplay, ace } -- AuK XML is unreadable to every
+ * @param {object} helpers  { toScreenplay, ace, aceStyles } -- AuK XML is unreadable to every
  *                          other engine and to a person, so the route hands in
  *                          the converter it already has rather than this file
  *                          growing an XML parser. `ace` is true only for a person
  *                          who may use ACE-Step XL; without it that engine is
- *                          neither a source nor a destination.
+ *                          neither a source nor a destination. `aceStyles` is true
+ *                          while ACE-Step XL has a Style choice of its own
+ *                          (ACE_STYLES_ENABLED), so a YuE2 style can be said to be
+ *                          left for it instead of missing from it.
  */
 function carryOver(project, to, helpers = {}) {
   const from = String((project && project.engine) || '');
@@ -315,8 +319,17 @@ function carryOver(project, to, helpers = {}) {
 
   /* ---- what was left behind, said out loud ------------------------------ */
   const dropped = [];
-  if (oldOpts.band && oldOpts.band !== 'none' && to !== 'yue2') {
-    dropped.push('trained style, which only YuE2 has');
+  /* Trained styles are adapters taught to one engine: YuE2's Soul and ACE-Step XL's Soul are different files for different
+   * models, so a Style name never crosses between them (it is not in any `keeps` list) and a carry says so. With
+   * ACE_STYLES_ENABLED off ACE-Step XL has no Style choice, and the sentence is the one it always was. */
+  const styled = !!oldOpts.band && oldOpts.band !== 'none';
+  const ownStyles = (from === 'yue2' && to === 'ace' && helpers.aceStyles === true) || (from === 'ace' && to === 'yue2');
+  if (styled && ownStyles) {
+    notes.push(
+      `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} style was left behind. Choose Style on the ${dst.label} card to use one.`,
+    );
+  } else if (styled && to !== 'yue2') {
+    dropped.push(from === 'ace' ? 'trained style, which only YuE2 and ACE-Step XL have' : 'trained style, which only YuE2 has');
   }
   if (oldOpts.abc && to !== 'yue2') {
     dropped.push('composition score');
