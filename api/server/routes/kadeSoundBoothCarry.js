@@ -344,7 +344,8 @@ function carryOver(project, to, helpers = {}) {
   }
   /* ACE-Step XL's own choices (its Quality and Length) mean nothing to the engines it can go to. The
    * ones left at the usual Fast and Match my lyrics are not worth a sentence. */
-  if (from === 'ace' && oldOpts.quality !== undefined && oldOpts.quality !== 'Fast') {
+  /* A styled take is Best because the style needs it, not because she picked it; the style is already said above. */
+  if (from === 'ace' && oldOpts.quality !== undefined && oldOpts.quality !== 'Fast' && !(styled && oldOpts.quality === 'Best')) {
     dropped.push('quality choice');
   }
   if (from === 'ace' && oldOpts.length !== undefined && oldOpts.length !== 'Match my lyrics') {
