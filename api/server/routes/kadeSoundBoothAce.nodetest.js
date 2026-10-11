@@ -14,7 +14,7 @@ require.extensions['.ts'] = (mod, filename) =>
     filename,
   );
 const ace = require('../../../packages/api/src/music/ace.ts');
-const { yueSinging, yueTakeCost } = require('../../../packages/api/src/music/yue.ts');
+const { yueInput, yueSinging, yueTakeCost } = require('../../../packages/api/src/music/yue.ts');
 const { isOwnedAudioReference } = require('../../../packages/api/src/speech/edit.ts');
 
 const SUNG = yueSinging.sung;
@@ -208,11 +208,13 @@ test('parse: a good request, every default applied, and the fields ACE does not 
     model: 'xl-turbo',
     bpm: 88,
     length_choice: 'Match my lyrics',
+    weirdness: 50,
+    guidance: 1,
     seed: 7,
   });
   assert.equal('instrumental' in input, false);
-  const loud = ace.aceInput({ ...base, abc: 'X:1', band: 'soul', cot: 'full', weirdness: 5, steps: 99, guidance: 3, count: 4, my_voice: true, soundModel: 'x', keep_chords: 'Yes', style_strength: 0.3, duration: 9 }, {});
-  assert.deepEqual(loud, input, 'YuE2 fields change nothing, and a take count of 4 is still one take');
+  const loud = ace.aceInput({ ...base, abc: 'X:1', band: 'soul', cot: 'full', steps: 99, count: 4, my_voice: true, soundModel: 'x', keep_chords: 'Yes', style_strength: 0.3, duration: 9 }, {});
+  assert.deepEqual(loud, input, 'the YuE2-only fields change nothing, and a take count of 4 is still one take (weirdness and guidance are ACE dials too: see their own tests)');
   const chosen = ace.aceInput({ ...base, quality: 'Best', length: '3:00', title: '  My song  ' }, {});
   assert.equal(chosen.model, 'xl-sft');
   assert.equal(chosen.duration, 180);
@@ -334,6 +336,180 @@ test('request: exactly the worker contract, one take, no custom style, no key or
   assert.equal(ace.aceRequest({ style: 'Jazz', title: 't', count: 1, seed: 1, lyrics: 'la' }).duration, 30);
 });
 
+/* ---------- Creative variation (weirdness) and Prompt guidance ---------- */
+
+test('Creative variation is the planner temperature and nothing else: 0.40 at 0, 0.85 at 50, 1.30 at 100, straight lines between', () => {
+  const table = [[0, 0.4], [1, 0.409], [10, 0.49], [20, 0.58], [25, 0.625], [30, 0.67], [40, 0.76], [49, 0.841], [50, 0.85], [51, 0.859], [60, 0.94], [70, 1.03], [75, 1.075], [80, 1.12], [90, 1.21], [99, 1.291], [100, 1.3]];
+  for (const [weirdness, temperature] of table) assert.equal(ace.aceLmTemperature(weirdness), temperature, `weirdness ${weirdness}`);
+  assert.equal(ace.aceLmTemperature(50), 0.85, 'the middle of the dial is upstream\'s own default, so it changes nothing');
+  let last = -Infinity;
+  for (let weirdness = 0; weirdness <= 100; weirdness += 1) {
+    const temperature = ace.aceLmTemperature(weirdness);
+    assert.ok(temperature > last, `${weirdness} is hotter than the one before`);
+    assert.ok(temperature >= 0 && temperature <= 2, `${temperature} is inside upstream's 0.0 to 2.0`);
+    assert.equal(temperature, Math.round(temperature * 1000) / 1000, `${temperature} has no floating-point tail`);
+    last = temperature;
+  }
+  assert.equal(ace.aceLmTemperature(-5), 0.4, 'below the dial is the low end');
+  assert.equal(ace.aceLmTemperature(150), 1.3, 'above the dial is the high end');
+  for (const odd of [NaN, Infinity, -Infinity]) assert.equal(ace.aceLmTemperature(odd), 0.85, `${odd} is the default`);
+});
+
+test('Prompt guidance is the sft guidance scale and nothing else: 7 + 3 x (guidance - 1), so 7, 10 and 13', () => {
+  const table = [[1, 7], [1.1, 7.3], [1.2, 7.6], [1.25, 7.75], [1.5, 8.5], [1.7, 9.1], [2, 10], [2.3, 10.9], [2.5, 11.5], [2.9, 12.7], [3, 13]];
+  for (const [guidance, scale] of table) assert.equal(ace.aceGuidanceScale(guidance), scale, `guidance ${guidance}`);
+  assert.equal(ace.aceGuidanceScale(1), 7, 'the bottom of the dial is upstream\'s own default for sft');
+  for (let step = 10; step <= 30; step += 1) {
+    const scale = ace.aceGuidanceScale(step / 10);
+    assert.equal(scale, Math.round(scale * 1000) / 1000, `${step / 10} has no floating-point tail`);
+    assert.ok(scale >= 1 && scale <= 15, `${scale} is inside the range the worker accepts (1 to 15)`);
+  }
+  assert.equal(ace.aceGuidanceScale(0), 7);
+  assert.equal(ace.aceGuidanceScale(9), 13);
+  for (const odd of [NaN, Infinity, -Infinity]) assert.equal(ace.aceGuidanceScale(odd), 7, `${odd} is the default`);
+});
+
+/* What the previous commit (73976e4, before the dials) built for these requests, as the exact JSON it sent. */
+const BEFORE_THE_DIALS = [
+  [{ script: 'Slow soul, 88 BPM, Rhodes', lyrics: '[Verse]\nWalking home\n[Chorus]\nHold on', seed: 7 },
+    '{"model":"xl-turbo","caption":"Slow soul, Rhodes","lyrics":"[Verse]\\nWalking home\\n[Chorus]\\nHold on","duration":30,"seed":7,"batch_size":1,"bpm":88}'],
+  [{ script: 'Bright synth pop', lyrics: '[Verse]\nla la\nla la', seed: 0, quality: 'Fast', length: '2:00' },
+    '{"model":"xl-turbo","caption":"Bright synth pop","lyrics":"[Verse]\\nla la\\nla la","duration":120,"seed":0,"batch_size":1}'],
+  [{ script: 'Warm folk song, fingerpicked guitar', lyrics: '[Verse]\nla la\nla la', seed: 12345, quality: 'Best', length: '3:00' },
+    '{"model":"xl-sft","caption":"Warm folk song, fingerpicked guitar","lyrics":"[Verse]\\nla la\\nla la","duration":180,"seed":12345,"batch_size":1}'],
+  [{ script: 'Funk, around 96 BPM, horns', lyrics: '[Chorus]\nla la', seed: 2147483647, quality: 'Best', length: '6:00' },
+    '{"model":"xl-sft","caption":"Funk, horns","lyrics":"[Chorus]\\nla la","duration":360,"seed":2147483647,"batch_size":1,"bpm":96}'],
+  [{ script: 'Banjo breakdown, 120 BPM', singing: INSTRUMENTAL, lyrics: 'ignored words', seed: 1 },
+    '{"model":"xl-turbo","caption":"Banjo breakdown","lyrics":"[Instrumental]","duration":120,"seed":1,"batch_size":1,"bpm":120}'],
+  [{ script: 'Slow jazz trio', singing: INSTRUMENTAL, seed: 99, quality: 'Best', length: '4:00' },
+    '{"model":"xl-sft","caption":"Slow jazz trio","lyrics":"[Instrumental]","duration":240,"seed":99,"batch_size":1}'],
+];
+
+test('at the defaults the worker request is byte for byte what it was before the dials existed', () => {
+  for (const [body, before] of BEFORE_THE_DIALS) {
+    assert.equal(JSON.stringify(ace.aceRequest(ace.aceInput(body, {}))), before, JSON.stringify(body));
+    /* Saying the defaults out loud, or nothing, or null, is all the same thing. */
+    for (const said of [{ weirdness: 50 }, { guidance: 1 }, { weirdness: 50, guidance: 1 }, { weirdness: null, guidance: null }, { weirdness: undefined }]) {
+      assert.equal(JSON.stringify(ace.aceRequest(ace.aceInput({ ...body, ...said }, {}))), before, `${JSON.stringify(body)} with ${JSON.stringify(said)}`);
+    }
+    /* A job saved before the dials existed has neither field, and asks for the same thing. */
+    const { weirdness: _w, guidance: _g, ...stored } = ace.aceInput(body, {});
+    assert.equal(JSON.stringify(ace.aceRequest(stored)), before, 'a stored job from before');
+    assert.equal(JSON.stringify(ace.aceRequest(JSON.parse(JSON.stringify(ace.aceInput(body, {}))))), before, 'a stored job read back');
+  }
+  /* Guidance moved on Fast, or the guidance dial at 1 on Best, still adds nothing. */
+  assert.equal(JSON.stringify(ace.aceRequest(ace.aceInput({ ...BEFORE_THE_DIALS[1][0], guidance: 3 }, {}))), BEFORE_THE_DIALS[1][1], 'Fast ignores the guidance dial');
+  assert.equal(JSON.stringify(ace.aceRequest(ace.aceInput({ ...BEFORE_THE_DIALS[2][0], guidance: 1 }, {}))), BEFORE_THE_DIALS[2][1]);
+  const request = ace.aceRequest(ace.aceInput(base, {}));
+  for (const key of ['lm_temperature', 'guidance_scale']) assert.equal(key in request, false, `${key} is not sent at the defaults`);
+});
+
+test('moving Creative variation sends lm_temperature, on Fast or Best, and only that', () => {
+  for (const [weirdness, temperature] of [[0, 0.4], [25, 0.625], [49, 0.841], [51, 0.859], [70, 1.03], [100, 1.3]]) {
+    for (const quality of ['Fast', 'Best']) {
+      const plain = ace.aceRequest(ace.aceInput({ ...base, quality }, {}));
+      const request = ace.aceRequest(ace.aceInput({ ...base, quality, weirdness }, {}));
+      assert.deepEqual(request, { ...plain, lm_temperature: temperature }, `${quality} at ${weirdness}`);
+      assert.equal('guidance_scale' in request, false, 'the planner dial does not touch the guidance');
+      assert.equal(request.model, plain.model);
+      assert.equal(request.duration, plain.duration);
+      assert.equal(request.seed, plain.seed);
+    }
+  }
+  assert.deepEqual(Object.keys(ace.aceRequest(ace.aceInput({ ...base, weirdness: 70 }, {}))), ['model', 'caption', 'lyrics', 'duration', 'seed', 'batch_size', 'bpm', 'lm_temperature']);
+  const noTempo = ace.aceRequest(ace.aceInput({ ...base, script: 'Slow soul, Rhodes', weirdness: 0 }, {}));
+  assert.deepEqual(Object.keys(noTempo), ['model', 'caption', 'lyrics', 'duration', 'seed', 'batch_size', 'lm_temperature']);
+  const instrumental = ace.aceRequest(ace.aceInput({ script: 'Banjo breakdown', singing: INSTRUMENTAL, seed: 1, weirdness: 100 }, {}));
+  assert.equal(instrumental.lm_temperature, 1.3, 'an instrumental is planned too');
+  const input = ace.aceInput({ ...base, weirdness: 70 }, {});
+  assert.equal(ace.aceRequest(input).lm_temperature, ace.aceLmTemperature(input.weirdness), 'the request uses the mapping and nothing else');
+});
+
+test('moving Prompt guidance sends guidance_scale for Best only: Fast never gets one, however far it is moved', () => {
+  for (const [guidance, scale] of [[1.1, 7.3], [1.5, 8.5], [2, 10], [2.5, 11.5], [3, 13]]) {
+    const plain = ace.aceRequest(ace.aceInput({ ...base, quality: 'Best' }, {}));
+    const best = ace.aceRequest(ace.aceInput({ ...base, quality: 'Best', guidance }, {}));
+    assert.deepEqual(best, { ...plain, guidance_scale: scale }, `Best at ${guidance}`);
+    assert.equal('lm_temperature' in best, false, 'the guidance dial does not touch the planner');
+    const fast = ace.aceRequest(ace.aceInput({ ...base, quality: 'Fast', guidance }, {}));
+    assert.deepEqual(fast, ace.aceRequest(ace.aceInput({ ...base, quality: 'Fast' }, {})), `Fast at ${guidance} is the plain request`);
+    assert.equal('guidance_scale' in fast, false);
+    assert.equal(ace.aceInput({ ...base, quality: 'Fast', guidance }, {}).guidance, guidance, 'the dial is still kept on the project');
+  }
+  assert.equal(ace.aceRequest(ace.aceInput({ ...base, guidance: 2 }, { ACE_DEFAULT_MODEL: 'xl-sft' })).guidance_scale, 10, 'Best by default is Best');
+  assert.equal('guidance_scale' in ace.aceRequest(ace.aceInput({ ...base, guidance: 2 }, { ACE_DEFAULT_MODEL: 'xl-turbo' })), false);
+  assert.equal('guidance_scale' in ace.aceRequest(ace.aceInput({ ...base, quality: 'Fast', guidance: 2 }, { ACE_DEFAULT_MODEL: 'xl-sft' })), false, 'a choice beats the default');
+  assert.equal('guidance_scale' in ace.aceRequest({ ...ace.aceInput({ ...base, guidance: 2 }, {}), model: undefined }), false, 'a job saved without a model is a Fast one');
+  assert.deepEqual(Object.keys(ace.aceRequest(ace.aceInput({ ...base, quality: 'Best', guidance: 2 }, {}))), ['model', 'caption', 'lyrics', 'duration', 'seed', 'batch_size', 'bpm', 'guidance_scale']);
+  const instrumental = ace.aceRequest(ace.aceInput({ script: 'Banjo breakdown', singing: INSTRUMENTAL, seed: 1, quality: 'Best', guidance: 3 }, {}));
+  assert.equal(instrumental.guidance_scale, 13);
+  /* Both dials together, each on its own field, in a fixed order. */
+  const both = ace.aceRequest(ace.aceInput({ ...base, quality: 'Best', weirdness: 70, guidance: 2 }, {}));
+  assert.deepEqual(both, { model: 'xl-sft', caption: 'Slow soul, Rhodes', lyrics: base.lyrics, duration: 30, seed: 7, batch_size: 1, bpm: 88, lm_temperature: 1.03, guidance_scale: 10 });
+  assert.deepEqual(Object.keys(both).slice(-2), ['lm_temperature', 'guidance_scale']);
+  const fastBoth = ace.aceRequest(ace.aceInput({ ...base, quality: 'Fast', weirdness: 70, guidance: 2 }, {}));
+  assert.deepEqual(fastBoth, { ...ace.aceRequest(ace.aceInput(base, {})), lm_temperature: 1.03 }, 'Fast keeps the temperature and drops the guidance');
+  /* The worker takes lm_temperature 0.0 to 2.0 and guidance_scale 1 to 15: the whole of both dials is inside. */
+  for (const weirdness of [0, 100]) assert.ok(ace.aceRequest(ace.aceInput({ ...base, weirdness }, {})).lm_temperature <= 2);
+  assert.ok(ace.aceRequest(ace.aceInput({ ...base, quality: 'Best', guidance: 3 }, {})).guidance_scale <= 15);
+});
+
+test('the estimate says so when Prompt guidance is moved on Fast, where it does nothing', () => {
+  const says = /Prompt guidance only works with Quality Best, so Fast ignores it\./;
+  assert.match(ace.aceEstimate(ace.aceInput({ ...base, guidance: 2 }, {})), says);
+  assert.equal(ace.aceEstimate(ace.aceInput({ ...base, guidance: 2 }, {})), `About 30 seconds of music, fast quality. Prompt guidance only works with Quality Best, so Fast ignores it. ${ace.aceCost}`);
+  for (const body of [{ ...base, quality: 'Best', guidance: 2 }, { ...base, guidance: 1 }, { ...base }, { ...base, weirdness: 80 }])
+    assert.doesNotMatch(ace.aceEstimate(ace.aceInput(body, {})), /Prompt guidance/, JSON.stringify(body));
+  assert.doesNotMatch(ace.aceEstimate(ace.aceInput({ ...base, guidance: 2 }, { ACE_DEFAULT_MODEL: 'xl-sft' })), /Prompt guidance/, 'Best by default uses it');
+  assert.equal(ace.aceEstimate(ace.aceInput(base, {})), `About 30 seconds of music, fast quality. ${ace.aceCost}`, 'untouched, the sentence is what it was');
+});
+
+test('the dials are refused in the same plain sentences YuE2 gives, and nothing is held to the end of the range', () => {
+  const WEIRD = 'Creative variation must be a whole number from 0 to 100.';
+  const GUIDE = 'Prompt guidance must be from 1 to 3.';
+  const yue = { script: 'Soul ballad', lyrics: 'la la' };
+  const yueSays = (extra) => { try { yueInput({ ...yue, ...extra }, {}); return null; } catch (error) { return error.message; } };
+  for (const weirdness of [-1, 101, 100.5, 50.5, 0.4, NaN, Infinity, -Infinity, '70', true, {}, []]) {
+    refusal({ ...base, weirdness }, WEIRD);
+    assert.equal(yueSays({ weirdness }), WEIRD, `YuE2 says the same for ${JSON.stringify(weirdness)}`);
+  }
+  for (const guidance of [0.99, 0, -1, 3.01, 4, 100, NaN, Infinity, -Infinity, '2', true, {}, []]) {
+    refusal({ ...base, guidance }, GUIDE);
+    assert.equal(yueSays({ guidance }), GUIDE, `YuE2 says the same for ${JSON.stringify(guidance)}`);
+  }
+  for (const weirdness of [0, 1, 50, 99, 100]) assert.equal(ace.aceInput({ ...base, weirdness }, {}).weirdness, weirdness);
+  for (const guidance of [1, 1.05, 1.5, 2.25, 3]) assert.equal(ace.aceInput({ ...base, guidance }, {}).guidance, guidance, 'any number from 1 to 3 is fine, as on the YuE2 card');
+  for (const nothing of [undefined, null]) {
+    assert.equal(ace.aceInput({ ...base, weirdness: nothing, guidance: nothing }, {}).weirdness, 50);
+    assert.equal(ace.aceInput({ ...base, weirdness: nothing, guidance: nothing }, {}).guidance, 1);
+  }
+  assert.doesNotMatch(WEIRD + GUIDE, /Kade/);
+  /* The order a person meets the refusals in: the seed, then the two dials, then Quality and Length. */
+  refusal({ ...base, seed: -1, weirdness: 500, guidance: 9, quality: 'Great' }, 'Seed must be a whole number from 0 to 2147483647.');
+  refusal({ ...base, weirdness: 500, guidance: 9, quality: 'Great' }, WEIRD);
+  refusal({ ...base, guidance: 9, quality: 'Great' }, GUIDE);
+  refusal({ ...base, quality: 'Great' }, 'Under Quality, choose Fast or Best.');
+});
+
+test('the dials are kept on the project, in the words the card shows, and a reopened project asks for the same thing', () => {
+  const body = { ...base, quality: 'Best', length: '3:00', weirdness: 70, guidance: 2.5 };
+  const input = ace.aceInput(body, {});
+  const options = ace.aceProjectOptions(input);
+  assert.deepEqual(options, { quality: 'Best', length: '3:00', singing: SUNG, lyrics: base.lyrics, weirdness: 70, guidance: 2.5, seed: 7 });
+  const keys = new Set(ace.aceGuide({}).settings.map((setting) => setting.key));
+  for (const key of Object.keys(options)) assert.ok(keys.has(key), `${key} is a setting on the card, so the page and the iPhone can restore it`);
+  assert.deepEqual(JSON.parse(JSON.stringify(options)), options, 'plain data: it survives the database and the wire');
+  /* Open in the booth puts the saved options back into the settings, and Make music sends them as the body. */
+  const reopened = ace.aceInput({ script: base.script, ...options }, {});
+  assert.deepEqual(reopened, input, 'the very same job comes back out');
+  assert.deepEqual(ace.aceRequest(reopened), ace.aceRequest(input));
+  assert.deepEqual(ace.aceRequest(reopened), { model: 'xl-sft', caption: 'Slow soul, Rhodes', lyrics: base.lyrics, duration: 180, seed: 7, batch_size: 1, bpm: 88, lm_temperature: 1.03, guidance_scale: 11.5 });
+  /* A project saved before the dials has neither: the card shows its defaults and nothing changes. */
+  const { weirdness: _w, guidance: _g, ...old } = options;
+  assert.deepEqual(ace.aceInput({ script: base.script, ...old }, {}), { ...input, weirdness: 50, guidance: 1 });
+  assert.deepEqual(ace.aceProjectOptions({ ...input, weirdness: undefined, guidance: undefined }), { ...options, weirdness: 50, guidance: 1 }, 'an input saved without them reads as the defaults');
+});
+
 test('estimate: length, quality, a note when the direction is cut, then the cost; no names, no figures', () => {
   const said = ace.aceEstimate(ace.aceInput({ ...base, length: '3:00' }, {}));
   assert.equal(said, `About 3 minutes of music, fast quality. ${ace.aceCost}`);
@@ -375,9 +551,9 @@ test('the "already in progress" sentence takes a or an from the engine name; the
 
 test('the project keeps the settings in the words the guide shows, and the library line says what it is', () => {
   const sung = ace.aceProjectOptions(ace.aceInput({ ...base, quality: 'Best', length: '3:00' }, {}));
-  assert.deepEqual(sung, { quality: 'Best', length: '3:00', singing: SUNG, lyrics: base.lyrics, seed: 7 });
+  assert.deepEqual(sung, { quality: 'Best', length: '3:00', singing: SUNG, lyrics: base.lyrics, weirdness: 50, guidance: 1, seed: 7 });
   const matched = ace.aceProjectOptions(ace.aceInput(base, {}));
-  assert.deepEqual(matched, { quality: 'Fast', length: 'Match my lyrics', singing: SUNG, lyrics: base.lyrics, seed: 7 });
+  assert.deepEqual(matched, { quality: 'Fast', length: 'Match my lyrics', singing: SUNG, lyrics: base.lyrics, weirdness: 50, guidance: 1, seed: 7 });
   const card = ace.aceGuide({}).settings;
   const options = (key) => card.find((s) => s.key === key).options;
   assert.ok(options('quality').includes(sung.quality) && options('length').includes(sung.length) && options('singing').includes(sung.singing), 'every saved value is one the card offers');
@@ -385,7 +561,7 @@ test('the project keeps the settings in the words the guide shows, and the libra
   const played = ace.aceProjectOptions(ace.aceInput({ script: 'Banjo', singing: INSTRUMENTAL, seed: 2 }, {}));
   assert.equal(played.singing, INSTRUMENTAL);
   assert.equal(played.lyrics, '');
-  assert.deepEqual(Object.keys(sung), ['quality', 'length', 'singing', 'lyrics', 'seed']);
+  assert.deepEqual(Object.keys(sung), ['quality', 'length', 'singing', 'lyrics', 'weirdness', 'guidance', 'seed']);
 
   assert.equal(ace.aceProjectWhy(undefined), 'ACE-Step XL — a song made on the sleeping music GPU');
   assert.equal(ace.aceProjectWhy({}), 'ACE-Step XL — a song made on the sleeping music GPU');
@@ -433,18 +609,37 @@ test('a worker answer is read with take 0 at the top level; the top level wins w
   for (const same of [{ error: 'The music model ran out of memory.' }, { takes: [] }, { takes: [{ index: 0, seed: 1 }] }, {}]) assert.equal(ace.aceOutput(same), same, JSON.stringify(same));
 });
 
-test('a finished take keeps the card, the checkpoint and what the planner chose, only when the worker said', () => {
+test('a finished take keeps the card, the checkpoint and what the planner chose, only when the worker said; and the two dials', () => {
   const input = ace.aceInput(base, {});
-  assert.deepEqual(ace.aceTakeFacts(WORKER_ANSWER, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', bpm: 88, keyscale: 'A minor' });
+  const dials = { weirdness: 50, guidance: 1 };
+  assert.deepEqual(ace.aceTakeFacts(WORKER_ANSWER, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', bpm: 88, keyscale: 'A minor', ...dials });
   assert.deepEqual(ace.aceTakeFacts(undefined, input), {});
-  assert.deepEqual(ace.aceTakeFacts({ url: 'x' }, input), {}, 'an answer that says nothing adds nothing');
-  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: undefined }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo' });
-  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: { bpm: 'fast', keyscale: 5 } }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo' });
-  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: { bpm: NaN } }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo' });
+  assert.deepEqual(ace.aceTakeFacts({ url: 'x' }, input), dials, 'an answer that says nothing adds nothing of the worker\'s; the dials are the request\'s own');
+  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: undefined }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', ...dials });
+  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: { bpm: 'fast', keyscale: 5 } }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', ...dials });
+  assert.deepEqual(ace.aceTakeFacts({ ...WORKER_ANSWER, plan: { bpm: NaN } }, input), { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', ...dials });
   const played = ace.aceInput({ script: 'Banjo', singing: INSTRUMENTAL, seed: 2 }, {});
+  assert.deepEqual(ace.aceTakeFacts({ gpu: 'x' }, played), { gpu: 'x', instrumental: true, weirdness: 50, guidance: 1 });
   assert.equal(ace.aceTakeFacts({ gpu: 'x' }, played).instrumental, true, 'an instrumental request says so');
   assert.equal(ace.aceTakeFacts({ gpu: 'x', instrumental: false }, played).instrumental, false, 'the worker has the last word');
   assert.equal('takeNote' in ace.aceTakeFacts(WORKER_ANSWER, input), false, 'engineering notes are not read to a listener');
+});
+
+test('the asset keeps the dials as set and the worker fields they became, and nothing for a dial left alone', () => {
+  const take = (body) => ace.aceTakeFacts(WORKER_ANSWER, ace.aceInput({ ...base, ...body }, {}));
+  const plain = { gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', bpm: 88, keyscale: 'A minor' };
+  assert.deepEqual(take({}), { ...plain, weirdness: 50, guidance: 1 });
+  assert.deepEqual(take({ weirdness: 70 }), { ...plain, weirdness: 70, guidance: 1, lm_temperature: 1.03 });
+  assert.deepEqual(take({ quality: 'Best', guidance: 2 }), { ...plain, weirdness: 50, guidance: 2, guidance_scale: 10 });
+  assert.deepEqual(take({ quality: 'Best', weirdness: 20, guidance: 3 }), { ...plain, weirdness: 20, guidance: 3, lm_temperature: 0.58, guidance_scale: 13 });
+  assert.deepEqual(take({ quality: 'Fast', weirdness: 20, guidance: 3 }), { ...plain, weirdness: 20, guidance: 3, lm_temperature: 0.58 }, 'a Fast take records the dial but no guidance_scale: none was sent');
+  for (const body of [{}, { weirdness: 70 }, { quality: 'Best', guidance: 2 }, { quality: 'Best', weirdness: 20, guidance: 3 }, { quality: 'Fast', guidance: 3 }]) {
+    const input = ace.aceInput({ ...base, ...body }, {});
+    const facts = ace.aceTakeFacts(WORKER_ANSWER, input);
+    const sent = ace.aceRequest(input);
+    assert.equal(facts.lm_temperature, sent.lm_temperature, `what is recorded is what was sent: ${JSON.stringify(body)}`);
+    assert.equal(facts.guidance_scale, sent.guidance_scale, JSON.stringify(body));
+  }
 });
 
 test('cost: the card the worker names sets the price, an unnamed one is priced as the A40', () => {
@@ -474,6 +669,8 @@ const EXPECTED_CARD = {
     { key: 'lyrics', label: 'Lyrics', hint: 'The words to sing, with [Verse] and [Chorus] tags. Write my song idea can draft them.', kind: 'text' },
     { key: 'quality', label: 'Quality', hint: 'Fast is quick. Best is slower and costs more.', kind: 'choice', options: ['Fast', 'Best'], default: 'Fast' },
     { key: 'length', label: 'Length', hint: 'Match my lyrics sizes the song from your lyric lines.', kind: 'choice', options: ['Match my lyrics', '1:00', '2:00', '3:00', '4:00', '5:00', '6:00'], default: 'Match my lyrics' },
+    { key: 'weirdness', label: 'Creative variation (weirdness)', hint: '50 is normal. Lower is more predictable; higher is more surprising and can lose its way.', kind: 'range', min: 0, max: 100, step: 1, default: 50, advanced: true },
+    { key: 'guidance', label: 'Prompt guidance', hint: 'Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural.', kind: 'range', min: 1, max: 3, step: 0.1, default: 1, advanced: true },
     { key: 'seed', label: 'Optional seed', hint: 'Leave blank for a new take; reuse a number for a similar start.', kind: 'number', min: 0, max: 2147483647, advanced: true },
   ],
 };
@@ -487,8 +684,9 @@ test('the guide card: exact, short, advanced settings tucked away, defaults from
   assert.deepEqual(ace.aceGuide({ ACE_MAX_SECONDS: '300' }).settings.find((s) => s.key === 'length').options, ['Match my lyrics', '1:00', '2:00', '3:00', '4:00', '5:00']);
   assert.deepEqual(ace.aceGuide({ ACE_MAX_SECONDS: '600' }).settings.find((s) => s.key === 'length').options.slice(-2), ['9:00', '10:00']);
   assert.deepEqual(ace.aceGuide({ ACE_MAX_SECONDS: '90' }).settings.find((s) => s.key === 'length').options, ['Match my lyrics', '1:00']);
-  assert.deepEqual(ace.aceGuide({}).settings.filter((s) => s.advanced).map((s) => s.key), ['seed'], 'only the seed sits under More settings');
-  assert.deepEqual(ace.aceGuide({}).settings.map((s) => s.key), ['singing', 'lyrics', 'quality', 'length', 'seed']);
+  assert.deepEqual(ace.aceGuide({}).settings.filter((s) => s.advanced).map((s) => s.key), ['weirdness', 'guidance', 'seed'], 'the two dials and the seed sit under More settings');
+  assert.deepEqual(ace.aceGuide({}).settings.filter((s) => !s.advanced).map((s) => s.key), ['singing', 'lyrics', 'quality', 'length'], 'nothing else is up front');
+  assert.deepEqual(ace.aceGuide({}).settings.map((s) => s.key), ['singing', 'lyrics', 'quality', 'length', 'weirdness', 'guidance', 'seed'], 'the dials come after Length and before the seed');
   /* Every option the card offers is one the parser accepts, and every default is what an untouched card means. */
   const offered = (key) => ace.aceGuide({}).settings.find((s) => s.key === key).options;
   for (const quality of offered('quality')) ace.aceInput({ ...base, quality }, {});
@@ -532,7 +730,7 @@ test('the guide for a person: the very same object unless they may use ACE, then
   assert.equal(shown.starters, guide.starters);
   assert.equal('ace' in guide.engines, false, 'the shared guide is never changed');
   assert.deepEqual(ace.withAceGuide(guide, user, { ...ON, ACE_ADMIN_ONLY: '0' }).engines.ace, EXPECTED_CARD);
-  assert.deepEqual(ace.withAceGuide(guide, admin, { ...ON, ACE_DEFAULT_MODEL: 'xl-sft' }).engines.ace.settings[2].default, 'Best');
+  assert.deepEqual(ace.withAceGuide(guide, admin, { ...ON, ACE_DEFAULT_MODEL: 'xl-sft' }).engines.ace.settings.find((s) => s.key === 'quality').default, 'Best');
   assert.equal(JSON.stringify(ace.withAceGuide(guide, user, {})), JSON.stringify(guide), 'serialised, byte for byte');
 });
 

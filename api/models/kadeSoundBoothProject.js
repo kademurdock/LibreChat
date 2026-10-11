@@ -24,7 +24,8 @@ const mongoose = require('mongoose');
  *                        asset, no job id. Its `options` carry no clips and no
  *                        voice settings, because it has none.
  *   - engine 'ace'     : ACE-Step XL (Oct 10 2026), QUEUED like 'yue2' on its own
- *                        endpoint; `options` are its Quality, Length, Singing, lyrics, seed.
+ *                        endpoint; `options` are its Quality, Length, Singing, lyrics,
+ *                        weirdness (Creative variation), guidance (Prompt guidance), seed.
  *
  * Collection name is `kadeplayground` deliberately: the plan that ordered this
  * work called the screen the Playground and specced the rows under that name.

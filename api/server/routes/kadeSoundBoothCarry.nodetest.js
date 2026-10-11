@@ -324,7 +324,7 @@ test('with access it is on offer between the two song engines, and nowhere near 
 
 test('YuE2 to ACE keeps the words, their tags and the seed, and says what stayed behind', () => {
   const before = JSON.stringify(YUE);
-  const out = carry.carryOver({ ...YUE, options: { ...YUE.options, reference_voice_url: 'https://example.invalid/cover.wav', singing: 'Sung, with my lyrics' } }, 'ace', ACE_ON);
+  const out = carry.carryOver({ ...YUE, options: { ...YUE.options, weirdness: 70, guidance: 2, reference_voice_url: 'https://example.invalid/cover.wav', singing: 'Sung, with my lyrics' } }, 'ace', ACE_ON);
   assert.strictEqual(out.ok, true, out.why);
   assert.strictEqual(out.draft.engine, 'ace');
   assert.strictEqual(out.draft.options.lyrics, LYRICS, 'the words changed on the way');
@@ -336,13 +336,17 @@ test('YuE2 to ACE keeps the words, their tags and the seed, and says what stayed
   assert.strictEqual(out.draft.title, 'The Long Way (on ACE-Step XL)');
   assert.strictEqual(out.draft.state, 'draft');
   assert.deepStrictEqual(out.draft.options.carriedFrom, { project: 'def456', engine: 'yue2' });
-  for (const key of ['band', 'abc', 'weirdness', 'guidance', 'count', 'reference_voice_url', 'quality', 'length']) {
+  for (const key of ['band', 'abc', 'count', 'reference_voice_url', 'quality', 'length']) {
     assert.strictEqual(out.draft.options[key], undefined, `${key} was carried to an engine that has no such thing`);
   }
+  /* ACE-Step XL has the same two dials as YuE2 (Creative variation and Prompt guidance), so they come across. */
+  assert.strictEqual(out.draft.options.weirdness, 70);
+  assert.strictEqual(out.draft.options.guidance, 2);
   const text = said(out);
   assert.match(text, /Your lyrics and their section tags came across whole/);
-  for (const word of ['trained style', 'composition score', 'weirdness', 'guidance']) assert.ok(text.includes(word), `nothing told her ${word} was left behind`);
-  assert.match(text, /ACE-Step XL has no trained style, which only YuE2 has, no composition score, no weirdness, no guidance, so those were left behind\./);
+  for (const word of ['trained style', 'composition score']) assert.ok(text.includes(word), `nothing told her ${word} was left behind`);
+  assert.doesNotMatch(text, /weirdness|guidance/, 'and nothing claims ACE-Step XL lacks the dials it has');
+  assert.match(text, /ACE-Step XL has no trained style, which only YuE2 has, no composition score, so those were left behind\./);
   assert.match(text, /ACE-Step XL makes one take at a time, so the 2 takes you asked for became one\./);
   assert.match(text, /ACE-Step XL does not take an imported recording, so that stayed behind\./);
   assert.strictEqual(out.rewriteAdvised, false, 'both read a style line and separate words');
@@ -372,6 +376,25 @@ test('ACE to YuE2 keeps the words, their tags and the seed, and says which of it
   const onlyLength = carry.carryOver({ ...ACE, options: { ...ACE.options, quality: 'Fast' } }, 'lyria', ACE_ON);
   assert.match(said(onlyLength), /Lyria has no length choice, so that was left behind\./);
   assert.doesNotMatch(said(carry.carryOver({ ...YUE, options: { ...YUE.options, count: 3 } }, 'lyria')), /one take at a time/);
+});
+
+test('Creative variation and Prompt guidance cross between YuE2 and ACE-Step XL, and are said to be left behind by Lyria', () => {
+  const dialled = { weirdness: 70, guidance: 2 };
+  const toYue = carry.carryOver({ ...ACE, options: { ...ACE.options, ...dialled } }, 'yue2', ACE_ON);
+  assert.strictEqual(toYue.draft.options.weirdness, 70);
+  assert.strictEqual(toYue.draft.options.guidance, 2);
+  assert.doesNotMatch(said(toYue), /weirdness|guidance/);
+  const toAce = carry.carryOver({ ...YUE, options: { ...YUE.options, ...dialled } }, 'ace', ACE_ON);
+  assert.deepStrictEqual([toAce.draft.options.weirdness, toAce.draft.options.guidance], [70, 2]);
+  /* Lyria has neither dial: the sentence is the one it always was for YuE2, and ACE-Step XL's usual 50 and 1 are not worth one. */
+  assert.match(said(carry.carryOver({ ...ACE, options: { ...ACE.options, ...dialled } }, 'lyria', ACE_ON)), /Lyria has no weirdness, no guidance, no quality choice, no length choice, so those were left behind\./);
+  assert.match(said(carry.carryOver({ ...ACE, options: { ...ACE.options, quality: 'Fast', length: 'Match my lyrics', weirdness: 70 } }, 'lyria', ACE_ON)), /Lyria has no weirdness, so that was left behind\./);
+  assert.doesNotMatch(said(carry.carryOver({ ...ACE, options: { ...ACE.options, quality: 'Fast', length: 'Match my lyrics', weirdness: 50, guidance: 1 } }, 'lyria', ACE_ON)), /weirdness|guidance|left behind/);
+  assert.strictEqual(carry.carryOver({ ...ACE, options: { ...ACE.options, ...dialled } }, 'lyria', ACE_ON).draft.options.weirdness, undefined);
+  assert.match(said(carry.carryOver(YUE, 'lyria')), /Lyria has no trained style, which only YuE2 has, no composition score, no weirdness, no guidance, so those were left behind\./, 'YuE2 to Lyria says what it always said');
+  assert.match(said(carry.carryOver({ ...YUE, options: { ...YUE.options, weirdness: 50, guidance: 1 } }, 'lyria')), /no weirdness, no guidance/, 'and still says it at the usual values: that is how a YuE2 project always read');
+  assert.ok(carry.SHARED_KNOBS.includes('weirdness') && carry.SHARED_KNOBS.includes('guidance'));
+  assert.deepStrictEqual(carry.carryOver(LYRIA, 'ace', ACE_ON).draft.options.weirdness, undefined, 'Lyria has none to bring');
 });
 
 test('ACE to Lyria and Lyria to ACE: the words come out of, and go back into, the right place', () => {

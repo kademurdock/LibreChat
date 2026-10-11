@@ -401,7 +401,7 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal(project.script, DIRECTION, 'Music direction is kept as typed, tempo and all');
     assert.equal(project.sourceText, 'my notes');
     assert.equal(project.state, 'queued');
-    assert.deepEqual(project.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, seed: 5 });
+    assert.deepEqual(project.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 5 });
     assert.deepEqual(project.jobs, [res.data.jobId]);
     const stored = await aceJobs().findOne({ id: res.data.jobId });
     assert.equal(stored.takes.length, 1);
@@ -458,6 +458,7 @@ test('ACE-Step XL through the booth route', async (t) => {
       wavUrl: answer.wav_url, seconds: 95, lyrics: LYRICS, truncated: false,
       costScope: 'execution estimate; startup and idle are additional',
       gpu: 'NVIDIA RTX A6000', model: 'xl-turbo', bpm: 88, keyscale: 'A minor',
+      weirdness: 50, guidance: 1,
     });
     const project = await Project.findById(first.projectId).lean();
     assert.equal(project.state, 'done');
@@ -476,7 +477,7 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal(list.status, 200);
     const row = list.data.projects.find((p) => p.engine === 'ace');
     assert.equal(row.why, 'ACE-Step XL — a song made on the sleeping music GPU, best quality');
-    assert.deepEqual(row.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, seed: 5 });
+    assert.deepEqual(row.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 5 });
     assert.equal(row.script, DIRECTION);
     assert.deepEqual(row.carryTo.map((d) => d.engine), ['lyria', 'yue2'], 'an admin can carry an ACE project to the other song engines');
     assert.equal(row.takes.length, 1);
@@ -615,6 +616,82 @@ test('ACE-Step XL through the booth route', async (t) => {
     assert.equal((await call('/render', { body: song, user: id(), role: 'ADMIN' })).status, 503);
     setEnv({ RUNPOD_API_KEY: 'fixture' });
     assert.equal(runpod.runs.length, before);
+  });
+
+  await t.test('Creative variation and Prompt guidance: the same two dials as the YuE2 card, sent only when moved, kept on the project and the asset', async () => {
+    const health = await call('/health', asAdmin());
+    const yueCard = health.data.guide.engines.yue2.settings;
+    const aceCard = health.data.guide.engines.ace.settings;
+    for (const key of ['weirdness', 'guidance']) {
+      const mine = aceCard.find((setting) => setting.key === key);
+      const theirs = yueCard.find((setting) => setting.key === key);
+      for (const field of ['key', 'label', 'kind', 'min', 'max', 'step', 'default', 'advanced']) assert.deepEqual(mine[field], theirs[field], `${key}.${field} is the YuE2 card's`);
+    }
+    assert.equal(aceCard.find((setting) => setting.key === 'weirdness').hint, yueCard.find((setting) => setting.key === 'weirdness').hint);
+    assert.match(aceCard.find((setting) => setting.key === 'guidance').hint, /^Only for Quality Best; Fast ignores it\. Higher follows your direction and lyrics more strictly but can sound less natural\.$/);
+    assert.deepEqual(aceCard.filter((setting) => setting.advanced).map((setting) => setting.key), ['weirdness', 'guidance', 'seed'], 'all under More settings');
+    assert.deepEqual(aceCard.map((setting) => setting.key), ['singing', 'lyrics', 'quality', 'length', 'weirdness', 'guidance', 'seed']);
+
+    /* Out of range is refused in YuE2's sentences, before a job, a row or a RunPod call. */
+    const owner = id();
+    const as = { user: owner, role: 'ADMIN' };
+    const runsBefore = runpod.runs.length, rowsBefore = await Project.countDocuments({ engine: 'ace' });
+    for (const [extra, error] of [[{ weirdness: 101 }, 'Creative variation must be a whole number from 0 to 100.'], [{ weirdness: 12.5 }, 'Creative variation must be a whole number from 0 to 100.'], [{ guidance: 3.5 }, 'Prompt guidance must be from 1 to 3.'], [{ guidance: 0.5 }, 'Prompt guidance must be from 1 to 3.']]) {
+      const res = await call('/render', { body: { ...song, ...extra }, ...as });
+      assert.equal(res.status, 400, JSON.stringify(extra));
+      assert.deepEqual(res.data, { error });
+    }
+    assert.equal(runpod.runs.length, runsBefore);
+    assert.equal(await Project.countDocuments({ engine: 'ace' }), rowsBefore);
+
+    /* The quote says so when the guidance is moved on Fast, and is silent on Best. */
+    const fastQuote = await call('/render', { body: { ...song, guidance: 2, estimateOnly: true }, ...as });
+    assert.match(fastQuote.data.estimate.spoken, /Prompt guidance only works with Quality Best, so Fast ignores it\./);
+    const bestQuote = await call('/render', { body: { ...song, guidance: 2, quality: 'Best', estimateOnly: true }, ...as });
+    assert.doesNotMatch(bestQuote.data.estimate.spoken, /Prompt guidance/);
+
+    /* Best with both dials moved: the worker gets lm_temperature and guidance_scale, in that order, after bpm. */
+    const best = await call('/render', { body: { ...song, seed: 70, quality: 'Best', length: '3:00', weirdness: 70, guidance: 2 }, ...as });
+    assert.equal(best.status, 200, best.text);
+    assert.deepEqual(runpod.runs.at(-1).body.input, { model: 'xl-sft', caption: 'Slow soul, Rhodes and brushed drums, a warm alto', lyrics: LYRICS, duration: 180, seed: 70, batch_size: 1, bpm: 88, lm_temperature: 1.03, guidance_scale: 10 });
+    assert.deepEqual(Object.keys(runpod.runs.at(-1).body.input).slice(-2), ['lm_temperature', 'guidance_scale']);
+    const bestProject = await Project.findById(best.data.projectId).lean();
+    assert.deepEqual(bestProject.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, weirdness: 70, guidance: 2, seed: 70 });
+    const storedBest = await aceJobs().findOne({ id: best.data.jobId });
+    assert.equal(storedBest.input.weirdness, 70, 'the job keeps the dials, not the worker numbers');
+    assert.equal(storedBest.input.guidance, 2);
+    assert.equal('lm_temperature' in storedBest.input, false);
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(70, { model: 'xl-sft' }), executionTime: 90000 });
+    assert.equal((await call(`/status/${best.data.jobId}`, as)).data.state, 'done');
+    assert.deepEqual(assetRows.at(-1).metadata, {
+      title: 'Rain song', seed: 70, jobId: storedBest.takes[0].id, projectId: best.data.projectId, via: 'sound-booth',
+      wavUrl: workerAnswer(70).wav_url, seconds: 95, lyrics: LYRICS, truncated: false,
+      costScope: 'execution estimate; startup and idle are additional',
+      gpu: 'NVIDIA RTX A6000', model: 'xl-sft', bpm: 88, keyscale: 'A minor',
+      weirdness: 70, guidance: 2, lm_temperature: 1.03, guidance_scale: 10,
+    });
+    /* Open in the booth: the library row and the single project both carry the dials back to the page. */
+    const list = await call('/projects', as);
+    assert.deepEqual(list.data.projects.find((p) => p.id === best.data.projectId).options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, weirdness: 70, guidance: 2, seed: 70 });
+    assert.deepEqual((await call(`/projects/${best.data.projectId}`, as)).data.project.options, { quality: 'Best', length: '3:00', singing: yueSinging.sung, lyrics: LYRICS, weirdness: 70, guidance: 2, seed: 70 });
+
+    /* Fast with the guidance moved: the temperature goes, the guidance does not; the asset says what was sent. */
+    const fast = await call('/render', { body: { ...song, seed: 71, weirdness: 20, guidance: 3 }, ...as });
+    assert.equal(fast.status, 200, fast.text);
+    assert.deepEqual(runpod.runs.at(-1).body.input, { model: 'xl-turbo', caption: 'Slow soul, Rhodes and brushed drums, a warm alto', lyrics: LYRICS, duration: 30, seed: 71, batch_size: 1, bpm: 88, lm_temperature: 0.58 });
+    assert.equal((await Project.findById(fast.data.projectId).lean()).options.guidance, 3, 'the dial is kept even though Fast ignores it');
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(71), executionTime: 30000 });
+    assert.equal((await call(`/status/${fast.data.jobId}`, as)).data.state, 'done');
+    const fastMeta = assetRows.at(-1).metadata;
+    assert.deepEqual([fastMeta.weirdness, fastMeta.guidance, fastMeta.lm_temperature], [20, 3, 0.58]);
+    assert.equal('guidance_scale' in fastMeta, false, 'no guidance_scale was sent, so none is recorded');
+
+    /* The dials at their defaults, said out loud: the job is exactly the one sent before the dials existed. */
+    const plain = await call('/render', { body: { ...song, seed: 72, weirdness: 50, guidance: 1 }, ...as });
+    assert.equal(plain.status, 200, plain.text);
+    assert.equal(JSON.stringify(runpod.runs.at(-1).body.input), '{"model":"xl-turbo","caption":"Slow soul, Rhodes and brushed drums, a warm alto","lyrics":"[Verse]\\nWalking home in the rain\\n[Chorus]\\nHold on, hold on\\n(hold on)","duration":30,"seed":72,"batch_size":1,"bpm":88}');
+    runpod.jobs.get(runpod.runs.at(-1).id).state = 'CANCELLED';
+    await call(`/status/${plain.data.jobId}`, as);
   });
 
   await t.test('the ACE job ids are its own: a YuE2 status request never reaches the ACE router and the other way round', async () => {

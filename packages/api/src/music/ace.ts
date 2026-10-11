@@ -26,6 +26,10 @@ export type AceRequest = {
   seed: number;
   batch_size: 1;
   bpm?: number;
+  /** The planner's sampling temperature, 0.0 to 2.0. Sent only when Creative variation is off its default (see aceLmTemperature). */
+  lm_temperature?: number;
+  /** The DiT guidance scale. Sent only for Best, and only when Prompt guidance is off its default (see aceGuidanceScale). */
+  guidance_scale?: number;
 };
 
 /** The settings as saved on the project, in the words the guide shows, so Open in the booth restores them. */
@@ -34,19 +38,29 @@ export type AceProjectOptions = {
   length: string;
   singing: string;
   lyrics: string;
+  weirdness: number;
+  guidance: number;
   seed: number;
 };
 
-/** What the asset keeps about a finished take; only what the worker really reported. */
+/**
+ * What the asset keeps about a finished take. The card, checkpoint and planner choices are only what the worker
+ * really reported; the two dials are what she set, and the last two are what the worker was actually sent for them
+ * (absent when a dial was left alone, and no guidance_scale for a Fast take, which ignores it).
+ */
 export type AceTakeFacts = {
   gpu?: string;
   model?: string;
   instrumental?: boolean;
   bpm?: number;
   keyscale?: string;
+  weirdness?: number;
+  guidance?: number;
+  lm_temperature?: number;
+  guidance_scale?: number;
 };
 
-export type AceGuideSetting = YueGuideSetting & { min?: number; max?: number };
+export type AceGuideSetting = YueGuideSetting & { min?: number; max?: number; step?: number };
 export type AceGuideEntry = {
   name: string;
   tagline: string;
@@ -83,6 +97,21 @@ const INSTRUMENTAL_TAG = '[Instrumental]';
  * test, not a measurement; the tests pin a table so a change is deliberate. */
 const LYRIC_BASE_SECONDS = 20;
 const LYRIC_SECONDS_PER_LINE = 3.7;
+/* The two dials, with the same keys, labels and ranges as the YuE2 card. 50 and 1 are "normal": a request at either
+ * default adds nothing to the worker job. */
+const WEIRDNESS_DEFAULT = 50;
+const WEIRDNESS_MIN = 0;
+const WEIRDNESS_MAX = 100;
+const GUIDANCE_DEFAULT = 1;
+const GUIDANCE_MIN = 1;
+const GUIDANCE_MAX = 3;
+/* Upstream (acestep/inference.py GenerationParams, pinned ca1e85f): lm_temperature 0.0 to 2.0, default 0.85; the sft
+ * checkpoint's guidance_scale default is 7.0. */
+const LM_TEMPERATURE_LOW = 0.4;
+const LM_TEMPERATURE_NORMAL = 0.85;
+const LM_TEMPERATURE_HIGH = 1.3;
+const SFT_GUIDANCE_NORMAL = 7;
+const SFT_GUIDANCE_PER_STEP = 3;
 const ACE_EXECUTION_TIMEOUT_MS = 1200000;
 const ACE_PROVIDER_TTL_MS = 7200000;
 
@@ -287,6 +316,94 @@ export function aceModelChoice(
   throw new Error(`Under Quality, choose ${aceQuality.fast} or ${aceQuality.best}.`);
 }
 
+/* ---------- Creative variation (weirdness) and Prompt guidance ---------- */
+
+function roundedTo(value: number, places: number): number {
+  const scale = 10 ** places;
+  return Math.round(value * scale) / scale;
+}
+
+/**
+ * Creative variation (weirdness), 0 to 100, as the planner's sampling temperature. It sets the planner and nothing
+ * else (the DiT, its steps and its guidance are untouched). Piecewise linear through three points:
+ *
+ *    weirdness   0 -> 0.40   (predictable)
+ *    weirdness  50 -> 0.85   (upstream's default, so 50 changes nothing)
+ *    weirdness 100 -> 1.30   (surprising)
+ *
+ * which is 0.009 a point on both sides, to three decimals; upstream accepts 0.0 to 2.0, so the whole dial is inside
+ * it. A value outside 0 to 100 is held at the nearest end; one that is not a number is the default.
+ */
+export function aceLmTemperature(weirdness: number): number {
+  if (!Number.isFinite(weirdness)) return LM_TEMPERATURE_NORMAL;
+  const at = Math.min(WEIRDNESS_MAX, Math.max(WEIRDNESS_MIN, weirdness));
+  const lower = at <= WEIRDNESS_DEFAULT;
+  const [fromAt, from] = lower
+    ? [WEIRDNESS_MIN, LM_TEMPERATURE_LOW]
+    : [WEIRDNESS_DEFAULT, LM_TEMPERATURE_NORMAL];
+  const [toAt, to] = lower
+    ? [WEIRDNESS_DEFAULT, LM_TEMPERATURE_NORMAL]
+    : [WEIRDNESS_MAX, LM_TEMPERATURE_HIGH];
+  return roundedTo(from + ((to - from) * (at - fromAt)) / (toAt - fromAt), 3);
+}
+
+/**
+ * Prompt guidance, 1 to 3, as the DiT's guidance_scale for the sft ("Best") checkpoint only:
+ *
+ *    guidance_scale = 7 + 3 x (guidance - 1)      1 -> 7 (upstream's default), 2 -> 10, 3 -> 13
+ *
+ * The turbo ("Fast") checkpoint has no guidance in upstream, so it is never sent one (see aceRequest). A value outside
+ * 1 to 3 is held at the nearest end; one that is not a number is the default.
+ */
+export function aceGuidanceScale(guidance: number): number {
+  if (!Number.isFinite(guidance)) return SFT_GUIDANCE_NORMAL;
+  const at = Math.min(GUIDANCE_MAX, Math.max(GUIDANCE_MIN, guidance));
+  return roundedTo(SFT_GUIDANCE_NORMAL + SFT_GUIDANCE_PER_STEP * (at - GUIDANCE_DEFAULT), 3);
+}
+
+function moved(value: number | undefined, normal: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value !== normal;
+}
+
+/**
+ * The worker fields the two dials set. Each is there only when its dial is off the default, and the guidance only
+ * when the take is Best, so a request at the defaults carries neither and is the job it always was.
+ */
+function aceDialFields(
+  model: AceModel,
+  input: Input,
+): Pick<AceRequest, 'lm_temperature' | 'guidance_scale'> {
+  return {
+    ...(moved(input.weirdness, WEIRDNESS_DEFAULT)
+      ? { lm_temperature: aceLmTemperature(input.weirdness) }
+      : {}),
+    ...(model === 'xl-sft' && moved(input.guidance, GUIDANCE_DEFAULT)
+      ? { guidance_scale: aceGuidanceScale(input.guidance) }
+      : {}),
+  };
+}
+
+/** A dial's value, or its default when she left it alone; refused in a plain sentence (the same ones YuE2 gives) when it is not a number in range. */
+function dial(
+  value: number | undefined,
+  fallback: number,
+  low: number,
+  high: number,
+  label: string,
+  whole: boolean,
+): number {
+  if (value == null) return fallback;
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value < low ||
+    value > high ||
+    (whole && !Number.isInteger(value))
+  )
+    throw new Error(`${label} must be ${whole ? 'a whole number ' : ''}from ${low} to ${high}.`);
+  return value;
+}
+
 /* ---------- the request ---------- */
 
 /** The router's parse: validates a booth request and applies every default (a choice she did not touch is not sent). */
@@ -314,6 +431,23 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     (!Number.isInteger(body.seed) || body.seed < 0 || body.seed > SEED_LIMIT)
   )
     throw new Error(`Seed must be a whole number from 0 to ${SEED_LIMIT}.`);
+  /* The two dials, as YuE2 reads them: nothing sent is the default, and an out-of-range number is refused, never held to the end. */
+  const weirdness = dial(
+    body.weirdness,
+    WEIRDNESS_DEFAULT,
+    WEIRDNESS_MIN,
+    WEIRDNESS_MAX,
+    'Creative variation',
+    true,
+  );
+  const guidance = dial(
+    body.guidance,
+    GUIDANCE_DEFAULT,
+    GUIDANCE_MIN,
+    GUIDANCE_MAX,
+    'Prompt guidance',
+    false,
+  );
   const direction = body.script.trim();
   const model = aceModelChoice(body.quality, env);
   const song = aceLength(body.length, lyrics, instrumental, aceMaxSeconds(env));
@@ -328,31 +462,43 @@ export function aceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     model,
     ...(bpm === undefined ? {} : { bpm }),
     length_choice: song.label,
+    weirdness,
+    guidance,
     seed: body.seed ?? Math.floor(Math.random() * SEED_LIMIT),
   };
 }
 
-/** The worker job for one take. The sheet goes through whole (never cut); an instrumental sends the tag the worker reads. */
+/**
+ * The worker job for one take. The sheet goes through whole (never cut); an instrumental sends the tag the worker reads.
+ * lm_temperature and guidance_scale come after bpm and only when a dial was moved (guidance only for Best); a job saved
+ * before the dials existed has neither dial and is the request it always was.
+ */
 export function aceRequest(input: Input): AceRequest {
   const sung = input.instrumental ? '' : (input.lyrics ?? '');
+  const model = input.model ?? 'xl-turbo';
   return {
-    model: input.model ?? 'xl-turbo',
+    model,
     caption: aceCaption(input.style).caption,
     lyrics: input.instrumental ? INSTRUMENTAL_TAG : sung,
     duration: input.duration ?? aceLyricSeconds(sung),
     seed: input.seed,
     batch_size: 1,
     ...(input.bpm ? { bpm: input.bpm } : {}),
+    ...aceDialFields(model, input),
   };
 }
 
-/** What is said before anything is spent: the length, the quality, a note if the direction was cut, then the cost. */
+/** What is said before anything is spent: the length, the quality, a note if the direction was cut or a dial will do nothing, then the cost. */
 export function aceEstimate(input: Input): string {
   const quality = input.model === 'xl-sft' ? aceQuality.best : aceQuality.fast;
-  const note = aceCaption(input.style).trimmed
+  const cut = aceCaption(input.style).trimmed
     ? ` Only the first part of Music direction fits; ACE-Step XL reads ${CAPTION_LIMIT} characters.`
     : '';
-  return `About ${spokenLength(input.duration ?? 0)} of music, ${quality.toLowerCase()} quality.${note} ${aceCost}`;
+  const idle =
+    input.model !== 'xl-sft' && moved(input.guidance, GUIDANCE_DEFAULT)
+      ? ` Prompt guidance only works with Quality ${aceQuality.best}, so ${aceQuality.fast} ignores it.`
+      : '';
+  return `About ${spokenLength(input.duration ?? 0)} of music, ${quality.toLowerCase()} quality.${cut}${idle} ${aceCost}`;
 }
 
 /* ---------- the project row and the library asset ---------- */
@@ -363,6 +509,8 @@ export function aceProjectOptions(input: Input): AceProjectOptions {
     length: input.length_choice ?? aceMatchLyrics,
     singing: input.instrumental ? yueSinging.instrumental : yueSinging.sung,
     lyrics: input.lyrics ?? '',
+    weirdness: input.weirdness ?? WEIRDNESS_DEFAULT,
+    guidance: input.guidance ?? GUIDANCE_DEFAULT,
     seed: input.seed,
   };
 }
@@ -378,17 +526,25 @@ function finiteNumber(value: number | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** What the asset keeps about a finished take: the card, the checkpoint and what the planner chose, when the worker said. */
+/**
+ * What the asset keeps about a finished take: the card, the checkpoint and what the planner chose, when the worker said;
+ * then the two dials as she set them and the worker fields they became (only the ones that were sent).
+ */
 export function aceTakeFacts(output: Output | undefined, input: Input): AceTakeFacts {
   if (!output) return {};
   const facts: AceTakeFacts = {};
   const bpm = finiteNumber(output.plan?.bpm);
+  const sent = aceDialFields(input.model ?? 'xl-turbo', input);
   if (typeof output.gpu === 'string') facts.gpu = output.gpu;
   if (typeof output.model === 'string') facts.model = output.model;
   if (typeof output.instrumental === 'boolean') facts.instrumental = output.instrumental;
   else if (input.instrumental === true) facts.instrumental = true;
   if (bpm !== undefined) facts.bpm = bpm;
   if (typeof output.plan?.keyscale === 'string') facts.keyscale = output.plan.keyscale;
+  facts.weirdness = input.weirdness ?? WEIRDNESS_DEFAULT;
+  facts.guidance = input.guidance ?? GUIDANCE_DEFAULT;
+  if (sent.lm_temperature !== undefined) facts.lm_temperature = sent.lm_temperature;
+  if (sent.guidance_scale !== undefined) facts.guidance_scale = sent.guidance_scale;
   return facts;
 }
 
@@ -466,6 +622,29 @@ export function aceGuide(env: NodeJS.ProcessEnv = process.env): AceGuideEntry {
         kind: 'choice',
         options: [aceMatchLyrics, ...minutes],
         default: aceMatchLyrics,
+      },
+      /* The same two dials, keys and labels as the YuE2 card, so every screen draws them alike. Both sit under More settings. */
+      {
+        key: 'weirdness',
+        label: 'Creative variation (weirdness)',
+        hint: '50 is normal. Lower is more predictable; higher is more surprising and can lose its way.',
+        kind: 'range',
+        min: WEIRDNESS_MIN,
+        max: WEIRDNESS_MAX,
+        step: 1,
+        default: WEIRDNESS_DEFAULT,
+        advanced: true,
+      },
+      {
+        key: 'guidance',
+        label: 'Prompt guidance',
+        hint: 'Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural.',
+        kind: 'range',
+        min: GUIDANCE_MIN,
+        max: GUIDANCE_MAX,
+        step: 0.1,
+        default: GUIDANCE_DEFAULT,
+        advanced: true,
       },
       {
         key: 'seed',

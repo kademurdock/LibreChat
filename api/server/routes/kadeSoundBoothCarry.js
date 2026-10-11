@@ -22,7 +22,7 @@
  *    free and immediate.
  *
  * 3. IT SAYS WHAT DID NOT COME ACROSS. Every engine has knobs the others do
- *    not: YuE2's weirdness and its trained styles, Lyria's instrumental
+ *    not: YuE2's trained styles and scores, Lyria's instrumental
  *    switch, Stable Audio's duration, AuK's pinned voice. Dropping them
  *    silently would be the sort of thing you only find out about after
  *    spending money on a render, so each carry returns plain sentences about
@@ -44,17 +44,18 @@ const ENGINES = {
     label: 'YuE2',
     kind: 'music',
     script: 'style',
-    keeps: ['lyrics', 'seed', 'count', 'reference_voice_url', 'singing'],
+    keeps: ['lyrics', 'seed', 'count', 'reference_voice_url', 'singing', 'weirdness', 'guidance'],
   },
   /* ACE-Step XL (Oct 10 2026): the same shape as YuE2 (a style line, separate lyrics, a Singing
    * choice) with no covers and one take per request. `gated` means it is behind ACE_ENABLED and the
    * admin gate (packages/api music/ace.ts): it is invisible, and refused, unless the caller passes
-   * `{ ace: true }` for a person who may use it. */
+   * `{ ace: true }` for a person who may use it. Its Creative variation (weirdness) and Prompt guidance are the same
+   * two dials, with the same keys and ranges, as YuE2's, so they cross between the two song engines as they are. */
   ace: {
     label: 'ACE-Step XL',
     kind: 'music',
     script: 'style',
-    keeps: ['lyrics', 'seed', 'singing'],
+    keeps: ['lyrics', 'seed', 'singing', 'weirdness', 'guidance'],
     gated: true,
   },
   scenema: {
@@ -202,6 +203,10 @@ const SHARED_KNOBS = [
   'background_sfx',
   'pace',
   'language',
+  /* Creative variation and Prompt guidance: one pair of dials on the YuE2 and ACE-Step XL cards (same keys, labels and
+   * ranges), so they cross between those two and are said to be left behind by every other engine. */
+  'weirdness',
+  'guidance',
 ];
 
 /**
@@ -316,10 +321,12 @@ function carryOver(project, to, helpers = {}) {
   if (oldOpts.abc && to !== 'yue2') {
     dropped.push('composition score');
   }
-  if (oldOpts.weirdness !== undefined && to !== 'yue2') {
+  /* Said for any engine without the dials. An ACE-Step XL project always saves them, so the usual 50 and 1 are not
+   * worth a sentence there (as with its Fast and Match my lyrics below); a YuE2 project says so as it always did. */
+  if (oldOpts.weirdness !== undefined && !dst.keeps.includes('weirdness') && !(from === 'ace' && oldOpts.weirdness === 50)) {
     dropped.push('weirdness');
   }
-  if (oldOpts.guidance !== undefined && to !== 'yue2') {
+  if (oldOpts.guidance !== undefined && !dst.keeps.includes('guidance') && !(from === 'ace' && oldOpts.guidance === 1)) {
     dropped.push('guidance');
   }
   /* ACE-Step XL's own choices (its Quality and Length) mean nothing to the engines it can go to. The

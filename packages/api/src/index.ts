@@ -188,6 +188,8 @@ export {
   aceModelChoice,
   aceInput,
   aceRequest,
+  aceLmTemperature,
+  aceGuidanceScale,
   aceEstimate,
   aceProjectOptions,
   aceProjectWhy,

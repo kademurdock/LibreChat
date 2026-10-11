@@ -49,7 +49,7 @@ const projects = [
   {
     id: 'ace-1', title: 'Rain Song', engine: 'ace', state: 'done', why: 'ACE-Step XL — a song made on the sleeping music GPU, best quality', costUSD: 0.02,
     script: DIRECTION, sourceText: 'a slow song about rain', mode: 'easy', updatedAt: '2026-10-10T12:00:00Z',
-    options: { quality: 'Best', length: '3:00', singing: 'Sung, with my lyrics', lyrics: LYRICS, seed: 5 },
+    options: { quality: 'Best', length: '3:00', singing: 'Sung, with my lyrics', lyrics: LYRICS, weirdness: 70, guidance: 2.5, seed: 5 },
     carryTo: [{ engine: 'lyria', label: 'Lyria' }, { engine: 'yue2', label: 'YuE2' }],
     takes: [{ id: 't1', url: ACE_MP3, masterUrl: ACE_WAV, seconds: 95, note: '' }],
   },
@@ -132,6 +132,16 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.equal(await page.locator('#set_seed').isVisible(), false, 'the seed waits under More settings');
     assert.equal(await page.locator('#moreSettingsGroup > summary').innerText(), 'More settings');
     assert.equal(await page.locator('#moreSettingsGroup #set_seed').count(), 1);
+    /* Creative variation and Prompt guidance: the same two sliders as the YuE2 card, also under More settings. */
+    assert.deepEqual(await page.locator('#moreSettingsGroup [data-key]').evaluateAll((els) => els.map((el) => el.dataset.key)), ['weirdness', 'guidance', 'seed'], 'both dials sit under More settings, before the seed');
+    for (const key of ['weirdness', 'guidance']) assert.equal(await page.locator('#settings #set_' + key).count(), 0, key + ' is not up front');
+    /* textContent, not innerText: the group is still collapsed here, and a collapsed group has no rendered text. */
+    assert.equal(await page.locator('label[for="set_weirdness"]').textContent(), 'Creative variation (weirdness)');
+    assert.equal(await page.locator('label[for="set_guidance"]').textContent(), 'Prompt guidance');
+    assert.equal(await page.locator('#set_weirdness_h').textContent(), '50 is normal. Lower is more predictable; higher is more surprising and can lose its way.');
+    assert.equal(await page.locator('#set_guidance_h').textContent(), 'Only for Quality Best; Fast ignores it. Higher follows your direction and lyrics more strictly but can sound less natural.');
+    assert.deepEqual(await page.locator('#set_weirdness').evaluate((el) => [el.type, el.min, el.max, el.step, el.value]), ['range', '0', '100', '1', '50']);
+    assert.deepEqual(await page.locator('#set_guidance').evaluate((el) => [el.type, el.min, el.max, el.step, el.value]), ['range', '1', '3', '0.1', '1']);
     assert.equal(await page.locator('#set_reference_voice_url').count(), 0, 'ACE-Step XL has no recording to cover');
     assert.equal(await page.locator('#btnLyrics').count(), 0);
     assert.deepEqual(await page.locator('#copyEngine option').allInnerTexts(), ['Lyria', 'YuE2'], 'Copy draft offers the other song engines');
@@ -145,18 +155,23 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.equal(render.engine, 'ace');
     assert.equal(render.script, DIRECTION);
     assert.equal(render.lyrics, LYRICS);
-    for (const field of ['gender', 'mood', 'voice_description', 'reference_voice_url', 'referenceExpected', 'audio_urls', 'quality', 'length', 'singing', 'seed', 'estimateOnly']) {
+    for (const field of ['gender', 'mood', 'voice_description', 'reference_voice_url', 'referenceExpected', 'audio_urls', 'quality', 'length', 'singing', 'weirdness', 'guidance', 'seed', 'estimateOnly']) {
       assert.equal(field in render, false, field + ' rode along with an untouched ACE render');
     }
     await page.locator('#set_quality').selectOption('Best');
     await page.locator('#set_length').selectOption('3:00');
     await page.locator('#moreSettingsGroup > summary').click();
     await page.locator('#set_seed').fill('5');
+    await page.locator('#set_weirdness').fill('70');
+    await page.locator('#set_guidance').fill('1.5');
+    assert.equal(await page.locator('#set_weirdness_value').innerText(), '70', 'the number beside the slider follows it');
+    assert.equal(await page.locator('#set_guidance_value').innerText(), '1.5');
     await page.locator('#btnRender').click();
     await page.waitForFunction((n) => document.getElementById('status').textContent.includes('Fixture recording ready') && n > 0, 1);
     await page.waitForFunction(() => !document.getElementById('btnRender').disabled);
     render = sentTo('/render').at(-1).body;
     assert.deepEqual([render.quality, render.length, render.seed], ['Best', '3:00', 5]);
+    assert.deepEqual([render.weirdness, render.guidance], [70, 1.5], 'the two dials go as numbers, under the keys the server reads');
     assert.equal(sentTo('/render').length, 2);
 
     /* ---- instrumental, and a sung song with no words ---- */
@@ -229,6 +244,10 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.equal(await page.locator('#set_singing').inputValue(), 'Sung, with my lyrics');
     assert.equal(await page.locator('#set_lyrics').inputValue(), LYRICS);
     assert.equal(await page.locator('#set_seed').inputValue(), '5');
+    assert.equal(await page.locator('#set_weirdness').inputValue(), '70', 'Creative variation is restored');
+    assert.equal(await page.locator('#set_guidance').inputValue(), '2.5', 'Prompt guidance is restored');
+    assert.equal(await page.locator('#set_weirdness_value').innerText(), '70');
+    assert.equal(await page.locator('#set_guidance_value').innerText(), '2.5');
     assert.equal(await page.locator('#script').inputValue(), DIRECTION);
     assert.equal(await page.locator('.clips li').count(), 0, 'no recording comes with an ACE project');
 
@@ -244,6 +263,9 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.equal(await page.locator('#set_lyrics').inputValue(), LYRICS);
     assert.equal(await page.locator('#script').inputValue(), DIRECTION);
     assert.match(await page.locator('#status').innerText(), /YuE2 has no quality choice, no length choice, so those were left behind\./);
+    assert.doesNotMatch(await page.locator('#status').innerText(), /weirdness|guidance/, 'the two dials are not among the things left behind');
+    assert.equal(await page.locator('#set_weirdness').inputValue(), '70', 'the dials came across to the YuE2 card');
+    assert.equal(await page.locator('#set_guidance').inputValue(), '2.5');
     assert.match(await page.locator('#status').innerText(), /Nothing was generated or saved/);
     await page.locator('#copyEngine').selectOption('ace');
     await page.locator('#btnCopyDraft').click();

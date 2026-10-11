@@ -38,7 +38,9 @@ export type Input = {
   /* Fit by tempo, sent only for a cover of a recording behind YUE_FIT_TEMPO (music/yue.ts). */
   fit_tempo?: boolean;
   /* ACE-Step XL fields (music/ace.ts): the quality as the worker names it, a tempo found in Music direction, and the
-   * Length choice as the guide words it so the project reopens on it. `duration` and `instrumental` are shared. */
+   * Length choice as the guide words it so the project reopens on it. `duration` and `instrumental` are shared, and so
+   * are `weirdness` and `guidance` above: the booth's two dials, which ACE-Step XL turns into the planner temperature
+   * and (for Best only) the guidance scale at request time, so the job keeps what she set, not the worker's numbers. */
   model?: 'xl-turbo' | 'xl-sft';
   bpm?: number;
   length_choice?: string;
