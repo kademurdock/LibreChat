@@ -209,10 +209,10 @@ router.use(createLyricsRouter(musicReferenceHooks));
  * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
  * still shows it live is refused here, on the server, before the YuE2 router queues anything,
  * with words that say what to change. An unreadable pack answer counts as outside the pack.
- * Oct 11 2026: the ACE-Step XL Style choice (Soul, taught from the same kind of records, and Suno) is the same pack feature,
- * behind ACE_STYLES_ENABLED: one gate for the whole choice, whatever style is named. Its card is greyed out by
- * withAceGuide(..., styleAllowed(user)) and a direct request is refused here, with the very same sentence, before the ACE
- * router (mounted further down) sees it. */
+ * Oct 11 2026: the ACE-Step XL Style choice (Soul, taught from the same kind of records, and Suno, taught from songs made
+ * with Suno) is the same pack feature, behind ACE_STYLES_ENABLED: one gate for the whole choice, whatever style is named.
+ * Its card is greyed out by withAceGuide(..., styleAllowed(user)) and a direct request is refused here, with the very same
+ * sentence, before the ACE router (mounted further down) sees it. */
 /** Any Style but None, for YuE2: yueInput's own reading of `band`. For ACE-Step XL it is the same reading, but only while
  * ACE_STYLES_ENABLED is on: with styles off ACE ignores `band` as it always did, so asking for one is not asking for a style. */
 function asksForStyle(body) {
@@ -4052,5 +4052,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, aceStyleChoice, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

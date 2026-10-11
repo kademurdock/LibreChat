@@ -219,12 +219,6 @@ const SHARED_KNOBS = [
  * listed here to stay out if a hand-made draft carries them. */
 const STYLE_KEYS = ['band', 'style_strength', 'lora_key', 'lora_scale'];
 
-/** The word a style name shows ("Soul" for soul), for a sentence about it; empty for anything that is not a plain name. */
-function styleName(band) {
-  const name = typeof band === 'string' ? band.trim() : '';
-  return /^[a-z][a-z0-9_-]{0,23}$/i.test(name) ? `${name.charAt(0).toUpperCase()}${name.slice(1)}` : '';
-}
-
 /**
  * Work out the new draft. Pure: takes a project-shaped object, returns what
  * the new one should hold plus plain sentences about the move.
@@ -339,20 +333,23 @@ function carryOver(project, to, helpers = {}) {
   const dropped = [];
   /* Trained styles are adapters taught to one engine: YuE2's Soul and ACE-Step XL's Soul are different files for different
    * models, so a Style never crosses between them (STYLE_KEYS are stripped from the new draft below, by key, not by comparing
-   * names) and a carry says which one stayed behind. ACE-Step XL's Style is only real for a person who has it
+   * names) and a carry says that it stayed behind, never which style it was: the sentence is the same for every style, so it
+   * cannot go stale when a menu gains one. ACE-Step XL's Style is only real for a person who has it
    * (helpers.aceStyles: ACE_STYLES_ENABLED and the Family feature pack). Without that, a draft that names one is carried
    * exactly as it always was, and the sentence is the one it always was. With it, a Style at strength 0 was a plain take, so
    * there is nothing to say; and "choose Style on the card" is said only when the card it points to has a Style choice for
    * this person (helpers.yueStyles for YuE2). */
   const aceStyled = from === 'ace' && helpers.aceStyles === true;
   const styled = !!oldOpts.band && oldOpts.band !== 'none' && !(aceStyled && oldOpts.style_strength === 0);
-  const named = styleName(oldOpts.band);
-  const leftBehind = `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} ${named ? `${named} ` : ''}style was left behind. Choose Style on the ${dst.label} card to use one.`;
   if (styled && from === 'yue2' && to === 'ace' && helpers.aceStyles === true) {
-    notes.push(leftBehind);
+    notes.push(
+      `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} style was left behind. Choose Style on the ${dst.label} card to use one.`,
+    );
   } else if (styled && aceStyled && to === 'yue2') {
     if (helpers.yueStyles === true) {
-      notes.push(leftBehind);
+      notes.push(
+        `${dst.label} has its own Style choice, taught separately from ${src.label}'s, so the ${src.label} style was left behind. Choose Style on the ${dst.label} card to use one.`,
+      );
     } else {
       dropped.push('trained style, which only ACE-Step XL has');
     }
@@ -465,5 +462,4 @@ module.exports = {
   hasSectionTags,
   SHARED_KNOBS,
   STYLE_KEYS,
-  styleName,
 };

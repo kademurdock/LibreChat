@@ -6,7 +6,7 @@
  * styled request for each style (forced Best, lora_key, lora_scale, English), that Soul's request is what it was before Suno
  * was added, every refusal, the project round trip (and a project saved before Suno), the quote, the library line, the asset
  * facts and the take note, the card for a pack member and for everyone else, and the carry between YuE2 and ACE-Step XL,
- * which never moves a style either way, by key and never by name. The routes and the router are in
+ * which never moves a style either way (by key, never by name) and says only that one was left behind, never which. The routes and the router are in
  * kadeSoundBoothAceStyle.selftest.js. The lyrics are invented placeholders. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -111,8 +111,9 @@ test('ACE_STYLES_ENABLED is off unless it is exactly 1', () => {
 });
 
 test('the hints are short, plain, true, and name no person, folder or trigger word', () => {
-  assert.equal(ace.aceStyleHint, 'A singing style taught to ACE-Step XL. Soul learned from real soul and R&B records; Suno from songs made with Suno. Uses the Best quality. None is plain ACE-Step XL.');
+  assert.equal(ace.aceStyleHint, 'A singing style taught to ACE-Step XL: Soul from soul and R&B records, Suno from songs made with Suno. Uses the Best quality. None is plain ACE-Step XL.');
   assert.ok(ace.aceStyleHint.split(/\s+/).length <= 30, 'about one sentence, as the booth asks');
+  assert.ok(ace.aceStyleHint.length < 165, 'shorter than the first Suno wording (165 characters)');
   assert.ok(ace.aceStyleHint.endsWith(' Uses the Best quality. None is plain ACE-Step XL.'), 'the part that was always there is still there');
   /* The hint says every style the registry has, so a style added to the registry cannot be left out of what the card tells people. */
   for (const name of Object.keys(ace.aceStyles)) assert.match(ace.aceStyleHint, new RegExp(`\\b${LABEL[name] || name}\\b`), `${name} is in the hint`);
@@ -746,7 +747,7 @@ test('carry, YuE2 to ACE-Step XL: the words and the seed come across, the style 
   assert.equal(out.draft.options.weirdness, 60);
   assert.equal(out.draft.options.guidance, 2);
   assert.equal(out.draft.engine, 'ace');
-  assert.ok(out.notes.includes('ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 Soul style was left behind. Choose Style on the ACE-Step XL card to use one.'), out.notes.join(' | '));
+  assert.ok(out.notes.includes('ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.'), out.notes.join(' | '));
   assert.ok(out.notes.some((n) => /took 3|3 takes you asked for became one/.test(n)), 'the take count is still said');
   assert.doesNotMatch(out.notes.join(' '), /no trained style, which only YuE2 has/, 'ACE-Step XL has styles now: it does not claim otherwise');
 });
@@ -760,7 +761,7 @@ test('carry, YuE2 to ACE-Step XL with styles off: the sentence it always was', (
 });
 
 test('carry, ACE-Step XL to YuE2: the style name does not come across, and it says so where YuE2 has a Style choice to point to', () => {
-  const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL Soul style was left behind. Choose Style on the YuE2 card to use one.';
+  const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.';
   const out = carry.carryOver(aceSoul(), 'yue2', { ace: true, aceStyles: true, yueStyles: true });
   assert.equal(out.ok, true);
   for (const key of STYLE_KEYS) assert.equal(key in out.draft.options, false, `${key} stays behind`);
@@ -864,24 +865,34 @@ test('carry: no style crosses between YuE2 and ACE-Step XL in either direction, 
     const toYue = carry.carryOver(draftOf('ace', { band: name }), 'yue2', { ace: true, aceStyles: true, yueStyles: true });
     assert.equal('band' in toAce.draft.options, false, `YuE2 ${name} does not become ACE-Step XL ${name}`);
     assert.equal('band' in toYue.draft.options, false, `ACE-Step XL ${name} does not become YuE2 ${name}`);
-    const label = `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
-    assert.ok(toAce.notes.includes(`ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 ${label} style was left behind. Choose Style on the ACE-Step XL card to use one.`), `${name}: ${toAce.notes.join(' | ')}`);
-    assert.ok(toYue.notes.includes(`YuE2 has its own Style choice, taught separately from ACE-Step XL's, so the ACE-Step XL ${label} style was left behind. Choose Style on the YuE2 card to use one.`), `${name}: ${toYue.notes.join(' | ')}`);
+    assert.ok(toAce.notes.includes(`ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.`), `${name}: ${toAce.notes.join(' | ')}`);
+    assert.ok(toYue.notes.includes(`YuE2 has its own Style choice, taught separately from ACE-Step XL's, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.`), `${name}: ${toYue.notes.join(' | ')}`);
   }
 });
 
-test('carry: the left-behind sentence names the style that stayed behind, and only a plain name is ever repeated', () => {
+test('carry: the left-behind sentence says a style stayed behind and never which, so it is the same for every style', () => {
+  /* The sentence is one fixed line, whatever style the draft named. A name in it would go stale the day a menu gains a style,
+   * and would have to be kept in step with every other branch that adds one. The words are also what the YuE2 Style suite pins. */
   const sentenceFor = (from, band, helpers) => carry.carryOver(deepFreeze({ _id: 'p', engine: from, title: 't', script: 'Slow soul', options: { lyrics: LYRICS, band } }), from === 'ace' ? 'yue2' : 'ace', helpers).notes.find((n) => /left behind/.test(n));
   const both = { ace: true, aceStyles: true, yueStyles: true };
-  assert.equal(sentenceFor('ace', 'suno', both), 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL Suno style was left behind. Choose Style on the YuE2 card to use one.');
-  assert.equal(sentenceFor('ace', 'soul', both), 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL Soul style was left behind. Choose Style on the YuE2 card to use one.');
-  assert.equal(sentenceFor('yue2', 'soul', both), 'ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 Soul style was left behind. Choose Style on the ACE-Step XL card to use one.');
-  assert.equal(sentenceFor('yue2', 'kids', both), 'ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 Kids style was left behind. Choose Style on the ACE-Step XL card to use one.');
-  /* Something that is not a plain name is not echoed into a sentence; the sentence is the one it was. */
-  for (const band of ['<b>x</b>', 'a b', 'x'.repeat(40), '1soul', 5, ['soul'], { soul: 1 }])
-    assert.equal(sentenceFor('yue2', band, both), 'ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.', JSON.stringify(band));
-  assert.deepEqual(['soul', 'suno', 'Kids', 'a_b-c', ' soul '].map(carry.styleName), ['Soul', 'Suno', 'Kids', 'A_b-c', 'Soul']);
-  assert.deepEqual(['', '1x', 'a b', 5, null, undefined, 'x'.repeat(25)].map(carry.styleName), ['', '', '', '', '', '', '']);
+  const TO_YUE = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.';
+  const TO_ACE = 'ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.';
+  for (const name of [...new Set([...Object.keys(ace.aceStyles), ...Object.keys(yue.yueStyles), 'soul', 'suno', 'kids'])]) {
+    assert.equal(sentenceFor('ace', name, both), TO_YUE, `ace ${name}`);
+    assert.equal(sentenceFor('yue2', name, both), TO_ACE, `yue2 ${name}`);
+  }
+  /* Something that is not a plain name is not echoed into a sentence either. */
+  for (const band of ['<b>x</b>', 'a b', 'x'.repeat(40), '1soul', 5, ['soul'], { soul: 1 }]) {
+    assert.equal(sentenceFor('yue2', band, both), TO_ACE, JSON.stringify(band));
+  }
+  /* No note a carry makes between the two engines holds a style name, for any style on either menu. */
+  for (const name of [...Object.keys(ace.aceStyles), ...Object.keys(yue.yueStyles)]) {
+    for (const [from, to] of [['ace', 'yue2'], ['yue2', 'ace']]) for (const helpers of [both, { ace: true, aceStyles: true }, { ace: true }]) {
+      const out = carry.carryOver(deepFreeze({ _id: 'p', engine: from, title: 't', script: 'Slow soul', options: { lyrics: LYRICS, band: name, style_strength: 0.5, seed: 4 } }), to, helpers);
+      assert.doesNotMatch(out.notes.join(' '), /\b(soul|suno|kids)\b/i, `${from} -> ${to} ${name} ${JSON.stringify(helpers)}: ${out.notes.join(' | ')}`);
+    }
+  }
+  assert.equal('styleName' in carry, false, 'the carry has no helper that puts a style name in a sentence');
   /* No style on the draft, no sentence; the sentence about a pointer to a card appears only where the card has a Style choice. */
   const none = carry.carryOver(deepFreeze({ _id: 'p', engine: 'yue2', title: 't', script: 's', options: { lyrics: LYRICS } }), 'ace', both);
   assert.doesNotMatch(none.notes.join(' '), /[Ss]tyle/);

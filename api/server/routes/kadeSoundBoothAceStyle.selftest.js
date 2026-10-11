@@ -9,7 +9,7 @@
  * the pack gets YuE2's refusal sentence and starts nothing (not even a quote), the App Review seat never gets ACE at all, a
  * styled request becomes exactly one Best RunPod job carrying that style's adapter, the project and the asset remember it (and
  * a project saved before Suno still opens), the take note and the library line are honest about a style the worker did or did
- * not confirm, and the carry between YuE2 and ACE-Step XL leaves the style behind, by name in the sentence and never by name in
+ * not confirm, and the carry between YuE2 and ACE-Step XL leaves the style behind, saying that one stayed and never which, and never by name in
  * the logic. The lyrics are invented placeholders. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -49,6 +49,14 @@ const sha = (value) => crypto.createHash('sha256').update(JSON.stringify(value))
 const LATER = (n) => `70000000000000000000${String(n).padStart(4, '0')}`;
 const EARLY = '6a5fc5fa351af41332734161';
 const REVIEW_SEAT = '6a6125d73939d20b95251078';
+
+/* The pack's own answer, except for an account a test puts in `packDown`: for that one the lookup throws, as an unreadable pack
+ * would. Everything else is the real familyFeatures. */
+const packDown = new Set();
+function packFeatures(user) {
+  if (user && packDown.has(String(user.id))) throw new Error('pack lookup failed');
+  return pack.familyFeatures(user);
+}
 
 function setEnv(vars) {
   for (const [key, value] of Object.entries(vars)) {
@@ -101,7 +109,7 @@ function loadBooth({ assetRows, logs }) {
         effectsConfigured: () => false,
         effectsVariant: () => ({ name: 'Stable Audio', model: 'stable', price: 0 }),
         notifyMusic: async () => ({ accepted: 0 }),
-        familyFeatures: (user) => pack.familyFeatures(user),
+        familyFeatures: (user) => packFeatures(user),
         FAMILY_PACK_STYLES_REFUSAL: pack.FAMILY_PACK_STYLES_REFUSAL,
         audioAssetDescription: (asset) => asset.description || '',
         ...ace,
@@ -311,7 +319,7 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
       assert.deepEqual(card, who.member ? open : shut, kind);
       assert.deepEqual(card.settings.map((s) => s.key), ['singing', 'lyrics', 'quality', 'band', 'style_strength', 'length', 'weirdness', 'guidance', 'seed'], `${kind}: the choice is there either way`);
       assert.deepEqual(setting(card, 'band').options, ['none', 'soul', 'suno']);
-      assert.match(setting(card, 'band').hint, /^A singing style taught to ACE-Step XL\. Soul learned from real soul and R&B records; Suno from songs made with Suno\. Uses the Best quality\. None is plain ACE-Step XL\./);
+      assert.match(setting(card, 'band').hint, /^A singing style taught to ACE-Step XL: Soul from soul and R&B records, Suno from songs made with Suno\. Uses the Best quality\. None is plain ACE-Step XL\./);
       assert.equal(setting(card, 'band').default, 'none');
       for (const key of ['band', 'style_strength']) assert.equal(setting(card, key).locked, who.member ? undefined : 'Part of the Family feature pack', `${kind} ${key}`);
       if (!who.member) assert.match(setting(card, 'band').hint, /Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL\.$/);
@@ -395,6 +403,54 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(family.status, 200);
     assert.equal(family.data.yueSaw.band, 'soul', 'the pack still passes on to YuE2');
     await unchanged(before, 'YuE2 stands in here, so ACE started nothing');
+  });
+
+  await t.test('the gate fails closed: when the pack lookup itself fails, nobody gets a style, not even an admin, and nothing starts', async () => {
+    /* styleAllowed answers false when familyFeatures throws (the comment on it: an unreadable pack answer counts as outside the
+     * pack). The stand-in below throws for one account only, so the same route, same flags, same body is the control. */
+    const down = kinds.admin();
+    const up = kinds.admin();
+    const downUser = { id: down.user, role: 'ADMIN' };
+    const upUser = { id: up.user, role: 'ADMIN' };
+    packDown.add(down.user);
+    try {
+      assert.throws(() => packFeatures(downUser), /pack lookup failed/, 'the stand-in does throw for that account');
+      assert.equal(packFeatures(upUser).trainedStyles, true, 'and answers as the pack itself does for the other');
+      assert.equal(internals.styleAllowed(downUser), false, 'a lookup that throws is outside the pack');
+      assert.equal(internals.styleAllowed(upUser), true, 'the same call for an admin whose lookup works says yes');
+      assert.equal(internals.aceStyleChoice(downUser), false);
+      assert.equal(internals.aceStyleChoice(upUser), true);
+      /* The card that choice draws: greyed out, never hidden, exactly the shut card. */
+      const shut = ace.aceGuide(process.env, internals.aceStyleChoice(downUser));
+      assert.deepEqual(shut, ace.aceGuide(process.env, false));
+      assert.deepEqual(ace.aceGuide(process.env, internals.aceStyleChoice(upUser)), ace.aceGuide(process.env, true));
+      for (const key of ['band', 'style_strength']) assert.equal(setting(shut, key).locked, 'Part of the Family feature pack', key);
+      assert.match(setting(shut, 'band').hint, /Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL\.$/);
+      /* The route: every way of asking for a style gets the pack refusal and starts nothing. */
+      const logged = logs.length;
+      for (const style of STYLES) {
+        const before = await started();
+        for (const body of [{ ...song, band: style }, { ...song, band: style, estimateOnly: true }, { ...song, band: style, style_strength: 0 }, { ...song, band: 'something-else' }, { engine: 'yue2', script: 'Slow soul', lyrics: 'la la', band: style }]) {
+          const res = await call('/render', { body, who: down });
+          assert.equal(res.status, 403, `${style} ${JSON.stringify(body.engine)}: ${res.text}`);
+          assert.deepEqual(res.data, REFUSED, style);
+        }
+        await unchanged(before, `${style}: no RunPod call, no project row, no job`);
+      }
+      assert.ok(logs.slice(logged).some((line) => /trained style REFUSED/.test(line)), 'the refusal is logged');
+      /* Control: the account whose lookup works is let through with the very same bodies. */
+      const open = await call('/render', { body: { ...song, band: 'suno' }, who: up });
+      assert.equal(open.status, 200, open.text);
+      assert.equal(runpod.runs.at(-1).body.input.lora_key, KEY.suno);
+      await settle(open, up);
+      /* A plain song asks for no style, so the lookup is not asked and the failure does not touch it. */
+      const plain = await call('/render', { body: song, who: down });
+      assert.equal(plain.status, 200, plain.text);
+      assert.equal('lora_key' in runpod.runs.at(-1).body.input, false);
+      await settle(plain, down);
+    } finally {
+      packDown.delete(down.user);
+    }
   });
 
   let styled;
@@ -644,10 +700,10 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toAce.data.project.options, false, `YuE2 to ACE: ${key}`);
     assert.equal(toAce.data.project.options.lyrics, LYRICS);
     assert.equal(toAce.data.project.options.seed, 4);
-    assert.ok(toAce.data.notes.includes('ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 Soul style was left behind. Choose Style on the ACE-Step XL card to use one.'), toAce.data.notes.join(' | '));
+    assert.ok(toAce.data.notes.includes('ACE-Step XL has its own Style choice, taught separately from YuE2\'s, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.'), toAce.data.notes.join(' | '));
     /* YuE2's own Style choice is behind YUE_STYLES_ENABLED. Without it there is no choice to "choose Style" on, and the carry says
      * only that the style was left behind. */
-    const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL Soul style was left behind. Choose Style on the YuE2 card to use one.';
+    const OWN = 'YuE2 has its own Style choice, taught separately from ACE-Step XL\'s, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.';
     const NO_YUE_STYLE = 'YuE2 has no trained style, which only ACE-Step XL has, so that was left behind.';
     const toYue = await call(`/projects/${aceProject._id}/carry`, { body: { engine: 'yue2' }, who });
     assert.equal(toYue.status, 200, toYue.text);
@@ -700,7 +756,7 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     const draft = await call('/carry', { body: { engine: 'ace', draft: { engine: 'yue2', title: 'Draft', script: 'Slow soul', options: { lyrics: LYRICS, band: 'soul', style_strength: 1 } } }, who });
     assert.equal(draft.status, 200);
     assert.equal('band' in draft.data.draft.options, false);
-    assert.ok(draft.data.notes.some((n) => /YuE2 Soul style was left behind/.test(n)));
+    assert.ok(draft.data.notes.some((n) => /YuE2 style was left behind/.test(n)));
     /* Someone outside the pack (a style draft from before the pack was taken away, say) has no Style choice on the ACE-Step XL card,
      * so the carry does not point at one: it says what it always said. */
     const outside = await call('/carry', { body: { engine: 'ace', draft: { engine: 'yue2', title: 'Draft', script: 'Slow soul', options: { lyrics: LYRICS, band: 'soul', style_strength: 1 } } }, who: kinds.outsider() });
@@ -733,10 +789,11 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
       for (const style of STYLES) {
         const aceProject = await Project.create({ user: who.user, engine: 'ace', title: `ACE ${style}`, script: 'Slow soul, Rhodes', options: { ...mine, band: style, style_strength: 0.4 }, state: 'done' });
         const yueProject = await Project.create({ user: who.user, engine: 'yue2', title: `YuE2 ${style}`, script: 'Slow soul, Rhodes, female lead vocal', options: { lyrics: LYRICS, band: style, style_strength: 0.4, seed: 4, weirdness: 60, guidance: 2, count: 1 }, state: 'done' });
-        /* ACE-Step XL to YuE2: the sentence names the ACE-Step XL style, the new YuE2 draft has no Style, and a render from it asks YuE2 for none. */
+        /* ACE-Step XL to YuE2: the sentence says the ACE-Step XL style was left behind (no style's name is in it), the new YuE2 draft has no Style, and a render from it asks YuE2 for none. */
         const toYue = await call(`/projects/${aceProject._id}/carry`, { body: { engine: 'yue2' }, who });
         assert.equal(toYue.status, 200, toYue.text);
-        assert.ok(toYue.data.notes.includes(`YuE2 has its own Style choice, taught separately from ACE-Step XL's, so the ACE-Step XL ${LABEL[style]} style was left behind. Choose Style on the YuE2 card to use one.`), `${style}: ${toYue.data.notes.join(' | ')}`);
+        assert.ok(toYue.data.notes.includes(`YuE2 has its own Style choice, taught separately from ACE-Step XL's, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.`), `${style}: ${toYue.data.notes.join(' | ')}`);
+        assert.doesNotMatch(toYue.data.notes.join(' '), /\b(soul|suno|kids)\b/i, `${style}: no style name in a carry note`);
         for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toYue.data.project.options, false, `${style} ACE to YuE2: ${key}`);
         const yueRender = await call('/render', { body: { engine: 'yue2', title: 'Carried', script: toYue.data.project.script, ...toYue.data.project.options }, who });
         assert.equal(yueRender.status, 200, yueRender.text);
@@ -744,7 +801,8 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
         /* YuE2 to ACE-Step XL, the other way: an ACE job built from the carried draft is a plain one. */
         const toAce = await call(`/projects/${yueProject._id}/carry`, { body: { engine: 'ace' }, who });
         assert.equal(toAce.status, 200, toAce.text);
-        assert.ok(toAce.data.notes.includes(`ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 ${LABEL[style]} style was left behind. Choose Style on the ACE-Step XL card to use one.`), `${style}: ${toAce.data.notes.join(' | ')}`);
+        assert.ok(toAce.data.notes.includes(`ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.`), `${style}: ${toAce.data.notes.join(' | ')}`);
+        assert.doesNotMatch(toAce.data.notes.join(' '), /\b(soul|suno|kids)\b/i, `${style}: no style name in a carry note`);
         for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toAce.data.project.options, false, `${style} YuE2 to ACE: ${key}`);
         const before = runpod.runs.length;
         const aceRender = await call('/render', { body: { engine: 'ace', title: 'Carried', script: toAce.data.project.script, ...toAce.data.project.options }, who });

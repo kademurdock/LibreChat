@@ -187,8 +187,8 @@ export type AceStyle = { key: string; scale: number };
  * the asset facts all read the row's name and nothing else.
  * Soul (Oct 11 2026): taught from real soul and R&B records (PEFT rank 64, alpha 128). Trained on commercial records, so the
  * whole Style choice is part of the Family feature pack (aceStyleAccess), as the YuE2 Style choice is.
- * Suno (Oct 11 2026): taught from 375 songs made with Suno. It stays behind the same pack as Soul: one gate for the whole Style
- * choice, not one per style. Smoke-tested on the live worker through the same fields as Soul, so the worker needs no change.
+ * Suno (Oct 11 2026): taught from songs made with Suno, not from commercial records. It stays behind the same pack as Soul: one
+ * gate for the whole Style choice, not one per style. It goes through the same fields as Soul, so the worker needs no change.
  * These styles are not YuE2's: a different model, a different adapter, even where the two menus use the same name (both have a
  * soul, and they are different files), which is why a style never crosses between the engines (see the carry module, which
  * drops the Style fields by key and never compares names).
@@ -205,7 +205,7 @@ export function aceStylesEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
 /** The Style choice's hint on the card (the `band` setting): what each style was taught from, in registry order. It names no
  * person and no folder, and a test holds it to saying every style the registry has. */
 export const aceStyleHint: string =
-  'A singing style taught to ACE-Step XL. Soul learned from real soul and R&B records; Suno from songs made with Suno. Uses the Best quality. None is plain ACE-Step XL.';
+  'A singing style taught to ACE-Step XL: Soul from soul and R&B records, Suno from songs made with Suno. Uses the Best quality. None is plain ACE-Step XL.';
 /** Added to the Style hints for an account outside the Family feature pack, so a client that does not read `locked` yet still says why the choice does nothing there. */
 export const aceStyleLockedSentence: string =
   ' Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL.';
