@@ -46,6 +46,14 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
  * English, <era> <sub-genre>, <pace>, <female|male> lead vocal, ...", one per song, so the
  * lead names the genre and leaves the singer to Music direction. Trained on commercial
  * records, so the whole Style choice is part of the Family feature pack (yueStyleAccess).
+ * Suno (Oct 2026): the composer LoRA taught from a collection of songs made with Suno (trigger
+ * kdsuno, step 600: the checkpoint that was listened to and kept, which the training run's own
+ * screen also ranked best).
+ * Its training captions were "kdsuno, in the style of kdsuno. English, <genre>, <pace>,
+ * <female|male|both> lead vocal, <sound words>, <N> BPM.", one per song (female lead 220, male
+ * lead 89, both 25, no singer named 36), so the lead stops at the language and leaves the genre
+ * and the singer to Music direction. The songs are AI-made, but the style is still part of the
+ * Family feature pack with the rest of the Style choice. Removing its row is the rollback.
  * Nothing here names a person or a private folder: this menu is read by everyone who uses the
  * booth. */
 export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
@@ -58,6 +66,11 @@ export const yueStyles: Record<string, { key: string; scale: number; lead: strin
     key: 'yue2-loras/soul-real-step1000.pt',
     scale: 1,
     lead: 'kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul.',
+  },
+  suno: {
+    key: 'yue2-loras/suno-step600.pt',
+    scale: 1,
+    lead: 'kdsuno, in the style of kdsuno. English.',
   },
 };
 /** Older saved songs stored the worker's training trigger in the editable music direction. */
@@ -78,10 +91,12 @@ export function yueStylesEnabled(): boolean {
   return process.env.YUE_STYLES_ENABLED === '1';
 }
 
-/** The Style choice's hint in the booth guide (the `band` setting). Both styles were taught from
- * real recordings; it names no person and no folder. */
+/** The Style choice's hint in the booth guide (the `band` setting). Kids and Soul were taught from
+ * real recordings and Suno from songs made with Suno, so the first sentence says only
+ * "recordings"; it names no person and no folder. Each style gets its own sentence, and the
+ * voice sentence names exactly the styles whose training captions named a singer. */
 export const yueStyleHint: string =
-  'A singing style taught to YuE2 from real recordings. Soul learned from soul and R&B records; write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir. None is plain YuE2. Works for new songs and covers.';
+  'A singing style taught to YuE2 from recordings. Soul learned from soul and R&B records. Suno learned from songs made with Suno. For Soul or Suno, write female lead vocal or male lead vocal in Music direction to choose the voice. Kids sings with a children’s choir. None is plain YuE2. Works for new songs and covers.';
 /** Added to the Style hint for an account outside the Family feature pack, so a client that
  * does not read `locked` yet still says why the choice does nothing there. */
 export const yueStyleLockedSentence: string =

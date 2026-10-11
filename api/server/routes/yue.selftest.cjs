@@ -209,6 +209,16 @@ async function covers(post, base, sentInputs, provider) {
         assert.equal(styled.lora_key, 'yue2-loras/soul-real-step1000.pt'); assert.equal(styled.cot, 'full'); assert.equal(styled.keep_harmony, true);
         assert.equal(styled.style, 'kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul. Lullaby');
         assert.equal(yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'kids' }, ON).cot, 'off');
+        // Suno (Oct 2026) is a third row of the same registry: the same refusal, the same cot, the cover recipe untouched, its own file.
+        for (const band of Object.keys(yue_1.yueStyles)) {
+            assert.throws(() => yueInput({ script: 'Lullaby', lyrics: '', singing: INSTRUMENTAL, band }, ON), { message: 'Styles are for singing, so an instrumental cannot use one. Set Style to None, or choose Sung under Singing or instrumental.' });
+            assert.equal(yueInput({ script: 'Lullaby', lyrics: 'Words', band }, ON).cot, 'off');
+            const cover = yueInput({ script: 'Lullaby', lyrics: 'Words', band, reference_voice_url: recording }, ON);
+            assert.equal(cover.cot, 'full'); assert.equal(cover.keep_harmony, true); assert.equal(cover.lora_key, yue_1.yueStyles[band].key);
+        }
+        const suno = yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'suno', reference_voice_url: recording }, ON);
+        assert.equal(suno.lora_key, 'yue2-loras/suno-step600.pt'); assert.equal(suno.lora_scale, 1);
+        assert.equal(suno.style, 'kdsuno, in the style of kdsuno. English. Lullaby');
     } finally {
         if (before === undefined) delete process.env.YUE_STYLES_ENABLED; else process.env.YUE_STYLES_ENABLED = before;
     }
