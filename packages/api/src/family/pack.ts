@@ -34,6 +34,11 @@ import type { LibraryAccount } from '../library/access';
  * its Style choice is greyed out for everyone outside the pack and refused by
  * the server (FAMILY_PACK_STYLES_REFUSAL). Booth words name no person, so that
  * refusal does not say who to ask.
+ * A style taught from songs made with Suno (Oct 2026) was taught from AI-made
+ * songs, not records, and sits behind the same pack for a different reason:
+ * Suno's terms are read as restricting use of its output to build competing
+ * models, so it is a private style tool for the family. That gate must stay:
+ * one pack answer covers every style, and no style is opened to everyone.
  * -------------------------------------------------------------------------- */
 
 /** One person's pack features. True means usable now; false means shown greyed out. */
