@@ -199,6 +199,24 @@ test("a pasted song's answer is said as the paste's, not blamed on the writer", 
   assert.equal(l.result, 'pop-punk');
 });
 
+test('an incomplete generated song keeps its lyrics and announces its problem once', () => {
+  const problem = 'This generated draft is incomplete: it has no chorus.';
+  for (const engine of ['lyria', 'yue2', 'ace']) {
+    for (const note of [undefined, problem, 'A partial draft was returned.']) {
+      const ctx = draftSorter('');
+      const out = ctx.sortDraft(engine, { problem, note }, DRAFT);
+      assert.equal(out.result, DIRECTION);
+      assert.equal(ctx.state.values.lyrics, '[Verse 1]\nthe words');
+      assert.equal(ctx.writingLyrics, '', 'Undo keeps the original empty lyrics field');
+      assert.equal(
+        out.lead.split(problem).length - 1,
+        1,
+        'the warning is present without duplicate announcements',
+      );
+    }
+  }
+});
+
 test('a whole song pasted into Music direction or the lyrics box is caught on the page', () => {
   const fn = pageFunction('sortPastedSong');
   assert.match(fn, /placeSongPaste\(pasted,\{field:field/);

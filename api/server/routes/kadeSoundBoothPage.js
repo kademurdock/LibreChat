@@ -765,7 +765,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         }
       }
       if(data.note)lead+=data.note+' ';
-      if(pastedDraft&&data.problem)lead+='One thing to fix first: '+data.problem+' ';
+      if(data.problem&&String(data.note||'').indexOf(data.problem)<0)lead+='One thing to fix first: '+data.problem+' ';
       return {result:result, lead:lead};
     }
     document.getElementById('btnUndoWriting').onclick=function(){
@@ -871,7 +871,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         changeWriting(sorted.result);document.getElementById('readback').textContent=r.data.readback||'';
         var titleLead=takeDeskTitle(r.data,originalTitle,titleRevision,titleEdited);
         var voiceLead=takeDeskVoice(r.data,true);
-        say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+'Draft ready in the editor. You can change it or undo. No audio has been generated.');
+        var draftStatus=r.data.problem?'Draft saved for review':'Draft ready';
+        say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+draftStatus+' in the editor. You can change it or undo. No audio has been generated.',!!r.data.problem);
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;showWritingThink();document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };

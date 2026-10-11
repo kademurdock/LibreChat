@@ -266,6 +266,7 @@ export {
 
 export {
   musicWritingPrompt,
+  musicLyricEditorSystem,
   musicWritingSettings,
   boothThinkMode,
   musicWritingBackground,
@@ -273,6 +274,8 @@ export {
   lyricRepairRequest,
   mergeRepairedLyrics,
   lyricShapeIssue,
+  lyricStructureIssue,
+  briefIsInstrumental,
   lyricThinSections,
   lyricBackingIssue,
   lyricRhymeReport,

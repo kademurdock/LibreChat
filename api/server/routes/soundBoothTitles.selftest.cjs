@@ -45,7 +45,15 @@ const server = http.createServer((req, res) => {
       released = false; const before = polls; await page.locator('#btnDraft').click();
       while (polls === before) await new Promise(resolve => setTimeout(resolve, 10));
       if (during !== undefined) for (const title of Array.isArray(during) ? during : [during]) await page.locator('#trackTitle').fill(title);
-      released = true; await page.locator('#status').filter({ hasText: 'Draft ready in the editor' }).waitFor();
+      released = true;
+      await page
+        .locator('#status')
+        .filter({
+          hasText: result.problem
+            ? 'Draft saved for review in the editor'
+            : 'Draft ready in the editor',
+        })
+        .waitFor();
     }
     await open();
     for (const mode of ['Low', 'Medium', 'High']) await page.getByRole('button', { name: 'Writing thought: ' + (mode === 'Low' ? 'Auto' : mode === 'Medium' ? 'Low' : 'Medium'), exact: true }).click();
@@ -64,6 +72,38 @@ const server = http.createServer((req, res) => {
     await draft('My title', ''); assert.equal(await page.locator('#trackTitle').inputValue(), '', 'a manual title cleared while waiting is not silently restored');
     await draft(''); await page.locator('#btnUndoWriting').click(); assert.equal(await page.locator('#trackTitle').inputValue(), '');
     await draft(''); await page.locator('#trackTitle').fill('Edited after completion'); await page.locator('#btnUndoWriting').click(); assert.equal(await page.locator('#trackTitle').inputValue(), 'Edited after completion');
+    result.problem = 'This generated draft is incomplete: it has no chorus.';
+    result.note = result.problem;
+    if ((await page.locator('#settingsDrawer').getAttribute('open')) === null) {
+      await page.locator('#settingsDrawer > summary').click();
+    }
+    await page.locator('#set_lyrics').fill('');
+    const beforePartial = sent.length;
+    await draft('');
+    const partialStatus = await page.locator('#status').textContent();
+    assert.match(partialStatus, /Draft saved for review in the editor/);
+    assert.doesNotMatch(partialStatus, /Draft ready/);
+    assert.equal(partialStatus.split(result.problem).length - 1, 1);
+    assert.equal(await page.locator('#status').getAttribute('role'), 'status');
+    assert.equal(await page.locator('#status').getAttribute('aria-live'), 'polite');
+    assert.equal(
+      await page.locator('#set_lyrics').inputValue(),
+      '[Verse 1]\nA red kite clears the barn',
+    );
+    assert.equal(await page.locator('#set_lyrics').isEditable(), true);
+    assert.equal(
+      sent.length - beforePartial,
+      1,
+      'an incomplete result starts no retry or audio request',
+    );
+    await page.locator('#btnUndoWriting').click();
+    assert.equal(
+      await page.locator('#set_lyrics').inputValue(),
+      '',
+      'the incomplete draft can be undone',
+    );
+    delete result.problem;
+    delete result.note;
     for (const edits of [['Typed and then cleared', ''], ['Custom title while waiting']]) {
       await page.locator('#trackTitle').fill('Initial request title'); await page.locator('#script').fill('Another kite song.');
       released = false; const beforePoll = polls; await page.locator('#btnDraft').click();
