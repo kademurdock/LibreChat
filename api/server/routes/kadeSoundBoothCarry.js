@@ -51,7 +51,8 @@ const ENGINES = {
    * admin gate (packages/api music/ace.ts): it is invisible, and refused, unless the caller passes
    * `{ ace: true }` for a person who may use it. Its Creative variation (weirdness) and Prompt guidance are the same
    * two dials, with the same keys and ranges, as YuE2's, so they cross between the two song engines as they are. Its Style
-   * choice (band, style_strength) is in no `keeps` list, on purpose: the two engines' styles are different adapters. */
+   * choice (band, style_strength) is in no `keeps` list, on purpose: the two engines' styles are different adapters
+   * (see STYLE_KEYS below, which makes that a rule the carry enforces rather than a thing a list happens to leave out). */
   ace: {
     label: 'ACE-Step XL',
     kind: 'music',
@@ -210,6 +211,14 @@ const SHARED_KNOBS = [
   'guidance',
 ];
 
+/* The fields of a trained style. A style is an adapter taught to ONE engine's model, and `band` is only a name in that
+ * engine's own menu: YuE2 and ACE-Step XL both have a style called soul, and they are different files for different models,
+ * so a matching name proves nothing and a value is never compared, translated or carried. The rule is by KEY: none of these
+ * fields ever reaches the new draft, whichever engine it is going to, whatever the ENGINES table or SHARED_KNOBS say, and
+ * whatever the value is. `lora_key` and `lora_scale` are the adapter a job was sent; no project row keeps them, so they are
+ * listed here to stay out if a hand-made draft carries them. */
+const STYLE_KEYS = ['band', 'style_strength', 'lora_key', 'lora_scale'];
+
 /**
  * Work out the new draft. Pure: takes a project-shaped object, returns what
  * the new one should hold plus plain sentences about the move.
@@ -323,11 +332,13 @@ function carryOver(project, to, helpers = {}) {
   /* ---- what was left behind, said out loud ------------------------------ */
   const dropped = [];
   /* Trained styles are adapters taught to one engine: YuE2's Soul and ACE-Step XL's Soul are different files for different
-   * models, so a Style name never crosses between them (it is not in any `keeps` list) and a carry says so. ACE-Step XL's
-   * Style is only real for a person who has it (helpers.aceStyles: ACE_STYLES_ENABLED and the Family feature pack). Without
-   * that, a draft that names one is carried exactly as it always was, and the sentence is the one it always was. With it, a
-   * Style at strength 0 was a plain take, so there is nothing to say; and "choose Style on the card" is said only when the
-   * card it points to has a Style choice for this person (helpers.yueStyles for YuE2). */
+   * models, so a Style never crosses between them (STYLE_KEYS are stripped from the new draft below, by key, not by comparing
+   * names) and a carry says that it stayed behind, never which style it was: the sentence is the same for every style, so it
+   * cannot go stale when a menu gains one. ACE-Step XL's Style is only real for a person who has it
+   * (helpers.aceStyles: ACE_STYLES_ENABLED and the Family feature pack). Without that, a draft that names one is carried
+   * exactly as it always was, and the sentence is the one it always was. With it, a Style at strength 0 was a plain take, so
+   * there is nothing to say; and "choose Style on the card" is said only when the card it points to has a Style choice for
+   * this person (helpers.yueStyles for YuE2). */
   const aceStyled = from === 'ace' && helpers.aceStyles === true;
   const styled = !!oldOpts.band && oldOpts.band !== 'none' && !(aceStyled && oldOpts.style_strength === 0);
   if (styled && from === 'yue2' && to === 'ace' && helpers.aceStyles === true) {
@@ -411,6 +422,12 @@ function carryOver(project, to, helpers = {}) {
     }
   }
 
+  /* A trained style never crosses, whichever engines these are and whatever the tables above say (see STYLE_KEYS). Every
+   * path above builds `options` from named fields, so this is a guard against a later edit adding one, not a repair. */
+  for (const key of STYLE_KEYS) {
+    delete options[key];
+  }
+
   /* Lineage, so a draft can say where it came from. */
   options.carriedFrom = { project: String(project._id || project.id || ''), engine: from };
 
@@ -444,4 +461,5 @@ module.exports = {
   stripTrainedLead,
   hasSectionTags,
   SHARED_KNOBS,
+  STYLE_KEYS,
 };

@@ -47,8 +47,9 @@ export interface FamilyFeatures {
   /** Kade's shared Library shelves. */
   familyLibrary: boolean;
   /** The Sound Booth's trained styles (the Style choice): YuE2's Soul and Kids and, behind
-   * ACE_STYLES_ENABLED, ACE-Step XL's Soul. All taught from real recordings, commercial songs
-   * among them (Part 295, Sep 27 2026; ACE-Step XL, Oct 11 2026). */
+   * ACE_STYLES_ENABLED, ACE-Step XL's Soul and Suno. Taught from real recordings, commercial songs among
+   * them, except Suno, which was taught from songs made with Suno. They are one pack feature, so one
+   * answer covers every style (Part 295, Sep 27 2026; ACE-Step XL, Oct 11 2026). */
   trainedStyles: boolean;
 }
 

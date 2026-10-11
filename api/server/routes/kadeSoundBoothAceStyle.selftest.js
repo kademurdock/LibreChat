@@ -2,14 +2,15 @@
 /* ACE-Step XL, the Style choice (Oct 11 2026), through the booth route: the real kadeSoundBooth.js in a vm, the real jobs.ts,
  * ace.ts, pack.ts and carry module, an in-memory Mongo, RunPod stood in by an axios adapter. Nothing leaves this process.
  *
- * The Style choice is part of the Family feature pack and behind ACE_STYLES_ENABLED. Proven here, with the real
+ * The Style choice (Soul and Suno) is part of the Family feature pack and behind ACE_STYLES_ENABLED. Proven here, with the real
  * familyFeatures answering for each kind of account: with the flag unset the card, the worker job, the project, the asset and
  * the spoken answer are what they were; with it set, the card is live for the pack (an admin, a family member, an older
- * account, a child with the pack) and greyed out for everyone else, a direct request for a style from an account outside the
- * pack gets YuE2's refusal sentence and starts nothing (not even a quote), the App Review seat never gets ACE at all, a
- * styled request becomes exactly one Best RunPod job carrying the adapter, the project and the asset remember it, the take
- * note and the library line are honest about a style the worker did or did not confirm, and the carry between YuE2 and
- * ACE-Step XL leaves the style name behind and says so. The lyrics are invented placeholders. */
+ * account, a child with the pack) and greyed out for everyone else, a direct request for either style from an account outside
+ * the pack gets YuE2's refusal sentence and starts nothing (not even a quote), the App Review seat never gets ACE at all, a
+ * styled request becomes exactly one Best RunPod job carrying that style's adapter, the project and the asset remember it (and
+ * a project saved before Suno still opens), the take note and the library line are honest about a style the worker did or did
+ * not confirm, and the carry between YuE2 and ACE-Step XL leaves the style behind, saying that one stayed and never which, and never by name in
+ * the logic. The lyrics are invented placeholders. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -48,6 +49,14 @@ const sha = (value) => crypto.createHash('sha256').update(JSON.stringify(value))
 const LATER = (n) => `70000000000000000000${String(n).padStart(4, '0')}`;
 const EARLY = '6a5fc5fa351af41332734161';
 const REVIEW_SEAT = '6a6125d73939d20b95251078';
+
+/* The pack's own answer, except for an account a test puts in `packDown`: for that one the lookup throws, as an unreadable pack
+ * would. Everything else is the real familyFeatures. */
+const packDown = new Set();
+function packFeatures(user) {
+  if (user && packDown.has(String(user.id))) throw new Error('pack lookup failed');
+  return pack.familyFeatures(user);
+}
 
 function setEnv(vars) {
   for (const [key, value] of Object.entries(vars)) {
@@ -100,7 +109,7 @@ function loadBooth({ assetRows, logs }) {
         effectsConfigured: () => false,
         effectsVariant: () => ({ name: 'Stable Audio', model: 'stable', price: 0 }),
         notifyMusic: async () => ({ accepted: 0 }),
-        familyFeatures: (user) => pack.familyFeatures(user),
+        familyFeatures: (user) => packFeatures(user),
         FAMILY_PACK_STYLES_REFUSAL: pack.FAMILY_PACK_STYLES_REFUSAL,
         audioAssetDescription: (asset) => asset.description || '',
         ...ace,
@@ -200,7 +209,11 @@ function workerAnswer(seed, extra = {}) {
     plan: { bpm: 88, keyscale: 'A minor', duration: 95 }, ...extra,
   };
 }
-const STYLE_REPORT = { key: 'ace-loras/soul-real-v1', name: 'Soul', scale: 1, tag: 'x-tag', sha256: 'e'.repeat(64) };
+const STYLES = ['soul', 'suno'];
+const LABEL = { soul: 'Soul', suno: 'Suno' };
+const KEY = { soul: 'ace-loras/soul-real-v1', suno: 'ace-loras/suno-v1' };
+const reportFor = (name, scale = 1) => ({ key: KEY[name], name: LABEL[name], scale, tag: 'x-tag', sha256: 'e'.repeat(64) });
+const STYLE_REPORT = reportFor('soul');
 
 test('ACE-Step XL Style choice through the booth route', async (t) => {
   const saved = Object.fromEntries(FLAGS.map((key) => [key, process.env[key]]));
@@ -305,7 +318,8 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
       const card = await aceCard(who);
       assert.deepEqual(card, who.member ? open : shut, kind);
       assert.deepEqual(card.settings.map((s) => s.key), ['singing', 'lyrics', 'quality', 'band', 'style_strength', 'length', 'weirdness', 'guidance', 'seed'], `${kind}: the choice is there either way`);
-      assert.deepEqual(setting(card, 'band').options, ['none', 'soul']);
+      assert.deepEqual(setting(card, 'band').options, ['none', 'soul', 'suno']);
+      assert.match(setting(card, 'band').hint, /^A singing style taught to ACE-Step XL: Soul from soul and R&B records, Suno from songs made with Suno\. Uses the Best quality\. None is plain ACE-Step XL\./);
       assert.equal(setting(card, 'band').default, 'none');
       for (const key of ['band', 'style_strength']) assert.equal(setting(card, key).locked, who.member ? undefined : 'Part of the Family feature pack', `${kind} ${key}`);
       if (!who.member) assert.match(setting(card, 'band').hint, /Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL\.$/);
@@ -321,21 +335,25 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(ace.aceGuide(process.env, true).settings.find((s) => s.key === 'band').locked, undefined, 'the shared card is never locked in place');
   });
 
-  await t.test('styles on, a request for a style from every kind of account', async () => {
-    for (const [kind, make] of Object.entries(kinds)) {
+  await t.test('styles on, a request for either style from every kind of account', async () => {
+    for (const style of STYLES) for (const [kind, make] of Object.entries(kinds)) {
       const who = make();
       const before = await started();
-      const quote = await call('/render', { body: { ...song, band: 'soul', estimateOnly: true }, who });
+      const quote = await call('/render', { body: { ...song, band: style, estimateOnly: true }, who });
       if (!who.member) {
-        assert.equal(quote.status, 403, `${kind}: not even a quote`);
-        assert.deepEqual(quote.data, REFUSED, kind);
-        const res = await call('/render', { body: { ...song, band: 'soul' }, who });
-        assert.equal(res.status, 403, kind);
-        assert.deepEqual(res.data, REFUSED, `${kind}: YuE2's sentence`);
-        await unchanged(before, `${kind}: no RunPod call, no project row, no job`);
+        assert.equal(quote.status, 403, `${style} ${kind}: not even a quote`);
+        assert.deepEqual(quote.data, REFUSED, `${style} ${kind}`);
+        const res = await call('/render', { body: { ...song, band: style }, who });
+        assert.equal(res.status, 403, `${style} ${kind}`);
+        assert.deepEqual(res.data, REFUSED, `${style} ${kind}: YuE2's sentence`);
+        await unchanged(before, `${style} ${kind}: no RunPod call, no project row, no job`);
         const other = await call('/render', { body: { ...song, band: 'something-else' }, who });
         assert.equal(other.status, 403, `${kind}: the pack answer comes before the engine's`);
         assert.deepEqual(other.data, REFUSED);
+        /* Strength 0 is still a request for a style, so the gate is the same for it. */
+        const zero = await call('/render', { body: { ...song, band: style, style_strength: 0 }, who });
+        assert.equal(zero.status, 403, `${style} ${kind}`);
+        assert.deepEqual(zero.data, REFUSED);
         const plainQuote = await call('/render', { body: { ...song, band: 'none', estimateOnly: true }, who });
         assert.equal(plainQuote.status, 200, `${kind}: None is open to everyone`);
         assert.match(plainQuote.data.estimate.spoken, /^About 30 seconds of music, fast quality\./);
@@ -346,23 +364,23 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
         await settle(plain, who);
         continue;
       }
-      assert.equal(quote.status, 200, `${kind}: ${quote.text}`);
-      assert.match(quote.data.estimate.spoken, /^About 30 seconds of music in the Soul style, which always uses best quality\. ACE-Step XL does not deduct/);
-      await unchanged(before, `${kind}: a quote starts nothing`);
-      const res = await call('/render', { body: { ...song, band: 'soul' }, who });
-      assert.equal(res.status, 200, `${kind}: ${res.text}`);
-      assert.equal(runpod.runs.length, before.runs + 1, `${kind}: exactly one RunPod job`);
+      assert.equal(quote.status, 200, `${style} ${kind}: ${quote.text}`);
+      assert.match(quote.data.estimate.spoken, new RegExp(`^About 30 seconds of music in the ${LABEL[style]} style, which always uses best quality\\. ACE-Step XL does not deduct`));
+      await unchanged(before, `${style} ${kind}: a quote starts nothing`);
+      const res = await call('/render', { body: { ...song, band: style }, who });
+      assert.equal(res.status, 200, `${style} ${kind}: ${res.text}`);
+      assert.equal(runpod.runs.length, before.runs + 1, `${style} ${kind}: exactly one RunPod job`);
       assert.deepEqual(runpod.runs.at(-1).body.input, {
         model: 'xl-sft', caption: CAPTION, lyrics: LYRICS, duration: 30, seed: 5, batch_size: 1, bpm: 88,
-        lora_key: 'ace-loras/soul-real-v1', lora_scale: 1, vocal_language: 'en',
-      }, kind);
+        lora_key: KEY[style], lora_scale: 1, vocal_language: 'en',
+      }, `${style} ${kind}`);
       await settle(res, who);
       const refusedStyle = await call('/render', { body: { ...song, band: 'kids' }, who });
       assert.equal(refusedStyle.status, 400, kind);
       assert.deepEqual(refusedStyle.data, { error: 'That trained style is not available. Choose None or another style.' });
     }
     /* The App Review seat is refused at ACE's own door, before any Style is looked at, and nothing is started. */
-    for (const role of ['USER', 'ADMIN']) for (const body of [{ ...song, band: 'soul' }, song, { ...song, band: 'soul', estimateOnly: true }]) {
+    for (const role of ['USER', 'ADMIN']) for (const style of STYLES) for (const body of [{ ...song, band: style }, song, { ...song, band: style, estimateOnly: true }]) {
       const before = await started();
       const res = await call('/render', { body, who: reviewSeat(role) });
       assert.equal(res.status, 403, role);
@@ -374,8 +392,8 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
 
   await t.test('the YuE2 Style gate is the same gate: a YuE2 request for a style from an outsider is still refused', async () => {
     assert.equal(internals.asksForStyle({ engine: 'yue2', band: 'soul' }), true);
-    assert.equal(internals.asksForStyle({ engine: 'ace', band: 'soul' }), true, 'and now an ACE one');
-    for (const body of [{ engine: 'ace', band: 'none' }, { engine: 'ace', band: '' }, { engine: 'ace' }, { engine: 'lyria', band: 'soul' }, { engine: 'seed', band: 'soul' }, null, undefined])
+    for (const band of STYLES) assert.equal(internals.asksForStyle({ engine: 'ace', band }), true, `and now an ACE one: ${band}`);
+    for (const body of [{ engine: 'ace', band: 'none' }, { engine: 'ace', band: '' }, { engine: 'ace' }, { engine: 'lyria', band: 'soul' }, { engine: 'lyria', band: 'suno' }, { engine: 'seed', band: 'soul' }, null, undefined])
       assert.equal(internals.asksForStyle(body), false, JSON.stringify(body));
     const before = await started();
     const res = await call('/render', { body: { engine: 'yue2', script: 'Slow soul', lyrics: 'la la', band: 'soul' }, who: kinds.outsider() });
@@ -385,6 +403,54 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(family.status, 200);
     assert.equal(family.data.yueSaw.band, 'soul', 'the pack still passes on to YuE2');
     await unchanged(before, 'YuE2 stands in here, so ACE started nothing');
+  });
+
+  await t.test('the gate fails closed: when the pack lookup itself fails, nobody gets a style, not even an admin, and nothing starts', async () => {
+    /* styleAllowed answers false when familyFeatures throws (the comment on it: an unreadable pack answer counts as outside the
+     * pack). The stand-in below throws for one account only, so the same route, same flags, same body is the control. */
+    const down = kinds.admin();
+    const up = kinds.admin();
+    const downUser = { id: down.user, role: 'ADMIN' };
+    const upUser = { id: up.user, role: 'ADMIN' };
+    packDown.add(down.user);
+    try {
+      assert.throws(() => packFeatures(downUser), /pack lookup failed/, 'the stand-in does throw for that account');
+      assert.equal(packFeatures(upUser).trainedStyles, true, 'and answers as the pack itself does for the other');
+      assert.equal(internals.styleAllowed(downUser), false, 'a lookup that throws is outside the pack');
+      assert.equal(internals.styleAllowed(upUser), true, 'the same call for an admin whose lookup works says yes');
+      assert.equal(internals.aceStyleChoice(downUser), false);
+      assert.equal(internals.aceStyleChoice(upUser), true);
+      /* The card that choice draws: greyed out, never hidden, exactly the shut card. */
+      const shut = ace.aceGuide(process.env, internals.aceStyleChoice(downUser));
+      assert.deepEqual(shut, ace.aceGuide(process.env, false));
+      assert.deepEqual(ace.aceGuide(process.env, internals.aceStyleChoice(upUser)), ace.aceGuide(process.env, true));
+      for (const key of ['band', 'style_strength']) assert.equal(setting(shut, key).locked, 'Part of the Family feature pack', key);
+      assert.match(setting(shut, 'band').hint, /Part of the Family feature pack, so songs on this account use None, plain ACE-Step XL\.$/);
+      /* The route: every way of asking for a style gets the pack refusal and starts nothing. */
+      const logged = logs.length;
+      for (const style of STYLES) {
+        const before = await started();
+        for (const body of [{ ...song, band: style }, { ...song, band: style, estimateOnly: true }, { ...song, band: style, style_strength: 0 }, { ...song, band: 'something-else' }, { engine: 'yue2', script: 'Slow soul', lyrics: 'la la', band: style }]) {
+          const res = await call('/render', { body, who: down });
+          assert.equal(res.status, 403, `${style} ${JSON.stringify(body.engine)}: ${res.text}`);
+          assert.deepEqual(res.data, REFUSED, style);
+        }
+        await unchanged(before, `${style}: no RunPod call, no project row, no job`);
+      }
+      assert.ok(logs.slice(logged).some((line) => /trained style REFUSED/.test(line)), 'the refusal is logged');
+      /* Control: the account whose lookup works is let through with the very same bodies. */
+      const open = await call('/render', { body: { ...song, band: 'suno' }, who: up });
+      assert.equal(open.status, 200, open.text);
+      assert.equal(runpod.runs.at(-1).body.input.lora_key, KEY.suno);
+      await settle(open, up);
+      /* A plain song asks for no style, so the lookup is not asked and the failure does not touch it. */
+      const plain = await call('/render', { body: song, who: down });
+      assert.equal(plain.status, 200, plain.text);
+      assert.equal('lora_key' in runpod.runs.at(-1).body.input, false);
+      await settle(plain, down);
+    } finally {
+      packDown.delete(down.user);
+    }
   });
 
   let styled;
@@ -397,23 +463,32 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
       return res;
     };
     const head = { model: 'xl-sft', caption: CAPTION, lyrics: LYRICS, duration: 30, seed: 5, batch_size: 1, bpm: 88 };
-    const tail = { lora_key: 'ace-loras/soul-real-v1', lora_scale: 1, vocal_language: 'en' };
-    for (const extra of [{ band: 'soul' }, { band: 'soul', quality: 'Fast' }, { band: 'soul', quality: 'Best' }]) await settle(await send(extra, { ...head, ...tail }), who);
-    await settle(await send({ band: 'soul', style_strength: 0.5 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.5, vocal_language: 'en' }), who);
-    await settle(await send({ band: 'soul', style_strength: 0 }, { ...head, model: 'xl-turbo' }), who);
-    await settle(await send({ band: 'soul', style_strength: 0.00004 }, { ...head, model: 'xl-turbo' }), who);
-    await settle(await send({ band: 'soul', style_strength: 0.00005 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.0001, vocal_language: 'en' }), who);
-    await settle(await send({ band: 'none', style_strength: 0.5 }, { ...head, model: 'xl-turbo' }), who);
-    await settle(await send({ band: 'soul', length: '3:00', weirdness: 70, guidance: 2 }, { ...head, duration: 180, lm_temperature: 1.03, guidance_scale: 10, ...tail }), who);
-    styled = await send({ band: 'soul', style_strength: 0.6, length: '3:00', seed: 9 }, { ...head, duration: 180, seed: 9, lora_key: tail.lora_key, lora_scale: 0.6, vocal_language: 'en' });
+    const sentSoul = {};
+    /* Soul goes last: its final job is left running, because the next test reads it back and finishes it. */
+    for (const style of [...STYLES].reverse()) {
+      const tail = { lora_key: KEY[style], lora_scale: 1, vocal_language: 'en' };
+      for (const extra of [{ band: style }, { band: style, quality: 'Fast' }, { band: style, quality: 'Best' }]) await settle(await send(extra, { ...head, ...tail }), who);
+      await settle(await send({ band: style, style_strength: 0.5 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.5, vocal_language: 'en' }), who);
+      await settle(await send({ band: style, style_strength: 0 }, { ...head, model: 'xl-turbo' }), who);
+      await settle(await send({ band: style, style_strength: 0.00004 }, { ...head, model: 'xl-turbo' }), who);
+      await settle(await send({ band: style, style_strength: 0.00005 }, { ...head, lora_key: tail.lora_key, lora_scale: 0.0001, vocal_language: 'en' }), who);
+      await settle(await send({ band: 'none', style_strength: 0.5 }, { ...head, model: 'xl-turbo' }), who);
+      await settle(await send({ band: style, length: '3:00', weirdness: 70, guidance: 2 }, { ...head, duration: 180, lm_temperature: 1.03, guidance_scale: 10, ...tail }), who);
+      sentSoul[style] = await send({ band: style, style_strength: 0.6, length: '3:00', seed: 9 }, { ...head, duration: 180, seed: 9, lora_key: tail.lora_key, lora_scale: 0.6, vocal_language: 'en' });
+      if (style === 'soul') styled = sentSoul[style];
+      else await settle(sentSoul[style], who);
+    }
     /* An instrumental cannot take a style: a plain sentence, and nothing starts. */
     const other = kinds.admin();
     const before = await started();
-    const instrumental = await call('/render', { body: { ...song, band: 'soul', singing: yue.yueSinging.instrumental }, who: other });
-    assert.equal(instrumental.status, 400);
-    assert.deepEqual(instrumental.data, { error: 'Styles are for singing, so an instrumental cannot use one. Set Style to None, or choose Sung under Singing or instrumental.' });
-    const strength = await call('/render', { body: { ...song, band: 'soul', style_strength: 1.5 }, who: other });
-    assert.deepEqual(strength.data, { error: 'Style strength must be from 0 to 1.' });
+    for (const style of STYLES) {
+      const instrumental = await call('/render', { body: { ...song, band: style, singing: yue.yueSinging.instrumental }, who: other });
+      assert.equal(instrumental.status, 400);
+      assert.deepEqual(instrumental.data, { error: 'Styles are for singing, so an instrumental cannot use one. Set Style to None, or choose Sung under Singing or instrumental.' });
+      const strength = await call('/render', { body: { ...song, band: style, style_strength: 1.5 }, who: other });
+      assert.deepEqual(strength.data, { error: 'Style strength must be from 0 to 1.' });
+    }
+    for (const band of ['Suno', 'SOUL', 'soul ', 'kids']) assert.equal((await call('/render', { body: { ...song, band }, who: other })).status, 400, `${band} is not a style here`);
     await unchanged(before, 'a refusal starts nothing');
     assert.equal((await call('/render', { body: { ...song, singing: yue.yueSinging.instrumental, band: 'none', estimateOnly: true }, who: other })).status, 200, 'an instrumental with None is as it always was');
   });
@@ -441,8 +516,55 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     await settle(styled, me);
     const reopened = await call('/render', { body: { engine: 'ace', title: 'Again', script: row.script, ...row.options }, who: me });
     assert.equal(reopened.status, 200, reopened.text);
-    assert.equal(JSON.stringify(runpod.runs.at(-1).body.input), JSON.stringify({ ...runpod.runs.find((r) => r.body.input.seed === 9).body.input }), 'the very same worker job');
+    assert.equal(JSON.stringify(runpod.runs.at(-1).body.input), JSON.stringify({ ...runpod.runs.find((r) => r.body.input.seed === 9 && r.body.input.lora_key === KEY.soul).body.input }), 'the very same worker job');
     await settle(reopened, me);
+  });
+
+  await t.test('a Suno project and a project saved before Suno: both open, both send the job they were', async () => {
+    const who = kinds.admin();
+    const me = (project) => ({ user: String(project.user), role: 'ADMIN' });
+    /* A Suno song: the project, the library line, and Open in the booth sending the same job again. */
+    const made = await call('/render', { body: { ...song, band: 'suno', style_strength: 0.8, length: '3:00', seed: 19 }, who });
+    assert.equal(made.status, 200, made.text);
+    const project = await Project.findById(made.data.projectId).lean();
+    const expected = { quality: 'Best', length: '3:00', singing: yue.yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 19, band: 'suno', style_strength: 0.8 };
+    assert.equal(project.script, DIRECTION);
+    assert.deepEqual(project.options, expected);
+    const listed = (await call('/projects', { who: me(project) })).data.projects.find((p) => p.id === made.data.projectId);
+    assert.equal(listed.why, 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Suno style');
+    assert.deepEqual(listed.options, expected);
+    const sent = runpod.runs.at(-1).body.input;
+    assert.deepEqual(sent, { model: 'xl-sft', caption: CAPTION, lyrics: LYRICS, duration: 180, seed: 19, batch_size: 1, bpm: 88, lora_key: 'ace-loras/suno-v1', lora_scale: 0.8, vocal_language: 'en' });
+    await settle(made, me(project));
+    const again = await call('/render', { body: { engine: 'ace', title: 'Again', script: listed.script, ...listed.options }, who: me(project) });
+    assert.equal(again.status, 200, again.text);
+    assert.equal(JSON.stringify(runpod.runs.at(-1).body.input), JSON.stringify(sent), 'the very same worker job, and still Suno');
+    await settle(again, me(project));
+    /* A project the base commit saved in Soul (the exact options it wrote, before Suno existed) opens as it was and sends what it did. */
+    const old = await Project.create({
+      user: who.user, engine: 'ace', title: 'Saved in Soul', script: DIRECTION, state: 'done',
+      options: { quality: 'Best', length: 'Match my lyrics', singing: yue.yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 5, band: 'soul', style_strength: 0.5 },
+    });
+    const opened = (await call(`/projects/${old._id}`, { who })).data.project;
+    assert.equal(opened.options.band, 'soul');
+    assert.equal(opened.options.style_strength, 0.5);
+    assert.equal(opened.why, 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Soul style');
+    const card = await aceCard(who);
+    assert.ok(setting(card, 'band').options.includes(opened.options.band), 'the card still offers the style it was made in');
+    const resent = await call('/render', { body: { engine: 'ace', title: 'Again', script: opened.script, ...opened.options }, who });
+    assert.equal(resent.status, 200, resent.text);
+    assert.deepEqual(runpod.runs.at(-1).body.input, { model: 'xl-sft', caption: CAPTION, lyrics: LYRICS, duration: 30, seed: 5, batch_size: 1, bpm: 88, lora_key: 'ace-loras/soul-real-v1', lora_scale: 0.5, vocal_language: 'en' });
+    await settle(resent, who);
+    /* One saved before any style existed. */
+    const older = await Project.create({
+      user: who.user, engine: 'ace', title: 'Saved plain', script: DIRECTION, state: 'done',
+      options: { quality: 'Fast', length: 'Match my lyrics', singing: yue.yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 5 },
+    });
+    const plain = (await call(`/projects/${older._id}`, { who })).data.project;
+    assert.equal(plain.why, 'ACE-Step XL — a song made on the sleeping music GPU');
+    const replain = await call('/render', { body: { engine: 'ace', title: 'Again', script: plain.script, ...plain.options }, who });
+    assert.equal(JSON.stringify(runpod.runs.at(-1).body.input), `{"model":"xl-turbo","caption":"${CAPTION}","lyrics":${JSON.stringify(LYRICS)},"duration":30,"seed":5,"batch_size":1,"bpm":88}`);
+    await settle(replain, who);
   });
 
   await t.test('a finished styled take: the asset keeps the style, the answer and the library say it, and an unconfirmed style is said', async () => {
@@ -504,26 +626,68 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     }
   });
 
+  await t.test('a finished Suno take: the asset keeps the style, the answer and the library say Suno, and a different adapter is not Suno', async () => {
+    const who = kinds.admin();
+    const res = await call('/render', { body: { ...song, seed: 61, band: 'suno', style_strength: 0.7 }, who });
+    assert.equal(res.status, 200, res.text);
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(61, { style: reportFor('suno', 0.7) }), executionTime: 90000 });
+    const status = await call(`/status/${res.data.jobId}`, { who });
+    assert.equal(status.data.state, 'done');
+    assert.equal(status.data.spoken, '1 of 1 takes ready. Open your library to compare them. Made in the Suno style at strength 0.7.');
+    await call(`/status/${res.data.jobId}`, { who });
+    const asset = assetRows.at(-1);
+    assert.deepEqual(asset.metadata, {
+      title: 'Rain song', seed: 61, jobId: `${res.data.jobId}_1`, projectId: res.data.projectId, via: 'sound-booth',
+      wavUrl: workerAnswer(61).wav_url, seconds: 95, lyrics: LYRICS, truncated: false,
+      costScope: 'execution estimate; startup and idle are additional',
+      gpu: 'NVIDIA RTX A6000', model: 'xl-sft', bpm: 88, keyscale: 'A minor', weirdness: 50, guidance: 1,
+      band: 'suno', style_strength: 0.7, lora_key: 'ace-loras/suno-v1', lora_scale: 0.7,
+      style: reportFor('suno', 0.7), takeNote: 'Made in the Suno style at strength 0.7.',
+    });
+    const row = (await call('/projects', { who })).data.projects.find((p) => p.id === res.data.projectId);
+    assert.equal(row.takes[0].note, 'Made in the Suno style at strength 0.7.', 'the library line');
+    assert.equal(row.why, 'ACE-Step XL — a song made on the sleeping music GPU, best quality, in the Suno style');
+
+    /* Asked for in Suno but reported as Soul's adapter: the take is kept and the note does not claim the style. */
+    const crossed = await call('/render', { body: { ...song, seed: 62, band: 'suno' }, who });
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(62, { style: reportFor('soul') }), executionTime: 60000 });
+    const said = await call(`/status/${crossed.data.jobId}`, { who });
+    const NOT = 'The Suno style was not confirmed for this take, so it may sound like plain ACE-Step XL.';
+    assert.equal(said.data.spoken, `1 of 1 takes ready. Open your library to compare them. ${NOT}`);
+    assert.equal(assetRows.at(-1).metadata.takeNote, NOT);
+    assert.equal(assetRows.at(-1).metadata.lora_key, 'ace-loras/suno-v1', 'what was asked for is still recorded');
+    assert.equal(assetRows.at(-1).metadata.band, 'suno');
+    /* A worker that says nothing about the adapter. */
+    const quiet = await call('/render', { body: { ...song, seed: 63, band: 'suno' }, who });
+    Object.assign(runpod.jobs.get(runpod.runs.at(-1).id), { state: 'COMPLETED', output: workerAnswer(63), executionTime: 60000 });
+    assert.equal((await call(`/status/${quiet.data.jobId}`, { who })).data.spoken, `1 of 1 takes ready. Open your library to compare them. ${NOT}`);
+    assert.equal(assetRows.at(-1).metadata.style, undefined);
+  });
+
   await t.test('switching styles off while a styled take is queued: it still finishes, and the next request is plain', async () => {
     const who = kinds.admin();
-    const res = await call('/render', { body: { ...song, seed: 51, band: 'soul' }, who });
-    assert.equal(res.status, 200);
-    const prov = runpod.runs.at(-1).id;
-    setEnv({ ACE_STYLES_ENABLED: undefined });
-    try {
-      assert.equal(sha(await aceCard(who)), GUIDE_BEFORE, 'the Style choice is gone from the card');
-      Object.assign(runpod.jobs.get(prov), { state: 'COMPLETED', output: workerAnswer(51, { style: STYLE_REPORT }), executionTime: 60000 });
-      const status = await call(`/status/${res.data.jobId}`, { who });
-      assert.equal(status.data.state, 'done');
-      assert.equal(status.data.spoken, '1 of 1 takes ready. Open your library to compare them. Made in the Soul style.');
-      assert.equal(assetRows.at(-1).metadata.lora_key, 'ace-loras/soul-real-v1');
-      const next = await call('/render', { body: { ...song, seed: 52, band: 'soul' }, who });
-      assert.equal(next.status, 200);
-      assert.equal('lora_key' in runpod.runs.at(-1).body.input, false, 'the next request is plain ACE-Step XL');
-      assert.equal(runpod.runs.at(-1).body.input.model, 'xl-turbo');
-      await settle(next, who);
-    } finally {
-      setEnv({ ACE_STYLES_ENABLED: '1' });
+    let seed = 50;
+    for (const style of STYLES) {
+      seed += 2;
+      const res = await call('/render', { body: { ...song, seed, band: style }, who });
+      assert.equal(res.status, 200);
+      const prov = runpod.runs.at(-1).id;
+      setEnv({ ACE_STYLES_ENABLED: undefined });
+      try {
+        assert.equal(sha(await aceCard(who)), GUIDE_BEFORE, 'the Style choice is gone from the card');
+        Object.assign(runpod.jobs.get(prov), { state: 'COMPLETED', output: workerAnswer(seed, { style: reportFor(style) }), executionTime: 60000 });
+        const status = await call(`/status/${res.data.jobId}`, { who });
+        assert.equal(status.data.state, 'done');
+        assert.equal(status.data.spoken, `1 of 1 takes ready. Open your library to compare them. Made in the ${LABEL[style]} style.`);
+        assert.equal(assetRows.at(-1).metadata.lora_key, KEY[style]);
+        const next = await call('/render', { body: { ...song, seed: seed + 1, band: style }, who });
+        assert.equal(next.status, 200);
+        assert.equal('lora_key' in runpod.runs.at(-1).body.input, false, 'the next request is plain ACE-Step XL');
+        assert.equal(runpod.runs.at(-1).body.input.model, 'xl-turbo');
+        await settle(next, who);
+      } finally {
+        setEnv({ ACE_STYLES_ENABLED: '1' });
+      }
     }
   });
 
@@ -615,6 +779,46 @@ test('ACE-Step XL Style choice through the booth route', async (t) => {
     assert.equal(draftClosed.status, 403);
     assert.deepEqual(draftClosed.data, { error: CLOSED });
     setEnv({ ACE_ADMIN_ONLY: '0' });
+  });
+
+  await t.test('carry through the routes, every style: the same name on both cards is not the same style, and what is sent next proves it', async () => {
+    const who = kinds.admin();
+    setEnv({ YUE_STYLES_ENABLED: '1' });
+    try {
+      const mine = { quality: 'Best', length: 'Match my lyrics', singing: yue.yueSinging.sung, lyrics: LYRICS, weirdness: 50, guidance: 1, seed: 7 };
+      for (const style of STYLES) {
+        const aceProject = await Project.create({ user: who.user, engine: 'ace', title: `ACE ${style}`, script: 'Slow soul, Rhodes', options: { ...mine, band: style, style_strength: 0.4 }, state: 'done' });
+        const yueProject = await Project.create({ user: who.user, engine: 'yue2', title: `YuE2 ${style}`, script: 'Slow soul, Rhodes, female lead vocal', options: { lyrics: LYRICS, band: style, style_strength: 0.4, seed: 4, weirdness: 60, guidance: 2, count: 1 }, state: 'done' });
+        /* ACE-Step XL to YuE2: the sentence says the ACE-Step XL style was left behind (no style's name is in it), the new YuE2 draft has no Style, and a render from it asks YuE2 for none. */
+        const toYue = await call(`/projects/${aceProject._id}/carry`, { body: { engine: 'yue2' }, who });
+        assert.equal(toYue.status, 200, toYue.text);
+        assert.ok(toYue.data.notes.includes(`YuE2 has its own Style choice, taught separately from ACE-Step XL's, so the ACE-Step XL style was left behind. Choose Style on the YuE2 card to use one.`), `${style}: ${toYue.data.notes.join(' | ')}`);
+        assert.doesNotMatch(toYue.data.notes.join(' '), /\b(soul|suno|kids)\b/i, `${style}: no style name in a carry note`);
+        for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toYue.data.project.options, false, `${style} ACE to YuE2: ${key}`);
+        const yueRender = await call('/render', { body: { engine: 'yue2', title: 'Carried', script: toYue.data.project.script, ...toYue.data.project.options }, who });
+        assert.equal(yueRender.status, 200, yueRender.text);
+        assert.equal(yueRender.data.yueSaw.band, undefined, `a YuE2 song carried from ACE-Step XL ${LABEL[style]} asks YuE2 for no style`);
+        /* YuE2 to ACE-Step XL, the other way: an ACE job built from the carried draft is a plain one. */
+        const toAce = await call(`/projects/${yueProject._id}/carry`, { body: { engine: 'ace' }, who });
+        assert.equal(toAce.status, 200, toAce.text);
+        assert.ok(toAce.data.notes.includes(`ACE-Step XL has its own Style choice, taught separately from YuE2's, so the YuE2 style was left behind. Choose Style on the ACE-Step XL card to use one.`), `${style}: ${toAce.data.notes.join(' | ')}`);
+        assert.doesNotMatch(toAce.data.notes.join(' '), /\b(soul|suno|kids)\b/i, `${style}: no style name in a carry note`);
+        for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.equal(key in toAce.data.project.options, false, `${style} YuE2 to ACE: ${key}`);
+        const before = runpod.runs.length;
+        const aceRender = await call('/render', { body: { engine: 'ace', title: 'Carried', script: toAce.data.project.script, ...toAce.data.project.options }, who });
+        assert.equal(aceRender.status, 200, aceRender.text);
+        assert.equal(runpod.runs.length, before + 1);
+        const sent = runpod.runs.at(-1).body.input;
+        for (const key of ['lora_key', 'lora_scale', 'vocal_language']) assert.equal(key in sent, false, `${style}: ${key} did not cross`);
+        assert.equal(sent.model, 'xl-turbo', 'and it is not forced to Best by a style it does not have');
+        await settle(aceRender, who);
+        /* The originals are untouched. */
+        assert.equal((await Project.findById(aceProject._id).lean()).options.band, style);
+        assert.equal((await Project.findById(yueProject._id).lean()).options.band, style);
+      }
+    } finally {
+      setEnv({ YUE_STYLES_ENABLED: undefined });
+    }
   });
 
   assert.deepEqual(runpod.unexpected, [], 'nothing but the ACE endpoint was called');
