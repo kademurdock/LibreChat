@@ -10,7 +10,98 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
-const { needsRefresh, getNewS3URL, saveBufferToS3, writingCost, splitLyricTitle, lyricTitleFromSong, musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, lyricEndingTells, lyricKissOffTells, songSectionMap, sectionMapNote, chorusShapeFor, chorusShapeNote, lyricRepeatIssues, lyricRepeatRequest, applyRepeatRewrite, lyricAuditRequest, fixStageDirections, formatGeneratedLyricsDraft, labelReadback, lyricWritingModel, lyricAgentId, songIdeaSparks, songIdeaSystemFor, songIdeaRequest, songIdeaTitle, cleanSongIdea, tooCloseToShelf, createEffectsRouter, effectsGuide, effectsConfigured, effectsPrice, effectsModel, effectsVariant, effectsVariants, downloadEffects, createYueRouter, yueConfigured, yueCost, yueStyles, yueStylesEnabled, yueStyleHint, yueStyleAccess, FAMILY_PACK_STYLES_REFUSAL, yueCoverSettings, yueCoverOptions, yueSavedOptions, yueMusicDirection, yueProjectWhy, yueTakeFacts, notifyMusic, createLyricsRouter, registerMusicReference, transcribeMusicLyrics, validateMusicReference, musicReferenceError, musicReferenceSeconds, findMyVoiceModel, withMyVoiceGuide, createMyVoiceRouter, createMyVoiceFollowUps, myVoiceAutoOptions, myVoiceTakeNote, myVoiceEffectLinks, myVoiceProjectOptions, myVoiceProjectWhy, musicReferenceSpeedNote, musicCoverLengthGuide, createAceRouter, aceEnabled, aceConfigured, aceAllowed, aceAccess, withAceGuide, aceProjectOptions, aceProjectWhy, aceTakeFacts } = require('@librechat/api');
+const {
+  needsRefresh,
+  getNewS3URL,
+  saveBufferToS3,
+  writingCost,
+  splitLyricTitle,
+  lyricTitleFromSong,
+  musicWritingPrompt,
+  musicLyricEditorSystem,
+  musicWritingSettings,
+  musicWritingBackground,
+  lyricTells,
+  mergeRepairedLyrics,
+  lyricShapeIssue,
+  lyricThinSections,
+  lyricBackingIssue,
+  lyricRhymeReport,
+  lyricRhymeWeight,
+  lyricLiftIssue,
+  lyricPetWords,
+  lyricLongLines,
+  lyricEndingTells,
+  lyricKissOffTells,
+  songSectionMap,
+  sectionMapNote,
+  chorusShapeFor,
+  chorusShapeNote,
+  lyricRepeatIssues,
+  lyricRepeatRequest,
+  applyRepeatRewrite,
+  lyricAuditRequest,
+  fixStageDirections,
+  formatGeneratedLyricsDraft,
+  labelReadback,
+  lyricWritingModel,
+  lyricAgentId,
+  songIdeaSparks,
+  songIdeaSystemFor,
+  songIdeaRequest,
+  songIdeaTitle,
+  cleanSongIdea,
+  tooCloseToShelf,
+  createEffectsRouter,
+  effectsGuide,
+  effectsConfigured,
+  effectsPrice,
+  effectsModel,
+  effectsVariant,
+  effectsVariants,
+  downloadEffects,
+  createYueRouter,
+  yueConfigured,
+  yueCost,
+  yueStyles,
+  yueStylesEnabled,
+  yueStyleHint,
+  yueStyleAccess,
+  FAMILY_PACK_STYLES_REFUSAL,
+  yueCoverSettings,
+  yueCoverOptions,
+  yueSavedOptions,
+  yueMusicDirection,
+  yueProjectWhy,
+  yueTakeFacts,
+  notifyMusic,
+  createLyricsRouter,
+  registerMusicReference,
+  transcribeMusicLyrics,
+  validateMusicReference,
+  musicReferenceError,
+  musicReferenceSeconds,
+  findMyVoiceModel,
+  withMyVoiceGuide,
+  createMyVoiceRouter,
+  createMyVoiceFollowUps,
+  myVoiceAutoOptions,
+  myVoiceTakeNote,
+  myVoiceEffectLinks,
+  myVoiceProjectOptions,
+  myVoiceProjectWhy,
+  musicReferenceSpeedNote,
+  musicCoverLengthGuide,
+  createAceRouter,
+  aceEnabled,
+  aceConfigured,
+  aceAllowed,
+  aceAccess,
+  withAceGuide,
+  aceProjectOptions,
+  aceProjectWhy,
+  aceTakeFacts,
+} = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
@@ -2065,16 +2156,16 @@ async function scriptHandler(req, res) {
      * audit gave the draft back unchanged in 10 of 12 songs when it was only asked to "change what
      * fails". KADE_LYRIC_GATES=0 stands them down. */
     const gatesOn = wantsWords && process.env.KADE_LYRIC_GATES !== '0';
-    const gateWeight = (script) => {
+    const gateReport = (script) => {
       const thin = gatesOn && typeof lyricThinSections === 'function' ? lyricThinSections(script, text) : [];
       const backing = gatesOn && typeof lyricBackingIssue === 'function' ? lyricBackingIssue(script, text) : null;
       const rhyme = gatesOn && typeof lyricRhymeReport === 'function' ? lyricRhymeReport(script, text) : null;
       const lift = gatesOn && typeof lyricLiftIssue === 'function' ? lyricLiftIssue(script, text) : false;
       const pets = gatesOn && typeof lyricPetWords === 'function' ? lyricPetWords(script, text) : [];
       const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text) : [];
-      return { thin, backing, rhyme, lift, pets, longLines, weight: thin.length + (backing ? 1 + backing.directions.length : 0) + (rhyme ? lyricRhymeWeight(rhyme) : 0) + (lift ? 1 : 0) + pets.length + Math.max(0, longLines.length - 1) };
+      return { thin, backing, rhyme, lift, pets, longLines };
     };
-    const gatesInDraft = gateWeight(raw);
+    const gatesInDraft = gateReport(raw);
     /* Part 296: what repeats instead of saying something, measured in code, rides into the
      * audit as its own gate (the audit used to be told the hook lands four to eight times
      * and left every collapsed chorus alone). */
@@ -2090,10 +2181,10 @@ async function scriptHandler(req, res) {
       try {
         const fixed = await callModel({
           ...writingSettings,
-          system: writingSystem,
+          system: musicLyricEditorSystem(audience),
           user: lyricAuditRequest(raw, tells, shape, repeatsInDraft, text, { thin: gatesInDraft.thin, backing: gatesInDraft.backing, rhyme: gatesInDraft.rhyme, lift: gatesInDraft.lift, pets: gatesInDraft.pets, longLines: gatesInDraft.longLines }),
           maxTokens: writingSettings.maxTokens,
-          /* the deep lane thinks hard on the draft; the audit is an edit, not a rewrite */
+          /* Keep the editorial pass on low reasoning for bounded latency; it can rebuild weak generated passages. */
           reasoning: { enabled: true, effort: 'low', exclude: true },
           timeoutMs: Math.min(timeLeft, 225000),
         });
@@ -2102,14 +2193,29 @@ async function scriptHandler(req, res) {
         /* Only the sung words come from the repair; her direction and READBACK
          * stay exactly as first written (the repair is careless with them). */
         /* Asked to add lines or backing parts, the audit may grow the song well past the usual cap. */
-        const merged = mergeRepairedLyrics(raw, fixed.text, gatesInDraft.weight ? 1.9 : 1.4);
-        const gatesAfter = merged ? gateWeight(merged) : gatesInDraft;
+        const addsParts =
+          shape ||
+          gatesInDraft.thin.length ||
+          (gatesInDraft.backing &&
+            (gatesInDraft.backing.total < gatesInDraft.backing.need ||
+              gatesInDraft.backing.choruses.some((count) => count === 0)));
+        const merged = mergeRepairedLyrics(raw, fixed.text, addsParts ? 1.9 : 1.4, text);
+        const gatesAfter = merged ? gateReport(merged) : gatesInDraft;
         const swore = swearing(raw).length;
         const stillSwears = merged ? swearing(merged).length : swore;
         const remaining = merged ? lyricTells(merged, text).length + stillSwears : tells.length;
         const grew = !!merged && !!shape && !lyricShapeIssue(merged, text, sectionMap);
         logger.info(`[soundbooth/script] audit: merged=${!!merged} tells ${tells.length}->${remaining} kissoff ${kissOffsInDraft.length}->${merged ? kissOffsOf(merged).length : kissOffsInDraft.length} shape=${shape ? 'short' : 'ok'} map=${sectionMap ? sectionMap.id : 'none'} grew=${grew} thin ${gatesInDraft.thin.length}->${gatesAfter.thin.length} rhyme ${gatesInDraft.rhyme ? lyricRhymeWeight(gatesInDraft.rhyme) : 'na'}->${gatesAfter.rhyme ? lyricRhymeWeight(gatesAfter.rhyme) : 'na'} creative ${gatesInDraft.rhyme ? gatesInDraft.rhyme.creative : 'na'}->${gatesAfter.rhyme ? gatesAfter.rhyme.creative : 'na'} backing ${gatesInDraft.backing ? gatesInDraft.backing.total + '/' + gatesInDraft.backing.need : 'ok'}->${gatesAfter.backing ? gatesAfter.backing.total + '/' + gatesAfter.backing.need : 'ok'} ${Date.now() - started}ms`);
-        if (merged && remaining <= tells.length && gatesAfter.weight <= gatesInDraft.weight) {
+        const directionsBefore = gatesInDraft.backing ? gatesInDraft.backing.directions.length : 0;
+        const directionsAfter = gatesAfter.backing ? gatesAfter.backing.directions.length : 0;
+        const edited =
+          merged && merged.replace(/\s+/g, ' ').trim() !== raw.replace(/\s+/g, ' ').trim();
+        if (
+          edited &&
+          remaining <= tells.length &&
+          stillSwears <= swore &&
+          directionsAfter <= directionsBefore
+        ) {
           const versesBefore = verseCount(raw);
           const versesAfter = verseCount(merged);
           raw = merged;
@@ -2120,8 +2226,6 @@ async function scriptHandler(req, res) {
           /* Part 320: say what the measured gates changed, in plain words she can hear. */
           if (gatesAfter.thin.length < gatesInDraft.thin.length) repairs = [...repairs, 'filled out sections that were too short'];
           if (gatesInDraft.backing && (!gatesAfter.backing || gatesAfter.backing.total > gatesInDraft.backing.total)) repairs = [...repairs, 'added backing vocals'];
-          if (gatesInDraft.rhyme && gatesAfter.rhyme && lyricRhymeWeight(gatesAfter.rhyme) < lyricRhymeWeight(gatesInDraft.rhyme)) repairs = [...repairs, 'tightened the rhymes'];
-          if (gatesInDraft.lift && !gatesAfter.lift) repairs = [...repairs, 'lifted the last chorus'];
           /* Two short verses grown into two long ones is not a third verse (review). */
           if (grew) repairs = [...repairs, versesAfter <= versesBefore ? 'lengthened the verses' : versesAfter - versesBefore > 1 ? 'added verses' : versesAfter === 3 ? 'added a third verse' : 'added a verse'];
         }
@@ -2318,7 +2422,18 @@ async function scriptHandler(req, res) {
         /* Part 296 follow-up: stock kiss-off lines in the first draft and in what she gets. */
         kissOffs: wantsWords && typeof lyricKissOffTells === 'function' ? { draft: kissOffsInDraft.length, left: kissOffsOf(raw).length } : undefined,
         /* Part 320: thin sections and missing backing vocals, in the first draft and in what she gets. */
-        gates: gatesOn ? { draft: { thin: gatesInDraft.thin.length, backing: gatesInDraft.backing ? gatesInDraft.backing.total : 'ok' }, left: { thin: gateWeight(raw).thin.length, backing: gateWeight(raw).backing ? gateWeight(raw).backing.total : 'ok' } } : undefined,
+        gates: gatesOn
+          ? {
+              draft: {
+                thin: gatesInDraft.thin.length,
+                backing: gatesInDraft.backing ? gatesInDraft.backing.total : 'ok',
+              },
+              left: {
+                thin: gateReport(raw).thin.length,
+                backing: gateReport(raw).backing ? gateReport(raw).backing.total : 'ok',
+              },
+            }
+          : undefined,
         model: writingSettings.model || MODEL,
         /* Oct 2 2026, AuK with a chosen voice: ok, rewritten (the second ask fixed it), off, or
          * clip (a reference clip is the voice, so nothing was checked). */

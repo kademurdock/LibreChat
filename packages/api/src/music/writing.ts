@@ -58,14 +58,15 @@ export function musicWritingSettings(request: Request): {
 
 export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the saved persona where they differ)
 - Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them. Preserve a supplied refrain, including its repeated words and dialect.
+- CONTENT COMES BEFORE TECHNIQUE. Settle what this singer is saying and why it matters, then find rhymes that carry that thought. Clear, sincere and plausible is only the starting point: the words need desire, force, intimacy, insight or comic timing worth hearing again. Merely announcing a feeling, listing relationship virtues or describing an intention to speak is weak content even when it makes sense. Clever rhyme, specific objects and a busy backing voice cannot make a disposable line worth keeping. A happy song can express attraction, confidence or pleasure directly; do not default to cute mishaps, banter or a comic sidekick. Match the emotional register to the requested genre and audience.
 - SING-ALONG FIRST FOR MELODIC SONGS. The owner wants songs people can sing and recognize as lyrics on a track. Favor connected plain speech, natural stressed words, compatible phrase patterns, satisfying audible rhyme and room for the voice. The owner loves lyricism and creative rhyme. Reach for multisyllabic, mosaic and internal rhymes and for a pair nobody expects, as long as the line still means something and no grammar is bent. A rhyme that makes no sense is unfinished. Rap can keep its own density, cadence and cross-bar rhyme.
 - Follow the requested subject. R&B, a soulful female voice or a decade describes the sound, not a relationship plot. Reflective songs need no invented physical scene. Write a precise feeling, choice or consequence before reaching for an object. Her named pet hates include "Everything's always a tuesday, drinks are always coffee, scenes are clean." Skip named weekdays and clock times, coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes unless the brief makes them relevant. Do not substitute a stranger prop or an arbitrary birthday for a stock one. Keep every phrase understandable in ordinary language.
 - The songs have been coming out thin in places. When no length is given, aim for about four minutes, 50 to 70 sung lines counting every written-out chorus, with the section sizes from the craft: a pre-chorus of four lines, a bridge of four to eight, an outro of three to six. This is a lyric budget, not measured duration. The desk draws a SECTION MAP for each song and sends it with the request, under the idea. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent. New verses add another thought, pressure, choice or event, not another wording of verse one. No compulsory story turn or payoff. Use the section tags the map names, each alone on its line.
-- THE CHORUS STATES THE HOOK. Let the singer say the central feeling directly. Six to eight lines is a useful default, with the brief and the groove deciding the form. The hook normally lands once or twice per chorus; surrounding lines deepen or answer it. A chorus should develop beyond its title instead of exhausting itself in repeated filler. When the brief supplies repetition, a refrain, a chant, a vamp or call and response, preserve that design. A sung word repeated for emphasis is allowed. The same chorus can return unchanged.
+- THE CHORUS STATES THE HOOK. Let the singer say the central feeling directly. Six to eight lines is a useful default, with the brief and the groove deciding the form. The hook normally lands once or twice per chorus; surrounding lines develop one thought that earns it. Do not follow a strong hook with disconnected compliments, anecdotes or jokes. The next verse should take the feeling or situation somewhere, not collect more examples of the same thing. When the brief supplies repetition, a refrain, a chant, a vamp or call and response, preserve that design. A sung word repeated for emphasis is allowed. The same chorus can return unchanged, including the last chorus; the arrangement can provide its lift.
 - Trust the listener. Do not explain a joke or attach a moral to every verse. No inspirational turnaround nobody earned: grief can stay grief, anger can stay anger, and the problem can remain unresolved. Hope can be determination while things stay hard. A song about coping can contain frustration and practical choices without becoming a worksheet, sermon, superiority speech or recovery story.
 - Details, humor, profanity, desire, darkness, tenderness and nonsense syllables are available when this song calls for them. Nobody needs to be a saint, and no flaw is compulsory. A funny or children's song gets real craft without compulsory melancholy. A stock kiss-off about handing back things or what the singer does not need is filler; write the actual thought instead.
-- Keep the music direction outside the lyrics. The lead voice, range and delivery fit this song; there is no house voice. Each performed phrase occupies one line. A supplied refrain with several phrases can span several lines while keeping every word in order; keep its line breaks too when the person explicitly requests them. Use one blank line between sections and none between the lines within a section. BACKING VOCALS ARE PART OF THE SONG. The owner feeds these sheets to AI music generators, which sing whatever sits in parentheses as a second voice. Write them as an arranger would: after the lead phrase on the same line when the voices overlap, on their own line when the backing voice sings alone, ten to twenty-five across a full song unless the brief or the genre says otherwise, at least one in every chorus and more in the last chorus. Only sung words and syllables go in parentheses, never directions. Keep a requested riff as a separate bracket cue, with its sound described in the music direction; do not invent words to sing in its place.
-- Before delivering, silently check the whole song once: the requested meaning and supplied hook survive, every phrase makes sense, the rhymes land and some of them are creative, the mouthfuls are manageable, the chorus develops, the backing parts are written, no section is thin, and the ending is believable. Repair weak lines and keep the successful ones. No example lyrics, analysis, score or promise of release quality in the output.`;
+- Keep the music direction outside the lyrics. The lead voice, range and delivery fit this song; there is no house voice. Each performed phrase occupies one line. A supplied refrain with several phrases can span several lines while keeping every word in order; keep its line breaks too when the person explicitly requests them. Use one blank line between sections and none between the lines within a section. BACKING VOCALS ARE PART OF THE SONG. The owner feeds these sheets to AI music generators. Parentheses contain sung words or syllables, never directions: inline for overlap, on their own line for a separate response. Put backing in every chorus unless the brief asks otherwise. Harmony echoes, held vowels and rhythmic responses are welcome; they do not have to be witty new dialogue. Leave most verse lines clear. Keep a requested riff as a separate bracket cue, with its sound described in the music direction; do not invent words to sing in its place.
+- Before delivering, silently check content, then sound: does the chorus make its hook matter, do the verses develop connected thoughts, and would this singer mean these words without the rhyme? Replace strained idioms, disposable anecdotes, forced attitudes and filler. Change a rhyme family or the whole setup when necessary; do not preserve a weak idea just to keep its end word. Then check satisfying creative rhyme, phrasing, backing parts, section development and the supplied words. Keep successful simple lines. No example lyrics, analysis, score or promise of release quality in the output.`;
 
 /* Part 293 (Sep 25 2026). Her words: "Chat gpt is the only model besides like
  * Grok that will cuss in lyrics when I have it write songs... Can we incorporate
@@ -89,6 +90,25 @@ const audienceNote = (audience: SongAudience | undefined): string => {
   if (audience === 'explicit') return SONG_EXPLICIT_NOTE;
   return audience === 'clean' ? SONG_CLEAN_NOTE : '';
 };
+
+export function musicLyricEditorSystem(audience?: SongAudience): string {
+  return `You are Lyric, working the songwriting desk in Kade-AI's Sound Booth.
+For this pass you are the record's lyric editor. Read the draft as a listener deciding whether these words deserve to be sung. The writer's first choices are provisional. Your job is a stronger song, not a neater checklist.
+
+Clear meaning is the entry requirement. Worthwhile content is the standard. A grammatical, plausible, sincere line can still be filler. Find passages that merely restate the premise, announce the singer's intention to communicate, explain how a relationship should work, or report that a feeling has grown without expressing that growth. Replace the weak thought, not just its vocabulary. A verse full of ordinary virtues or interchangeable activities needs a better central thought before it needs another rhyme.
+
+Find the song's emotional reason for being. What makes this declaration, accusation, pleasure, doubt or joke worth hearing from this speaker now? Let the actual words carry desire, force, intimacy, insight or comic timing. Preserve a plain line that hits; do not replace direct feeling with ornate metaphors, obscure words, quirky props or compulsory conflict. A happy love song can be confident and pleasurable. A doubtful, grieving or angry song can remain unresolved. Keep the voice and register appropriate to this brief; do not make everyone polite, bashful, clever or emotionally instructive.
+
+The chorus should deliver one compelling thought around the hook. Its supporting lines need musical or emotional force, not merely relevance to the topic. A supplied hook cannot do all the work while the rest of the chorus says things any song could say. Keep every supplied lyric phrase, its wording, repeated words and dialect. Do not add a second premise or explain the hook. A changed rhyme family, setup or whole generated passage is allowed when that is what fixes the content. Preserve strong lines and their character; do not flatten the entire song into generic sincerity.
+
+Read each section in order. Verse two should reveal, intensify or complicate something, not offer another list of examples. A bridge changes the angle or musical pressure without inventing an unrelated situation. Distinguish actual development from the singer announcing that something is deeper or more real. Keep the song complete and use its existing section order. Remove a weak pair by writing a better passage in its place, not by leaving a hole.
+
+After the thought works, make the words feel good in the mouth: meaningful stresses, connected phrases, confident rhyme, inventive internal or multi-syllable sound where natural, and room for a vocalist. Avoid stiff idioms or unnatural actions that only exist to finish a rhyme. A pronunciation-table count is a clue, never a verdict. Backing parts support harmony, rhythm and the hook; echoes and sung syllables need no witty sidekick. Preserve backing in the choruses and any section sung entirely by backing voices unless the brief requests no backing.
+
+Return only the complete edited draft in its existing delivery format. Keep the TITLE, music direction and READBACK, with a Lyrics: heading, section tags alone and every returning chorus written out. Supplied phrases may span shorter performed lines with their words unchanged; preserve their line breaks too when explicitly requested. Parentheses contain sung words only. No critique, ratings, rationale, placeholder, repeat instruction or assurance of release quality.
+
+${audienceNote(audience)}`;
+}
 
 /* Part 216 (Sep 19 2026). Her words: "Everything's always a tuesday, drinks are
  * always coffee, scenes are clean." The desk runs the writer on low reasoning so
@@ -1163,8 +1183,8 @@ function sectionKind(tag: string): string {
  *  line in (parentheses) is a backing line of its own; parentheses after a lead phrase are
  *  inline backing. Bracket cues that are not section tags ([riff]) are skipped. */
 function sectionPasses(script: string): SectionPass[] {
-  const at = script.search(/^\s*lyrics\s*:/im);
-  if (at === -1) return [];
+  const heading = /^\s*lyrics\s*:/im.exec(script);
+  if (!heading) return [];
   const passes: SectionPass[] = [];
   let cur: SectionPass | null = null;
   const open = (tag: string): SectionPass => {
@@ -1182,7 +1202,7 @@ function sectionPasses(script: string): SectionPass[] {
     passes.push(pass);
     return pass;
   };
-  for (const raw of script.slice(at).split('\n').slice(1)) {
+  for (const raw of script.slice(heading.index + heading[0].length).split('\n')) {
     const line = raw.trim();
     if (/^READBACK:/i.test(line)) break;
     if (!line) continue;
@@ -1254,6 +1274,21 @@ const DIRECTION_WORDS: Set<string> = new Set(
   ),
 );
 
+function isDirection(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .split(/[^a-z']+/)
+    .filter(Boolean);
+  return words.length > 0 && words.every((word) => DIRECTION_WORDS.has(word));
+}
+
+function hasSungBacking(pass: SectionPass): boolean {
+  for (const line of pass.all)
+    for (const hit of line.matchAll(/\(([^()\n]+)\)/g)) if (!isDirection(hit[1])) return true;
+  return false;
+}
+
 /** The parenthesised groups in a draft's lyrics that hold only directions (a generator sings
  *  "(whispered)" aloud). A group with any other word in it is a sung part. */
 function directionsInParens(script: string): string[] {
@@ -1262,12 +1297,7 @@ function directionsInParens(script: string): string[] {
   const body = script.slice(at).split(/^READBACK:/im)[0];
   const found: string[] = [];
   for (const hit of body.matchAll(/\(([^()\n]{1,60})\)/g)) {
-    const words = hit[1]
-      .toLowerCase()
-      .replace(/[’‘`]/g, "'")
-      .split(/[^a-z']+/)
-      .filter(Boolean);
-    if (words.length && words.every((w) => DIRECTION_WORDS.has(w))) found.push(hit[0]);
+    if (isDirection(hit[1])) found.push(hit[0]);
   }
   return found;
 }
@@ -1281,9 +1311,6 @@ export type BackingIssue = {
   choruses: number[];
   /** Parentheses that hold directions, not sung words. */
   directions: string[];
-  /** When most backing parts only repeat the lead's last words: the parts counted, and how many echo. */
-  parts: number;
-  echoes: number;
 };
 
 /** The words of a line without its parentheses, lower case, as a list. */
@@ -1292,33 +1319,6 @@ const wordsOf = (text: string): string[] =>
     .split(' ')
     .map(bare)
     .filter(Boolean);
-
-/** How many backing parts only repeat the last one to three words of the lead line they follow
- *  or answer. Echoes are fine for a build; a song of nothing else is arrangement filler. */
-function echoCount(passes: SectionPass[]): { parts: number; echoes: number } {
-  let parts = 0;
-  let echoes = 0;
-  const echoed = (lead: string[], said: string[]): boolean => {
-    if (!said.length || said.length > 3 || lead.length < said.length) return false;
-    return lead.slice(-said.length).join(' ') === said.join(' ');
-  };
-  for (const pass of passes) {
-    let last: string[] = [];
-    for (const line of pass.all) {
-      if (/^\(.*\)$/.test(line)) {
-        parts += 1;
-        if (echoed(last, sayable(line).split(' ').map(bare).filter(Boolean))) echoes += 1;
-        continue;
-      }
-      last = wordsOf(line);
-      for (const hit of line.matchAll(/\(([^()]+)\)/g)) {
-        parts += 1;
-        if (echoed(last, sayable(hit[1]).split(' ').map(bare).filter(Boolean))) echoes += 1;
-      }
-    }
-  }
-  return { parts, echoes };
-}
 
 /** Whether a full-length draft is missing its backing vocals: fewer events than a song of this
  *  size wants, a chorus pass with none, or parentheses that are directions. Null when the brief
@@ -1333,23 +1333,16 @@ export function lyricBackingIssue(script: string, brief = ''): BackingIssue | nu
   const need = Math.max(6, Math.round(lead / 7));
   const choruses = passes.filter((p) => p.kind === 'chorus').map(events);
   const directions = directionsInParens(script);
-  const { parts, echoes } = echoCount(passes);
-  const echoHeavy = parts >= 6 && echoes / parts > 0.5;
-  if (total >= need && !choruses.some((n) => n === 0) && !directions.length && !echoHeavy)
-    return null;
+  if (total >= need && !choruses.some((n) => n === 0) && !directions.length) return null;
   return {
     total,
     need,
     choruses,
     directions,
-    parts: echoHeavy ? parts : 0,
-    echoes: echoHeavy ? echoes : 0,
   };
 }
 
-/** The last chorus has the same lead lines as the first in a song with three or more choruses:
- *  the blind judges named the pasted final chorus in every song, and extra backing parts alone
- *  were not a change in what the chorus says. */
+/** Whether the last chorus repeats its lead words. This describes the text, not musical lift. */
 export function lyricLiftIssue(script: string, brief = ''): boolean {
   if (briefWantsRepeats(brief) || briefRepeatsItself(brief)) return false;
   const choruses = sectionPasses(script).filter((p) => p.kind === 'chorus');
@@ -1572,7 +1565,7 @@ export function lyricRhymeReport(script: string, brief = ''): RhymeReport | null
   };
 }
 
-/** How much a rhyme report asks the audit to fix: used to keep an audit that made it worse. */
+/** Number of rhyme observations for diagnostics; this is not a measure of lyric quality. */
 export function lyricRhymeWeight(report: RhymeReport | null): number {
   if (!report) return 0;
   return (
@@ -1581,8 +1574,7 @@ export function lyricRhymeWeight(report: RhymeReport | null): number {
     report.sameWord.length +
     report.worn.length +
     report.suffixStacks.length +
-    (report.couplets ? 1 : 0) +
-    (report.creative < report.need ? 1 : 0)
+    (report.couplets ? 1 : 0)
   );
 }
 
@@ -2126,7 +2118,7 @@ function sizeGate(thin: ThinSection[], number: number): string {
     (s) =>
       `[${s.tag || SECTION_LABEL[s.kind] || s.kind}] has ${s.lines} lead line${s.lines === 1 ? '' : 's'} and wants at least ${s.need}${s.times > 1 ? ` (it comes back ${s.times} times at that size; change every copy the same way)` : ''}`,
   );
-  return `\n${number}. SECTION SIZES, measured by the desk. These sections are too thin to carry a melody: ${rows.join('; ')}. Write the missing lines as new thoughts in the same voice, rhyme sound and rhythm, so each section climbs or answers instead of stopping early. Do not fill the gap by repeating a line, chanting the hook or restating the line above. Keep every line that is already there.`;
+  return `\n${number}. SECTION SIZES, measured by the desk. These sections are shorter than the default map: ${rows.join('; ')}. Fill out the section with connected thoughts that earn their place in the song. Replace existing filler where necessary; keep working lines and supplied words. Preserve the voice and groove, and rebuild a rhyme pair together when its meaning needs repair. Do not pad the section with paraphrases, unrelated incidents or invented details just to reach a count. The brief's requested shape takes precedence.`;
 }
 
 function backingGate(issue: BackingIssue | null, number: number): string {
@@ -2134,11 +2126,7 @@ function backingGate(issue: BackingIssue | null, number: number): string {
   const parts: string[] = [];
   if (issue.total < issue.need || issue.choruses.some((n) => n === 0))
     parts.push(
-      `The draft has ${issue.total} backing part${issue.total === 1 ? '' : 's'} (a backing line in parentheses, or parentheses after a lead phrase)${issue.choruses.length ? `; the choruses carry ${issue.choruses.join(', ')} in order` : ''}. A song this size wants about ${issue.need}, at least one in every chorus and more in the last chorus. Add them the way an arranger would: an echo of a line's last word, a reply of one to four words, a harmony on the hook, a call-and-response between lead and backing voice, a gang shout or a hype ad-lib where the genre uses them. When the voices overlap, put the backing words after the lead phrase on the same line; when the backing voice sings alone, give it its own line in parentheses. Backing words never repeat a whole lead line, and a lead line keeps its words.`,
-    );
-  if (issue.parts && issue.echoes)
-    parts.push(
-      `${issue.echoes} of the ${issue.parts} backing parts only repeat the last words of the lead line. Turn at least half of those into replies, retorts, agreements, questions or asides that comment on or contradict the lead, and keep straight echoes for the build of the last chorus.`,
+      `The draft has ${issue.total} backing part${issue.total === 1 ? '' : 's'} (a backing line in parentheses, or parentheses after a lead phrase)${issue.choruses.length ? `; the choruses carry ${issue.choruses.join(', ')} in order` : ''}. Keep at least one sung backing part in every chorus unless the brief asks for none. About ${issue.need} parts is an arrangement reference, not a quota. Use echoes, harmony syllables, replies or fills where they support the vocal performance and the genre. Straight echoes are valid; no required share of conversational replies. Cut ad-libs that explain the lead, supply a forced joke or make the backing singer sound like a commentator. When voices overlap, put the backing words after the lead phrase on the same line; when the backing voice sings alone, give it its own line in parentheses.`,
     );
   if (issue.directions.length)
     parts.push(
@@ -2151,18 +2139,20 @@ function liftGate(lift: boolean, pets: PetWord[], longLines: string[], number: n
   const parts: string[] = [];
   if (lift)
     parts.push(
-      'The last chorus says exactly what the first one said. Lift it without touching the hook: add one line, or change a line so it lands harder after everything the verses have said. More backing vocals on top are welcome and are not enough alone.',
+      'The last chorus repeats the first chorus lead words. That can be the right choice: the verses, harmony, backing vocals or delivery can supply the lift. Change a lead line only when it earns a stronger meaning; do not invent a reversal or a new line merely to make the text different.',
     );
   if (longLines.length > 1)
     parts.push(
-      `These lines are too long to sing at tempo: ${longLines
+      `These lines exceed the desk's rough phrase-length reference: ${longLines
         .slice(0, 6)
         .map((l) => `"${l}"`)
-        .join('; ')}. Split each into two lines or trim the tail, keeping the joke and the rhyme.`,
+        .join(
+          '; ',
+        )}. Check them against the requested groove and natural speech stress. Trim only filler or an awkward mouthful; keep deliberate long phrases, pickups and rap cadence. A text count cannot establish what fits the melody.`,
     );
   for (const p of pets)
     parts.push(
-      `The word "${p.word}" fills ${p.lines.length} or more different lines (${p.lines.map((l) => `"${l}"`).join(', ')}). Keep it in one of them and give the others a sharper word, a number or the thing itself.`,
+      `The word "${p.word}" appears in ${p.lines.length} or more different lines (${p.lines.map((l) => `"${l}"`).join(', ')}). Check whether it is a filler habit or carries the intended meaning. Revise filler, not a meaningful repetition, and do not add an arbitrary number or object to avoid the word.`,
     );
   return parts.length
     ? `\n${number}. LIFT, WORDS AND LINE LENGTH, measured by the desk. ${parts.join(' ')}`
@@ -2179,41 +2169,39 @@ function rhymeGate(report: RhymeReport | null, number: number): string {
         .map((l) => `[${l.tag}] "${l.line}"`)
         .join(
           '; ',
-        )}. Give each a rhyme partner by changing the end of that line or of a neighbour, keeping what it means.`,
+        )}. Check the intended rhyme pattern by ear; pronunciation, slant rhyme and a more distant answer may explain the count. Repair a genuinely missing rhyme without weakening the thought.`,
     );
   for (const e of report.repeatedEnds)
     parts.push(
-      `The word "${e.word}" ends ${e.lines.length} or more different lines (${e.lines.map((l) => `"${l}"`).join(', ')}). Change the end word of all but one of them, on the same rhyme sound when the pair needs it.`,
+      `The word "${e.word}" ends ${e.lines.length} or more different lines (${e.lines.map((l) => `"${l}"`).join(', ')}). Keep intentional hooks and parallel phrasing; revise an end word only when repetition is covering for a weak thought.`,
     );
   if (report.sameWord.length)
     parts.push(
-      `A word cannot rhyme with itself: ${report.sameWord.slice(0, 4).join('; ')}. Give one line of each pair another end word.`,
+      `These pairs repeat the same end word or sound rather than introducing another rhyme word: ${report.sameWord.slice(0, 4).join('; ')}. Decide whether this is intentional repetition or a missed rhyme opportunity.`,
     );
   if (report.worn.length)
     parts.push(
       `Worn rhyme pairs: ${report.worn
         .slice(0, 4)
         .map((w) => `${w.pair} in [${w.tag}]`)
-        .join(', ')}. Rhyme the second line against something less expected.`,
+        .join(
+          ', ',
+        )}. Check for predictable content. Keep a familiar rhyme when the sentence is fresh and exact; rebuild both lines if a forced partner is driving the thought.`,
     );
   for (const s of report.suffixStacks)
     parts.push(
-      `[${s.tag}] closes ${s.words.length} or more lines on words that rhyme only because they share the ending ${s.family} (${s.words.join(', ')}). Keep at most two of them and rhyme the others on concrete words.`,
+      `[${s.tag}] closes ${s.words.length} or more lines on words that share the ending ${s.family} (${s.words.join(', ')}). Check whether the run says something or merely cycles through abstract rhyme words. Keep a purposeful run; rewrite the thought when it is empty.`,
     );
   if (report.couplets)
     parts.push(
-      `${report.couplets.sections} of ${report.couplets.of} sections run in plain couplets, which sounds like a nursery rhyme. Give the chorus a different scheme (alternating lines, or a run on one sound that ends on the hook) and the bridge another, keeping their meaning, their hook and their rhymes.`,
+      `${report.couplets.sections} of ${report.couplets.of} sections run in couplets. Couplet schemes are valid across genres. Vary a pattern only when it makes the phrasing or development stronger, not to satisfy a variety count.`,
     );
-  if (report.creative < report.need && report.plain.length)
-    parts.push(
-      `The song has ${report.creative} two-syllable, mosaic or internal rhymes, and a song this size wants about ${report.need}. Upgrade these plain couplets by rewriting the second line (or both) so the pair rhymes on two syllables, on a run of words that sounds like one longer word, or with an internal rhyme, without bending the grammar or changing what the line means: ${report.plain.map((p) => `[${p.tag}] "${p.first}" / "${p.second}"`).join('; ')}.`,
-    );
-  return `\n${number}. RHYME, measured by the desk from the sounds of the words. ${parts.join(' ')}`;
+  return `\n${number}. RHYME OBSERVATIONS, estimated from a pronunciation table. These are editing leads, not pass/fail rules or a quality score. Clear meaning, natural phrasing and the supplied hook take priority over counts. Keep creative rhyme where it strengthens the song; there is no minimum quota. ${parts.join(' ')}`;
 }
 
 function repeatGate(issues: RepeatIssue[], number: number): string {
   if (!issues.length) return '';
-  return `\n${number}. REPEATS, measured by the desk. ${issues.map((issue) => `[${issue.tag}]${passCount(issue)}: ${issue.problems.join('; ')}.`).join(' ')} Fix each where it stands. A chorus normally sings its hook word for word once or twice and develops the central thought with surrounding answers or consequences, leaving room for phrasing; change it the same way every time it comes back. Lines that open the same way get new openings, a word that ends too many lines gives way to other words on the same rhyme sound, and a line that stacks a list becomes one plain thought. Keep the hook, the rhyme sounds and the length.`;
+  return `\n${number}. REPEATS, measured by the desk. ${issues.map((issue) => `[${issue.tag}]${passCount(issue)}: ${issue.problems.join('; ')}.`).join(' ')} Fix each where it stands. A chorus normally sings its hook word for word once or twice and develops the central thought with surrounding answers or consequences, leaving room for phrasing; change it the same way every time it comes back. Lines that open the same way get new openings, a word that ends too many lines gives way to other words on the same rhyme sound, and a line that stacks a list becomes one plain thought. Keep the supplied hook, the central meaning and a comparable musical span. Change a rhyme family or its setup when needed to avoid filler.`;
 }
 
 type RepeatPart = RepeatIssue & {
@@ -2303,7 +2291,7 @@ export function lyricRepeatRequest(script: string, issues: RepeatIssue[], brief 
     }
     /* Part 296 review: this used to say "keep its last word where you can", which a
      * section flagged for one word ending three lines could only obey by failing. */
-    return `${said}\n   Rewrite only the lines named: lines that open the same way get new openings, a line that stacks a list becomes one plain thought, and a word that ends too many lines gives way to other words on the same rhyme sound. Keep what each line says, its rhyme sound and its length. Return the whole section with every other line exactly as it is.`;
+    return `${said}\n   Rewrite only the lines named: lines that open the same way get new openings, a line that stacks a list becomes one plain thought, and a word that ends too many lines gives way to other words on the same rhyme sound. Keep the intended meaning and singable rhythm. If the rhyme caused the weak thought, repair its setup and answer together instead of protecting the end word. Return the whole section, preserving unaffected lines.`;
   });
   return `Think briefly: fix what is named, then write it out. Do not count syllables. Your song is below, and it stays exactly as it is except for the part${many ? 's' : ''} named here. The desk measured the song and found ${issues.length > 1 ? 'these sections' : 'this section'} repeating instead of saying something, which the owner of this desk hears as a writer who ran out of ideas:
 
@@ -2405,7 +2393,7 @@ export function applyRepeatRewrite(
 function endingGate(script: string, number: number): string {
   const lines = lyricEndingLines(script);
   if (!lines.length) return '';
-  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Repair any unearned moral, cure or reversal. Keep requested encouragement, direct emotional statements and the supplied hook when they fit the subject; an unresolved problem can coexist with determination. Do not add a physical scene or new prop to prove the ending is concrete. Keep its rhyme sound and length, and change it the same way everywhere it repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
+  return `\n${number}. THE ENDING. These are the last two sung lines of the song, of each chorus pass, of the last verse and of the bridge, and any line the last chorus changed, pulled by the desk:\n${lines.map((l) => `   - "${l}"`).join('\n')}\n   Read each one on its own. Repair any unearned moral, cure or reversal. Keep requested encouragement, direct emotional statements and the supplied hook when they fit the subject; an unresolved problem can coexist with determination. Do not add a physical scene or new prop to prove the ending is concrete. Keep a singable rhythm, changing the rhyme family or setup if the old ending forced the weakness. Carry a repaired refrain consistently through its repeats. A song can end unresolved. Lines that already land on a moment stay exactly as they are.`;
 }
 
 /* Part 296: gate 2 used to say the hook is "repeated verbatim, title landing four
@@ -2437,18 +2425,18 @@ export function lyricAuditRequest(
   );
   const cadence = rapped
     ? '5. FLOW AND MEANING. Check the bars against the requested groove, with internal and multisyllabic rhyme, deliberate stress placement, changes of cadence and usable breath points. Preserve intentional enjambment and unequal bar lengths. Do not force rap into four-stress couplets or predictable end rhymes. Every rhyme must serve the sentence, the character or the payoff; remove filler wordplay. Keep hooks memorable in the form the brief asks for.'
-    : "5. SING-ALONG. Read the verses aloud against their groove. Preserve a coherent rhyme pattern and melodic stresses; prefer surprising but natural rhyme partners over predictable stock pairs. Nearly every line of a verse and chorus should land in a rhyme. Look for two-syllable, mosaic and internal rhymes, aim for at least two in each verse and one in the chorus, and keep them only where the line still means what it says. Do not count syllables yourself. If the desk flags uneven lines, check them by ear and change only lines that lose the groove, keeping deliberate pickups and held notes. The chorus needs a clear feeling and a memorable hook in this singer's own words. No worn rhyme pairs (fire and desire, heart and apart, love and above).";
+    : "5. SING-ALONG. Read the verses aloud against their groove. Preserve a coherent audible rhyme pattern and melodic stresses; pursue natural, inventive rhyme including multi-syllable, mosaic and internal rhyme without meeting a quota. After fixing meaning, audition a new rhyme family if the old one forces weak language. Keep deliberate pickups and held notes. Syllable and rhyme reports are clues to inspect by ear, not evidence that a line is good or bad. The chorus needs a clear feeling and a memorable hook in this singer's own words.";
   const hookCount =
     briefWantsRepeats(brief) || briefRepeatsItself(brief)
       ? 'The idea asked for this repetition (a chant, or a chorus it spelled out itself), so the chorus sings its hook as often as the idea does.'
-      : 'It is sung word for word once or twice in each chorus, never more: the title lands because the chorus comes back, not because one chorus says it over and over. Every other chorus line says something the hook does not.';
+      : "It normally lands word for word once or twice in each chorus: let the returning chorus establish it instead of filling the section with the title alone. Every surrounding line serves the hook's central feeling; an answer or rhythmic phrase need not add a new fact.";
   /* Part 296 follow-up: a kiss-off line is fixed by a new move, not by new words for the same
    * one, or the rewrite hands the same things back in other words. Named, never shown. */
   const kissOffs = tells.some((t) => t.tell.startsWith(KISS_OFF_TELL))
     ? '\nA line marked as the stock kiss-off needs a different move, not the same move in new words: nothing handed back or left behind for them in any wording, and no run of things the singer can do without. Give the singer something only this song has to do or say to this person instead: an action, a fact about the two of them, a joke or a comeback aimed at them.'
     : '';
   const flagged = tells.length
-    ? `\n\nThese exact lines lean on default-reach words and must be rewritten, keeping each line's rhyme sound, stress count and length, the same way everywhere a line repeats, and never by swapping in another default-reach word:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}${kissOffs}`
+    ? `\n\nInspect these exact lines for stock language. Replace genuinely generic thoughts, keeping their role in the song and a singable rhythm. Change the setup or rhyme family together when the old rhyme caused the weakness. Apply a hook repair consistently wherever it returns, preserve supplied words, and do not substitute another stock image:\n${tells.map((t, i) => `${i + 1}. "${t.line}" -- ${t.tell}`).join('\n')}${kissOffs}`
     : '';
   let next = shape ? 8 : 7;
   const sizes = sizeGate(gates.thin || [], next);
@@ -2462,19 +2450,19 @@ export function lyricAuditRequest(
   const repeatText = repeatGate(repeats, next);
   if (repeatText) next += 1;
   const endings = endingGate(script, next);
-  return `Make one focused producer edit of the draft below. Keep working lines, the requested subject, the singer's language, and every supplied lyric phrase. Do not invent a different song to demonstrate improvement.
+  return `Edit the draft for a record. Preserve its brief, singer, strong lines and every supplied lyric phrase. Generated passages with weak content can be rebuilt, including their rhyme family; do not protect an idea merely because the first draft used it. Keep the existing section order and complete arrangement.
 
 ORIGINAL BRIEF: ${JSON.stringify(brief)}
 
-Check, in this order, and change only what fails:
-1. TOPIC AND MEANING. Does the whole song answer the actual brief? Genre and vocal identity do not imply a romance. Reflective subjects need no invented physical scene. Every line should have a clear ordinary-language meaning; fix unclear pronouns, unrelated images and thoughts added only for rhyme. Personal context need not become the narrator's biography.
-2. The hook. Keep supplied wording, repetitions and dialect exactly. ${hookCount} Let surrounding lines deepen or answer the feeling and leave room for the voice. Six to eight lines is a useful chorus default, not a quota. No compulsory syllable count, surprise, title flip or second hook.
-3. DEVELOPMENT. Verses add another aspect, pressure, choice, consequence or event. A bridge may change perspective or phrasing. Do not demand a planted prop, plot turn, quirk or rewritten final chorus. For coping, let practical responses remain human language instead of clinical labels, and let frustration coexist with care.
+Check, in this order. Content decides what stays; the later mechanical reports are prompts to inspect, not targets to optimize:
+1. CONTENT AND VOICE. Privately state what the singer means and why it is worth hearing. Plausible, sincere language can still be filler. Find passages that merely restate the premise, announce an intention to communicate, praise ordinary virtues or claim that a feeling has grown without expressing it. Rebuild a weak section's central thought before polishing its rhymes. Read suspect lines without their rhyme partners: would this singer say them, and what would be lost if they disappeared? Fix strained idioms, invented attitudes, unclear pronouns and implausible behavior used to finish a rhyme. No noun, surprise or cleverness quota. Keep direct emotion and strong simple lines. Genre and vocal identity do not imply a romance; personal context need not become the narrator's biography.
+2. THE CHORUS. Keep supplied wording, repetitions and dialect exactly. ${hookCount} Read the chorus as one statement: every supporting line should set up, deepen or answer its hook. Replace unrelated compliments, anecdotes and jokes that make it drift after a strong opening. Six to eight lines is a useful default, not a quota. Musical answers may develop the feeling without new facts. No compulsory surprise, title flip or second hook.
+3. DEVELOPMENT. Verses add another aspect, pressure, choice, consequence or event. Could verse two replace verse one without changing anything? If so, develop the thought rather than adding another interchangeable activity. A happy song can deepen desire or confidence without manufactured conflict. The bridge should change the angle, intimacy, stakes or phrasing; a new rhyme family alone is not a new thought. No compulsory planted prop, plot twist or rewritten final chorus. For coping, preserve human language and let frustration coexist with care.
 4. EMOTIONAL HONESTY. Preserve the stance requested in the brief. Encouragement can coexist with continuing difficulty. No unearned cure, superiority speech, guaranteed victory or fairy-tale ending. A good chorus can return unchanged.
 ${cadence}
 6. Singability. Natural speech stress, plausible breaths, manageable phrases and room for held notes. Preserve intentional long-short patterns, pickups and expressive repeats. Parentheses are sung backing vocals and ad-libs; production cues stay separate. Without a melody, do not claim exact timing or force equal syllable counts.${shape ? `\n7. Length. ${shape}` : ''}${sizes}${backs}${rhymes}${lifts}${repeatText}${endings}${flagged}${lyricMeterNote(script, brief)}
 
-Last, find the three weakest lines in the song: filler, a line that explains the feeling instead of showing it, a rhyme chosen only to finish a pair, or words that could sit in five hundred other songs. Rewrite each so only this singer in this song could have said it, keeping its rhyme sound, stress and length.
+Last, read the revised sections together. Did a repair introduce a different subject or attitude just to improve a rhyme count? Does the backing voice support the feeling and groove, or keep interrupting with little jokes and explanations? Harmony echoes and wordless responses need no dialogue quota. Keep the successful simple lines, musical repetition and clear transitions. Make only edits with a real content or performance benefit; do not change a fixed number of lines to demonstrate effort.
 
 Return the complete song in the same format: the music direction, the Lyrics: heading with every sung line and every chorus written out in full, then the READBACK line. One performed phrase per line, no blank lines within a section, one blank line between sections. Nothing else.
 
@@ -2508,6 +2496,7 @@ export function mergeRepairedLyrics(
   original: string,
   repaired: string,
   maxGrowth = 1.4,
+  brief = '',
 ): string | null {
   const heading = /^\s*lyrics\s*:\s*$/im;
   const from = heading.exec(original);
@@ -2525,14 +2514,42 @@ export function mergeRepairedLyrics(
     if (at !== -1) words = words.slice(0, at);
   }
   words = dropTrailingProse(words);
-  const sung = (t: string): number =>
-    // A tag is a line that is ONLY a bracket. "[Her] You go first" is a sung line
-    // (seen Sep 20 2026: a duet's audit was refused because nine such lines were
-    // counted as tags and the repair looked like it had lost them).
-    t.split('\n').filter((l) => l.trim() && !/^\s*\[[^\]]*\]\s*$/.test(l)).length;
-  const before = original.slice(from.index + from[0].length, tailAt === -1 ? undefined : tailAt);
-  if (!words || sung(words) < sung(before) * 0.9 || sung(words) > sung(before) * maxGrowth)
+  const before = sectionPasses(original);
+  const after = sectionPasses(`Lyrics:\n${words}`);
+  const counts = (passes: SectionPass[]): { lead: number; sung: number } =>
+    passes.reduce((n, pass) => ({ lead: n.lead + pass.lead, sung: n.sung + pass.all.length }), {
+      lead: 0,
+      sung: 0,
+    });
+  const previous = counts(before);
+  const candidate = counts(after);
+  if (!words || candidate.lead < previous.lead * 0.9 || candidate.sung > previous.sung * maxGrowth)
     return null;
+  let at = 0;
+  for (const pass of before) {
+    if (!pass.all.length) continue;
+    while (at < after.length && after[at].kind !== pass.kind) at += 1;
+    const replacement = after[at];
+    if (!replacement || replacement.lead < Math.min(pass.lead, SECTION_FLOOR[pass.kind] || 1))
+      return null;
+    if (!pass.lead && hasSungBacking(pass)) {
+      const sungParts = (section: SectionPass): number =>
+        section.ownLines.filter((line) => !isDirection(line.slice(1, -1))).length;
+      if (
+        replacement.lead + sungParts(replacement) <
+        Math.min(sungParts(pass), SECTION_FLOOR[pass.kind] || 1)
+      )
+        return null;
+    }
+    if (
+      pass.kind === 'chorus' &&
+      hasSungBacking(pass) &&
+      !hasSungBacking(replacement) &&
+      !NO_BACKING.test(brief)
+    )
+      return null;
+    at += 1;
+  }
   return `${original.slice(0, from.index + from[0].length).trimEnd()}\n${words}\n\n${tail}`.trimEnd();
 }
 

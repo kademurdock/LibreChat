@@ -258,6 +258,7 @@ export {
 
 export {
   musicWritingPrompt,
+  musicLyricEditorSystem,
   musicWritingSettings,
   boothThinkMode,
   musicWritingBackground,
