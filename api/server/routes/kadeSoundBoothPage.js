@@ -23,6 +23,10 @@ const { SHARED_HEAD } = require('./kadePages');
  * by interpolation, so none of it passes through this file's template-literal
  * escaping. */
 const { PAGE_SOURCE: SONG_PASTE_SOURCE } = require('./kadeSoundBoothPaste');
+/* Oct 11 2026: Describe the sound of the recording (kadeSoundBoothDescribe.js). Four pieces of page source, spliced in below by
+ * interpolation; all four are empty strings while KADE_DESCRIBE_SOUND=0, so the page is then the text it was before. */
+const { pageParts: describeParts } = require('./kadeSoundBoothDescribe');
+const DESCRIBE = typeof describeParts === 'function' ? describeParts() : { button: '', heard: '', said: '', functions: '' };
 
 const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -512,7 +516,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.engine==='yue2' && state.clips.length){
         extras.insertAdjacentHTML('beforeend','<button type="button" class="act" id="btnLyrics">Transcribe reference lyrics</button><p class="hint">Free. Drafts the sung words into Lyrics for you to check, since singing is often misheard; Undo writing change brings back your lyrics.</p>');
         document.getElementById('btnLyrics').disabled=busy();
-        document.getElementById('btnLyrics').onclick=transcribeLyrics;
+        document.getElementById('btnLyrics').onclick=transcribeLyrics;${DESCRIBE.button}
       }
       if(state.importError){
         extras.insertAdjacentHTML('beforeend','<p role="alert">'+esc(state.importError)+' Retry the import or discard this failed attempt before generating.</p><button type="button" class="act quiet" id="discardImport">Discard failed import</button>');
@@ -561,10 +565,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.transcribing=false;state.writing=false;
       if(state.engine!==sourceEngine || !state.clips.length || state.clips[0].url!==reference){renderSettings();return;}
       if(!result.ok){renderSettings();say(result.data.error||'Could not hear the words. Your lyrics are kept.',true);return;}
-      state.values.lyrics=result.data.transcript;invalidateQuote();renderSettings();
+      state.values.lyrics=result.data.transcript;${DESCRIBE.heard}invalidateQuote();renderSettings();
       document.getElementById('btnUndoWriting').hidden=false;
-      document.getElementById('set_lyrics').focus();say(result.data.warning);
-    }
+      document.getElementById('set_lyrics').focus();say(result.data.warning${DESCRIBE.said});
+    }${DESCRIBE.functions}
     async function importClip(file){
       if(busy())return;
       invalidateQuote();state.importError='';

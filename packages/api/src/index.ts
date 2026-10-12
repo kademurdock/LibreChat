@@ -224,6 +224,8 @@ export {
   createLyricsRouter,
   registerMusicReference,
   transcribeMusicLyrics,
+  describeMusicSound,
+  describeSoundEnabled,
   validateMusicReference,
   musicReferenceError,
   musicReferenceSeconds,

@@ -3,7 +3,7 @@ import express from 'express';
 import FormData from 'form-data';
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
-import type { Request, RequestHandler, Router } from 'express';
+import type { Request, RequestHandler, Response, Router } from 'express';
 import type { MediaSite } from '../description/links';
 
 /* A new request for an imported recording should use the backing-vocal notation prompt instead
@@ -256,6 +256,360 @@ async function scribeLyrics(buffer: Buffer, mime: string, seconds: number): Prom
   };
 }
 
+/* ---- Describe the sound (Oct 11 2026) ----
+ * A cover can start from what the recording sounds like. This is a SECOND Gemini audio call, apart from the lyric
+ * transcriber (whose prompt and request stay exactly as they were): it asks for ONE plain line in the shape the YuE2
+ * trained styles' captions use, "<language>, <genre>, <pace>, <vocal>, <voice, instrument and production words>", which
+ * the booth puts in Music direction. KADE_DESCRIBE_SOUND=0 switches the whole feature off (no extra call, no route, no
+ * button, every answer as before); unset or anything else is on.
+ * The reply is checked hard before anyone sees it (checkSoundDirection). The prompt forbids names, BPM, comparisons and
+ * lyrics, and the check turns anything that slipped through into "no description" instead of junk. Honest limit: a name
+ * written in plain lowercase inside a line otherwise in lowercase cannot be told from a descriptive word. */
+const soundVersion = 'gemini38-sound-v1';
+const soundPrompt =
+  'Listen to this recording and describe how it sounds in ONE line, in exactly this shape: <language of the singing>, <one or two genre or sub-genre words>, <slow tempo, mid-tempo or up-tempo>, <female lead vocal, male lead vocal or female and male vocals>, then four to six short phrases about the voice quality, the instruments and the production. Separate the parts with commas. Write everything in lowercase except the language. If there is no singing, write instrumental in place of the language and leave out the vocal part. Rules: never give a BPM or any number except a decade such as 80s. Never name any artist, band, singer, producer, song, album or label. Never write sounds like, in the style of or any other comparison. Never write lyrics or quote any word from the recording. Never write section labels or brackets. Return only the line, with no label, quotes, markdown or explanation.';
+const soundMaxChars = 240;
+/** A line needs at least one phrase about the voice, instruments or production after the four fixed parts. */
+const soundMinPhrases = 1;
+const soundMaxParts = 30;
+/** The message shown when a description could not be made. */
+const soundMissNote = 'I could not describe the sound this time; type it yourself.';
+const soundLateNote =
+  'The description of the sound is not ready yet. Choose Describe the sound of the recording in a moment.';
+const soundFailure =
+  'I could not describe the sound this time. Your Music direction is kept; type it yourself.';
+
+type SoundUsage = { inputTokens: number; outputTokens: number };
+export type SoundDescription = {
+  direction: string;
+  seconds: number;
+  model: string;
+  usage?: SoundUsage;
+};
+export type SoundCheck = { direction: string } | { reason: string };
+type SoundReply = { text: string; usage?: SoundUsage };
+
+export function describeSoundEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.KADE_DESCRIBE_SOUND !== '0';
+}
+
+const soundAlias = (canonical: string, ...forms: string[]): [string, string][] =>
+  forms.map((form): [string, string] => [form, canonical]);
+const soundLanguages: ReadonlySet<string> = new Set(
+  'english spanish french german italian portuguese japanese korean mandarin cantonese chinese hindi arabic russian swedish norwegian danish finnish dutch polish turkish greek hebrew hawaiian latin irish welsh gaelic yiddish swahili zulu tagalog thai vietnamese indonesian ukrainian czech hungarian romanian persian bengali tamil punjabi urdu afrikaans icelandic catalan instrumental'.split(
+    ' ',
+  ),
+);
+const soundPace: ReadonlyMap<string, string> = new Map([
+  ...soundAlias('slow tempo', 'slow tempo', 'slow-tempo', 'slow', 'slow paced', 'slow-paced', 'downtempo'),
+  ...soundAlias(
+    'mid-tempo',
+    'mid-tempo',
+    'mid tempo',
+    'midtempo',
+    'medium tempo',
+    'medium-tempo',
+    'moderate tempo',
+    'moderate-tempo',
+    'moderate',
+    'medium',
+  ),
+  ...soundAlias(
+    'up-tempo',
+    'up-tempo',
+    'up tempo',
+    'uptempo',
+    'fast tempo',
+    'fast-tempo',
+    'fast',
+    'fast paced',
+    'fast-paced',
+    'quick tempo',
+    'upbeat tempo',
+  ),
+]);
+const soundVocal: ReadonlyMap<string, string> = new Map([
+  ...soundAlias(
+    'female lead vocal',
+    'female lead vocal',
+    'female lead vocals',
+    'female lead',
+    'female vocal',
+    'female vocals',
+    'female singer',
+    'female lead singer',
+    'female voice',
+    'female vocalist',
+    'female lead vocalist',
+    'female-led vocals',
+    'female led vocals',
+    'lead female vocal',
+    'lead female vocals',
+  ),
+  ...soundAlias(
+    'male lead vocal',
+    'male lead vocal',
+    'male lead vocals',
+    'male lead',
+    'male vocal',
+    'male vocals',
+    'male singer',
+    'male lead singer',
+    'male voice',
+    'male vocalist',
+    'male lead vocalist',
+    'male-led vocals',
+    'male led vocals',
+    'lead male vocal',
+    'lead male vocals',
+  ),
+  ...soundAlias(
+    'female and male vocals',
+    'female and male vocals',
+    'male and female vocals',
+    'female and male lead vocals',
+    'male and female lead vocals',
+    'female and male vocal',
+    'male and female vocal',
+    'female and male voices',
+    'male and female voices',
+    'female and male',
+    'male and female',
+    'female and male duet',
+    'male and female duet',
+    'duet',
+    'mixed vocals',
+  ),
+]);
+/** Words that may be capitalized in a description without being a person's name. */
+const soundAcronyms: ReadonlySet<string> = new Set(['R&B', 'EDM', 'UK', 'US', 'DJ']);
+const soundPlaces: ReadonlySet<string> = new Set(
+  'motown latin celtic afro afrobeat americana appalachian delta chicago memphis nashville detroit british southern western caribbean jamaican brazilian cuban irish scottish hawaiian texas k-pop j-pop'.split(
+    ' ',
+  ),
+);
+const soundLabel =
+  /^(?:music\s+direction|description|caption|direction|style|sound|prompt|genre|tags?|answer|output|result)\s*[:\-–—]\s*/i;
+const soundDecade = /\b(?:19|20)?\d0s\b/g;
+/** A section tag or any bracket: "[Chorus]" in a reply means lyrics, whatever else is on the line. */
+const soundTag = /[[\]{}<>]/;
+/** A reason code for the log, and the pattern that earns it. Order matters: the clearest reason wins. */
+const soundBans: [string, RegExp][] = [
+  ['tag', soundTag],
+  ['quoted', /["“”]/],
+  [
+    'refusal',
+    /\b(?:sorry|i apologi[sz]e|i can(?:not|'t)|cannot|can't|i'?m unable|i am unable|unable to|not able to|as an ai|no audio|no sound)\b/i,
+  ],
+  [
+    'comparison',
+    /\b(?:sounds?\s+like|sounding\s+like|in\s+the\s+style\s+of|in\s+the\s+vein\s+of|in\s+the\s+manner\s+of|style\s+of|reminiscent|reminds?|similar\s+to|inspired\s+by|influenced\s+by|akin\s+to|cover\s+of|version\s+of|featuring)\b|esque\b/i,
+  ],
+  ['trigger', /(?:^|[^a-z])kd[a-z0-9]*/i],
+  ['bpm', /bpm\b|beats?[\s-]+per[\s-]+minute/i],
+  ['sentences', /[.!?]\s+\S/],
+  ['lyrics', /\b(?:i|i'm|i'll|i've|i'd|me|my|you|you're|your|we|our)\b/i],
+];
+
+const soundReject = (reason: string): { reason: string } => ({ reason });
+const soundTokens = (parts: string[]): { token: string; initial: boolean }[] =>
+  parts.flatMap((part) =>
+    part.split(/\s+/).map((token, index) => ({ token, initial: index === 0 })),
+  );
+const soundNeutral = (token: string): boolean =>
+  soundAcronyms.has(token) || soundPlaces.has(token.toLowerCase());
+const soundCapital = (token: string): boolean => /^\p{Lu}/u.test(token) && !soundNeutral(token);
+
+/**
+ * Whether a capital letter in the description points to a person's, band's or song's name. A line written wholly in
+ * Title Case or wholly in sentence case per part is a style, not names. Capitals mixed into lowercase words are names,
+ * and so is any shouted word (three capitals or more) that is not a known acronym.
+ */
+function soundHasName(parts: string[]): boolean {
+  const tokens = soundTokens(parts);
+  if (tokens.some(({ token }) => /^\p{Lu}{3,}$/u.test(token) && !soundNeutral(token))) return true;
+  const inner = tokens.filter(({ initial }) => !initial);
+  const innerCapitals = inner.filter(({ token }) => soundCapital(token)).length;
+  const titleCase = inner.length > 0 && innerCapitals / inner.length >= 0.6;
+  if (innerCapitals > 0 && !titleCase) return true;
+  const openers = tokens.filter(({ initial, token }) => initial && !soundNeutral(token));
+  const capitalOpeners = openers.filter(({ token }) => soundCapital(token)).length;
+  return capitalOpeners > 0 && capitalOpeners < openers.length;
+}
+
+const soundLower = (part: string): string =>
+  part
+    .toLowerCase()
+    .replace(/\br&b\b/g, 'R&B')
+    .replace(/\b(edm|uk|us|dj)\b/g, (word) => word.toUpperCase());
+
+/** One line from the model's reply: markdown, a leading label and wrapping quotes are removed; two lines is no line. */
+function soundLine(raw: string): { text: string } | { reason: string } {
+  if (soundTag.test(raw)) return soundReject('tag');
+  const lines = raw
+    .replace(/```[a-z]*/gi, '\n')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return soundReject('empty');
+  if (lines.length > 1) return soundReject('lines');
+  const text = lines[0]
+    .replace(/^[\s>*#_`-]+/, '')
+    .replace(soundLabel, '')
+    .replace(/^[\s"'‘’`*_]+|[\s"'‘’`*_.]+$/g, '');
+  return text ? { text } : soundReject('empty');
+}
+
+/** The parts of a line in the order the trained captions use, cut at a comma boundary under the cap. */
+function soundOrdered(
+  language: string,
+  genre: string,
+  pace: string,
+  vocal: string | undefined,
+  sound: string[],
+): string {
+  const head = [language[0].toUpperCase() + language.slice(1), genre, pace, ...(vocal ? [vocal] : [])].join(', ');
+  const totals = sound.map((_, index) =>
+    sound.slice(0, index + 1).reduce((length, word) => length + word.length + 2, head.length),
+  );
+  const over = totals.findIndex((length) => length > soundMaxChars);
+  return [head, ...(over === -1 ? sound : sound.slice(0, over))].join(', ');
+}
+
+/**
+ * The strict check on the model's reply. Returns the line to show or the reason it was refused. It accepts exactly:
+ * language (or "instrumental"), a genre part, slow tempo, mid-tempo or up-tempo, female lead vocal, male lead vocal or
+ * female and male vocals (not for an instrumental), then voice, instrument and production words, one line, at most 240
+ * characters, cut at a comma. It refuses an empty or too short reply, a second line, brackets (section tags), quoted
+ * words, lyric-like sentences or first-person words, an apology or refusal, a BPM or any number but a decade, a
+ * comparison ("sounds like"), a training trigger (kd...), and capitals that look like names.
+ */
+export function checkSoundDirection(raw: string): SoundCheck {
+  const first = soundLine(raw);
+  if ('reason' in first) return first;
+  const banned = soundBans.find(([, pattern]) => pattern.test(first.text));
+  if (banned) return soundReject(banned[0]);
+  if (/\d/.test(first.text.replace(soundDecade, ''))) return soundReject('number');
+  const parts = first.text
+    .split(/\s*[,;]\s*/)
+    .map((part) => part.trim().replace(/[.\s]+$/, ''))
+    .filter(Boolean);
+  const [language, ...rest] = parts;
+  if (!language || !soundLanguages.has(language.toLowerCase())) return soundReject('language');
+  if (parts.length > soundMaxParts || rest.some((part) => part.split(/\s+/).length > 6 || part.length > 48))
+    return soundReject('segment');
+  if (rest.some((part) => /[^\p{L}\d&'’\/ -]/u.test(part))) return soundReject('characters');
+  const lower = rest.map(soundLower);
+  const fixedPart = (part: string): boolean => soundPace.has(part) || soundVocal.has(part);
+  if (soundHasName(rest.filter((part) => !fixedPart(part.toLowerCase())))) return soundReject('name');
+  const pace = lower.map((part) => soundPace.get(part)).find(Boolean);
+  const vocal = lower.map((part) => soundVocal.get(part)).find(Boolean);
+  const instrumental = language.toLowerCase() === 'instrumental';
+  if (!pace) return soundReject('pace');
+  if (instrumental === Boolean(vocal)) return soundReject('vocal');
+  const others = [...new Set(lower.filter((part) => !soundPace.has(part) && !soundVocal.has(part)))];
+  if (others.length === 0) return soundReject('genre');
+  if (others.length < 1 + soundMinPhrases) return soundReject('short');
+  return { direction: soundOrdered(language.toLowerCase(), others[0], pace, vocal, others.slice(1)) };
+}
+
+/** The reply of one Gemini audio call, before any check. Same endpoint, key, model, limits and settings as the lyric call. */
+async function geminiSound(buffer: Buffer, mime: string): Promise<SoundReply> {
+  const key = process.env.GEMINI_API_KEY || process.env.KADE_EMBED_GEMINI_KEY;
+  if (!key) throw new GeminiMiss('skip:no-key', true);
+  if (buffer.length > 14 * 1024 * 1024) throw new GeminiMiss('skip:over-14MiB', true);
+  if (!mime.startsWith('audio/')) throw new GeminiMiss('skip:not-audio', true);
+  const { data } = await axios.post<GeminiResult>(
+    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
+    {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: mime, data: buffer.toString('base64') } },
+            { text: soundPrompt },
+          ],
+        },
+      ],
+      generationConfig: {
+        maxOutputTokens: 2048,
+        thinkingConfig: { thinkingLevel: 'low' },
+      },
+    },
+    {
+      headers: { 'x-goog-api-key': key },
+      timeout: 60000,
+      maxRedirects: 0,
+      maxBodyLength: 20 * 1024 * 1024,
+      maxContentLength: 128 * 1024,
+    },
+  );
+  const candidate = data.candidates?.[0];
+  if (!candidate) {
+    const blocked = data.promptFeedback?.blockReason;
+    throw new GeminiMiss(blocked ? `blocked:${blocked}` : 'finish:no-candidate');
+  }
+  if (candidate.finishReason !== 'STOP')
+    throw new GeminiMiss(`finish:${candidate.finishReason || 'none'}`);
+  const usage = data.usageMetadata;
+  return {
+    text: (candidate.content?.parts ?? [])
+      .filter((part) => !part.thought && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n'),
+    usage: usage
+      ? {
+          inputTokens: usage.promptTokenCount || 0,
+          outputTokens: (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0),
+        }
+      : undefined,
+  };
+}
+
+const soundTokensNote = (usage?: SoundUsage): string =>
+  usage ? `tokens=in:${usage.inputTokens},out:${usage.outputTokens}` : 'tokens=unknown';
+
+/**
+ * One plain line about how a recording sounds, for the Music direction box of a cover, or null when no usable line
+ * could be made. It never throws. Its log lines carry the model, the recording's size and length, the token counts
+ * (what the house paid for the call) and the reason for a miss, never the reply, the request or the key.
+ * `onGeminiError` hears every Gemini HTTP failure, as transcribeMusicLyrics does, so the fork's Google key alarm can tell
+ * an empty prepaid balance from a refused recording; a throw inside it is ignored.
+ */
+export async function describeMusicSound(
+  buffer: Buffer,
+  mime: string,
+  seconds: number,
+  onGeminiError?: (error: unknown) => void,
+): Promise<SoundDescription | null> {
+  mime = audioMime(buffer, mime);
+  const detail = `model=${geminiModel} ${mime} ${buffer.length}B ${Math.round(seconds)}s`;
+  try {
+    const reply = await geminiSound(buffer, mime);
+    const checked = checkSoundDirection(reply.text);
+    if (!('direction' in checked)) {
+      logger.warn(
+        `[music/lyrics] sound describe rejected reason=${checked.reason} ${detail} ${soundTokensNote(reply.usage)}`,
+      );
+      return null;
+    }
+    logger.info(`[music/lyrics] sound described ${detail} ${soundTokensNote(reply.usage)}`);
+    return { direction: checked.direction, seconds, model: geminiModel, usage: reply.usage };
+  } catch (error) {
+    const line = `[music/lyrics] sound describe failed reason=${geminiFailureReason(error)} ${detail}`;
+    if (error instanceof GeminiMiss && error.skipped) logger.info(line);
+    else logger.warn(line);
+    if (onGeminiError && !(error instanceof GeminiMiss)) {
+      try {
+        onGeminiError(error);
+      } catch {
+        /* the alarm never changes the answer */
+      }
+    }
+    return null;
+  }
+}
+
 /** Where an imported cover came from, when it was not a file (Part 293: a media link). */
 export type MusicReferenceSource = {
   site: MediaSite;
@@ -272,6 +626,8 @@ type Reference = {
   source?: MusicReferenceSource;
   transcript?: Transcript;
   transcriptVersion?: string;
+  sound?: SoundDescription;
+  soundVersion?: string;
   leaseUntil?: Date;
 };
 const schema = new mongoose.Schema<Reference>({
@@ -282,6 +638,8 @@ const schema = new mongoose.Schema<Reference>({
   source: mongoose.Schema.Types.Mixed,
   transcript: mongoose.Schema.Types.Mixed,
   transcriptVersion: String,
+  sound: mongoose.Schema.Types.Mixed,
+  soundVersion: String,
   leaseUntil: Date,
 });
 schema.index({ user: 1, key: 1 }, { unique: true });
@@ -336,6 +694,10 @@ type Hooks = {
   refresh: (url: string, user: string) => Promise<string>;
   duration: (buffer: Buffer) => Promise<number | null>;
   transcribe: (buffer: Buffer, mime: string, seconds: number) => Promise<Transcript>;
+  /** One plain line about how the recording sounds; resolves to null when none could be made. */
+  describe?: (buffer: Buffer, mime: string, seconds: number) => Promise<SoundDescription | null>;
+  /** Test seam for how long a description is waited for (see soundWaitAfterLyricsMs). */
+  describeWait?: { afterLyricsMs?: number; aloneMs?: number };
 };
 
 /**
@@ -533,8 +895,145 @@ export async function validateMusicReference(
   return refreshed;
 }
 
+type SoundFields = { direction: string; direction_usage?: SoundUsage } | { direction_note: string };
+type Heard = { buffer: Buffer; mime: string; seconds: number };
+/** A description being made: its result, and the moment it has been written to the recording's row (never rejects). */
+type SoundFlight = { described: Promise<SoundDescription | null>; kept: Promise<void> };
+type SoundFlights = {
+  running: (user: string, key: string) => SoundFlight | undefined;
+  begin: (user: string, key: string, heard: Heard) => SoundFlight;
+};
+/* How long a description is waited for. After the lyric call it is not waited for at all: if it is not ready by then, the
+ * lyrics go out without it and it finishes in the background and is kept for the next press. Alone (the lyrics were already
+ * kept from an earlier press) it is the whole request, so it gets time. */
+const soundWaitAfterLyricsMs = 0;
+const soundWaitAloneMs = 45000;
+
+const describeActive = (hooks: Hooks): boolean =>
+  typeof hooks.describe === 'function' && describeSoundEnabled();
+
+function cachedSound(
+  reference: Pick<Reference, 'sound' | 'soundVersion'> | null | undefined,
+): SoundDescription | undefined {
+  const sound = reference?.sound;
+  return sound?.direction && reference?.soundVersion === soundVersion ? sound : undefined;
+}
+
+const soundFields = (sound: SoundDescription): SoundFields => ({
+  direction: sound.direction,
+  ...(sound.usage ? { direction_usage: sound.usage } : {}),
+});
+
+/** The description if it is ready within `waitMs`; otherwise the plain note that says why there is none. */
+async function soundWithin(flight: SoundFlight, waitMs: number): Promise<SoundFields> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), waitMs);
+  });
+  const got = await Promise.race([flight.described, late]).finally(() => clearTimeout(timer));
+  if (got === 'late') return { direction_note: soundLateNote };
+  if (!got) return { direction_note: soundMissNote };
+  await flight.kept;
+  return soundFields(got);
+}
+
+/** The Describe button's answer once the description is made: the line (after it is kept), or the plain failure sentence. */
+async function answerSound(res: Response, flight: SoundFlight): Promise<void> {
+  const described = await flight.described;
+  if (!described) {
+    res.status(502).json({ error: soundFailure });
+    return;
+  }
+  await flight.kept;
+  res.json({ ...soundFields(described), cached: false });
+}
+
+async function keepSound(user: string, key: string, sound: SoundDescription | null): Promise<void> {
+  if (!sound) return;
+  try {
+    await References.updateOne({ user, key }, { $set: { sound, soundVersion } });
+  } catch (error) {
+    logger.warn(
+      `[music/lyrics] sound description could not be kept reason=${geminiFailureReason(error)}`,
+    );
+  }
+}
+
+/**
+ * The descriptions being made right now, by account and recording. A description that missed its wait keeps running and
+ * is kept when it ends, and a second press for the same recording joins it instead of paying for a second call.
+ */
+function soundFlights(hooks: Hooks): SoundFlights {
+  const flying = new Map<string, SoundFlight>();
+  const running = (user: string, key: string): SoundFlight | undefined =>
+    flying.get(`${user}\n${key}`);
+  const begin = (user: string, key: string, heard: Heard): SoundFlight => {
+    const known = running(user, key);
+    if (known) return known;
+    const id = `${user}\n${key}`;
+    const described = Promise.resolve()
+      .then(() => hooks.describe?.(heard.buffer, heard.mime, heard.seconds) ?? null)
+      .then((sound) => (sound && sound.direction?.trim() ? sound : null))
+      .catch((error: unknown) => {
+        logger.warn(`[music/lyrics] sound describe hook failed reason=${geminiFailureReason(error)}`);
+        return null;
+      });
+    const kept = described.then((sound) => keepSound(user, key, sound));
+    const flight = { described, kept };
+    flying.set(id, flight);
+    void kept.finally(() => flying.delete(id));
+    return flight;
+  };
+  return { running, begin };
+}
+
+/** One account's hold on one recording for four minutes, so two presses never run two calls. Null when it is held. */
+function claimReference(user: string, key: string) {
+  return References.findOneAndUpdate(
+    {
+      user,
+      key,
+      $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: new Date() } }],
+    },
+    { $set: { leaseUntil: new Date(Date.now() + 240000) } },
+    { new: true },
+  ).lean();
+}
+
+const releaseReference = (user: string, key: string) =>
+  References.updateOne({ user, key }, { $unset: { leaseUntil: 1 } });
+
+/**
+ * The recording's bytes, type and measured length. A recording past a cover's limit is answered here with the 400 and
+ * nothing is returned. Transcribe reference lyrics and Describe the sound are a YuE2 cover's buttons, so a cover's limit.
+ */
+async function listenTo(
+  res: Response,
+  user: string,
+  referenceUrl: string,
+  hooks: Hooks,
+): Promise<Heard | undefined> {
+  const url = await hooks.refresh(referenceUrl, user);
+  await authorizeReference(user, url, hooks);
+  const audio = await axios.get<ArrayBuffer>(url, {
+    responseType: 'arraybuffer',
+    maxRedirects: 0,
+    maxContentLength: 20 * 1024 * 1024,
+    timeout: 45000,
+  });
+  const buffer = Buffer.from(audio.data);
+  const seconds = await hooks.duration(buffer);
+  const durationError = musicReferenceError(seconds, { yueCover: true });
+  if (durationError || seconds === null) {
+    res.status(400).json({ error: durationError });
+    return undefined;
+  }
+  return { buffer, mime: String(audio.headers['content-type'] || 'audio/mpeg'), seconds };
+}
+
 export function createLyricsRouter(hooks: Hooks): Router {
   const router = express.Router();
+  const flights = soundFlights(hooks);
   router.post(
     '/reference/lyrics',
     hooks.auth,
@@ -558,20 +1057,23 @@ export function createLyricsRouter(hooks: Hooks): Router {
             .json({ error: 'That recording is not saved on your account. Import it again.' });
           return;
         }
-        if (reference?.transcript && reference.transcriptVersion === transcriptVersion) {
+        const describing = describeActive(hooks);
+        const known = describing ? cachedSound(reference) : undefined;
+        if (
+          reference?.transcript &&
+          reference.transcriptVersion === transcriptVersion &&
+          (!describing || known)
+        ) {
           const warning = lyricsWarning(reference.transcript.model);
-          res.json({ ...reference.transcript, warning, cached: true });
+          res.json({
+            ...reference.transcript,
+            warning,
+            cached: true,
+            ...(known ? soundFields(known) : {}),
+          });
           return;
         }
-        const claim = await References.findOneAndUpdate(
-          {
-            user,
-            key,
-            $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lt: new Date() } }],
-          },
-          { $set: { leaseUntil: new Date(Date.now() + 240000) } },
-          { new: true },
-        ).lean();
+        const claim = await claimReference(user, key);
         if (!claim) {
           res
             .status(409)
@@ -580,49 +1082,52 @@ export function createLyricsRouter(hooks: Hooks): Router {
         }
         try {
           await authorizeReference(user, claim.url, hooks);
-          if (claim.transcript && claim.transcriptVersion === transcriptVersion) {
+          const kept =
+            claim.transcript && claim.transcriptVersion === transcriptVersion
+              ? claim.transcript
+              : undefined;
+          const keptSound = describing ? cachedSound(claim) : undefined;
+          if (kept && (!describing || keptSound)) {
             res.json({
-              ...claim.transcript,
-              warning: lyricsWarning(claim.transcript.model),
+              ...kept,
+              warning: lyricsWarning(kept.model),
               cached: true,
+              ...(keptSound ? soundFields(keptSound) : {}),
             });
             return;
           }
-          const url = await hooks.refresh(claim.url, user);
-          await authorizeReference(user, url, hooks);
-          const audio = await axios.get<ArrayBuffer>(url, {
-            responseType: 'arraybuffer',
-            maxRedirects: 0,
-            maxContentLength: 20 * 1024 * 1024,
-            timeout: 45000,
-          });
-          const buffer = Buffer.from(audio.data);
-          const seconds = await hooks.duration(buffer);
-          /* Transcribe reference lyrics is a YuE2 cover's button, so a cover's limit. */
-          const durationError = musicReferenceError(seconds, { yueCover: true });
-          if (durationError || seconds === null) {
-            res.status(400).json({ error: durationError });
-            return;
-          }
-          const result = await hooks.transcribe(
-            buffer,
-            String(audio.headers['content-type'] || 'audio/mpeg'),
-            seconds,
-          );
+          const heard = await listenTo(res, user, claim.url, hooks);
+          if (!heard) return;
+          const sound =
+            describing && !keptSound ? flights.begin(user, key, heard) : undefined;
+          const result =
+            kept ?? (await hooks.transcribe(heard.buffer, heard.mime, heard.seconds));
           if (!result.transcript?.trim()) {
             res
               .status(422)
               .json({ error: 'No clear words were detected. Your existing lyrics are kept.' });
             return;
           }
-          result.transcript = result.transcript.slice(0, 8000);
-          await References.updateOne(
-            { user, key },
-            { $set: { transcript: result, transcriptVersion } },
-          );
-          res.json({ ...result, warning: lyricsWarning(result.model), cached: false });
+          if (!kept) {
+            result.transcript = result.transcript.slice(0, 8000);
+            await References.updateOne(
+              { user, key },
+              { $set: { transcript: result, transcriptVersion } },
+            );
+          }
+          const extra = keptSound
+            ? soundFields(keptSound)
+            : sound
+              ? await soundWithin(
+                  sound,
+                  kept
+                    ? (hooks.describeWait?.aloneMs ?? soundWaitAloneMs)
+                    : (hooks.describeWait?.afterLyricsMs ?? soundWaitAfterLyricsMs),
+                )
+              : {};
+          res.json({ ...result, warning: lyricsWarning(result.model), cached: !!kept, ...extra });
         } finally {
-          await References.updateOne({ user, key }, { $unset: { leaseUntil: 1 } });
+          await releaseReference(user, key);
         }
       } catch (error) {
         if (res.headersSent) return;
@@ -634,6 +1139,72 @@ export function createLyricsRouter(hooks: Hooks): Router {
           error:
             'Could not transcribe this recording. Your existing lyrics are kept. Try a clearer recording or type the words.',
         });
+      }
+    },
+  );
+  /* Describe the sound of the recording: the explicit button. It shares the lookup, the ownership check, the four-minute
+   * hold and the cover limit with the transcriber, and is answered 404 as if it did not exist while the feature is off. */
+  router.post(
+    '/reference/describe',
+    (_req, _res, next) => (describeActive(hooks) ? next() : next('route')),
+    hooks.auth,
+    express.json({ limit: '16kb' }),
+    async (req, res) => {
+      let key: string;
+      const user = hooks.user(req);
+      try {
+        if (typeof req.body.url !== 'string' || req.body.url.length > 12000)
+          throw new Error('No recording.');
+        key = identity(req.body.url);
+      } catch {
+        res.status(400).json({ error: 'Import a cover recording first.' });
+        return;
+      }
+      try {
+        const reference = await ownedReference(user, req.body.url, hooks);
+        if (!reference) {
+          res
+            .status(404)
+            .json({ error: 'That recording is not saved on your account. Import it again.' });
+          return;
+        }
+        const known = cachedSound(reference);
+        if (known) {
+          res.json({ ...soundFields(known), cached: true });
+          return;
+        }
+        const flying = flights.running(user, key);
+        if (flying) {
+          await answerSound(res, flying);
+          return;
+        }
+        const claim = await claimReference(user, key);
+        if (!claim) {
+          res
+            .status(409)
+            .json({ error: 'This recording is already being worked on. Wait for it to finish.' });
+          return;
+        }
+        try {
+          await authorizeReference(user, claim.url, hooks);
+          const keptSound = cachedSound(claim);
+          if (keptSound) {
+            res.json({ ...soundFields(keptSound), cached: true });
+            return;
+          }
+          const heard = await listenTo(res, user, claim.url, hooks);
+          if (!heard) return;
+          await answerSound(res, flights.begin(user, key, heard));
+        } finally {
+          await releaseReference(user, key);
+        }
+      } catch (error) {
+        if (res.headersSent) return;
+        if (error instanceof ReferenceOwnershipError) {
+          res.status(400).json({ error: error.message });
+          return;
+        }
+        res.status(502).json({ error: soundFailure });
       }
     },
   );

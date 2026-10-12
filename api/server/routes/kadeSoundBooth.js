@@ -80,6 +80,8 @@ const {
   createLyricsRouter,
   registerMusicReference,
   transcribeMusicLyrics,
+  describeMusicSound,
+  describeSoundEnabled,
   validateMusicReference,
   musicReferenceError,
   musicReferenceSeconds,
@@ -133,6 +135,14 @@ const musicReferenceHooks = {
     googleKeyAlarm('the lyric transcriber', error, process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : 'KADE_EMBED_GEMINI_KEY')),
   savedSources: user => audioReferenceGuard(user).savedSources(),
 };
+/* Oct 11 2026: Describe the sound of the recording. A second Gemini call beside the lyric transcriber puts one line about how a
+ * cover's recording sounds in the answer (and behind POST /reference/describe), for the Music direction box. KADE_DESCRIBE_SOUND=0
+ * turns it off: no hook, so no extra call and no route, and every answer is as it was. A harness whose @librechat/api stand-in has
+ * no describeMusicSound simply has none, like MY_VOICE_READY. The same Google key alarm hears a refusal that is the key's trouble. */
+if (typeof describeMusicSound === 'function' && typeof describeSoundEnabled === 'function' && describeSoundEnabled()) {
+  musicReferenceHooks.describe = (buffer, mime, seconds) => describeMusicSound(buffer, mime, seconds, (error) =>
+    googleKeyAlarm('the sound describer', error, process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : 'KADE_EMBED_GEMINI_KEY'));
+}
 /* Sep 25 2026: a song pasted whole from ChatGPT ("Lyrics Box", "Tag Box",
  * "Negative Tag Box") is sorted before any render route reads it -- YuE2's
  * below and Lyria's further down -- so the engine gets the direction and the
