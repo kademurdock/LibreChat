@@ -43,15 +43,18 @@ const LINE_1 = 'English, folk, mid-tempo, female lead vocal, warm acoustic guita
 const LINE_2 = 'English, soul, slow tempo, male lead vocal, gritty vocals, warm organ';
 const WARNING = 'Draft lyrics only: review the words before generating.';
 const FILLED = 'Music direction filled with what the recording sounds like. Change it or clear it if you want a different style.';
+const NAMED = ' Track title: cover (cover).';
 const READY = 'A description of the sound is ready, but your Music direction was kept. Choose Describe the sound of the recording to use it.';
 const REPLACED = 'Music direction replaced with what the recording sounds like. Change it or clear it to move the cover to another genre. Undo writing change brings back your previous direction.';
 const NOTE = 'I could not describe the sound this time; type it yourself.';
-const HINT = 'Fills Music direction with what the recording sounds like, for a cover in the same style. Change or clear it to move the cover to another genre.';
+const HINT = 'Free. Fills Music direction with what the recording sounds like, for a cover in the same style. Change or clear it to move the cover to another genre.';
 
 const sent = [], errors = [];
 let lyricsReply = () => ({ transcript: '[Verse]\nTranscribed singing', warning: WARNING, direction: LINE_1 });
 let describeReply = () => ({ status: 200, body: { direction: LINE_2, cached: false } });
 let holdDescribe = null;
+let holdLyrics = null;
+let lyricsStatus = 200;
 
 const server = http.createServer((req, res) => {
   if (req.url === '/sound-booth') { res.setHeader('Content-Type', 'text/html'); res.end(pageOn); return; }
@@ -67,7 +70,10 @@ const server = http.createServer((req, res) => {
     if (req.url.endsWith('/reference')) { res.end(JSON.stringify({ url: 'https://example.test/cover.mp3', name: 'cover.mp3', seconds: 200, spoken: 'Song imported.' })); return; }
     const body = JSON.parse(raw || '{}');
     sent.push({ url: req.url, body });
-    if (req.url.endsWith('/reference/lyrics')) { res.end(JSON.stringify(lyricsReply())); return; }
+    if (req.url.endsWith('/reference/lyrics')) {
+      if (holdLyrics) await holdLyrics;
+      res.statusCode = lyricsStatus; res.end(JSON.stringify(lyricsReply())); return;
+    }
     if (req.url.endsWith('/reference/describe')) {
       if (holdDescribe) await holdDescribe;
       const reply = describeReply();
@@ -122,16 +128,18 @@ const server = http.createServer((req, res) => {
     await transcribe.click();
     await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_1);
     assert.equal(await page.locator('#set_lyrics').inputValue(), '[Verse]\nTranscribed singing');
-    assert.equal(await status(), WARNING + ' ' + FILLED, 'one sentence in the one status line');
+    assert.equal(await status(), FILLED + NAMED + ' ' + WARNING, 'one sentence in the one status line, the part about Music direction first');
+    assert.equal(await page.locator('#trackTitle').inputValue(), 'cover (cover)', 'an untitled cover is named after its recording');
     assert.equal(await focused(), 'set_lyrics', 'focus lands on the lyrics, as before');
     assert.equal(await page.locator('#script').getAttribute('data-auto-direction'), LINE_1);
     assert.equal(await page.locator('#btnUndoWriting').isVisible(), true);
     assert.equal(sent.at(-1).url, '/api/kade/sound-booth/reference/lyrics');
-    assert.deepEqual(sent.at(-1).body, { url: 'https://example.test/cover.mp3' });
-    /* Undo writing change brings back the empty direction and her lyrics */
+    assert.deepEqual(sent.at(-1).body, { url: 'https://example.test/cover.mp3', describe: true }, 'the page asks for the description');
+    /* Undo writing change brings back the empty direction, the empty title and her lyrics */
     await page.locator('#btnUndoWriting').click();
     assert.equal(await page.locator('#script').inputValue(), '');
     assert.equal(await page.locator('#set_lyrics').inputValue(), 'My first lyrics');
+    assert.equal(await page.locator('#trackTitle').inputValue(), '', 'and the title the feature wrote');
     assert.equal(await status(), 'Previous writing restored.');
 
     /* ---- the box still holds the feature's own earlier line: it is replaced ---- */
@@ -140,7 +148,7 @@ const server = http.createServer((req, res) => {
     lyricsReply = () => ({ transcript: '[Verse]\nSecond draft', warning: WARNING, direction: LINE_2 });
     await transcribe.click();
     await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_2);
-    assert.equal(await status(), WARNING + ' ' + FILLED);
+    assert.equal(await status(), FILLED + ' ' + WARNING, 'the title was already named, so it is not announced again');
     assert.equal(await page.locator('#script').getAttribute('data-auto-direction'), LINE_2);
 
     /* ---- typing clears the flag; what she typed is never replaced ---- */
@@ -153,7 +161,7 @@ const server = http.createServer((req, res) => {
     await transcribe.click();
     await page.waitForFunction(() => document.getElementById('set_lyrics').value.includes('Third draft'));
     assert.equal(await page.locator('#script').inputValue(), mine, 'her text is kept');
-    assert.equal(await status(), WARNING + ' ' + READY, 'she is told a description is ready and which button uses it');
+    assert.equal(await status(), READY + ' ' + WARNING, 'she is told a description is ready and which button uses it, before the warning');
     /* her own text from the start (never filled by the feature) */
     await page.locator('#script').fill('A slow blues cover with a gravel voice');
     await transcribe.click();
@@ -165,7 +173,7 @@ const server = http.createServer((req, res) => {
     lyricsReply = () => ({ transcript: '[Verse]\nFourth draft', warning: WARNING, direction_note: NOTE });
     await transcribe.click();
     await page.waitForFunction(() => document.getElementById('set_lyrics').value.includes('Fourth draft'));
-    assert.equal(await status(), WARNING + ' ' + NOTE);
+    assert.equal(await status(), NOTE + ' ' + WARNING);
     assert.equal(await page.locator('#script').inputValue(), '');
 
     /* ---- an older server (no direction fields): exactly the old sentence ---- */
@@ -208,9 +216,14 @@ const server = http.createServer((req, res) => {
     await page.locator('#script').fill('Typed while nothing is running');
     await page.locator('#btnDescribe').click();
     await page.locator('#status').filter({ hasText: 'Listening to how the recording sounds. Your Music direction is kept until the description is ready.' }).waitFor();
-    assert.equal(await page.locator('#btnDescribe').isDisabled(), true, 'disabled while it works');
+    assert.equal(await page.locator('#btnDescribe').isDisabled(), true, 'unavailable while it works (to a screen reader and to the mouse)');
+    assert.equal(await page.locator('#btnDescribe').getAttribute('aria-disabled'), 'true');
+    assert.equal(await focused(), 'btnDescribe', 'and focus stays on the button instead of dropping to the page');
     assert.equal(await page.locator('#btnLyrics').isDisabled(), true, 'so is the transcribe button');
     assert.equal(await page.locator('#btnRender').isDisabled(), true, 'and Render');
+    assert.equal(await page.locator('#btnDraft').isDisabled(), true, 'and Help write this, which would otherwise silently do nothing');
+    assert.equal(await page.locator('#btnInspire').isDisabled(), true, 'and Surprise me');
+    assert.equal(await page.locator('#script').isEditable(), false, 'Music direction cannot be typed into while the description is on its way to replace it');
     assert.equal(await page.locator('#script').inputValue(), 'Typed while nothing is running', 'her text is kept until the description is ready');
     await page.locator('#btnDescribe').evaluate((el) => el.onclick());
     assert.equal(sent.filter((s) => s.url.endsWith('/reference/describe')).length, 3, 'a second press while it works sends nothing');
@@ -218,8 +231,84 @@ const server = http.createServer((req, res) => {
     holdDescribe = null;
     await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_1);
     assert.equal(await page.locator('#btnDescribe').isEnabled(), true);
+    assert.equal(await page.locator('#btnDescribe').getAttribute('aria-disabled'), null, 'the unavailable mark is gone');
     assert.equal(await page.locator('#btnLyrics').isEnabled(), true);
     assert.equal(await page.locator('#btnRender').isEnabled(), true);
+    assert.equal(await page.locator('#btnDraft').isEnabled(), true);
+    assert.equal(await page.locator('#btnInspire').isEnabled(), true);
+    assert.equal(await page.locator('#script').isEditable(), true);
+
+    /* ---- Undo brings back what she typed, however many times the buttons are pressed (Edge) ---- */
+    await page.locator('#script').fill('MY OWN TYPED DIRECTION');
+    await page.locator('#set_lyrics').fill('Lyrics she wrote');
+    await page.locator('#trackTitle').fill('');
+    describeReply = () => ({ status: 200, body: { direction: LINE_1, cached: false } });
+    await describe.click();
+    await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_1);
+    assert.equal(await page.locator('#trackTitle').inputValue(), 'cover (cover)', 'an untitled cover is named after its recording, not after the first words of the description');
+    assert.equal(await status(), REPLACED.replace('genre. Undo', 'genre.' + NAMED + ' Undo'));
+    describeReply = () => ({ status: 200, body: { direction: LINE_2, cached: false } });
+    await describe.click();
+    await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_2);
+    assert.equal(await status(), REPLACED, 'the title was named already, so it is not announced again');
+    await page.locator('#btnUndoWriting').click();
+    assert.equal(await page.locator('#script').inputValue(), 'MY OWN TYPED DIRECTION', 'Undo after a second press brings back her text, not the first description');
+    assert.equal(await page.locator('#trackTitle').inputValue(), '', 'and the empty title');
+    assert.equal(await page.locator('#set_lyrics').inputValue(), 'Lyrics she wrote');
+    /* Describe, then Transcribe, then Undo */
+    describeReply = () => ({ status: 200, body: { direction: LINE_1, cached: false } });
+    await describe.click();
+    await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_1);
+    lyricsReply = () => ({ transcript: '[Verse]\nUndo chain draft', warning: WARNING, direction: LINE_2 });
+    await transcribe.click();
+    await page.waitForFunction(() => document.getElementById('set_lyrics').value.includes('Undo chain draft'));
+    assert.equal(await page.locator('#script').inputValue(), LINE_2);
+    await page.locator('#btnUndoWriting').click();
+    assert.equal(await page.locator('#script').inputValue(), 'MY OWN TYPED DIRECTION', 'Undo after Describe then Transcribe brings back her text');
+    assert.equal(await page.locator('#set_lyrics').inputValue(), 'Lyrics she wrote');
+    assert.equal(await page.locator('#trackTitle').inputValue(), '');
+    /* a title she wrote is never replaced */
+    await page.locator('#trackTitle').fill('My porch song');
+    describeReply = () => ({ status: 200, body: { direction: LINE_1, cached: false } });
+    await describe.click();
+    await page.waitForFunction((line) => document.getElementById('script').value === line, LINE_1);
+    assert.equal(await page.locator('#trackTitle').inputValue(), 'My porch song');
+    assert.equal(await status(), REPLACED);
+    await page.locator('#trackTitle').fill('');
+
+    /* ---- Transcribe reference lyrics: focus stays on its button while it works, and comes back after a failure ---- */
+    await page.locator('#script').fill('');
+    let freeLyrics;
+    holdLyrics = new Promise((resolve) => { freeLyrics = resolve; });
+    lyricsReply = () => ({ transcript: '[Verse]\nHeld draft', warning: WARNING, direction: LINE_1 });
+    await page.locator('#btnLyrics').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('#status').filter({ hasText: 'Listening for the sung words.' }).waitFor();
+    assert.equal(await focused(), 'btnLyrics', 'focus stays on the button while it works');
+    assert.equal(await page.locator('#btnLyrics').getAttribute('aria-disabled'), 'true');
+    assert.equal(await page.locator('#btnLyrics').isDisabled(), true);
+    assert.equal(await page.locator('#btnDescribe').isDisabled(), true);
+    assert.equal(await page.locator('#btnDraft').isDisabled(), true);
+    assert.equal(await page.locator('#btnInspire').isDisabled(), true);
+    freeLyrics();
+    holdLyrics = null;
+    await page.waitForFunction(() => document.getElementById('set_lyrics').value.includes('Held draft'));
+    assert.equal(await focused(), 'set_lyrics', 'a success moves focus to the lyrics, as before');
+    assert.equal(await page.locator('#btnDraft').isEnabled(), true);
+    assert.equal(await page.locator('#btnInspire').isEnabled(), true);
+    assert.equal(await status(), FILLED + NAMED + ' ' + WARNING);
+    lyricsStatus = 502;
+    lyricsReply = () => ({ error: 'Could not transcribe this recording.' });
+    await page.locator('#btnLyrics').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('#status.err').waitFor();
+    assert.equal(await status(), 'Could not transcribe this recording.');
+    assert.equal(await focused(), 'btnLyrics', 'a failure puts focus back on the button');
+    assert.equal(await page.locator('#btnLyrics').isEnabled(), true);
+    assert.equal(await page.locator('#btnDraft').isEnabled(), true);
+    assert.equal(await page.locator('#btnInspire').isEnabled(), true);
+    lyricsStatus = 200;
+    await page.locator('#trackTitle').fill('');
 
     /* ---- a failure: her text is kept, the error is said, focus is on the button, Undo is not armed for it ---- */
     await page.locator('#script').fill('My text before the failure');
@@ -266,6 +355,7 @@ const server = http.createServer((req, res) => {
     await off.waitForFunction(() => document.getElementById('set_lyrics').value.includes('Off-page draft'));
     assert.equal(await off.locator('#status').innerText(), WARNING, 'a direction a server sent is ignored: the old sentence only');
     assert.equal(await off.locator('#script').inputValue(), '', 'and the box is left alone');
+    assert.deepEqual(sent.at(-1).body, { url: 'https://example.test/cover.mp3' }, 'and it does not ask for a description');
     await off.locator('#btnUndoWriting').click();
     assert.equal(await off.locator('#status').innerText(), 'Previous writing restored.');
     assert.equal(await off.evaluate(() => typeof describeSound + typeof heardSound), 'undefinedundefined');

@@ -92,6 +92,19 @@ export function yueMusicDirection(style: string): string {
   }
   return direction;
 }
+/**
+ * The Music direction as a trained style's caption continues it. "Describe the sound of the recording" writes a line in the
+ * shape "English, <genre>, <pace>, <voice>, <sound words>", but every trained lead already says English and the Soul and Kids
+ * leads already name their genre, so the line would repeat the language ("English, English, folk") or argue with the style's
+ * own genre. The language is dropped, and the genre too when the lead names one; a lead that stops at "English," (Suno) leaves
+ * the genre to the direction, as its training captions did, so only the language goes. Only a line of exactly that shape is
+ * touched: anything she wrote herself is sent as it is.
+ */
+export function yueStyleDirection(direction: string, lead: string): string {
+  const described = /^English,\s*([^,]+),\s*((?:slow tempo|mid-tempo|up-tempo)\b[\s\S]*)$/i.exec(direction);
+  if (!described) return direction;
+  return /English,$/.test(lead) ? `${described[1]}, ${described[2]}` : described[2];
+}
 export function yueStylesEnabled(): boolean {
   return process.env.YUE_STYLES_ENABLED === '1';
 }
@@ -321,7 +334,7 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
     !instrumental &&
     (body.my_voice === true || String(body.my_voice ?? '').trim().toLowerCase() === 'on');
   return {
-    style: trained ? `${trained.lead} ${direction}`.slice(0, 3000) : direction,
+    style: trained ? `${trained.lead} ${yueStyleDirection(direction, trained.lead)}`.slice(0, 3000) : direction,
     title: body.title?.trim() || direction.split(/\s+/).slice(0, 7).join(' ').slice(0, 80),
     count: number(body.count, 1, 1, 4, 'Number of takes'),
     weirdness: number(body.weirdness, 50, 0, 100, 'Creative variation'),
