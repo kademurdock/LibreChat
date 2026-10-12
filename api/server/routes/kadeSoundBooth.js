@@ -206,8 +206,9 @@ router.use(createLyricsRouter(musicReferenceHooks));
 /* Part 295 (Sep 27 2026): the trained styles are part of the Family feature pack. The Soul style
  * was taught from commercial soul and R&B records. A style taught from songs made with Suno
  * (Oct 2026) is not covered by that reason; it sits behind the same gate because Suno's terms are
- * read as restricting use of its output to build competing models, so the gate must stay. Only
- * an account with the pack
+ * read as restricting use of its output to build competing models, so the gate must stay. Sona
+ * (Oct 2026, taught from songs made with Sonauto) sits behind the same gate: one answer covers
+ * every style on the menu, whatever name `band` carries. Only an account with the pack
  * (familyFeatures(user).trainedStyles; never the App Review seats) may render in a style. The
  * guide greys the Style choice out for everyone else (withStyleAccess), and an older client that
  * still shows it live is refused here, on the server, before the YuE2 router queues anything,
@@ -299,6 +300,16 @@ const myVoiceFollowUps = !MY_VOICE_READY ? MY_VOICE_OFF : createMyVoiceFollowUps
   },
   log: (line) => logger.info(line),
 });
+/* The Music direction saved with a YuE2 song: what the worker was sent, less the lead the booth itself put in front of it.
+ * When a Style was sent the cut is exact, by that style's own lead, instead of a search (yueMusicDirection, which is for
+ * older songs): the Sona lead is the front of the retired first-Sona lead, so a search would read a direction that begins
+ * "female lead vocal." as that older lead and drop the words from what is saved. With no Style (or strength 0) the text
+ * is her direction already, and the search finds nothing in it. */
+function savedDirection(input) {
+  const style = String((input && input.style) || '');
+  const row = input && input.lora_key ? Object.values(yueStyles || {}).find((candidate) => candidate && candidate.key === input.lora_key) : undefined;
+  return row && style.startsWith(`${row.lead} `) ? style.slice(row.lead.length + 1).trim() : yueMusicDirection(style);
+}
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
@@ -312,7 +323,7 @@ router.use(createYueRouter({
     return rest;
   },
   project: async (user, input, sourceText) => {
-    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: yueMusicDirection(input.style),
+    const p = await KadeSoundBoothProject.create({ user, engine: 'yue2', title: input.title, script: savedDirection(input),
       sourceText: sourceText.slice(0, 8000), options: { lyrics: input.lyrics, abc: input.abc, cot: input.cot, band: input.band, style_strength: input.style_strength, seed: input.seed, reference_voice_url: input.reference_voice_url, count: input.count, weirdness: input.weirdness, steps: input.steps, guidance: input.guidance, ...yueCoverOptions(input), ...(input.my_voice ? { my_voice: myVoiceAutoOptions.on } : {}) }, state: 'queued' });
     return String(p._id);
   },

@@ -40,9 +40,10 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
  * children's choirs.
  * Soul (Part 295, Sep 27 2026): the composer LoRA taught from real soul and R&B records
  * (trigger kdsoulr, step 1000, the steadiest words of the pilot), chosen in a blind test over
- * the AI-trained sonauto style (yue2-loras/soul-sona1800.pt, lead "kdsona, in the style of
- * kdsona. English, female lead vocal."), which stays in the bucket: putting that key and lead
- * back is the rollback. Its training captions were "kdsoulr, in the style of kdsoulr.
+ * the first Sona, a September style taught from songs made with Sonauto (yue2-loras/soul-sona1800.pt,
+ * lead "kdsona, in the style of kdsona. English, female lead vocal."). That file stays in storage
+ * but is not used: Sona is back as a style of its own (below) on a retrained file. Soul's training
+ * captions were "kdsoulr, in the style of kdsoulr.
  * English, <era> <sub-genre>, <pace>, <female|male> lead vocal, ...", one per song, so the
  * lead names the genre and leaves the singer to Music direction. Trained on commercial
  * records, so the whole Style choice is part of the Family feature pack (yueStyleAccess).
@@ -59,6 +60,16 @@ export function yueTakeCost(executionMs: number | undefined, gpu?: string | null
  * restricting use of its output to build competing models, so it is a private style tool for
  * the family. The pack gate must stay for it (yueStyleAccess and the render refusal gate every
  * row at once); do not open the Style choice to every account. Removing its row is the rollback.
+ * Sona (Oct 2026): the composer LoRA retrained from female-lead pop songs made with Sonauto,
+ * their lyrics written by Gemini (trigger kdsona, step 800, yue2-loras/sona-step800.pt, 279,028,157
+ * bytes). Its training captions were "kdsona, in the style of kdsona. English, female lead vocal,
+ * <N> BPM.", one per song. The lead stops at the language, comma included, like Suno's, so Music
+ * direction carries the caption on. Nothing in the lead picks a voice: every song it was taught
+ * from has a female lead, which is what the hint tells people to expect. The first Sona
+ * (soul-sona1800.pt, above) is retired for good: this row has a different key, and the old lead
+ * is recognised only to clean up older saved songs (yueMusicDirection). These songs are AI-made
+ * too, so Sona sits behind the same Family feature pack gate as every other row. Removing its row
+ * is the rollback.
  * Nothing here names a person or a private folder: this menu is read by everyone who uses the
  * booth. */
 export const yueStyles: Record<string, { key: string; scale: number; lead: string }> = {
@@ -77,13 +88,23 @@ export const yueStyles: Record<string, { key: string; scale: number; lead: strin
     scale: 1,
     lead: 'kdsuno, in the style of kdsuno. English,',
   },
+  sona: {
+    key: 'yue2-loras/sona-step800.pt',
+    scale: 1,
+    lead: 'kdsona, in the style of kdsona. English,',
+  },
 };
+/** The lead the first Sona (September, soul-sona1800.pt, retired) put in front of a saved song's music direction. Not a style any
+ * more; kept only so an older saved song still opens without its trigger word. It begins with the current Sona lead. */
+const retiredSonaLead = 'kdsona, in the style of kdsona. English, female lead vocal.';
 /** Older saved songs stored the worker's training trigger in the editable music direction. */
 export function yueMusicDirection(style: string): string {
-  const leads = [
-    ...Object.values(yueStyles).map((row) => row.lead),
-    'kdsona, in the style of kdsona. English, female lead vocal.',
-  ];
+  /* Longest lead first, so the retired Sona lead is taken whole. Were the current Sona lead tried first (it is the front of
+   * the retired one), an older Sona song would open with "female lead vocal." left in front of its words as if they were
+   * written there, and two retired leads in a row would stop after the first. */
+  const leads = [retiredSonaLead, ...Object.values(yueStyles).map((row) => row.lead)].sort(
+    (a, b) => b.length - a.length,
+  );
   let direction = style.trim();
   let prefix = leads.find((lead) => direction === lead || direction.startsWith(`${lead} `));
   while (prefix) {
@@ -97,11 +118,13 @@ export function yueStylesEnabled(): boolean {
 }
 
 /** The Style choice's hint in the booth guide (the `band` setting). Kids and Soul were taught from
- * real recordings and Suno from songs made with Suno, so the opening says only "recordings";
- * it names no person and no folder. The first sentence gives each style one clause, and the
- * voice sentence names exactly the styles whose training captions named a singer. */
+ * real recordings, Suno from songs made with Suno and Sona from songs made with Sonauto, so the
+ * opening says only "recordings"; it names no person and no folder. The first sentence gives each
+ * style one clause. The voice sentence names the styles whose training captions named a singer
+ * song by song, Soul and Suno, and says to write it. Sona is not in it: every song Sona was
+ * taught from has a female lead, so its clause says so and there is no singer to choose. */
 export const yueStyleHint: string =
-  'A singing style taught to YuE2 from recordings: Soul from soul and R&B records, Suno from songs made with Suno, Kids from a children’s choir. For Soul or Suno, write female lead vocal or male lead vocal in Music direction. None is plain YuE2. Works for new songs and covers.';
+  'A singing style taught to YuE2 from recordings: Soul from soul and R&B records, Suno from songs made with Suno, Sona from female-led pop songs made with Sonauto, Kids from a children’s choir. For Soul or Suno, write female lead vocal or male lead vocal in Music direction. None is plain YuE2. Works for new songs and covers.';
 /** Added to the Style hint for an account outside the Family feature pack, so a client that
  * does not read `locked` yet still says why the choice does nothing there. */
 export const yueStyleLockedSentence: string =

@@ -219,6 +219,12 @@ async function covers(post, base, sentInputs, provider) {
         const suno = yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'suno', reference_voice_url: recording }, ON);
         assert.equal(suno.lora_key, 'yue2-loras/suno-step600.pt'); assert.equal(suno.lora_scale, 1);
         assert.equal(suno.style, 'kdsuno, in the style of kdsuno. English, Lullaby');
+        // Sona (Oct 2026) is the fourth row, on its retrained file; the September file is never sent.
+        const sona = yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'sona', reference_voice_url: recording }, ON);
+        assert.equal(sona.lora_key, 'yue2-loras/sona-step800.pt'); assert.equal(sona.lora_scale, 1);
+        assert.equal(sona.style, 'kdsona, in the style of kdsona. English, Lullaby');
+        assert.equal(yueInput({ script: 'Lullaby', lyrics: 'Words', band: 'sona', style_strength: 0.5 }, ON).lora_scale, 0.5);
+        assert.equal(JSON.stringify(sona).includes('sona1800'), false);
     } finally {
         if (before === undefined) delete process.env.YUE_STYLES_ENABLED; else process.env.YUE_STYLES_ENABLED = before;
     }

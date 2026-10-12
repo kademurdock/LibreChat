@@ -8,6 +8,10 @@
  * Review seats included), and refused by the server with plain words when an older client still
  * sends one. Her rule holds too: booth words name no person and no private folder.
  *
+ * Oct 11 2026: Sona is back on the menu as the fourth style, on a retrained file (yue2-loras/sona-step800.pt, taught from
+ * female-lead pop songs made with Sonauto). The September file (soul-sona1800.pt) is never used again; its lead is only
+ * recognised so an older saved song still opens. It sits behind the same Family feature pack gate as every row.
+ *
  * Proven here: the style rows and their lead sentences (the training captions' shape), the hint,
  * yueStyleAccess, the pack's new map entry and refusal, the real booth route (kadeSoundBooth.js
  * loaded with stand-ins for the database, the upload parser and the YuE2 router) greying the
@@ -18,6 +22,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const vm = require('node:vm');
 const path = require('node:path');
 const Module = require('node:module');
@@ -45,7 +50,10 @@ const yue = loadTs('packages/api/src/music/yue.ts');
 const pack = loadTs('packages/api/src/family/pack.ts');
 const link = require('./kadeSoundBoothLink');
 
-const PERSON_OR_FOLDER = /Kade|Holly|your own folders|sonauto|AudioCaptures|MUSIC GROUP|KIDS CHOIR|model training music|Desktop/i;
+/* "Sonauto" is not here any more: like Suno it is a public product's name, and the Sona clause of the Style hint says what that style was
+ * taught from. It is allowed in that one clause and nowhere else (the hint test below counts it). Everything that names a person or a
+ * private folder is still refused. */
+const PERSON_OR_FOLDER = /Kade|Holly|your own folders|AudioCaptures|MUSIC GROUP|KIDS CHOIR|model training music|Desktop|iCloud/i;
 
 function withEnv(values, run) {
   const saved = {};
@@ -85,8 +93,8 @@ test('Soul is the real-music composer LoRA; its lead has the training captions\'
   assert.doesNotMatch(soul.key, /decoder|soundstage/i, 'never a decoder file under yue2-loras/');
 });
 
-test('Kids and Soul are unchanged, and the menu is exactly Kids, Soul and Suno', () => {
-  assert.deepEqual(Object.keys(yue.yueStyles), ['kids', 'soul', 'suno']);
+test('Kids and Soul are unchanged, and the menu is exactly Kids, Soul, Suno and Sona', () => {
+  assert.deepEqual(Object.keys(yue.yueStyles), ['kids', 'soul', 'suno', 'sona']);
   assert.deepEqual(yue.yueStyles.kids, {
     key: 'yue2-loras/kids-step1200.pt',
     scale: 1,
@@ -118,9 +126,30 @@ test('Suno is the composer LoRA taught from songs made with Suno; its lead stops
   assert.match(suno.key, /^yue2-loras\/[A-Za-z0-9._-]{1,80}\.pt$/, 'the worker folds only keys of this shape');
 });
 
+/* Oct 11 2026: the fourth style, Sona, retrained from female-lead pop songs made with Sonauto (trigger kdsona). The checkpoint is the one
+ * after 800 steps (279,028,157 bytes, sha256 3004de4b268eeeda...), uploaded as yue2-loras/sona-step800.pt. The worker needed no change: its
+ * key pattern is ^yue2-loras/[A-Za-z0-9._-]{1,80}\.pt$. The September file (soul-sona1800.pt) is never used again. */
+test('Sona is the retrained composer LoRA; its lead stops at the language and forces no singer, and its key is the new file', () => {
+  assert.deepEqual(yue.yueStyles.sona, {
+    key: 'yue2-loras/sona-step800.pt',
+    scale: 1,
+    lead: 'kdsona, in the style of kdsona. English,',
+  });
+  /* Training captions: "kdsona, in the style of kdsona. English, female lead vocal, <N> BPM." The booth puts the lead first and Music
+   * direction carries the caption on, the way it does for Suno. */
+  assert.match(yue.yueStyles.sona.lead, /^kdsona, in the style of kdsona\. English,$/);
+  assert.doesNotMatch(yue.yueStyles.sona.lead, /\b(fe)?male\b|\bwoman\b|\bman\b|\bboth\b/i, 'the lead forces no voice');
+  assert.match(yue.yueStyles.sona.key, /^yue2-loras\/[A-Za-z0-9._-]{1,80}\.pt$/, 'the worker folds only keys of this shape');
+  assert.doesNotMatch(yue.yueStyles.sona.key, /decoder|soundstage/i, 'never a decoder file under yue2-loras/');
+  /* The September checkpoint stays in storage and must never be sent: no row, and no request, carries its key. */
+  for (const row of Object.values(yue.yueStyles)) assert.doesNotMatch(row.key, /sona1800|soul-sona/i, row.key);
+  assert.equal(Object.values(yue.yueStyles).filter((row) => /sona/i.test(row.key)).length, 1, 'one Sona file in the registry');
+});
+
 test('every style row is one adapter of its own: a safe key, its own trigger twice in its lead, English, no singer, scale in range', () => {
   const rows = Object.entries(yue.yueStyles);
-  assert.ok(rows.length >= 3);
+  assert.ok(rows.length >= 4);
+  assert.ok(rows.some(([name]) => name === 'sona'), 'Sona is one of the rows checked here');
   const keys = new Set();
   const triggers = new Set();
   for (const [name, row] of rows) {
@@ -196,6 +225,60 @@ test('a Suno song opens with the lead, runs score-free, and asks the worker for 
   assert.equal(male.style, 'kdsuno, in the style of kdsuno. English, Mid-tempo, male lead vocal, acoustic guitar, 96 BPM.');
 });
 
+/* The Sona request written out as literals (not read back from the registry), so a wrong key, scale or lead in the registry fails here. */
+const SONA_LEAD = 'kdsona, in the style of kdsona. English,';
+const occurrences = (text, part) => text.split(part).length - 1;
+test('a Sona song carries the new file, a scale of strength x 1, and the lead exactly once', () => {
+  const sona = request({ band: 'sona' });
+  assert.deepEqual(JSON.parse(JSON.stringify(sona)), {
+    style: `${SONA_LEAD} ${DIRECTION}`,
+    title: 'Slow tempo, female lead vocal, warm electric',
+    count: 1,
+    weirdness: 50,
+    steps: 32,
+    guidance: 1,
+    lyrics: '[Verse]\nWords',
+    cot: 'off',
+    band: 'sona',
+    lora_key: 'yue2-loras/sona-step800.pt',
+    lora_scale: 1,
+    seed: 7,
+  });
+  assert.equal(JSON.stringify(sona), JSON.stringify(expectedRequest('sona')), 'the same key order as every other style');
+  assert.equal(occurrences(sona.style, SONA_LEAD), 1, 'the lead is there once');
+  assert.equal(occurrences(sona.style, 'kdsona'), 2, 'its trigger word is in the lead twice and nowhere else');
+  assert.ok(sona.style.startsWith(`${SONA_LEAD} `), 'the lead opens the caption, the way the training captions did');
+  assert.equal(JSON.stringify(sona).includes('sona1800'), false, 'the September file is never sent');
+  // Strength scales the adapter: scale = strength x the row's 1.
+  for (const style_strength of [1, 0.9, 0.5, 0.25, 0.1]) {
+    const styled = request({ band: 'sona', style_strength });
+    assert.equal(styled.lora_scale, style_strength * 1, `strength ${style_strength}`);
+    assert.equal(styled.style_strength, style_strength);
+    assert.equal(styled.lora_key, 'yue2-loras/sona-step800.pt');
+    assert.equal(occurrences(styled.style, SONA_LEAD), 1, `strength ${style_strength}: one lead`);
+  }
+  // Strength 0 is plain YuE2: no lead, no file, and the request equals the plain one apart from the Style fields that were named.
+  const zero = request({ band: 'sona', style_strength: 0 });
+  const plain = request({});
+  assert.equal(zero.lora_key, undefined);
+  assert.equal(zero.lora_scale, undefined);
+  assert.equal(zero.style, plain.style);
+  assert.equal(zero.cot, plain.cot);
+  // Her own words ride after the lead, whichever voice she names: nothing in the lead picks one.
+  for (const script of ['Upbeat pop, 120 BPM, bright synths.', 'Mid-tempo, male lead vocal, acoustic guitar, 96 BPM.', 'female lead vocal, 90 BPM, warm piano']) {
+    const own = request({ band: 'sona', script });
+    assert.equal(own.style, `${SONA_LEAD} ${script}`);
+    assert.equal(occurrences(own.style, SONA_LEAD), 1);
+  }
+  // A Sona cover keeps the official recipe like every style: chords kept, the file in the request, the lead once.
+  const cover = request({ band: 'sona', reference_voice_url: RECORDING }, COVER_ENV);
+  assert.equal(cover.lora_key, 'yue2-loras/sona-step800.pt');
+  assert.equal(cover.lora_scale, 1);
+  assert.equal(cover.cot, 'full');
+  assert.equal(cover.keep_harmony, true);
+  assert.equal(occurrences(cover.style, SONA_LEAD), 1);
+});
+
 test('None makes the request the previous commit made, and so do Kids and Soul; each style differs from plain only in its own fields', () => {
   for (const shape of [{}, { recording: true }, { recording: true, covers: true }]) {
     const env = shape.covers ? COVER_ENV : {};
@@ -216,6 +299,33 @@ test('None makes the request the previous commit made, and so do Kids and Soul; 
       assert.equal(styled.lora_scale, yue.yueStyles[band].scale);
     }
   }
+});
+
+/* Oct 11 2026, adding Sona: what the commit before it (the merge of both Suno branches, 2c9dd68) sent for None, Kids, Soul and Suno,
+ * as sha256 of the JSON of five requests each: a new song, the same at strength 0.5, a cover with the covers flag off, a cover with
+ * every cover flag on, and a score. They were computed on that commit's yue.ts with the same inputs as below, so these strings only
+ * change if one of those four requests does. Adding a row to the registry must not move any of them. */
+const SENT_BEFORE_SONA = {
+  noBand: '15acfffe54729003f25f251baf4acefb13620d56c18467ea9a94380f6ff00d42',
+  none: 'b5f2c1aab94bfe202af8e727098aed7e179da858d9d438ed255872e052370f1b',
+  kids: '07b9877ee7b2bdd6788930424ca3b2e408ea48130640f377927a6b741c8d855d',
+  soul: 'fec6ba1a3bd9aeaca9ac036cb99e34df73103a5761c4064d920c220f511fb15a',
+  suno: 'ba865315b7225c992396b5a56c236f96d9b8a53ea94f604ebf69cd43386223f3',
+};
+const shaOf = (value) => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+test('with Sona added, the requests for no Style, None, Kids, Soul and Suno are byte for byte what they were before', () => {
+  const ask = (env, body) => JSON.stringify(request(body, env));
+  const shapesFor = (band) => [
+    ask({}, { band }),
+    ask({}, { band, style_strength: 0.5 }),
+    ask({}, { band, reference_voice_url: RECORDING }),
+    ask(COVER_ENV, { band, reference_voice_url: RECORDING }),
+    ask({ YUE_COVERS_V2: '1' }, { band, abc: 'X:1', lyrics: 'la' }),
+  ];
+  for (const band of ['none', 'kids', 'soul', 'suno']) assert.equal(shaOf(JSON.stringify(shapesFor(band))), SENT_BEFORE_SONA[band], `${band}: the requests are the base's`);
+  assert.equal(shaOf(JSON.stringify([ask({}, {}), ask({}, { reference_voice_url: RECORDING }), ask(COVER_ENV, { reference_voice_url: RECORDING })])), SENT_BEFORE_SONA.noBand, 'no Style at all: the base\'s requests');
+  // The check can fail: a Sona request is not any of them, and a changed Kids row would move its hash.
+  assert.notEqual(shaOf(JSON.stringify(shapesFor('sona'))), SENT_BEFORE_SONA.suno);
 });
 
 test('covers and instrumentals treat Suno exactly as they treat Kids and Soul', () => {
@@ -363,9 +473,50 @@ test('reopening a styled song never accumulates triggers for any style, Suno inc
       assert.equal(yue.yueMusicDirection(`A singer describes ${trigger} in the middle.`), `A singer describes ${trigger} in the middle.`, band);
       assert.equal(yue.yueMusicDirection(`Warm piano. ${lead} Slow.`), `Warm piano. ${lead} Slow.`, `${band}: a lead that is not at the front is not removed`);
     }
-    // A song saved in the Sonauto-era style (the rollback lead) still loses its trigger.
+    // A song saved in the Sonauto-era style (the September Sona, retired) still loses its trigger.
     assert.equal(yue.yueMusicDirection('kdsona, in the style of kdsona. English, female lead vocal. Warm piano.'), 'Warm piano.');
   });
+});
+
+/* Sona is back, and its lead is the FRONT of the September Sona's lead ("... English," then " female lead vocal."). Both are leads the
+ * cleanup must take off whole, in any mix, once each time and never half: tried shortest first, the retired lead would leave
+ * "female lead vocal." in front of an older song's words. */
+test('the current Sona lead and the retired September Sona lead both come off whole, singly, doubled and mixed, and no word is lost', () => {
+  const retired = 'kdsona, in the style of kdsona. English, female lead vocal.';
+  const sona = yue.yueStyles.sona.lead;
+  assert.ok(retired.startsWith(`${sona} `), 'the trap this test guards: one lead is the front of the other');
+  const direction = 'Warm piano, soft drums, 80 BPM.';
+  const others = Object.entries(yue.yueStyles).filter(([name]) => name !== 'sona').map(([, row]) => row.lead);
+  const all = [retired, sona, ...others];
+  for (const [label, front] of [
+    ['the current lead', sona],
+    ['the retired lead', retired],
+    ['the current lead twice', `${sona} ${sona}`],
+    ['the retired lead twice', `${retired} ${retired}`],
+    ['current then retired', `${sona} ${retired}`],
+    ['retired then current', `${retired} ${sona}`],
+    ['every lead in a row', all.join(' ')],
+    ['every lead, reversed', [...all].reverse().join(' ')],
+    ['retired between two others', `${others[0]} ${retired} ${others[1]}`],
+  ]) {
+    assert.equal(yue.yueMusicDirection(`${front} ${direction}`), direction, label);
+    assert.equal(yue.yueMusicDirection(front), '', `${label}: the leads alone leave nothing`);
+    assert.equal(yue.yueMusicDirection(`  ${front}   ${direction}  `), direction, `${label}: stray spaces`);
+  }
+  // Whatever follows the current lead is her caption and stays: the words the training captions continue with are hers to type.
+  for (const words of ['female lead vocal, 90 BPM, warm piano', 'female lead vocal and bright synths', 'Female lead vocal. Warm piano.', 'male lead vocal. Warm piano.', 'pop, female lead vocal']) {
+    assert.equal(yue.yueMusicDirection(`${sona} ${words}`), words, words);
+    assert.equal(yue.yueMusicDirection(`${sona} ${sona} ${words}`), words, `twice: ${words}`);
+  }
+  // A lead that is only the start of a longer word is not a lead (the current lead is still the front of the second text, and comes off).
+  assert.equal(yue.yueMusicDirection(`${sona}x Warm piano.`), `${sona}x Warm piano.`);
+  assert.equal(yue.yueMusicDirection(`${retired}x Warm piano.`), 'female lead vocal.x Warm piano.');
+  // The words the retired lead ended with are only part of it when the whole lead is there.
+  assert.equal(yue.yueMusicDirection('kdsona, in the style of kdsona. English, female lead vocal Warm piano.'), 'female lead vocal Warm piano.');
+  // The one text both readings share: the current lead, then her words beginning "female lead vocal." That is exactly what the
+  // retired lead looked like, so this search reads it as that lead. The save path does not search (savedDirection in
+  // kadeSoundBooth.js; the round trip test below), so the words she typed are kept in what is saved.
+  assert.equal(yue.yueMusicDirection(`${sona} female lead vocal. Warm piano.`), 'Warm piano.');
 });
 
 /* ---------------- the hint and the lock ----------------------------------- */
@@ -375,15 +526,21 @@ test('the Style hint is true now and names no person or folder', () => {
   assert.doesNotMatch(hint, /real recordings/);
   assert.match(hint, /Soul from soul and R&B records[,.]/);
   assert.match(hint, /Suno from songs made with Suno[,.]/);
+  assert.match(hint, /Sona from female-led pop songs made with Sonauto[,.]/, 'one plain clause: what Sona was taught from, and that its lead singer is a woman');
   assert.match(hint, /Kids from a children’s choir\./);
   assert.match(hint, /For Soul or Suno, write female lead vocal or male lead vocal in Music direction\./);
   assert.doesNotMatch(hint, /clean/i, 'Sep 27 2026: no clean-lyrics rule for the Kids style');
   assert.match(hint, /None is plain YuE2\./);
-  assert.ok(hint.split(/\s+/).length <= 60, 'the hint stays short');
+  /* Four styles in one sentence of clauses: 58 words, under the ceiling the booth keeps ("super wordy and cluttered"). Sona added 8 words
+   * (50 before); the ceiling did not need to move. */
+  assert.ok(hint.split(/\s+/).length <= 60, `the hint stays short (${hint.split(/\s+/).length} words)`);
   assert.doesNotMatch(hint, /one expressive female lead/, 'the old sonauto description is gone');
-  for (const words of [hint, yue.yueStyleLockedSentence, pack.FAMILY_PACK_STYLES_REFUSAL, yue.yueStyles.soul.lead, yue.yueStyles.kids.lead, yue.yueStyles.suno.lead, yue.yueStyles.suno.key]) {
-    assert.doesNotMatch(words, PERSON_OR_FOLDER, words);
-  }
+  const everyStyleWord = [hint, yue.yueStyleLockedSentence, pack.FAMILY_PACK_STYLES_REFUSAL, ...Object.values(yue.yueStyles).flatMap((row) => [row.lead, row.key])];
+  for (const words of everyStyleWord) assert.doesNotMatch(words, PERSON_OR_FOLDER, words);
+  /* "Sonauto" is a product's name and the hint may say it, once, in Sona's clause; nothing else the booth shows or sends names it. */
+  assert.equal((hint.match(/Sonauto/g) || []).length, 1);
+  for (const words of everyStyleWord.filter((w) => w !== hint)) assert.doesNotMatch(words, /sonauto/i, words);
+  assert.doesNotMatch(hint, /sona1800|kdsona|\.pt\b/i, 'no trigger word and no file name in what people read');
 });
 
 test('the Style hint says what every style on the menu was taught from, once each, and the voice sentence names only styles whose captions named a singer', () => {
@@ -400,6 +557,7 @@ test('the Style hint says what every style on the menu was taught from, once eac
   assert.match(voice[0], /\bSoul\b/);
   assert.match(voice[0], /\bSuno\b/);
   assert.doesNotMatch(voice[0], /\bKids\b/, 'the choir style has no single singer to choose');
+  assert.doesNotMatch(voice[0], /\bSona\b/, 'every song Sona was taught from has a female lead, so there is no singer to choose; its own clause says so');
   /* The training captions of the Suno style, counted when the set was built: 220 named a female lead, 89 a male lead, 25 both,
    * 36 no singer. The first two are what the sentence promises. */
   assert.match(yue.yueStyles.suno.lead, /^kdsuno, in the style of kdsuno\. English,$/);
@@ -408,7 +566,7 @@ test('the Style hint says what every style on the menu was taught from, once eac
 test('yueStyleAccess: the pack keeps the choice; everyone else sees it greyed out with every option', () => {
   const settings = [
     { key: 'lyrics', label: 'Lyrics', hint: 'Words.', kind: 'text' },
-    { key: 'band', label: 'Style', hint: yue.yueStyleHint, kind: 'choice', options: ['none', 'kids', 'soul', 'suno'], default: 'none' },
+    { key: 'band', label: 'Style', hint: yue.yueStyleHint, kind: 'choice', options: ['none', 'kids', 'soul', 'suno', 'sona'], default: 'none' },
     { key: 'count', label: 'Number of takes', hint: 'One to four.', kind: 'number' },
   ];
   assert.equal(yue.yueStyleAccess(settings, true, pack.FAMILY_PACK_NOTE), settings, 'unchanged with the pack');
@@ -417,7 +575,7 @@ test('yueStyleAccess: the pack keeps the choice; everyone else sees it greyed ou
   assert.deepEqual(locked.map((s) => s.key), ['lyrics', 'band', 'count'], 'never hidden');
   const band = locked[1];
   assert.equal(band.locked, 'Part of the Family feature pack');
-  assert.deepEqual(band.options, ['none', 'kids', 'soul', 'suno']);
+  assert.deepEqual(band.options, ['none', 'kids', 'soul', 'suno', 'sona']);
   assert.equal(band.default, 'none');
   assert.equal(band.hint, yue.yueStyleHint + ' Part of the Family feature pack, so songs on this account use None, plain YuE2.');
   assert.ok(yue.yueStyleLockedSentence.includes(pack.FAMILY_PACK_NOTE), 'the hint carries the pack note for clients that do not read locked');
@@ -496,6 +654,9 @@ function loadBooth(state) {
   return mod.exports;
 }
 
+/* The YuE2 card of the guide with the Style choice off, as sha256 of its JSON, computed on the commit before Sona was added (2c9dd68)
+ * with the same stand-ins as below. With YUE_STYLES_ENABLED unset, '0', 'true' or empty the card is that one, byte for byte. */
+const YUE2_CARD_STYLES_OFF_BEFORE_SONA = '3062ce1ba575a5f54d1e8ce4f1d47b98c30647aed92d157b8d4f830d1cdc154a';
 test('the booth route with the Style choice switched off: the YuE2 card has neither Style setting for anyone, and nothing else in the guide differs', () => {
   const internals = (flag, trainedStyles) => withEnv({ YUE_STYLES_ENABLED: flag, KADE_SOUNDBOOTH_YT_LINKS: undefined }, () => {
     const state = { user: { id: 'u1' }, features: () => ({ trainedStyles }), warnings: [], auths: 0 };
@@ -512,6 +673,7 @@ test('the booth route with the Style choice switched off: the YuE2 card has neit
       const off = internals(flag, trainedStyles);
       for (const key of STYLE_SETTINGS) assert.equal(keysOf(off.GUIDE).includes(key), false, `YUE_STYLES_ENABLED=${flag}: no ${key} on the card`);
       assert.equal(JSON.stringify(off.GUIDE), withoutStyle(on.GUIDE), `YUE_STYLES_ENABLED=${flag}: the guide is the flag-on guide minus exactly the two Style settings`);
+      assert.equal(shaOf(JSON.stringify(off.GUIDE.engines.yue2)), YUE2_CARD_STYLES_OFF_BEFORE_SONA, `YUE_STYLES_ENABLED=${flag}: the YuE2 card is byte for byte the one from before Sona was added`);
       // Nothing to grey out, so the guide goes out as it is, for a member and a stranger alike.
       for (const user of [{ id: 'family' }, { id: 'bob' }, null]) assert.equal(off.withStyleAccess(off.GUIDE, user), off.GUIDE, `YUE_STYLES_ENABLED=${flag}`);
     }
@@ -525,7 +687,7 @@ test('the booth route: the guide greys Style out per person, and /render refuses
     const { GUIDE, withStyleAccess, styleAllowed, asksForStyle } = booth._internals;
     const band = GUIDE.engines.yue2.settings.find((s) => s.key === 'band');
     assert.equal(band.hint, yue.yueStyleHint, 'the guide reads the hint from yue.ts');
-    assert.deepEqual([...band.options], ['none', 'kids', 'soul', 'suno'], 'the options (a vm array, so spread into this realm)');
+    assert.deepEqual([...band.options], ['none', 'kids', 'soul', 'suno', 'sona'], 'the options (a vm array, so spread into this realm)');
     assert.equal(band.locked, undefined, 'the shared GUIDE carries no lock');
 
     // Per person.
@@ -535,7 +697,7 @@ test('the booth route: the guide greys Style out per person, and /render refuses
     const stranger = withStyleAccess(GUIDE, { id: 'bob' });
     const greyed = stranger.engines.yue2.settings.find((s) => s.key === 'band');
     assert.equal(greyed.locked, 'Part of the Family feature pack');
-    assert.deepEqual([...greyed.options], ['none', 'kids', 'soul', 'suno'], 'every option is still there');
+    assert.deepEqual([...greyed.options], ['none', 'kids', 'soul', 'suno', 'sona'], 'every option is still there');
     assert.match(greyed.hint, /Part of the Family feature pack, so songs on this account use None, plain YuE2\.$/);
     assert.equal(stranger.engines.lyria, GUIDE.engines.lyria, 'other engines untouched');
     assert.equal(GUIDE.engines.yue2.settings.find((s) => s.key === 'band').locked, undefined, 'GUIDE itself is never changed');
@@ -548,6 +710,7 @@ test('the booth route: the guide greys Style out per person, and /render refuses
     assert.equal(asksForStyle({ engine: 'yue2', band: 'soul' }), true);
     assert.equal(asksForStyle({ engine: 'yue2', band: 'kids' }), true);
     assert.equal(asksForStyle({ engine: 'yue2', band: 'suno' }), true);
+    assert.equal(asksForStyle({ engine: 'yue2', band: 'sona' }), true);
     assert.equal(asksForStyle({ engine: 'yue2', band: 'none' }), false);
     assert.equal(asksForStyle({ engine: 'yue2', band: '' }), false);
     assert.equal(asksForStyle({ engine: 'yue2' }), false);
@@ -566,7 +729,7 @@ test('the booth route: the guide greys Style out per person, and /render refuses
     const song = { engine: 'yue2', script: 'Slow tempo, female lead vocal, 72 BPM.', lyrics: '[Verse]\nWords' };
     try {
       state.features = () => ({ trainedStyles: false, mediaLinks: false });
-      for (const style of ['soul', 'kids', 'suno', 'something-else']) {
+      for (const style of ['soul', 'kids', 'suno', 'sona', 'something-else']) {
         const refused = await post({ ...song, band: style });
         assert.equal(refused.status, 403, style);
         assert.deepEqual(refused.body, { error: pack.FAMILY_PACK_STYLES_REFUSAL, pack: true });
@@ -579,7 +742,7 @@ test('the booth route: the guide greys Style out per person, and /render refuses
       assert.equal((await post(song)).body.yueSaw.engine, 'yue2', 'no Style at all is plain YuE2');
 
       state.features = () => ({ trainedStyles: true });
-      for (const style of ['soul', 'kids', 'suno']) {
+      for (const style of ['soul', 'kids', 'suno', 'sona']) {
         const family = await post({ ...song, band: style });
         assert.equal(family.status, 200, style);
         assert.equal(family.body.yueSaw.band, style, `the pack passes ${style} on to YuE2`);
@@ -618,7 +781,7 @@ const ACCOUNTS = {
   'nobody signed in': { user: null, member: false },
 };
 
-test('every kind of account: Suno is live for exactly the Family feature pack and greyed out for everyone else, the review seat included', async () => {
+test('every kind of account: every style, Suno and Sona included, is live for exactly the Family feature pack and greyed out for everyone else, the review seat included', async () => {
   await withEnv({ YUE_STYLES_ENABLED: '1', KADE_SOUNDBOOTH_YT_LINKS: undefined, KADE_LIBRARY_HIDDEN_FROM: undefined, KADE_APP_REVIEW_USER_IDS: undefined, NOTIFY_TEST_USER_IDS: undefined }, async () => {
     const state = { user: null, features: (user) => pack.familyFeatures(user, {}), warnings: [], auths: 0 };
     const booth = loadBooth(state);
@@ -640,24 +803,27 @@ test('every kind of account: Suno is live for exactly the Family feature pack an
         const card = withStyleAccess(GUIDE, user).engines.yue2;
         const band = card.settings.find((s) => s.key === 'band');
         const strength = card.settings.find((s) => s.key === 'style_strength');
-        assert.deepEqual([...band.options], ['none', 'kids', 'soul', 'suno'], `${kind}: nothing is hidden`);
+        assert.deepEqual([...band.options], ['none', 'kids', 'soul', 'suno', 'sona'], `${kind}: nothing is hidden`);
         assert.equal(band.default, 'none', kind);
         assert.equal(band.locked, member ? undefined : 'Part of the Family feature pack', kind);
         assert.equal(strength.locked, member ? undefined : 'Part of the Family feature pack', kind);
         assert.equal(band.hint.endsWith('so songs on this account use None, plain YuE2.'), !member, `${kind}: the hint says why for a client that ignores locked`);
-        // The direct request for Suno (an older client, or a hand-made body).
-        state.warnings.length = 0;
-        const asked = await post({ ...song, band: 'suno' });
-        if (member) {
-          assert.equal(asked.status, 200, kind);
-          assert.equal(asked.body.yueSaw.band, 'suno', `${kind}: passed on to YuE2`);
-          assert.equal(state.warnings.length, 0, kind);
-        } else {
-          assert.equal(asked.status, 403, kind);
-          assert.deepEqual(asked.body, { error: pack.FAMILY_PACK_STYLES_REFUSAL, pack: true }, `${kind}: the same sentence as Soul and Kids`);
-          assert.equal(asked.body.yueSaw, undefined, `${kind}: nothing reached YuE2`);
-          assert.match(state.warnings.join('\n'), /trained style REFUSED/, kind);
+        // The direct request for each style (an older client, or a hand-made body), Sona's the same as Kids, Soul and Suno.
+        for (const style of Object.keys(yue.yueStyles)) {
+          state.warnings.length = 0;
+          const asked = await post({ ...song, band: style });
+          if (member) {
+            assert.equal(asked.status, 200, `${kind} ${style}`);
+            assert.equal(asked.body.yueSaw.band, style, `${kind}: ${style} passed on to YuE2`);
+            assert.equal(state.warnings.length, 0, `${kind} ${style}`);
+          } else {
+            assert.equal(asked.status, 403, `${kind} ${style}`);
+            assert.deepEqual(asked.body, { error: pack.FAMILY_PACK_STYLES_REFUSAL, pack: true }, `${kind} ${style}: the same sentence for every style`);
+            assert.equal(asked.body.yueSaw, undefined, `${kind} ${style}: nothing reached YuE2`);
+            assert.match(state.warnings.join('\n'), /trained style REFUSED/, `${kind} ${style}`);
+          }
         }
+        assert.ok(Object.keys(yue.yueStyles).includes('sona'), 'Sona is one of the styles asked for above');
         // Plain YuE2 stays open to everyone who is signed in.
         assert.equal((await post({ ...song, band: 'none' })).status, 200, `${kind}: Style None is open`);
         assert.equal((await post(song)).status, 200, `${kind}: no Style is open`);
@@ -706,6 +872,55 @@ test('options round trip: a styled song is saved with its Style, opens with it, 
       const render = yue.yueInput(reopen(old), process.env);
       assert.equal(render.style, `${yue.yueStyles[band].lead} Slow soul`, `${band}: the lead is put in front once`);
       assert.equal(render.lora_scale, 0.7);
+    }
+    /* Sona: a project saved in September (the first, Sonauto-era Sona) stored band 'sona' and, in front of her words, the long retired
+     * lead; one saved after the lead was kept out has only her words. Both open, and both render as a Sona song on the NEW file with
+     * the lead once. No saved project carries an adapter file, so the old file cannot ride along. */
+    const retiredLead = 'kdsona, in the style of kdsona. English, female lead vocal.';
+    const sonaLead = yue.yueStyles.sona.lead;
+    for (const [what, script] of [
+      ['the retired lead', `${retiredLead} Slow soul`],
+      ['the retired lead twice', `${retiredLead} ${retiredLead} Slow soul`],
+      ['the current lead', `${sonaLead} Slow soul`],
+      ['her words only', 'Slow soul'],
+    ]) {
+      for (const options of [
+        { lyrics: '[Verse]\nWords', band: 'sona', seed: 3, style_strength: 0.7 },
+        { lyrics: '[Verse]\nWords', band: 'sona', seed: 3 },
+        { lyrics: '[Verse]\nWords', cot: 'off', band: 'sona', seed: 3, count: 1, weirdness: 50, steps: 32, guidance: 1, style_strength: 1 },
+      ]) {
+        const old = legacy(script, options);
+        const why = `${what} ${JSON.stringify(options.style_strength)}`;
+        assert.equal(old.options.band, 'sona', why);
+        const render = yue.yueInput(reopen(old), process.env);
+        assert.equal(render.band, 'sona', why);
+        assert.equal(render.style, `${sonaLead} Slow soul`, `${why}: the current lead, once, then her words`);
+        assert.equal(render.style.split('kdsona').length - 1, 2, `${why}: one lead, its trigger word twice`);
+        assert.equal(render.lora_key, 'yue2-loras/sona-step800.pt', `${why}: the new file`);
+        assert.equal(render.lora_scale, options.style_strength === undefined ? 1 : options.style_strength, why);
+        assert.doesNotMatch(JSON.stringify(render), /sona1800/, why);
+      }
+    }
+    // With the Style choice switched off, the same old project is refused with the one plain sentence, as an old Kids one is.
+    withEnv({ YUE_STYLES_ENABLED: undefined }, () => {
+      const old = legacy(`${retiredLead} Slow soul`, { lyrics: '[Verse]\nWords', band: 'sona', seed: 3 });
+      assert.throws(() => yue.yueInput(reopen(old), process.env), { message: 'That trained style is not available. Choose None or another style.' });
+    });
+    /* Her own words can begin with "female lead vocal." after a lead. That is also how the retired Sona lead ended, but here they are
+     * hers: what is saved keeps them (the booth cuts the lead it put in front exactly, savedDirection), and the song reopens as the
+     * same request. */
+    for (const band of Object.keys(yue.yueStyles)) {
+      for (const script of ['female lead vocal. Warm piano.', 'female lead vocal. kdsona is a made-up word.']) {
+        for (const style_strength of [undefined, 0.4, 0]) {
+          const input = yue.yueInput({ script, lyrics: '[Verse]\nWords', band, style_strength, seed: 5, title: 'Rain song' }, process.env);
+          const id = await state.yueHooks.project('u1', input, 'my notes');
+          const view = projectView(JSON.parse(JSON.stringify(state.projects.find((row) => String(row._id) === id))), 1, {});
+          const why = `${band} ${style_strength} ${script}`;
+          assert.equal(view.script, script, `${why}: nothing she wrote is lost from what is saved`);
+          assert.equal(JSON.stringify(yue.yueInput(reopen(view), process.env)), JSON.stringify(input), `${why}: it reopens as the same request`);
+          if (style_strength !== 0) assert.equal(input.style, `${yue.yueStyles[band].lead} ${script}`, why);
+        }
+      }
     }
     const gone = legacy('Slow soul', { lyrics: '[Verse]\nWords', band: 'a-style-that-was-removed', seed: 3 });
     assert.equal(gone.options.band, 'a-style-that-was-removed', 'it still opens');

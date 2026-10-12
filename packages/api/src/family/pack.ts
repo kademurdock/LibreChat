@@ -39,6 +39,8 @@ import type { LibraryAccount } from '../library/access';
  * Suno's terms are read as restricting use of its output to build competing
  * models, so it is a private style tool for the family. That gate must stay:
  * one pack answer covers every style, and no style is opened to everyone.
+ * YuE2's Sona (Oct 2026, taught from songs made with Sonauto) is one more row
+ * behind that same answer.
  * -------------------------------------------------------------------------- */
 
 /** One person's pack features. True means usable now; false means shown greyed out. */
@@ -51,10 +53,10 @@ export interface FamilyFeatures {
   jukeboxLinks: boolean;
   /** Kade's shared Library shelves. */
   familyLibrary: boolean;
-  /** The Sound Booth's trained styles (the Style choice): YuE2's Soul and Kids and, behind
-   * ACE_STYLES_ENABLED, ACE-Step XL's Soul and Suno. Taught from real recordings, commercial songs among
-   * them, except Suno, which was taught from songs made with Suno. They are one pack feature, so one
-   * answer covers every style (Part 295, Sep 27 2026; ACE-Step XL, Oct 11 2026). */
+  /** The Sound Booth's trained styles (the Style choice): YuE2's Kids, Soul, Suno and Sona and, behind
+   * ACE_STYLES_ENABLED, ACE-Step XL's Soul and Suno. Kids and Soul were taught from real recordings,
+   * commercial songs among them; Suno and Sona from songs made with Suno and with Sonauto. They are one
+   * pack feature, so one answer covers every style (Part 295, Sep 27 2026; ACE-Step XL, Oct 11 2026). */
   trainedStyles: boolean;
 }
 
