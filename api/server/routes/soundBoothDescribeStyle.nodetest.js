@@ -63,12 +63,12 @@ test('a direction she wrote herself goes through exactly as it did', () => {
     'A slow blues cover with a gravel voice',
     'English, brisk, folk, with a banjo',
     'english-language folk, mid-tempo',
-    'English and Spanish, latin pop, up-tempo, male lead vocal, bright trumpets',
+    'English and Spanish lyrics, latin pop, up-tempo, male lead vocal, bright trumpets',
     'Spanish, latin pop, up-tempo, male lead vocal, bright trumpets',
     'Instrumental, jazz, slow tempo, piano trio',
     'Warm English, folk, mid-tempo, female lead vocal',
   ]) {
-    for (const band of ['suno', 'soul', 'kids'])
+    for (const band of ['suno', 'sona', 'soul', 'kids'])
       assert.equal(request(mine, band).style, `${yue.yueStyles[band].lead} ${mine}`, `${band}: ${mine}`);
   }
 });

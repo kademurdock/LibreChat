@@ -118,11 +118,13 @@ export function yueMusicDirection(style: string): string {
  * shape "English, <genre>, <pace>, <voice>, <sound words>", but every trained lead already says English and the Soul and Kids
  * leads already name their genre, so the line would repeat the language ("English, English, folk") or argue with the style's
  * own genre. The language is dropped, and the genre too when the lead names one; a lead that stops at "English," (Suno) leaves
- * the genre to the direction, as its training captions did, so only the language goes. Only a line of exactly that shape is
- * touched: anything she wrote herself is sent as it is.
+ * the genre to the direction, as its training captions did, so only the language goes. A recording in two languages gives the
+ * describer "English and Spanish" or "Spanish and English"; English is in the lead already, so that whole language part goes
+ * the same way. A single other language ("Spanish, bolero, ...") is kept: the lead cannot speak for that recording. Only a
+ * line of exactly that shape is touched: anything she wrote herself is sent as it is.
  */
 export function yueStyleDirection(direction: string, lead: string): string {
-  const described = /^English,\s*([^,]+),\s*((?:slow tempo|mid-tempo|up-tempo)\b[\s\S]*)$/i.exec(direction);
+  const described = /^(?:English(?: and [a-z]+)?|[a-z]+ and English),\s*([^,]+),\s*((?:slow tempo|mid-tempo|up-tempo)\b[\s\S]*)$/i.exec(direction);
   if (!described) return direction;
   return /English,$/.test(lead) ? `${described[1]}, ${described[2]}` : described[2];
 }
