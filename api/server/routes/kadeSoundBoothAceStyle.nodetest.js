@@ -142,7 +142,7 @@ test('flag unset: the card is byte for byte the previous commit\'s, whoever asks
 
 test('flag unset: a Style on the request is ignored, as every field ACE does not have always was', () => {
   const plain = ace.aceInput(base, {});
-  for (const extra of [{ band: 'soul' }, { band: 'suno' }, { band: 'kids' }, { band: 'soul', style_strength: 0.3 }, { band: 'suno', style_strength: 0.3 }, { band: 'nonsense' }, { band: ['soul'] }, { band: ['suno'] }, { style_strength: 5 }, { style_strength: 'x' }, { band: 'soul', quality: 'Fast', singing: false }, { band: 'suno', quality: 'Fast', singing: false }, { lora_key: 'ace-loras/suno-v1', lora_scale: 1, vocal_language: 'en' }]) {
+  for (const extra of [{ band: 'soul' }, { band: 'suno' }, { band: 'kids' }, { band: 'sona' }, { band: 'soul', style_strength: 0.3 }, { band: 'suno', style_strength: 0.3 }, { band: 'nonsense' }, { band: ['soul'] }, { band: ['suno'] }, { style_strength: 5 }, { style_strength: 'x' }, { band: 'soul', quality: 'Fast', singing: false }, { band: 'suno', quality: 'Fast', singing: false }, { lora_key: 'ace-loras/suno-v1', lora_scale: 1, vocal_language: 'en' }]) {
     assert.deepEqual(ace.aceInput({ ...base, ...extra }, {}), plain, JSON.stringify(extra));
     assert.deepEqual(ace.aceInput({ ...base, ...extra }, { ACE_STYLES_ENABLED: '0' }), plain, JSON.stringify(extra));
   }
@@ -435,8 +435,8 @@ test('every refusal is one plain sentence, in YuE2\'s words where YuE2 has the s
   assert.equal(yueSays({ band: 'nonsense' }), UNAVAILABLE, 'YuE2 says the same');
   assert.equal(yueSays({ band: 'soul', style_strength: 2 }), STRENGTH, 'YuE2 says the same');
   assert.equal(yueSays({ band: 'soul', singing: INSTRUMENTAL, lyrics: '' }, { YUE_COVERS_V2: '1' }), SINGING, 'YuE2 says the same');
-  /* YuE2's Kids is not an ACE-Step XL style, and a name that is nearly one is not one either: the registry is read by exact name. */
-  for (const band of ['kids', 'Soul', 'SOUL', ' soul', 'soul ', 'Suno', 'SUNO', ' suno', 'suno ', 'soul,suno', 'constructor', '__proto__', 'toString', 'hasOwnProperty', 5, true, ['soul'], ['suno'], {}, 'none ', 'None'])
+  /* YuE2's Kids and Sona are not ACE-Step XL styles, and a name that is nearly one is not one either: the registry is read by exact name. */
+  for (const band of ['kids', 'sona', 'Sona', 'Soul', 'SOUL', ' soul', 'soul ', 'Suno', 'SUNO', ' suno', 'suno ', 'soul,suno', 'constructor', '__proto__', 'toString', 'hasOwnProperty', 5, true, ['soul'], ['suno'], {}, 'none ', 'None'])
     refusal({ ...base, band }, UNAVAILABLE);
   for (const name of STYLES) for (const style_strength of [-0.1, 1.1, 2, NaN, Infinity, -Infinity, '0.5', true, [], {}]) {
     refusal({ ...base, band: name, style_strength }, STRENGTH);

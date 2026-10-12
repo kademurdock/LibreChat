@@ -261,6 +261,27 @@ test("the Suno style's trigger goes the same way, and its style is said to be le
   }
 });
 
+test("a project saved with the Sona style (the retired lead, the current lead or none) carries on with its words whole and leaves the style behind", () => {
+  const retired = 'kdsona, in the style of kdsona. English, female lead vocal. ';
+  const current = 'kdsona, in the style of kdsona. English, ';
+  assert.strictEqual(carry.stripTrainedLead(current + 'Warm pop, 100 BPM.'), 'English, Warm pop, 100 BPM.');
+  assert.strictEqual(carry.stripTrainedLead(retired + current + 'Warm pop.'), 'English, female lead vocal. English, Warm pop.');
+  for (const script of [retired + 'Warm pop, 100 BPM.', current + 'Warm pop, 100 BPM.', 'Warm pop, 100 BPM.']) {
+    for (const to of ['lyria', 'ace']) {
+      const project = { ...YUE, script, options: { ...(YUE.options || {}), band: 'sona', style_strength: 0.7, lora_key: 'yue2-loras/sona-step800.pt', lora_scale: 0.7 } };
+      const out = carry.carryOver(project, to, ACE_ON);
+      const why = `${to}: ${script}`;
+      assert.strictEqual(out.ok, true, why);
+      assert.match(out.draft.script, /Warm pop, 100 BPM\.$/, why);
+      assert.doesNotMatch(JSON.stringify(out.draft), /kdsona|sona-step800|sona1800/, why);
+      for (const key of ['band', 'style_strength', 'lora_key', 'lora_scale']) assert.strictEqual(out.draft.options[key], undefined, `${why}: ${key} stays behind`);
+      assert.strictEqual(out.draft.options.lyrics, LYRICS, why + ': the words and their tags come across whole');
+      assert.ok(out.notes.some((n) => /trained style, which only YuE2 has/.test(n)), `${why}: ${out.notes.join(' | ')}`);
+      assert.doesNotMatch(out.notes.join(' '), /\bsona\b|kd[a-z]+/i, `${why}: no note names the style or its trigger`);
+    }
+  }
+});
+
 test('a trigger that re-rendering put in front twice is taken off every time', () => {
   const lead = 'kdsona, in the style of kdsona. ';
   assert.strictEqual(carry.stripTrainedLead(lead + lead + 'English, female lead vocal. Neo-soul.'), 'English, female lead vocal. Neo-soul.');
