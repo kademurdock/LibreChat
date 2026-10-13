@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
+process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -1707,7 +1708,7 @@ test('providers: the vision request drops a routing suffix, pins reasoning, send
     assert.deepEqual(fake.calls[1].body.reasoning, { effort: 'low' });
     assert.equal(fake.calls[1].body.max_tokens, 24000);
     assert.deepEqual(fake.calls[1].body.provider, flexRoute, 'the survey asks flex too');
-    delete process.env.KADE_DESCRIPTION_MODEL;
+    process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
     process.env.KADE_DESCRIPTION_TIER = 'standard';
     await analyze({ file, seconds: 10, brief: brief(), state: null, lines: [], before: [] }, signal, meter);
     assert.equal(fake.calls[2].body.model, 'google/gemini-3.8-flash');
@@ -1722,7 +1723,7 @@ test('providers: the vision request drops a routing suffix, pins reasoning, send
       assert.equal(JSON.stringify(call.body.provider.only ?? []).includes('google-ai-studio'), false);
     }
   } finally {
-    delete process.env.KADE_DESCRIPTION_MODEL;
+    process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
     delete process.env.KADE_DESCRIPTION_TIER;
     fake.restore();
   }

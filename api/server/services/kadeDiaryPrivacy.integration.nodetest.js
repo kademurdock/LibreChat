@@ -11,16 +11,27 @@ const api = require('@librechat/api');
 const root = path.resolve(__dirname, '../../..');
 const userId = 'synthetic-diary-user';
 const agentId = 'agent_synthetic_diary';
+const testVector = Array.from({ length: 1536 }, (_, i) => i === 0 ? 0.2 : -0.1);
 
 function diaryFixture(embedding) {
+  const Module = require('node:module');
+  const ts = require('typescript');
+  const helperFile = path.join(root, 'packages/api/src/memory/embedding.ts');
+  const helper = new Module(helperFile);
+  helper.paths = Module._nodeModulePaths(path.dirname(helperFile));
+  helper.require = (name) => name === 'axios' ? { post: embedding } : require(name);
+  helper._compile(ts.transpileModule(fs.readFileSync(helperFile, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText, helperFile);
+  const env = { KADE_DIARY: '1', KADE_EMBED_GEMINI_KEY: 'synthetic-no-network-key' };
   const module = { exports: {} };
   const source = fs.readFileSync(path.join(root, 'api/models/kadeDiary.js'), 'utf8');
   vm.runInNewContext(source, {
     module,
-    process: { env: { KADE_DIARY: '1', KADE_EMBED_GEMINI_KEY: 'synthetic-no-network-key' } },
+    process: { env },
     require: (name) => {
       if (name === 'axios') return { post: embedding };
-      if (name === '@librechat/api') return api;
+      if (name === '@librechat/api') return { ...api, ...helper.exports, memoryEmbeddingLane: () => helper.exports.memoryEmbeddingLane(env) };
       return require(name);
     },
   });
@@ -42,7 +53,7 @@ function delayedEmbedding() {
     post: async () => {
       start();
       await blocked;
-      return { data: { embedding: { values: [0.2, -0.1] } } };
+      return { data: { embedding: { values: testVector } } };
     },
   };
 }
@@ -86,10 +97,11 @@ test('real diary creation respects policy changes during embedding and insertion
   await t.test(
     'allowed creation still saves a real dated entry and successful-write stamp',
     async () => {
-      const diary = diaryFixture(async () => ({ data: { embedding: { values: [0.1, 0.2] } } }));
+      const diary = diaryFixture(async () => ({ data: { embedding: { values: testVector } } }));
       assert.equal((await write(diary, 'allowed-chat')).ok, true);
       const row = await diary.KadeDiaryEntry.findOne({ conversationId: 'allowed-chat' }).lean();
       assert.ok(row.writeActivity.live_chat.createdAt instanceof Date);
+      assert.equal(row.embedding.length, 1536);
     },
   );
 
@@ -117,7 +129,7 @@ test('real diary creation respects policy changes during embedding and insertion
   }
 
   await t.test('a policy change inside the actual insert removes only its new entry', async () => {
-    const diary = diaryFixture(async () => ({ data: { embedding: { values: [0.2, -0.1] } } }));
+    const diary = diaryFixture(async () => ({ data: { embedding: { values: testVector } } }));
     const conversationId = 'insert-race-chat';
     const original = diary.KadeDiaryEntry.create;
     diary.KadeDiaryEntry.create = async function (...args) {

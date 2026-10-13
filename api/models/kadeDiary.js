@@ -24,14 +24,12 @@
  * agentId = null means shared; a string means only that character's diary.
  * Default scope is AGENT — you told ONE character about your day.
  *
- * EMBEDDINGS: Google gemini-embedding-001 at 1536 dims via
- * KADE_EMBED_GEMINI_KEY (the AI Studio key already powering the Live video
- * lane; live-tested Aug 7 2026 — $0.15/M tokens, an entry costs ~a hundredth
- * of a cent). Discovered same day: the RAG service's OPENAI_API_KEY is DEAD
- * (401 on a live embeddings call), so the OpenAI lane is only a fallback if
- * KADE_EMBED_OPENAI_KEY is ever set with a fresh key. Query and entry vectors
- * only compare when embedModel matches — a future model swap needs a backfill
- * pass, never silent cross-model cosine. Fail-soft everywhere: an entry that
+ * EMBEDDINGS: KADE_EMBED_MODEL selects the compatible provider. Production
+ * uses Qwen3-Embedding-8B at 1536 dimensions, with the original Google index
+ * retained for rollback. The model, dimensions and text recipe must all
+ * match before vectors compare. Staged vectors also require a current text
+ * hash. The old Google/OpenAI lanes are used only when no explicit model is
+ * selected. Fail-soft everywhere: an entry that
  * can't embed still SAVES (embedding null, searchable after backfill); a
  * search that can't embed falls back to date/recency. The diary must never
  * lose her day over a flaky embedding call.
@@ -41,10 +39,20 @@
  * Plain Mongoose on purpose — no data-schemas TS build (kadeMemorySummary /
  * kadeNudge precedent).
  */
-const axios = require('axios');
 const mongoose = require('mongoose');
-const { diaryWriteOrigins, diaryWriteOrigin } = require('@librechat/api');
-const { logger, memorySourceStorage, memorySourceAllowed, excludedMemoryConversations } = require('@librechat/data-schemas');
+const {
+  diaryWriteOrigins,
+  diaryWriteOrigin,
+  memoryEmbeddingLane,
+  requestMemoryEmbedding,
+  indexedEmbedding,
+} = require('@librechat/api');
+const {
+  logger,
+  memorySourceStorage,
+  memorySourceAllowed,
+  excludedMemoryConversations,
+} = require('@librechat/data-schemas');
 
 const kadeDiarySchema = new mongoose.Schema(
   {
@@ -58,6 +66,9 @@ const kadeDiarySchema = new mongoose.Schema(
     /** 1536-dim vector from whichever lane embedModel names, or null if embedding failed at write. */
     embedding: { type: [Number], default: null },
     embedModel: { type: String, default: null },
+    embeddingNext: { type: [Number], default: null },
+    embedNextModel: { type: String, default: null },
+    embedNextHash: { type: String, default: null },
     /** 'keeper' (memory agent) | 'manual' (future diary surface) | 'backfill' */
     source: { type: String, default: 'keeper' },
     sourceConversationIds: { type: [String], default: [] },
@@ -121,20 +132,9 @@ function centralDateString(date = new Date()) {
   return fmt.format(date); // en-CA gives YYYY-MM-DD directly
 }
 
-const EMBED_TIMEOUT_MS = 8000;
-const EMBED_DIMS = 1536;
-const GEMINI_EMBED_MODEL = 'gemini-embedding-001';
-const OPENAI_EMBED_MODEL = 'text-embedding-3-small';
-
 /** Which embedding lane is live right now → { provider, model, key } or null. */
 function embedLane() {
-  if (process.env.KADE_EMBED_GEMINI_KEY) {
-    return { provider: 'gemini', model: GEMINI_EMBED_MODEL, key: process.env.KADE_EMBED_GEMINI_KEY };
-  }
-  if (process.env.KADE_EMBED_OPENAI_KEY) {
-    return { provider: 'openai', model: OPENAI_EMBED_MODEL, key: process.env.KADE_EMBED_OPENAI_KEY };
-  }
-  return null;
+  return memoryEmbeddingLane();
 }
 
 /* ⭐ AUG 28 2026 — THE STRIP BECOMES A FUNCTION, BECAUSE THERE WERE TWO DOORS.
@@ -174,7 +174,7 @@ function stripLeadingDateStamp(raw) {
 /** The model name entries are being written with right now (drives the match guard). */
 function currentEmbedModel() {
   const lane = embedLane();
-  return lane ? lane.model : null;
+  return lane ? lane.identity : null;
 }
 
 /* ⭐⭐⭐ AUG 28 2026 — THE EMBEDDING LANE CAN DIE SILENTLY, AND IT DID.
@@ -215,7 +215,7 @@ function readEmbedHealth() {
   return {
     ...embedHealth,
     provider: lane ? lane.provider : null,
-    model: lane ? lane.model : null,
+    model: lane ? lane.identity : null,
     configured: Boolean(lane),
   };
 }
@@ -232,48 +232,16 @@ function embedErrorText(e) {
 }
 
 /** Embed one string. Returns float array or null (never throws). */
-async function embedText(text) {
+async function embedText(text, { purpose = 'document' } = {}) {
   const lane = embedLane();
   if (!lane || !text) {
     return null;
   }
   try {
-    if (lane.provider === 'gemini') {
-      const resp = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${lane.model}:embedContent?key=${lane.key}`,
-        {
-          model: `models/${lane.model}`,
-          content: { parts: [{ text: String(text).slice(0, 4000) }] },
-          outputDimensionality: EMBED_DIMS,
-        },
-        { headers: { 'Content-Type': 'application/json' }, timeout: EMBED_TIMEOUT_MS },
-      );
-      const vec = resp.data?.embedding?.values;
-      if (Array.isArray(vec) && vec.length > 0) {
-        embedHealth.ok += 1;
-        embedHealth.lastOkAt = new Date().toISOString();
-        return vec;
-      }
-      embedHealth.failed += 1;
-      embedHealth.lastError = 'the provider answered 200 with no vector in it';
-      embedHealth.lastErrorAt = new Date().toISOString();
-      return null;
-    }
-    const resp = await axios.post(
-      'https://api.openai.com/v1/embeddings',
-      { model: lane.model, input: String(text).slice(0, 4000) },
-      { headers: { Authorization: `Bearer ${lane.key}` }, timeout: EMBED_TIMEOUT_MS },
-    );
-    const vec = resp.data?.data?.[0]?.embedding;
-    if (Array.isArray(vec) && vec.length > 0) {
-      embedHealth.ok += 1;
-      embedHealth.lastOkAt = new Date().toISOString();
-      return vec;
-    }
-    embedHealth.failed += 1;
-    embedHealth.lastError = 'the provider answered 200 with no vector in it';
-    embedHealth.lastErrorAt = new Date().toISOString();
-    return null;
+    const vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    embedHealth.ok += 1;
+    embedHealth.lastOkAt = new Date().toISOString();
+    return vec;
   } catch (e) {
     const detail = embedErrorText(e);
     embedHealth.failed += 1;
@@ -325,8 +293,11 @@ async function logDiaryEntry({
   conversationId = null,
   origin = 'unknown',
 }) {
-  const memorySource = memorySourceStorage.getStore() || (conversationId ? { userId: String(userId), conversationId, kind: 'conversation' } : undefined);
-  if (!(await memorySourceAllowed(memorySource))) return { ok: false, error: 'Conversation memory is excluded' };
+  const memorySource =
+    memorySourceStorage.getStore() ||
+    (conversationId ? { userId: String(userId), conversationId, kind: 'conversation' } : undefined);
+  if (!(await memorySourceAllowed(memorySource)))
+    return { ok: false, error: 'Conversation memory is excluded' };
   conversationId = conversationId || memorySource?.conversationId || null;
   const writeOrigin = diaryWriteOrigin({ source, conversationId, origin });
   if (!diaryEnabled()) {
@@ -372,9 +343,13 @@ async function logDiaryEntry({
    * machine's chores. */
   if (
     (source === 'keeper' || source === 'mined') &&
-    /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b|\bchecked\b|\bswept?\b|\bpass(?:ed)?\b|\bhousekeeping\b|\bconsolidat/i.test(cleanText) &&
+    /\basked|\brequested|\bran\b|\bwants? (?:me|a)\b|\bchecked\b|\bswept?\b|\bpass(?:ed)?\b|\bhousekeeping\b|\bconsolidat/i.test(
+      cleanText,
+    ) &&
     /\b(?:diary|logbook|memory|memories|notes?)\b/i.test(cleanText) &&
-    /\b(?:search|check|look(?:ed)?\s?up|read back|record|housekeeping|consolidat|merge|repair|sweep|consolidation pass|nothing needed changing)/i.test(cleanText)
+    /\b(?:search|check|look(?:ed)?\s?up|read back|record|housekeeping|consolidat|merge|repair|sweep|consolidation pass|nothing needed changing)/i.test(
+      cleanText,
+    )
   ) {
     return {
       ok: false,
@@ -386,7 +361,9 @@ async function logDiaryEntry({
   /* entryDate override is for BACKFILL lanes only (supervised card sort,
    * history mining) — live keeper writes always stamp today. */
   const effectiveDate =
-    entryDate && /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate)) ? String(entryDate) : centralDateString();
+    entryDate && /^\d{4}-\d{2}-\d{2}$/.test(String(entryDate))
+      ? String(entryDate)
+      : centralDateString();
   const embedding = await embedText(cleanText);
 
   /* ── RE-MINE GUARD (Aug 26 2026) ──────────────────────────────────────────
@@ -411,10 +388,14 @@ async function logDiaryEntry({
         agentId: effectiveAgentId,
         entryDate: effectiveDate,
       })
-        .select('text embedding')
+        .select('text embedding embedModel embeddingNext embedNextModel embedNextHash')
         .limit(40)
         .lean();
-      const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const norm = (t) =>
+        String(t || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, ' ')
+          .trim();
       const mine = norm(cleanText);
       const threshold = (() => {
         const v = parseFloat(process.env.KADE_DIARY_DEDUP_SIM);
@@ -422,11 +403,25 @@ async function logDiaryEntry({
       })();
       for (const row of sameDay) {
         if (norm(row.text) === mine) {
-          return { ok: false, error: 'duplicate: an identical entry already exists for that day', duplicate: true };
+          return {
+            ok: false,
+            error: 'duplicate: an identical entry already exists for that day',
+            duplicate: true,
+          };
         }
-        if (embedding && Array.isArray(row.embedding) && row.embedding.length) {
-          if (cosine(embedding, row.embedding) >= threshold) {
-            return { ok: false, error: 'duplicate: a near-identical entry already exists for that day', duplicate: true };
+        const vector = indexedEmbedding(
+          row,
+          currentEmbedModel(),
+          row.text,
+          embedLane()?.dimensions || 1536,
+        );
+        if (embedding && vector && embedding.length === vector.length) {
+          if (cosine(embedding, vector) >= threshold) {
+            return {
+              ok: false,
+              error: 'duplicate: a near-identical entry already exists for that day',
+              duplicate: true,
+            };
           }
         }
       }
@@ -477,8 +472,14 @@ async function logDiaryEntry({
           existing.embedModel = currentEmbedModel();
         }
         existing.salience = Math.max(existing.salience || 1, cleanSalience);
-        if (!(await memorySourceAllowed(memorySource))) return { ok: false, error: 'Memory policy changed during this write' };
-        existing.sourceConversationIds = [...new Set([...(existing.sourceConversationIds || []), ...(memorySource?.conversationIds || [conversationId]).filter(Boolean)])];
+        if (!(await memorySourceAllowed(memorySource)))
+          return { ok: false, error: 'Memory policy changed during this write' };
+        existing.sourceConversationIds = [
+          ...new Set([
+            ...(existing.sourceConversationIds || []),
+            ...(memorySource?.conversationIds || [conversationId]).filter(Boolean),
+          ]),
+        ];
         existing.set(`writeActivity.${writeOrigin}.amendedAt`, new Date());
         await existing.save();
         return { ok: true, date: effectiveDate, amended: true };
@@ -565,7 +566,11 @@ async function searchDiary({
     userId: String(userId),
     conversationId: { $nin: await excludedMemoryConversations(String(userId)) },
     sourceConversationIds: { $nin: await excludedMemoryConversations(String(userId)) },
-    $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : []), ...(Array.isArray(extraAgentIds) ? extraAgentIds.map((a) => ({ agentId: String(a) })) : [])],
+    $or: [
+      { agentId: null },
+      ...(agentId ? [{ agentId: String(agentId) }] : []),
+      ...(Array.isArray(extraAgentIds) ? extraAgentIds.map((a) => ({ agentId: String(a) })) : []),
+    ],
   };
   if (dateFrom || dateTo) {
     filter.entryDate = {};
@@ -593,7 +598,7 @@ async function searchDiary({
     const qVec =
       Array.isArray(queryVector) && queryVector.length > 0
         ? queryVector
-        : await embedText(String(query));
+        : await embedText(String(query), { purpose: 'query' });
     if (!qVec) {
       /* embedding down → degrade to recency within the same filter */
       const rows = await KadeDiaryEntry.find(filter)
@@ -612,10 +617,13 @@ async function searchDiary({
     const rows = await KadeDiaryEntry.find(filter)
       .sort({ createdAt: -1 })
       .limit(3000)
-      .select('text entryDate agentId embedding embedModel salience')
+      .select(
+        'text entryDate agentId embedding embedModel embeddingNext embedNextModel embedNextHash salience',
+      )
       .lean();
     const scored = [];
     const activeModel = currentEmbedModel();
+    const dimensions = embedLane()?.dimensions;
     /* TIME-AWARE RECALL (Aug 9 2026, Zep's lesson from the northstar pass):
      * relevance gates (raw cosine >= minScore), but the RANKING blends in
      * recency and salience. A fresh entry gets up to +0.05; the boost halves
@@ -625,14 +633,10 @@ async function searchDiary({
      * milestone) structurally outranks a same-relevance product note. */
     const todayMs = Date.now();
     for (const r of rows) {
-      if (!Array.isArray(r.embedding) || r.embedding.length === 0) {
-        continue;
-      }
-      /* Cross-model cosine is noise, not recall — skip until a backfill re-embeds. */
-      if (r.embedModel && activeModel && r.embedModel !== activeModel) {
-        continue;
-      }
-      const score = cosine(qVec, r.embedding);
+      const vector =
+        activeModel && dimensions ? indexedEmbedding(r, activeModel, r.text, dimensions) : null;
+      if (!vector || qVec.length !== vector.length) continue;
+      const score = cosine(qVec, vector);
       if (score >= minScore) {
         let ageDays = 0;
         const t = Date.parse(`${r.entryDate}T12:00:00-06:00`);
@@ -688,7 +692,7 @@ async function editDiaryEntry(filter, { text = null, salience = null } = {}) {
   }
   try {
     const row = await KadeDiaryEntry.findOneAndUpdate(filter, { $set: update }, { new: true })
-      .select('-embedding')
+      .select('-embedding -embeddingNext -embedNextHash')
       .lean();
     if (!row) {
       return { ok: false, error: 'not found' };

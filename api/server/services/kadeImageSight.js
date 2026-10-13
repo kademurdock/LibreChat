@@ -18,7 +18,7 @@ const { openRouterCost } = require('./kadeRealCost');
  * as before (image simply not described). Never throws into the chat pipeline.
  */
 
-const VISION_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
+const VISION_MODEL = process.env.KADE_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
 
 // Models with NATIVE image input — skip auto-describe for these (they see the
 // image directly). Substring match on the agent's model string. Everything
@@ -66,6 +66,7 @@ function visionReasoning(model) {
   if (eff) {
     return { effort: eff };
   }
+  if (String(model).startsWith('xiaomi/mimo-')) return { enabled: false, effort: 'none' };
   return /-pro/.test(String(model)) ? { effort: 'low' } : null;
 }
 
@@ -123,8 +124,8 @@ async function describeAttachedImages(imageParts, opts = {}) {
       const usage = r.data?.usage || {};
       const cost =
         openRouterCost(usage) ??
-        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1) +
-          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4)) /
+        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.435) +
+          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.87)) /
           1e6;
       return { text: typeof text === 'string' ? text.trim() : '', cost, idx };
     };

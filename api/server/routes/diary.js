@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
     const entries = await KadeDiaryEntry.find({ userId: String(req.user.id) })
       .sort({ entryDate: -1, createdAt: -1 })
       .limit(limit)
-      .select('-embedding')
+      .select('-embedding -embeddingNext -embedNextHash')
       .lean();
     const distinctAgents = [...new Set(entries.map((e) => e.agentId).filter(Boolean))];
     const agentNames = await resolveAgentNames(distinctAgents);
@@ -150,7 +150,7 @@ router.delete('/:entryId', async (req, res) => {
   try {
     const { entryId } = req.params;
     const entry = await KadeDiaryEntry.findOne({ _id: entryId, userId: String(req.user.id) })
-      .select('-embedding')
+      .select('-embedding -embeddingNext -embedNextHash')
       .lean();
     if (!entry) {
       return res.status(404).json({ error: 'That entry was not found in your logbook' });

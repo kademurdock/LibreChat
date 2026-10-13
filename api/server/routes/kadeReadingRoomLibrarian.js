@@ -23,7 +23,7 @@
  *                           description if there is one, and the librarian's
  *                           notes. Nothing else; it says so when it does not
  *                           know.
- * Model: KADE_LIBRARIAN_MODEL (default google/gemini-3.1-flash-lite) through
+ * Model: KADE_LIBRARIAN_MODEL (default xiaomi/mimo-v2.6-flash) through
  * OpenRouter. Kill: KADE_LIBRARIAN=0.
  * -------------------------------------------------------------------------- */
 const axios = require('axios');
@@ -31,17 +31,17 @@ const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
 
-const MODEL = () => process.env.KADE_LIBRARIAN_MODEL || 'google/gemini-3.1-flash-lite';
+const MODEL = () => process.env.KADE_LIBRARIAN_MODEL || 'xiaomi/mimo-v2.6-flash';
 const ENABLED = () => process.env.KADE_LIBRARIAN !== '0';
-const IN_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1);
-const OUT_USD_PER_M = () => Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4);
+const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARIAN_IN_USD_PER_M || 0.14);
+const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARIAN_OUT_USD_PER_M || 0.28);
 
 async function chat(messages, maxTokens = 900, json = false) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) throw new Error('OPENROUTER_KEY not configured');
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: MODEL(), max_tokens: maxTokens, messages, usage: { include: true }, ...(json ? { response_format: { type: 'json_object' } } : {}) },
+    { model: MODEL(), max_tokens: maxTokens, messages, usage: { include: true }, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: false, effort: 'none' } } : {}), ...(json ? { response_format: { type: 'json_object' } } : {}) },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
   );
   const text = r.data?.choices?.[0]?.message?.content;

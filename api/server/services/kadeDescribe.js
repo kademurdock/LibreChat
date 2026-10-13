@@ -5,7 +5,7 @@
  * gets a rich, screen-reader-first description / read-aloud on /describe.
  *
  * Pipeline pieces live here; routes in ~/server/routes/kadeDescribe.js.
- * Vision model: KADE_VISION_MODEL (default google/gemini-3.1-flash-lite) via
+ * Vision model: KADE_VISION_MODEL (default xiaomi/mimo-v2.6-pro) via
  * OpenRouter — the SAME proven path the gallery auto-describer uses (handles
  * images AND video inline as base64; verified live July 2 2026).
  */
@@ -14,7 +14,7 @@ const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { openRouterCost } = require('./kadeRealCost');
 
-const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'google/gemini-3.1-flash-lite';
+const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
 
 /* ---------------------------------------------------------------------------
@@ -119,8 +119,8 @@ function verifyShareToken(token) {
 /* ---------------------------------------------------------------------------
  * OpenRouter helpers
  * ------------------------------------------------------------------------- */
-const IN_USD_PER_M = Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1);
-const OUT_USD_PER_M = Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4);
+const IN_USD_PER_M = Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.435);
+const OUT_USD_PER_M = Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.87);
 
 
 /** Reasoning effort for the vision call: KADE_VISION_REASONING=off|minimal|low|medium|high.
@@ -133,6 +133,7 @@ function visionReasoning(model) {
   if (eff) {
     return { effort: eff };
   }
+  if (String(model).startsWith('xiaomi/mimo-')) return { enabled: false, effort: 'none' };
   return /-pro/.test(String(model)) ? { effort: 'low' } : null;
 }
 

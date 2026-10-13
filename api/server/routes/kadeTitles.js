@@ -69,7 +69,7 @@ async function generateTitle(convoText) {
   const r = await axios.post(
     gatewayUrl,
     {
-      model: 'google/gemini-2.5-flash-lite',
+      model: 'xiaomi/mimo-v2.6-flash',
       max_tokens: 40,
       messages: [{ role: 'user', content: `${PROMPT_HEAD}\n\nConversation:\n${convoText}` }],
     },

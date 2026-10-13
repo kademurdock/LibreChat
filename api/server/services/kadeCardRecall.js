@@ -726,6 +726,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
               minScore: focused ? Number(process.env.KADE_FOCUSED_MEMORY_MIN_SCORE || '0.45') : CARD_MIN_SCORE,
               extraAgentIds,
               keys,
+              values: new Map([...liveByKey].map(([key, memory]) => [key, String(memory.value ?? '')])),
             })
           : [];
         if (cardHits.length > 0) {

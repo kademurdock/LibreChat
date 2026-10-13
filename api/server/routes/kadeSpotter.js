@@ -93,7 +93,7 @@ router.post('/generate', requireJwtAuth, async (req, res) => {
     const r = await axios.post(
       (process.env.REFRAME_PROXY_URL || 'https://reframe-proxy-production.up.railway.app') + '/chat/completions',
       {
-        model: 'google/gemini-2.5-flash-lite',
+        model: 'xiaomi/mimo-v2.6-flash',
         stream: false,
         max_tokens: 400,
         messages: [{ role: 'user', content: prompt }],

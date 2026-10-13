@@ -40,7 +40,7 @@ router.get('/mine', async (req, res) => {
     /* Logbook */
     let entries = [];
     try {
-      entries = await KadeDiaryEntry.find({ userId }).sort({ entryDate: 1, createdAt: 1 }).select('-embedding').lean();
+      entries = await KadeDiaryEntry.find({ userId }).sort({ entryDate: 1, createdAt: 1 }).select('-embedding -embeddingNext -embedNextHash').lean();
     } catch (e) { logger.warn('[export] diary fetch failed:', e.message); }
     zip.file('data/logbook.json', JSON.stringify(entries.map((e) => ({
       date: e.entryDate, text: e.text, salience: e.salience || 1, source: e.source, agentId: e.agentId || null,

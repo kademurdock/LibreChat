@@ -36,8 +36,8 @@ test('Part 295 review: a BYOK photo without Google\'s figure is priced from its 
   const sight = load(async () => ({ data: { choices: [{ message: { content: 'A bird.' } }], usage } }), ledger);
   assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'bird' } }], { userId: 'u1' }), 'A bird.');
   assert.equal(ledger.length, 1);
-  /* 2,000 in at $0.10/M and 500 out at $0.40/M. */
-  assert.ok(Math.abs(ledger[0].costUSD - 0.0004) < 1e-12, String(ledger[0].costUSD));
+  /* MiMo Pro: 2,000 in at $0.435/M and 500 out at $0.87/M. */
+  assert.ok(Math.abs(ledger[0].costUSD - 0.001305) < 1e-12, String(ledger[0].costUSD));
 });
 test('photo question reaches vision as user text and is separate from instructions', async () => {
   const calls = [];
@@ -45,6 +45,8 @@ test('photo question reaches vision as user text and is separate from instructio
   const result = await sight.describeAttachedImages([{ image_url: { url: 'test-image' } }], { question: [{ type: 'text', text: 'Which side is the red mug on?' }] });
   assert.match(result, /left/);
   assert.equal(calls[0].messages[0].role, 'system');
+  assert.equal(calls[0].model, 'xiaomi/mimo-v2.6-pro');
+  assert.equal(calls[0].reasoning.enabled, false);
   assert.equal(calls[0].messages[1].content[0].text, 'Which side is the red mug on?');
   assert.match(calls[0].messages[0].content, /answer that first/);
   assert.equal(calls[0].messages[1].content[1].image_url.url, 'test-image');

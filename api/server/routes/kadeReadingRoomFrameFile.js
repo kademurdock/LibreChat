@@ -40,13 +40,10 @@ const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const ENABLED = () => process.env.KADE_LIBRARY_VISION_FILE === '1';
-/* Checked against OpenRouter's own model list, not guessed: the first slug
- * here was invented and every call came back 400. This one exists, takes
- * images, and is the cheapest that does — $0.10/M in, $0.40/M out, which is
- * the fifteen cents for all 2,270 that was quoted to her. */
-const MODEL = () => process.env.KADE_FRAME_MODEL || 'google/gemini-2.5-flash-lite';
-const IN_USD_PER_M = () => Number(process.env.KADE_FRAME_IN_USD_PER_M || 0.1);
-const OUT_USD_PER_M = () => Number(process.env.KADE_FRAME_OUT_USD_PER_M || 0.4);
+/* A short visual label uses Flash with thinking disabled and a small output cap. */
+const MODEL = () => process.env.KADE_FRAME_MODEL || 'xiaomi/mimo-v2.6-flash';
+const IN_USD_PER_M = () => Number(process.env.KADE_FRAME_IN_USD_PER_M || 0.14);
+const OUT_USD_PER_M = () => Number(process.env.KADE_FRAME_OUT_USD_PER_M || 0.28);
 /* A commercial's first second is often black or a leader frame, so seek in a
  * little. Three seconds is far enough past the join and early enough that a
  * range read of the head of the file still contains it. */

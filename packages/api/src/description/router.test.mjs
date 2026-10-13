@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { before, after } from 'node:test';
+process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, copyFile, writeFile } from 'node:fs/promises';
@@ -703,6 +704,17 @@ test('authenticated adult testers have access; authentication and child restrict
 });
 
 const dory = 'clear high-ish young woman · dory';
+test('MiMo Pro config quotes its own model and never offers Google tiers', async () => {
+  const previous = process.env.KADE_DESCRIPTION_MODEL;
+  process.env.KADE_DESCRIPTION_MODEL = 'xiaomi/mimo-v2.6-pro';
+  try {
+    const config = (await call('get', '/config').expect(200)).body;
+    assert.equal(config.videoModel, 'xiaomi/mimo-v2.6-pro');
+    assert.equal(config.videoModelLabel, 'MiMo Pro');
+    assert.equal(config.tiers, undefined);
+    assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.015 });
+  } finally { process.env.KADE_DESCRIPTION_MODEL = previous; }
+});
 const flint = 'clear woman · flint';
 const prefsRow = (owner) => mongoose.models.KadeDescriptionPrefs.findById(owner).lean();
 

@@ -424,6 +424,8 @@ function storage(initial = {}) {
 
 const config = {
   enabled: true,
+  videoModel: 'xiaomi/mimo-v2.6-pro',
+  videoModelLabel: 'MiMo Pro',
   maxBytes: 2 * 1024 ** 3,
   chunkBytes: 8,
   maxMinutes: 90,
@@ -3080,7 +3082,7 @@ test('keep 7 more days, check again, the suggested Library shelf and the privacy
   assert.equal(env.status(), 'Checking the video again. Checking is free.');
   assert.equal($('recheck').hidden, true);
   const limits = $('limits').textContent;
-  for (const service of ['Google Gemini, through OpenRouter', 'Deepgram', 'platform voices']) assert.ok(limits.includes(service), service);
+  for (const service of ['MiMo Pro through OpenRouter', 'Deepgram', 'platform voices']) assert.ok(limits.includes(service), service);
 });
 
 test('escaped and two-line WebVTT cues are read back as plain words', async () => {

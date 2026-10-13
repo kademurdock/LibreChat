@@ -108,7 +108,7 @@ async function mirrorAsset(doc) {
  * the reasoning-off request below was refused on every clip from Sep 3 and
  * My Creations wrote no descriptions for a month. Flash-lite is the original
  * gallery model and the cheapest that reads pictures and video. */
-const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'google/gemini-3.1-flash-lite';
+const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'xiaomi/mimo-v2.6-flash';
 /* A Pro-class model cannot switch reasoning off: think briefly, hide the
  * thinking, and leave room for it so the words are not cut short. */
 const describeIsPro = /-pro/.test(DESCRIBE_MODEL);

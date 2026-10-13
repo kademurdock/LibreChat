@@ -3,6 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const Module = require('node:module');
+const ts = require('typescript');
+const crypto = require('node:crypto');
+const helperFile = path.resolve(__dirname, '../../../packages/api/src/memory/embedding.ts');
+const helperModule = new Module(helperFile, module);
+helperModule.paths = Module._nodeModulePaths(path.dirname(helperFile));
+helperModule._compile(ts.transpileModule(fs.readFileSync(helperFile, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+}).outputText, helperFile);
 
 // Exercise the real recall service AND vector ranking. Only storage, embedding,
 // and ancillary services are replaced; no model calls or family data are used.
@@ -14,6 +23,11 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
   const cards = { '': shared, companion: own, ...others };
   const vectorRows = vectors || Object.entries(cards).flatMap(([agentId, rows]) =>
     rows.map((m) => ({ key: m.key, agentId: agentId || null, embedding: m.vector || [1, 0] })));
+  for (const row of vectorRows) {
+    const source = cards[row.agentId || '']?.find(m => m.key === row.key);
+    row.embedModel = 'fixture-model';
+    row.valueHash = crypto.createHash('sha1').update(String(source?.value || '')).digest('hex');
+  }
   const vectorModel = {
     find(filter) {
       assert.equal(filter.userId, 'seat');
@@ -43,6 +57,7 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
   const ranking = load(path.join(__dirname, '../../models/kadeCardVector.js'), {
     mongoose: { Schema, models: { KadeCardVector: vectorModel } },
     '@librechat/data-schemas': { logger }, '~/models/kadeDiary': diary,
+    '@librechat/api': { ...helperModule.exports, memoryEmbeddingLane: () => ({ dimensions: 2 }) },
   });
   const service = load(path.join(__dirname, 'kadeCardRecall.js'), {
     '@librechat/data-schemas': { logger },

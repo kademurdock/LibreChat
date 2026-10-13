@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
+process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
 import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1276,6 +1277,27 @@ test('flex tier: a flex timeout, or two flex failures in a row, moves the rest o
   const { keeper } = keeperFor(undefined);
   await run(f, [], [], { providers: backend, keeper, settings: { ...settings, tier: 'flex' } });
   assert.deepEqual(looks.map((look) => [look.second, look.tier]), [[undefined, 'flex'], [true, 'standard']]);
+});
+
+test('MiMo closer looks keep real-time clocks and do not buy another look for a Gemini reasoning floor', async () => {
+  const previous = process.env.KADE_DESCRIPTION_MODEL;
+  process.env.KADE_DESCRIPTION_MODEL = 'xiaomi/mimo-v2.6-pro';
+  const f = await fixture('mimo-native-close', 9);
+  const { backend, looks } = thinking(f, [0]);
+  const original = backend.analyze;
+  backend.analyze = async (...args) => {
+    const result = await original(...args);
+    result.vision[0].model = 'xiaomi/mimo-v2.6-pro';
+    return result;
+  };
+  try {
+    await run(f, [], [], { providers: backend, settings: { ...settings, closeLook: true } });
+    assert.equal(looks.length, 1);
+    assert.ok(Math.abs(looks[0].seconds - 9) < 0.1);
+    assert.equal(looks[0].brief.slowed, false);
+    assert.equal(looks[0].brief.denseFrames, true);
+    assert.equal(looks[0].brief.stamped, undefined, 'native video has no synthetic time strip');
+  } finally { process.env.KADE_DESCRIPTION_MODEL = previous; }
 });
 
 test('re-look: a look that thought enough, or whose provider does not say, is not looked at again', async () => {

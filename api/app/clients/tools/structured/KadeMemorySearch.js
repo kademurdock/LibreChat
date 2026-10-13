@@ -165,7 +165,7 @@ class KadeMemorySearch extends Tool {
       const { embedText } = require('~/models/kadeDiary');
       const wantCards = Boolean(query) && scope !== 'logbook';
       const wantDiary = scope !== 'cards';
-      const qv = query ? await embedText(String(query).slice(0, 1500)) : null;
+      const qv = query ? await embedText(String(query).slice(0, 1500), { purpose: 'query' }) : null;
 
       const cardLines = [];
       const cardLine = (m) =>
@@ -189,6 +189,7 @@ class KadeMemorySearch extends Tool {
             const cardHits = await searchCardVectors(this.userId, this.agentId, qv, {
               limit: Math.min(Math.max(parseInt(limit, 10) || 6, 1), 12),
               minScore: 0.24,
+              values: new Map([...byKey].map(([key, memory]) => [key, String(memory.value ?? '')])),
             });
             for (const h of cardHits) {
               const m = byKey.get((h.agentId == null ? '' : String(h.agentId)) + '::' + h.key);

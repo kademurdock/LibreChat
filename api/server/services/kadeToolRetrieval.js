@@ -410,7 +410,7 @@ async function embedHits({ text, tools, embed, queryVec, minScore, margin, maxTa
     await Promise.all(
       need.map(async (t) => {
         const desc = `${String(t.name).replace(/^kade_/, '').replace(/_/g, ' ')}: ${String(t.description || '').slice(0, 1200)}`;
-        const vec = await embed(desc);
+        const vec = await embed(desc, { purpose: 'document' });
         if (vec) descVecs.set(t.name, { text: desc, vec });
       }),
     );
@@ -613,18 +613,19 @@ function applySelection(result, keep) {
 
 /** Per-request memo so the diary/card recall reuses the same query vector. */
 function memoEmbed(req, embed) {
-  return async (text) => {
-    const key = String(text || '');
+  return async (text, options = { purpose: 'query' }) => {
+    const value = String(text || '');
+    const key = `${options.purpose || 'query'}\0${value}`;
     if (req) {
       if (!req._kadeEmbedMemo) req._kadeEmbedMemo = new Map();
       if (req._kadeEmbedMemo.has(key)) return req._kadeEmbedMemo.get(key);
       const pr = Promise.resolve()
-        .then(() => embed(key))
+        .then(() => embed(value, options))
         .catch(() => null);
       req._kadeEmbedMemo.set(key, pr);
       return pr;
     }
-    return embed(key);
+    return embed(value, options);
   };
 }
 

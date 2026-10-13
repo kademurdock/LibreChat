@@ -109,9 +109,6 @@ endpoints:
           "z-ai/glm-4.7",              # cheaper GLM, solid all-rounder
           "deepseek/deepseek-v4-flash",# very cheap + fast, huge memory
           "deepseek/deepseek-v4-pro",  # heavyweight thinker
-          "google/gemini-3-flash-preview", # fast, sees images/audio/video
-          "google/gemini-3.1-flash-lite",  # FASTEST tested (0.9s replies, July 2) — try for snappy characters
-          "google/gemini-2.5-flash-lite",  # cheapest quick chat
           "xiaomi/mimo-v2.5",          # cheap omni all-rounder
           "openai/gpt-4o-mini",        # familiar + cheap
           "mistralai/mistral-nemo",    # cheap creative roleplay classic

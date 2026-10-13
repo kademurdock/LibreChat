@@ -29,6 +29,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { embedText, currentEmbedModel, readEmbedHealth } = require('~/models/kadeDiary');
+const { indexedEmbedding, indexedCardEmbedding, memoryEmbeddingLane } = require('@librechat/api');
 
 const kadeCardVectorSchema = new mongoose.Schema(
   {
@@ -41,6 +42,10 @@ const kadeCardVectorSchema = new mongoose.Schema(
     valueHash: { type: String, required: true },
     embedding: { type: [Number], default: null },
     embedModel: { type: String, default: null },
+    embeddingNext: { type: [Number], default: null },
+    embedNextModel: { type: String, default: null },
+    embedNextHash: { type: String, default: null },
+    embedNextValueHash: { type: String, default: null },
   },
   { timestamps: true },
 );
@@ -50,8 +55,7 @@ const KadeCardVector =
   mongoose.models.KadeCardVector ||
   mongoose.model('KadeCardVector', kadeCardVectorSchema, 'kadecardvectors');
 
-const hashValue = (value) =>
-  crypto.createHash('sha1').update(String(value), 'utf8').digest('hex');
+const hashValue = (value) => crypto.createHash('sha1').update(String(value), 'utf8').digest('hex');
 
 /* Same cosine as the diary — tiny, kept local so the two models stay
  * independently readable. */
@@ -124,7 +128,12 @@ async function syncBucketVectors(userId, agentId, entries, opts = {}) {
     for (const [key, value] of live) {
       const h = hashValue(value);
       const row = byKey.get(key);
-      if (!row || row.valueHash !== h || row.embedModel !== model || !row.embedding) {
+      const text = key.replace(/_/g, ' ') + ': ' + value;
+      if (
+        !row ||
+        row.valueHash !== h ||
+        !indexedEmbedding(row, model, text, memoryEmbeddingLane()?.dimensions || 1536)
+      ) {
         work.push({ key, value, h });
       }
     }
@@ -188,17 +197,41 @@ async function searchCardVectors(userId, agentId, queryVector, opts = {}) {
     const extra = Array.isArray(opts.extraAgentIds) ? opts.extraAgentIds.map(String) : [];
     const filter = {
       userId: String(userId),
-      $or: [{ agentId: null }, ...(agentId ? [{ agentId: String(agentId) }] : []), ...extra.map((a) => ({ agentId: a }))],
-      embedding: { $ne: null },
-      embedModel: model,
+      $or: [
+        { agentId: null },
+        ...(agentId ? [{ agentId: String(agentId) }] : []),
+        ...extra.map((a) => ({ agentId: a })),
+      ],
+      $and: [
+        {
+          $or: [
+            { embedding: { $ne: null }, embedModel: model },
+            { embeddingNext: { $ne: null }, embedNextModel: model },
+          ],
+        },
+      ],
     };
-    const rows = await KadeCardVector.find(filter).select('key agentId embedding').lean();
+    const rows = await KadeCardVector.find(filter)
+      .select(
+        'key agentId embedding embedModel embeddingNext embedNextModel embedNextHash embedNextValueHash valueHash',
+      )
+      .lean();
     const scored = [];
     for (const r of rows) {
       if (opts.keys && !opts.keys.has((r.agentId ?? '') + '::' + r.key)) {
         continue;
       }
-      const score = cosine(queryVector, r.embedding);
+      const key = (r.agentId ?? '') + '::' + r.key;
+      if (opts.values && !opts.values.has(key)) continue;
+      const value = opts.values?.get(key);
+      const vector = indexedCardEmbedding(
+        r,
+        model,
+        memoryEmbeddingLane()?.dimensions || 1536,
+        value,
+      );
+      if (!vector || vector.length !== queryVector.length) continue;
+      const score = cosine(queryVector, vector);
       if (score >= minScore) {
         scored.push({ key: r.key, agentId: r.agentId ?? null, score });
       }

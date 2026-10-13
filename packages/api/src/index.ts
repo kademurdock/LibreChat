@@ -421,3 +421,12 @@ export type { MemoryArtifactContext } from './memory/artifacts';
 export { createDesktopCallsRouter, webCallSessionId } from './calls/desktop';
 export { createAnnouncementRouter, announcementURL, announcementPayloadHash } from './announcements/router';
 export type { AnnouncementDependencies } from './announcements/router';
+export {
+  memoryEmbeddingLane,
+  requestMemoryEmbedding,
+  embeddingTextHash,
+  indexedEmbedding,
+  indexedCardEmbedding,
+  validEmbedding,
+} from './memory/embedding';
+export type { EmbeddingLane, IndexedEmbedding } from './memory/embedding';

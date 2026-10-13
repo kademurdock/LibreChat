@@ -27,6 +27,7 @@ export type Brief = {
   orientation?: Person[];
   survey?: boolean;
   slowed?: boolean;
+  denseFrames?: boolean;
   /**
    * Where this clip sits in the whole (working) video, in original seconds. With close look the
    * prompt scales clip-relative times by 4 itself.
@@ -778,7 +779,7 @@ const mentionsName = (text: string, name: string) =>
 function heardReadings(cues: Cue[], spoken: string[]): string[] {
   const cards: string[] = [];
   let from = 0;
-  for (let start = 0; start < cues.length;) {
+  for (let start = 0; start < cues.length; ) {
     const first = cues[start];
     if (!first.reading) {
       start++;

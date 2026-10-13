@@ -22,6 +22,7 @@ const Module = require('node:module');
 const ts = require('typescript');
 const express = require('express');
 const axios = require('axios');
+process.env.KADE_MUSIC_LISTENER_MODEL = 'gemini-3.8-flash';
 
 const logs = [];
 const stubs = {

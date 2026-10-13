@@ -49,6 +49,7 @@ const lyrics = musicLyrics();
 
 /* ---------- fake providers ---------- */
 const GEMINI_KEY = 'gemini-key-for-tests';
+process.env.KADE_MUSIC_LISTENER_MODEL = 'gemini-3.8-flash';
 const SCRIBE_KEY = 'scribe-key-for-tests';
 process.env.GEMINI_API_KEY = GEMINI_KEY;
 process.env.ELEVENLABS_API_KEY = SCRIBE_KEY;

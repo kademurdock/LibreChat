@@ -608,7 +608,7 @@ router.post('/diary-embed-backfill', requireAdminAccess, async (req, res) => {
       const vec = await embedText(String(r.text || '').slice(0, 4000));
       if (vec) {
         await KadeDiaryEntry.updateOne(
-          { _id: r._id },
+          { _id: r._id, text: r.text },
           { $set: { embedding: vec, embedModel: model } },
         );
         embedded += 1;

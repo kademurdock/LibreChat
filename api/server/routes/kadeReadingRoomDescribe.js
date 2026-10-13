@@ -40,18 +40,11 @@ const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
-/** The library's own model knob. The platform's KADE_VISION_MODEL is Gemini Pro
- * (a minute of video cost $0.045 on the Sep 11 smoke); the library defaults to
- * Flash Lite so a two-hour film stays under a dollar. */
-/* Sep 12 2026: 'google/gemini-3.1-flash' is NOT an OpenRouter model id (400 'is not a
- * valid model ID'), so every describe run died before it started — one of the
- * reasons her word was 'no way to get AI descriptions'. Current Flash ids that
- * take video: gemini-3.8-flash / 3.7 / 3.6 ($0.75 per million in), 3.5-flash-lite
- * ($0.30). Her word stands (Flash, not cost-cut), so the newest Flash. */
-const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'google/gemini-3.8-flash'; // her word: Flash is fine as long as the descriptions are not cost-cut
-const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.3); // Gemini 3.1 Flash list price, for the estimate shown before a run
-const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 2.5);
-const TOKENS_PER_SECOND = 300; // Gemini video (+ audio) tokens per second of media, roughly
+/** The library uses MiMo Pro for video, separately configurable from the image reader. */
+const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
+const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.435);
+const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 0.87);
+const TOKENS_PER_SECOND = 400; // Estimate only; the provider's actual receipt is booked.
 const SEGMENT_SECONDS = () => Math.max(60, parseInt(process.env.KADE_DESCRIBE_SEGMENT_SECONDS, 10) || 900);
 const MAX_MINUTES = () => Math.max(1, parseFloat(process.env.KADE_DESCRIBE_MAX_MINUTES) || 180);
 const DAILY_USD = () => Math.max(0, parseFloat(process.env.KADE_DESCRIBE_DAILY_USD) || 2.0);
@@ -106,7 +99,7 @@ async function askModel(fileBuf, mime, prompt) {
   const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: MODEL(), max_tokens: 6000, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' } },
+    { model: MODEL(), max_tokens: 24000, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: true, effort: 'medium' } } : {}), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' } },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 300000 },
   );
   const text = r.data?.choices?.[0]?.message?.content;

@@ -59,7 +59,14 @@ const outputThreads = (complex: boolean = false): string[] => [
 ];
 
 export type MediaProblem =
-  'damaged' | 'no-video' | 'cover-art' | 'too-short' | 'format' | 'too-detailed' | 'disk' | 'tools';
+  | 'damaged'
+  | 'no-video'
+  | 'cover-art'
+  | 'too-short'
+  | 'format'
+  | 'too-detailed'
+  | 'disk'
+  | 'tools';
 const plainWords: Record<MediaProblem, string> = {
   damaged:
     'This video file is incomplete or damaged. It may not have finished copying. Export or download it again.',
@@ -941,8 +948,7 @@ export async function soundtrack(
   const events = await pictureScan(source, directory, signal, info, tools);
   const live =
     info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
-  if (!live)
-    return { ...result, ...events, ...(info.oneSided ? { oneSided: info.oneSided } : {}) };
+  if (!live) return { ...result, ...events, ...(info.oneSided ? { oneSided: info.oneSided } : {}) };
   const again = await soundPass(source, directory, signal, { ...info, oneSided: live }, tools);
   const { levels: _unused, ...measured } = again;
   return { ...measured, ...events, oneSided: live };
@@ -1046,8 +1052,7 @@ export function timeStrip(strip: Strip): string[] {
   const hours = strip.film + strip.seconds >= 3600;
   const film = `floor((${strip.film.toFixed(3)}+t)*10+0.5)`;
   const clip = `floor(t*${strip.scale}*10+0.5)`;
-  const eif = (expression: string, pad?: number) =>
-    `%{eif:${expression}:d${pad ? `:${pad}` : ''}}`;
+  const eif = (expression: string, pad?: number) => `%{eif:${expression}:d${pad ? `:${pad}` : ''}}`;
   const clock = [
     ...(hours ? [eif(`floor(${film}/36000)`), eif(`mod(floor(${film}/600),60)`, 2)] : []),
     ...(hours ? [] : [eif(`floor(${film}/600)`)]),
@@ -1101,6 +1106,7 @@ export async function lookClip(
   closeLook: boolean = false,
   media?: Media,
   film?: number,
+  nativeClose: boolean = false,
 ): Promise<{ file: string; stamped: boolean }> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
@@ -1117,7 +1123,7 @@ export async function lookClip(
     const picture = [
       pictureClock(info, start),
       deinterlace(info, tools),
-      `fps=${closeLook ? 4 : lookRate(seconds)}:start_time=0`,
+      `fps=${closeLook || nativeClose ? 4 : lookRate(seconds)}:start_time=0`,
       ...shape(info, tools, width),
       ...strip,
       `trim=end=${seconds.toFixed(6)}`,
@@ -1188,7 +1194,7 @@ export async function lookClip(
     }
     return encode(width, []);
   };
-  const width = closeLook ? 1440 : 960;
+  const width = closeLook || nativeClose ? 1440 : 960;
   if ((await attempt(width)) <= clipLimit) return { file: video, stamped };
   if ((await attempt(closeLook ? 960 : 640)) <= clipLimit) return { file: video, stamped };
   await rm(video, { force: true });
@@ -1857,8 +1863,7 @@ export async function assemble(
   const shift = offset > 0.0005 ? ['-itsoffset', offset.toFixed(6)] : [];
   const lead = copy && (options.lead ?? 0) > 0.0005 ? (options.lead as number) : 0;
   const late = lead ? ['-itsoffset', lead.toFixed(6)] : [];
-  const end =
-    copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
+  const end = copy && Number.isFinite(soundLength) ? ['-t', (offset + soundLength).toFixed(6)] : [];
   const captions = options.captions;
   await command(
     ffmpeg(),

@@ -303,6 +303,7 @@ test('a reply that is the same line twice, or shouted, is not shown', () => {
 
 /* ---------- the Gemini call ---------- */
 const GEMINI_KEY = 'gemini-key-for-tests';
+process.env.KADE_MUSIC_LISTENER_MODEL = 'gemini-3.8-flash';
 process.env.GEMINI_API_KEY = GEMINI_KEY;
 const calls = [];
 /** How Gemini answers: (config, body) => data, or throws. */

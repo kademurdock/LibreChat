@@ -16,18 +16,18 @@ import type {
 } from './types';
 import type { Brief } from './prompt';
 import { analysisFormat, analysisPrompt, readAnalysis, speakable, spokenForm } from './prompt';
-import { MediaError } from './media';
+import { MediaError, probe } from './media';
 import { Halt } from './types';
 
 /**
- * The video model (KADE_DESCRIPTION_MODEL, default google/gemini-3.8-flash). The tier is chosen
+ * The video model (KADE_DESCRIPTION_MODEL, default xiaomi/mimo-v2.6-pro). The tier is chosen
  * apart (`descriptionTier`, `routeFor`), so a routing variant is dropped from the name. `:floor`
  * sorts by price: in the Sep 26 bake-off all 5 `:floor` looks ran on Kade's own Google AI Studio
  * key (BYOK), which billed twice OpenRouter's list price. `:nitro` would admit the dearer
  * priority tier.
  */
 export const visionModel = (): string =>
-  (process.env.KADE_DESCRIPTION_MODEL || 'google/gemini-3.8-flash').replace(/:(floor|nitro)$/, '');
+  (process.env.KADE_DESCRIPTION_MODEL || 'xiaomi/mimo-v2.6-pro').replace(/:(floor|nitro)$/, '');
 /**
  * The tier looks ask for unless the administrator chose one for a job (`Settings.tier`):
  * KADE_DESCRIPTION_TIER, `flex` (the default) or `standard`. Round 2 of the close-look bake-off
@@ -702,7 +702,7 @@ const declined: ReadonlySet<string> = new Set([
 type Choice = z.infer<typeof modelSchema>['choices'][number];
 
 /** How a look asks the model to think (OpenRouter's `reasoning`): an effort, or a token budget. */
-type Reasoning = { effort: 'low' | 'medium' | 'high' } | { max_tokens: number };
+type Reasoning = { effort: 'low' | 'medium' | 'high'; enabled?: true } | { max_tokens: number };
 /**
  * How one look asks: how it thinks, how many output tokens (reasoning included) it may write, how
  * many reasoning tokens it is expected to write, and how long the request may take.
@@ -743,7 +743,7 @@ const effortReasoningTokens = { low: 2400, medium: 6000, high: 16000 };
  * `visionLimits.secondRequestMs` instead of `requestMs`.
  */
 function planFor(look: Look): LookPlan {
-  const { survey, slowed } = look.brief;
+  const { survey, slowed, denseFrames } = look.brief;
   if (look.second && !survey)
     return {
       reasoning: { effort: 'high' },
@@ -751,7 +751,7 @@ function planFor(look: Look): LookPlan {
       reasoningTokens: effortReasoningTokens.high,
       requestMs: visionLimits.secondRequestMs,
     };
-  const maxTokens = slowed ? 24000 : 12000;
+  const maxTokens = slowed || denseFrames ? 24000 : 12000;
   const requestMs = visionLimits.requestMs;
   if (survey)
     return {
@@ -760,7 +760,14 @@ function planFor(look: Look): LookPlan {
       reasoningTokens: effortReasoningTokens.low,
       requestMs,
     };
-  if (slowed)
+  if (denseFrames && visionModel().startsWith('xiaomi/mimo-'))
+    return {
+      reasoning: { effort: 'high' },
+      maxTokens,
+      reasoningTokens: effortReasoningTokens.high,
+      requestMs,
+    };
+  if (slowed || denseFrames)
     return {
       reasoning: { max_tokens: closeReasoningTokens },
       maxTokens,
@@ -789,6 +796,25 @@ const listPrice: Record<Tier, { prompt: number; completion: number }> = {
   flex: { prompt: 0.375, completion: 1.875 },
   standard: { prompt: 0.75, completion: 3.75 },
 };
+export function descriptionRates(
+  model: string,
+  tier: Tier,
+): { prompt: number; completion: number } {
+  if (model === 'xiaomi/mimo-v2.6-pro') return { prompt: 0.435, completion: 0.87 };
+  if (model === 'xiaomi/mimo-v2.6-flash') return { prompt: 0.14, completion: 0.28 };
+  if (model === 'z-ai/glm-5.3-flash') return { prompt: 0.15, completion: 0.5 };
+  return model.startsWith('google/') ? listPrice[tier] : visionPrice;
+}
+
+const ceilingFor = (model: string): { prompt: number; completion: number } =>
+  model.startsWith('google/') ? visionPrice : descriptionRates(model, 'standard');
+
+export function descriptionReasoning(model: string, reasoning: Reasoning): Reasoning {
+  if (!model.startsWith('xiaomi/mimo-')) return reasoning;
+  if ('max_tokens' in reasoning)
+    return { effort: reasoning.max_tokens < 8000 ? 'low' : 'medium', enabled: true };
+  return { effort: reasoning.effort, enabled: true };
+}
 /**
  * The tier a look's first try asks: the look's own (`Look.tier`), otherwise the server's. Only
  * Google's models have Vertex's flex tier, so any other model is asked on the standard tier.
@@ -805,8 +831,11 @@ export function tierFor(look: Pick<Look, 'tier'>, model: string = visionModel())
  * never routes a request without a tier to a flex or priority endpoint. Both keep the `max_price`
  * ceiling, and both name AI Studio in `ignore`, so no look can reach her key.
  */
-export function routeFor(tier: Tier): Record<string, unknown> {
-  const ceiling = { max_price: { ...visionPrice } };
+export function routeFor(tier: Tier, model: string = visionModel()): Record<string, unknown> {
+  const ceiling = { max_price: { ...ceilingFor(model) } };
+  if (model.startsWith('xiaomi/mimo-'))
+    return { order: ['Xiaomi'], allow_fallbacks: true, ...ceiling };
+  if (!model.startsWith('google/')) return { ignore: [aiStudio], ...ceiling };
   return tier === 'flex'
     ? { only: [flexEndpoint], ignore: [aiStudio], allow_fallbacks: false, ...ceiling }
     : { ignore: [aiStudio], ...ceiling };
@@ -826,11 +855,19 @@ const clipTokensPerSecond = 85;
  */
 const answerTokens = 3000;
 /** What sending the clip and the prompt can cost: about 400 tokens a second of video, 3 characters a token. */
-const promptUSD = (seconds: number, prompt: string): number =>
-  ((seconds * 400 + prompt.length / 3) * visionPrice.prompt) / 1e6;
+const promptUSD = (seconds: number, prompt: string, model: string, inputBound?: number): number =>
+  ((inputBound ?? seconds * 400 + prompt.length / 3) * ceilingFor(model).prompt) / 1e6;
 /** The most one look call can cost, which the meter holds while the call is out. */
-const reserveFor = (seconds: number, prompt: string, maxTokens: number): number =>
-  promptUSD(seconds, prompt) + (maxTokens * visionPrice.completion) / 1e6 + 0.01;
+const reserveFor = (
+  seconds: number,
+  prompt: string,
+  maxTokens: number,
+  model: string = visionModel(),
+  inputBound?: number,
+): number =>
+  promptUSD(seconds, prompt, model, inputBound) +
+  (maxTokens * ceilingFor(model).completion) / 1e6 +
+  0.01;
 /**
  * What a look call is expected to have cost when OpenRouter never said, at the list price of the
  * tier it asked: its clip (`clipTokensPerSecond`) and prompt text, and the reasoning it was
@@ -844,11 +881,14 @@ const expectedFor = (
   reasoningTokens: number,
   reserve: number,
   tier: Tier,
+  model: string = visionModel(),
 ): number =>
   Math.min(
     reserve,
-    ((seconds * clipTokensPerSecond + prompt.length / 4) * listPrice[tier].prompt +
-      (reasoningTokens + answerTokens) * listPrice[tier].completion) /
+    ((seconds * (model.startsWith('xiaomi/mimo-') ? 400 : clipTokensPerSecond) +
+      prompt.length / 4) *
+      descriptionRates(model, tier).prompt +
+      (reasoningTokens + answerTokens) * descriptionRates(model, tier).completion) /
       1e6,
   );
 /**
@@ -958,7 +998,8 @@ async function bodyOf(
     halt = reject;
   });
   const cut = () => {
-    const error = new axios.CanceledError(undefined, config);
+    const error = new axios.CanceledError();
+    error.config = config;
     halt(error);
     stream.destroy?.(error);
     const socket = request as { destroy?: () => void } | undefined;
@@ -1053,7 +1094,10 @@ function replyData(text: string): z.infer<typeof modelSchema> {
         ? new CutOff(`The visual description came back cut off: ${message}`)
         : type === 'content_policy_violation' || type === 'refusal'
           ? new Refusal(`The video model declined to describe this scene: ${message}`)
-          : new Upstream(message, Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined)
+          : new Upstream(
+              message,
+              Number.isInteger(code) && code >= 400 && code < 600 ? code : undefined,
+            )
     ) as Error & FailedCall & { thinking?: boolean };
     if (failed instanceof CutOff)
       failed.thinking = filledByReasoning(
@@ -1306,8 +1350,19 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   const prompt = analysisPrompt(look.seconds, look.brief, look.state, look.lines, look.before);
   const video = (await readFile(look.file)).toString('base64');
   const plan = planFor(look);
-  const reserve = reserveFor(look.seconds, prompt, plan.maxTokens);
   const model = visionModel();
+  let inputBound: number | undefined;
+  if (model.startsWith('xiaomi/mimo-')) {
+    const media = await probe(look.file, signal);
+    const frames = Math.ceil(look.seconds * (look.brief.denseFrames ? 4 : 2));
+    const visual =
+      Math.ceil(frames / 2) * Math.ceil(media.width / 32) * Math.ceil(media.height / 32);
+    inputBound = Math.min(
+      1050000,
+      visual + frames * 8 + Math.ceil(look.seconds * 6.25) + Buffer.byteLength(prompt) + 512,
+    );
+  }
+  const reserve = reserveFor(look.seconds, prompt, plan.maxTokens, model, inputBound);
   const tier = tierFor(look, model);
   /** The tier this try asks: the look's own first, standard for every retry. */
   let lane: Tier = tier;
@@ -1383,13 +1438,17 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
               {
                 model,
                 max_tokens: plan.maxTokens,
-                reasoning,
-                provider: routeFor(asked),
+                reasoning: descriptionReasoning(model, reasoning),
+                provider: routeFor(asked, model),
                 messages: [
                   {
                     role: 'user',
                     content: [
-                      { type: 'video_url', video_url: { url: `data:video/mp4;base64,${video}` } },
+                      {
+                        type: 'video_url',
+                        video_url: { url: `data:video/mp4;base64,${video}` },
+                        ...(look.brief.denseFrames ? { fps: 4, media_resolution: 'max' } : {}),
+                      },
                       { type: 'text', text: prompt + shorter },
                     ],
                   },

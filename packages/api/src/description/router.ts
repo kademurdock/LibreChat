@@ -53,6 +53,7 @@ import {
   providerDetail,
   providerProblem,
   tierFor,
+  visionModel,
   transcriptionPerMinute,
 } from './providers';
 import {
@@ -685,6 +686,19 @@ const rates: Record<Tier, { vision: number; closeLook: number; firstLook: number
   standard: { vision: 0.021, closeLook: 0.025, firstLook: 0.021 },
   flex: { vision: 0.014, closeLook: 0.021, firstLook: 0.014 },
 };
+const quoteRates = (tier: Tier): { vision: number; closeLook: number; firstLook: number } => {
+  if (visionModel() === 'xiaomi/mimo-v2.6-pro')
+    return { vision: 0.025, closeLook: 0.025, firstLook: 0.015 };
+  if (visionModel() === 'xiaomi/mimo-v2.6-flash')
+    return { vision: 0.008, closeLook: 0.012, firstLook: 0.008 };
+  return rates[tier];
+};
+const videoLabel = (model: string): string => {
+  if (model === 'xiaomi/mimo-v2.6-pro') return 'MiMo Pro';
+  if (model === 'xiaomi/mimo-v2.6-flash') return 'MiMo Flash';
+  if (model.startsWith('google/')) return 'Google Gemini';
+  return 'the configured video model';
+};
 /**
  * The tier a run's looks ask (providers.ts `tierFor`): the administrator's choice for the job,
  * otherwise the server's, and always standard for a model that is not Google's.
@@ -747,7 +761,7 @@ const askWithin = (
 function priceFor(work: Work, settings: Settings): Price {
   const per = (seconds: number, rate: number) => (seconds / 60) * rate;
   const looked = work.looks > 0;
-  const rate = rates[tierOf(settings)];
+  const rate = quoteRates(tierOf(settings));
   const breakdown: Breakdown = {
     vision: per(work.looks, rate.vision) + (looked ? work.fixed : 0),
     closeLook: settings.closeLook ? per(work.looks, rate.closeLook) : 0,
@@ -2199,8 +2213,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       const issue = error.issues[0];
       throw new Problem(
         issue?.code === 'custom' ||
-          issue?.path.includes('text') ||
-          issue?.path.includes('shortText')
+        issue?.path.includes('text') ||
+        issue?.path.includes('shortText')
           ? issue.message
           : 'A correction could not be read. Reopen the script and try again.',
         400,
@@ -2718,7 +2732,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const factor = factorFor(req);
     /* At the server's tier; the administrator's estimates follow the tier she picks. */
     const tier = tierFor({});
-    const rate = rates[tier];
+    const rate = quoteRates(tier);
     const perMinute = (detail: Settings['detail']) =>
       Math.round((rate.vision + speechPerMinute(detail) + dialogue) * factor * 10000) / 10000;
     /** A rule applied to her quote gives her hold: the fixed part is at her price too. */
@@ -2734,6 +2748,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       dailyUSD: hooks.wallet ? null : dailyLimit(),
       billingMode: billingMode(req),
       speechIncluded: true,
+      videoModel: visionModel(),
+      videoModelLabel: videoLabel(visionModel()),
       dialogueIncluded: freeDialogue(),
       remainingUSD: await remaining(hooks.actor(req).id),
       perMinuteUSD: {
@@ -2751,7 +2767,9 @@ export function createDescriptionRouter(hooks: Hooks): {
       ...(isAdmin(req)
         ? {
             rehearsal: true,
-            tiers: { default: tier, choices: [...tiers] },
+            ...(visionModel().startsWith('google/')
+              ? { tiers: { default: tier, choices: [...tiers] } }
+              : {}),
             credit: {
               where: creditWhere(),
               logos: { start: logoChoice('start'), end: logoChoice('end') },
@@ -2788,9 +2806,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   /** The voice her new videos start with; `null` goes back to the house voice. */
   route('post', '/prefs/default', async (req, res) => {
     const owner = hooks.actor(req).id;
-    const input = z
-      .object({ voice: z.string().min(1).max(120).nullable() })
-      .parse(req.body ?? {});
+    const input = z.object({ voice: z.string().min(1).max(120).nullable() }).parse(req.body ?? {});
     if (input.voice) {
       const { catalog, label } = await narrator(input.voice);
       await Prefs.updateOne(
@@ -2822,10 +2838,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         { $pull: { favorites: { $in: same } } },
         { upsert: true },
       );
-      await Prefs.updateOne(
-        { _id: owner },
-        { $push: { favorites: stable(catalog, label) } },
-      );
+      await Prefs.updateOne({ _id: owner }, { $push: { favorites: stable(catalog, label) } });
     } else {
       const label = listed(catalog, input.voice) ?? input.voice;
       await Prefs.updateOne(
@@ -4022,7 +4035,9 @@ export function createDescriptionRouter(hooks: Hooks): {
             index: section.index,
             cues: section.analysis?.cues.length ?? 0,
             placed: section.placements.length,
-            spoken: Math.round(section.placements.reduce((sum, item) => sum + item.duration, 0) * 10) / 10,
+            spoken:
+              Math.round(section.placements.reduce((sum, item) => sum + item.duration, 0) * 10) /
+              10,
             skipped: section.skipped.length,
             failure: section.failure ? scrub(section.failure) : undefined,
             failureClass: section.failureClass,
@@ -4780,9 +4795,7 @@ export function createDescriptionRouter(hooks: Hooks): {
                 kind,
                 settled: actual,
                 status: axios.isAxiosError(error) ? error.response?.status : undefined,
-                ...(typeof failed.generation === 'string'
-                  ? { generation: failed.generation }
-                  : {}),
+                ...(typeof failed.generation === 'string' ? { generation: failed.generation } : {}),
                 reserveUSD: Math.round(reserve * 1e6) / 1e6,
                 ...(interrupted
                   ? { providerMayBill: billed(error), why: stopName(signal.reason) }

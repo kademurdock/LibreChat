@@ -793,7 +793,7 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
       const text = stripAiTells(String(rr.data?.choices?.[0]?.message?.content || '')).replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 480);
       return { text, usage: rr.data?.usage };
     }
-    const FALLBACK_MODEL = 'google/gemini-3.1-flash-lite';
+    const FALLBACK_MODEL = 'xiaomi/mimo-v2.6-flash';
     let turn;
     try {
       turn = await oneTurn(agent.model || FALLBACK_MODEL);

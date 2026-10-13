@@ -574,7 +574,7 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
     const r = await axios.post(
       gatewayUrl,
       {
-        model: agent.model || 'google/gemini-3.1-flash-lite',
+        model: agent.model || 'xiaomi/mimo-v2.6-flash',
         // 160 not 80: a reasoning-happy model can think through a tight cap and
         // hand back empty content (seen once on the first live table-talk try).
         max_tokens: 160,

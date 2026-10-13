@@ -91,7 +91,7 @@ router.get('/', async (req, res) => {
     const entries = await KadeDiaryEntry.find(filter)
       .sort({ entryDate: -1, createdAt: -1 })
       .limit(limit)
-      .select('-embedding')
+      .select('-embedding -embeddingNext -embedNextHash')
       .lean();
     res.json({
       entries: entries.map((e) => ({
@@ -186,7 +186,7 @@ router.delete('/:entryId', async (req, res) => {
     if (!userId) {
       return res.status(400).json({ error: 'userId query parameter is required' });
     }
-    const entry = await KadeDiaryEntry.findOne({ _id: entryId, userId }).select('-embedding').lean();
+    const entry = await KadeDiaryEntry.findOne({ _id: entryId, userId }).select('-embedding -embeddingNext -embedNextHash').lean();
     if (!entry) {
       return res.status(404).json({ error: 'Diary entry not found for that user' });
     }

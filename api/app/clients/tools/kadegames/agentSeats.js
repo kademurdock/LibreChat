@@ -20,7 +20,7 @@ const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells')
  * OpenRouter-direct shape as the Debate Room.
  */
 
-const FALLBACK_MODEL = process.env.KADE_GAME_SEAT_FALLBACK_MODEL || 'google/gemini-3.1-flash-lite';
+const FALLBACK_MODEL = process.env.KADE_GAME_SEAT_FALLBACK_MODEL || 'xiaomi/mimo-v2.6-flash';
 const SEAT_MAX_TOKENS = parseInt(process.env.KADE_GAME_SEAT_MAX_TOKENS || '90', 10);
 
 function buildSeatSystem({ agentName, instructions, gameName, humanName }) {

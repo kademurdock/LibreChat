@@ -19,6 +19,10 @@ import {
   synthesize,
   visionLimits,
   voices,
+  descriptionRates,
+  descriptionReasoning,
+  routeFor,
+  tierFor,
 } from './providers.ts';
 import { MediaError } from './media.ts';
 import { folderBytes } from './youtube.ts';
@@ -29,7 +33,19 @@ const axios = createRequire(import.meta.url)('axios');
  * below set their own (KADE_DESCRIPTION_TIER, or the look's own `tier`).
  */
 process.env.KADE_DESCRIPTION_TIER = 'standard';
+process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
 const scratch = await mkdtemp(join(tmpdir(), 'described-providers-test-'));
+
+test('MiMo video uses its own pricing and reasoning route, with no Google flex or AI Studio dependency', () => {
+  assert.equal(tierFor({ tier: 'flex' }, 'xiaomi/mimo-v2.6-pro'), 'standard');
+  assert.deepEqual(routeFor('standard', 'xiaomi/mimo-v2.6-pro'), {
+    order: ['Xiaomi'], allow_fallbacks: true, max_price: { prompt: 0.435, completion: 0.87 },
+  });
+  assert.deepEqual(descriptionRates('xiaomi/mimo-v2.6-pro', 'standard'), { prompt: 0.435, completion: 0.87 });
+  assert.deepEqual(descriptionRates('xiaomi/mimo-v2.6-flash', 'standard'), { prompt: 0.14, completion: 0.28 });
+  assert.deepEqual(descriptionReasoning('xiaomi/mimo-v2.6-pro', { max_tokens: 8000 }), { effort: 'medium', enabled: true });
+  assert.deepEqual(descriptionReasoning('google/gemini-3.8-flash', { max_tokens: 8000 }), { max_tokens: 8000 });
+});
 after(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
@@ -1076,7 +1092,7 @@ test('providers: on the flex tier, the default, every look is pinned to Vertex f
     /* Only Google's models have a flex tier. */
     process.env.KADE_DESCRIPTION_MODEL = 'qwen/qwen3-vl-flash';
     await onTier('flex', () => analyze(base, signal, meter));
-    delete process.env.KADE_DESCRIPTION_MODEL;
+    process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
     const bodies = fake.calls.map((call) => call.body);
     assert.deepEqual(bodies.map((body) => body.provider), [flexRoute, standardRoute, flexRoute, standardRoute, standardRoute]);
     assert.deepEqual(bodies.map((body) => body.model), [
@@ -1088,7 +1104,7 @@ test('providers: on the flex tier, the default, every look is pinned to Vertex f
     ]);
     neverAiStudio(bodies, 'every choice');
   } finally {
-    delete process.env.KADE_DESCRIPTION_MODEL;
+    process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
     fake.restore();
   }
 });

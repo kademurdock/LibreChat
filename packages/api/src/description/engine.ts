@@ -62,6 +62,7 @@ import {
   analyze,
   billed,
   expectedLook,
+  visionModel,
   failureClass,
   keytermsFor,
   linesFrom,
@@ -771,7 +772,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const began = Date.now();
     try {
       await mkdir(dir, { recursive: true });
-      const scale = settings.closeLook && !survey ? 4 : 1;
+      const nativeVideo = visionModel().startsWith('xiaomi/mimo-');
+      const nativeClose = settings.closeLook && !survey && nativeVideo;
+      const scale = settings.closeLook && !survey && !nativeClose ? 4 : 1;
       const film = survey ? undefined : (settings.range?.start ?? 0) + section.start;
       const { file: clip, stamped } = await lookClip(
         source,
@@ -781,16 +784,21 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         signal,
         scale > 1,
         media,
-        film,
+        nativeVideo ? undefined : film,
+        nativeClose,
       );
-      if (film !== undefined && !stamped && !stripMissing) {
+      if (!nativeVideo && film !== undefined && !stamped && !stripMissing) {
         stripMissing = true;
         log('Look clips carry no time strip: the media tools have no drawtext or no font.');
       }
       const input: Look = {
         file: clip,
         seconds: seconds * scale,
-        brief: { ...briefFor(i, survey, scale), ...(stamped ? { stamped } : {}) },
+        brief: {
+          ...briefFor(i, survey, scale),
+          ...(stamped ? { stamped } : {}),
+          ...(nativeClose ? { denseFrames: true } : {}),
+        },
         state,
         lines: linesFrom(inSection(section), section.start).map((line) => ({
           ...line,
@@ -849,7 +857,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           /** What this look's failed tries were booked at, which its finished calls leave out. */
           let failedUSD = 0;
           /** The part of the run this look pays for, in the breakdown she is shown. */
-          const part: CostPart = survey ? 'firstLook' : scale > 1 ? 'closeLooks' : 'looks';
+          let part: CostPart = 'looks';
+          if (survey) part = 'firstLook';
+          else if (scale > 1 || nativeClose) part = 'closeLooks';
           const tallied: Meter = (kind, reserve, action) =>
             meter(
               kind,
@@ -926,7 +936,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const thought = reasoningOf(first);
     if (thought === undefined) return first;
     const reasons: Relook['reasons'] = [];
-    if (thought < reasoningFloor) reasons.push('reasoning');
+    const model = first.vision?.[first.vision.length - 1]?.model;
+    const geminiFloor = !model || model.startsWith('google/');
+    if (geminiFloor && thought < reasoningFloor) reasons.push('reasoning');
     if (first.stretched?.length) reasons.push('crammed');
     if (!reasons.length) return first;
     const where = `Section ${i + 1} of ${count}`;
@@ -1010,7 +1022,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       return skip('failed');
     }
     const again = reasoningOf(second);
-    const better = again !== undefined && (again >= reasoningFloor || again > thought);
+    const better = geminiFloor
+      ? again !== undefined && (again >= reasoningFloor || again > thought)
+      : (second.stretched?.length || 0) < (first.stretched?.length || 0);
     log(
       `${where}: the second look reasoned ${again ?? 'an unknown number of'} tokens${second.stretched?.length ? ', crammed end' : ''}, the first ${thought}; the ${better ? 'second' : 'first'} is kept.`,
     );
