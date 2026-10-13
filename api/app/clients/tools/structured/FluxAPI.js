@@ -68,7 +68,7 @@ const fluxApiJsonSchema = {
         '/v1/flux-pro-1.1-ultra-finetuned',
       ],
       description:
-        "Endpoint to use for image generation. DEFAULT to '/v1/flux-2-pro-preview' (FLUX.2 pro — best quality, photorealism, and prompt adherence, ~$0.03/image). '/v1/flux-2-klein-9b-preview' is the fast/cheap FLUX.2. Older flux-1 endpoints remain for compatibility and finetunes.",
+        "Endpoint to use for image generation. DEFAULT to '/v1/flux-2-pro' (FLUX.2 pro, from $0.03/image). Older endpoints remain for compatibility and finetunes.",
     },
     raw: {
       type: 'boolean',
@@ -150,7 +150,7 @@ class FluxAPI extends Tool {
     this.description_for_model = `// Transform any image description into a detailed, high-quality prompt. Never submit a prompt under 3 sentences. Follow these core rules:
     // 1. ALWAYS enhance basic prompts into 5-10 detailed sentences (e.g., "a cat" becomes: "A close-up photo of a sleek Siamese cat with piercing blue eyes. The cat sits elegantly on a vintage leather armchair, its tail curled gracefully around its paws. Warm afternoon sunlight streams through a nearby window, casting gentle shadows across its face and highlighting the subtle variations in its cream and chocolate-point fur. The background is softly blurred, creating a shallow depth of field that draws attention to the cat's expressive features. The overall composition has a peaceful, contemplative mood with a professional photography style.")
     // 2. Each prompt MUST be 3-6 descriptive sentences minimum, focusing on visual elements: lighting, composition, mood, and style
-    // 3. DEFAULT to endpoint '/v1/flux-2-pro-preview' (FLUX.2) unless the user asks for a specific older model or a finetune.\n    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
+    // 3. DEFAULT to endpoint '/v1/flux-2-pro' (FLUX.2) unless the user asks for a specific older model or a finetune.\n    // Use action: 'list_finetunes' to see available custom models. When using finetunes, use endpoint: '/v1/flux-pro-finetuned' (default) or '/v1/flux-pro-1.1-ultra-finetuned' for higher quality and aspect ratio.`;
 
     // Add base URL from environment variable with fallback
     this.baseUrl = process.env.FLUX_API_BASE_URL || 'https://api.bfl.ai';
@@ -243,6 +243,12 @@ class FluxAPI extends Tool {
 
   async _call(data) {
     const { action = 'generate', ...imageData } = data;
+    if (action === 'generate') {
+      // The preview path was retired. Normalize old saved calls too, and use
+      // the same endpoint for submission, billing and the saved image record.
+      imageData.endpoint = !imageData.endpoint || imageData.endpoint === '/v1/flux-2-pro-preview'
+        ? '/v1/flux-2-pro' : imageData.endpoint;
+    }
 
     // Use provided API key for this request if available, otherwise use default
     const requestApiKey = this.apiKey || this.getApiKey();
@@ -286,7 +292,7 @@ class FluxAPI extends Tool {
       payload.raw = imageData.raw;
     }
 
-    const generateUrl = `${this.baseUrl}${imageData.endpoint || '/v1/flux-2-pro-preview'}`;
+    const generateUrl = `${this.baseUrl}${imageData.endpoint}`;
     const resultUrl = `${this.baseUrl}/v1/get_result`;
 
     logger.debug('[FluxAPI] Generating image with payload:', payload);
