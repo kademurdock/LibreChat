@@ -157,8 +157,8 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       const usage = r.data?.usage || {};
       const cost =
         require('~/server/services/kadeRealCost').openRouterCost(usage) ??
-        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.1) +
-          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.4)) /
+        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || 0.14) +
+          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || 0.28)) /
           1e6;
       const { logKadeUsage } = require('~/models/kadeUsage');
       logKadeUsage({
