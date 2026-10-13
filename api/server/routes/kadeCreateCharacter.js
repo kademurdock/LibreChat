@@ -367,7 +367,7 @@ function buildDescription(a) {
 const GEN_DAILY_CAP = Number(process.env.KADE_AVATAR_GEN_DAILY_CAP || 8);
 let genDayStamp = '';
 const genCounts = new Map();
-const FLUX_ENDPOINT = '/v1/flux-2-pro-preview';
+const FLUX_ENDPOINT = '/v1/flux-2-pro';
 
 function httpsReq(url, { method = 'GET', headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {

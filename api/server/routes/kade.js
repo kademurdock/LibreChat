@@ -1813,7 +1813,7 @@ const sendHtml = (html) => (req, res) => res.type('html').send(html);
 const axios = require('axios');
 const { fluxCost } = require('~/models/kadeUsage');
 const _avatarGenLast = new Map(); // userId -> ts (simple cooldown)
-const AVATAR_ENDPOINT = '/v1/flux-2-pro-preview';
+const AVATAR_ENDPOINT = '/v1/flux-2-pro';
 
 router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
   try {

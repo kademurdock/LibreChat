@@ -860,6 +860,10 @@ export const fluxApiSchema: ExtendedJsonSchema = {
     endpoint: {
       type: 'string',
       enum: [
+        '/v1/flux-2-pro',
+        '/v1/flux-2-pro-preview',
+        '/v1/flux-2-flex',
+        '/v1/flux-2-klein-9b-preview',
         '/v1/flux-pro-1.1',
         '/v1/flux-pro',
         '/v1/flux-dev',
@@ -867,7 +871,7 @@ export const fluxApiSchema: ExtendedJsonSchema = {
         '/v1/flux-pro-finetuned',
         '/v1/flux-pro-1.1-ultra-finetuned',
       ],
-      description: 'Endpoint to use for image generation.',
+      description: 'Default /v1/flux-2-pro for FLUX.2 Pro quality, from $0.03 per image. Preview calls are accepted for compatibility.',
     },
     raw: {
       type: 'boolean',
