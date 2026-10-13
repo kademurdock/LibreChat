@@ -1360,6 +1360,7 @@ class BaseClient {
       {
         provider: this.options.agent?.provider ?? this.options.endpoint,
         endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+        model: this.options.agent?.model_parameters?.model ?? this.options.agent?.model ?? this.modelOptions?.model ?? this.model,
       },
       getStrategyFunctions,
     );

@@ -49,7 +49,7 @@ const {
 
 /* ────────────────────────────────────────────────────────────────────────────
  * THE MODEL MENU — models as choices a person can hear and pick between.
- * The all-rounder follows the conversational fleet's Oct 5 2026 Sol trial.
+ * The all-rounder follows the conversational fleet's current model.
  * `everyoneNote` is the line the page reads out loud;
  * `expert` is what the "show technical names" toggle reveals.
  * ──────────────────────────────────────────────────────────────────────── */
@@ -58,8 +58,8 @@ const MODEL_MENU = [
     key: 'all-rounder',
     plainName: 'The all-rounder',
     provider: 'OpenRouter',
-    model: 'openai/gpt-6.1-sol',
-    blurb: 'GPT-6.1 Sol, the model in the current character trial. Can see images and use the tools you give your character.',
+    model: 'xiaomi/mimo-v2.6-pro',
+    blurb: 'MiMo V2.6 Pro, a lower-cost all-rounder. Can see images and use the tools you give your character.',
     goodFor: 'friends, companions, helpers, almost anything',
     speed: 'fast',
     default: true,
@@ -500,18 +500,18 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
  * that already arrives globally on every turn. Which is also why the craft
  * brief below tells the writer, in as many words, not to write anti-slop rules.
  *
- * MODEL: follows the creative-helper Sol trial, Oct 5 2026.
+ * MODEL: follows the lower-cost MiMo character and writing rollout, Oct 13 2026.
  * Move it with KADE_PERSONA_MODEL without a code change.
  * ──────────────────────────────────────────────────────────────────────── */
 
-const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'openai/gpt-6.1-sol';
+const PERSONA_MODEL = process.env.KADE_PERSONA_MODEL || 'xiaomi/mimo-v2.6-pro';
 const PERSONA_DAILY_CAP = Number(process.env.KADE_PERSONA_DAILY_CAP || 12);
 const PERSONA_MAX_TOKENS = Number(process.env.KADE_PERSONA_MAX_TOKENS || 6000);
 /* OpenRouter's published price for the default model, per MILLION tokens.
  * Used only to print an honest number; the wallet is charged the measured
  * amount, not an estimate. */
-const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 2);
-const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 10);
+const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 0.435);
+const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 0.87);
 
 let personaDayStamp = '';
 const personaCounts = new Map();

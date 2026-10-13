@@ -228,8 +228,8 @@ test('real script route accounts for the shortening call as well as the first dr
 });
 
 test('lyric model token estimates use its own prices', () => {
-  assert.equal(lyricWritingModel, 'openai/gpt-6.1-sol');
-  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 12, measured: false });
+  assert.equal(lyricWritingModel, 'xiaomi/mimo-v2.6-pro');
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 1.305, measured: false });
   assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, 'moonshotai/kimi-k3'), { costUSD: 12.87, measured: false });
 });
 

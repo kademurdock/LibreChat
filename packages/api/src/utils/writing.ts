@@ -32,6 +32,8 @@ export function writingCost(
     return { costUSD: upstream, measured: true };
   }
   const prices: { [model: string]: [number, number] } = {
+    'xiaomi/mimo-v2.6-pro': [0.435, 0.87],
+    'mimo-v2.6-pro': [0.435, 0.87],
     'openai/gpt-6.1-sol': [2, 10],
     'gpt-6.1-sol': [2, 10],
     'nousresearch/hermes-4-405b': [1, 3],

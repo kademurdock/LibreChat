@@ -140,7 +140,7 @@ test('the benign fictional kitten brief reaches the real Seed desk with original
   const desk = booth([`${KITTEN_SCENE}\nREADBACK: Two original hosts interview a mischievous fictional kitten, with audience reactions.`]);
   const out = await desk.write({ engine: 'seed', text: KITTEN_BRIEF });
   const wire = desk.writerCalls[0];
-  assert.equal(wire.model, 'openai/gpt-6.1-sol');
+  assert.equal(wire.model, 'xiaomi/mimo-v2.6-pro');
   assert.match(wire.messages[1].content, new RegExp(KITTEN_BRIEF.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.ok(wire.messages[0].content.includes(scriptWriter.seedSceneContext));
   assert.match(wire.messages[0].content, /explicitly fictional animal with that voice is still that animal/);
@@ -233,7 +233,7 @@ test('Sol writes and formats speech with the chosen thought, without unsupported
       const desk = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
       const result = await desk.write({ mode, thinkMode, voice_description: GIRL });
       const sent = desk.writerCalls[0];
-      assert.equal(sent.model, 'openai/gpt-6.1-sol');
+      assert.equal(sent.model, 'xiaomi/mimo-v2.6-pro');
       assert.equal(Object.hasOwn(sent, 'temperature'), false);
       assert.equal(Object.hasOwn(sent, 'top_p'), false);
       assert.equal(sent.max_tokens, thinkMode === 'high' ? 65536 : 16384);
@@ -265,7 +265,7 @@ test('song length stays in the brief while all four thought modes use resumable 
     assert.equal(polled.status, 200);
     assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
     assert.match(desk.writerCalls[0].messages[1].content, /four-minute instrumental/);
-    assert.equal(desk.writerCalls[0].model, 'openai/gpt-6.1-sol');
+    assert.equal(desk.writerCalls[0].model, 'xiaomi/mimo-v2.6-pro');
     assert.equal(desk.writerCalls[0].reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
     assert.match(polled.result.result.script, /four-minute instrumental/);
     assert.equal((await desk.request('get/script/job/:id', {}, { id }, 'other-owner')).status, 404);
@@ -369,7 +369,7 @@ test('the song idea helper uses Sol and respects the same selected thought', asy
     assert.equal(result.status, 200, JSON.stringify({ result: result.result, warnings: desk.warnings }));
     assert.equal(result.result.idea, idea);
     const sent = desk.writerCalls[0];
-    assert.equal(sent.model, 'openai/gpt-6.1-sol');
+    assert.equal(sent.model, 'xiaomi/mimo-v2.6-pro');
     assert.equal(Object.hasOwn(sent, 'temperature'), false);
     assert.equal(Object.hasOwn(sent, 'top_p'), false);
     assert.equal(sent.reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);

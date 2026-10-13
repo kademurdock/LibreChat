@@ -4,7 +4,7 @@ import { rhymeKeyOf, rhymeRelation, rhymeSyllables, rhymeWord, sameRhymeWord } f
 import { seedWritingPrompt } from '../audio/script';
 
 export const lyricAgentId = 'agent_9YHpms0vJoApICwshh0mR';
-export const lyricWritingModel = 'openai/gpt-6.1-sol';
+export const lyricWritingModel = 'xiaomi/mimo-v2.6-pro';
 type Reader = (filter: { id: string }) => Promise<Pick<IAgent, 'name' | 'instructions'> | null>;
 export type BoothThinkMode = 'auto' | 'low' | 'medium' | 'high';
 type Request = {
