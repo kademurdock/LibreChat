@@ -2296,6 +2296,20 @@ test('voice picker: F or the Favourite button stars the voice with focus, in pla
   assert.equal(member.$('voice-suggest').hidden, true, 'only the administrator curates');
 });
 
+test('retired narrator defaults survive a new-only picker without appearing as new choices', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: {
+    ...config, voices: ['New narrator'], retained: ['Old narrator'], defaultVoice: 'Old narrator',
+    myDefaultVoice: 'Old narrator', categories: [{ name: 'New voices', voices: ['New narrator'] }],
+    favorites: ['Old narrator'], recent: ['Old narrator'], suggested: [],
+  } }));
+  const env = await boot({ server });
+  assert.equal(env.$('voice').value, 'Old narrator');
+  await env.click('voice-open');
+  assert.equal(env.$('voice-kind').options.find(option => option.value === 'all').textContent, 'All voices (1)');
+  assert.ok(env.$('voice').options.find(option => option.value === 'Old narrator').hidden);
+});
+
 test('narrator default: new videos start with her server default, not this browser’s old voice; the button saves it and says so', async () => {
   const server = makeServer();
   server.prefs.myDefaultVoice = 'warm man · oak';

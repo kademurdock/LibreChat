@@ -1387,6 +1387,9 @@ test('providers: the voice list keeps old spellings and the fish.audio labels, a
     describe: { 'Kade Murdock': 'warm and natural' },
     renames: { 'Voice 541': 'clear high-ish young woman · dory', 'Voice 650': 'clear woman · flint' },
     fish: ['Kade Murdock'],
+    hidden: ['Retired Inworld narrator'],
+    aliases: ['Old Fish narrator'],
+    retainedFish: ['Old Fish narrator'],
     custom: [541],
   };
   const fake = fakeAxios(async () => ({ data: reply }));
@@ -1403,6 +1406,9 @@ test('providers: the voice list keeps old spellings and the fish.audio labels, a
       'Voice 650': 'clear woman · flint',
     });
     assert.deepEqual(list.fish, ['Kade Murdock']);
+    assert.deepEqual(list.hidden, ['Retired Inworld narrator']);
+    assert.deepEqual(list.aliases, ['Old Fish narrator']);
+    assert.deepEqual(list.retainedFish, ['Old Fish narrator']);
     assert.equal(list.custom, undefined, 'only the fields the describer reads are kept');
 
     reply = { voices: ['Voice 1'], renames: 'not a map', fish: [42] };

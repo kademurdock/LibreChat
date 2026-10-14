@@ -183,6 +183,9 @@ const recordedCost = (record: z.infer<typeof generationSchema>['data']): number 
   realCost(record.total_cost, record.is_byok, record.upstream_inference_cost);
 export type VoiceCatalog = {
   voices: string[];
+  hidden?: string[];
+  aliases?: string[];
+  retainedFish?: string[];
   describe?: Record<string, string>;
   categories?: { name: string; voices: string[] }[];
   /** Old spelling ("Voice 541") -> the current described label. */
@@ -229,6 +232,9 @@ async function fetchVoices(): Promise<VoiceCatalog> {
   const data = z
     .object({
       voices: z.array(z.string().min(1).max(120)).max(3000),
+      hidden: z.array(z.string().max(160)).max(10000).optional().catch(undefined),
+      aliases: z.array(z.string().max(160)).max(10000).optional().catch(undefined),
+      retainedFish: z.array(z.string().max(160)).max(10000).optional().catch(undefined),
       describe: z.record(z.string()).optional(),
       categories: z
         .array(z.object({ name: z.string().max(120), voices: z.array(z.string().max(120)) }))
@@ -1557,7 +1563,7 @@ function visionCall(
  */
 export async function voiceInput(words: string, voice: string): Promise<string> {
   const fish = await voices().then(
-    (list) => !!list.fish?.includes(voice),
+    (list) => !!list.fish?.includes(voice) || !!list.retainedFish?.includes(voice),
     () => false,
   );
   return fish ? fishDirection + words : words;

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { narratorLabel, retainedNarrators } from './voiceCatalog';
+import type { NarratorCatalog } from './voiceCatalog';
 import axios from 'axios';
 import mongoose from 'mongoose';
 import { tmpdir } from 'node:os';
@@ -1101,14 +1103,11 @@ const maxRecent = 8;
 /** The prefs row that holds the platform's own lists rather than one person's. */
 const houseKey = '__describing__';
 const fishNote =
-  'This voice sounds less natural when it is sped up, and narration usually is. For speeds above 1×, a voice under Good for describing will sound smoother.';
-type Catalog = { voices: string[]; renames?: Record<string, string>; fish?: string[] };
+  'This Fish voice follows the reference sample’s natural pace. Audition it at your narration speed; lower the speed if the words sound rushed.';
+type Catalog = NarratorCatalog;
 /** The current label for a stored name: an exact label, or an old spelling ("Voice 541") renamed since. */
 function listed(catalog: Catalog, name?: string | null): string | undefined {
-  if (!name) return undefined;
-  if (catalog.voices.includes(name)) return name;
-  const renamed = catalog.renames?.[name];
-  return renamed && catalog.voices.includes(renamed) ? renamed : undefined;
+  return narratorLabel(catalog, name);
 }
 const listedAll = (catalog: Catalog, list: string[]): string[] => [
   ...new Set(list.map((name) => listed(catalog, name)).filter((v): v is string => !!v)),
@@ -1966,7 +1965,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         'The list of voices could not be loaded right now. Try again in a minute.',
         503,
       );
-    if (!catalog.voices.includes(voice))
+    if (!narratorLabel(catalog, voice, true))
       throw new Problem('Choose one of the listed voices.', 400, 'voice');
   }
   /** A listed voice's current label, accepting an old spelling; refuses anything else. */
@@ -1977,7 +1976,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         'The list of voices could not be loaded right now. Try again in a minute.',
         503,
       );
-    const label = listed(catalog, voice);
+    const label = narratorLabel(catalog, voice, true);
     if (!label) throw new Problem('Choose one of the listed voices.', 400, 'voice');
     return { catalog, label };
   }
@@ -1998,7 +1997,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   async function prefsView(owner: string, catalog: Catalog) {
     const prefs = await prefsOf(owner);
     const house = houseVoice(catalog) ?? null;
-    const mine = listed(catalog, prefs.voice) ?? null;
+    const mine = narratorLabel(catalog, prefs.voice, true) ?? null;
     return {
       defaultVoice: mine ?? house,
       myDefaultVoice: mine,
@@ -2017,7 +2016,7 @@ export function createDescriptionRouter(hooks: Hooks): {
   /** A run that started: its voice moves to the front of her Recently used list. */
   async function noteUse(owner: string, voice: string): Promise<void> {
     const catalog = await voiceCatalog();
-    const label = listed(catalog, voice);
+    const label = narratorLabel(catalog, voice, true);
     if (!label) return;
     await Prefs.updateOne(
       { _id: owner },
@@ -2034,7 +2033,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const input = (body ?? {}) as { voice?: unknown };
     const catalog = await voiceCatalog();
     if (typeof input.voice === 'string' && input.voice) {
-      const label = listed(catalog, input.voice);
+      const label = narratorLabel(catalog, input.voice, true);
       return label && label !== input.voice ? { ...(body as object), voice: label } : body;
     }
     const view = await prefsView(hooks.actor(req).id, catalog);
@@ -2786,6 +2785,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ...(hooks.actor(req).role === 'ADMIN' ? { curate: true } : {}),
       voicesAvailable: catalog.available,
       voices: catalog.voices,
+      retained: retainedNarrators(catalog),
       describe: catalog.describe,
       categories: catalog.categories,
       /* Part 293: shown greyed out, never hidden, when it is not available. */

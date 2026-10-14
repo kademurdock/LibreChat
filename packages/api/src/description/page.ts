@@ -507,6 +507,7 @@ export const descriptionBrowserScript: string = String.raw`
      player did. Auditions use one audio element there instead, which plays through the switch. */
   function appleTouch(){try{var ua=String(navigator&&navigator.userAgent||'');return /iP(hone|ad|od)/.test(ua)||/Macintosh/.test(ua)&&Number(navigator.maxTouchPoints)>1;}catch(e){return false;}}
   function listed(v){return !!v&&!!config&&(config.voices||[]).indexOf(v)>=0;}
+  function retained(v){return listed(v)||!!v&&!!config&&(config.retained||[]).indexOf(v)>=0;}
   function isFish(v){return !!v&&!!config&&(config.fish||[]).indexOf(v)>=0;}
   function favorite(v){return !!v&&!!config&&(config.favorites||[]).indexOf(v)>=0;}
   function suggestedVoice(v){return !!v&&!!config&&(config.suggested||[]).indexOf(v)>=0;}
@@ -604,7 +605,7 @@ export const descriptionBrowserScript: string = String.raw`
     if(!listed(v))return;$('voice').value=v;closeVoices(true);renderVoice();onSettingsChange('voice');
     say(voiceName(v)+' chosen.'+(isFish(v)&&config.fishNote?' '+config.fishNote:''),true);
   }
-  function setVoice(voice){if(voicesOff||!listed(voice))return false;$('voice').value=voice;renderVoice();return true;}
+  function setVoice(voice){if(voicesOff||!retained(voice))return false;var select=$('voice');if(!Array.from(select.options).some(function(o){return o.value===voice;})){var kept=document.createElement('option');kept.value=voice;kept.textContent=voice;kept.hidden=true;select.appendChild(kept);}select.value=voice;renderVoice();return true;}
   function applyPrefs(prefs){if(prefs)['defaultVoice','myDefaultVoice','houseVoice','favorites','recent','suggested','maxFavorites','speeds'].forEach(function(key){if(prefs[key]!==undefined)config[key]=prefs[key];});}
   function noteRecent(v){if(config&&v)config.recent=[v].concat((config.recent||[]).filter(function(item){return item!==v;})).slice(0,8);}
   function pickerProblem(e){if(e&&(e.auth||e.network))failure(e);else say(e&&e.message||'That did not work. Try again.',true);}
@@ -619,7 +620,7 @@ export const descriptionBrowserScript: string = String.raw`
   /** Once per browser: the voice this browser remembered becomes her default, unless she already has one. */
   async function migrateDefault(){
     var old=(stored(SETTINGS_KEY,{})||{}).voice;
-    if(voicesOff||config.myDefaultVoice||!listed(old)||old==='clear woman · flint'||stored(MOVED_KEY,false))return;
+    if(voicesOff||config.myDefaultVoice||!retained(old)||old==='clear woman · flint'||stored(MOVED_KEY,false))return;
     try{applyPrefs(await call('/prefs/default','POST',{voice:old}));store(MOVED_KEY,true);}catch(e){}
   }
   /** Once per browser: the speeds this browser remembered go to the server, unless she already keeps speeds there or they are only the usual defaults. */
