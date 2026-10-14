@@ -9,7 +9,7 @@ import useGetAudioSettings from '~/hooks/Input/useGetAudioSettings';
 import useAudioRef from '~/hooks/Audio/useAudioRef';
 import { usePauseGlobalAudio } from '../Audio';
 import { logger } from '~/utils';
-import { normalizeVoiceLabel } from '~/utils/voiceLabels';
+import { reconcileVoiceSelection } from '~/utils/voiceLabels';
 import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
 import store from '~/store';
 
@@ -91,8 +91,21 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
   // Part 118 (Sep 2 2026): the described catalog's rename map, and a gate so
   // a missing stored voice is never snapped to voices[0] before the map has
   // arrived (see useTTSExternal.ts for the same note).
-  const { renames, ready: catalogReady } = useVoiceCatalog();
+  const { renames, retained, ready: catalogReady } = useVoiceCatalog();
   useEffect(() => {
+    if (textToSpeechEndpoint === 'external') {
+      const next = reconcileVoiceSelection(
+        voice,
+        voices.map((v) => String(v)),
+        renames,
+        retained,
+        catalogReady,
+      );
+      if (next !== undefined && next !== voice) {
+        setVoice(next);
+      }
+      return;
+    }
     const firstVoice = voices[0];
     if (voices.length && typeof firstVoice === 'object') {
       const lastSelectedVoice = voices.find((v) =>
@@ -117,23 +130,13 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       }
       // KADE July 23 2026: migrate a stored beta-era spelling to its
       // graduated label instead of snapping the user's pick to voices[0].
-      const graduated = normalizeVoiceLabel(
-        typeof voice === 'string' ? voice : undefined,
-        voices.map((v) => String(v)),
-        renames,
-      );
-      if (graduated != null) {
-        logger.log('useTextToSpeech.ts - Effect: graduated voice label', { voice, graduated });
-        setVoice(graduated);
-        return;
-      }
       if (!catalogReady) {
         return; // rename map still loading — do not snap
       }
       logger.log('useTextToSpeech.ts - Effect:', { voices, voice: firstVoice });
       setVoice(firstVoice.toString());
     }
-  }, [setVoice, textToSpeechEndpoint, voice, voices, renames, catalogReady]);
+  }, [setVoice, textToSpeechEndpoint, voice, voices, renames, retained, catalogReady]);
 
   const handleMouseDown = () => {
     isMouseDownRef.current = true;
@@ -141,7 +144,9 @@ const useTextToSpeech = (props?: TUseTextToSpeech) => {
       if (isMouseDownRef.current) {
         const messageContent = content ?? '';
         const parsedMessage =
-          typeof messageContent === 'string' ? messageContent : parseTextParts(messageContent, true);
+          typeof messageContent === 'string'
+            ? messageContent
+            : parseTextParts(messageContent, true);
         generateSpeech(parsedMessage, false);
       }
     }, 1000);

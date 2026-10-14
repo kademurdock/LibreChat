@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 /** Same proxy base the ConversationMode voice pipeline points at. */
@@ -36,6 +37,7 @@ export function useVoiceCatalog(): {
   describe?: Record<string, string>;
   /** Part 129: label -> its one-word tag ("flurry"), the voice's spoken name. */
   tags?: Record<string, string>;
+  retained?: string[];
   ready: boolean;
 } {
   const { data, status } = useQuery(
@@ -52,6 +54,8 @@ export function useVoiceCatalog(): {
         renames?: Record<string, string>;
         describe?: Record<string, string>;
         tags?: Record<string, string>;
+        hidden?: string[];
+        aliases?: string[];
       };
     },
     { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false },
@@ -67,13 +71,26 @@ export function useVoiceCatalog(): {
   const describe =
     data?.describe != null && typeof data.describe === 'object' ? data.describe : undefined;
   const tags = data?.tags != null && typeof data.tags === 'object' ? data.tags : undefined;
+  const retained = useMemo(
+    () => [
+      ...new Set(
+        [
+          ...(Array.isArray(data?.hidden) ? data.hidden : []),
+          ...(Array.isArray(data?.aliases) ? data.aliases : []),
+        ].filter((v) => typeof v === 'string'),
+      ),
+    ],
+    [data?.hidden, data?.aliases],
+  );
   return {
     sample: typeof data?.sample === 'string' && data.sample !== '' ? data.sample : undefined,
-    audition: typeof data?.audition === 'string' && data.audition !== '' ? data.audition : undefined,
+    audition:
+      typeof data?.audition === 'string' && data.audition !== '' ? data.audition : undefined,
     categories: categories && categories.length > 0 ? categories : undefined,
     renames,
     describe,
     tags,
+    retained,
     ready: status === 'success' || status === 'error',
   };
 }
