@@ -38,7 +38,10 @@ test('a staged index keeps scope, exclusions, current content and the original v
   process.env.KADE_EMBED_DIMENSIONS = '32';
   process.env.OPENROUTER_KEY = 'test-only';
   const diary = model('kadeDiary.js');
-  const cards = model('kadeCardVector.js', { '~/models/kadeDiary': diary });
+  let embedCalls = 0;
+  const cards = model('kadeCardVector.js', { '~/models/kadeDiary': {
+    ...diary, embedText: async () => { embedCalls++; throw new Error('An already-staged card must not be paid for again'); },
+  } });
   const identity = helpers.memoryEmbeddingLane().identity;
   const vector = Array.from({ length: 32 }, (_, i) => i === 0 ? 1 : 0);
   const add = async (userId, agentId, text, extra = {}) => diary.KadeDiaryEntry.create({
@@ -69,6 +72,12 @@ test('a staged index keeps scope, exclusions, current content and the original v
     assert.equal((await cards.searchCardVectors('other-person', 'a', vector, options)).length, 0);
     assert.equal((await cards.searchCardVectors('person', 'a', vector, { ...options, values: new Map([['a::concert', 'Changed value']]) })).length, 0);
     assert.equal((await cards.searchCardVectors('person', 'a', vector.slice(1), options)).length, 0);
+    const synced = await cards.syncBucketVectors('person', 'a', [{ key: 'concert', value }]);
+    assert.equal(synced.embedded, 0);
+    assert.equal(embedCalls, 0);
+    const stillOriginal = await cards.KadeCardVector.findOne({ userId: 'person', key: 'concert' }).lean();
+    assert.equal(stillOriginal.valueHash, cards.hashValue('Old value'));
+    assert.equal(stillOriginal.embedModel, 'gemini-embedding-001');
     await cards.KadeCardVector.updateOne({ userId: 'person', key: 'concert' }, { $set: { embedNextModel: 'other-model' } });
     assert.equal((await cards.searchCardVectors('person', 'a', vector, options)).length, 0);
   } finally { await mongoose.disconnect(); await server.stop(); }

@@ -29,7 +29,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { embedText, currentEmbedModel, readEmbedHealth } = require('~/models/kadeDiary');
-const { indexedEmbedding, indexedCardEmbedding, memoryEmbeddingLane } = require('@librechat/api');
+const { indexedCardEmbedding, memoryEmbeddingLane } = require('@librechat/api');
 
 const kadeCardVectorSchema = new mongoose.Schema(
   {
@@ -128,11 +128,9 @@ async function syncBucketVectors(userId, agentId, entries, opts = {}) {
     for (const [key, value] of live) {
       const h = hashValue(value);
       const row = byKey.get(key);
-      const text = key.replace(/_/g, ' ') + ': ' + value;
       if (
         !row ||
-        row.valueHash !== h ||
-        !indexedEmbedding(row, model, text, memoryEmbeddingLane()?.dimensions || 1536)
+        !indexedCardEmbedding(row, model, memoryEmbeddingLane()?.dimensions || 1536, value)
       ) {
         work.push({ key, value, h });
       }
