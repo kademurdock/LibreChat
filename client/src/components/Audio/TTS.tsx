@@ -1,6 +1,9 @@
 /* eslint-disable jsx-a11y/media-has-caption */
 import { useEffect } from 'react';
-import { watchVoiceAudio, stopWatchingVoiceAudio } from '~/components/Chat/character/voice-playback.mjs';
+import {
+  watchVoiceAudio,
+  stopWatchingVoiceAudio,
+} from '~/components/Chat/character/voice-playback.mjs';
 import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '@librechat/client';
@@ -79,8 +82,8 @@ export function BrowserTTS({
         </button>
       )}
       <audio
-        onPlaying={event => watchVoiceAudio(event.currentTarget, messageId)}
-        onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
+        onPlaying={(event) => watchVoiceAudio(event.currentTarget, messageId)}
+        onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls
         preload="none"
@@ -112,7 +115,6 @@ export function ExternalTTS({
   renderButton,
 }: TMessageAudio) {
   const localize = useLocalize();
-  const playbackRate = useRecoilValue(store.playbackRate);
 
   const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTTSExternal({
     isLast,
@@ -138,10 +140,8 @@ export function ExternalTTS({
     if (!messageAudio) {
       return;
     }
-    if (playbackRate != null && playbackRate > 0 && messageAudio.playbackRate !== playbackRate) {
-      messageAudio.playbackRate = playbackRate;
-    }
-  }, [audioRef, isSpeaking, playbackRate, messageId]);
+    messageAudio.playbackRate = 1;
+  }, [audioRef, isSpeaking, messageId]);
 
   logger.log(
     'MessageAudio: audioRef.current?.src, audioRef.current',
@@ -179,8 +179,8 @@ export function ExternalTTS({
         </button>
       )}
       <audio
-        onPlaying={event => watchVoiceAudio(event.currentTarget, messageId)}
-        onEmptied={event => stopWatchingVoiceAudio(event.currentTarget)}
+        onPlaying={(event) => watchVoiceAudio(event.currentTarget, messageId)}
+        onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls
         preload="none"

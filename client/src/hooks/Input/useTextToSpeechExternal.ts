@@ -4,6 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { generationRate, voiceCacheKey } from '~/utils/voicePace';
 import { speechAudioFile, speechAudioBlob } from '~/hooks/Audio/speech';
 import {
   watchVoiceAudio,
@@ -41,6 +42,7 @@ function useTextToSpeechExternal({
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
+  const speed = generationRate(voiceSpeed, playbackRate);
 
   const [downloadFile, setDownloadFile] = useState(false);
 
@@ -58,9 +60,7 @@ function useTextToSpeechExternal({
   const playAudioPromise = (blobUrl: string) => {
     const newAudio = new Audio(blobUrl);
     const initializeAudio = () => {
-      if (playbackRate != null && playbackRate !== 1 && playbackRate > 0) {
-        newAudio.playbackRate = playbackRate;
-      }
+      newAudio.playbackRate = 1;
     };
 
     initializeAudio();
@@ -117,7 +117,13 @@ function useTextToSpeechExternal({
 
         if (cacheTTS && inputText) {
           const cache = await caches.open('tts-responses');
-          const request = new Request(inputText);
+          const request = new Request(
+            voiceCacheKey(
+              inputText,
+              String(variables.get('voice') ?? ''),
+              Number(variables.get('speed') ?? 1),
+            ),
+          );
           const response = new Response(audioBlob);
           cache.put(request, response);
         }
@@ -143,7 +149,7 @@ function useTextToSpeechExternal({
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice ?? '', voiceSpeed);
+    const formData = createFormData(text, voice ?? '', speed);
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -157,7 +163,7 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(text);
+    const cachedResponse = await caches.match(voiceCacheKey(text, voice, speed));
     if (!cachedResponse) {
       return startMutation(text, download);
     }

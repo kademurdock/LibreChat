@@ -1,3 +1,4 @@
+import { generationRate } from '~/utils/voicePace';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useRecoilValue } from 'recoil';
@@ -59,6 +60,7 @@ export default function DownloadAudioButton({
   const engineTTS = useRecoilValue<string>(store.engineTTS);
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
+  const preference = useRecoilValue(store.playbackRate);
   const [loading, setLoading] = useState(false);
 
   const { mutate } = useTextToSpeechMutation({
@@ -93,9 +95,7 @@ export default function DownloadAudioButton({
     const formData = new FormData();
     formData.append('input', content);
     formData.append('voice', voice ?? '');
-    if (typeof voiceSpeed === 'number') {
-      formData.append('speed', String(voiceSpeed));
-    }
+    formData.append('speed', String(generationRate(voiceSpeed, preference)));
     mutate(formData);
   };
 

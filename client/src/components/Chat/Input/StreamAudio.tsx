@@ -10,6 +10,7 @@ import { getLatestText, logger } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
+import { generationRate, voiceCacheKey } from '~/utils/voicePace';
 import { consumeSpeechAudio, speechAudioBlob } from '~/hooks/Audio/speech';
 import { useSpeechRequest } from '~/hooks/Audio/request';
 import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
@@ -21,7 +22,8 @@ export default function StreamAudio({ index = 0 }) {
   const playbackRate = useRecoilValue(store.playbackRate);
 
   const voice = useRecoilValue(store.voice);
-  const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
+  const voiceSpeed = useRecoilValue(store.voiceSpeed);
+  const speed = generationRate(voiceSpeed, playbackRate);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const voiceCallActive = useRecoilValue(store.voiceCallActiveState);
@@ -91,7 +93,7 @@ export default function StreamAudio({ index = 0 }) {
           setGlobalAudioURL(null);
         }
 
-        let cacheKey = latestMessage?.text ?? '';
+        let cacheKey = voiceCacheKey(latestMessage?.text ?? '', voice, speed);
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
         if (!speechRequest.isCurrent(controller)) return;
@@ -117,7 +119,7 @@ export default function StreamAudio({ index = 0 }) {
             runId: activeRunId,
             voice,
             // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
-            speed: voiceSpeed,
+            speed,
           }),
         });
 
@@ -154,7 +156,7 @@ export default function StreamAudio({ index = 0 }) {
           const targetMessage = latestMessages.find(
             (msg) => msg.messageId === latestMessage?.messageId,
           );
-          cacheKey = targetMessage?.text ?? '';
+          cacheKey = voiceCacheKey(targetMessage?.text ?? '', voice, speed);
           if (cacheKey) await cache.put(cacheKey, new Response(audioBlob));
         }
         if (audioBlob && !streamed && speechRequest.isCurrent(controller)) {
@@ -188,22 +190,14 @@ export default function StreamAudio({ index = 0 }) {
     cacheTTS,
     audioRef,
     voice,
-    voiceSpeed,
+    speed,
     token,
     speechRequest,
   ]);
 
   useEffect(() => {
-    if (
-      playbackRate != null &&
-      globalAudioURL != null &&
-      playbackRate > 0 &&
-      audioRef.current &&
-      audioRef.current.playbackRate !== playbackRate
-    ) {
-      audioRef.current.playbackRate = playbackRate;
-    }
-  }, [audioRef, globalAudioURL, playbackRate]);
+    if (audioRef.current) audioRef.current.playbackRate = 1;
+  }, [audioRef, globalAudioURL]);
 
   /* KADE (July 15 2026): iOS/WebKit surfaces a lock-screen "Now Playing"
    * widget for any playing <audio>, and with no explicit Media Session

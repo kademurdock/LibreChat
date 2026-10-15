@@ -15,6 +15,7 @@ const {
   getNewS3URL,
   saveBufferToS3,
   writingCost,
+  readWritingCompletion,
   splitLyricTitle,
   lyricTitleFromSong,
   musicWritingPrompt,
@@ -909,6 +910,7 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
     gatewayUrl,
     {
       model,
+      ...(model === lyricWritingModel ? { stream: true, stream_options: { include_usage: true } } : {}),
       max_tokens: maxTokens,
       ...(model === lyricWritingModel ? {} : { temperature, ...(top_p !== undefined ? { top_p } : {}) }),
       ...(reasoning ? { reasoning } : {}),
@@ -921,11 +923,13 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
     {
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': UA },
       timeout: timeoutMs,
+      ...(model === lyricWritingModel ? { responseType: 'stream', signal: AbortSignal.timeout(timeoutMs) } : {}),
     },
   );
-  const out = r.data?.choices?.[0]?.message?.content;
-  const usage = r.data?.usage || {};
-  return { text: String(out || ''), refusal: r.data?.choices?.[0]?.message?.refusal, usage, finishReason: r.data?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
+  const reply = model === lyricWritingModel ? await readWritingCompletion(r.data) : r.data;
+  const out = reply?.choices?.[0]?.message?.content;
+  const usage = reply?.usage || {};
+  return { text: String(out || ''), refusal: reply?.choices?.[0]?.message?.refusal, usage, finishReason: reply?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */

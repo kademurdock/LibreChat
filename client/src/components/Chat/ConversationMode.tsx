@@ -1,3 +1,4 @@
+import { generationRate } from '~/utils/voicePace';
 /**
  * ConversationMode — Patch F2 (+ F3 a11y/streaming repair + F4 STT alignment)
  *
@@ -372,7 +373,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
    * is the old behavior and still how you deliberately start clean. */
   const chatConversation = useRecoilValue(store.conversationByIndex(index));
   const voice = useRecoilValue(store.voice);
-  const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d: agent's speaking rate
+  const voiceSpeed = useRecoilValue(store.voiceSpeed);
+  const voicePacePreference = useRecoilValue(store.playbackRate);
+  const generationSpeed = generationRate(voiceSpeed, voicePacePreference); // Kade D2d: agent's speaking rate
   const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const { token } = useAuthContext();
@@ -1209,7 +1212,12 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // speed: Kade D2d — the active agent's speaking rate (undefined drops out)
-          body: JSON.stringify({ model: 'tts-1', input: text, voice: useVoice, speed: voiceSpeed }),
+          body: JSON.stringify({
+            model: 'tts-1',
+            input: text,
+            voice: useVoice,
+            speed: generationSpeed,
+          }),
         });
         if (!resp.ok) return null;
         return await resp.arrayBuffer();
@@ -1218,7 +1226,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         return null;
       }
     },
-    [voice, voiceSpeed],
+    [voice, generationSpeed],
   );
 
   // -- LLM streaming turn ------------------------------------------------------
@@ -2250,7 +2258,9 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       return;
     }
     if (e.key !== 'Tab') return;
-    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>('summary, button:not([disabled])');
+    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'summary, button:not([disabled])',
+    );
     if (!nodes || nodes.length === 0) return;
     const list = Array.from(nodes);
     const first = list[0];
