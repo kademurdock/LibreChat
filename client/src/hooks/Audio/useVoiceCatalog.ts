@@ -37,6 +37,7 @@ export function useVoiceCatalog(): {
   describe?: Record<string, string>;
   /** Part 129: label -> its one-word tag ("flurry"), the voice's spoken name. */
   tags?: Record<string, string>;
+  providers?: Record<string, string>;
   retained?: string[];
   ready: boolean;
 } {
@@ -54,6 +55,7 @@ export function useVoiceCatalog(): {
         renames?: Record<string, string>;
         describe?: Record<string, string>;
         tags?: Record<string, string>;
+        providers?: Record<string, string>;
         hidden?: string[];
         aliases?: string[];
       };
@@ -90,6 +92,7 @@ export function useVoiceCatalog(): {
     renames,
     describe,
     tags,
+    providers: data?.providers,
     retained,
     ready: status === 'success' || status === 'error',
   };

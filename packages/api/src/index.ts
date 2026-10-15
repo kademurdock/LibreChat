@@ -303,6 +303,7 @@ export {
 } from './music/writing';
 export { splitLyricTitle, lyricTitleFromSong } from './music/title';
 export { formatGeneratedLyricsDraft } from './music/format';
+export { readWritingCompletion } from './music/completion';
 export {
   songIdeaSparks,
   songIdeaSystem,

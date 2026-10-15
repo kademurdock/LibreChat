@@ -1,53 +1,55 @@
 import React from 'react';
 import { useRecoilState, useRecoilValue } from 'recoil';
-import { Slider, InputNumber } from '@librechat/client';
-import { cn, defaultTextProps, optionText } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
+import {
+  fishPaces,
+  fishPaceValue,
+  generationRate,
+  inworldRates,
+  isFishVoice,
+} from '~/utils/voicePace';
 import store from '~/store';
 
-export default function DecibelSelector() {
+export default function PlaybackRate() {
   const localize = useLocalize();
   const textToSpeech = useRecoilValue(store.textToSpeech);
-  const [playbackRate, setPlaybackRate] = useRecoilState(store.playbackRate);
-
+  const voice = useRecoilValue(store.voice);
+  const base = useRecoilValue(store.voiceSpeed);
+  const [rate, setRate] = useRecoilState(store.playbackRate);
+  const { providers } = useVoiceCatalog();
+  const fish = isFishVoice(voice, providers);
+  const value = generationRate(base, rate);
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center justify-between">
-        <div id="playback-rate-label">{localize('com_nav_playback_rate')}</div>
-        <div className="w-2" />
-        <small className="opacity-40">
-          ({localize('com_endpoint_default_with_num', { 0: '1' })})
-        </small>
-      </div>
-      <div className="flex items-center justify-between">
-        <Slider
-          value={[playbackRate ?? 1]}
-          onValueChange={(value) => setPlaybackRate(value[0])}
-          onDoubleClick={() => setPlaybackRate(null)}
-          min={0.1}
-          max={2}
-          step={0.1}
-          className="ml-4 flex h-4 w-24"
-          disabled={!textToSpeech}
-          aria-labelledby="playback-rate-label"
-        />
-        <div className="w-2" />
-        <InputNumber
-          value={playbackRate ?? 1}
-          disabled={!textToSpeech}
-          onChange={(value) => setPlaybackRate(value ? value[0] : 0)}
-          min={0.1}
-          max={2}
-          aria-labelledby="playback-rate-label"
-          className={cn(
-            defaultTextProps,
-            cn(
-              optionText,
-              'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
-            ),
-          )}
-        />
-      </div>
+    <div className="flex flex-col gap-2">
+      <label htmlFor="voice-generation-pace">
+        {localize(fish ? 'com_voice_pace_fish' : 'com_voice_speed_inworld')}
+      </label>
+      <select
+        id="voice-generation-pace"
+        className="rounded border border-border-medium bg-surface-secondary p-2"
+        disabled={!textToSpeech}
+        value={
+          rate == null ? '' : String(fish ? fishPaceValue(value) : Math.round(value * 10) / 10)
+        }
+        onChange={(event) => setRate(event.target.value ? Number(event.target.value) : null)}
+      >
+        <option value="">{localize('com_voice_pace_agent')}</option>
+        {fish
+          ? fishPaces.map((pace) => (
+              <option key={pace.value} value={pace.value}>
+                {localize(pace.key)}
+              </option>
+            ))
+          : inworldRates.map((speed) => (
+              <option key={speed} value={speed}>
+                {speed}×
+              </option>
+            ))}
+      </select>
+      <p className="text-xs text-text-secondary">
+        {localize(fish ? 'com_voice_pace_fish_help' : 'com_voice_speed_inworld_help')}
+      </p>
     </div>
   );
 }

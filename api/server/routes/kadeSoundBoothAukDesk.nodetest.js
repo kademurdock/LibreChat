@@ -59,7 +59,7 @@ function booth(replies = [], env = {}) {
   }
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map((m) => [m, (p, ...v) => handlers.set(m + p, v.at(-1))]));
   const context = {
-    module: { exports: {} }, Buffer, URL, console,
+    module: { exports: {} }, Buffer, URL, console, AbortSignal,
     process: { env: { REFRAME_PROXY_SECRET: 'offline-fixture', BRIDGE_SECRET: 'offline-fixture', ...env } },
     require(name) {
       if (name === 'express') return { Router: () => router, json: () => () => {} };
@@ -80,7 +80,7 @@ function booth(replies = [], env = {}) {
         writingCost: writerPricing.writingCost,
         validateMusicReference: async (_user, url) => url, musicReferenceSeconds: async () => 10,
         ...(() => { const mod = { exports: {} }; const code = require('typescript').transpileModule(require('node:fs').readFileSync(path.join(__dirname, '../../../packages/api/src/speech/edit.ts'), 'utf8'), { compilerOptions: { module: require('typescript').ModuleKind.CommonJS } }).outputText; require('node:vm').runInNewContext(code, { exports: mod.exports, module: mod, URL, process: { env: { AWS_ENDPOINT_URL: 'https://example.invalid', AWS_BUCKET_NAME: 'recordings' } } }); return mod.exports; })(),
-        ...writing, ...ideas, ...scriptWriter, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')), ...loadTs(path.join(__dirname, '../../../packages/api/src/music/format.ts')),
+        ...writing, ...ideas, ...scriptWriter, ...loadTs(path.join(__dirname, '../../../packages/api/src/music/completion.ts')), ...loadTs(path.join(__dirname, '../../../packages/api/src/music/title.ts')), ...loadTs(path.join(__dirname, '../../../packages/api/src/music/format.ts')),
         musicWritingPrompt: async (base, request, ...rest) => request.engine === 'seed' ? writing.musicWritingPrompt(base, request, ...rest) : base,
         yueStylesEnabled: () => false, yueStyles: {}, effectsGuide: {},
         createYueRouter: () => () => {}, createEffectsRouter: () => () => {}, createLyricsRouter: () => () => {},
@@ -267,6 +267,8 @@ test('song length stays in the brief while all four thought modes use resumable 
     assert.match(desk.writerCalls[0].messages[1].content, /four-minute instrumental/);
     assert.equal(desk.writerCalls[0].model, 'xiaomi/mimo-v2.6-pro');
     assert.equal(desk.writerCalls[0].reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
+    assert.equal(desk.writerCalls[0].stream, true, 'all lyric thought levels use streaming transport');
+    assert.equal(desk.writerCalls[0].stream_options.include_usage, true);
     assert.match(polled.result.result.script, /four-minute instrumental/);
     assert.equal((await desk.request('get/script/job/:id', {}, { id }, 'other-owner')).status, 404);
   }

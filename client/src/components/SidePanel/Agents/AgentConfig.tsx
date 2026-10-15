@@ -1,3 +1,5 @@
+import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
+import { fishPaces, fishPaceValue, inworldRates, isFishVoice } from '~/utils/voicePace';
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
@@ -84,6 +86,9 @@ export default function AgentConfig() {
   const model = useWatch({ control, name: 'model' });
   /** D2d: the agent's configured speaking rate — auditions and previews use it live. */
   const watchedSpeakingRate = useWatch({ control, name: 'tts.speakingRate' });
+  const watchedVoice = useWatch({ control, name: 'tts.voiceId' });
+  const { providers: voiceProviders } = useVoiceCatalog();
+  const fishVoice = isFishVoice(watchedVoice, voiceProviders);
   /* Part 116 — the voice picker auditions with the character's OWN lines,
    * read live off the form so a persona pasted a second ago already speaks. */
   const watchedInstructions = useWatch({ control, name: 'instructions' });
@@ -98,7 +103,10 @@ export default function AgentConfig() {
    * name). KADE_AGENT_LINE_AUDITIONS flips it back on. */
   const agentLinesOn = false;
   const agentLines = useMemo(
-    () => (agentLinesOn ? extractAgentLines(watchedInstructions as string, watchedDescription as string) : []),
+    () =>
+      agentLinesOn
+        ? extractAgentLines(watchedInstructions as string, watchedDescription as string)
+        : [],
     [agentLinesOn, watchedInstructions, watchedDescription],
   );
   const speakingRate = typeof watchedSpeakingRate === 'number' ? watchedSpeakingRate : undefined;
@@ -400,7 +408,7 @@ export default function AgentConfig() {
             A dropdown of preset steps — simplest control for VoiceOver. */}
         <div className="mb-4">
           <label className={labelClass} id="agent-rate-label" htmlFor="agent-rate-dropdown">
-            {localize('com_agents_speaking_rate')}
+            {localize(fishVoice ? 'com_voice_pace_fish' : 'com_voice_speed_inworld')}
           </label>
           <Controller
             name="tts.speakingRate"
@@ -408,22 +416,20 @@ export default function AgentConfig() {
             render={({ field }) => {
               const rateOptions = [
                 { label: localize('com_agents_speaking_rate_default'), value: '' },
-                { label: '0.5 (slowest)', value: '0.5' },
-                { label: '0.6', value: '0.6' },
-                { label: '0.7', value: '0.7' },
-                { label: '0.8', value: '0.8' },
-                { label: '0.9', value: '0.9' },
-                { label: '1 (normal)', value: '1' },
-                { label: '1.1', value: '1.1' },
-                { label: '1.2', value: '1.2' },
-                { label: '1.3', value: '1.3' },
-                { label: '1.4', value: '1.4' },
-                { label: '1.5 (fastest)', value: '1.5' },
+                ...(fishVoice
+                  ? fishPaces.map((pace) => ({
+                      label: localize(pace.key),
+                      value: String(pace.value),
+                    }))
+                  : inworldRates.map((rate) => ({ label: `${rate}×`, value: String(rate) }))),
               ];
+              const normalizedRate = fishVoice
+                ? fishPaceValue(field.value ?? 1)
+                : Math.min(1.5, Math.max(0.5, field.value ?? 1));
               return (
                 <div className="flex flex-col gap-2">
                   <Dropdown
-                    value={field.value != null ? String(field.value) : ''}
+                    value={field.value != null ? String(normalizedRate) : ''}
                     options={rateOptions}
                     onChange={(newValue?: string | Option) => {
                       const v = typeof newValue === 'string' ? newValue : newValue?.value;
@@ -435,7 +441,9 @@ export default function AgentConfig() {
                     aria-labelledby="agent-rate-label"
                   />
                   <p className="text-xs text-text-secondary">
-                    {localize('com_agents_speaking_rate_help')}
+                    {localize(
+                      fishVoice ? 'com_voice_pace_fish_help' : 'com_voice_speed_inworld_help',
+                    )}
                   </p>
                 </div>
               );
@@ -448,7 +456,11 @@ export default function AgentConfig() {
             already use. "Instant" = effort 'none' (verified to zero reasoning
             tokens on GLM-5.2 and MiniMax-M3 via OpenRouter). */}
         <div className="mb-4">
-          <label className={labelClass} id="agent-answer-speed-label" htmlFor="agent-answer-speed-dropdown">
+          <label
+            className={labelClass}
+            id="agent-answer-speed-label"
+            htmlFor="agent-answer-speed-dropdown"
+          >
             {localize('com_agents_answer_speed')}
           </label>
           <Controller
@@ -465,12 +477,10 @@ export default function AgentConfig() {
               // Map any other stored effort (minimal/medium/xhigh, set via the
               // model panel) onto the nearest of our four so the dropdown
               // never silently shows the wrong thing.
-              const shown =
-                current === '' || current === 'none' || current === 'low' || current === 'high'
-                  ? current
-                  : current === 'minimal'
-                    ? 'low'
-                    : 'high';
+              const fallbackEffort = current === 'minimal' ? 'low' : 'high';
+              const shown = ['', 'none', 'low', 'high'].includes(current)
+                ? current
+                : fallbackEffort;
               return (
                 <div className="flex flex-col gap-2">
                   <Dropdown
