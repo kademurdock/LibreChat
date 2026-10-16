@@ -31,6 +31,27 @@ function parseKadeTtsSpeed(raw) {
   }
   return Math.min(1.5, Math.max(0.5, n));
 }
+/* Oct 16 2026: the listener's "Filler words and little sounds" switch. false =
+ * the proxy adds no spoken um/I mean and no breaths or little laughs to this
+ * request; true = on; undefined = the proxy's own default. JSON bodies send a
+ * boolean, multipart forms (the iPhone app, the web /tts/manual callers) send
+ * a string. Anything unrecognised is undefined, never a guess. */
+function parseKadeTtsFillers(raw) {
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const v = raw.trim().toLowerCase();
+  if (v === 'true' || v === '1' || v === 'on') {
+    return true;
+  }
+  if (v === 'false' || v === '0' || v === 'off') {
+    return false;
+  }
+  return undefined;
+}
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { getAppConfig } = require('~/server/services/Config');
 const { getUserDictionary, applyPronunciationRespellings } = require('~/models/kadePronunciation');
@@ -352,7 +373,11 @@ class TTSService {
    * @returns {Promise<Object>} The axios response object.
    * @throws {Error} If the provider is invalid or the request fails.
    */
-  async ttsRequest(provider, ttsSchema, { input, voice, stream = true, speed, sessionKey, kadeStream, delivery }) {
+  async ttsRequest(
+    provider,
+    ttsSchema,
+    { input, voice, stream = true, speed, sessionKey, kadeStream, delivery, fillers },
+  ) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -361,6 +386,11 @@ class TTSService {
     const [url, data, headers] = strategy.call(this, ttsSchema, input, voice, stream, speed);
     if (delivery && data && typeof data === 'object') {
       data.delivery = delivery; // Part 119.3 — the proxy reads it; other providers ignore it
+    }
+    /* Oct 16 2026: only a real boolean rides along; removeUndefined keeps
+     * `false` (it only drops undefined), so "off" reaches the proxy. */
+    if (typeof fillers === 'boolean' && data && typeof data === 'object') {
+      data.fillers = fillers;
     }
 
     /* PART 92.16 (Aug 24 2026) — SAY WHO IS SPEAKING, SO THE PROXY CAN GIVE THE
@@ -426,6 +456,7 @@ class TTSService {
     const kadeStream = req.body.stream === '1' || req.body.stream === true;
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
     const delivery = parseKadeTtsDelivery(req.body.delivery); // Part 119.3
+    const fillers = parseKadeTtsFillers(req.body.fillers); // Oct 16 2026
 
     if (!rawInput) {
       return res.status(400).send('Missing text in request body');
@@ -478,6 +509,7 @@ class TTSService {
           voice,
           speed,
           delivery,
+          fillers,
           sessionKey: req.user && req.user.id,
           kadeStream,
         });
@@ -495,6 +527,7 @@ class TTSService {
             stream: true,
             speed,
             delivery,
+            fillers,
             sessionKey: req.user && req.user.id,
           });
 
@@ -551,6 +584,13 @@ class TTSService {
     const ttsSchema = appConfig?.speech?.tts?.[provider];
     const voice = await this.getVoice(ttsSchema, req.body.voice, provider);
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
+    /* Oct 16 2026: the auto-play lane carries the same per-request choices as
+     * the manual lane, so a reply heard on auto-play sounds like the same reply
+     * played by hand: delivery (when a caller sends one), the listener's filler
+     * switch, and the per-seat context key (Part 92.16). */
+    const delivery = parseKadeTtsDelivery(req.body.delivery);
+    const fillers = parseKadeTtsFillers(req.body.fillers);
+    const sessionKey = req.user && req.user.id;
     // Kade July 20 2026: fetched once per stream, applied per chunk below.
     const dictionary = await safeGetDictionary(req.user && req.user.id);
 
@@ -584,6 +624,9 @@ class TTSService {
               input: applyPronunciationRespellings(update.text, dictionary),
               stream: true,
               speed,
+              delivery,
+              fillers,
+              sessionKey,
             });
 
             if (!shouldContinue) {
@@ -690,4 +733,5 @@ module.exports = {
   textToSpeech,
   streamAudio,
   getProvider,
+  parseKadeTtsFillers,
 };

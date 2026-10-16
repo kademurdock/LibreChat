@@ -18,10 +18,12 @@ describe('provider generation pace', () => {
     expect(isFishVoice('Miss-A (Amber A)', { 'Miss-A (Amber A)': 'fish' })).toBe(true);
     expect(isFishVoice('Voice (Classic)')).toBe(false);
   });
-  it('never reuses an old pace, voice, or text-only audio cache entry', () => {
-    const key = voiceCacheKey('same words', 'Fish voice', 1.2);
-    expect(key).not.toBe(voiceCacheKey('same words', 'Classic voice', 1.2));
-    expect(key).not.toBe(voiceCacheKey('same words', 'Fish voice', 1));
-    expect(key).toContain('pacing-v2');
+  it('never reuses an old pace, voice, filler, or text-only audio cache entry', () => {
+    const key = voiceCacheKey('same words', 'Fish voice', 1.2, true);
+    expect(key).not.toBe(voiceCacheKey('same words', 'Classic voice', 1.2, true));
+    expect(key).not.toBe(voiceCacheKey('same words', 'Fish voice', 1, true));
+    expect(key).not.toBe(voiceCacheKey('same words', 'Fish voice', 1.2, false));
+    expect(key).toContain('pacing-v3');
+    expect(key).not.toContain('pacing-v2');
   });
 });

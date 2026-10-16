@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useRecoilValue } from 'recoil';
 import { ChevronDown, Volume2, Check } from 'lucide-react';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import {
@@ -16,6 +17,8 @@ import { useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 import { cn } from '~/utils';
+import { generationRate } from '~/utils/voicePace';
+import store from '~/store';
 
 /**
  * ♿ KADE D2b (2026-07-01): audition-as-you-browse voice picker for the agent
@@ -148,6 +151,8 @@ function useVoiceAudition({
   agentLines?: string[];
 }) {
   const { token } = useAuthContext();
+  /** Oct 16 2026: the listener's filler switch, sent exactly as chat sends it. */
+  const fillers = useRecoilValue(store.voiceFillers);
   const lastLineRef = useRef<string | null>(null);
   /** ONE AudioContext, unlocked inside the tap that opens the list. Web Audio is
    * the reliable iOS path here: once a context is resumed by a real gesture,
@@ -226,9 +231,12 @@ function useVoiceAudition({
         }
         // An agent line varies per play on purpose, so it is keyed by its own
         // text — the same line for the same voice still replays from cache.
+        // The filler switch is in the key too: a take made with fillers on must not replay
+        // after the listener turns them off.
+        const fillerKey = fillers ? 'um' : 'plain';
         const cacheKey = agentLine != null
-          ? `${voice}|a:${agentLine}|${speed ?? ''}`
-          : `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
+          ? `${voice}|a:${agentLine}|${speed ?? ''}|${fillerKey}`
+          : `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}|${fillerKey}`;
         let buffer = cacheRef.current.get(cacheKey);
         if (buffer == null) {
           const fd = new FormData();
@@ -237,6 +245,7 @@ function useVoiceAudition({
           if (typeof speed === 'number') {
             fd.append('speed', String(speed));
           }
+          fd.append('fillers', String(fillers));
           const res = await fetch('/api/files/speech/tts/manual', {
             method: 'POST',
             body: fd,
@@ -285,7 +294,7 @@ function useVoiceAudition({
         }
       }
     },
-    [token, auditionTemplate, speed, agentLines, stopSource],
+    [token, auditionTemplate, speed, fillers, agentLines, stopSource],
   );
 
   /** Debounced audition — call on option focus/hover. Rapid movement through
@@ -329,14 +338,16 @@ function useVoiceAudition({
 export default function AgentVoicePicker({
   value,
   onChange,
-  speed,
+  speakingRate,
   agentId,
   agentLines,
 }: {
   value?: string | null;
   onChange: (voice?: string) => void;
-  /** D2d: the agent's configured speaking rate — auditions play at this pace. */
-  speed?: number;
+  /** D2d: the agent's configured speaking rate. Oct 16 2026: auditions are sent at the pace
+   * chat would use for this character — generationRate(rate, listener pace), the listener's
+   * pace choice winning — not the bare rate. */
+  speakingRate?: number;
   /** ♿ July 17 2026 (proposal B): lets the picker warn the EDITOR when their
    * own personal pick is shadowing the builder voice they're setting here. */
   agentId?: string | null;
@@ -378,9 +389,10 @@ export default function AgentVoicePicker({
   const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
+  const pacePreference = useRecoilValue(store.voicePacePreference);
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
     auditionTemplate,
-    speed,
+    speed: generationRate(speakingRate, pacePreference),
     agentLines,
   });
   const rootRef = useRef<HTMLDivElement>(null);

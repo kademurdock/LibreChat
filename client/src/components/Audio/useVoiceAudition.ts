@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { logger } from '~/utils';
+import store from '~/store';
 
 /**
  * ♿ KADE — shared "audition as you browse" engine (Web Audio).
@@ -30,8 +32,12 @@ export function auditionLine(voice: string, template?: string) {
   return line.split('{voice}').join(voice);
 }
 
+/** Oct 16 2026: an audition sends what a real chat message from that character would send —
+ * `speed` is the caller's generationRate(character rate, listener pace), and the listener's
+ * filler switch rides along — so the sample sounds like that character's voice messages. */
 export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: string; speed?: number }) {
   const { token } = useAuthContext();
+  const fillers = useRecoilValue(store.voiceFillers);
   const ctxRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const cacheRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -86,7 +92,7 @@ export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate
       const seq = ++seqRef.current;
       setError(null);
       try {
-        const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}`;
+        const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}|${fillers ? 'um' : 'plain'}`;
         let buffer = cacheRef.current.get(cacheKey);
         if (buffer == null) {
           const fd = new FormData();
@@ -95,6 +101,7 @@ export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate
           if (typeof speed === 'number') {
             fd.append('speed', String(speed));
           }
+          fd.append('fillers', String(fillers));
           const res = await fetch('/api/files/speech/tts/manual', {
             method: 'POST',
             body: fd,
@@ -140,7 +147,7 @@ export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate
         }
       }
     },
-    [token, auditionTemplate, speed, stopSource],
+    [token, auditionTemplate, speed, fillers, stopSource],
   );
 
   const audition = useCallback(

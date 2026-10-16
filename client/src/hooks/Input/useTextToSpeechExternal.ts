@@ -11,13 +11,12 @@ import {
   stopWatchingVoiceAudio,
 } from '~/components/Chat/character/voice-playback.mjs';
 
-const createFormData = (text: string, voice: string, speed?: number) => {
+const createFormData = (text: string, voice: string, speed: number, fillers: boolean) => {
   const formData = new FormData();
   formData.append('input', text);
   formData.append('voice', voice);
-  if (typeof speed === 'number') {
-    formData.append('speed', String(speed)); // Kade D2d: agent speaking rate
-  }
+  formData.append('speed', String(speed)); // Kade D2d: agent speaking rate
+  formData.append('fillers', String(fillers)); // Oct 16 2026: the listener's filler switch
   return formData;
 };
 
@@ -43,6 +42,7 @@ function useTextToSpeechExternal({
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const pacePreference = useRecoilValue(store.voicePacePreference);
   const speed = generationRate(voiceSpeed, pacePreference);
+  const fillers = useRecoilValue(store.voiceFillers);
 
   const [downloadFile, setDownloadFile] = useState(false);
 
@@ -122,6 +122,7 @@ function useTextToSpeechExternal({
               inputText,
               String(variables.get('voice') ?? ''),
               Number(variables.get('speed') ?? 1),
+              variables.get('fillers') !== 'false',
             ),
           );
           const response = new Response(audioBlob);
@@ -149,7 +150,7 @@ function useTextToSpeechExternal({
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice ?? '', speed);
+    const formData = createFormData(text, voice ?? '', speed, fillers);
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -163,7 +164,7 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(voiceCacheKey(text, voice, speed));
+    const cachedResponse = await caches.match(voiceCacheKey(text, voice, speed, fillers));
     if (!cachedResponse) {
       return startMutation(text, download);
     }

@@ -7,6 +7,7 @@ import {
   AutomaticPlaybackSwitch,
   CloudBrowserVoicesSwitch,
   PlaybackRate,
+  VoiceFillersSwitch,
 } from '../SettingsTabs/Speech/TTS';
 import {
   SpeechToTextSwitch,
@@ -501,6 +502,15 @@ export const registry: SettingEntry[] = [
     section: 'tts',
     labelKey: 'com_ui_settings_label_playback_rate',
     Component: PlaybackRate,
+  },
+  // Oct 16 2026: spoken um / I mean, breaths and little laughs in what you hear
+  {
+    id: 'voiceFillers',
+    tab: SPEECH,
+    section: 'tts',
+    labelKey: 'com_voice_fillers',
+    keywords: ['um', 'filler', 'breath', 'laugh', 'natural', 'human', 'voice message'],
+    Component: VoiceFillersSwitch,
   },
   {
     id: 'cacheTTS',

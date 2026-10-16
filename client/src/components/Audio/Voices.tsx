@@ -9,6 +9,7 @@ import { cn, logger } from '~/utils';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useVoiceAudition } from '~/components/Audio/useVoiceAudition';
 import { speechAudioBlob } from '~/hooks/Audio/speech';
+import { generationRate } from '~/utils/voicePace';
 import store from '~/store';
 import {
   saveAgentVoicePreference,
@@ -105,6 +106,8 @@ export function compareVoices(a: string, b: string): number {
  */
 function useVoicePreview() {
   const { token } = useAuthContext();
+  /** Oct 16 2026: the listener's filler switch, sent exactly as chat sends it. */
+  const fillers = useRecoilValue(store.voiceFillers);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -143,7 +146,8 @@ function useVoicePreview() {
   // handler (iOS Safari blocks play() if the element is first touched after an
   // await), fetches the sample, and points the element at it.
   // D2d: `text` lets callers supply the catalog's expressive sample monologue;
-  // `speed` is the optional per-agent speaking rate (0.5–1.5).
+  // `speed` is the pace to generate at (0.5–1.5): VoicePreviewButton passes the same
+  // generationRate chat would send for that character.
   const play = useCallback(async (
     voiceId: string,
     audio: HTMLAudioElement,
@@ -156,6 +160,7 @@ function useVoicePreview() {
       if (typeof opts?.speed === 'number') {
         fd.append('speed', String(opts.speed));
       }
+      fd.append('fillers', String(fillers));
 
       const doFetch = () =>
         fetch('/api/files/speech/tts/manual', {
@@ -222,7 +227,7 @@ function useVoicePreview() {
       setError('Preview failed: could not reach the voice server.');
       stop();
     }
-  }, [stop, token]);
+  }, [stop, token, fillers]);
 
   const togglePreview = useCallback(
     (voiceId: string, opts?: { text?: string; speed?: number }) => {
@@ -259,14 +264,18 @@ function useVoicePreview() {
 export function VoicePreviewButton({
   voiceId,
   disabled,
-  speed,
+  speakingRate,
 }: {
   voiceId: string;
   disabled: boolean;
-  /** D2d: optional speaking rate so the preview matches the agent's configured pace. */
-  speed?: number;
+  /** The character's own speaking rate (tts.speakingRate). Oct 16 2026: the preview is sent at
+   * the pace chat would use for that character — generationRate(rate, listener pace), where
+   * the listener's pace choice wins — instead of the bare rate. */
+  speakingRate?: number;
 }) {
   const localize = useLocalize();
+  const pacePreference = useRecoilValue(store.voicePacePreference);
+  const speed = generationRate(speakingRate, pacePreference);
   const { isPlaying, togglePreview, error } = useVoicePreview();
   // The same expressive monologue the /voices library page performs.
   const { sample: sampleText } = useVoiceCatalog();
@@ -440,7 +449,15 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   // July 23 2026: + loose category sections for the same list (her ask: "the
   // madness and chaos should have some form and shape").
   const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalog();
-  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({ auditionTemplate });
+  /* Oct 16 2026: audition at the pace chat uses for the active character (its rate, or the
+   * listener's own pace when one is chosen), so the sample sounds like its voice messages. */
+  const voiceSpeed = useRecoilValue(store.voiceSpeed);
+  const pacePreference = useRecoilValue(store.voicePacePreference);
+  const auditionSpeed = generationRate(voiceSpeed, pacePreference);
+  const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
+    auditionTemplate,
+    speed: auditionSpeed,
+  });
 
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -816,7 +833,7 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
       {/* ♿ C3: long-form Preview button stays — full audition of the selected voice. */}
       {current != null && (
         <div className="flex items-start justify-end gap-2">
-          <VoicePreviewButton voiceId={current} disabled={disabled} />
+          <VoicePreviewButton voiceId={current} disabled={disabled} speakingRate={voiceSpeed} />
           <VoiceFlagButton voiceId={current} disabled={disabled} />
         </div>
       )}

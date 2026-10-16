@@ -395,7 +395,7 @@ export default function AgentConfig() {
                   <AgentVoicePicker
                     value={current}
                     onChange={(v) => field.onChange(v ?? undefined)}
-                    speed={speakingRate}
+                    speakingRate={speakingRate}
                     agentId={agent_id}
                     agentLines={agentLines}
                   />
@@ -404,7 +404,11 @@ export default function AgentConfig() {
                   </p>
                   {current !== '' && (
                     <div className="flex items-start justify-start gap-2">
-                      <VoicePreviewButton voiceId={current} disabled={false} speed={speakingRate} />
+                      <VoicePreviewButton
+                        voiceId={current}
+                        disabled={false}
+                        speakingRate={speakingRate}
+                      />
                       <VoiceFlagButton voiceId={current} />
                     </div>
                   )}

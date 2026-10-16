@@ -24,6 +24,7 @@ export default function StreamAudio({ index = 0 }) {
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const speed = generationRate(voiceSpeed, pacePreference);
+  const fillers = useRecoilValue(store.voiceFillers);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const voiceCallActive = useRecoilValue(store.voiceCallActiveState);
@@ -93,7 +94,7 @@ export default function StreamAudio({ index = 0 }) {
           setGlobalAudioURL(null);
         }
 
-        let cacheKey = voiceCacheKey(latestMessage?.text ?? '', voice, speed);
+        let cacheKey = voiceCacheKey(latestMessage?.text ?? '', voice, speed, fillers);
         const cache = await caches.open('tts-responses');
         const cachedResponse = await cache.match(cacheKey);
         if (!speechRequest.isCurrent(controller)) return;
@@ -120,6 +121,7 @@ export default function StreamAudio({ index = 0 }) {
             voice,
             // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
             speed,
+            fillers, // Oct 16 2026: the listener's filler switch
           }),
         });
 
@@ -156,7 +158,7 @@ export default function StreamAudio({ index = 0 }) {
           const targetMessage = latestMessages.find(
             (msg) => msg.messageId === latestMessage?.messageId,
           );
-          cacheKey = voiceCacheKey(targetMessage?.text ?? '', voice, speed);
+          cacheKey = voiceCacheKey(targetMessage?.text ?? '', voice, speed, fillers);
           if (cacheKey) await cache.put(cacheKey, new Response(audioBlob));
         }
         if (audioBlob && !streamed && speechRequest.isCurrent(controller)) {
@@ -191,6 +193,7 @@ export default function StreamAudio({ index = 0 }) {
     audioRef,
     voice,
     speed,
+    fillers,
     token,
     speechRequest,
   ]);

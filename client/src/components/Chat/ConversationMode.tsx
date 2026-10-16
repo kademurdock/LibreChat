@@ -380,6 +380,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const voicePacePreference = useRecoilValue(store.voicePacePreference);
   const generationSpeed = generationRate(voiceSpeed, voicePacePreference); // Kade D2d: agent's speaking rate
+  const voiceFillers = useRecoilValue(store.voiceFillers); // Oct 16 2026: the listener's filler switch
   const setVoiceCallActive = useSetRecoilState(store.voiceCallActiveState);
   const { pauseGlobalAudio } = usePauseGlobalAudio(index);
   const { token } = useAuthContext();
@@ -1257,6 +1258,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             input: text,
             voice: useVoice,
             speed: generationSpeed,
+            fillers: voiceFillers,
           }),
         });
         if (!resp.ok) return null;
@@ -1266,7 +1268,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         return null;
       }
     },
-    [voice, generationSpeed, token],
+    [voice, generationSpeed, voiceFillers, token],
   );
 
   // -- LLM streaming turn ------------------------------------------------------

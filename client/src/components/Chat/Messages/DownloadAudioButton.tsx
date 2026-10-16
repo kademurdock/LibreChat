@@ -61,6 +61,7 @@ export default function DownloadAudioButton({
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const preference = useRecoilValue(store.voicePacePreference);
+  const fillers = useRecoilValue(store.voiceFillers);
   const [loading, setLoading] = useState(false);
 
   const { mutate } = useTextToSpeechMutation({
@@ -96,6 +97,7 @@ export default function DownloadAudioButton({
     formData.append('input', content);
     formData.append('voice', voice ?? '');
     formData.append('speed', String(generationRate(voiceSpeed, preference)));
+    formData.append('fillers', String(fillers)); // Oct 16 2026: a saved clip sounds like the played one
     mutate(formData);
   };
 

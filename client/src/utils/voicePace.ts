@@ -27,10 +27,19 @@ export function isFishVoice(
   return provider ? provider === 'fish' : !voice?.endsWith('(Classic)');
 }
 
+/** Oct 16 2026: v3 adds the listener's filler switch, so audio made with fillers on never
+ * replays after they are switched off (and the other way round). Older v2 entries are
+ * never matched again. */
 export function voiceCacheKey(
   text: string,
   voice: string | null | undefined,
   speed: number,
+  fillers: boolean,
 ): string {
-  return `/__voice-cache/pacing-v2?${new URLSearchParams({ text, voice: voice ?? '', speed: String(speed) })}`;
+  return `/__voice-cache/pacing-v3?${new URLSearchParams({
+    text,
+    voice: voice ?? '',
+    speed: String(speed),
+    fillers: fillers ? '1' : '0',
+  })}`;
 }
