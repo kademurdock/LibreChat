@@ -225,6 +225,8 @@ export function createPuppetRig(
       const t = now();
       const dt = lastAt ? (t - lastAt) / 1000 : 0;
       lastAt = t;
+      // Visible first, so a canvas that was hidden has a layout size to draw at.
+      show(true);
       const [w, h] = fit();
       const playing = t < playUntil ? playName : '';
       if (!frame.active) {
@@ -239,7 +241,6 @@ export function createPuppetRig(
         }
         lastAt = 0;
         voiceAt = -Infinity;
-        show(true);
         return;
       }
       signature = '';
@@ -266,7 +267,6 @@ export function createPuppetRig(
           ch[c] = clamp((ch[c] || 0) + v * Math.min(1, level * 1.5), 0, 1);
       }
       draw(ch, w, h);
-      show(true);
     } catch {
       failed = true;
       show(false);
