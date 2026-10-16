@@ -292,3 +292,19 @@ test('an answer that is not clearly a designed person is treated as a creature',
   );
   assert.equal(out.recipe.hair.style, 'afro');
 });
+
+test('a portrait is read carefully: notes first, copy only what is seen, low temperature', async () => {
+  const { posts } = await designerCall({}, (p) =>
+    p.recipeFromPicture('https://example.invalid/p.png', 'Professor Vance: a history teacher'),
+  );
+  const body = posts[0][1];
+  assert.equal(body.temperature, 0.3);
+  assert.equal(body.max_tokens, 1400);
+  const text = body.messages[1].content[0].text;
+  assert.match(text, /"seen"/);
+  assert.match(text, /never add glasses/);
+  assert.match(text, /always draws a necktie/);
+  assert.match(text, /the portrait wins/);
+  const words = await designerCall({}, (p) => p.recipeFromWords('a tall cowboy'));
+  assert.equal(words.posts[0][1].temperature, 0.7, 'words keep their livelier temperature');
+});

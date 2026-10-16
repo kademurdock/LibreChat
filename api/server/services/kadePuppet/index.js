@@ -203,7 +203,10 @@ const PERSON_CHECK =
 
 const NOT_PEOPLE = new Set(['creature', 'animal', 'robot', 'object', 'monster', 'thing']);
 
-async function askModel(userContent, { maxTokens = 900, requirePerson = false } = {}) {
+async function askModel(
+  userContent,
+  { maxTokens = 900, requirePerson = false, temperature = 0.7 } = {},
+) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
     const err = new Error('Body design is not configured right now.');
@@ -219,7 +222,7 @@ async function askModel(userContent, { maxTokens = 900, requirePerson = false } 
     {
       model: MODEL(),
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature,
       reasoning: { enabled: false },
       usage: { include: true },
       response_format: { type: 'json_object' },
@@ -283,21 +286,41 @@ async function recipeFromWords(words, base, { requirePerson = false } = {}) {
   });
 }
 
+/* Oct 16 2026: the first backfill's bodies were checked against all 198 people's portraits
+ * and half came out wrong in the same few ways: glasses, headphones, ties, chains, freckles
+ * and stubble nobody wore (the old prompt said "fill every field", and the description
+ * hint pulled props in: a professor got reading glasses), long or curly hair drawn as a
+ * near-shaved crop, mostly-dark hair turned grey, and skin a few shades off. The model now
+ * writes what it SEES first ("seen", dropped by normalizeRecipe), then copies only that,
+ * at a low temperature. */
+const PORTRAIT_LOOK =
+  'Design a puppet body that looks like the character in this portrait. Copy only what you can see. ' +
+  'Start the JSON with "seen": short plain notes on hair (length, texture, colour, worn up or down), skin ' +
+  'tone, apparent age, facial hair, glasses, headwear, earrings, necklace or tie, clothing and face marks. ' +
+  'Then choose the parts that match those notes. Rules: accessories, face marks and facial hair are none ' +
+  '(an empty accessories list, marks "none", facialHair "none") unless the portrait clearly shows them; ' +
+  'never add glasses, headphones, hats, headbands, ties, chains, earrings, freckles, beauty marks or ' +
+  'stubble that are not there. The "blazer" top always draws a necktie, so choose it only when the portrait ' +
+  'shows a tie. Hair length comes first: hair past the shoulders needs a long style, chin-to-shoulder hair a ' +
+  'bob or waves, and a short style only when the hair is above the ears; hair worn up is a top bun or ' +
+  'ponytail; curly hair stays curly. Silver, white or salt-and-pepper only when the hair is mostly grey. ' +
+  'Choose the skin tone closest to the face in the portrait.';
+
 /** Turn a portrait image URL (the agent's avatar) into a resembling recipe. */
 async function recipeFromPicture(imageUrl, hint) {
   const content = [
     {
       type: 'text',
       text:
-        'Design a puppet body that resembles the character in this portrait: face shape, skin, eyes, ' +
-        'hair, facial hair, clothes, glasses and other accessories, and any fantasy features. ' +
-        'Add glasses, headphones or other accessories only when the portrait shows them.' +
+        PORTRAIT_LOOK +
         PERSON_CHECK +
-        (hint ? ` The character: ${String(hint).slice(0, 600)}` : ''),
+        (hint
+          ? ` For context only (the portrait wins; add nothing from these words that the portrait does not show): ${String(hint).slice(0, 600)}`
+          : ''),
     },
     { type: 'image_url', image_url: { url: imageUrl } },
   ];
-  return askModel(content, { requirePerson: true });
+  return askModel(content, { requirePerson: true, temperature: 0.3, maxTokens: 1400 });
 }
 
 module.exports = {
