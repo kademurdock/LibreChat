@@ -86,6 +86,9 @@ export enum QueryKeys {
   skillStates = 'skillStates',
   /* General user favorites */
   favorites = 'favorites',
+  /* KADE puppet bodies */
+  agentBody = 'agentBody',
+  agentBodyCatalog = 'agentBodyCatalog',
 }
 
 // Dynamic query keys that require parameters
@@ -129,4 +132,7 @@ export enum MutationKeys {
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
   convoPin = 'convoPin',
+  /* KADE puppet bodies */
+  saveAgentBody = 'saveAgentBody',
+  deleteAgentBody = 'deleteAgentBody',
 }

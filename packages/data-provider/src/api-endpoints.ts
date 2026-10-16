@@ -293,6 +293,13 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
   return url;
 };
 
+/* KADE Oct 16 2026: puppet bodies for characters */
+export const agentBody = (path = '') => `${BASE_URL}/api/kade/agent-body${path ? `/${path}` : ''}`;
+export const agentBodyCatalog = () => agentBody('catalog');
+export const agentBodyById = (agentId: string) => agentBody(encodeURIComponent(agentId));
+export const agentBodyFromPortrait = (agentId: string) =>
+  agentBody(`${encodeURIComponent(agentId)}/from-portrait`);
+
 export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
 export const agentTask = (taskId: string) =>
   `${BASE_URL}/api/agents/chat/tasks/${encodeURIComponent(taskId)}`;
