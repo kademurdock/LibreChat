@@ -113,3 +113,61 @@ test('Angel links still open fresh chats when randomUUID is absent or throws', a
     assert.ok(url.searchParams.get('fresh'));
   }
 });
+
+/** A worker whose one window logs the order of what the click does to it. */
+function orderedWorker({ navigateFails = false, focusFails = false, windows = 1 } = {}) {
+  const events = new Map(),
+    steps = [];
+  const client = {
+    navigate: async () => {
+      steps.push('navigate');
+      if (navigateFails) throw new TypeError('not controlled by this worker');
+      return client;
+    },
+    focus: async () => {
+      steps.push('focus');
+      if (focusFails) throw new Error('no click allowance left');
+      return client;
+    },
+  };
+  const self = {
+    location: { origin: 'https://kademurdock.com' },
+    addEventListener: (name, fn) => events.set(name, fn),
+    clients: {
+      matchAll: async () => (windows ? [client] : []),
+      openWindow: async (url) => steps.push(`open ${url}`),
+    },
+  };
+  runInNewContext(source, { self, URL });
+  return {
+    steps,
+    click: async () => {
+      let work;
+      events.get('notificationclick')({
+        notification: { data: { url: '/c/new' }, close() {} },
+        waitUntil: (promise) => {
+          work = promise;
+        },
+      });
+      await work;
+    },
+  };
+}
+
+test('a click focuses the open window before navigating it', async () => {
+  const fixture = orderedWorker();
+  await fixture.click();
+  assert.deepEqual(fixture.steps, ['focus', 'navigate']);
+});
+
+test('a window this worker cannot navigate gets the page opened instead; a refused focus still navigates', async () => {
+  const uncontrolled = orderedWorker({ navigateFails: true });
+  await uncontrolled.click();
+  assert.deepEqual(uncontrolled.steps, ['focus', 'navigate', 'open https://kademurdock.com/c/new']);
+  const late = orderedWorker({ focusFails: true });
+  await late.click();
+  assert.deepEqual(late.steps, ['focus', 'navigate']);
+  const none = orderedWorker({ windows: 0 });
+  await none.click();
+  assert.deepEqual(none.steps, ['open https://kademurdock.com/c/new']);
+});
