@@ -26,6 +26,113 @@ const bodies = require('~/models/kadeAgentBody');
 const puppet = require('~/server/services/kadePuppet');
 
 const router = express.Router();
+
+/* ---------- one-time backfill (machine-to-machine) ----------
+ * POST /admin/backfill { secret, maxUSD = 1, limit = 300, dryRun, agentIds? } starts a
+ * background job that gives every character without a body a starting one: from its
+ * portrait when it has one (a small vision call), otherwise from its name and
+ * description. Hand-painted characters keep their own faces and are skipped. Same
+ * trust model as /api/kade/agent-promote (KADE_USAGE_EVENT_SECRET). Spend stops at
+ * maxUSD. GET /admin/backfill?secret= reports progress. */
+const HAND_PAINTED = new Set([
+  'agent_6llV0eMu4fmIaj8f2x1Sb', // Kiana
+  'agent_BSOLa3eNEZyjs-7abCjMt', // Della
+  'agent_TOdYS8v-bRxeNw0dia_Md', // Lilly (public)
+  'agent_JhouuajXMYsfhCTVMQCv_', // Lilly (Skylee's)
+  'agent_d26Mtu8mgOzkVGQECqO1a', // Harley
+  'agent_o7TKU3lK0Euo0MKgpNpvZ', // Witherspoon
+  'agent_NkG_Fb8_xLz8HFJyx4gNv', // Angel
+]);
+let backfill = null;
+const machine = (req) => {
+  const expected = process.env.KADE_USAGE_EVENT_SECRET;
+  const given = (req.body && req.body.secret) || req.get('x-kade-secret') || req.query.secret;
+  return !!expected && given === expected;
+};
+
+router.get('/admin/backfill', (req, res) => {
+  if (!machine(req)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  res.json(backfill || { state: 'idle' });
+});
+
+router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res) => {
+  if (!machine(req)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  if (backfill && backfill.state === 'running') {
+    return res.status(409).json({ error: 'A backfill is already running', backfill });
+  }
+  const b = req.body || {};
+  const maxUSD = Math.min(5, Math.max(0.01, Number(b.maxUSD) || 1));
+  const limit = Math.min(500, Math.max(1, parseInt(b.limit, 10) || 300));
+  const only = Array.isArray(b.agentIds) ? new Set(b.agentIds.map(String)) : null;
+  const mongoose = require('mongoose');
+  const agents = await mongoose.connection.db
+    .collection('agents')
+    .find({}, { projection: { id: 1, name: 1, description: 1, avatar: 1 } })
+    .toArray();
+  const existing = new Set((await bodies.KadeAgentBody.find({}, { agentId: 1 }).lean()).map((r) => r.agentId));
+  const todo = agents
+    .filter((a) => a.id && !HAND_PAINTED.has(a.id) && !existing.has(a.id) && (!only || only.has(a.id)))
+    .slice(0, limit);
+  backfill = { state: b.dryRun ? 'dry-run' : 'running', startedAt: new Date(), maxUSD, total: todo.length, done: 0, spentUSD: 0, results: [] };
+  if (b.dryRun) {
+    backfill.results = todo.map((a) => ({ agentId: a.id, name: a.name, from: a.avatar && a.avatar.filepath ? 'portrait' : 'words' }));
+    return res.json(backfill);
+  }
+  res.status(202).json({ ok: true, total: todo.length, maxUSD });
+  (async () => {
+    for (const a of todo) {
+      if (backfill.spentUSD >= maxUSD) {
+        backfill.state = 'stopped at spend cap';
+        break;
+      }
+      const hint = [a.name, a.description].filter(Boolean).join(': ').slice(0, 600);
+      let out = null;
+      let from = 'words';
+      try {
+        let url = a.avatar && a.avatar.filepath;
+        if (url && a.avatar.source === FileSources.s3) {
+          url = await refreshS3Url(a.avatar).catch(() => url);
+        }
+        if (url && /^https:\/\//i.test(String(url))) {
+          from = 'portrait';
+          out = await puppet.recipeFromPicture(url, hint).catch(() => null);
+        }
+        if (!out) {
+          from = 'words';
+          out = await puppet.recipeFromWords(`A character called ${hint || 'a friendly helper'}`);
+        }
+        backfill.spentUSD += out.costUSD || 0;
+        const compiled = await puppet.compile(out.recipe);
+        const saved = await bodies.saveAgentBody(a.id, {
+          recipe: compiled.recipe,
+          description: compiled.description,
+          source: 'auto',
+          updatedBy: 'backfill',
+          baseRev: 0,
+        });
+        backfill.results.push({ agentId: a.id, name: a.name, from, ok: saved.ok, costUSD: out.costUSD, description: compiled.description });
+      } catch (e) {
+        backfill.results.push({ agentId: a.id, name: a.name, from, ok: false, error: String(e.message || e).slice(0, 200) });
+      }
+      backfill.done += 1;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    if (backfill.state === 'running') {
+      backfill.state = 'finished';
+    }
+    backfill.finishedAt = new Date();
+    logger.info(`[kadeAgentBody] backfill ${backfill.state}: ${backfill.results.filter((r) => r.ok).length}/${backfill.total} bodies, $${backfill.spentUSD.toFixed(4)}`);
+  })().catch((e) => {
+    backfill.state = 'failed';
+    backfill.error = e.message;
+    logger.error(`[kadeAgentBody] backfill failed: ${e.message}`);
+  });
+});
+
 router.use(requireJwtAuth);
 
 const json = express.json({ limit: '64kb' });

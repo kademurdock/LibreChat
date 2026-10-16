@@ -178,6 +178,9 @@ async function askModel(userContent, { maxTokens = 900 } = {}) {
       reasoning: { enabled: false },
       usage: { include: true },
       response_format: { type: 'json_object' },
+      /* Portraits and character descriptions are family data: keep Kade's
+       * zero-data-retention rule, as every fleet model does in reframe. */
+      provider: { zdr: true, data_collection: 'deny', allow_fallbacks: true },
       messages: [
         { role: 'system', content: SYSTEM(cat) },
         { role: 'user', content: userContent },
