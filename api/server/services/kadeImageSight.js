@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { openRouterCost } = require('./kadeRealCost');
+const { mediaProvider, readReply } = require('./kadeMediaRoute');
 
 /**
  * KADE July 13 2026 — "sight" for text-only agents.
@@ -105,6 +106,9 @@ async function describeAttachedImages(imageParts, opts = {}) {
             { role: 'user', content },
           ],
           usage: { include: true },
+          /* Oct 16 2026: people's photos go only to hosts that keep no copy and train on nothing
+           * (her zero-retention rule), DeepInfra first (kadeMediaRoute). */
+          provider: mediaProvider(VISION_MODEL, 'image'),
           ...(visionReasoning(VISION_MODEL) ? { reasoning: visionReasoning(VISION_MODEL) } : {}),
         },
         {
@@ -117,7 +121,13 @@ async function describeAttachedImages(imageParts, opts = {}) {
           timeout: 60000,
         },
       );
-      const text = r.data?.choices?.[0]?.message?.content;
+      /* A refused reply ("considered high risk") is no description: that photo is left out. */
+      const { text, refused } = readReply(r.data, VISION_MODEL, 'image');
+      if (refused) {
+        logger.warn(
+          `[kadeImageSight] image ${idx} was refused by ${r.data?.provider || 'the host'} (content_filter)`,
+        );
+      }
       /* Part 295: with her Google key in OpenRouter (BYOK) usage.cost is only OpenRouter's fee.
        * A reply that names no real cost (a BYOK one without Google's figure) is priced from its
        * tokens at the describer's env-tunable rates, as kadeDescribe does. */
@@ -127,7 +137,7 @@ async function describeAttachedImages(imageParts, opts = {}) {
         ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_DESCRIBE_IN_USD_PER_M || 0.435) +
           (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_DESCRIBE_OUT_USD_PER_M || 0.87)) /
           1e6;
-      return { text: typeof text === 'string' ? text.trim() : '', cost, idx };
+      return { text: text || '', cost, idx };
     };
 
     const results = await Promise.all(urls.map((u, i) => describeOne(u, i).catch((e) => {

@@ -37,6 +37,7 @@ const { execFile } = require('child_process');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
+const { mediaProvider, readReply } = require('~/server/services/kadeMediaRoute');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
@@ -93,21 +94,47 @@ const INSTRUCTION = (offsetSeconds, totalSeconds, title, category) =>
   'Answer ONLY with JSON: {"summary": "two or three sentences about the whole segment", "scenes": [{"t": <seconds from the START OF THIS SEGMENT, a number>, "text": "one or two sentences"}]}. ' +
   'Make a scene at every cut or new shot that matters — commercials and montages get a scene every few seconds, a talking-head show every half minute or so. Keep each scene short enough to be spoken in under ten seconds.';
 
+/**
+ * One look at a shrunk segment. Oct 16 2026: only zero-retention hosts that hear the soundtrack
+ * (kadeMediaRoute: Novita for MiMo; DeepInfra drops it and looks at a fixed handful of frames), so
+ * the description can leave out what the audio already says. json_object, not json_schema: Novita
+ * refuses a strict schema. `refused` (a content_filter reply) and `unheard` (a host that cannot hear
+ * it answered) come back with no text; their cost is still counted.
+ */
 async function askModel(fileBuf, mime, prompt) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) throw new Error('OPENROUTER_KEY not configured');
   const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: MODEL(), max_tokens: 24000, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: true, effort: 'medium' } } : {}), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' } },
+    { model: MODEL(), max_tokens: 24000, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: true, effort: 'medium' } } : {}), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' }, provider: mediaProvider(MODEL(), 'video') },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 300000 },
   );
-  const text = r.data?.choices?.[0]?.message?.content;
+  const { text, refused, unheard } = readReply(r.data, MODEL(), 'video');
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
   /* Part 295: OpenRouter's fee plus, with her Google key in OpenRouter (BYOK), Google's charge. */
   const costUSD = openRouterCost(usage) ?? est;
-  return { text: typeof text === 'string' ? text.trim() : '', costUSD, tokens: usage.prompt_tokens || 0 };
+  return { text: text || '', costUSD, tokens: usage.prompt_tokens || 0, refused, unheard, provider: r.data?.provider || '' };
+}
+
+/**
+ * Asks about one segment, once more after a refusal (Novita's filter refuses a harmless clip now and
+ * then). A second refusal, or an answer from a host that cannot hear the soundtrack, stops the job
+ * with a plain reason rather than saving it; `costUSD` carries every call's cost either way.
+ */
+async function lookAt(fileBuf, mime, prompt) {
+  let costUSD = 0;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const r = await askModel(fileBuf, mime, prompt);
+    costUSD += r.costUSD;
+    if (r.unheard) {
+      throw Object.assign(new Error(`The video went to ${r.provider}, which cannot hear its soundtrack, so that description was not used.`), { costUSD });
+    }
+    if (!r.refused) return { ...r, costUSD };
+    logger.warn(`[library/describe] ${r.provider || 'the host'} refused a segment (content_filter)${attempt === 1 ? '; asking once more' : ''}`);
+  }
+  throw Object.assign(new Error('The video service refused to describe part of this video twice. Try again later.'), { costUSD });
 }
 
 function parseScenes(text) {
@@ -161,7 +188,14 @@ async function describeTrack({ signedUrl, mime, title, category, onProgress, fro
         buf = await fs.readFile(smaller);
         if (buf.length > MODEL_BYTES_CAP) throw new Error('Even shrunk, a segment is too big for the model. Lower KADE_DESCRIBE_SEGMENT_SECONDS.');
       }
-      const r = await askModel(buf, 'video/mp4', INSTRUCTION(start, total, title, category) + (to > 0 ? ' This is a RECAP of the stretch a viewer just watched; be complete about what happened in it.' : ''));
+      let r;
+      try {
+        r = await lookAt(buf, 'video/mp4', INSTRUCTION(start, total, title, category) + (to > 0 ? ' This is a RECAP of the stretch a viewer just watched; be complete about what happened in it.' : ''));
+      } catch (e) {
+        /* What the job spent before it stopped, for the server log. */
+        e.costUSD = out.costUSD + (e.costUSD || 0);
+        throw e;
+      }
       const parsed = parseScenes(r.text);
       out.costUSD += r.costUSD;
       out.frames += Math.round(len * 6);
@@ -198,7 +232,7 @@ async function drain() {
         logKadeUsage({ userId: job.userId, service: 'describe', quantity: 1, unit: 'items', costUSD: result.costUSD, metadata: { source: 'library', book: job.bookId, track: job.t, model: result.model, seconds: result.seconds, segments: result.segments, recap: job.to > 0 ? `${Math.round(job.from)}-${Math.round(job.to)}` : '' } });
         logger.info(`[library/describe] "${job.title}" track ${job.t}${job.to > 0 ? ` recap ${Math.round(job.from)}-${Math.round(job.to)}s` : ''}: ${result.scenes.length} scenes, ${Math.round(result.seconds)} s, ${result.segments} segment(s), $${result.costUSD.toFixed(4)}`);
       } catch (e) {
-        logger.warn(`[library/describe] "${job.title}" track ${job.t} FAILED: ${e.message} ${String(e.stderr || '').slice(0, 300)}`);
+        logger.warn(`[library/describe] "${job.title}" track ${job.t} FAILED${e.costUSD > 0 ? ` after $${e.costUSD.toFixed(4)} of model calls` : ''}: ${e.message} ${String(e.stderr || '').slice(0, 300)}`);
         await job.onDone(e, null).catch(() => {});
       } finally {
         delete progress[k];
@@ -218,4 +252,4 @@ function enqueue(job) {
   return queue.length;
 }
 
-module.exports = { enqueue, estimate, progressOf: (bookId, t) => progress[`${bookId}:${t}`] || '', queued: () => queue.length, ENABLED, _internals: { parseScenes, INSTRUCTION } };
+module.exports = { enqueue, estimate, progressOf: (bookId, t) => progress[`${bookId}:${t}`] || '', queued: () => queue.length, ENABLED, _internals: { parseScenes, INSTRUCTION, askModel, lookAt } };

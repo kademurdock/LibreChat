@@ -1651,13 +1651,21 @@ const replyBody = JSON.stringify({
   protectedSounds: [],
 });
 
+/* Oct 16 2026: every look keeps zero retention (Vertex's flex and standard endpoints qualify). */
 const flexRoute = {
   only: ['google-vertex/global/flex'],
   ignore: ['google-ai-studio'],
   allow_fallbacks: false,
+  zdr: true,
+  data_collection: 'deny',
   max_price: { prompt: 1.5, completion: 7.5 },
 };
-const standardRoute = { ignore: ['google-ai-studio'], max_price: { prompt: 1.5, completion: 7.5 } };
+const standardRoute = {
+  ignore: ['google-ai-studio'],
+  zdr: true,
+  data_collection: 'deny',
+  max_price: { prompt: 1.5, completion: 7.5 },
+};
 
 test('providers: the vision request drops a routing suffix, pins reasoning, sends no temperature, and asks Vertex flex by default, never AI Studio', async () => {
   process.env.OPENROUTER_KEY = 'test-key';

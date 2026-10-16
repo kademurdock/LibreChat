@@ -139,6 +139,7 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   if (!key) {
     return null;
   }
+  const { contentKind, mediaProvider, readReply } = require('~/server/services/kadeMediaRoute');
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     /* July 13 2026 money audit: request usage so gallery descriptions stop
@@ -157,10 +158,11 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       reasoning: describeIsGeminiPro ? { effort: 'low', exclude: true } : { enabled: false },
       /* Oct 16 2026: people's own pictures and videos go only to hosts that
        * keep no copy and train on nothing (her zero-retention rule). */
-      /* DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200 with a
-       * content_filter refusal ("considered high risk"); the check below keeps that from ever
-       * being read to someone as a description. */
-      provider: { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true },
+      /* Pictures DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200
+       * with a content_filter refusal ("considered high risk"); the check below keeps that from
+       * ever being read to someone as a description. A video goes only to Novita: DeepInfra
+       * drops a video's soundtrack and looks at a fixed handful of frames (kadeMediaRoute). */
+      provider: mediaProvider(DESCRIBE_MODEL, contentKind(content)),
       messages: [{ role: 'user', content }],
       usage: { include: true },
     },
@@ -188,13 +190,9 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       });
     } catch { /* logging must never break a description */ }
   }
-  const choice = r.data?.choices?.[0];
-  // A refused or filtered reply is not a description; the caller's fallback runs instead.
-  if (choice?.finish_reason === 'content_filter' || choice?.native_finish_reason === 'content_filter') {
-    return null;
-  }
-  const text = choice?.message?.content;
-  return typeof text === 'string' ? text.trim() : null;
+  // A refused or filtered reply is not a description, nor is a video answered by a host that
+  // cannot hear it; the caller's fallback runs instead.
+  return readReply(r.data, DESCRIBE_MODEL, contentKind(content)).text;
 }
 
 const DESCRIBE_INSTRUCTION =

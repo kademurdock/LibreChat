@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { openRouterCost } = require('./kadeRealCost');
+const { contentKind, mediaProvider, readReply } = require('./kadeMediaRoute');
 
 const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
@@ -137,33 +138,58 @@ function visionReasoning(model) {
   return /-pro/.test(String(model)) ? { effort: 'low' } : null;
 }
 
+/**
+ * One describer call. Oct 16 2026: only zero-retention hosts (kadeMediaRoute) — a video only to the
+ * hosts that hear its soundtrack, pictures and text DeepInfra first. A refusal (Novita's filter
+ * sometimes refuses a harmless request) is asked once more and is never returned as text; a video
+ * answered by a host that cannot hear it is not used. Every call's cost is counted, used or not.
+ * The scanned-PDF `file` part is still turned into text by OpenRouter's Mistral OCR plugin, which
+ * zero retention does not cover (OpenRouter: ZDR "only applies to provider routing").
+ */
 async function orChat(content, maxTokens = 900) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
     throw new Error('OPENROUTER_KEY not configured');
   }
-  const r = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: DESCRIBE_MODEL,
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content }],
-      usage: { include: true },
-      ...(visionReasoning(DESCRIBE_MODEL) ? { reasoning: visionReasoning(DESCRIBE_MODEL) } : {}),
-    },
-    { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
-  );
-  const text = r.data?.choices?.[0]?.message?.content;
-  const usage = r.data?.usage || {};
-  const estUSD =
-    ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M +
-      (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M) /
-    1e6;
-  // Prefer OpenRouter's real reported cost (with a BYOK key, its fee plus what Google charged,
-  // Part 295); fall back to the env-tunable estimate.
-  const reported = openRouterCost(usage);
-  const costUSD = reported != null ? reported : estUSD;
-  return { text: typeof text === 'string' ? text.trim() : null, costUSD };
+  const kind = contentKind(content);
+  let costUSD = 0;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const r = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: DESCRIBE_MODEL,
+        max_tokens: maxTokens,
+        messages: [{ role: 'user', content }],
+        usage: { include: true },
+        provider: mediaProvider(DESCRIBE_MODEL, kind),
+        ...(visionReasoning(DESCRIBE_MODEL) ? { reasoning: visionReasoning(DESCRIBE_MODEL) } : {}),
+      },
+      { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
+    );
+    const usage = r.data?.usage || {};
+    const estUSD =
+      ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M +
+        (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M) /
+      1e6;
+    // Prefer OpenRouter's real reported cost (with a BYOK key, its fee plus what Google charged,
+    // Part 295); fall back to the env-tunable estimate.
+    const reported = openRouterCost(usage);
+    costUSD += reported != null ? reported : estUSD;
+    const reply = readReply(r.data, DESCRIBE_MODEL, kind);
+    if (reply.unheard) {
+      logger.warn(
+        `[kadeDescribe] ${r.data?.provider} answered a video it cannot hear the soundtrack of; not used`,
+      );
+      return { text: null, costUSD };
+    }
+    if (!reply.refused) {
+      return { text: reply.text, costUSD };
+    }
+    logger.warn(
+      `[kadeDescribe] ${r.data?.provider || 'the host'} refused (content_filter)${attempt === 1 ? '; asking once more' : ''}`,
+    );
+  }
+  return { text: null, costUSD };
 }
 
 const IMAGE_INSTRUCTION =

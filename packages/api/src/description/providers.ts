@@ -50,6 +50,41 @@ export const flexEndpoint = 'google-vertex/global/flex';
  * where flex was overloaded 5 of 6 tries. Every look leaves it out.
  */
 export const aiStudio = 'google-ai-studio';
+/**
+ * Zero-retention OpenRouter hosts that really hear a MiMo video's soundtrack, in the order asked
+ * (KADE_VIDEO_HOSTS, a comma list, overrides). Measured Oct 16 2026 with clips of known spoken
+ * words, each sent with `only` one host and `zdr`: Novita wrote every word, even four times slowed;
+ * DeepInfra and Venice answered "silent" or invented music, and counted the same 3,688 prompt
+ * tokens for a 12, 15 and 47 s clip, so they also look at a fixed handful of frames. Xiaomi itself
+ * keeps data, so it is never asked (Kade's zero-retention rule).
+ */
+export const videoHosts = (): string[] => {
+  const chosen = (process.env.KADE_VIDEO_HOSTS ?? '')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean);
+  return chosen.length ? chosen : ['Novita'];
+};
+/**
+ * MiMo hosts that accept a strict `json_schema` reply format (OpenRouter's endpoint list, Oct 16
+ * 2026). Novita refuses one with HTTP 400 ("response format json_schema is not supported"), so a
+ * look routed there asks for `json_object`; the prompt spells out the JSON shape either way.
+ */
+const schemaHosts: ReadonlySet<string> = new Set(['xiaomi', 'deepinfra', 'gmicloud']);
+/** Whether a look may ask for the strict reply schema (`analysisFormat`) on this model's hosts. */
+export function strictFormat(model: string = visionModel()): boolean {
+  if (!model.startsWith('xiaomi/mimo-')) return true;
+  return videoHosts().every((host) => schemaHosts.has(host.toLowerCase()));
+}
+/**
+ * Whether the host that answered a MiMo look is one that hears its soundtrack (`videoHosts`). A
+ * prompt-token check cannot tell: the sound is only about 8 tokens a second against hundreds for the
+ * pictures. A reply that names no host is let through, since `only` already pinned the hosts.
+ */
+export function heardBy(model: string, provider: string | null | undefined): boolean {
+  if (!model.startsWith('xiaomi/mimo-') || !provider) return true;
+  return videoHosts().some((host) => host.toLowerCase() === provider.toLowerCase());
+}
 export const voiceBase = (): string =>
   process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
 export const userAgent =
@@ -250,7 +285,12 @@ async function fetchVoices(): Promise<VoiceCatalog> {
   return data;
 }
 
-/** The video model declined a clip (a safety filter); the same clip will be declined again. */
+/**
+ * The video model declined a clip (a safety filter). Google declines the same clip again, so it is
+ * not asked twice; Novita's filter (MiMo) refused 2 of 12 harmless test clips on Oct 16 2026 ("The
+ * request was rejected because it was considered high risk") and passed them later, so a MiMo look
+ * asks once more.
+ */
 export class Refusal extends Error {}
 /**
  * The model's reply ran out of room; one more try asks for fewer, shorter cues, or, when its
@@ -263,6 +303,8 @@ class CutOff extends SyntaxError {
 class Unplayable extends Error {}
 /** A failure whose message is already a plain sentence for Kade (the provider error is its cause). */
 export class Plain extends Error {}
+/** A MiMo look answered by a host that does not hear the soundtrack (`heardBy`); never retried. */
+class Unheard extends Plain {}
 /**
  * An error OpenRouter sent inside a 200 reply (`{"error":{"code","message"}}`), which happens when
  * the provider fails after OpenRouter has sent its headers. `status` is its code when that is an
@@ -836,15 +878,20 @@ export function tierFor(look: Pick<Look, 'tier'>, model: string = visionModel())
  * leaves only Google AI Studio out, where Kade's own key would bill twice the price; OpenRouter
  * never routes a request without a tier to a flex or priority endpoint. Both keep the `max_price`
  * ceiling, and both name AI Studio in `ignore`, so no look can reach her key.
+ *
+ * Every look goes only to hosts that keep no copy and train on nothing (`zdr`, `data_collection`
+ * deny: Kade's zero-retention rule; Vertex's flex and standard endpoints both qualify). A MiMo look
+ * goes only to `videoHosts`, the zero-retention hosts that hear a video's soundtrack.
  */
 export function routeFor(tier: Tier, model: string = visionModel()): Record<string, unknown> {
   const ceiling = { max_price: { ...ceilingFor(model) } };
+  const kept = { zdr: true, data_collection: 'deny' };
   if (model.startsWith('xiaomi/mimo-'))
-    return { order: ['Xiaomi'], allow_fallbacks: true, ...ceiling };
-  if (!model.startsWith('google/')) return { ignore: [aiStudio], ...ceiling };
+    return { only: videoHosts(), allow_fallbacks: true, ...kept, ...ceiling };
+  if (!model.startsWith('google/')) return { ignore: [aiStudio], ...kept, ...ceiling };
   return tier === 'flex'
-    ? { only: [flexEndpoint], ignore: [aiStudio], allow_fallbacks: false, ...ceiling }
-    : { ignore: [aiStudio], ...ceiling };
+    ? { only: [flexEndpoint], ignore: [aiStudio], allow_fallbacks: false, ...kept, ...ceiling }
+    : { ignore: [aiStudio], ...kept, ...ceiling };
 }
 /**
  * Prompt tokens per second of the clip as sent (a close look's clip is four times the section).
@@ -1386,11 +1433,15 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
   let tries = 0;
   let timeouts = 0;
   let cutoffs = 0;
+  let refusals = 0;
   const calls: VisionCall[] = [];
+  /** Novita, MiMo's one zero-retention host that hears video, refuses a strict reply schema. */
+  const format = strictFormat(model) ? analysisFormat : ({ type: 'json_object' } as const);
   const timedOut = (error: unknown) =>
     isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0));
   const retryable = (error: unknown) => {
-    if (error instanceof Refusal) return false;
+    /** Novita's filter refuses a harmless clip now and then; Google's refusals stand. */
+    if (error instanceof Refusal) return model.startsWith('xiaomi/mimo-') && ++refusals <= 1;
     if (error instanceof CutOff) return ++cutoffs <= 1;
     /** Flex's queue says nothing of standard's: its timeout leaves standard's one retry. */
     if (timedOut(error)) return lane === 'flex' || ++timeouts <= 1;
@@ -1453,13 +1504,15 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
                       {
                         type: 'video_url',
                         video_url: { url: `data:video/mp4;base64,${video}` },
+                        /* Xiaomi honours these; Novita ignores them (Oct 16 2026: the same
+                         * prompt tokens with and without), so it samples two frames a second. */
                         ...(look.brief.denseFrames ? { fps: 4, media_resolution: 'max' } : {}),
                       },
                       { type: 'text', text: prompt + shorter },
                     ],
                   },
                 ],
-                response_format: loose ? { type: 'json_object' } : analysisFormat,
+                response_format: loose ? { type: 'json_object' } : format,
                 usage: { include: true },
               },
               key,
@@ -1500,6 +1553,14 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
             `vision: asked ${asked === 'flex' ? `flex (${flexEndpoint})` : 'standard'}, served tier ${data.service_tier ?? 'unknown'}, provider ${data.provider ?? 'unknown'}, finish ${choice?.finish_reason ?? 'none'}${choice?.native_finish_reason ? ` (${choice.native_finish_reason})` : ''}, output ${output ?? '?'} tokens (${data.usage?.completion_tokens_details?.reasoning_tokens ?? '?'} reasoning), $${cost.toFixed(4)}`,
           );
           try {
+            if (!heardBy(model, data.provider)) {
+              look.log?.(
+                `vision: ${data.provider} answered, which is not one of the hosts that hear the soundtrack (${videoHosts().join(', ')}); the reply was not used`,
+              );
+              throw new Unheard(
+                'The video went to a service that cannot hear its soundtrack, so that description was not used.',
+              );
+            }
             result = replyOf(choice, look);
           } catch (error) {
             if (error instanceof CutOff)

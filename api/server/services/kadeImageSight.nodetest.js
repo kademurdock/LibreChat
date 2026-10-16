@@ -10,6 +10,7 @@ function load(post, ledger = []) {
       if (id === 'axios') return { post };
       if (id === '@librechat/data-schemas') return { logger: { warn() {} } };
       if (id === './kadeRealCost') return require('./kadeRealCost');
+      if (id === './kadeMediaRoute') return require('./kadeMediaRoute');
       if (id === '~/models/kadeUsage') return { logKadeUsage: (row) => ledger.push(row) };
       throw Error(id);
     },
@@ -57,4 +58,21 @@ test('a failed first photo does not renumber the second photo', async () => {
     return { data: { choices: [{ message: { content: 'Blue bowl.' } }] } };
   });
   assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'bad' } }, { image_url: { url: 'good' } }]), 'Photo 2: Blue bowl.');
+});
+test('Oct 16 2026: a photo goes only to zero-retention hosts, DeepInfra first, never Xiaomi', async () => {
+  const calls = [];
+  const sight = load(async (_, body) => { calls.push(body); return { data: { provider: 'DeepInfra', choices: [{ message: { content: 'A porch light.' } }] } }; });
+  assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'porch' } }]), 'A porch light.');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].provider)), { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
+});
+test('Oct 16 2026: a content_filter refusal is never handed to the companion as what the photo shows', async () => {
+  const refusal = { finish_reason: 'content_filter', message: { content: 'The request was rejected because it was considered high risk' } };
+  const sight = load(async (_, body) => ({
+    data: { provider: 'Novita', choices: [body.messages[1].content[1].image_url.url === 'refused' ? refusal : { message: { content: 'Green kettle.' } }] },
+  }));
+  assert.equal(await sight.describeAttachedImages([{ image_url: { url: 'refused' } }]), null);
+  assert.equal(
+    await sight.describeAttachedImages([{ image_url: { url: 'refused' } }, { image_url: { url: 'kettle' } }]),
+    'Photo 2: Green kettle.',
+  );
 });

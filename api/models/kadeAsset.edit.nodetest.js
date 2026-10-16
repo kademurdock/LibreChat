@@ -36,6 +36,7 @@ function fixture(env = {}, mirror = async () => null) {
       saveURLToS3: async (args) => { calls.mirror.push(args); return mirror(args); },
     },
     '~/server/services/kadeRealCost': { openRouterCost: () => 0 },
+    '~/server/services/kadeMediaRoute': require('../server/services/kadeMediaRoute'),
     '~/models/kadeUsage': { logKadeUsage() {} },
   };
   vm.runInNewContext(source + '\nmodule.exports.enrichAsset = enrichAsset;', {

@@ -14,7 +14,7 @@ const source = fs.readFileSync(path.join(__dirname, 'kadeAsset.js'), 'utf8');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
 
-function fixture(env = {}, { realCost = null, choice = { message: { content: 'A described scene.' } } } = {}) {
+function fixture(env = {}, { realCost = null, choice = { message: { content: 'A described scene.' } }, provider } = {}) {
   const calls = { post: [], usage: [], updates: [] };
   const modelModule = { exports: {} };
   const stubs = {
@@ -25,6 +25,7 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
         calls.post.push(args);
         return {
           data: {
+            ...(provider ? { provider } : {}),
             choices: [choice],
             usage: { prompt_tokens: 1e6, completion_tokens: 1e6 },
           },
@@ -35,6 +36,7 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
     '@librechat/api': { saveURLToS3: async () => null },
     '~/server/services/kadeRealCost': { openRouterCost: () => realCost },
     '~/models/kadeUsage': { logKadeUsage: (row) => calls.usage.push(row) },
+    '~/server/services/kadeMediaRoute': require('../server/services/kadeMediaRoute'),
   };
   vm.runInNewContext(source + '\nmodule.exports.enrichAsset = enrichAsset;', {
     require: (id) => {
@@ -58,12 +60,15 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
     assert.equal(calls.post.length, modelCalls, 'model calls');
     const [url, body] = calls.post[0];
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
-    return { body, usage: calls.usage, updates: calls.updates };
+    return { body, bodies: calls.post.map(([, sent]) => sent), usage: calls.usage, updates: calls.updates };
   };
   return { describe };
 }
 
 const ZERO_RETENTION = { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true };
+/* A video only to Novita, the one zero-retention host that hears a MiMo video's soundtrack
+ * (Oct 16 2026 probe: DeepInfra drops it and looks at a fixed handful of frames). */
+const HEARING_VIDEO = { zdr: true, data_collection: 'deny', only: ['Novita'], allow_fallbacks: true };
 
 test('MiMo Pro is the default and describes a picture with reasoning off, the normal limit and zero retention', async () => {
   const { body, usage } = await fixture().describe('image');
@@ -76,12 +81,12 @@ test('MiMo Pro is the default and describes a picture with reasoning off, the no
   assert.equal(usage[0].metadata.model, 'xiaomi/mimo-v2.6-pro');
 });
 
-test('a video goes to MiMo Pro as a video part under the same settings', async () => {
+test('a video goes to MiMo Pro as a video part, only to the zero-retention host that hears it', async () => {
   const { body } = await fixture().describe('video');
   assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
   assert.equal(body.max_tokens, 260);
   assert.deepEqual(plain(body.reasoning), { enabled: false });
-  assert.deepEqual(plain(body.provider), ZERO_RETENTION);
+  assert.deepEqual(plain(body.provider), HEARING_VIDEO);
   assert.equal(body.messages[0].content[1].type, 'video_url');
   assert.match(body.messages[0].content[1].video_url.url, /^data:video\/mp4;base64,/);
 });
@@ -100,7 +105,10 @@ for (const model of ['xiaomi/mimo-v2.6-pro', 'xiaomi/mimo-v2.6-flash', 'example/
     assert.equal(body.model, model);
     assert.equal(body.max_tokens, 260);
     assert.deepEqual(plain(body.reasoning), { enabled: false });
-    assert.deepEqual(plain(body.provider), ZERO_RETENTION);
+    assert.deepEqual(
+      plain(body.provider),
+      model.startsWith('xiaomi/') ? ZERO_RETENTION : { zdr: true, data_collection: 'deny' },
+    );
   });
 }
 
@@ -110,7 +118,8 @@ for (const model of ['google/gemini-3.1-pro-preview', 'google/gemini-2.5-pro']) 
     assert.equal(body.model, model);
     assert.equal(body.max_tokens, 2260);
     assert.deepEqual(plain(body.reasoning), { effort: 'low', exclude: true });
-    assert.deepEqual(plain(body.provider), ZERO_RETENTION);
+    /* Vertex is zero-retention; AI Studio (her own key, billed double) is never asked. */
+    assert.deepEqual(plain(body.provider), { zdr: true, data_collection: 'deny', ignore: ['google-ai-studio'] });
   });
 }
 
@@ -139,4 +148,16 @@ test('a content_filter refusal is never saved as the description', async () => {
   assert.ok(!JSON.stringify(updates).includes('considered high risk'), JSON.stringify(updates));
   const ok = await fixture().describe('image');
   assert.ok(JSON.stringify(ok.updates).includes('A described scene.'));
+});
+
+test('a video answered by a host that cannot hear its soundtrack is never saved; the prompt fallback runs', async () => {
+  /* Two calls: the video's answer was thrown away, and the second is the text-only fallback. */
+  const deaf = await fixture({}, { provider: 'DeepInfra' }).describe('video', {}, { modelCalls: 2 });
+  assert.equal(deaf.bodies[0].messages[0].content[1].type, 'video_url');
+  assert.equal(deaf.bodies[1].messages[0].content.length, 1);
+  assert.match(deaf.bodies[1].messages[0].content[0].text, /Likely shows:/);
+  /* The fallback sends only the prompt's words, so any zero-retention host may answer it. */
+  assert.deepEqual(plain(deaf.bodies[1].provider), ZERO_RETENTION);
+  const heard = await fixture({}, { provider: 'Novita' }).describe('video');
+  assert.ok(JSON.stringify(heard.updates).includes('A described scene.'));
 });

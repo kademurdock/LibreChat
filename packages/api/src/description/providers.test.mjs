@@ -21,8 +21,12 @@ import {
   voices,
   descriptionRates,
   descriptionReasoning,
+  heardBy,
+  Refusal,
   routeFor,
+  strictFormat,
   tierFor,
+  videoHosts,
 } from './providers.ts';
 import { MediaError } from './media.ts';
 import { folderBytes } from './youtube.ts';
@@ -38,8 +42,10 @@ const scratch = await mkdtemp(join(tmpdir(), 'described-providers-test-'));
 
 test('MiMo video uses its own pricing and reasoning route, with no Google flex or AI Studio dependency', () => {
   assert.equal(tierFor({ tier: 'flex' }, 'xiaomi/mimo-v2.6-pro'), 'standard');
+  /* Oct 16 2026: only zero-retention hosts that hear a video's soundtrack; never Xiaomi itself. */
   assert.deepEqual(routeFor('standard', 'xiaomi/mimo-v2.6-pro'), {
-    order: ['Xiaomi'], allow_fallbacks: true, max_price: { prompt: 0.435, completion: 0.87 },
+    only: ['Novita'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+    max_price: { prompt: 0.435, completion: 0.87 },
   });
   assert.deepEqual(descriptionRates('xiaomi/mimo-v2.6-pro', 'standard'), { prompt: 0.435, completion: 0.87 });
   assert.deepEqual(descriptionRates('xiaomi/mimo-v2.6-flash', 'standard'), { prompt: 0.14, completion: 0.28 });
@@ -1008,9 +1014,16 @@ const flexRoute = {
   only: ['google-vertex/global/flex'],
   ignore: ['google-ai-studio'],
   allow_fallbacks: false,
+  zdr: true,
+  data_collection: 'deny',
   max_price: { prompt: 1.5, completion: 7.5 },
 };
-const standardRoute = { ignore: ['google-ai-studio'], max_price: { prompt: 1.5, completion: 7.5 } };
+const standardRoute = {
+  ignore: ['google-ai-studio'],
+  zdr: true,
+  data_collection: 'deny',
+  max_price: { prompt: 1.5, completion: 7.5 },
+};
 /** Runs with KADE_DESCRIPTION_TIER set (undefined: unset, the server's default), then puts it back. */
 async function onTier(tier, run) {
   const saved = process.env.KADE_DESCRIPTION_TIER;
@@ -1450,6 +1463,170 @@ test('providers: free narration reserves nothing against her approval; priced na
     [{ kind: 'speech', reserve: 0, costUSD: 0 }],
   );
   assert.ok(Math.abs(speechReserve(0.01) - 0.0105) < 1e-12, 'narration with a price still reserves it and a margin');
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Zero retention for MiMo (Oct 16 2026). Probed with clips of known spoken words: Novita heard
+ * every soundtrack; DeepInfra and Venice heard none and looked at a fixed handful of frames;
+ * Xiaomi keeps data. Novita refuses a strict json_schema reply (HTTP 400) and its filter refuses a
+ * harmless clip now and then ("considered high risk").
+ * ---------------------------------------------------------------------------------------- */
+
+test('providers: MiMo hosts come from KADE_VIDEO_HOSTS (default Novita), and only all-schema hosts get the strict reply format', () => {
+  const saved = process.env.KADE_VIDEO_HOSTS;
+  try {
+    delete process.env.KADE_VIDEO_HOSTS;
+    assert.deepEqual(videoHosts(), ['Novita']);
+    assert.equal(strictFormat('xiaomi/mimo-v2.6-pro'), false, 'Novita answers a json_schema with HTTP 400');
+    assert.equal(strictFormat('google/gemini-3.8-flash'), true);
+    assert.equal(heardBy('xiaomi/mimo-v2.6-pro', 'Novita'), true);
+    assert.equal(heardBy('xiaomi/mimo-v2.6-pro', 'novita'), true);
+    assert.equal(heardBy('xiaomi/mimo-v2.6-pro', 'DeepInfra'), false, 'DeepInfra drops the soundtrack');
+    assert.equal(heardBy('xiaomi/mimo-v2.6-pro', undefined), true, 'a reply naming no host was pinned by only');
+    assert.equal(heardBy('google/gemini-3.8-flash', 'Google'), true);
+    process.env.KADE_VIDEO_HOSTS = ' GMICloud , Xiaomi ';
+    assert.deepEqual(videoHosts(), ['GMICloud', 'Xiaomi']);
+    assert.equal(strictFormat('xiaomi/mimo-v2.6-pro'), true);
+    process.env.KADE_VIDEO_HOSTS = 'GMICloud,Novita';
+    assert.equal(strictFormat('xiaomi/mimo-v2.6-pro'), false, 'one host without the schema is enough to ask for plain JSON');
+    assert.deepEqual(routeFor('standard', 'xiaomi/mimo-v2.6-flash'), {
+      only: ['GMICloud', 'Novita'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      max_price: { prompt: 0.14, completion: 0.28 },
+    });
+    /* Any other model keeps zero retention too, and never reaches AI Studio. */
+    assert.deepEqual(routeFor('standard', 'qwen/qwen3-vl-flash'), {
+      ignore: ['google-ai-studio'], zdr: true, data_collection: 'deny',
+      max_price: { prompt: 1.5, completion: 7.5 },
+    });
+  } finally {
+    if (saved === undefined) delete process.env.KADE_VIDEO_HOSTS;
+    else process.env.KADE_VIDEO_HOSTS = saved;
+  }
+});
+
+/**
+ * A MiMo look probes its clip (ffprobe) before asking, so these use a real two-second clip made
+ * with FFMPEG_PATH / ffmpeg-static and probed with FFPROBE_PATH / ffprobe-static, and skip without them.
+ */
+async function mimoClip(name) {
+  const req = createRequire(import.meta.url);
+  const pick = (variable, module, field) => {
+    if (process.env[variable]) return process.env[variable];
+    try {
+      const found = req(module);
+      return field ? found[field] : found;
+    } catch {
+      return undefined;
+    }
+  };
+  const ffmpeg = pick('FFMPEG_PATH', 'ffmpeg-static');
+  const ffprobe = pick('FFPROBE_PATH', 'ffprobe-static', 'path');
+  if (!ffmpeg || !ffprobe) return undefined;
+  process.env.FFPROBE_PATH = ffprobe;
+  const file = join(scratch, name);
+  const { execFileSync } = req('node:child_process');
+  execFileSync(ffmpeg, [
+    '-hide_banner', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=s=320x180:r=8:d=2',
+    '-f', 'lavfi', '-i', 'sine=f=440:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-ac', '1', '-shortest', file,
+  ]);
+  return { file, seconds: 2, brief, state: null, lines: [], before: [] };
+}
+const novitaReply = (provider = 'Novita') => ({
+  ...good,
+  id: 'gen-mimo',
+  provider,
+  usage: { cost: 0.0016, prompt_tokens: 3582, completion_tokens: 300 },
+});
+const refused = {
+  id: 'gen-refused',
+  provider: 'Novita',
+  choices: [{ finish_reason: 'content_filter', message: { content: 'The request was rejected because it was considered high risk' } }],
+  usage: { cost: 0.00004, prompt_tokens: 52, completion_tokens: 12 },
+};
+async function onMimo(run) {
+  const saved = { model: process.env.KADE_DESCRIPTION_MODEL, hosts: process.env.KADE_VIDEO_HOSTS };
+  process.env.KADE_DESCRIPTION_MODEL = 'xiaomi/mimo-v2.6-pro';
+  delete process.env.KADE_VIDEO_HOSTS;
+  try {
+    return await run();
+  } finally {
+    process.env.KADE_DESCRIPTION_MODEL = saved.model;
+    if (saved.hosts === undefined) delete process.env.KADE_VIDEO_HOSTS;
+    else process.env.KADE_VIDEO_HOSTS = saved.hosts;
+  }
+}
+
+test('providers: a MiMo look goes only to zero-retention Novita, asks for plain JSON, and keeps the answer', async (t) => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await mimoClip('mimo-novita.mp4');
+  if (!look) return t.skip('no ffmpeg/ffprobe');
+  const fake = fakeAxios(() => ({ headers: { 'x-generation-id': 'gen-mimo' }, data: novitaReply() }));
+  try {
+    const result = await onMimo(() => analyze(look, signal, meter));
+    assert.equal(fake.calls.length, 1);
+    const body = fake.calls[0].body;
+    assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
+    assert.deepEqual(body.provider, {
+      only: ['Novita'], allow_fallbacks: true, zdr: true, data_collection: 'deny',
+      max_price: { prompt: 0.435, completion: 0.87 },
+    });
+    assert.equal(body.provider.order, undefined, 'never Xiaomi first, which keeps data');
+    assert.deepEqual(body.response_format, { type: 'json_object' }, 'Novita answers a json_schema with HTTP 400');
+    assert.match(body.messages[0].content[0].video_url.url, /^data:video\/mp4;base64,/, 'the clip goes with its soundtrack');
+    assert.equal(result.cues[0].text, 'A cook flips a pancake.');
+    assert.equal(result.vision[0].provider, 'Novita');
+  } finally {
+    fake.restore();
+  }
+});
+
+test('providers: a MiMo look that Novita’s filter refuses is asked once more; the refusal text is never a description', async (t) => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await mimoClip('mimo-refused.mp4');
+  if (!look) return t.skip('no ffmpeg/ffprobe');
+  const { entries, meter: kept } = ledger();
+  const once = fakeAxios((_call, n) => ({ data: n === 1 ? refused : novitaReply() }));
+  try {
+    const result = await onMimo(() => analyze(look, signal, kept));
+    assert.equal(once.calls.length, 2, 'a flaky refusal is asked once more');
+    assert.ok(result.cues.every((cue) => !/high risk/.test(cue.text)));
+    assert.equal(entries.length, 2, 'the refused call is still paid for');
+  } finally {
+    once.restore();
+  }
+  const twice = fakeAxios(() => ({ data: refused }));
+  try {
+    const failure = await onMimo(() => analyze(look, signal, meter)).catch((error) => error);
+    assert.equal(twice.calls.length, 2, 'refused twice: not asked a third time');
+    assert.ok(failure instanceof Refusal, String(failure));
+    assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this scene.');
+  } finally {
+    twice.restore();
+  }
+});
+
+test('providers: a MiMo answer from a host that cannot hear the soundtrack is paid for but never used or retried', async (t) => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  const look = await mimoClip('mimo-deaf.mp4');
+  if (!look) return t.skip('no ffmpeg/ffprobe');
+  const { entries, meter: kept } = ledger();
+  const fake = fakeAxios(() => ({ data: novitaReply('DeepInfra') }));
+  const logs = [];
+  try {
+    const failure = await onMimo(() => analyze({ ...look, log: (line) => logs.push(line) }, signal, kept)).catch(
+      (error) => error,
+    );
+    assert.equal(fake.calls.length, 1, 'not asked again');
+    assert.equal(
+      providerProblem(failure, 'The video model'),
+      'The video went to a service that cannot hear its soundtrack, so that description was not used.',
+    );
+    assert.equal(entries.length, 1, 'its cost is still booked');
+    assert.ok(logs.some((line) => line.includes('DeepInfra answered, which is not one of the hosts that hear the soundtrack (Novita)')), logs.join('\n'));
+  } finally {
+    fake.restore();
+  }
 });
 
 test('youtube: the size watch skips a file renamed or removed while it counts', async () => {
