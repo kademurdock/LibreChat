@@ -156,6 +156,31 @@ const parenthesizeBacking = (words: string): string => {
   return /^\(.+\)$/.test(phrase) ? phrase : `(${phrase})`;
 };
 
+const lyricClock = String.raw`(?:\d{1,2}:)?\d{1,2}:[0-5]\d(?:[.,]\d{1,3})?`;
+const lyricTimeSeparator = '[\\t ]*(?:-->|[-–—])[\\t ]*';
+const lyricTimeRange = `${lyricClock}${lyricTimeSeparator}${lyricClock}`;
+const lyricTimingPrefix = new RegExp(
+  `^[\\t ]*(?:\\[[\\t ]*${lyricClock}(?:${lyricTimeSeparator}${lyricClock})?[\\t ]*\\]|\\([\\t ]*${lyricTimeRange}[\\t ]*\\)|${lyricTimeRange}):?(?:[\\t ]+|$)`,
+);
+
+/** Remove provider timing annotations without changing lyric words or section/backing cues. */
+export function stripLyricTimestamps(transcript: string): string {
+  return transcript
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .flatMap((line) => {
+      const words = line.replace(lyricTimingPrefix, '');
+      return words !== line && !words.trim() ? [] : [words];
+    })
+    .join('\n')
+    .trim();
+}
+
+const cleanTranscript = (draft: Transcript): Transcript => ({
+  ...draft,
+  transcript: stripLyricTimestamps(draft.transcript),
+});
+
 /**
  * Keeps Gemini's labels to the allowed list: "[verse 2]" becomes "[Verse]", a label outside the
  * list ("[Interlude]") is dropped, and "[unclear]" on its own line stays. An explicit backing-
@@ -163,7 +188,7 @@ const parenthesizeBacking = (words: string): string => {
  */
 export function tidySectionTags(transcript: string): string {
   let nextBackingLine = false;
-  return transcript
+  return stripLyricTimestamps(transcript)
     .split('\n')
     .flatMap((line) => {
       const rolePhrase = bracketedBackingPhrase.exec(line) || backingPhrase.exec(line);
@@ -346,7 +371,9 @@ async function scribeLyrics(buffer: Buffer, mime: string, seconds: number): Prom
   );
   if (typeof response.data.text !== 'string') throw new Error('No lyric transcript returned.');
   return {
-    transcript: response.data.text.trim().replace(/([.!?。！？])[\t ]+/gu, '$1\n'),
+    transcript: stripLyricTimestamps(
+      response.data.text.trim().replace(/([.!?。！？])[\t ]+/gu, '$1\n'),
+    ),
     seconds,
     model: 'scribe_v2',
   };
@@ -1413,8 +1440,9 @@ export function createLyricsRouter(hooks: Hooks): Router {
           reference.transcriptVersion === transcriptVersion &&
           (!describing || settled)
         ) {
-          const warning = lyricsWarning(reference.transcript.model);
-          res.json({ ...reference.transcript, warning, cached: true, ...settled });
+          const cached = cleanTranscript(reference.transcript);
+          const warning = lyricsWarning(cached.model);
+          res.json({ ...cached, warning, cached: true, ...settled });
           return;
         }
         const claim = await claimReference(user, key);
@@ -1430,7 +1458,7 @@ export function createLyricsRouter(hooks: Hooks): Router {
           await authorizeReference(user, claim.url, hooks);
           const kept =
             claim.transcript && claim.transcriptVersion === transcriptVersion
-              ? claim.transcript
+              ? cleanTranscript(claim.transcript)
               : undefined;
           const settledNow = describing ? settledSound(claim, missWindow) : undefined;
           if (kept && (!describing || settledNow)) {
@@ -1447,7 +1475,9 @@ export function createLyricsRouter(hooks: Hooks): Router {
           const heard = await listenTo(res, user, claim.url, hooks);
           if (!heard) return;
           const sound = describing && !settledNow ? flights.begin(user, key, heard) : undefined;
-          const result = kept ?? (await hooks.transcribe(heard.buffer, heard.mime, heard.seconds));
+          const result =
+            kept ??
+            cleanTranscript(await hooks.transcribe(heard.buffer, heard.mime, heard.seconds));
           if (!result.transcript?.trim()) {
             res.status(422).json({
               error: describing ? `${noWordsNote} ${noWordsDescribeNote}` : noWordsNote,

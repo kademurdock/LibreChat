@@ -124,6 +124,15 @@ test('backing vocal cues become parentheses without adding words or reclassifyin
   assert.equal(tidy('[unclear]\nIt might be one singer'), '[unclear]\nIt might be one singer');
 });
 
+test('cover transcripts discard provider time ranges while keeping lyric words and vocal structure', () => {
+  const raw = '0:14.30-0:42.00\r\n[Verse]\r\nThe lights stay on (stay on)\r\n\r\n[0:42.00 – 1:03.50] [Chorus]\r\n00:01:03,500 --> 00:01:08,000 Come home\r\nBacking vocals:\r\n(1:08.00-1:12.00)\r\nOoh, ooh';
+  assert.equal(lyrics.tidySectionTags(raw), '[Verse]\nThe lights stay on (stay on)\n\n[Chorus]\nCome home\n(Ooh, ooh)');
+  assert.equal(lyrics.stripLyricTimestamps('[0:14.30] Keep walking\n0:42.00-0:49.00: Stay with me'), 'Keep walking\nStay with me');
+  const words = '[Verse]\nMeet me at 9:05\n9:05\nFourteen to forty-two\n(come home)\nI sang [unclear] here';
+  assert.equal(lyrics.stripLyricTimestamps(words), words);
+  assert.equal(lyrics.stripLyricTimestamps(lyrics.stripLyricTimestamps(raw)), lyrics.stripLyricTimestamps(raw));
+});
+
 test('tags: a draft that was nothing but labels is no draft, and the backup transcriber is used', async () => {
   gemini = () => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '[Instrumental]\n\n[Interlude]' }] } }] });
   const got = await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30);

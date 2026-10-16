@@ -190,7 +190,7 @@ test('Describe the sound: the routes', async (t) => {
     assert.equal(t1[0].toString(), 'ID3fixture audio');
     const row = await rowOf(who.user);
     assert.equal(row.sound.direction, LINE);
-    assert.equal(row.soundVersion, 'gemini38-sound-v1');
+    assert.equal(row.soundVersion, 'mimo26-sound-v2');
     const second = await r.read(await r.post('/reference/lyrics', { url: who.url, describe: true }, who.user));
     assert.equal(second.json.cached, true);
     assert.equal(second.json.direction, LINE);
@@ -425,7 +425,7 @@ test('Describe the sound: the routes', async (t) => {
     const refreshed = await stale.read(await stale.post('/reference/lyrics', { url: old.url, describe: true }, old.user));
     assert.equal(refreshed.json.direction, LINE);
     assert.equal(stale.control.describeCalls.length, 2);
-    assert.equal((await rowOf(old.user)).soundVersion, 'gemini38-sound-v1');
+    assert.equal((await rowOf(old.user)).soundVersion, 'mimo26-sound-v2');
   }));
 
   await t.test('a description kept but lyrics not: the lyrics are made, the kept description is not paid for again', withEnv(undefined, async () => {
@@ -586,7 +586,7 @@ test('Describe the sound: the routes', async (t) => {
     await sleep(60);
     const row = await rowOf(who.user);
     assert.equal(row.sound, undefined);
-    assert.equal(row.soundMiss.version, 'gemini38-sound-v1');
+    assert.equal(row.soundMiss.version, 'mimo26-sound-v2');
     assert.ok(Date.now() - new Date(row.soundMiss.at).getTime() < 5000, 'the moment of the failure is kept with the recording');
     const fetched = downloads;
     for (let press = 0; press < 5; press += 1) {
@@ -624,7 +624,7 @@ test('Describe the sound: the routes', async (t) => {
     r.control.describe = async () => null;
     assert.equal((await r.post('/reference/describe', { url: other.url }, other.user)).status, 502);
     await sleep(60);
-    assert.equal((await rowOf(other.user)).soundMiss.version, 'gemini38-sound-v1', 'a failure on the button is remembered too');
+    assert.equal((await rowOf(other.user)).soundMiss.version, 'mimo26-sound-v2', 'a failure on the button is remembered too');
     r.control.describe = async () => SOUND();
     const calls = r.control.describeCalls.length;
     assert.equal((await r.post('/reference/describe', { url: other.url }, other.user)).status, 429);
@@ -669,7 +669,7 @@ test('Describe the sound: the routes', async (t) => {
     const row = await rowOf(who.user);
     assert.equal(row.leaseUntil, undefined);
     assert.equal(row.sound, undefined);
-    assert.equal(row.soundMiss.version, 'gemini38-sound-v1');
+    assert.equal(row.soundMiss.version, 'mimo26-sound-v2');
     assert.ok(logs.some(([level, line]) => level === 'warn' && /sound describe passed its deadline of 80 ms/.test(line)));
     /* the next press is a fresh call, not a join onto the hung one */
     r.control.describe = async () => SOUND();
