@@ -61,7 +61,7 @@ test('MiMo Pro is the default eye, with thinking off, a small cap and zero reten
   assert.equal(framer.MODEL(), 'xiaomi/mimo-v2.6-pro');
   assert.equal(body.max_tokens, 40);
   assert.deepEqual(body.reasoning, { enabled: false });
-  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny' });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
   const [text, picture] = body.messages[0].content;
   assert.match(text.text, /Tegrin ad, 1969/);
   assert.equal(picture.type, 'image_url');
@@ -74,7 +74,7 @@ test('KADE_FRAME_MODEL still picks the model, and the retention rule rides along
   const body = posts[0][1];
   assert.equal(body.model, 'xiaomi/mimo-v2.6-flash');
   assert.deepEqual(body.reasoning, { enabled: false });
-  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny' });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
 });
 
 test('a reply naming no cost is priced at Pro rates by default, Flash rates on Flash', async () => {

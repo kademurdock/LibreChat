@@ -14,8 +14,8 @@ const source = fs.readFileSync(path.join(__dirname, 'kadeAsset.js'), 'utf8');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
 
-function fixture(env = {}, { realCost = null } = {}) {
-  const calls = { post: [], usage: [] };
+function fixture(env = {}, { realCost = null, choice = { message: { content: 'A described scene.' } } } = {}) {
+  const calls = { post: [], usage: [], updates: [] };
   const modelModule = { exports: {} };
   const stubs = {
     mongoose: new mongoose.Mongoose(),
@@ -25,7 +25,7 @@ function fixture(env = {}, { realCost = null } = {}) {
         calls.post.push(args);
         return {
           data: {
-            choices: [{ message: { content: 'A described scene.' } }],
+            choices: [choice],
             usage: { prompt_tokens: 1e6, completion_tokens: 1e6 },
           },
         };
@@ -48,22 +48,22 @@ function fixture(env = {}, { realCost = null } = {}) {
   }, { filename: 'kadeAsset.js' });
   const { KadeAsset, logKadeAsset, enrichAsset } = modelModule.exports;
   KadeAsset.create = async (values) => new KadeAsset(values);
-  KadeAsset.updateOne = async () => {};
-  const describe = async (kind, extra = {}) => {
+  KadeAsset.updateOne = async (...args) => { calls.updates.push(plain(args)); };
+  const describe = async (kind, extra = {}, { modelCalls = 1 } = {}) => {
     const doc = await logKadeAsset({
       userId: new mongoose.Types.ObjectId(), kind, service: 'fal_' + kind,
       url: `https://example.invalid/${kind}`, prompt: 'A red barn at dusk.', ...extra,
     });
     await enrichAsset(doc);
-    assert.equal(calls.post.length, 1, 'one model call');
+    assert.equal(calls.post.length, modelCalls, 'model calls');
     const [url, body] = calls.post[0];
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
-    return { body, usage: calls.usage };
+    return { body, usage: calls.usage, updates: calls.updates };
   };
   return { describe };
 }
 
-const ZERO_RETENTION = { zdr: true, data_collection: 'deny' };
+const ZERO_RETENTION = { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true };
 
 test('MiMo Pro is the default and describes a picture with reasoning off, the normal limit and zero retention', async () => {
   const { body, usage } = await fixture().describe('image');
@@ -130,4 +130,13 @@ test('a reply naming no cost is priced at the running model rates', async () => 
   near(tuned.usage[0].costUSD, 3);
   const reported = await fixture({}, { realCost: 0.0123 }).describe('image');
   assert.equal(reported.usage[0].costUSD, 0.0123);
+});
+
+test('a content_filter refusal is never saved as the description', async () => {
+  const refusal = { finish_reason: 'content_filter', message: { content: 'The request was rejected because it was considered high risk' } };
+  // The refused look is followed by the usual fallback call, which here is refused too.
+  const { updates } = await fixture({}, { choice: refusal }).describe('image', {}, { modelCalls: 2 });
+  assert.ok(!JSON.stringify(updates).includes('considered high risk'), JSON.stringify(updates));
+  const ok = await fixture().describe('image');
+  assert.ok(JSON.stringify(ok.updates).includes('A described scene.'));
 });

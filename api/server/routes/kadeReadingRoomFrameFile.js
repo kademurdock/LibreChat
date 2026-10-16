@@ -114,7 +114,7 @@ async function labelFrame(jpeg, title) {
       usage: { include: true },
       /* Oct 16 2026: frames from her library go only to hosts that keep no
        * copy and train on nothing (her zero-retention rule). */
-      provider: { zdr: true, data_collection: 'deny' },
+      provider: { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true },
       messages: [
         {
           role: 'user',
@@ -135,7 +135,10 @@ async function labelFrame(jpeg, title) {
   });
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
-  const text = String(r.data?.choices?.[0]?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
+  const choice = r.data?.choices?.[0];
+  /* A content_filter refusal (Novita, Oct 16) is no label: the item stays for the next pass. */
+  const refused = choice?.finish_reason === 'content_filter' || choice?.native_finish_reason === 'content_filter';
+  const text = refused ? '' : String(choice?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
   return {
     label: /^unknown$/i.test(text) || text.length < 2 ? null : text.slice(0, 120),
     /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */

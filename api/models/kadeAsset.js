@@ -157,7 +157,10 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       reasoning: describeIsGeminiPro ? { effort: 'low', exclude: true } : { enabled: false },
       /* Oct 16 2026: people's own pictures and videos go only to hosts that
        * keep no copy and train on nothing (her zero-retention rule). */
-      provider: { zdr: true, data_collection: 'deny' },
+      /* DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200 with a
+       * content_filter refusal ("considered high risk"); the check below keeps that from ever
+       * being read to someone as a description. */
+      provider: { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true },
       messages: [{ role: 'user', content }],
       usage: { include: true },
     },
@@ -185,7 +188,12 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       });
     } catch { /* logging must never break a description */ }
   }
-  const text = r.data?.choices?.[0]?.message?.content;
+  const choice = r.data?.choices?.[0];
+  // A refused or filtered reply is not a description; the caller's fallback runs instead.
+  if (choice?.finish_reason === 'content_filter' || choice?.native_finish_reason === 'content_filter') {
+    return null;
+  }
+  const text = choice?.message?.content;
   return typeof text === 'string' ? text.trim() : null;
 }
 
