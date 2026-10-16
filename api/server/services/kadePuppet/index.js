@@ -302,9 +302,12 @@ const PORTRAIT_LOOK =
   'never add glasses, headphones, hats, headbands, ties, chains, earrings, freckles, beauty marks or ' +
   'stubble that are not there. The "blazer" top always draws a necktie, so choose it only when the portrait ' +
   'shows a tie. Hair length comes first: hair past the shoulders needs a long style, chin-to-shoulder hair a ' +
-  'bob or waves, and a short style only when the hair is above the ears; hair worn up is a top bun or ' +
-  'ponytail; curly hair stays curly. Silver, white or salt-and-pepper only when the hair is mostly grey. ' +
-  'Choose the skin tone closest to the face in the portrait.';
+  'bob or waves, and a short style only when the hair is above the ears; hair pulled back, in a bun, a ' +
+  'braid or a ponytail is never a short style (use top bun, ponytail or braids); curly hair stays curly. ' +
+  'Silver, white or salt-and-pepper only when the hair is mostly grey. Keep the gender presentation the ' +
+  'portrait shows: a woman or girl keeps her longer or pulled-back hair, lashes, lip colour and earrings ' +
+  'when shown. Keep fantasy skin and hair colours when the portrait has them. Choose the skin tone ' +
+  'closest to the face in the portrait.';
 
 /** Turn a portrait image URL (the agent's avatar) into a resembling recipe. */
 async function recipeFromPicture(imageUrl, hint) {
