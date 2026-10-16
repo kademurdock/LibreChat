@@ -19,7 +19,7 @@ const { createLyricsRouter, registerMusicReference, transcribeMusicLyrics, valid
 const { notifyMusic } = source('notify');
 (async () => {
   const mongo = await MongoMemoryServer.create(); await mongoose.connect(mongo.getUri());
-  Object.assign(process.env, { YUE_ENDPOINT_ID: 'fixture', RUNPOD_API_KEY: 'fixture', BRIDGE_SECRET: 'fixture', BRIDGE_URL: 'https://bridge.test', GEMINI_API_KEY: 'gemini-fixture', ELEVENLABS_API_KEY: 'scribe-fixture' });
+  Object.assign(process.env, { YUE_ENDPOINT_ID: 'fixture', RUNPOD_API_KEY: 'fixture', BRIDGE_SECRET: 'fixture', BRIDGE_URL: 'https://bridge.test', GEMINI_API_KEY: 'gemini-fixture', ELEVENLABS_API_KEY: 'scribe-fixture', KADE_MUSIC_LISTENER_MODEL: 'gemini-3.8-flash' });
   const providers = new Map(), submitted = [], saved = new Map(), notifications = [];
   let lostSubmission = 0, transcriptionCalls = 0, duration = 30;
   let geminiMode = 'ok', scribeFailure = false, geminiCalls = 0, scribeCalls = 0;
@@ -163,6 +163,25 @@ const { notifyMusic } = source('notify');
     assert.deepEqual(cleanedCached.usage, lyrics.usage);
     assert.equal((await References.findOne({ user: 'a' }).lean()).transcript.transcript, '0:14.30-0:42.00\n' + wordsBeforeTiming, 'reading cached lyrics does not rewrite the saved provider draft');
     await References.updateOne({ user: 'a' }, { $set: { 'transcript.transcript': wordsBeforeTiming } });
+    // Oct 16 2026: a draft saved with a blank line after every line is served one line per line, from the cache, unchanged in the store.
+    const doubleSpaced = wordsBeforeTiming.split('\n').filter(Boolean).join('\n\n');
+    await References.updateOne({ user: 'a' }, { $set: { 'transcript.transcript': doubleSpaced } });
+    const respaced = await (await post('/reference/lyrics', { url: ref })).json();
+    assert.equal(respaced.transcript, wordsBeforeTiming);
+    assert.equal(respaced.cached, true);
+    assert.equal(transcriptionCalls, 1, 'tidying a cached draft never pays for another transcript');
+    assert.equal((await References.findOne({ user: 'a' }).lean()).transcript.transcript, doubleSpaced);
+    // A draft made with the v4 prompt (before the sung-order rule) is listened to again, once.
+    await References.updateOne({ user: 'a' }, { $set: { transcriptVersion: 'mimo26-tags-backing-scribe2-lyrics-v4' } });
+    const relistened = await (await post('/reference/lyrics', { url: ref })).json();
+    assert.equal(relistened.cached, false);
+    assert.equal(transcriptionCalls, 2);
+    assert.equal(relistened.transcript, wordsBeforeTiming);
+    const fresh = await References.findOne({ user: 'a' }).lean();
+    assert.equal(fresh.transcript.transcript, wordsBeforeTiming);
+    assert.notEqual(fresh.transcriptVersion, 'mimo26-tags-backing-scribe2-lyrics-v4');
+    assert.equal((await (await post('/reference/lyrics', { url: ref })).json()).cached, true);
+    assert.equal(transcriptionCalls, 2);
     geminiMode = 'truncated';
     const fallback = await transcribeMusicLyrics(Buffer.from('ID3fixture audio'), 'application/octet-stream', 45);
     assert.equal(fallback.model, 'scribe_v2'); assert.equal(fallback.transcript, 'Fallback lyrics.\nSame chorus.\nSame chorus.');

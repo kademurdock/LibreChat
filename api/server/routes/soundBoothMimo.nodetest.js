@@ -34,6 +34,10 @@ test('the default listener uses native MiMo Flash audio, preserves sung words/ta
     assert.equal(seen.body.messages[0].content[1].input_audio.format, 'mp3');
     assert.equal(seen.body.reasoning.enabled, false);
     assert.equal(seen.body.provider.max_price.prompt, 0.14);
+    // Kade's zero-retention rule: only zero-retention hosts that really hear Flash's audio.
+    assert.equal(seen.body.provider.zdr, true);
+    assert.equal(seen.body.provider.data_collection, 'deny');
+    assert.deepEqual(seen.body.provider.only, ['Makora', 'Novita']);
     assert.match(result.transcript, /\[Verse\]\nKeep the fire low\n\(Keep it low\)/);
     assert.equal(result.model, 'xiaomi/mimo-v2.6-flash');
     assert.match(lyrics.lyricsWarning(result.model), /section tags are guesses/);

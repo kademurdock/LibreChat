@@ -41,7 +41,10 @@ async function chat(messages, maxTokens = 900, json = false) {
   if (!key) throw new Error('OPENROUTER_KEY not configured');
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
-    { model: MODEL(), max_tokens: maxTokens, messages, usage: { include: true }, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: false, effort: 'none' } } : {}), ...(json ? { response_format: { type: 'json_object' } } : {}) },
+    /* Oct 16 2026: her zero-retention rule. The model stays Flash here (a live
+     * answer to a person waiting); the background media and sorting jobs
+     * moved to Pro. */
+    { model: MODEL(), max_tokens: maxTokens, messages, usage: { include: true }, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: false, effort: 'none' } } : {}), ...(json ? { response_format: { type: 'json_object' } } : {}), provider: { zdr: true, data_collection: 'deny' } },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
   );
   const text = r.data?.choices?.[0]?.message?.content;

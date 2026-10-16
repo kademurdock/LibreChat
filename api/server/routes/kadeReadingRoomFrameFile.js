@@ -40,10 +40,15 @@ const { openRouterCost } = require('~/server/services/kadeRealCost');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const ENABLED = () => process.env.KADE_LIBRARY_VISION_FILE === '1';
-/* A short visual label uses Flash with thinking disabled and a small output cap. */
-const MODEL = () => process.env.KADE_FRAME_MODEL || 'xiaomi/mimo-v2.6-flash';
-const IN_USD_PER_M = () => Number(process.env.KADE_FRAME_IN_USD_PER_M || 0.14);
-const OUT_USD_PER_M = () => Number(process.env.KADE_FRAME_OUT_USD_PER_M || 0.28);
+/* A short visual label uses MiMo with thinking disabled and a small output cap.
+ * Oct 16 2026: Pro by default (Kade's ask, and the Flash-vs-Pro comparison
+ * recommended Pro for media jobs; about two hundredths of a cent a frame).
+ * Railway's KADE_FRAME_MODEL still picks. The fallback rates price a reply that
+ * names no cost: Flash's on MiMo Flash, Pro's ($0.435/$0.87 per M) otherwise. */
+const MODEL = () => process.env.KADE_FRAME_MODEL || 'xiaomi/mimo-v2.6-pro';
+const ON_FLASH = () => /mimo-v2\.6-flash/i.test(MODEL());
+const IN_USD_PER_M = () => Number(process.env.KADE_FRAME_IN_USD_PER_M || (ON_FLASH() ? 0.14 : 0.435));
+const OUT_USD_PER_M = () => Number(process.env.KADE_FRAME_OUT_USD_PER_M || (ON_FLASH() ? 0.28 : 0.87));
 /* A commercial's first second is often black or a leader frame, so seek in a
  * little. Three seconds is far enough past the join and early enough that a
  * range read of the head of the file still contains it. */
@@ -107,6 +112,9 @@ async function labelFrame(jpeg, title) {
        * OpenRouter spelling of the trap the describe lane records. */
       reasoning: { enabled: false },
       usage: { include: true },
+      /* Oct 16 2026: frames from her library go only to hosts that keep no
+       * copy and train on nothing (her zero-retention rule). */
+      provider: { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true },
       messages: [
         {
           role: 'user',
@@ -127,7 +135,10 @@ async function labelFrame(jpeg, title) {
   });
   const usage = r.data?.usage || {};
   const est = ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M() + (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M()) / 1e6;
-  const text = String(r.data?.choices?.[0]?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
+  const choice = r.data?.choices?.[0];
+  /* A content_filter refusal (Novita, Oct 16) is no label: the item stays for the next pass. */
+  const refused = choice?.finish_reason === 'content_filter' || choice?.native_finish_reason === 'content_filter';
+  const text = refused ? '' : String(choice?.message?.content || '').trim().replace(/^["'`]+|["'`.]+$/g, '');
   return {
     label: /^unknown$/i.test(text) || text.length < 2 ? null : text.slice(0, 120),
     /* Part 295: BYOK-safe (OpenRouter's fee plus what Google charged her key). */

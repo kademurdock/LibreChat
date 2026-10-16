@@ -281,7 +281,7 @@ export const HAIR_STYLES = {
     sideburns(b, k, ctx, 44);
     strands(b, 'hairLines', 'hairFront', capStrands(k, 'swept'), ctx, 0.32);
   } },
-  'shoulder-wavy': { name: 'Shoulder-length waves', note: 'soft waves that fall to the shoulders', hidesEars: true,
+  'shoulder-wavy': { name: 'Waves past the shoulders', note: 'soft waves that fall past the shoulders', hidesEars: true,
     back: (b, f, k, ctx) => add(b, 'hairBack', 'hairBack', backMass(k, k.nb + 50, 6), 'hairBack', ctx),
     front: (b, f, k, ctx) => {
       add(b, 'lockR', 'hairFront', sideLock(k, 1, k.nb + 46), 'hair', ctx);

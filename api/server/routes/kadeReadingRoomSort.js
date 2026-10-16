@@ -29,13 +29,22 @@ const SHELVES = [
   'Nonfiction — Science & nature', 'Nonfiction — Cooking & home', 'Nonfiction — Religion & spirituality', 'Nonfiction — True crime',
   'Nonfiction — Reference & how-to', 'Nonfiction — Inspirational stories', 'Poetry', 'Other',
 ];
-const MODEL = () => process.env.KADE_LIBRARIAN_MODEL || 'xiaomi/mimo-v2.6-flash';
+/* Oct 16 2026, Kade's ask: MiMo Pro over Flash for the sorting jobs. The sorter
+ * has its own setting now. It used to share KADE_LIBRARIAN_MODEL with the live
+ * librarian, which stays on Flash for speed, so it deliberately does not fall
+ * back to that setting. The fallback rates price a reply that names no cost:
+ * Flash's on MiMo Flash, Pro's ($0.435/$0.87 per million in/out) otherwise. */
+const MODEL = () => process.env.KADE_LIBRARY_SORT_MODEL || 'xiaomi/mimo-v2.6-pro';
+const ON_FLASH = () => /mimo-v2\.6-flash/i.test(MODEL());
 const ENABLED = () => process.env.KADE_LIBRARY_SORT !== '0';
 const DAILY_USD = () => Math.max(0, parseFloat(process.env.KADE_LIBRARY_SORT_DAILY_USD) || 0.5);
 const BATCH = () => Math.max(1, parseInt(process.env.KADE_LIBRARY_SORT_BATCH, 10) || 25);
 const INTERVAL_MIN = () => Math.max(2, parseInt(process.env.KADE_LIBRARY_SORT_INTERVAL_MIN, 10) || 10);
-const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARIAN_IN_USD_PER_M || 0.14);
-const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARIAN_OUT_USD_PER_M || 0.28);
+const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_SORT_IN_USD_PER_M || (ON_FLASH() ? 0.14 : 0.435));
+const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_SORT_OUT_USD_PER_M || (ON_FLASH() ? 0.28 : 0.87));
+/* Her zero-retention rule. DeepInfra first: the Oct 16 speed test had it
+ * answering MiMo far sooner than Xiaomi, and Xiaomi keeps prompts. */
+const PROVIDER = () => ({ zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
 
 async function spentToday() {
   try {
@@ -110,7 +119,7 @@ async function classifyLLM(books) {
   const list = books.map((b, i) => `${i + 1}. id=${b._id} | title: ${b.title} | author: ${b.author || '?'} | year: ${b.copyrightYear || '?'} | synopsis: ${String(b.synopsis || '').slice(0, 1200)}`).join('\n');
   const prompt = `You are the librarian of a family library. File each book on exactly one shelf from this list (copy the shelf name exactly):\n${SHELVES.map((s) => '- ' + s).join('\n')}\n\nDistinguish subject from genre: inspirational true stories and personal essays are nonfiction, even when written for children or teens. A novel about sex is fiction, not a nonfiction sex manual. A book about food is not automatically a cookbook. Use Other when the metadata does not support a shelf; do not invent a plot or infer genre from an author's identity.\n\nAlso say whether the book is ADULT (explicit sexual content, or clearly for grown-ups only) — jokes, romance and street fiction are NOT adult unless the title or synopsis says explicit.\n\nBooks:\n${list}\n\nAnswer ONLY with JSON: {"books": [{"id": "...", "shelf": "...", "adult": true|false}]}`;
   const r = await axios.post('https://openrouter.ai/api/v1/chat/completions',
-    { model: MODEL(), max_tokens: 4000, messages: [{ role: 'user', content: prompt }], usage: { include: true }, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: false, effort: 'none' } } : {}), response_format: { type: 'json_object' } },
+    { model: MODEL(), max_tokens: 4000, messages: [{ role: 'user', content: prompt }], usage: { include: true }, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: false, effort: 'none' } } : {}), response_format: { type: 'json_object' }, provider: PROVIDER() },
     { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 });
   const text = String(r.data?.choices?.[0]?.message?.content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const usage = r.data?.usage || {};
