@@ -516,6 +516,18 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || lyricWritingModel;
+/* Oct 16 2026: the edit passes (the producer's audit, the repeat rewrite, Seed's cut-to-fit)
+ * rework a draft that is already written. On MiMo even effort 'low' thought for 143-507 s, so
+ * the audit was cancelled on every song after Oct 13 and she got the unaudited first draft;
+ * with thinking off the gateway's rescue returned a whole 4 KB song in 9 s. Edit passes now
+ * ride with thinking off. A long (background) write also holds AUDIT_RESERVE_MS back from its
+ * first draft, so a slow draft can no longer starve the audit. KADE_LYRIC_AUDIT_RESERVE_MS=0
+ * gives the draft the whole budget again. */
+const EDIT_PASS_REASONING = Object.freeze({ enabled: false, effort: 'none' });
+const AUDIT_RESERVE_MS = Math.max(0, Number(process.env.KADE_LYRIC_AUDIT_RESERVE_MS ?? 90000) || 0);
+function draftTimeoutMs(timeoutMs, wantsWords) {
+  return wantsWords && timeoutMs >= 300000 ? timeoutMs - AUDIT_RESERVE_MS : timeoutMs;
+}
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
@@ -906,27 +918,40 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
     e.status = 503;
     throw e;
   }
-  const r = await axios.post(
-    gatewayUrl,
-    {
-      model,
-      ...(model === lyricWritingModel ? { stream: true, stream_options: { include_usage: true } } : {}),
-      max_tokens: maxTokens,
-      ...(model === lyricWritingModel ? {} : { temperature, ...(top_p !== undefined ? { top_p } : {}) }),
-      ...(reasoning ? { reasoning } : {}),
-      ...(kade_think_max_effort ? { kade_think_max_effort } : {}),
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    },
-    {
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': UA },
-      timeout: timeoutMs,
-      ...(model === lyricWritingModel ? { responseType: 'stream', signal: AbortSignal.timeout(timeoutMs) } : {}),
-    },
-  );
-  const reply = model === lyricWritingModel ? await readWritingCompletion(r.data) : r.data;
+  const streamed = model === lyricWritingModel;
+  const signal = streamed ? AbortSignal.timeout(timeoutMs) : undefined;
+  let reply;
+  try {
+    const r = await axios.post(
+      gatewayUrl,
+      {
+        model,
+        ...(streamed ? { stream: true, stream_options: { include_usage: true } } : {}),
+        max_tokens: maxTokens,
+        ...(streamed ? {} : { temperature, ...(top_p !== undefined ? { top_p } : {}) }),
+        ...(reasoning ? { reasoning } : {}),
+        ...(kade_think_max_effort ? { kade_think_max_effort } : {}),
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      },
+      {
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': UA },
+        timeout: timeoutMs,
+        ...(streamed ? { responseType: 'stream', signal } : {}),
+      },
+    );
+    reply = streamed ? await readWritingCompletion(r.data) : r.data;
+  } catch (e) {
+    /* Oct 16 2026: the streamed writer's only wall clock is the signal (keep-alive comments
+     * keep axios's idle timer from firing), and its abort arrives as ERR_CANCELED, which
+     * the handlers below read as "the desk had trouble". Every timeout is ECONNABORTED. */
+    if (!(signal && (signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'TimeoutError'))) throw e;
+    const timedOut = new Error(`writer timed out after ${timeoutMs}ms (${e?.message || 'aborted'})`);
+    timedOut.code = 'ECONNABORTED';
+    throw timedOut;
+  }
   const out = reply?.choices?.[0]?.message?.content;
   const usage = reply?.usage || {};
   return { text: String(out || ''), refusal: reply?.choices?.[0]?.message?.refusal, usage, finishReason: reply?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
@@ -2102,11 +2127,13 @@ async function scriptHandler(req, res) {
     const audience = mode === 'write' && songEngines.includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
     const requestedTitle = typeof b.title === 'string' ? b.title.trim().slice(0, 80) : '';
     const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode, title: requestedTitle }, getAgent, audience);
+    const draftBudgetMs = draftTimeoutMs(writingSettings.timeoutMs, wantsWords);
     const first = await callModel({
       ...writingSettings,
       system: writingSystem,
       user: lines.join('\n\n'),
       maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
+      timeoutMs: draftBudgetMs,
     });
     if (engine === 'seed') {
       try {
@@ -2136,14 +2163,14 @@ async function scriptHandler(req, res) {
      * one-paragraph description and no song. A sung request that comes back
      * without a Lyrics: heading is a failed draft, not something to hand her;
      * ask once more. */
-    if (wantsWords && !/^\s*lyrics\s*:/im.test(raw) && (writingSettings.timeoutMs || 0) - (Date.now() - started) >= 45000) {
+    if (wantsWords && !/^\s*lyrics\s*:/im.test(raw) && (draftBudgetMs || 0) - (Date.now() - started) >= 45000) {
       try {
         const again = await callModel({
           ...writingSettings,
           system: writingSystem,
           user: lines.join('\n\n') + '\n\nWrite the complete draft now: the music direction, then the Lyrics: heading with every sung line, then the READBACK line.',
           maxTokens: writingSettings.maxTokens,
-          timeoutMs: (writingSettings.timeoutMs || 0) - (Date.now() - started) - 4000,
+          timeoutMs: (draftBudgetMs || 0) - (Date.now() - started) - 4000,
         });
         totalCost += again.costUSD;
         costMeasured = costMeasured && again.measured;
@@ -2243,8 +2270,9 @@ async function scriptHandler(req, res) {
             },
           ),
           maxTokens: writingSettings.maxTokens,
-          /* Keep the editorial pass on low reasoning for bounded latency; it can rebuild weak generated passages. */
-          reasoning: { enabled: true, effort: 'low', exclude: true },
+          /* Thinking off (see EDIT_PASS_REASONING): low effort on MiMo never finished inside the budget. */
+          reasoning: EDIT_PASS_REASONING,
+          kade_think_max_effort: undefined,
           timeoutMs: Math.min(timeLeft, 225000),
         });
         totalCost += fixed.costUSD;
@@ -2309,7 +2337,8 @@ async function scriptHandler(req, res) {
           system: writingSystem,
           user: lyricRepeatRequest(raw, repeatsLeft, text),
           maxTokens: writingSettings.maxTokens,
-          reasoning: writingSettings.reasoning ? { ...writingSettings.reasoning, effort: 'low' } : undefined,
+          reasoning: EDIT_PASS_REASONING,
+          kade_think_max_effort: undefined,
           timeoutMs: Math.min(repeatTime, 150000),
         });
         totalCost += answer.costUSD;
@@ -2431,7 +2460,7 @@ async function scriptHandler(req, res) {
           system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 2000. Cut it to fit by removing redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue. Keep the distinct voices, the conversation's progression, the requested sound constraints and its complete ending. Keep a wordless piece wordless; never invent speech. Output the script and nothing else — no fence, no preamble, no READBACK.`,
           user: script,
           maxTokens: 16384,
-          reasoning: { enabled: true, effort: 'low', exclude: true },
+          reasoning: EDIT_PASS_REASONING,
         });
         totalCost += shorter.costUSD;
         costMeasured = costMeasured && shorter.measured;
@@ -2554,7 +2583,11 @@ async function scriptHandler(req, res) {
     });
   } catch (error) {
     const status = error.status || 500;
-    logger.error('[soundbooth/script] failed:', error);
+    /* An axios error logs as its message, code and status only: the whole object drags its
+     * request and socket along. Anything else keeps its stack. */
+    const failed = `[soundbooth/script] failed: ${error.message} code=${error.code || 'none'} status=${error.response?.status || 'none'}`;
+    if (error.isAxiosError) logger.error(failed);
+    else logger.error(failed, error);
     return res
       .status(status)
       .json({ error: status === 503 || error.code === 'SOUNDBOOTH_WRITER_REFUSED' ? error.message : error.code === 'ECONNABORTED' ? 'The writer ran out of time on that one. Your idea is kept; nothing was recorded. Try again.' : 'The script desk had trouble. Try again.' });
