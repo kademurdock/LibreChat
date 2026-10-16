@@ -8,9 +8,10 @@ const path = require('path');
  * the pure validator can be tested without a database. */
 const stubName = (request) => path.join(__dirname, '__stub__' + request.replace(/[^a-z]/gi, '_') + '.js');
 const STUBS = {
-  '~/models': 'module.exports = { getAgent: async () => null };',
-  '~/models/kadeVoicePref': 'module.exports = { getUserVoicePref: async () => null };',
-  '~/server/services/Files/Audio/voiceCatalog': 'module.exports = { fetchLiveVoices: async () => null };',
+  '~/models': 'module.exports = { getAgent: async () => globalThis.__resolverAgent || null };',
+  '~/models/kadeVoicePref': 'module.exports = { getUserVoicePref: async () => globalThis.__resolverPick || null };',
+  '~/server/services/Files/Audio/voiceCatalog':
+    'module.exports = { fetchLiveCatalog: async () => globalThis.__resolverCatalog || { voices: null, hidden: null, aliases: null } };',
   '@librechat/data-schemas': 'module.exports = { logger: { warn() {}, error() {}, info() {} } };',
 };
 const origResolve = Module._resolveFilename;
@@ -20,7 +21,7 @@ Module._resolveFilename = function (request, ...rest) {
 };
 const fs = require('fs');
 for (const [request, body] of Object.entries(STUBS)) fs.writeFileSync(stubName(request), body);
-const { isValidLabel } = require('./kadeVoiceResolver');
+const { isValidLabel, resolveVoice } = require('./kadeVoiceResolver');
 for (const f of fs.readdirSync(__dirname)) if (f.startsWith('__stub__')) fs.unlinkSync(path.join(__dirname, f));
 
 const live = ['warm low-ish woman · turnpike', 'clear high girl · hickory', 'Voice 700'];
@@ -41,4 +42,32 @@ test('a numbered label must be served or hidden', () => {
   assert.ok(isValidLabel('Voice 31', live, aliases, hidden));
   assert.ok(!isValidLabel('Voice 999', live, aliases, hidden));
   assert.ok(isValidLabel('Voice 999', null, aliases, hidden), 'no catalog reachable -> passes');
+});
+
+test('Oct 16: a pick saved under a renamed voice stays valid, read from the one shared catalog', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('the resolver must not fetch /voices.json on its own');
+  };
+  try {
+    globalThis.__resolverAgent = { name: 'Della', tts: { voiceId: 'Old Builder Name' } };
+    globalThis.__resolverCatalog = {
+      voices: ['New Name', 'New Builder Name'],
+      hidden: ['Old Name', 'Old Builder Name'],
+      aliases: ['Kiana (Comedian)'],
+    };
+    globalThis.__resolverPick = 'Old Name';
+    let got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.strictEqual(got.voice, 'Old Name');
+    assert.strictEqual(got.source, 'personal');
+    globalThis.__resolverPick = null;
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.strictEqual(got.voice, 'Old Builder Name');
+    assert.strictEqual(got.source, 'builder');
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.__resolverAgent;
+    delete globalThis.__resolverCatalog;
+    delete globalThis.__resolverPick;
+  }
 });
