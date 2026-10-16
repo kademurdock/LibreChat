@@ -98,6 +98,13 @@ export function clipBytes(model: string = visionModel()): number {
 }
 export const voiceBase = (): string =>
   process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
+/** Oct 16 2026: the voice proxy only answers callers holding KADE_SPEECH_SECRET (the same
+ * Railway variable on the proxy, the fork and the bridge); the lane only names the caller. */
+function speechProxyHeaders(lane: string): Record<string, string> {
+  const secret = String(process.env.KADE_SPEECH_SECRET || '').split(',')[0].trim();
+  return secret ? { 'x-kade-caller': lane, 'x-proxy-secret': secret } : { 'x-kade-caller': lane };
+}
+
 export const userAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
@@ -1689,6 +1696,7 @@ export async function synthesize(
               'User-Agent': userAgent,
               'Content-Type': 'application/json',
               'x-kade-tts-session': session.slice(0, 64),
+              ...speechProxyHeaders('fork-described-video'),
             },
             responseType: 'arraybuffer',
             signal,

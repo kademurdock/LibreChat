@@ -9,7 +9,8 @@ import { generationRate } from '~/utils/voicePace';
  * Architecture:
  *   MediaRecorder + silence VAD -> LibreChat /api/files/speech/stt (Whisper)
  *   -> /api/agents/chat (resumable SSE) -> SentenceStreamer
- *   -> Inworld TTS proxy /v1/audio/speech -> Web Audio API playback
+ *   -> /api/files/speech/tts/manual (signed in; the fork adds the proxy's
+ *      secret, Oct 16 2026) -> Inworld TTS proxy -> Web Audio API playback
  *
  * F4 (June 30 2026): speech-to-text now uses the SAME server-side Whisper path
  * as the in-app mic (useSpeechToTextExternal): record with MediaRecorder, detect
@@ -235,7 +236,9 @@ class SentenceStreamer {
 // -- Types & constants ---------------------------------------------------------
 type CallStatus = 'idle' | 'connecting' | 'listening' | 'thinking' | 'speaking';
 
-const TTS_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
+/* Oct 16 2026: speech goes through the fork's signed-in lane, like the iPhone's. The
+ * voice proxy no longer answers browsers, so a stranger cannot spend the voice credit. */
+const TTS_URL = '/api/files/speech/tts/manual';
 const STT_URL = '/api/files/speech/stt';
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
 const NEW_CONVO = 'new';
@@ -1241,9 +1244,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       if (abortRef.current) return null;
       const useVoice = voice || 'Kiana (Comedian)';
       try {
-        const resp = await fetch(`${TTS_BASE}/v1/audio/speech`, {
+        const resp = await fetch(TTS_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           // speed: Kade D2d — the active agent's speaking rate (undefined drops out)
           body: JSON.stringify({
             model: 'tts-1',
@@ -1259,7 +1266,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         return null;
       }
     },
-    [voice, generationSpeed],
+    [voice, generationSpeed, token],
   );
 
   // -- LLM streaming turn ------------------------------------------------------

@@ -45,6 +45,7 @@ const axios = require('axios');
 const { MooRoom, MooChar, MooDistrict, logger, worldClock, pick } = require('./ctx');
 const { MooRumor, MooBoard } = require('~/models/kadeMooLife');
 const { MooRadio } = require('~/models/kadeMooRadio');
+const { speechProxyHeaders } = require('~/server/services/kadeSpeechAuth');
 const reverie = require('../reverie');
 
 const ENABLED = () => process.env.REVERIE_RADIO !== '0';
@@ -284,7 +285,7 @@ async function performInworld(script, slot) {
   const base = (process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app').replace(/\/$/, '');
   const { text, baseVoice } = sceneScript(script, slot);
   const r = await axios.post(`${base}/v1/audio/speech`, { input: text, voice: baseVoice, model: 'tts-1' }, {
-    headers: { Authorization: 'Bearer placeholder', 'Content-Type': 'application/json', 'User-Agent': UA },
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA, ...speechProxyHeaders('fork-reverie-radio') },
     responseType: 'arraybuffer',
     timeout: 120000,
   });

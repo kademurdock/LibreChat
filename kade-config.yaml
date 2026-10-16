@@ -594,13 +594,15 @@ speech:
   stt:
     openai:
       url: "https://inworld-tts-proxy-production.up.railway.app/v1/audio/transcriptions"
-      apiKey: "placeholder"
+      # Oct 16 2026: the proxy only answers callers holding this Railway variable.
+      apiKey: "${KADE_SPEECH_SECRET}"
       model: "nova-3"
 
   tts:
     openai:
       url: "https://inworld-tts-proxy-production.up.railway.app/v1/audio/speech"
-      apiKey: "placeholder"
+      # Oct 16 2026: the proxy only answers callers holding this Railway variable.
+      apiKey: "${KADE_SPEECH_SECRET}"
       model: "tts-1"
       voices:
         - "Voice 1"

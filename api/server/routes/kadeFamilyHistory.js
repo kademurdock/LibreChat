@@ -11,6 +11,7 @@ const { logger } = require('@librechat/data-schemas');
 const { initializeS3, libraryReviewSeat, familyArchiveDefinitions, familyHistoryArchivesRouter, familyRouterCall } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { speechProxyHeaders } = require('~/server/services/kadeSpeechAuth');
 const { signGet, readingVoice } = require('./kadeReadingRoom')._internals;
 
 const unzip = promisify(gunzip);
@@ -106,6 +107,7 @@ async function speak(text, { session, userId }) {
       headers: {
         'Content-Type': 'application/json',
         'x-kade-tts-session': String(session).slice(0, 64),
+        ...speechProxyHeaders('fork-family-history'),
       },
       responseType: 'arraybuffer',
       timeout: 120000,

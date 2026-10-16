@@ -395,6 +395,9 @@ class TTSService {
     if (kadeStream) {
       headers['x-kade-tts-stream'] = '1';
     }
+    if (provider === TTSProviders.OPENAI) {
+      headers['x-kade-caller'] = 'fork-tts'; // Oct 16 2026: names this lane in the proxy's speech-gate summary
+    }
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 

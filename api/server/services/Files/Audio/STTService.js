@@ -210,6 +210,7 @@ class STTService {
     const headers = {
       'Content-Type': 'multipart/form-data',
       ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+      'x-kade-caller': 'fork-stt', // Oct 16 2026: names this lane in the voice proxy's speech-gate summary
     };
     [headers].forEach(this.removeUndefined);
 

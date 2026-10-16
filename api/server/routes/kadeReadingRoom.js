@@ -50,6 +50,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
 const { reviewedLibraryOriginal, libraryOriginalLibrarian } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
+const { speechProxyHeaders } = require('~/server/services/kadeSpeechAuth');
 const { userPriceFactor, extraChargeUSD } = require('~/server/services/kadeRealCost');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
 const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
@@ -935,6 +936,7 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
       'Content-Type': 'application/json',
       'x-kade-tts-session': `reading:${String(req.user.id).slice(0, 24)}:${String(book._id).slice(-12)}`,
       'x-kade-tts-stream': '1',
+      ...speechProxyHeaders('fork-library'),
     };
     const upstream = await axios.post(
       `${PROXY_BASE()}/v1/audio/speech`,
