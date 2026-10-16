@@ -376,3 +376,22 @@ test('Oct 16: memoEmbed folds a tools query into the memory query where the lane
   assert.strictEqual(calls, 3);
   assert.deepStrictEqual(seen.slice(1).sort(), ['query', 'tools']);
 });
+
+test('Oct 16: a down lane is not asked to embed every tool description on each turn', async () => {
+  R._resetForTests();
+  const asked = [];
+  const embed = async (text, options) => {
+    asked.push((options && options.purpose) || 'query');
+    return null;
+  };
+  const r = await R.selectTools({
+    tools: T(KIANA),
+    text: 'how are you feeling',
+    agentId: 'a',
+    conversationId: 'c-down',
+    embed,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(r.reason, 'embed-down');
+  assert.deepStrictEqual(asked.sort(), ['query', 'tools']);
+});

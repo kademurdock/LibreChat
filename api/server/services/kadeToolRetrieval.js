@@ -400,8 +400,9 @@ function keywordHits(text, candidates) {
  * (the query embed, then six cold description embeds in a row of failures).
  * The turn now waits at most QUERY_WAIT_MS for the query vector
  * (KADE_TOOLS_EMBED_WAIT_MS); one that has not come back counts as the lane
- * being down. Tool descriptions are never awaited on the turn path: a missing
- * one is embedded in the background and scores from the next turn on. */
+ * being down. Tool descriptions are never awaited on the turn path: once the
+ * lane answers, a missing one is embedded in the background and scores from
+ * the next turn on. */
 const QUERY_WAIT_MS = 2500;
 const SLOW = Symbol('slow');
 
@@ -460,7 +461,6 @@ async function embedHits({
     return out;
   }
   try {
-    primeToolDescriptions(tools, embed);
     let qv = queryVec;
     if (!qv) {
       const query = String(text).slice(0, 1500);
@@ -469,9 +469,15 @@ async function embedHits({
       Promise.resolve()
         .then(() => embed(query))
         .catch(() => null);
-      const got = await within(embed(query, { purpose: 'tools' }), waitMs);
+      const asked = Promise.resolve().then(() => embed(query, { purpose: 'tools' }));
+      /* Descriptions only once the lane has answered (a down lane is not asked for
+       * thirty more), and in the background. */
+      asked.then((vec) => vec && primeToolDescriptions(tools, embed)).catch(() => {});
+      const got = await within(asked, waitMs);
       out.slow = got === SLOW;
       qv = out.slow ? null : got;
+    } else {
+      primeToolDescriptions(tools, embed);
     }
     if (!qv) {
       out.failed = true;
@@ -675,8 +681,8 @@ function applySelection(result, keep) {
   return dropped;
 }
 
-/** Per-request memo so the diary/card recall reuses the same query vector. */
-/** `samePurpose` (kadeDiary.embedPurpose) folds purposes the live lane embeds
+/** Per-request memo so the diary/card recall reuses the same query vector.
+ * `samePurpose` (kadeDiary.embedPurpose) folds purposes the live lane embeds
  * identically into one, so they share one call: on a lane that reads no
  * instruction the tools query is the memory query card recall takes. */
 function memoEmbed(req, embed, samePurpose) {
