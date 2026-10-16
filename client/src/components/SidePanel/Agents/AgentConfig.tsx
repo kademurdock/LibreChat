@@ -36,6 +36,7 @@ import { VoicePreviewButton, VoiceFlagButton } from '~/components/Audio/Voices';
 import AgentVoicePicker, { extractAgentLines } from './AgentVoicePicker';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
+import AgentBody from './AgentBody';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
 import FileSearch from './FileSearch';
@@ -115,6 +116,7 @@ export default function AgentConfig() {
   const skills = useWatch({ control, name: 'skills' });
   const skillsActive = useWatch({ control, name: 'skills_enabled' });
   const agent_id = useWatch({ control, name: 'id' });
+  const agentName = useWatch({ control, name: 'name' });
 
   let skillsHintKey:
     | 'com_ui_skills_disabled_hint'
@@ -335,6 +337,14 @@ export default function AgentConfig() {
             )}
           />
         </div>
+        {/* ♿ KADE Oct 16 2026: the character's puppet body (saved agents only) */}
+        {agent_id && !isEphemeralAgent(agent_id) && (
+          <AgentBody
+            agentId={agent_id}
+            agentName={agentName ?? ''}
+            avatarPath={agent?.avatar?.filepath ?? ''}
+          />
+        )}
         {/* Description */}
         <div className="mb-4">
           <label className={labelClass} htmlFor="description">
