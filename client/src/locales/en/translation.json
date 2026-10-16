@@ -2111,5 +2111,5 @@
   "com_voice_pace_fish_help": "Directs how the voice performs the next message. This is a pace request, not an exact speed multiplier. Finished audio plays at its original speed.",
   "com_voice_speed_inworld_help": "Uses Inworld’s supported 0.5–1.5 speaking-rate range for the next message. Finished audio plays at its original speed.",
   "com_voice_fillers": "Filler words and little sounds",
-  "com_voice_fillers_help": "Characters sometimes say um or I mean, take a breath, or laugh a little, like a real voice message. Only in what you hear: the text never changes. Never in books."
+  "com_voice_fillers_help": "Characters sometimes say um or uh, take a breath, or laugh a little, like a real voice message. Only in what you hear: the text never changes. Never in books."
 }

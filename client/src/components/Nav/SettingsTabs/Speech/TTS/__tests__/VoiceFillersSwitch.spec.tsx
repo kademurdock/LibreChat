@@ -16,7 +16,7 @@ describe('VoiceFillersSwitch', () => {
     const toggle = getByRole('switch', { name: 'Filler words and little sounds' });
     expect(toggle).toHaveAttribute('aria-checked', 'true');
     expect(toggle).toHaveAccessibleDescription(
-      'Characters sometimes say um or I mean, take a breath, or laugh a little, like a real voice message. Only in what you hear: the text never changes. Never in books.',
+      'Characters sometimes say um or uh, take a breath, or laugh a little, like a real voice message. Only in what you hear: the text never changes. Never in books.',
     );
   });
 

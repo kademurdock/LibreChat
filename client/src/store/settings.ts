@@ -89,7 +89,7 @@ const localStorageAtoms = {
    * the old 'playbackRate' slider stored audio-stretch numbers (often a leftover 1 or 2) that
    * would otherwise override every character's pace. useSpeechSettingsInit drops that key. */
   voicePacePreference: atomWithLocalStorage<number | null>('voicePacePreference', null),
-  /** Oct 16 2026: "Filler words and little sounds". On = characters may say um or I mean,
+  /** Oct 16 2026: "Filler words and little sounds". On = characters may say um or uh,
    * breathe or laugh a little in what you HEAR (the text never changes); off = sent as
    * fillers:false on every chat and audition request. Reading lanes never get them. */
   voiceFillers: atomWithLocalStorage<boolean>('voiceFillers', true),
