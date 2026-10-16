@@ -11,7 +11,13 @@ import {
   LILLY_PUBLIC_ID,
   LILLY_PUBLIC_PORTRAIT_FILE,
   facialBlend,
+  portraitPlan,
 } from './portrait-rig.mjs';
+import { readFileSync } from 'node:fs';
+
+const bodyScene = JSON.parse(
+  readFileSync(new URL('./puppet/fixtures/scene-golden.json', import.meta.url), 'utf8'),
+).cases[0].scene;
 test('Lilly animation is bound to her original portrait with valid local regions', () => {
   const lilly = preparedPortrait(LILLY_ID, '/' + LILLY_PORTRAIT_FILE);
   assert.ok(lilly);
@@ -52,4 +58,17 @@ test('mouth and eyelids have bounded graduated poses instead of on/off jumps', (
   const values = Array.from({ length: 101 }, (_, i) => facialBlend(i / 100));
   assert.ok(new Set(values).size > 10);
   assert.ok(values.every((v, i) => i === 0 || v >= values[i - 1]));
+});
+test('a saved body gives a puppet only to characters without a hand-made face', () => {
+  const body = { scene: bodyScene, description: 'An oval face.' };
+  const plain = portraitPlan('agent_someoneElse', '/uploaded.png', body);
+  assert.equal(plain.vector, 'puppet');
+  assert.equal(plain.scene, bodyScene);
+  assert.equal(plain.description, 'An oval face.');
+  assert.equal(portraitPlan('agent_someoneElse', '', body).vector, 'puppet', 'no avatar needed');
+  const kiana = portraitPlan(KIANA_ID, '/' + KIANA_PORTRAIT_FILE, body);
+  assert.ok(kiana.sheet, 'Kiana keeps her own face');
+  assert.equal(portraitPlan('agent_someoneElse', '/x.png', null), null);
+  assert.equal(portraitPlan('agent_someoneElse', '/x.png', { scene: null }), null);
+  assert.equal(portraitPlan('agent_someoneElse', '/x.png', { scene: { schema: 'old' } }), null);
 });
