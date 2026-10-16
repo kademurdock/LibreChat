@@ -19,8 +19,11 @@ function kit() {
   return kitPromise;
 }
 
-const KIT_VERSION = '2026-10-16.1';
-const SCENE_CACHE_LIMIT = 300;
+const KIT_VERSION = '2026-10-16.2';
+/* Scenes are cached as JSON text: 300 parsed scenes held about 82 MB of heap, the same
+ * scenes as text about 25 MB (86 KB each on average, 16 KB gzipped on the wire). Only
+ * saved bodies are cached; editor previews and surprises are drawn and sent once. */
+const SCENE_CACHE_LIMIT = 200;
 const sceneCache = new Map();
 
 function hashOf(value) {
@@ -42,8 +45,12 @@ async function describe(recipe) {
   return k.describeRecipe(recipe);
 }
 
-/** Compile a recipe; scenes are cached by recipe hash + kit version. */
-async function compile(recipe) {
+/**
+ * Compile a recipe into { recipe, description, sceneHash, sceneJson }; the scene travels as
+ * JSON text (see sendWithScene in the route). Saved bodies are cached by recipe hash + kit
+ * version; pass { cache: false } for one-off drawings.
+ */
+async function compile(recipe, { cache = true } = {}) {
   const k = await kit();
   const normalized = k.normalizeRecipe(recipe);
   const key = `${KIT_VERSION}:${hashOf(normalized)}`;
@@ -56,17 +63,24 @@ async function compile(recipe) {
   const { scene } = k.buildScene(normalized);
   scene.recipeHash = key.split(':')[1];
   scene.kit = KIT_VERSION;
-  const out = { recipe: normalized, scene, description: scene.description, sceneHash: key.replace(':', '-') };
-  sceneCache.set(key, out);
-  if (sceneCache.size > SCENE_CACHE_LIMIT) {
-    sceneCache.delete(sceneCache.keys().next().value);
+  const out = {
+    recipe: normalized,
+    description: scene.description,
+    sceneHash: key.replace(':', '-'),
+    sceneJson: JSON.stringify(scene),
+  };
+  if (cache) {
+    sceneCache.set(key, out);
+    if (sceneCache.size > SCENE_CACHE_LIMIT) {
+      sceneCache.delete(sceneCache.keys().next().value);
+    }
   }
   return out;
 }
 
 async function random(seed, fantasy) {
   const k = await kit();
-  return compile(k.randomRecipe(String(seed || Date.now()), { fantasy: !!fantasy }));
+  return compile(k.randomRecipe(String(seed || Date.now()), { fantasy: !!fantasy }), { cache: false });
 }
 
 /* ---------- the character's own sense of its body ---------- */

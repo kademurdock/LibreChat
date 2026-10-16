@@ -6,7 +6,32 @@
 // Metals default per item; a recipe may set `jewelry: { metal: 'gold' | 'silver' }`.
 // Fabric pieces (scarf, ties, bandana, lanyard) take the outfit accent colour.
 import { ellipse, openSpline, closedSpline, closedMixed, compound, shade, lerp, hexToRgb, luminance, round1 } from './geom.mjs';
-import { morphable, BROW_SHAPES, EYE_SHAPES } from './kit.mjs';
+
+// No import from kit.mjs: kit -> accessories -> this file would form a cycle that breaks
+// when this file is loaded first. The brow piercing needs the brow geometry, so the
+// few numbers it uses are mirrored here from kit.mjs (BROW_SHAPES, EYE_SHAPES.size).
+const BROW_SHAPES = {
+  'soft-arch': { arch: 11, peak: 0.6, inner: 0, t: 1 },
+  straight: { arch: 3, peak: 0.5, inner: 0, t: 1 },
+  'high-arch': { arch: 21, peak: 0.66, inner: 2, t: 0.9 },
+  bushy: { arch: 6, peak: 0.55, inner: 0, t: 1.55 },
+  thin: { arch: 12, peak: 0.6, inner: 0, t: 0.55 },
+  worried: { arch: 6, peak: 0.35, inner: -10, t: 0.95 },
+  stern: { arch: 4, peak: 0.6, inner: 9, t: 1.15 },
+};
+const EYE_SIZE = { doe: 1.12 };
+
+// Same contract as kit.mjs morphable: identical command structure for every target.
+function morphable(fn, base, channels) {
+  const d = fn(base);
+  const m = [];
+  for (const [c, patch, neg] of channels) {
+    const t = fn({ ...base, ...patch });
+    if (t.length !== d.length) throw new Error('morph structure mismatch on ' + c);
+    m.push(neg ? { c, d: t, n: true } : { c, d: t });
+  }
+  return { d, m };
+}
 
 // ---------------------------------------------------------------- helpers
 const METALS = {
@@ -243,9 +268,9 @@ export const ITEMS = {
       const M = METALS[metal];
       for (const L of lobes(ctx)) {
         const id = 'stud-earrings-' + L.s;
-        const R = 7.2;
-        const x = L.x;
-        const y = L.y;
+        const R = 8;
+        const x = L.x + L.side * 1.5;
+        const y = L.y - 3;
         metalGrad(ctx, id + '-g', metal, x - R, y - R, x + R, y + R);
         b.add({ id: id + '-set', g: 'ears', d: ellipse(x, y, R, R), fill: id + '-g', stroke: M.line, sw: 1.6 });
         b.grad(id + '-gem', { kind: 'radial', center: [x, y], focal: [x - 1.6, y - 1.8], radius: R * 0.7, stops: [{ at: 0, color: '#FFFFFF' }, { at: 0.45, color: '#DDF2FF' }, { at: 1, color: '#86BCE6' }] });
@@ -328,7 +353,7 @@ export const ITEMS = {
         const id = 'star-earrings-' + L.s;
         const x = L.x + L.side * 1;
         const y = L.y + 1;
-        const ro = 11.5;
+        const ro = 13;
         metalGrad(ctx, id + '-g', metal, x - ro, y - ro, x + ro * 0.8, y + ro);
         b.add({ id: id + '-star', g: 'ears', d: starPath(x, y, ro, ro * 0.45), fill: id + '-g', stroke: M.line, sw: 1.4 });
         b.add({ id: id + '-shine', g: 'ears', d: ellipse(x - 2.4, y - 2.6, 2.6, 1.8), fill: '#FFFFFF', op: 0.7 });
@@ -458,28 +483,40 @@ export const ITEMS = {
     },
   },
   necktie: {
-    name: 'Necktie', slot: 'neckwear', note: 'a striped necktie',
+    name: 'Necktie', slot: 'neckwear', note: 'a striped necktie under a crisp shirt collar',
     neckwear(ctx) {
-      const { b, CX } = ctx;
+      const { b, CX, colors } = ctx;
       const { nb, nw } = neckOf(ctx);
       const c = fabricOf(ctx);
       const line = shade(c, -0.45);
       const stripe = contrastOf(c);
-      const y = nb - 12;
+      const shirt = luminance(colors.cloth) > 0.75 ? '#FFFFFF' : '#F3F1EC';
+      const shirtLine = '#9A9690';
+      const y = nb - 14;
       fabricGrad(ctx, 'necktie-g', c, CX - 40, y, CX + 40, y + 200);
-      b.add({ id: 'necktie-band', g: 'body', d: closedSpline([[CX - nw * 1.3, y - 14], [CX, y - 6], [CX + nw * 1.3, y - 14], [CX + nw * 1.3, y - 6], [CX, y + 3], [CX - nw * 1.3, y - 6]]), fill: shade(c, -0.18), stroke: line, sw: 1.6, clip: 'neck' });
-      const blade = closedMixed([[CX - 9, y + 20, true], [CX + 9, y + 20, true], [CX + 17, y + 100], [CX + 23, y + 168, true], [CX, y + 190, true], [CX - 23, y + 168, true], [CX - 17, y + 100]]);
+      b.grad('necktie-shirt', { kind: 'linear', start: [CX - 80, nb - 30], end: [CX + 80, nb + 30], stops: [{ at: 0, color: shirt }, { at: 1, color: shade(shirt, -0.12) }] });
+      // collar band standing round the neck
+      b.add({ id: 'necktie-collarBack', g: 'body', d: closedSpline([[CX - nw * 1.1, nb - 36], [CX, nb - 27], [CX + nw * 1.1, nb - 36], [CX + nw * 1.14, nb - 12], [CX, nb - 2], [CX - nw * 1.14, nb - 12]]), fill: 'necktie-shirt', stroke: shirtLine, sw: 2 });
+      // shirt front showing between the collar points
+      b.add({ id: 'necktie-placket', g: 'body', d: closedMixed([[CX - 24, y - 4, true], [CX + 24, y - 4, true], [CX + 32, y + 40, true], [CX, y + 50, true], [CX - 32, y + 40, true]]), fill: 'necktie-shirt', stroke: shirtLine, sw: 1.6 });
+      const blade = closedMixed([[CX - 10, y + 22, true], [CX + 10, y + 22, true], [CX + 18, y + 100], [CX + 24, y + 168, true], [CX, y + 192, true], [CX - 24, y + 168, true], [CX - 18, y + 100]]);
       b.add({ id: 'necktie-blade', g: 'body', d: blade, fill: 'necktie-g', stroke: line, sw: 2.4 });
       const stripes = [];
       for (let i = 0; i < 6; i++) {
-        const sy = y + 34 + i * 26;
-        stripes.push(closedMixed([[CX - 30, sy, true], [CX + 30, sy - 22, true], [CX + 30, sy - 15, true], [CX - 30, sy + 7, true]]));
+        const sy = y + 40 + i * 26;
+        stripes.push(closedMixed([[CX - 30, sy, true], [CX + 30, sy - 22, true], [CX + 30, sy - 14, true], [CX - 30, sy + 8, true]]));
       }
       b.add({ id: 'necktie-stripes', g: 'body', d: compound(...stripes), fill: stripe, op: 0.85, clip: 'necktie-blade' });
-      b.add({ id: 'necktie-crease', g: 'body', d: openSpline([[CX + 2, y + 26], [CX + 4, y + 100], [CX + 3, y + 180]]), fill: 'none', stroke: line, sw: 1.6, op: 0.25, clip: 'necktie-blade' });
-      b.add({ id: 'necktie-knot', g: 'body', d: closedMixed([[CX - 15, y - 6, true], [CX, y - 9], [CX + 15, y - 6, true], [CX + 10, y + 22, true], [CX, y + 24], [CX - 10, y + 22, true]]), fill: 'necktie-g', stroke: line, sw: 2.4 });
-      b.add({ id: 'necktie-knotFold', g: 'body', d: openSpline([[CX - 9, y - 2], [CX + 2, y + 8], [CX + 6, y + 19]]), fill: 'none', stroke: line, sw: 1.6, op: 0.35 });
-      b.add({ id: 'necktie-shine', g: 'body', d: openSpline([[CX - 9, y + 30], [CX - 12, y + 80], [CX - 15, y + 130]]), fill: 'none', stroke: '#FFFFFF', sw: 2.4, op: 0.22, clip: 'necktie-blade' });
+      b.add({ id: 'necktie-crease', g: 'body', d: openSpline([[CX + 2, y + 28], [CX + 4, y + 100], [CX + 3, y + 180]]), fill: 'none', stroke: line, sw: 1.6, op: 0.25, clip: 'necktie-blade' });
+      b.add({ id: 'necktie-shine', g: 'body', d: openSpline([[CX - 9, y + 32], [CX - 12, y + 80], [CX - 15, y + 130]]), fill: 'none', stroke: '#FFFFFF', sw: 2.4, op: 0.22, clip: 'necktie-blade' });
+      b.add({ id: 'necktie-knot', g: 'body', d: closedMixed([[CX - 17, y - 4, true], [CX, y - 7], [CX + 17, y - 4, true], [CX + 10, y + 26, true], [CX, y + 28], [CX - 10, y + 26, true]]), fill: 'necktie-g', stroke: line, sw: 2.4 });
+      b.add({ id: 'necktie-knotFold', g: 'body', d: openSpline([[CX - 10, y + 1], [CX + 1, y + 11], [CX + 6, y + 23]]), fill: 'none', stroke: line, sw: 1.6, op: 0.35 });
+      // collar points lying over the knot's sides
+      for (const side of [-1, 1]) {
+        const x = (dx) => CX + side * dx;
+        const flap = closedMixed([[x(9), y - 3, true], [x(nw * 0.6), nb - 26], [x(nw * 1.12), nb - 22, true], [x(nw * 1.02), nb + 4], [x(30), y + 40, true], [x(16), y + 18]]);
+        b.add({ id: 'necktie-flap' + side, g: 'body', d: flap, fill: 'necktie-shirt', stroke: shirtLine, sw: 2 });
+      }
     },
   },
   scarf: {
@@ -502,7 +539,21 @@ export const ITEMS = {
       const end = (x0, x1, top, bot, w0, w1) => closedMixed([[x0 - w0 / 2, top], [x0 + w0 / 2, top], [lerp(x0, x1, 0.5) + (w0 + w1) / 4, (top + bot) / 2], [x1 + w1 / 2, bot, true], [x1 - w1 / 2, bot, true], [lerp(x0, x1, 0.5) - (w0 + w1) / 4, (top + bot) / 2]]);
       const backX0 = CX - nw * 0.12;
       const backX1 = CX - nw * 0.02;
-      b.add({ id: 'scarf-endB', g: 'body', d: end(backX0, backX1, nb + 4, nb + 108, 44, 46), fill: shade(c, -0.16), stroke: line, sw: 2.4 });
+      const bBot = nb + 108;
+      const fringeOf = (x, bot, n) => {
+        const out = [];
+        for (let i = 0; i < n; i++) {
+          const fx = x - ((n - 1) * 9.2) / 2 + i * 9.2;
+          out.push(openSpline([[fx, bot - 1], [fx - 1, bot + 8], [fx - 2.5, bot + 15]]));
+        }
+        return compound(...out);
+      };
+      b.add({ id: 'scarf-fringeB', g: 'body', d: fringeOf(backX1, bBot, 5), fill: 'none', stroke: line, sw: 4.2 });
+      b.add({ id: 'scarf-fringeBLit', g: 'body', d: fringeOf(backX1, bBot, 5), fill: 'none', stroke: shade(c, -0.16), sw: 2.4 });
+      b.add({ id: 'scarf-endB', g: 'body', d: end(backX0, backX1, nb + 4, bBot, 44, 46), fill: shade(c, -0.16), stroke: line, sw: 2.4 });
+      const ribsB = [];
+      for (let i = -1; i <= 1; i++) ribsB.push(openSpline([[backX0 + i * 10, nb], [backX1 + i * 10.5, bBot + 6]]));
+      b.add({ id: 'scarf-ribsB', ...rib, d: compound(...ribsB), clip: 'scarf-endB' });
       const fx0 = CX - nw * 0.62;
       const fx1 = CX - nw * 0.78;
       const fBot = nb + 120;
@@ -513,13 +564,8 @@ export const ITEMS = {
       const ribsA = [];
       for (let i = -2; i <= 2; i++) ribsA.push(openSpline([[fx0 + i * 10, nb], [lerp(fx0, fx1, 0.5) + i * 10.5, nb + 64], [fx1 + i * 11, fBot + 6]]));
       b.add({ id: 'scarf-ribsA', ...rib, d: compound(...ribsA), clip: 'scarf-endA' });
-      const fringe = [];
-      for (let i = 0; i < 6; i++) {
-        const fx = fx1 - 23 + i * 9.2;
-        fringe.push(openSpline([[fx, fBot - 1], [fx - 1, fBot + 8], [fx - 2.5, fBot + 15]]));
-      }
-      b.add({ id: 'scarf-fringe', g: 'body', d: compound(...fringe), fill: 'none', stroke: line, sw: 4.2 });
-      b.add({ id: 'scarf-fringeLit', g: 'body', d: compound(...fringe), fill: 'none', stroke: c, sw: 2.4 });
+      b.add({ id: 'scarf-fringe', g: 'body', d: fringeOf(fx1, fBot, 6), fill: 'none', stroke: line, sw: 4.2 });
+      b.add({ id: 'scarf-fringeLit', g: 'body', d: fringeOf(fx1, fBot, 6), fill: 'none', stroke: c, sw: 2.4 });
       // lower roll draping over the front
       const roll2 = [[CX - nw * 1.55, nb - 6], [CX - nw * 1.15, nb - 24], [CX - nw * 0.2, nb - 10], [CX + nw * 0.9, nb - 22], [CX + nw * 1.52, nb - 8], [CX + nw * 1.34, nb + 20], [CX + nw * 0.5, nb + 34], [CX - nw * 0.6, nb + 36], [CX - nw * 1.36, nb + 22]];
       b.add({ id: 'scarf-roll2', g: 'body', d: closedSpline(roll2), fill: 'scarf-g', stroke: line, sw: 2.6 });
@@ -600,11 +646,11 @@ export const ITEMS = {
       const k = 0.85 + 0.35 * (r.nose ? r.nose.size : 0.5);
       const ns = r.nose && r.nose.shape;
       const wide = ns === 'wide' ? 1.3 : ns === 'pointed' ? 0.8 : 1;
-      const x = CX + 19 * k * wide;
-      const y = f.noseY - 8 * k;
+      const x = CX + 18 * k * wide;
+      const y = f.noseY - 9 * k;
       metalGrad(ctx, 'nose-stud-g', metal, x - 4, y - 4, x + 4, y + 4);
-      b.add({ id: 'nose-stud-set', g: 'nose', d: ellipse(x, y, 4.4, 4.4), fill: 'nose-stud-g', stroke: M.line, sw: 1.1 });
-      b.add({ id: 'nose-stud-gem', g: 'nose', d: ellipse(x - 0.3, y - 0.3, 2.6, 2.6), fill: '#E6F5FF' });
+      b.add({ id: 'nose-stud-set', g: 'nose', d: ellipse(x, y, 5, 5), fill: 'nose-stud-g', stroke: M.line, sw: 1.1 });
+      b.add({ id: 'nose-stud-gem', g: 'nose', d: ellipse(x - 0.3, y - 0.3, 3, 3), fill: '#E6F5FF' });
       b.add({ id: 'nose-stud-glint', g: 'nose', d: twinkle(x - 1, y - 1.2, 2.6), fill: '#FFFFFF', op: 0.95 });
     },
   },
@@ -619,11 +665,11 @@ export const ITEMS = {
       const wide = ns === 'wide' ? 1.3 : ns === 'pointed' ? 0.8 : 1;
       const cx = CX + 24 * k * wide;
       const cy = f.noseY + 1;
-      const rr = 7.5;
+      const rr = 8;
       const pts = arcPts(cx, cy, rr, rr, -125, 150, 7);
       metalGrad(ctx, 'nose-ring-g', metal, cx - rr, cy - rr, cx + rr, cy + rr);
-      b.add({ id: 'nose-ring-under', g: 'nose', d: openSpline(pts), fill: 'none', stroke: M.line, sw: 4.2 });
-      b.add({ id: 'nose-ring-wire', g: 'nose', d: openSpline(pts), fill: 'none', stroke: 'nose-ring-g', sw: 2.4 });
+      b.add({ id: 'nose-ring-under', g: 'nose', d: openSpline(pts), fill: 'none', stroke: M.line, sw: 4.8 });
+      b.add({ id: 'nose-ring-wire', g: 'nose', d: openSpline(pts), fill: 'none', stroke: 'nose-ring-g', sw: 2.9 });
       b.add({ id: 'nose-ring-glint', g: 'nose', d: ellipse(cx + rr * 0.72, cy - rr * 0.35, 1.3, 1.6), fill: '#FFFFFF', op: 0.85 });
     },
   },
@@ -634,8 +680,7 @@ export const ITEMS = {
       const metal = metalOf(ctx, 'silver');
       const M = METALS[metal];
       const bs = BROW_SHAPES[r.brows && r.brows.shape] || BROW_SHAPES['soft-arch'];
-      const es = EYE_SHAPES[r.eyes && r.eyes.shape] || EYE_SHAPES.round;
-      const ew = 74 * (0.86 + 0.28 * (r.eyes ? r.eyes.size : 0.5)) * (es.size || 1);
+      const ew = 74 * (0.86 + 0.28 * (r.eyes ? r.eyes.size : 0.5)) * (EYE_SIZE[r.eyes && r.eyes.shape] || 1);
       const len = ew * 1.12;
       const th = 11 * (0.7 + 0.6 * (r.brows ? r.brows.thickness : 0.5)) * bs.t;
       const side = 1;
@@ -657,8 +702,8 @@ export const ITEMS = {
         return [x, y];
       };
       const T = 0.8;
-      const half = th * 0.33 + 2.6;
-      const ball = 3.8;
+      const half = th * 0.33 + 4;
+      const ball = 4.3;
       const ends = (p) => {
         const [x, y] = at(T, p);
         const [x2, y2] = at(T + 0.04, p);

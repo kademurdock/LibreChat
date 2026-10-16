@@ -106,7 +106,7 @@ router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res)
           out = await puppet.recipeFromWords(`A character called ${hint || 'a friendly helper'}`);
         }
         backfill.spentUSD += out.costUSD || 0;
-        const compiled = await puppet.compile(out.recipe);
+        const compiled = await puppet.compile(out.recipe, { cache: false });
         const saved = await bodies.saveAgentBody(a.id, {
           recipe: compiled.recipe,
           description: compiled.description,
@@ -166,8 +166,19 @@ function payload(agentId, row, compiled) {
     recipe: compiled ? compiled.recipe : null,
     description: compiled ? compiled.description : null,
     sceneHash: compiled ? compiled.sceneHash : null,
-    scene: compiled ? compiled.scene : null,
   };
+}
+
+/* The compiled scene is cached as JSON text, so it is spliced in rather than parsed and
+ * re-serialized on every request. `body` is always a non-empty object (see payload). */
+function sendWithScene(res, body, compiled, status = 200) {
+  const head = JSON.stringify(body);
+  const scene = compiled && compiled.sceneJson ? compiled.sceneJson : 'null';
+  return res.status(status).type('application/json').send(`${head.slice(0, -1)},"scene":${scene}}`);
+}
+
+function withScene(body, compiled) {
+  return { ...body, scene: compiled && compiled.sceneJson ? JSON.parse(compiled.sceneJson) : null };
 }
 
 router.get('/catalog', async (_req, res) => {
@@ -182,8 +193,8 @@ router.get('/catalog', async (_req, res) => {
 
 router.post('/preview', json, async (req, res) => {
   try {
-    const compiled = await puppet.compile((req.body && req.body.recipe) || {});
-    res.json(payload(null, null, compiled));
+    const compiled = await puppet.compile((req.body && req.body.recipe) || {}, { cache: false });
+    sendWithScene(res, payload(null, null, compiled), compiled);
   } catch (e) {
     logger.error(`[kadeAgentBody] preview failed: ${e.message}`);
     res.status(400).json({ error: 'That body could not be drawn.' });
@@ -194,7 +205,8 @@ router.post('/surprise', json, async (req, res) => {
   try {
     const b = req.body || {};
     const seed = String(b.seed || `${req.user.id}-${Date.now()}`).slice(0, 80);
-    res.json(payload(null, null, await puppet.random(seed, !!b.fantasy)));
+    const compiled = await puppet.random(seed, !!b.fantasy);
+    sendWithScene(res, payload(null, null, compiled), compiled);
   } catch (e) {
     logger.error(`[kadeAgentBody] surprise failed: ${e.message}`);
     res.status(500).json({ error: 'Surprise me is unavailable right now.' });
@@ -216,11 +228,15 @@ async function paidDesign(req, res, run, via) {
       metadata: { via, inTok: out.inTok, outTok: out.outTok },
     }).catch(() => {});
     logger.info(`[kadeAgentBody] ${via} in=${out.inTok} out=${out.outTok} cost=$${out.costUSD.toFixed(5)} ${out.ms}ms`);
-    const compiled = await puppet.compile(out.recipe);
-    return res.json({
-      ...payload(null, null, compiled),
-      costUSD: Number((out.costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
-    });
+    const compiled = await puppet.compile(out.recipe, { cache: false });
+    return sendWithScene(
+      res,
+      {
+        ...payload(null, null, compiled),
+        costUSD: Number((out.costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
+      },
+      compiled,
+    );
   } catch (e) {
     const status = e.status || (e.response && e.response.status >= 500 ? 502 : 500);
     logger.error(`[kadeAgentBody] ${via} failed: ${e.message}`);
@@ -243,7 +259,7 @@ router.get('/:agentId', canView, async (req, res) => {
     const agentId = req.params.agentId;
     const row = await bodies.getAgentBody(agentId);
     if (!row || !row.recipe) {
-      return res.json(payload(agentId, null, null));
+      return sendWithScene(res, payload(agentId, null, null), null);
     }
     const compiled = await puppet.compile(row.recipe);
     const etag = `"${row.rev}-${compiled.sceneHash}"`;
@@ -254,9 +270,9 @@ router.get('/:agentId', canView, async (req, res) => {
     }
     const out = payload(agentId, row, compiled);
     if (req.query.scene === '0') {
-      delete out.scene;
+      return res.json(out);
     }
-    return res.json(out);
+    return sendWithScene(res, out, compiled);
   } catch (e) {
     logger.error(`[kadeAgentBody] get ${req.params.agentId} failed: ${e.message}`);
     return res.status(500).json({ error: 'That body could not be loaded.' });
@@ -284,11 +300,11 @@ router.put('/:agentId', json, canEdit, async (req, res) => {
       const latest = result.conflict && result.conflict.recipe ? await puppet.compile(result.conflict.recipe) : null;
       return res.status(409).json({
         error: 'Someone else changed this body a moment ago. Here is their version.',
-        latest: payload(agentId, result.conflict, latest),
+        latest: withScene(payload(agentId, result.conflict, latest), latest),
       });
     }
     logger.info(`[kadeAgentBody] saved ${agentId} rev=${result.body.rev} by ${req.user.id} (${source})`);
-    return res.json(payload(agentId, result.body, compiled));
+    return sendWithScene(res, payload(agentId, result.body, compiled), compiled);
   } catch (e) {
     logger.error(`[kadeAgentBody] save ${req.params.agentId} failed: ${e.message}`);
     return res.status(500).json({ error: 'That body could not be saved.' });

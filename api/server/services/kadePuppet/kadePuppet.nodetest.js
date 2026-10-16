@@ -89,7 +89,9 @@ test('service compiles, caches and writes the character note', async () => {
   const a = await puppet.compile({ hair: { style: 'afro' } });
   const b = await puppet.compile({ hair: { style: 'afro' } });
   assert.equal(a, b, 'second compile is cached');
-  assert.equal(a.scene.schema, 'kade-puppet-scene/1');
+  assert.equal(JSON.parse(a.sceneJson).schema, 'kade-puppet-scene/1');
+  const once = await puppet.compile({ hair: { style: 'bob' } }, { cache: false });
+  assert.notEqual(once, await puppet.compile({ hair: { style: 'bob' } }, { cache: false }), 'one-off drawings are not cached');
   assert.ok(a.sceneHash && a.description);
   const note = puppet.bodyNoteText(a.description);
   assert.ok(note.includes(a.description));
