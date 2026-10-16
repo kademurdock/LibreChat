@@ -14,12 +14,14 @@
  * Bodies live in their own collection (api/models/kadeAgentBody.js), never on the Agent
  * document. The character is told how it looks (services/kadePuppet bodyNoteFor).
  */
+const crypto = require('crypto');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { logger } = require('@librechat/data-schemas');
-const { PermissionBits, FileSources } = require('librechat-data-provider');
-const { refreshS3Url } = require('@librechat/api');
+const { PermissionBits, FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
+const { refreshS3Url, generateCheckAccess, limiterCache } = require('@librechat/api');
 const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
-const { getAgent } = require('~/models');
+const { getAgent, getRoleByName } = require('~/models');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { userPriceFactor } = require('~/server/services/kadeRealCost');
 const bodies = require('~/models/kadeAgentBody');
@@ -33,17 +35,31 @@ const router = express.Router();
  * portrait when it has one (a small vision call), otherwise from its name and
  * description. Hand-painted characters keep their own faces and are skipped. Same
  * trust model as /api/kade/agent-promote (KADE_USAGE_EVENT_SECRET). Spend stops at
- * maxUSD. GET /admin/backfill?secret= reports progress. */
+ * maxUSD. GET /admin/backfill (x-kade-secret header) reports progress. */
 const { HAND_PAINTED } = puppet;
 const ADMIN_USER_ID = () => process.env.ADMIN_USER_ID || '6a3cba4d0b0afa92194e42f7';
 let backfill = null;
 /* Set before the first await so two quick POSTs cannot both start a paid run. */
 let backfillStarting = false;
+/* The secret rides in the x-kade-secret header (or the POST body), never the URL, and is
+ * compared in constant time. */
 const machine = (req) => {
   const expected = process.env.KADE_USAGE_EVENT_SECRET;
-  const given = (req.body && req.body.secret) || req.get('x-kade-secret') || req.query.secret;
-  return !!expected && given === expected;
+  const given = String(req.get('x-kade-secret') || (req.body && req.body.secret) || '');
+  if (!expected || !given) {
+    return false;
+  }
+  const a = crypto.createHash('sha256').update(given).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
 };
+
+/* The app-wide parser has already read the body (3 MB), so a route limit is enforced from
+ * the declared size. */
+const sizeCap = (bytes) => (req, res, next) =>
+  Number(req.headers['content-length'] || 0) > bytes
+    ? res.status(413).json({ error: 'That request is too large.' })
+    : next();
 
 router.get('/admin/backfill', (req, res) => {
   if (!machine(req)) {
@@ -52,7 +68,7 @@ router.get('/admin/backfill', (req, res) => {
   res.json(backfill || { state: 'idle' });
 });
 
-router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res) => {
+router.post('/admin/backfill', sizeCap(32 * 1024), async (req, res) => {
   if (!machine(req)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
@@ -155,8 +171,23 @@ function logUsage(out, via) {
 }
 
 router.use(requireJwtAuth);
+/* Same role gates as LibreChat's own /api/agents routes. */
+router.use(generateCheckAccess({ permissionType: PermissionTypes.AGENTS, permissions: [Permissions.USE], getRoleByName }));
+const canCreate = generateCheckAccess({
+  permissionType: PermissionTypes.AGENTS,
+  permissions: [Permissions.USE, Permissions.CREATE],
+  getRoleByName,
+});
+/* Drawing is cheap (a few ms) but unbounded; 60 a minute per person is far above any editor. */
+const drawLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  handler: (_req, res) => res.status(429).json({ error: 'That is a lot of drawing at once. Try again in a minute.' }),
+  keyGenerator: (req) => req.user?.id,
+  store: limiterCache('kade_agent_body_limiter'),
+});
 
-const json = express.json({ limit: '64kb' });
+const json = sizeCap(64 * 1024);
 const canView = canAccessAgentResource({ requiredPermission: PermissionBits.VIEW, resourceIdParam: 'agentId' });
 const canEdit = canAccessAgentResource({ requiredPermission: PermissionBits.EDIT, resourceIdParam: 'agentId' });
 
@@ -212,7 +243,7 @@ router.get('/catalog', async (_req, res) => {
   }
 });
 
-router.post('/preview', json, async (req, res) => {
+router.post('/preview', json, drawLimit, async (req, res) => {
   try {
     const compiled = await puppet.compile((req.body && req.body.recipe) || {}, { cache: false });
     sendWithScene(res, payload(null, null, compiled), compiled);
@@ -222,7 +253,7 @@ router.post('/preview', json, async (req, res) => {
   }
 });
 
-router.post('/surprise', json, async (req, res) => {
+router.post('/surprise', json, drawLimit, async (req, res) => {
   try {
     const b = req.body || {};
     const seed = String(b.seed || `${req.user.id}-${Date.now()}`).slice(0, 80);
@@ -259,9 +290,16 @@ async function paidDesign(req, res, run, via) {
       compiled,
     );
   } catch (e) {
-    const status = e.status || (e.response && e.response.status >= 500 ? 502 : 500);
-    logger.error(`[kadeAgentBody] ${via} failed: ${e.message}`);
-    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: e.status ? e.message : 'The body designer is having a moment. Try again.' });
+    // A billed answer that could not be read still costs money.
+    if (Number.isFinite(e.costUSD) && e.costUSD > 0) {
+      logKadeUsage({ userId: req.user.id, service: 'openrouter', quantity: 1, unit: 'body-design', costUSD: e.costUSD, metadata: { via, failed: true } }).catch(() => {});
+    }
+    /* Only the service's own errors reach the browser. An upstream 401 or 402 would make the
+     * web client refresh its session and replay a paid request, so those become 502. */
+    logger.error(`[kadeAgentBody] ${via} failed: ${e.message}${e.response ? ` (upstream ${e.response.status})` : ''}`);
+    return e.expose
+      ? res.status(e.status).json({ error: e.message })
+      : res.status(502).json({ error: 'The body designer is having a moment. Try again.' });
   }
 }
 
@@ -300,7 +338,7 @@ router.get('/:agentId', canView, async (req, res) => {
   }
 });
 
-router.put('/:agentId', json, canEdit, async (req, res) => {
+router.put('/:agentId', json, canCreate, drawLimit, canEdit, async (req, res) => {
   try {
     const agentId = req.params.agentId;
     const b = req.body || {};
@@ -332,7 +370,7 @@ router.put('/:agentId', json, canEdit, async (req, res) => {
   }
 });
 
-router.delete('/:agentId', canEdit, async (req, res) => {
+router.delete('/:agentId', canCreate, canEdit, async (req, res) => {
   try {
     await bodies.deleteAgentBody(req.params.agentId);
     puppet.forgetBodyNote(req.params.agentId);
@@ -358,7 +396,7 @@ router.get('/:agentId/history', canEdit, async (req, res) => {
   }
 });
 
-router.post('/:agentId/from-portrait', json, canEdit, async (req, res) => {
+router.post('/:agentId/from-portrait', json, canCreate, canEdit, async (req, res) => {
   const agent = await getAgent({ id: req.params.agentId }).catch(() => null);
   if (!agent || !agent.avatar || !agent.avatar.filepath) {
     return res.status(400).json({ error: 'This character has no portrait to work from.' });

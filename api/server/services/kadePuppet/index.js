@@ -127,7 +127,8 @@ async function bodyNoteFor(agentId) {
     const { getAgentBody } = require('~/models/kadeAgentBody');
     const body = await getAgentBody(id);
     if (body && body.recipe) {
-      text = bodyNoteText(body.description || (await describe(body.recipe)));
+      // Described fresh, so the character hears the same words a screen reader gets.
+      text = bodyNoteText(await describe(body.recipe));
     }
   } catch (e) {
     logger.warn(`[kadePuppet] body note for ${id} failed: ${e.message}`);
@@ -191,6 +192,7 @@ async function askModel(userContent, { maxTokens = 900 } = {}) {
   if (!key) {
     const err = new Error('Body design is not configured right now.');
     err.status = 503;
+    err.expose = true;
     throw err;
   }
   const k = await kit();
@@ -227,6 +229,7 @@ async function askModel(userContent, { maxTokens = 900 } = {}) {
   if (!parsed) {
     const err = new Error('The designer came back with nothing usable. Try again.');
     err.status = 502;
+    err.expose = true;
     err.costUSD = costUSD;
     throw err;
   }
