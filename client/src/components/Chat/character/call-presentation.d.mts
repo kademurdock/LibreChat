@@ -37,5 +37,5 @@ export function createCallPresentation(): {
     running: boolean;
     status: string;
     live: boolean;
-  }): ReturnType<typeof voiceMessagePose>;
+  }): ReturnType<typeof voiceMessagePose> & { listening?: boolean };
 };

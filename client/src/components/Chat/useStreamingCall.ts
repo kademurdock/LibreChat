@@ -56,6 +56,10 @@ export interface StreamingStartArgs {
    *  this client just never sent it, so every call started amnesiac and
    *  minted a fresh conversation. Null/absent = fresh call, old behavior. */
   conversationId?: string | null;
+  /** KADE Oct 16 2026: the listener's voice pace (Settings > Speech), 0.5..1.5, sent only
+   *  when they chose one. Chat read-aloud and the classic call engine already follow it;
+   *  the bridge applies it to this call's speech in place of the character's own rate. */
+  speed?: number;
   handlers: StreamingHandlers;
 }
 
@@ -394,6 +398,7 @@ export default function useStreamingCall() {
       presentation,
       token,
       conversationId,
+      speed,
       handlers,
     }: StreamingStartArgs) => {
       if (activeRef.current) return;
@@ -476,6 +481,7 @@ export default function useStreamingCall() {
                 ticket,
                 spotterDirect: spotterDirect === true,
                 ...(conversationId ? { conversationId } : {}),
+                ...(typeof speed === 'number' && Number.isFinite(speed) ? { speed } : {}),
               }),
             );
           } catch {

@@ -33,7 +33,7 @@ import { generationRate } from '~/utils/voicePace';
  *   - Modal focus management, Escape to end, Tab trapped in the dialog.
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import {
@@ -85,7 +85,8 @@ import GameTable from '~/components/Chat/Messages/Content/GameTable';
 import useStreamingCall from './useStreamingCall';
 import store from '~/store';
 import type { CallAudioIdentity } from './character/call-presentation.mjs';
-import { createPortraitRig, preparedPortrait } from './character/portrait-rig.mjs';
+import { createPortraitRig, portraitPlan } from './character/portrait-rig.mjs';
+import { useAgentBodyQuery } from '~/data-provider';
 import {
   createCallPresentation,
   authoredCallIdentity,
@@ -403,12 +404,23 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const portraitCallAgentRef = useRef<string | null>(null);
   const portraitCallSerialRef = useRef(0);
   const portraitCacheRef = useRef(new Map<string, string>());
-  const preparedCallPortrait = portraitAgentId
-    ? preparedPortrait(portraitAgentId, avatarUrl)
-    : null;
+  /* Oct 16 2026: a character with a saved puppet body gets it on the call screen too
+   * (hand-made faces win); its description fills "Describe character". */
+  const { data: portraitBody } = useAgentBodyQuery(portraitAgentId, {
+    enabled: open && !!portraitAgentId,
+  });
+  const preparedCallPortrait = useMemo(
+    () => (portraitAgentId ? portraitPlan(portraitAgentId, avatarUrl, portraitBody) : null),
+    [portraitAgentId, avatarUrl, portraitBody],
+  );
+  const puppetFace = !!preparedCallPortrait && 'scene' in preparedCallPortrait;
   const appearanceKey = portraitAgentId
     ? characterAppearanceKey(portraitAgentId, avatarUrl)
     : undefined;
+  const bodyDescription =
+    preparedCallPortrait && 'description' in preparedCallPortrait
+      ? preparedCallPortrait.description
+      : '';
   const localize = useLocalize();
   portraitAgentRef.current = portraitAgentId;
   const tableSeqRef = useRef(0);
@@ -427,6 +439,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const outputAnalyserRef = useRef<AnalyserNode | null>(null);
   const orbRef = useRef<HTMLDivElement | null>(null);
   const pulseRafRef = useRef<number | null>(null);
+  const pulseRefreshRef = useRef<(() => void) | null>(null);
   // Thinking-gap sound (same clip that plays on the phone line, ported here
   // as a tactile "still working on it" cue): cached decoded buffer (fetched
   // once, reused every turn), the currently-playing source node (so it can
@@ -863,23 +876,30 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     const surface = orbRef.current,
       canvas = portraitCanvasRef.current;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const prepared =
-      !liveMode && portraitAgentId ? preparedPortrait(portraitAgentId, avatarUrl) : null;
+    const prepared = !liveMode ? preparedCallPortrait : null;
+    // A puppet has no matching photo underneath, so it stays drawn (as a still) when the
+    // other rigs would hide: reduced motion, idle, connecting.
+    const selfDrawn = !!prepared && 'scene' in prepared;
     let disposed = false,
       inView = true,
       failed = false,
-      lastTick = 0;
+      lastTick = 0,
+      idleTimer: ReturnType<typeof setTimeout> | null = null;
     let rig: ReturnType<typeof createPortraitRig> | undefined;
     let samples = new Float32Array(0),
       frequencies = new Uint8Array(0);
     const cancel = () => {
       if (pulseRafRef.current != null) window.cancelAnimationFrame(pulseRafRef.current);
       pulseRafRef.current = null;
+      if (idleTimer != null) clearTimeout(idleTimer);
+      idleTimer = null;
     };
     const tick = (now: number) => {
       pulseRafRef.current = null;
+      idleTimer = null;
       if (disposed) return;
-      const usable = inView && !document.hidden && !reduced.matches && callActiveRef.current;
+      const showing = inView && !document.hidden && callActiveRef.current;
+      const usable = showing && !reduced.matches;
       const context = audioCtxRef.current,
         analyser = outputAnalyserRef.current;
       const time = context?.currentTime ?? 0;
@@ -907,7 +927,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         status: statusRef.current,
         live: liveModeRef.current,
       });
-      if (usable && prepared && !rig && !failed)
+      if ((usable || (selfDrawn && showing)) && prepared && !rig && !failed)
         rig = createPortraitRig(canvas, {
           id: portraitAgentId!,
           ...prepared,
@@ -922,7 +942,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       rig?.render(pose);
       canvas.style.transform = '';
       surface.style.transform = '';
-      if (usable && prepared?.vector !== 'angel' && pose.active)
+      // Vector rigs (Angel, puppets) move their own head; the others sway the orb.
+      if (usable && prepared && !('vector' in prepared) && pose.active)
         surface.style.transform = `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
       if (usable && !prepared && analyser && (clip || statusRef.current === 'speaking')) {
         analyser.getByteFrequencyData(frequencies);
@@ -931,7 +952,13 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         surface.style.transform = `scale(${(1 + Math.min((sum / frequencies.length / 255) * 0.6, 0.16)).toFixed(3)})`;
       }
       lastTick = now;
-      if (usable) pulseRafRef.current = window.requestAnimationFrame(loop);
+      // Frames only while something moves: a face that is active or has a clip playing
+      // (speaker hand-off is read off the clip), or the plain orb's speaking pulse. Other
+      // times a cheap 4 Hz check notices a new clip; status changes also refresh at once.
+      const needsFrames =
+        usable && (prepared ? pose.active || !!clip : !!clip || statusRef.current === 'speaking');
+      if (needsFrames) pulseRafRef.current = window.requestAnimationFrame(loop);
+      else if (showing) idleTimer = setTimeout(refresh, 250);
     };
     const loop = (now: number) => {
       if (now - lastTick < 1000 / 24) {
@@ -940,10 +967,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
       tick(now);
     };
-    const refresh = () => {
+    function refresh() {
       cancel();
       tick(performance.now());
-    };
+    }
+    pulseRefreshRef.current = refresh;
     const observer = new IntersectionObserver((entries) => {
       inView = entries[0]?.isIntersecting ?? false;
       refresh();
@@ -954,6 +982,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     refresh();
     return () => {
       disposed = true;
+      if (pulseRefreshRef.current === refresh) pulseRefreshRef.current = null;
       cancel();
       rig?.dispose();
       observer.disconnect();
@@ -961,7 +990,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       document.removeEventListener('visibilitychange', refresh);
       surface.style.transform = '';
     };
-  }, [open, avatarUrl, portraitAgentId, portraitEnabled, liveMode, callPresentation]);
+  }, [open, preparedCallPortrait, portraitAgentId, portraitEnabled, liveMode, callPresentation]);
+  // A new status (speaking, listening, thinking) restarts the portrait loop at once.
+  useEffect(() => {
+    pulseRefreshRef.current?.();
+  }, [status]);
 
   useEffect(() => {
     const ok =
@@ -1540,14 +1573,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   // Transcribe one recorded utterance via the server STT route, then take a turn.
   const handleUtterance = useCallback(
     async (mime: string) => {
-      if (abortRef.current) return;
+      // A transcription still in flight when the call ends must not start a turn in the
+      // NEXT call (startCall clears abortRef straight away): it belongs to this serial.
+      const serial = portraitCallSerialRef.current;
+      const stale = () => abortRef.current || serial !== portraitCallSerialRef.current;
+      if (stale()) return;
       const chunks = audioChunksRef.current;
       audioChunksRef.current = [];
       const blob = new Blob(chunks, { type: mime || 'audio/webm' });
 
       // Nothing meaningful was said — hand the mic straight back.
       if (!spokeRef.current || blob.size < 1200) {
-        if (!abortRef.current) {
+        if (!stale()) {
           setStatus('listening');
           startListeningRef.current();
         }
@@ -1567,7 +1604,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         if (!resp.ok) throw new Error(`stt ${resp.status}`);
         const data = (await resp.json()) as { text?: string };
         const text = (data?.text ?? '').trim();
-        if (abortRef.current) return;
+        if (stale()) return;
         if (text) {
           setTranscript(text);
           callTurnsRef.current.push({ role: 'user', text });
@@ -1578,7 +1615,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         }
       } catch (err) {
         console.error('[ConvMode] STT error:', err);
-        if (!abortRef.current) {
+        if (!stale()) {
           setError("Couldn't transcribe that — your turn, try again.");
           setStatus('listening');
           startListeningRef.current();
@@ -1878,6 +1915,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
            * this call is being placed from, so it seeds history from it and
            * appends the transcript back into it instead of minting a new one. */
           conversationId: conversationIdRef.current,
+          /* The listener's pace preference, as the classic engine uses it (finding 18). */
+          speed: voicePacePreference != null ? generationSpeed : undefined,
           handlers: {
             onStatus: (st) => {
               if (!ownsCall()) return;
@@ -1976,6 +2015,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     playPickupSound,
     streamingEngine,
     onVideoEvent,
+    voicePacePreference,
+    generationSpeed,
   ]);
 
   // Mirror the call status onto the Live Activity (both engines funnel
@@ -2463,7 +2504,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           (!preparedCallPortrait || liveMode) &&
             (avatarUrl ? 'h-44 w-44 rounded-full' : 'h-28 w-28 rounded-full'),
           liveMode ? 'ring-4 ring-emerald-500/60' : ringClass,
-          avatarUrl ? 'bg-white/5' : backgroundClass,
+          avatarUrl || puppetFace ? 'bg-white/5' : backgroundClass,
         )}
         aria-hidden="true"
       >
@@ -2482,22 +2523,25 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             <Radio size={avatarUrl ? 64 : 44} aria-hidden="true" className="text-emerald-300" />
           </div>
         )}
-        {!liveMode && avatarUrl && (
+        {!liveMode && (avatarUrl || puppetFace) && (
           <>
             {/* FaceTime Lite: the character's face IS the orb. The rAF
                 speaking pulse scales this whole container, so the photo
-                breathes with the voice. onError falls back to the orb. */}
-            <img
-              ref={portraitImageRef}
-              src={avatarUrl}
-              alt=""
-              draggable={false}
-              onError={() => setAvatarUrl('')}
-              className={cn(
-                'h-full w-full select-none object-cover',
-                preparedCallPortrait ? 'rounded-2xl' : 'rounded-full',
-              )}
-            />
+                breathes with the voice. onError falls back to the orb.
+                A puppet body draws itself on the canvas, photo or not. */}
+            {avatarUrl && (
+              <img
+                ref={portraitImageRef}
+                src={avatarUrl}
+                alt=""
+                draggable={false}
+                onError={() => setAvatarUrl('')}
+                className={cn(
+                  'h-full w-full select-none object-cover',
+                  preparedCallPortrait ? 'rounded-2xl' : 'rounded-full',
+                )}
+              />
+            )}
             <span
               className={cn(
                 'absolute -bottom-1 -right-1 z-20 flex h-11 w-11 items-center justify-center rounded-full border-2 border-gray-950',
@@ -2514,7 +2558,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             </span>
           </>
         )}
-        {!liveMode && !avatarUrl && (
+        {!liveMode && !avatarUrl && !puppetFace && (
           <>
             {status === 'listening' && <Mic size={44} className="animate-pulse text-blue-400" />}
             {status === 'thinking' && (
@@ -2528,12 +2572,14 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         )}
       </div>
 
-      {appearanceKey && !liveMode && (
+      {(appearanceKey || bodyDescription) && !liveMode && (
         <details className="mb-4 w-full max-w-xs rounded-xl px-3 text-sm text-gray-100">
           <summary className="min-h-[44px] cursor-pointer py-3 focus-visible:outline focus-visible:outline-2">
             {localize('com_ui_character_describe')}
           </summary>
-          <p className="pb-3 leading-relaxed">{localize(appearanceKey)}</p>
+          <p className="pb-3 leading-relaxed">
+            {appearanceKey ? localize(appearanceKey) : bodyDescription}
+          </p>
         </details>
       )}
 

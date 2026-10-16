@@ -8,6 +8,7 @@ import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
 import * as ag from './types/agents';
+import type * as body from './types/agentBody';
 import * as q from './types/queries';
 import * as sk from './types/skills';
 import * as f from './types/files';
@@ -1390,3 +1391,38 @@ export interface ActiveJobsResponse {
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {
   return request.get(endpoints.activeJobs());
 };
+
+/* KADE Oct 16 2026: puppet bodies (/api/kade/agent-body). GET answers with an ETag, so
+ * the browser revalidates a cached body with If-None-Match and a 304 costs no download. */
+export const getAgentBodyCatalog = (): Promise<body.TAgentBodyCatalog> =>
+  request.get(endpoints.agentBodyCatalog());
+
+export const getAgentBody = (agentId: string): Promise<body.TAgentBody> =>
+  request.get(endpoints.agentBodyById(agentId));
+
+export const saveAgentBody = ({
+  agentId,
+  ...data
+}: body.TSaveAgentBodyRequest): Promise<body.TAgentBody> =>
+  request.put(endpoints.agentBodyById(agentId), data);
+
+export const deleteAgentBody = (agentId: string): Promise<{ ok: boolean; agentId: string }> =>
+  request.delete(endpoints.agentBodyById(agentId));
+
+/** Compile a draft recipe (no save): normalized recipe, scene and description. */
+export const previewAgentBody = (recipe: body.TAgentBodyRecipe): Promise<body.TAgentBody> =>
+  request.post(endpoints.agentBody('preview'), { recipe });
+
+export const surpriseAgentBody = (
+  params: { seed?: string; fantasy?: boolean } = {},
+): Promise<body.TAgentBody> => request.post(endpoints.agentBody('surprise'), params);
+
+/** A body from a description (a small paid call; the answer carries costUSD). */
+export const agentBodyFromWords = (params: {
+  words: string;
+  base?: body.TAgentBodyRecipe | null;
+}): Promise<body.TAgentBody> => request.post(endpoints.agentBody('from-words'), params);
+
+/** A body that resembles the agent's portrait (a small paid call; carries costUSD). */
+export const agentBodyFromPortrait = (agentId: string): Promise<body.TAgentBody> =>
+  request.post(endpoints.agentBodyFromPortrait(agentId), {});

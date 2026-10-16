@@ -4,6 +4,7 @@ import type { TMessageProps } from '~/common';
 import MessageRender from './ui/MessageRender';
 import MultiMessage from './MultiMessage';
 import VoiceMessagePortrait from '../character/VoiceMessagePortrait';
+import CharacterDescription from '../character/CharacterDescription';
 import { messageCharacterId, messageSpeechText } from '../character/voice-message-motion.mjs';
 
 const MessageContainer = React.memo(function MessageContainer({
@@ -36,6 +37,7 @@ export default function Message(props: TMessageProps) {
   }
 
   const { children, messageId = null } = message;
+  const characterId = message.isCreatedByUser ? null : messageCharacterId(message);
 
   return (
     <>
@@ -44,7 +46,7 @@ export default function Message(props: TMessageProps) {
           {!message.isCreatedByUser && messageId && (
             <VoiceMessagePortrait
               messageId={messageId}
-              agentId={messageCharacterId(message)}
+              agentId={characterId}
               text={messageSpeechText(message)}
             />
           )}
@@ -53,6 +55,9 @@ export default function Message(props: TMessageProps) {
             isSubmitting={effectiveIsSubmitting}
             chatContext={chatContext}
           />
+          {characterId && messageId && !children?.length && (
+            <CharacterDescription messageId={messageId} agentId={characterId} />
+          )}
         </div>
       </MessageContainer>
       <MultiMessage

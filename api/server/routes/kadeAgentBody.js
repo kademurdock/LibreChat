@@ -1,0 +1,360 @@
+/**
+ * KADE Oct 16 2026 — /api/kade/agent-body: puppet bodies for characters.
+ *
+ *   GET    /catalog                 every part and colour, with spoken names (drives both editors)
+ *   GET    /:agentId                the saved body + compiled scene (VIEW), or { recipe: null }
+ *   PUT    /:agentId                save { recipe, baseRev, source } (EDIT); 409 when someone saved first
+ *   DELETE /:agentId                back to the plain portrait (EDIT)
+ *   GET    /:agentId/history        the last ten saved looks (EDIT)
+ *   POST   /preview                 { recipe } -> normalized recipe + scene + description (no save)
+ *   POST   /surprise                { seed, fantasy } -> a random body (no save)
+ *   POST   /from-words              { words, base } -> a body from a description (small paid call)
+ *   POST   /:agentId/from-portrait  a body that resembles the agent's avatar (EDIT, small paid call)
+ *
+ * Bodies live in their own collection (api/models/kadeAgentBody.js), never on the Agent
+ * document. The character is told how it looks (services/kadePuppet bodyNoteFor).
+ */
+const express = require('express');
+const { logger } = require('@librechat/data-schemas');
+const { PermissionBits, FileSources } = require('librechat-data-provider');
+const { refreshS3Url } = require('@librechat/api');
+const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
+const { getAgent } = require('~/models');
+const { logKadeUsage } = require('~/models/kadeUsage');
+const { userPriceFactor } = require('~/server/services/kadeRealCost');
+const bodies = require('~/models/kadeAgentBody');
+const puppet = require('~/server/services/kadePuppet');
+
+const router = express.Router();
+
+/* ---------- one-time backfill (machine-to-machine) ----------
+ * POST /admin/backfill { secret, maxUSD = 1, limit = 300, dryRun, agentIds? } starts a
+ * background job that gives every character without a body a starting one: from its
+ * portrait when it has one (a small vision call), otherwise from its name and
+ * description. Hand-painted characters keep their own faces and are skipped. Same
+ * trust model as /api/kade/agent-promote (KADE_USAGE_EVENT_SECRET). Spend stops at
+ * maxUSD. GET /admin/backfill?secret= reports progress. */
+const HAND_PAINTED = new Set([
+  'agent_6llV0eMu4fmIaj8f2x1Sb', // Kiana
+  'agent_BSOLa3eNEZyjs-7abCjMt', // Della
+  'agent_TOdYS8v-bRxeNw0dia_Md', // Lilly (public)
+  'agent_JhouuajXMYsfhCTVMQCv_', // Lilly (Skylee's)
+  'agent_d26Mtu8mgOzkVGQECqO1a', // Harley
+  'agent_o7TKU3lK0Euo0MKgpNpvZ', // Witherspoon
+  'agent_NkG_Fb8_xLz8HFJyx4gNv', // Angel
+]);
+let backfill = null;
+const machine = (req) => {
+  const expected = process.env.KADE_USAGE_EVENT_SECRET;
+  const given = (req.body && req.body.secret) || req.get('x-kade-secret') || req.query.secret;
+  return !!expected && given === expected;
+};
+
+router.get('/admin/backfill', (req, res) => {
+  if (!machine(req)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  res.json(backfill || { state: 'idle' });
+});
+
+router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res) => {
+  if (!machine(req)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  if (backfill && backfill.state === 'running') {
+    return res.status(409).json({ error: 'A backfill is already running', backfill });
+  }
+  const b = req.body || {};
+  const maxUSD = Math.min(5, Math.max(0.01, Number(b.maxUSD) || 1));
+  const limit = Math.min(500, Math.max(1, parseInt(b.limit, 10) || 300));
+  const only = Array.isArray(b.agentIds) ? new Set(b.agentIds.map(String)) : null;
+  const mongoose = require('mongoose');
+  const agents = await mongoose.connection.db
+    .collection('agents')
+    .find({}, { projection: { id: 1, name: 1, description: 1, avatar: 1 } })
+    .toArray();
+  const existing = new Set((await bodies.KadeAgentBody.find({}, { agentId: 1 }).lean()).map((r) => r.agentId));
+  const todo = agents
+    .filter((a) => a.id && !HAND_PAINTED.has(a.id) && !existing.has(a.id) && (!only || only.has(a.id)))
+    .slice(0, limit);
+  backfill = { state: b.dryRun ? 'dry-run' : 'running', startedAt: new Date(), maxUSD, total: todo.length, done: 0, spentUSD: 0, results: [] };
+  if (b.dryRun) {
+    backfill.results = todo.map((a) => ({ agentId: a.id, name: a.name, from: a.avatar && a.avatar.filepath ? 'portrait' : 'words' }));
+    return res.json(backfill);
+  }
+  res.status(202).json({ ok: true, total: todo.length, maxUSD });
+  (async () => {
+    for (const a of todo) {
+      if (backfill.spentUSD >= maxUSD) {
+        backfill.state = 'stopped at spend cap';
+        break;
+      }
+      const hint = [a.name, a.description].filter(Boolean).join(': ').slice(0, 600);
+      let out = null;
+      let from = 'words';
+      try {
+        let url = a.avatar && a.avatar.filepath;
+        if (url && a.avatar.source === FileSources.s3) {
+          url = await refreshS3Url(a.avatar).catch(() => url);
+        }
+        if (url && /^https:\/\//i.test(String(url))) {
+          from = 'portrait';
+          out = await puppet.recipeFromPicture(url, hint).catch(() => null);
+        }
+        if (!out) {
+          from = 'words';
+          out = await puppet.recipeFromWords(`A character called ${hint || 'a friendly helper'}`);
+        }
+        backfill.spentUSD += out.costUSD || 0;
+        const compiled = await puppet.compile(out.recipe, { cache: false });
+        const saved = await bodies.saveAgentBody(a.id, {
+          recipe: compiled.recipe,
+          description: compiled.description,
+          source: 'auto',
+          updatedBy: 'backfill',
+          baseRev: 0,
+        });
+        backfill.results.push({ agentId: a.id, name: a.name, from, ok: saved.ok, costUSD: out.costUSD, description: compiled.description });
+      } catch (e) {
+        backfill.results.push({ agentId: a.id, name: a.name, from, ok: false, error: String(e.message || e).slice(0, 200) });
+      }
+      backfill.done += 1;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    if (backfill.state === 'running') {
+      backfill.state = 'finished';
+    }
+    backfill.finishedAt = new Date();
+    logger.info(`[kadeAgentBody] backfill ${backfill.state}: ${backfill.results.filter((r) => r.ok).length}/${backfill.total} bodies, $${backfill.spentUSD.toFixed(4)}`);
+  })().catch((e) => {
+    backfill.state = 'failed';
+    backfill.error = e.message;
+    logger.error(`[kadeAgentBody] backfill failed: ${e.message}`);
+  });
+});
+
+router.use(requireJwtAuth);
+
+const json = express.json({ limit: '64kb' });
+const canView = canAccessAgentResource({ requiredPermission: PermissionBits.VIEW, resourceIdParam: 'agentId' });
+const canEdit = canAccessAgentResource({ requiredPermission: PermissionBits.EDIT, resourceIdParam: 'agentId' });
+
+/* Paid helpers: a small per-person daily cap (Central time day). */
+const DAILY_CAP = () => Math.max(1, parseInt(process.env.KADE_BODY_DAILY_CAP, 10) || 40);
+let capDay = '';
+const capCounts = new Map();
+function takeCredit(userId) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+  if (today !== capDay) {
+    capDay = today;
+    capCounts.clear();
+  }
+  const used = capCounts.get(userId) || 0;
+  if (used >= DAILY_CAP()) {
+    return false;
+  }
+  capCounts.set(userId, used + 1);
+  return true;
+}
+
+function payload(agentId, row, compiled) {
+  return {
+    agentId,
+    rev: row ? row.rev : 0,
+    source: row ? row.source : null,
+    updatedAt: row ? row.updatedAt : null,
+    recipe: compiled ? compiled.recipe : null,
+    description: compiled ? compiled.description : null,
+    sceneHash: compiled ? compiled.sceneHash : null,
+  };
+}
+
+/* The compiled scene is cached as JSON text, so it is spliced in rather than parsed and
+ * re-serialized on every request. `body` is always a non-empty object (see payload). */
+function sendWithScene(res, body, compiled, status = 200) {
+  const head = JSON.stringify(body);
+  const scene = compiled && compiled.sceneJson ? compiled.sceneJson : 'null';
+  return res.status(status).type('application/json').send(`${head.slice(0, -1)},"scene":${scene}}`);
+}
+
+function withScene(body, compiled) {
+  return { ...body, scene: compiled && compiled.sceneJson ? JSON.parse(compiled.sceneJson) : null };
+}
+
+router.get('/catalog', async (_req, res) => {
+  try {
+    res.set('Cache-Control', 'private, max-age=300');
+    res.json(await puppet.catalog());
+  } catch (e) {
+    logger.error(`[kadeAgentBody] catalog failed: ${e.message}`);
+    res.status(500).json({ error: 'The body parts catalog is unavailable right now.' });
+  }
+});
+
+router.post('/preview', json, async (req, res) => {
+  try {
+    const compiled = await puppet.compile((req.body && req.body.recipe) || {}, { cache: false });
+    sendWithScene(res, payload(null, null, compiled), compiled);
+  } catch (e) {
+    logger.error(`[kadeAgentBody] preview failed: ${e.message}`);
+    res.status(400).json({ error: 'That body could not be drawn.' });
+  }
+});
+
+router.post('/surprise', json, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const seed = String(b.seed || `${req.user.id}-${Date.now()}`).slice(0, 80);
+    const compiled = await puppet.random(seed, !!b.fantasy);
+    sendWithScene(res, payload(null, null, compiled), compiled);
+  } catch (e) {
+    logger.error(`[kadeAgentBody] surprise failed: ${e.message}`);
+    res.status(500).json({ error: 'Surprise me is unavailable right now.' });
+  }
+});
+
+async function paidDesign(req, res, run, via) {
+  if (!takeCredit(req.user.id)) {
+    return res.status(429).json({ error: `That's ${DAILY_CAP()} body designs today. It reopens tomorrow.` });
+  }
+  try {
+    const out = await run();
+    logKadeUsage({
+      userId: req.user.id,
+      service: 'openrouter',
+      quantity: 1,
+      unit: 'body-design',
+      costUSD: out.costUSD,
+      metadata: { via, inTok: out.inTok, outTok: out.outTok },
+    }).catch(() => {});
+    logger.info(`[kadeAgentBody] ${via} in=${out.inTok} out=${out.outTok} cost=$${out.costUSD.toFixed(5)} ${out.ms}ms`);
+    const compiled = await puppet.compile(out.recipe, { cache: false });
+    return sendWithScene(
+      res,
+      {
+        ...payload(null, null, compiled),
+        costUSD: Number((out.costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
+      },
+      compiled,
+    );
+  } catch (e) {
+    const status = e.status || (e.response && e.response.status >= 500 ? 502 : 500);
+    logger.error(`[kadeAgentBody] ${via} failed: ${e.message}`);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: e.status ? e.message : 'The body designer is having a moment. Try again.' });
+  }
+}
+
+router.post('/from-words', json, async (req, res) => {
+  const b = req.body || {};
+  const words = String(b.words || '').trim();
+  if (words.length < 3) {
+    return res.status(400).json({ error: 'Describe the look in a few words first.' });
+  }
+  const base = b.base && typeof b.base === 'object' ? await puppet.normalize(b.base) : null;
+  return paidDesign(req, res, () => puppet.recipeFromWords(words, base), 'body-from-words');
+});
+
+router.get('/:agentId', canView, async (req, res) => {
+  try {
+    const agentId = req.params.agentId;
+    const row = await bodies.getAgentBody(agentId);
+    if (!row || !row.recipe) {
+      return sendWithScene(res, payload(agentId, null, null), null);
+    }
+    const compiled = await puppet.compile(row.recipe);
+    const etag = `"${row.rev}-${compiled.sceneHash}"`;
+    res.set('ETag', etag);
+    res.set('Cache-Control', 'private, no-cache');
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    const out = payload(agentId, row, compiled);
+    if (req.query.scene === '0') {
+      return res.json(out);
+    }
+    return sendWithScene(res, out, compiled);
+  } catch (e) {
+    logger.error(`[kadeAgentBody] get ${req.params.agentId} failed: ${e.message}`);
+    return res.status(500).json({ error: 'That body could not be loaded.' });
+  }
+});
+
+router.put('/:agentId', json, canEdit, async (req, res) => {
+  try {
+    const agentId = req.params.agentId;
+    const b = req.body || {};
+    if (!b.recipe || typeof b.recipe !== 'object') {
+      return res.status(400).json({ error: 'A body recipe is required.' });
+    }
+    const compiled = await puppet.compile(b.recipe);
+    const source = ['editor', 'words', 'picture', 'surprise', 'auto'].includes(b.source) ? b.source : 'editor';
+    const result = await bodies.saveAgentBody(agentId, {
+      recipe: compiled.recipe,
+      description: compiled.description,
+      source,
+      updatedBy: String(req.user.id),
+      baseRev: Number.isFinite(Number(b.baseRev)) ? Number(b.baseRev) : 0,
+    });
+    puppet.forgetBodyNote(agentId);
+    if (!result.ok) {
+      const latest = result.conflict && result.conflict.recipe ? await puppet.compile(result.conflict.recipe) : null;
+      return res.status(409).json({
+        error: 'Someone else changed this body a moment ago. Here is their version.',
+        latest: withScene(payload(agentId, result.conflict, latest), latest),
+      });
+    }
+    logger.info(`[kadeAgentBody] saved ${agentId} rev=${result.body.rev} by ${req.user.id} (${source})`);
+    return sendWithScene(res, payload(agentId, result.body, compiled), compiled);
+  } catch (e) {
+    logger.error(`[kadeAgentBody] save ${req.params.agentId} failed: ${e.message}`);
+    return res.status(500).json({ error: 'That body could not be saved.' });
+  }
+});
+
+router.delete('/:agentId', canEdit, async (req, res) => {
+  try {
+    await bodies.deleteAgentBody(req.params.agentId);
+    puppet.forgetBodyNote(req.params.agentId);
+    res.json({ ok: true, agentId: req.params.agentId });
+  } catch (e) {
+    logger.error(`[kadeAgentBody] delete ${req.params.agentId} failed: ${e.message}`);
+    res.status(500).json({ error: 'That body could not be removed.' });
+  }
+});
+
+router.get('/:agentId/history', canEdit, async (req, res) => {
+  try {
+    const rows = await bodies.getAgentBodyHistory(req.params.agentId);
+    res.json({
+      agentId: req.params.agentId,
+      history: rows
+        .slice()
+        .reverse()
+        .map((h) => ({ rev: h.rev, description: h.description, source: h.source, at: h.at, recipe: h.recipe })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'History is unavailable right now.' });
+  }
+});
+
+router.post('/:agentId/from-portrait', json, canEdit, async (req, res) => {
+  const agent = await getAgent({ id: req.params.agentId }).catch(() => null);
+  if (!agent || !agent.avatar || !agent.avatar.filepath) {
+    return res.status(400).json({ error: 'This character has no portrait to work from.' });
+  }
+  let url = agent.avatar.filepath;
+  if (agent.avatar.source === FileSources.s3) {
+    try {
+      url = await refreshS3Url(agent.avatar);
+    } catch (e) {
+      logger.warn(`[kadeAgentBody] avatar refresh failed: ${e.message}`);
+    }
+  }
+  if (!/^https:\/\//i.test(String(url))) {
+    return res.status(400).json({ error: 'This portrait is not reachable for the designer.' });
+  }
+  const hint = [agent.name, agent.description].filter(Boolean).join(': ');
+  return paidDesign(req, res, () => puppet.recipeFromPicture(url, hint), 'body-from-portrait');
+});
+
+module.exports = router;

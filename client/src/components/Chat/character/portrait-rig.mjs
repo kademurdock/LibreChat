@@ -2,6 +2,7 @@
 // Never swap the full generated frames: their backgrounds/head poses drift.
 import { createFaceSheetRig } from './face-sheet-rig.mjs';
 import { ANGEL_ID, ANGEL_PORTRAIT_FILE, createAngelRig } from './angel-rig.mjs';
+import { createPuppetRig, validPuppetScene } from './puppet/puppet-rig.mjs';
 export { ANGEL_ID, ANGEL_PORTRAIT_FILE } from './angel-rig.mjs';
 // Regions inside one sheet panel, 0..1: the brow-to-chin oval, the mouth, the eyes.
 // Registered by eye against each character's own sheets, Sep 19 2026.
@@ -94,6 +95,19 @@ export function preparedPortrait(id, url) {
   }
 }
 
+// Oct 16 2026: a character with a saved puppet body (GET /api/kade/agent-body/:id) is
+// drawn by the puppet rig. The hand-made faces above always win, so Kiana, Della, both
+// Lillys, Harley, Witherspoon and Angel keep theirs even if a body is saved for them.
+export function puppetPortrait(body) {
+  if (!body || !validPuppetScene(body.scene)) return null;
+  const description = typeof body.description === 'string' ? body.description : '';
+  return { vector: 'puppet', scene: body.scene, description };
+}
+
+export function portraitPlan(id, url, body) {
+  return preparedPortrait(id, url) || puppetPortrait(body);
+}
+
 export function facialBlend(value) {
   if (!Number.isFinite(value)) return 0;
   const n = Math.max(0, Math.min(1, value));
@@ -113,11 +127,11 @@ const EYES = [
 /**
  * @typedef {{ kind: string, from: number[], to: number[] }} PortraitFeature
  * @param {HTMLCanvasElement} canvas
- * @param {{ id: string, portrait: string, atlas?: string, blink?: string,
+ * @param {{ id: string, portrait?: string, atlas?: string, blink?: string,
  *   features?: PortraitFeature[], eyeFeatures?: PortraitFeature[], expression?: string,
  *   browFeatures?: PortraitFeature[], sheet?: { expressions: string, mouths: string,
  *   face: number[], mouth: number[], eyes: number[] }, onReady?: () => void,
- *   onFailure?: () => void, vector?: string,
+ *   onFailure?: () => void, vector?: string, scene?: object,
  *   onVisibilityChange?: (show: boolean) => void }} options
  */
 export function createPortraitRig(
@@ -139,6 +153,7 @@ export function createPortraitRig(
   // Characters with expression sheets get the full face; the patch rig below
   // remains for anyone who only has the older art.
   if (arguments[1]?.sheet) return createFaceSheetRig(canvas, arguments[1]);
+  if (arguments[1]?.vector === 'puppet') return createPuppetRig(canvas, arguments[1]);
   const ctx = canvas.getContext('2d');
   let disposed = false,
     ready = false,
