@@ -6,9 +6,11 @@ import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response, Router } from 'express';
 import type { MediaSite } from '../description/links';
 
-/* A new request for an imported recording should use the backing-vocal notation prompt instead
- * of returning a lyric draft cached before that instruction existed. */
-const transcriptVersion = 'mimo26-tags-backing-scribe2-lyrics-v4';
+/* A new request for an imported recording should use the current prompt instead of returning a
+ * lyric draft cached before it existed. v5 (Oct 16 2026): the prompt asks for the sections in sung
+ * order and no blank lines inside a section, after MiMo opened a cover on an extra chorus with a
+ * blank line after every line; a v4 draft is listened to again (one listener call) on next open. */
+const transcriptVersion = 'mimo26-tags-backing-scribe2-lyrics-v5';
 /* Flash on low thinking: the Sep 25 check found no word-accuracy gain from medium or Pro, and
  * medium once spent 7,863 thought tokens and hit MAX_TOKENS. */
 const geminiModel = 'gemini-3.8-flash';
@@ -16,9 +18,11 @@ export const musicListenerModel = (): string =>
   process.env.KADE_MUSIC_LISTENER_MODEL || 'xiaomi/mimo-v2.6-flash';
 const geminiListener = (): boolean => musicListenerModel().startsWith('gemini');
 /* The tag instruction is TAG_PROMPT from the Sep 25 check (no accuracy loss detected; every
- * chorus tagged), with [Post-Chorus] added to the allowed labels. */
+ * chorus tagged), with [Post-Chorus] added to the allowed labels. Oct 16 2026: two plain rules
+ * for MiMo, which opened one cover on a chorus sung only later and put a blank line after every
+ * line: the sung order, and no blank lines inside a section (tidyLyricSpacing still enforces it). */
 const lyricPrompt =
-  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Write the lead vocal without parentheses. Put the words of a clearly separate backing, harmony, response, or secondary vocal phrase in parentheses. If it overlaps a lead phrase, put its parentheses after that lead phrase; if it sings alone, use its own line. Do not add another copy of the lead words merely because the lead is doubled or harmonized. When the voices cannot be distinguished, leave the words unparenthesized. Do not infer or invent backing words. Do not use vocal-role labels in the lyric transcript. Put a section label on its own line before a section only where the music audibly marks a new section: [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Intro] or [Outro]. A block whose words come back as a refrain is [Chorus]. Do not number the labels. Return only the lyric transcript with those labels, with no commentary or timestamps.';
+  'Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language. Write the sections in the order they are sung, starting with the first sound of the recording; never move a chorus or any other section ahead of where it is sung, and write a chorus only where it is sung. Use only words audibly present in this recording. Preserve repeated choruses, repetitions, contractions, and audible vocalizations. Do not summarize, translate, improve the writing, or fill gaps from memory. Mark genuinely unintelligible words [unclear]. Put each sung phrase on its own line, with a blank line between sections. Do not put blank lines between the lines of a section or after a section label. Write the lead vocal without parentheses. Put the words of a clearly separate backing, harmony, response, or secondary vocal phrase in parentheses. If it overlaps a lead phrase, put its parentheses after that lead phrase; if it sings alone, use its own line. Do not add another copy of the lead words merely because the lead is doubled or harmonized. When the voices cannot be distinguished, leave the words unparenthesized. Do not infer or invent backing words. Do not use vocal-role labels in the lyric transcript. Put a section label on its own line before a section only where the music audibly marks a new section: [Verse], [Pre-Chorus], [Chorus], [Post-Chorus], [Bridge], [Intro] or [Outro]. A block whose words come back as a refrain is [Chorus]. Do not number the labels. Return only the lyric transcript with those labels, with no commentary or timestamps.';
 type Transcript = {
   transcript: string;
   seconds: number;
@@ -141,9 +145,34 @@ function audioMime(buffer: Buffer, declared: string): string {
 
 /** The only section labels a draft may carry; YuE2 reads the lyrics word for word. */
 const sectionTags = ['Intro', 'Verse', 'Pre-Chorus', 'Chorus', 'Post-Chorus', 'Bridge', 'Outro'];
-const sectionTagByName = new Map(
-  sectionTags.map((tag) => [tag.toLowerCase().replace(/[^a-z]/g, ''), `[${tag}]`]),
+const sectionLabelLine = new RegExp(`^\\[(?:${sectionTags.join('|')})\\]$`);
+/* A model's label is read by the section word it starts with, after at most one describing word:
+ * "[Verse 1: lead vocal]" and "[Verse 1 - 0:12 to 0:40]" are [Verse], "[Intro - instrumental]" and
+ * "[Spoken Intro]" are [Intro], "[Final Chorus]", "[Chorus (repeat)]", "[Hook]" and "[Refrain]" are
+ * [Chorus]. Until Oct 16 2026 such labels were dropped, which could leave [Chorus] as the first
+ * label of a song that has an intro and a verse before it. */
+const sectionLabelName = new RegExp(
+  '^(?:(?:final|last|first|second|third|opening|closing|spoken|sung|instrumental|rap|extended|repeat(?:ed)?|short)[\\s_-]+)?' +
+    '(?:(pre|post)[\\s_-]*)?(intro(?:duction)?|verses?|chorus|hook|refrain|bridge|outro)(?=$|[^a-z]|x\\s*\\d)',
 );
+const sectionTagByWord: Record<string, string> = {
+  intro: '[Intro]',
+  introduction: '[Intro]',
+  verse: '[Verse]',
+  verses: '[Verse]',
+  chorus: '[Chorus]',
+  hook: '[Chorus]',
+  refrain: '[Chorus]',
+  bridge: '[Bridge]',
+  outro: '[Outro]',
+};
+function sectionTagFor(label: string): string | undefined {
+  const found = sectionLabelName.exec(label.trim().toLowerCase());
+  if (!found) return undefined;
+  const tag = sectionTagByWord[found[2]];
+  if (tag !== '[Chorus]' || !found[1]) return tag;
+  return found[1] === 'pre' ? '[Pre-Chorus]' : '[Post-Chorus]';
+}
 const backingRole = '(?:backing|background|secondary|harmony)\\s+vocals?';
 const backingCue = new RegExp(`^\\s*(?:\\[\\s*)?${backingRole}\\s*(?:\\])?\\s*:?\\s*$`, 'i');
 const backingPhrase = new RegExp(
@@ -176,9 +205,47 @@ export function stripLyricTimestamps(transcript: string): string {
     .trim();
 }
 
+/**
+ * One sung line per line, one blank line between sections, none inside a section or right after a
+ * section label, and never a run of blank lines. A draft that puts a blank line between most of
+ * its sung lines (MiMo's Oct 16 2026 cover draft put one after every line) is read as single-
+ * spaced: there only a section label or a run of two or more blank lines still starts a new block.
+ * Words, labels and their order are never changed.
+ */
+export function tidyLyricSpacing(transcript: string): string {
+  const lines: { text: string; gap: number; label: boolean }[] = [];
+  let gap = 0;
+  for (const text of transcript.replace(/\r\n?/g, '\n').split('\n')) {
+    if (!text.trim()) {
+      gap++;
+      continue;
+    }
+    const label = sectionLabelLine.test(text.trim());
+    lines.push({ text: label ? text.trim() : text, gap, label });
+    gap = 0;
+  }
+  let pairs = 0;
+  let spaced = 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].label || lines[i - 1].label) continue;
+    pairs++;
+    if (lines[i].gap > 0) spaced++;
+  }
+  const doubleSpaced = spaced >= 2 && spaced * 2 > pairs;
+  return lines
+    .map((line, i) => {
+      if (i === 0) return line.text;
+      const blank = line.label || (!lines[i - 1].label && line.gap >= (doubleSpaced ? 2 : 1));
+      return blank ? `\n${line.text}` : line.text;
+    })
+    .join('\n')
+    .trim();
+}
+
+/** What every served draft gets, fresh or cached: no timing annotations and tidy spacing. */
 const cleanTranscript = (draft: Transcript): Transcript => ({
   ...draft,
-  transcript: stripLyricTimestamps(draft.transcript),
+  transcript: tidyLyricSpacing(stripLyricTimestamps(draft.transcript)),
 });
 
 /**
@@ -188,7 +255,7 @@ const cleanTranscript = (draft: Transcript): Transcript => ({
  */
 export function tidySectionTags(transcript: string): string {
   let nextBackingLine = false;
-  return stripLyricTimestamps(transcript)
+  const tidied = stripLyricTimestamps(transcript)
     .split('\n')
     .flatMap((line) => {
       const rolePhrase = bracketedBackingPhrase.exec(line) || backingPhrase.exec(line);
@@ -211,17 +278,53 @@ export function tidySectionTags(transcript: string): string {
         return [parenthesizeBacking(line)];
       }
       nextBackingLine = false;
-      const name = label[1]
-        .toLowerCase()
-        .replace(/\s*(?:x\s*\d+|\d+\s*x|\d+)$/, '')
-        .replace(/[^a-z]/g, '');
-      if (name === 'unclear') return [line];
-      const tag = sectionTagByName.get(name);
+      if (label[1].toLowerCase().replace(/[^a-z]/g, '') === 'unclear') return [line];
+      const tag = sectionTagFor(label[1]);
       return tag ? [tag] : [];
     })
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .join('\n');
+  return tidyLyricSpacing(tidied);
+}
+
+/* MiMo hears a recording as 6.25 prompt tokens a second: both Oct 16 2026 live drafts counted
+ * 1,531 prompt tokens for 199 s and 1,622 for 213.5 s, over about 290 for the prompt's words. A
+ * host that silently drops the recording still answers "stop" with a whole invented song (in the
+ * Oct 16 check one did: another language, chorus first, a blank line after every line). A reply
+ * whose prompt counted under a third of that rate, taking the prompt's words at their fewest
+ * possible tokens, was not listened to and is not shown as the singer's words. Only the measured
+ * model is judged; any other listener, or a reply without usage figures, is taken as heard. */
+const listenerTokensPerSecond: Record<string, number> = { 'xiaomi/mimo-v2.6-flash': 6.25 };
+function heardRecording(
+  usage: { inputTokens: number } | undefined,
+  prompt: string,
+  seconds: number,
+): boolean {
+  const rate = listenerTokensPerSecond[musicListenerModel()];
+  if (!rate || !usage?.inputTokens || !(seconds > 0)) return true;
+  const audioTokens = usage.inputTokens - Math.floor(prompt.length / 6);
+  return audioTokens >= (rate / 3) * seconds;
+}
+
+/**
+ * True when a draft's first section is a [Chorus] whose lines all come back in a later [Chorus]:
+ * the shape of the Oct 16 2026 MiMo cover draft that put an extra copy of the chorus ahead of the
+ * intro and first verse. It is only logged, never changed, because a song can really open on its
+ * chorus; the count shows whether the sung-order rule in the prompt is holding.
+ */
+export function opensOnRepeatedChorus(transcript: string): boolean {
+  const blocks: { tag: string; lines: string[] }[] = [];
+  for (const line of transcript.split('\n')) {
+    const text = line.trim();
+    if (!text) continue;
+    if (sectionLabelLine.test(text)) blocks.push({ tag: text, lines: [] });
+    else if (!blocks.length) return false;
+    else blocks[blocks.length - 1].lines.push(text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' '));
+  }
+  const first = blocks[0];
+  if (!first || first.tag !== '[Chorus]' || first.lines.length < 2) return false;
+  return blocks
+    .slice(1)
+    .some((block) => block.tag === '[Chorus]' && first.lines.every((l) => block.lines.includes(l)));
 }
 
 /** Why Gemini gave no draft, as one short countable word for the log ("finish:RECITATION"). */
@@ -325,11 +428,22 @@ export async function transcribeMusicLyrics(
 ): Promise<Transcript> {
   mime = audioMime(buffer, mime);
   try {
-    if (geminiListener()) return await geminiLyrics(buffer, mime, seconds);
-    const reply = await mimoAudio(buffer, mime, lyricPrompt, 8192);
-    const transcript = tidySectionTags(reply.text);
-    if (!transcript) throw new GeminiMiss('finish:STOP-empty');
-    return { transcript, seconds, model: musicListenerModel(), usage: reply.usage };
+    let draft: Transcript;
+    if (geminiListener()) draft = await geminiLyrics(buffer, mime, seconds);
+    else {
+      const reply = await mimoAudio(buffer, mime, lyricPrompt, 8192);
+      if (!heardRecording(reply.usage, lyricPrompt, seconds))
+        throw new GeminiMiss(`unheard:tokens=${reply.usage?.inputTokens}`);
+      const transcript = tidySectionTags(reply.text);
+      if (!transcript) throw new GeminiMiss('finish:STOP-empty');
+      draft = { transcript, seconds, model: musicListenerModel(), usage: reply.usage };
+    }
+    /* Countable: grep "opens on a repeated chorus" to see whether the sung-order rule holds. */
+    if (opensOnRepeatedChorus(draft.transcript))
+      logger.info(
+        `[music/lyrics] draft opens on a repeated chorus model=${draft.model} ${Math.round(seconds)}s`,
+      );
+    return draft;
   } catch (error) {
     /* Countable: grep "lyrics gemini fallback reason=finish:RECITATION" to see how often
      * Gemini refuses a commercial song and the untagged backup draft is used instead. */

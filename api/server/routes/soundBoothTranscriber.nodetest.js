@@ -56,11 +56,14 @@ process.env.ELEVENLABS_API_KEY = SCRIBE_KEY;
 const calls = [];
 /** How Gemini answers: (config, body) => data, or throws. */
 let gemini = () => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Words' }] } }] });
+/** How the MiMo listener (through OpenRouter) answers: (config, body) => data. */
+let mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: 'Words' } }] });
 axios.defaults.adapter = async (config) => {
   const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
   calls.push({ url: config.url, body, config });
   let data;
   if (config.url.includes('generativelanguage.googleapis.com')) data = gemini(config, body);
+  else if (config.url === 'https://openrouter.ai/api/v1/chat/completions') data = mimo(config, body);
   else if (config.url === 'https://api.elevenlabs.io/v1/speech-to-text') data = { text: 'Backup words. Second line.' };
   else throw new Error('unexpected request ' + config.url);
   return { data, status: 200, statusText: 'OK', headers: {}, config };
@@ -247,5 +250,153 @@ test('log: recordings Gemini is never asked about are logged as skips, not failu
   } finally {
     process.env.GEMINI_API_KEY = saved;
     if (savedEmbed !== undefined) process.env.KADE_EMBED_GEMINI_KEY = savedEmbed;
+  }
+});
+
+/* ---------- Oct 16 2026: a cover draft with blank lines between everything, chorus first ----------
+ * Kade's cover upload (199 s) came back from MiMo with a blank line after every line, labels too,
+ * and with a chorus ahead of the intro and first verse. The stored draft had every newline run
+ * exactly "\n\n"; these fixtures have that shape with made-up words. */
+const doubleSpace = (text) => text.split('\n').filter(Boolean).join('\n\n');
+const sungLines = (text) => text.split('\n').filter((line) => line.trim());
+const coverDraft = [
+  '[Intro]', 'Ooh, da-da', '', '[Verse]', 'Walking out the door again', 'Leaving every light on (light on)', 'Nothing left to say', '',
+  '[Chorus]', 'Hold the line tonight', 'Let the rain come down', 'Hold the line tonight', '',
+  '[Bridge]', 'Turn it all around', '', '[Chorus]', 'Hold the line tonight', 'Let the rain come down', 'Hold the line tonight',
+].join('\n');
+
+test('prompt: sections in the order they are sung, and no blank lines inside a section or after a label', async () => {
+  let prompt;
+  gemini = (config, body) => {
+    prompt = body.contents[0].parts[1].text;
+    return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '[Verse]\nWords' }] } }] };
+  };
+  await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 30);
+  assert.match(prompt, /^Transcribe the complete sung lyrics from this audio, from beginning to end, in the original language\. Write the sections in the order they are sung, starting with the first sound of the recording; never move a chorus or any other section ahead of where it is sung, and write a chorus only where it is sung\. Use only words audibly present/);
+  assert.match(prompt, /Put each sung phrase on its own line, with a blank line between sections\. Do not put blank lines between the lines of a section or after a section label\./);
+  assert.match(prompt, /Preserve repeated choruses, repetitions, contractions, and audible vocalizations\./, 'the earlier rules stay');
+  assert.doesNotMatch(prompt, /Hold the line|Walking out/, 'no example lyric lines in the prompt');
+});
+
+test('spacing: a draft with a blank line after every line comes out one sung line per line, one blank between sections', () => {
+  const { tidySectionTags, tidyLyricSpacing } = lyrics;
+  const stored = doubleSpace(coverDraft);
+  assert.match(stored, /\[Chorus\]\n\nHold the line tonight\n\nLet the rain come down/, 'fixture has the stored shape');
+  assert.equal(tidySectionTags(stored), coverDraft);
+  assert.equal(tidyLyricSpacing(stored), coverDraft, 'the same cleanup a cached draft gets');
+  assert.deepEqual(sungLines(tidySectionTags(stored)), sungLines(stored), 'no word, label or order changes');
+  /* The second Oct 16 draft: single-spaced sections, but a blank line right after every label. */
+  assert.equal(
+    tidySectionTags('[Intro]\n\nMm, ah\n\n[Verse]\n\nFirst line here\nSecond line here\n\n[Chorus]\n\nHook line (hook)\nHook again'),
+    '[Intro]\nMm, ah\n\n[Verse]\nFirst line here\nSecond line here\n\n[Chorus]\nHook line (hook)\nHook again',
+  );
+  /* A timed reply, one entry per phrase with a blank line between entries: the timestamps go and
+   * so do the blank lines they left behind. */
+  for (const timed of [
+    '[00:05.10] Ooh\n\n[00:12.34] Line one\n\n[00:15.00] Line two\n\n[00:18.20] Line three',
+    '[00:05.10]\nOoh\n\n[00:12.34]\nLine one\n\n[00:15.00]\nLine two\n\n[00:18.20]\nLine three',
+    '0:05 - 0:10\nOoh\n\n0:12 - 0:15\nLine one\n\n0:15 - 0:18\nLine two\n\n0:18 - 0:21\nLine three',
+    '00:00:05,100 --> 00:00:10,000\nOoh\n\n00:00:12,340 --> 00:00:15,000\nLine one\n\n00:00:15,000 --> 00:00:18,000\nLine two\n\n00:00:18,200 --> 00:00:21,000\nLine three',
+  ]) {
+    assert.equal(tidySectionTags(timed), 'Ooh\nLine one\nLine two\nLine three', timed);
+    assert.equal(tidyLyricSpacing(lyrics.stripLyricTimestamps(timed)), 'Ooh\nLine one\nLine two\nLine three', timed);
+  }
+  /* Runs of blank lines, whitespace-only lines and CR line ends collapse to one blank line. */
+  assert.equal(tidySectionTags('[Verse]\nOne\nTwo\n \t\n\n\n[Chorus]\nThree\nFour'), '[Verse]\nOne\nTwo\n\n[Chorus]\nThree\nFour');
+  assert.equal(tidySectionTags('[Verse]\r\r\nOne\r\r\nTwo\r\r\nThree\r\r\n[Chorus]\r\r\nFour\r\r\nFive'), '[Verse]\nOne\nTwo\nThree\n\n[Chorus]\nFour\nFive');
+  /* A label glued to the line before it still starts its own section. */
+  assert.equal(tidySectionTags('[Verse]\nOne\nTwo\n[Chorus]\nThree'), '[Verse]\nOne\nTwo\n\n[Chorus]\nThree');
+  /* An ordinary draft is left alone, including an unlabelled stanza break inside a section, and a
+   * double-spaced draft keeps a wider gap (two or more blank lines) as its section break. */
+  const ordinary = '[Verse]\nOne\nTwo\n\nThree\nFour\n\n[Chorus]\nFive\nSix';
+  assert.equal(tidySectionTags(ordinary), ordinary);
+  assert.equal(tidySectionTags('A\nB\n\nC\nD\n\nE\nF'), 'A\nB\n\nC\nD\n\nE\nF');
+  assert.equal(tidyLyricSpacing('One\n\nTwo\n\nThree\n\n\n\nFour\n\nFive'), 'One\nTwo\nThree\n\nFour\nFive');
+  assert.equal(tidyLyricSpacing(''), '');
+});
+
+test('labels: an intro or verse label with extra words keeps its place, so [Chorus] is not left as the first label', () => {
+  const tidy = lyrics.tidySectionTags;
+  assert.equal(
+    tidy('[Intro (spoken)]\nOoh\n\n[Verse 1: lead vocal]\nLine one\nLine two\n\n[Chorus]\nHook one'),
+    '[Intro]\nOoh\n\n[Verse]\nLine one\nLine two\n\n[Chorus]\nHook one',
+  );
+  /* Both Oct 16 symptoms from one timed reply: descriptive labels after the times, blank lines
+   * between timed phrases. The intro and the verse keep their labels and their places. */
+  assert.equal(
+    tidy('[00:00.00 - 00:09.50] [Intro - instrumental]\n\n[00:09.50 - 00:13.00] [Chorus]\nhook line A\n\n[00:13.00 - 00:16.40]\nhook line B\n\n[00:16.40 - 00:21.00] [Verse 1: lead vocal]\nverse line 1\n\n[00:21.00 - 00:25.00]\nverse line 2\n\n[00:25.00 - 00:29.00]\nverse line 3'),
+    '[Intro]\n\n[Chorus]\nhook line A\nhook line B\n\n[Verse]\nverse line 1\nverse line 2\nverse line 3',
+  );
+  for (const [label, tag] of [
+    ['[Instrumental Intro]', '[Intro]'], ['[Spoken Intro]', '[Intro]'], ['[Introduction]', '[Intro]'],
+    ['[Verse 1 - 0:12 to 0:40]', '[Verse]'], ['[Verse 2 (0:40-1:05)]', '[Verse]'], ['[First Verse]', '[Verse]'], ['[Rap Verse]', '[Verse]'],
+    ['[Hook]', '[Chorus]'], ['[Refrain]', '[Chorus]'], ['[Final Chorus]', '[Chorus]'], ['[Chorus (repeat)]', '[Chorus]'], ['[Chorusx2]', '[Chorus]'],
+    ['[Pre Hook]', '[Pre-Chorus]'], ['[Prechorus]', '[Pre-Chorus]'], ['[Post Chorus]', '[Post-Chorus]'],
+    ['[Bridge - half time]', '[Bridge]'], ['[Outro (fade)]', '[Outro]'],
+  ]) assert.equal(tidy(`${label}\nWords`), `${tag}\nWords`, label);
+  for (const label of ['[Interlude]', '[Instrumental]', '[Guitar Solo]', '[Spoken]', '[Hooked on a feeling]', '[Breakdown]'])
+    assert.equal(tidy(`${label}\nWords`), 'Words', label);
+});
+
+test('MiMo: the Oct 16 cover draft shape is served single-spaced, in the order the listener wrote it', async () => {
+  const savedModel = process.env.KADE_MUSIC_LISTENER_MODEL;
+  process.env.KADE_MUSIC_LISTENER_MODEL = 'xiaomi/mimo-v2.6-flash';
+  process.env.OPENROUTER_KEY = 'openrouter-key-for-tests';
+  try {
+    let asked;
+    mimo = (config, body) => {
+      asked = body;
+      return { choices: [{ finish_reason: 'stop', message: { content: doubleSpace(coverDraft) } }], usage: { prompt_tokens: 1531, completion_tokens: 446 } };
+    };
+    const got = await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199);
+    assert.equal(got.model, 'xiaomi/mimo-v2.6-flash');
+    assert.equal(got.transcript, coverDraft);
+    assert.ok(got.transcript.startsWith('[Intro]\nOoh, da-da\n\n[Verse]\n'), 'the intro and verse stay ahead of the chorus');
+    assert.match(asked.messages[0].content[0].text, /Write the sections in the order they are sung/);
+    assert.deepEqual(got.usage, { inputTokens: 1531, outputTokens: 446 });
+    assert.equal(logs.length, 0, 'a draft that opens on its intro logs nothing');
+
+    /* The stored Oct 16 draft opened on a chorus that every later chorus repeats word for word. A
+     * song can really open on its chorus, so it is never moved or cut; it is counted in the log. */
+    const chorusFirst = '[Chorus]\nHold the line tonight\nLet the rain come down\n\n[Verse]\nWalking out the door again\n\n[Chorus]\nHold the line tonight\nLet the rain come down';
+    mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: doubleSpace(chorusFirst) } }], usage: { prompt_tokens: 1531, completion_tokens: 446 } });
+    const opened = await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199);
+    assert.equal(opened.transcript, chorusFirst);
+    assert.deepEqual(logs, [['info', '[music/lyrics] draft opens on a repeated chorus model=xiaomi/mimo-v2.6-flash 199s']]);
+    assert.equal(lyrics.opensOnRepeatedChorus(coverDraft), false);
+    assert.equal(lyrics.opensOnRepeatedChorus('[Chorus]\nOnly once here\nAnd never again\n\n[Verse]\nSomething else'), false);
+    assert.equal(lyrics.opensOnRepeatedChorus('Sung first\n\n[Chorus]\nA line\nB line\n\n[Chorus]\nA line\nB line'), false);
+  } finally {
+    process.env.KADE_MUSIC_LISTENER_MODEL = savedModel;
+    delete process.env.OPENROUTER_KEY;
+  }
+});
+
+test('MiMo: a reply whose prompt counted no audio is not shown as the singer\'s words', async () => {
+  const savedModel = process.env.KADE_MUSIC_LISTENER_MODEL;
+  process.env.KADE_MUSIC_LISTENER_MODEL = 'xiaomi/mimo-v2.6-flash';
+  process.env.OPENROUTER_KEY = 'openrouter-key-for-tests';
+  try {
+    /* Oct 16 check: a host that dropped the recording counted 288 prompt tokens (the words alone)
+     * and still answered "stop" with an invented song, chorus first, double-spaced. */
+    mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: doubleSpace('[Chorus]\nMade up line\nAnother made up line\n\n[Verse]\nNot from the song') } }], usage: { prompt_tokens: 288, completion_tokens: 670 } });
+    const got = await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199);
+    assert.equal(got.model, 'scribe_v2');
+    assert.equal(got.transcript, 'Backup words.\nSecond line.');
+    const [level, line] = logs.find(([, entry]) => entry.includes('lyrics listener fallback'));
+    assert.equal(level, 'warn');
+    assert.equal(line, `[music/lyrics] lyrics listener fallback reason=unheard:tokens=288 model=xiaomi/mimo-v2.6-flash audio/mpeg ${MP3.length}B 199s; using scribe_v2`);
+    /* A heard recording passes at any length, and a reply without usage figures is not judged. */
+    for (const [seconds, usage] of [[199, { prompt_tokens: 1531, completion_tokens: 446 }], [213.52, { prompt_tokens: 1622, completion_tokens: 670 }], [5, { prompt_tokens: 330, completion_tokens: 9 }], [199, undefined]]) {
+      mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: '[Verse]\nHeard words' } }], usage });
+      assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', seconds)).model, 'xiaomi/mimo-v2.6-flash', String(seconds));
+    }
+    /* Only the measured listener is judged: Pro's audio rate was never measured. */
+    process.env.KADE_MUSIC_LISTENER_MODEL = 'xiaomi/mimo-v2.6-pro';
+    mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: '[Verse]\nHeard words' } }], usage: { prompt_tokens: 288, completion_tokens: 9 } });
+    assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199)).model, 'xiaomi/mimo-v2.6-pro');
+  } finally {
+    process.env.KADE_MUSIC_LISTENER_MODEL = savedModel;
+    delete process.env.OPENROUTER_KEY;
   }
 });
