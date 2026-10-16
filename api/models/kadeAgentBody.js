@@ -122,6 +122,18 @@ async function deleteAgentBody(agentId) {
   await KadeAgentBody.deleteOne({ agentId: String(agentId) });
 }
 
+/** Removes a starting body only while it is exactly as the backfill left it (one atomic
+ * filter, so an edit landing at the same moment wins). True when one was removed. */
+async function deleteBackfilledBody(agentId) {
+  const r = await KadeAgentBody.deleteOne({
+    agentId: String(agentId),
+    source: 'auto',
+    updatedBy: 'backfill',
+    rev: 1,
+  });
+  return r.deletedCount === 1;
+}
+
 async function getAgentBodyHistory(agentId) {
   const row = await KadeAgentBody.findOne({ agentId: String(agentId) }, { history: 1 }).lean();
   return row && Array.isArray(row.history) ? row.history : [];
@@ -134,5 +146,6 @@ module.exports = {
   getAgentBodies,
   saveAgentBody,
   deleteAgentBody,
+  deleteBackfilledBody,
   getAgentBodyHistory,
 };

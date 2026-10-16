@@ -114,16 +114,24 @@ async function startBackfill(req, res) {
       let from = 'words';
       try {
         let url = a.avatar && a.avatar.filepath;
-        if (url && a.avatar.source === FileSources.s3) {
-          url = await refreshS3Url(a.avatar).catch(() => url);
-        }
-        if (url && /^https:\/\//i.test(String(url))) {
+        if (url) {
+          /* A character with a portrait is designed from it or not at all: words alone
+           * cannot tell a dog called Diggy from a person, so any failure here (timeout,
+           * unreadable answer, unreachable picture) saves nothing and a later run retries. */
           from = 'portrait';
-          out = await puppet.recipeFromPicture(url, hint).catch(() => null);
-        }
-        if (!out) {
-          from = 'words';
-          out = await puppet.recipeFromWords(`A character called ${hint || 'a friendly helper'}`);
+          if (a.avatar.source === FileSources.s3) {
+            url = await refreshS3Url(a.avatar).catch(() => url);
+          }
+          if (!/^https:\/\//i.test(String(url))) {
+            throw new Error('The portrait could not be reached.');
+          }
+          out = await puppet.recipeFromPicture(url, hint);
+        } else {
+          out = await puppet.recipeFromWords(
+            `A character called ${hint || 'a friendly helper'}`,
+            null,
+            { requirePerson: true },
+          );
         }
         backfill.spentUSD += out.costUSD || 0;
         logUsage(out, from);
@@ -140,7 +148,25 @@ async function startBackfill(req, res) {
         // A billed answer that could not be read still costs money.
         backfill.spentUSD += e.costUSD || 0;
         if (e.costUSD) logUsage({ costUSD: e.costUSD }, from);
-        backfill.results.push({ agentId: a.id, name: a.name, from, ok: false, error: String(e.message || e).slice(0, 200) });
+        backfill.results.push(
+          e.code === 'creature'
+            ? {
+                agentId: a.id,
+                name: a.name,
+                from,
+                ok: false,
+                skipped: 'creature',
+                what: e.what,
+                costUSD: e.costUSD,
+              }
+            : {
+                agentId: a.id,
+                name: a.name,
+                from,
+                ok: false,
+                error: String(e.message || e).slice(0, 200),
+              },
+        );
       }
       backfill.done += 1;
       await new Promise((r) => setTimeout(r, 400));
@@ -156,6 +182,37 @@ async function startBackfill(req, res) {
     logger.error(`[kadeAgentBody] backfill failed: ${e.message}`);
   });
 }
+
+/* POST /admin/backfill/undo { agentIds } (x-kade-secret header) removes starting bodies the
+ * backfill made, so those characters go back to their paintings. Only a body nobody has
+ * touched since (source 'auto', made by the backfill, still revision 1) is removed; an
+ * edited one is reported and kept. */
+router.post('/admin/backfill/undo', sizeCap(32 * 1024), async (req, res) => {
+  if (!machine(req)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  const ids = Array.isArray(req.body && req.body.agentIds)
+    ? req.body.agentIds.map(String).slice(0, 500)
+    : [];
+  if (!ids.length) {
+    return res.status(400).json({ error: 'agentIds is required' });
+  }
+  const results = [];
+  for (const agentId of ids) {
+    try {
+      const removed = await bodies.deleteBackfilledBody(agentId);
+      if (removed) {
+        puppet.forgetBodyNote(agentId);
+      }
+      results.push({ agentId, removed });
+    } catch (e) {
+      results.push({ agentId, removed: false, error: String(e.message || e).slice(0, 120) });
+    }
+  }
+  const removed = results.filter((r) => r.removed).length;
+  logger.info(`[kadeAgentBody] backfill undo: ${removed}/${ids.length} removed`);
+  res.json({ ok: true, results });
+});
 
 /* Backfill calls are logged against the admin seat, so the real cost shows on the usage
  * page without charging anyone. */
@@ -296,7 +353,10 @@ async function paidDesign(req, res, run, via) {
     }
     /* Only the service's own errors reach the browser. An upstream 401 or 402 would make the
      * web client refresh its session and replay a paid request, so those become 502. */
-    logger.error(`[kadeAgentBody] ${via} failed: ${e.message}${e.response ? ` (upstream ${e.response.status})` : ''}`);
+    // A creature is an expected answer, not a fault.
+    (e.code === 'creature' ? logger.info : logger.error)(
+      `[kadeAgentBody] ${via} failed: ${e.message}${e.response ? ` (upstream ${e.response.status})` : ''}`,
+    );
     return e.expose
       ? res.status(e.status).json({ error: e.message })
       : res.status(502).json({ error: 'The body designer is having a moment. Try again.' });

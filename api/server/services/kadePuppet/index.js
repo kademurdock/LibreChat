@@ -190,7 +190,20 @@ function parseJson(raw) {
   }
 }
 
-async function askModel(userContent, { maxTokens = 900 } = {}) {
+/* Oct 16 2026, Kade: the kit draws only human faces, so the first backfill turned a
+ * golden retriever, a chicken and a minotaur into people. A portrait (and the backfill's
+ * words) is now asked "person or creature?" first; a creature keeps its painting. Ears,
+ * horns and costumes on a human face still count as a person. */
+const PERSON_CHECK =
+  ' First decide "kind". "person": the character has a human face, even with elf, pointed or cat ears, ' +
+  'horns, wings, face paint, fantasy skin colours or a costume. "creature": the face is an animal\'s or ' +
+  "a creature's (a snout, muzzle, beak or bill, a face covered in fur, feathers or scales, an animal head " +
+  'on a human body) or there is no human face at all (a robot, an object, a blob). For a creature reply ' +
+  'with only {"kind":"creature","what":"a few words"} and design nothing. For a person include "kind":"person".';
+
+const NOT_PEOPLE = new Set(['creature', 'animal', 'robot', 'object', 'monster', 'thing']);
+
+async function askModel(userContent, { maxTokens = 900, requirePerson = false } = {}) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
     const err = new Error('Body design is not configured right now.');
@@ -236,14 +249,38 @@ async function askModel(userContent, { maxTokens = 900 } = {}) {
     err.costUSD = costUSD;
     throw err;
   }
+  const kind = String(parsed.kind || '')
+    .trim()
+    .toLowerCase();
+  /* Anything but a clear "person" with a design counts as a creature: a model that says
+   * "animal" or "robot", or names no kind and designs nothing, must not become a default
+   * human after normalizeRecipe fills the gaps. */
+  const designed = ['head', 'skin', 'eyes', 'hair', 'outfit'].some(
+    (key) => parsed[key] && typeof parsed[key] === 'object',
+  );
+  if (requirePerson && kind !== 'person' && (NOT_PEOPLE.has(kind) || !designed)) {
+    const err = new Error(
+      'This character is an animal or creature, and bodies can only draw people for now, so its painting stays.',
+    );
+    err.code = 'creature';
+    err.what = String(parsed.what || '').slice(0, 80);
+    err.status = 422;
+    err.expose = true;
+    err.costUSD = costUSD;
+    throw err;
+  }
   return { recipe: k.normalizeRecipe(parsed), costUSD, inTok, outTok, ms: Date.now() - started };
 }
 
-/** Turn a person's words ("a tall cowboy with a gray handlebar mustache") into a recipe. */
-async function recipeFromWords(words, base) {
+/** Turn a person's words ("a tall cowboy with a gray handlebar mustache") into a recipe.
+ * `requirePerson` (the backfill's words for a character with no portrait) rejects a
+ * creature with code 'creature' instead of drawing it as a person. */
+async function recipeFromWords(words, base, { requirePerson = false } = {}) {
   const text = String(words || '').trim().slice(0, 1500);
   const baseLine = base ? `\nCurrent body (change only what the words ask for): ${JSON.stringify(base)}` : '';
-  return askModel(`Design this body: ${text}${baseLine}`);
+  return askModel(`Design this body: ${text}${baseLine}${requirePerson ? PERSON_CHECK : ''}`, {
+    requirePerson,
+  });
 }
 
 /** Turn a portrait image URL (the agent's avatar) into a resembling recipe. */
@@ -253,12 +290,14 @@ async function recipeFromPicture(imageUrl, hint) {
       type: 'text',
       text:
         'Design a puppet body that resembles the character in this portrait: face shape, skin, eyes, ' +
-        'hair, facial hair, clothes, glasses and other accessories, and any fantasy features.' +
+        'hair, facial hair, clothes, glasses and other accessories, and any fantasy features. ' +
+        'Add glasses, headphones or other accessories only when the portrait shows them.' +
+        PERSON_CHECK +
         (hint ? ` The character: ${String(hint).slice(0, 600)}` : ''),
     },
     { type: 'image_url', image_url: { url: imageUrl } },
   ];
-  return askModel(content);
+  return askModel(content, { requirePerson: true });
 }
 
 module.exports = {
