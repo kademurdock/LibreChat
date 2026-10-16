@@ -112,4 +112,25 @@ function getCachedLiveAliases() {
   return _voiceCache.aliases || null;
 }
 
-module.exports = { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden, getCachedLiveAliases };
+/**
+ * KADE Oct 16 2026: voices, hidden and aliases from ONE /voices.json read, for
+ * callers that validate a stored label (kadeVoiceResolver). The resolver used
+ * to keep hidden/aliases in a second cache on its own 5-minute clock, so just
+ * after a voice rename the new list could meet the old hidden list and a saved
+ * pick under the old name looked invalid for minutes. Same fetch, same
+ * last-known-good fallback as fetchLiveVoices; all three null before the first
+ * successful fetch.
+ */
+async function fetchLiveCatalog(ttsUrl) {
+  await fetchLiveVoices(ttsUrl);
+  const { voices, hidden, aliases } = _voiceCache;
+  return { voices: voices || null, hidden: hidden || null, aliases: aliases || null };
+}
+
+module.exports = {
+  fetchLiveVoices,
+  fetchLiveCatalog,
+  getCachedLiveVoices,
+  getCachedLiveHidden,
+  getCachedLiveAliases,
+};

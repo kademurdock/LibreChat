@@ -15,6 +15,7 @@ const VALID_STT_ENGINES: string[] = [STTEndpoints.browser, STTEndpoints.external
  * the platform's TTS. A provider name in the config means external speech IS
  * configured — map it to "external" instead. */
 const LEGACY_EXTERNAL_ENGINES = new Set(['openai', 'azureopenai', 'elevenlabs', 'localai']);
+const RETIRED_PLAYBACK_RATE_KEY = 'playbackRate';
 
 /**
  * Initializes speech-related Recoil values from the server-side custom
@@ -41,8 +42,17 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
     cloudBrowserVoices: useSetRecoilState(store.cloudBrowserVoices),
     languageTTS: useSetRecoilState(store.languageTTS),
     automaticPlayback: useSetRecoilState(store.automaticPlayback),
-    playbackRate: useSetRecoilState(store.playbackRate),
+    voicePacePreference: useSetRecoilState(store.voicePacePreference),
   }).current;
+
+  useEffect(() => {
+    /* Oct 16 2026: the retired playback-stretch slider's value; nothing reads it any more. */
+    try {
+      localStorage.removeItem(RETIRED_PLAYBACK_RATE_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !data || data.message === 'not_found') return;

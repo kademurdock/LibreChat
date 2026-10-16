@@ -14,7 +14,7 @@ loaded.paths = Module._nodeModulePaths(dirname(filename));
 loaded._compile(ts.transpileModule(readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
 }).outputText, filename);
-const { memoryEmbeddingLane, requestMemoryEmbedding, indexedEmbedding, embeddingTextHash } = loaded.exports;
+const { memoryEmbeddingLane, requestMemoryEmbedding, indexedEmbedding, embeddingTextHash, memoryEmbeddingPurpose, memoryEmbeddingTimeoutMs } = loaded.exports;
 
 const env = { KADE_EMBED_MODEL: 'qwen/qwen3-embedding-8b', OPENROUTER_KEY: 'test-only', KADE_EMBED_DIMENSIONS: '32' };
 const vector = Array.from({ length: 32 }, (_, index) => index / 100);
@@ -57,4 +57,30 @@ test('query instructions stay out of documents and every response must have the 
     assert.equal(seen[0].body.provider.max_price.prompt, 0.02);
     await assert.rejects(requestMemoryEmbedding({ ...lane, dimensions: 64 }, 'x'), /invalid vector/);
   } finally { axios.defaults.adapter = original; }
+});
+
+test('Oct 16: tool matching has its own instruction, and the turn path waits less than a write', async () => {
+  const seen = [];
+  const original = axios.defaults.adapter;
+  axios.defaults.adapter = async (config) => {
+    seen.push({ timeout: config.timeout, body: JSON.parse(config.data) });
+    return { status: 200, statusText: 'OK', headers: {}, config, data: { data: [{ index: 0, embedding: vector }] } };
+  };
+  try {
+    const lane = memoryEmbeddingLane(env);
+    await requestMemoryEmbedding(lane, 'what is the weather', 'tools');
+    await requestMemoryEmbedding(lane, 'what is the weather', 'query');
+    await requestMemoryEmbedding(lane, 'what is the weather', 'document');
+    assert.match(seen[0].body.input, /^Instruct: Given a user message, retrieve the tool whose description can fulfil the request/);
+    assert.match(seen[1].body.input, /personal memories/);
+    assert.equal(seen[2].body.input, 'what is the weather');
+    assert.deepEqual(seen.map((call) => call.timeout), [3000, 3000, 8000]);
+  } finally { axios.defaults.adapter = original; }
+  assert.equal(memoryEmbeddingTimeoutMs('query', { KADE_EMBED_TIMEOUT_MS: '2000' }), 2000);
+  assert.equal(memoryEmbeddingTimeoutMs('query', { KADE_EMBED_TIMEOUT_MS: 'soon' }), 3000);
+  assert.equal(memoryEmbeddingTimeoutMs('query', { KADE_EMBED_TIMEOUT_MS: '10' }), 3000, 'too short to ever answer');
+  assert.equal(memoryEmbeddingTimeoutMs('document', { KADE_EMBED_TIMEOUT_MS: '2000', KADE_EMBED_DOC_TIMEOUT_MS: '9000' }), 9000);
+  assert.equal(memoryEmbeddingPurpose(memoryEmbeddingLane(env), 'tools'), 'tools');
+  assert.equal(memoryEmbeddingPurpose(memoryEmbeddingLane({ KADE_EMBED_GEMINI_KEY: 'legacy' }), 'tools'), 'query');
+  assert.equal(memoryEmbeddingPurpose(null, 'document'), 'document');
 });

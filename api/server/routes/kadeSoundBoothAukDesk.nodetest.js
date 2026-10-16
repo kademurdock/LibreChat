@@ -44,6 +44,7 @@ const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSou
 function booth(replies = [], env = {}) {
   const handlers = new Map();
   const writerCalls = [];
+  const writerOptions = [];
   const bridgeCalls = [];
   const saved = [];
   const warnings = [];
@@ -64,15 +65,17 @@ function booth(replies = [], env = {}) {
     require(name) {
       if (name === 'express') return { Router: () => router, json: () => () => {} };
       if (name === 'multer') return Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
-      if (name === 'axios') return { post: async (url, body) => {
+      if (name === 'axios') return { post: async (url, body, options) => {
         if (url.endsWith('/audio/scenema/start')) {
           bridgeCalls.push(body);
           return { data: { jobId: 'offline-job', estimate: {} } };
         }
         assert.match(url, /chat\/completions$/);
         writerCalls.push(body);
+        writerOptions.push(options);
         const reply = replies[writerCalls.length - 1];
         assert.ok(reply !== undefined, 'the writer was asked more times than this test expected');
+        if (reply instanceof Error) throw reply;
         return { data: { choices: [{ message: { content: typeof reply === 'string' ? reply : reply.text, refusal: typeof reply === 'string' ? undefined : reply.refusal }, finish_reason: typeof reply === 'string' ? 'stop' : reply.finishReason }], usage: typeof reply === 'string' ? { cost: 0 } : reply.usage || { cost: 0 } } };
       } };
       if (name === 'crypto') return require(name);
@@ -109,7 +112,7 @@ function booth(replies = [], env = {}) {
     return result;
   };
   return {
-    writerCalls, bridgeCalls, saved, warnings, usageLog, request, internals: context.module.exports._internals,
+    writerCalls, writerOptions, bridgeCalls, saved, warnings, usageLog, request, internals: context.module.exports._internals,
     write: (body) => call('post/script', { engine: 'scenema', mode: 'write', text: 'A short story.', gender: 'female', ...body }),
     render: (body) => call('post/render', { engine: 'scenema', gender: 'female', ...body }),
   };
@@ -351,6 +354,44 @@ test('missing or generic title metadata falls back to sung words, never the musi
     assert.equal(polled.result.result.title, 'Ribbon thief, bring back my sky');
     assert.equal(desk.writerCalls.length, 2, 'only the existing draft and producer revision; fallback has no separate title inference');
   }
+});
+
+test('Oct 16: the producer audit rides with thinking off, and a background draft leaves it a reserve', async () => {
+  const draft = 'Warm folk.\nLyrics:\n[Verse 1]\nThe barn is empty\n[Chorus]\nRibbon thief, bring back my sky!\nREADBACK: A playful kite jingle.';
+  const run = async (thinkMode, env = {}) => {
+    const desk = booth([draft, draft], { KADE_LYRIC_REPEATS: '0', ...env });
+    const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A short kite jingle.', thinkMode, notify: false });
+    let polled;
+    for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+    assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+    assert.equal(desk.writerCalls.length, 2, 'the draft and the audit');
+    return desk;
+  };
+  for (const thinkMode of ['auto', 'low', 'high']) {
+    const desk = await run(thinkMode);
+    const [draftCall, audit] = desk.writerCalls;
+    assert.equal(draftCall.reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode, 'the first draft keeps its chosen thought');
+    assert.equal(audit.reasoning.enabled, false);
+    assert.equal(audit.reasoning.effort, 'none');
+    assert.equal(Object.hasOwn(audit, 'kade_think_max_effort'), false, 'auto mode does not hand the audit back to the think router');
+    assert.equal(audit.stream, true);
+    assert.equal(desk.writerOptions[0].timeout, 510000, 'the 600 s background budget keeps 90 s back for the audit');
+    assert.ok(desk.writerOptions[1].timeout >= 45000 && desk.writerOptions[1].timeout <= 225000);
+  }
+  const whole = await run('low', { KADE_LYRIC_AUDIT_RESERVE_MS: '0' });
+  assert.equal(whole.writerOptions[0].timeout, 600000, 'KADE_LYRIC_AUDIT_RESERVE_MS=0 gives the draft the whole budget');
+});
+
+test('Oct 16: a streamed writer cancelled by its time limit says the writer ran out of time', async () => {
+  const cancel = Object.assign(new Error('canceled'), { name: 'CanceledError', code: 'ERR_CANCELED' });
+  const desk = booth([cancel]);
+  const { status, result } = await desk.request('post/script', { engine: 'seed', mode: 'write', text: KITTEN_BRIEF });
+  assert.equal(status, 500);
+  assert.match(result.error, /The writer ran out of time on that one/);
+  assert.ok(desk.warnings.some((w) => /writer timed out after 112000ms \(canceled\) code=ECONNABORTED/.test(w)), desk.warnings.join('\n'));
+  const other = booth([Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })]);
+  const failed = await other.request('post/script', { engine: 'seed', mode: 'write', text: KITTEN_BRIEF });
+  assert.match(failed.result.error, /The script desk had trouble/, 'a non-timeout failure keeps its own message');
 });
 
 test('a song that reaches the output ceiling is reported rather than returned as a complete draft', async () => {
@@ -977,6 +1018,7 @@ test('Seed overflow asks for concise directions before cutting dialogue and keep
   assert.match(rewrite, /requested sound constraints and its complete ending/);
   assert.match(rewrite, /wordless piece wordless; never invent speech/);
   assert.equal(desk.writerCalls[1].max_tokens, 16384);
+  assert.equal(desk.writerCalls[1].reasoning.enabled, false, 'cut-to-fit is an edit pass: thinking off');
   assert.equal(out.script, SEED_SCENE);
   assert.ok(out.repairs.some((note) => note.startsWith('cut to fit Seed\'s cap:')));
   assert.equal(out.problem, null);

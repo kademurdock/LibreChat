@@ -18,9 +18,40 @@ export type IndexedEmbedding = {
   embedNextHash?: string | null;
 };
 
-const queryInstruction =
-  'Given a conversation query, retrieve relevant personal memories that answer the query';
+export type MemoryEmbeddingPurpose = 'query' | 'document' | 'tools';
+
+/* Oct 16 2026: tool matching asked Qwen3 to "retrieve relevant personal memories" for the
+ * person's words and scored that against tool descriptions. Tool selection has its own
+ * instruction now; documents are never instructed. */
+const queryInstructions: Record<Exclude<MemoryEmbeddingPurpose, 'document'>, string> = {
+  query: 'Given a conversation query, retrieve relevant personal memories that answer the query',
+  tools: 'Given a user message, retrieve the tool whose description can fulfil the request',
+};
 const openRouter = 'https://openrouter.ai/api/v1';
+const instructed = (lane: EmbeddingLane | null): boolean =>
+  !!lane && /qwen3-embedding/i.test(lane.model);
+
+/** The purpose whose input actually differs on this lane: a lane that reads no instruction
+ * embeds a tools query and a memory query identically, so a per-turn memo can share them. */
+export function memoryEmbeddingPurpose(
+  lane: EmbeddingLane | null,
+  purpose: MemoryEmbeddingPurpose,
+): MemoryEmbeddingPurpose {
+  return purpose === 'tools' && !instructed(lane) ? 'query' : purpose;
+}
+
+/* Oct 16 2026: one in five Kiana turns sat out the full 8 s embed timeout before tool
+ * loading went on. Queries (on the turn path) default to 3 s, KADE_EMBED_TIMEOUT_MS;
+ * document embeds (writes, backfills, tool descriptions) keep 8 s, KADE_EMBED_DOC_TIMEOUT_MS. */
+export function memoryEmbeddingTimeoutMs(
+  purpose: MemoryEmbeddingPurpose = 'document',
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const document = purpose === 'document';
+  const set = Number(document ? env.KADE_EMBED_DOC_TIMEOUT_MS : env.KADE_EMBED_TIMEOUT_MS);
+  if (Number.isFinite(set) && set >= 500 && set <= 60000) return set;
+  return document ? 8000 : 3000;
+}
 
 export function memoryEmbeddingLane(env: NodeJS.ProcessEnv = process.env): EmbeddingLane | null {
   if (env.KADE_EMBED_MODEL) {
@@ -143,12 +174,12 @@ type EmbeddingResponse = {
 export async function requestMemoryEmbedding(
   lane: EmbeddingLane,
   text: string,
-  purpose: 'query' | 'document' = 'document',
+  purpose: MemoryEmbeddingPurpose = 'document',
 ): Promise<number[]> {
   const plain = text.slice(0, 4000);
   const input =
-    purpose === 'query' && /qwen3-embedding/i.test(lane.model)
-      ? `Instruct: ${queryInstruction}\nQuery: ${plain}`
+    purpose !== 'document' && instructed(lane)
+      ? `Instruct: ${queryInstructions[purpose]}\nQuery: ${plain}`
       : plain;
   const compatible = lane.provider !== 'gemini';
   const response = await axios.post<EmbeddingResponse>(
@@ -172,7 +203,7 @@ export async function requestMemoryEmbedding(
       headers: compatible
         ? { Authorization: `Bearer ${lane.key}`, 'Content-Type': 'application/json' }
         : { 'x-goog-api-key': lane.key, 'Content-Type': 'application/json' },
-      timeout: 8000,
+      timeout: memoryEmbeddingTimeoutMs(purpose),
       maxRedirects: 0,
       maxContentLength: 256 * 1024,
     },

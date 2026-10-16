@@ -30,47 +30,19 @@
 const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 const { getUserVoicePref } = require('~/models/kadeVoicePref');
-const { fetchLiveVoices } = require('~/server/services/Files/Audio/voiceCatalog');
+const { fetchLiveCatalog } = require('~/server/services/Files/Audio/voiceCatalog');
 
 const DEFAULT_VOICE = process.env.KADE_DEFAULT_VOICE || 'Kiana (Comedian)';
 const PROXY_URL = (
   process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app'
 ).replace(/\/$/, '');
 
-/** Aliases (named voice labels) — separate 5-min cache; /voices.json may not
- * expose them yet (proxy-side addition rides the catalog-integrity commit). */
-let _aliasCache = { at: 0, aliases: null, hidden: null };
-async function fetchAliases() {
-  try {
-    if (_aliasCache.aliases && Date.now() - _aliasCache.at < 5 * 60 * 1000) {
-      return _aliasCache;
-    }
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    const r = await fetch(`${PROXY_URL}/voices.json`, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      },
-    });
-    clearTimeout(timer);
-    if (!r.ok) return _aliasCache;
-    const d = await r.json();
-    if (Array.isArray(d?.aliases)) {
-      // `hidden` (July 23 2026): old picker spellings — the graduated
-      // beta-era labels — still resolvable at synth, never shown in pickers.
-      _aliasCache = {
-        at: Date.now(),
-        aliases: d.aliases,
-        hidden: Array.isArray(d?.hidden) ? d.hidden : null,
-      };
-    }
-    return _aliasCache;
-  } catch {
-    return _aliasCache;
-  }
-}
+/* Oct 16 2026: aliases (named voice labels) and `hidden` (old spellings the
+ * proxy still resolves) used to come from a second /voices.json cache on its
+ * own 5-minute clock. After a voice rename the live list could be new while
+ * hidden was still old, so personal and builder picks saved under the old name
+ * were skipped for up to five minutes. All three now come from the one shared
+ * read in voiceCatalog.js (fetchLiveCatalog). */
 
 /**
  * A label is INVALID only when we positively know better:
@@ -134,10 +106,10 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
   let aliases = null;
   let hidden = null;
   try {
-    liveVoices = await fetchLiveVoices(`${PROXY_URL}/v1/audio/speech`);
-    const aliasInfo = await fetchAliases();
-    aliases = aliasInfo && aliasInfo.aliases;
-    hidden = aliasInfo && aliasInfo.hidden;
+    const catalog = await fetchLiveCatalog(`${PROXY_URL}/v1/audio/speech`);
+    liveVoices = (catalog && catalog.voices) || null;
+    aliases = (catalog && catalog.aliases) || null;
+    hidden = (catalog && catalog.hidden) || null;
   } catch { /* validation degrades to pass-through */ }
 
   /* 1. personal */

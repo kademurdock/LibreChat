@@ -1199,21 +1199,27 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
   async function loadVoices(){
     var sel = $('voiceSel'); sel.innerHTML = '';
+    var renames = {};
     try {
       var r = await fetch(TTS_BASE + '/voices.json'); var j = await r.json();
       var cats = j.categories || [];
       var hidden = j.hidden || [];
       var describe = j.describe || {};
+      renames = j.renames || {};
       cats.forEach(function(c){
         var og = document.createElement('optgroup'); og.label = c.name;
         (c.voices || []).forEach(function(v){ if (hidden.indexOf(v) !== -1) return; var o = document.createElement('option'); o.value = v; o.textContent = describe[v] ? v + ' — ' + describe[v] : v; og.appendChild(o); });
         if (og.children.length) sel.appendChild(og);
       });
     } catch(e) {}
-    if (!sel.options.length || ![].some.call(sel.options, function(o){ return o.value === voice; })) {
+    var listed = function(v){ return [].some.call(sel.options, function(o){ return o.value === v; }); };
+    /* Oct 16 2026: a book saved under a voice's old name shows that voice under its new
+       name (both names speak with the same voice; nothing is saved until a new pick). */
+    var shown = !listed(voice) && typeof renames[voice] === 'string' && listed(renames[voice]) ? renames[voice] : voice;
+    if (!sel.options.length || !listed(shown)) {
       var o = document.createElement('option'); o.value = voice; o.textContent = voice; sel.insertBefore(o, sel.firstChild);
     }
-    sel.value = voice;
+    sel.value = shown;
   }
   /* the library's eyes */
   var descPausedFor = null, descTimer = null, descSpoken = {}, descAudio = null;

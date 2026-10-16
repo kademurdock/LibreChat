@@ -54,17 +54,22 @@ self.addEventListener('notificationclick', (event) => {
     self.clients
       .matchAll({ type: 'window', includeUncontrolled: true })
       .then(async (clientList) => {
-        for (const client of clientList) {
-          if ('focus' in client) {
-            try {
-              const navigated = await client.navigate(url);
-              return (navigated || client).focus();
-            } catch {
-              return self.clients.openWindow(url);
-            }
-          }
+        const client = clientList.find((c) => 'focus' in c);
+        if (!client) return self.clients.openWindow(url);
+        /* KADE Oct 16 2026: focus first, while the click still allows it (Firefox gives about
+         * a second), then navigate; waiting for the page used to leave the tab behind. A tab
+         * this worker does not control (a hard reload) cannot be navigated: open the page. */
+        let focused = client;
+        try {
+          focused = (await client.focus()) || client;
+        } catch {
+          /* the navigation below still lands */
         }
-        return self.clients.openWindow(url);
+        try {
+          await focused.navigate(url);
+        } catch {
+          return self.clients.openWindow(url);
+        }
       }),
   );
 });

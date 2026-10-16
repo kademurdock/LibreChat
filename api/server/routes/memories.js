@@ -572,58 +572,27 @@ router.get('/ledger', async (req, res) => {
  * quietly before and nobody ever noticed that either. A fail-soft write with
  * no backfill is not fail-soft; it is fail-silent-forever.
  *
- * Non-destructive by construction: touches ONLY embedding + embedModel,
- * never text, never dates, never salience. Idempotent: a second run finds
- * nothing. `dry: true` gives the census without a single embed call.
+ * Touches ONLY the vectors, never text, never dates, never salience. Since
+ * Oct 16 2026 an entry already searchable on the live lane (including through
+ * a staged vector) is not counted or paid for again, and an entry that carries
+ * another model's index (the Google one kept for rollback) gets the new vector
+ * staged beside it, never over it. Idempotent: a second run finds nothing.
+ * `dry: true` gives the census without a single embed call.
+ * The work lives in kadeDiary.backfillDiaryEmbeddings.
  */
 router.post('/diary-embed-backfill', requireAdminAccess, async (req, res) => {
   try {
-    const { KadeDiaryEntry, embedText, currentEmbedModel } = require('~/models/kadeDiary');
-    const model = currentEmbedModel();
-    if (!model) {
-      return res.status(400).json({
-        error: 'no embedding lane is configured — set KADE_EMBED_GEMINI_KEY or KADE_EMBED_OPENAI_KEY first',
-      });
-    }
+    const { backfillDiaryEmbeddings } = require('~/models/kadeDiary');
     const dry = req.body?.dry === true;
     const cap = Math.min(Math.max(parseInt(req.body?.limit, 10) || 300, 1), 1000);
-    const filter = {
-      $or: [
-        { embedding: null },
-        { embedding: { $size: 0 } },
-        { embedModel: { $ne: model } },
-      ],
-    };
-    const total = await KadeDiaryEntry.countDocuments(filter);
-    if (dry) {
-      return res.json({ dry: true, needing: total, model });
+    const result = await backfillDiaryEmbeddings({ dry, limit: cap });
+    if (!result) {
+      return res.status(400).json({
+        error:
+          'no embedding lane is configured — set KADE_EMBED_MODEL with KADE_EMBED_KEY or OPENROUTER_KEY, or KADE_EMBED_GEMINI_KEY or KADE_EMBED_OPENAI_KEY, first',
+      });
     }
-    const rows = await KadeDiaryEntry.find(filter)
-      .select('_id text')
-      .limit(cap)
-      .lean();
-    let embedded = 0;
-    let failed = 0;
-    for (const r of rows) {
-      const vec = await embedText(String(r.text || '').slice(0, 4000));
-      if (vec) {
-        await KadeDiaryEntry.updateOne(
-          { _id: r._id, text: r.text },
-          { $set: { embedding: vec, embedModel: model } },
-        );
-        embedded += 1;
-      } else {
-        failed += 1;
-        /* Provider still failing? Stop after three straight so a dead lane
-         * costs three calls, not a thousand. */
-        if (failed >= 3 && embedded === 0) {
-          break;
-        }
-      }
-      await new Promise((ok) => setTimeout(ok, 150));
-    }
-    const remaining = await KadeDiaryEntry.countDocuments(filter);
-    res.json({ scanned: rows.length, embedded, failed, remaining, model });
+    res.json(result);
   } catch (error) {
     logger.error('[POST /memories/diary-embed-backfill] failed:', error);
     res.status(500).json({ error: error.message });

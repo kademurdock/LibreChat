@@ -20,10 +20,12 @@
  *   - Everything else is DEFERRED and retrieved per turn by (a) hand-written
  *     keyword aliases (the obvious asks: "tell me a joke", "call my mom",
  *     "play blackjack") and (b) embedding similarity between the person's
- *     words and each tool's description — the SAME Gemini embed the diary
- *     and card recall already take for this turn (memoised on the request, so
- *     the added per-turn cost is zero embed calls). Tool description vectors
- *     are computed once per process and cached.
+ *     words and each tool's description. Since Oct 16 2026 the words are
+ *     embedded with a tools instruction (purpose 'tools'; Qwen3 reads it, a
+ *     lane with no instruction shares the memory query card recall takes for
+ *     this turn, memoised on the request), and the turn waits at most 2.5 s
+ *     for it. Tool description vectors are computed once per process, in the
+ *     background, and cached.
  *   - STICKY PER CONVERSATION: once a tool is retrieved in a conversation it
  *     stays attached for the rest of it (in-process map, 48 h TTL). The tool
  *     list is part of the cached prefix; a set that only ever GROWS costs one
@@ -42,8 +44,11 @@
  *   KADE_TOOLS_CORE             comma list, replaces the default core
  *   KADE_TOOLS_CORE_EXTRA       comma list, adds to the core
  *   KADE_TOOLS_MIN_SCORE        cosine floor for an embed hit (default 0.60;
- *                               measured Sep 5: real asks 0.64–0.74, chit-chat
- *                               tops out ~0.55)
+ *                               measured Sep 5 on gemini-embedding-001: real
+ *                               asks 0.64–0.74, chit-chat tops out ~0.55. NOT
+ *                               re-measured on qwen3-embedding-8b (Oct 13): read
+ *                               the [kadeToolRag] top= scores before moving it)
+ *   KADE_TOOLS_EMBED_WAIT_MS    longest a turn waits for the query vector (2500)
  *   KADE_TOOLS_MARGIN           also take tools within this of the top hit (0.06)
  *   KADE_TOOLS_MAX_EMBED        max tools taken by embedding per turn (4)
  *   KADE_TOOLS_RAG_SKIP_AGENTS  comma list of agent ids never filtered
@@ -237,6 +242,8 @@ const sticky = new Map();
 
 /** tool name → { text, vec } */
 const descVecs = new Map();
+/** tool name → its description embed still on the way (one per tool at a time) */
+const descPending = new Map();
 
 /* Part 176: the NO_WEB_NOTE promises "if they say yes, the search comes along
  * on the next turn" -- and nothing made that true. "Yes", "sure", "go ahead",
@@ -389,31 +396,93 @@ function keywordHits(text, candidates) {
   return hits;
 }
 
+/* Oct 16 2026: a slow embed lane held whole turns for its full 8 s timeout here
+ * (the query embed, then six cold description embeds in a row of failures).
+ * The turn now waits at most QUERY_WAIT_MS for the query vector
+ * (KADE_TOOLS_EMBED_WAIT_MS); one that has not come back counts as the lane
+ * being down. Tool descriptions are never awaited on the turn path: once the
+ * lane answers, a missing one is embedded in the background and scores from
+ * the next turn on. */
+const QUERY_WAIT_MS = 2500;
+const SLOW = Symbol('slow');
+
+function within(promise, ms) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise).catch(() => null),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(SLOW), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/** Embed the descriptions the cache lacks. Resolves when they are in (or failed); the turn never waits on it. */
+function primeToolDescriptions(tools, embed) {
+  if (!embed) return Promise.resolve();
+  const jobs = (tools || [])
+    .filter((t) => !descVecs.has(t.name))
+    .map((t) => {
+      if (descPending.has(t.name)) return descPending.get(t.name);
+      const name = String(t.name)
+        .replace(/^kade_/, '')
+        .replace(/_/g, ' ');
+      const desc = `${name}: ${String(t.description || '').slice(0, 1200)}`;
+      const job = Promise.resolve()
+        .then(() => embed(desc, { purpose: 'document' }))
+        .then((vec) => {
+          if (vec) descVecs.set(t.name, { text: desc, vec });
+        })
+        .catch(() => {})
+        .finally(() => descPending.delete(t.name));
+      descPending.set(t.name, job);
+      return job;
+    });
+  return Promise.all(jobs).then(() => undefined);
+}
+
 /**
- * Embedding pass. `embed` is an async (text) => number[]|null. Description
- * vectors are cached per tool name for the life of the process.
- * Returns { hits:Set, scored:[[name,score]...], failed:boolean }.
+ * Embedding pass. `embed` is an async (text, {purpose}) => number[]|null.
+ * Description vectors are cached per tool name for the life of the process.
+ * Returns { hits:Set, scored:[[name,score]...], failed:boolean, slow:boolean }.
  */
-async function embedHits({ text, tools, embed, queryVec, minScore, margin, maxTake }) {
-  const out = { hits: new Set(), scored: [], failed: false };
+async function embedHits({
+  text,
+  tools,
+  embed,
+  queryVec,
+  minScore,
+  margin,
+  maxTake,
+  waitMs = QUERY_WAIT_MS,
+}) {
+  const out = { hits: new Set(), scored: [], failed: false, slow: false };
   if (!embed || !text || tools.length === 0) {
     out.failed = !embed;
     return out;
   }
   try {
-    const qv = queryVec || (await embed(String(text).slice(0, 1500)));
+    let qv = queryVec;
+    if (!qv) {
+      const query = String(text).slice(0, 1500);
+      /* Card recall reads the memory query for these same words from the per-turn
+       * memo later in the turn; start it here, beside the tools query, as before. */
+      Promise.resolve()
+        .then(() => embed(query))
+        .catch(() => null);
+      const asked = Promise.resolve().then(() => embed(query, { purpose: 'tools' }));
+      /* Descriptions only once the lane has answered (a down lane is not asked for
+       * thirty more), and in the background. */
+      asked.then((vec) => vec && primeToolDescriptions(tools, embed)).catch(() => {});
+      const got = await within(asked, waitMs);
+      out.slow = got === SLOW;
+      qv = out.slow ? null : got;
+    } else {
+      primeToolDescriptions(tools, embed);
+    }
     if (!qv) {
       out.failed = true;
       return out;
     }
-    const need = tools.filter((t) => !descVecs.has(t.name));
-    await Promise.all(
-      need.map(async (t) => {
-        const desc = `${String(t.name).replace(/^kade_/, '').replace(/_/g, ' ')}: ${String(t.description || '').slice(0, 1200)}`;
-        const vec = await embed(desc, { purpose: 'document' });
-        if (vec) descVecs.set(t.name, { text: desc, vec });
-      }),
-    );
     const scored = [];
     for (const t of tools) {
       const d = descVecs.get(t.name);
@@ -494,12 +563,13 @@ async function selectTools(p) {
     minScore: num('KADE_TOOLS_MIN_SCORE', 0.6),
     margin: num('KADE_TOOLS_MARGIN', 0.06),
     maxTake: Math.max(1, Math.floor(num('KADE_TOOLS_MAX_EMBED', 4))),
+    waitMs: Math.max(0, num('KADE_TOOLS_EMBED_WAIT_MS', QUERY_WAIT_MS)),
   });
   if (emb.failed && kw.size === 0 && String(process.env.KADE_TOOLS_RAG_STRICT || '') !== '1') {
-    /* Embed lane down and no obvious ask: the old full set rides. A cheaper
-       turn is never worth a missed tool. KADE_TOOLS_RAG_STRICT=1 trusts the
-       keywords alone. */
-    return keepAll('embed-down');
+    /* Embed lane down (or too slow to wait for) and no obvious ask: the old
+       full set rides. A cheaper turn is never worth a missed tool.
+       KADE_TOOLS_RAG_STRICT=1 trusts the keywords alone. */
+    return keepAll(emb.slow ? 'embed-slow' : 'embed-down');
   }
   const retrieved = new Set([...kw, ...emb.hits]);
   /* Part 176: a go-ahead after a turn that had to decline a lookup */
@@ -516,7 +586,7 @@ async function selectTools(p) {
   }
   const reason = `kw=[${[...kw].join(',')}] emb=[${[...emb.hits].join(',')}]${
     stickyTools && stickyTools.size ? ` sticky=[${[...stickyTools].join(',')}]` : ''
-  }`;
+  }${emb.slow ? ' embed-slow' : ''}`;
   /* Part 239 — F2, THE ADD-ONLY SWITCH. Kade approved the whole ideas list.
    * The shadow above has been watching since Part 236 and its trial is
    * unusually clean: of 24 labelled messages every genuinely needed tool
@@ -611,27 +681,34 @@ function applySelection(result, keep) {
   return dropped;
 }
 
-/** Per-request memo so the diary/card recall reuses the same query vector. */
-function memoEmbed(req, embed) {
+/** Per-request memo so the diary/card recall reuses the same query vector.
+ * `samePurpose` (kadeDiary.embedPurpose) folds purposes the live lane embeds
+ * identically into one, so they share one call: on a lane that reads no
+ * instruction the tools query is the memory query card recall takes. */
+function memoEmbed(req, embed, samePurpose) {
   return async (text, options = { purpose: 'query' }) => {
     const value = String(text || '');
-    const key = `${options.purpose || 'query'}\0${value}`;
+    const asked = options.purpose || 'query';
+    const purpose = typeof samePurpose === 'function' ? samePurpose(asked) : asked;
+    const opts = { ...options, purpose };
+    const key = `${purpose}\0${value}`;
     if (req) {
       if (!req._kadeEmbedMemo) req._kadeEmbedMemo = new Map();
       if (req._kadeEmbedMemo.has(key)) return req._kadeEmbedMemo.get(key);
       const pr = Promise.resolve()
-        .then(() => embed(value, options))
+        .then(() => embed(value, opts))
         .catch(() => null);
       req._kadeEmbedMemo.set(key, pr);
       return pr;
     }
-    return embed(value, options);
+    return embed(value, opts);
   };
 }
 
 function _resetForTests() {
   sticky.clear();
   descVecs.clear();
+  descPending.clear();
   pendingWeb.clear();
 }
 
@@ -643,6 +720,7 @@ module.exports = {
   selectTools,
   applySelection,
   memoEmbed,
+  primeToolDescriptions,
   keywordHits,
   GO_AHEAD,
   cosine,

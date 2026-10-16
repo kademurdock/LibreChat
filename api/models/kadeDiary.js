@@ -44,8 +44,10 @@ const {
   diaryWriteOrigins,
   diaryWriteOrigin,
   memoryEmbeddingLane,
+  memoryEmbeddingPurpose,
   requestMemoryEmbedding,
   indexedEmbedding,
+  embeddingTextHash,
 } = require('@librechat/api');
 const {
   logger,
@@ -231,14 +233,31 @@ function embedErrorText(e) {
   return status ? `HTTP ${status}: ${providerMsg}` : String(providerMsg);
 }
 
-/** Embed one string. Returns float array or null (never throws). */
+/** A timeout, as axios reports one (code depends on its transitional settings). */
+const embedTimedOut = (e) =>
+  e?.code === 'ECONNABORTED' ||
+  e?.code === 'ETIMEDOUT' ||
+  /\btimeout\b/i.test(String(e?.message || ''));
+
+/** Embed one string. Returns float array or null (never throws).
+ * Oct 16 2026: a memory query that times out is asked once more (the lane's
+ * timeouts come and go); documents, backfills and tool queries fail soft at once. */
 async function embedText(text, { purpose = 'document' } = {}) {
   const lane = embedLane();
   if (!lane || !text) {
     return null;
   }
   try {
-    const vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    let vec;
+    try {
+      vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    } catch (e) {
+      if (purpose !== 'query' || !embedTimedOut(e)) throw e;
+      logger.warn(
+        `[kadeDiary] query embedding timed out (${lane.provider}/${lane.model}); asking once more`,
+      );
+      vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    }
     embedHealth.ok += 1;
     embedHealth.lastOkAt = new Date().toISOString();
     return vec;
@@ -263,6 +282,14 @@ async function embedText(text, { purpose = 'document' } = {}) {
     }
     return null;
   }
+}
+
+/** The purpose a per-turn memo should key `purpose` under on the live lane (a lane that reads
+ * no instruction embeds a tools query exactly like a memory query, so they share one call). */
+function embedPurpose(purpose = 'query') {
+  return typeof memoryEmbeddingPurpose === 'function'
+    ? memoryEmbeddingPurpose(embedLane(), purpose)
+    : purpose;
 }
 
 function cosine(a, b) {
@@ -704,16 +731,84 @@ async function editDiaryEntry(filter, { text = null, salience = null } = {}) {
   }
 }
 
+/* Oct 16 2026: the admin backfill (POST /memories/diary-embed-backfill) counted
+ * every entry whose embedModel was not the live lane, so with Qwen live it saw
+ * all 1,251 staged entries as unembedded, and a real run paid for them again
+ * and wrote over the Google vectors kept for rollback. An entry now needs an
+ * embed only when nothing it carries is searchable on the live lane (its own
+ * vector, or a staged one for the same model and words), and a new vector is
+ * staged beside another model's index instead of replacing it. Streams the
+ * candidates, so the vectors are never all in memory at once.
+ * Returns null when no lane is configured. */
+const BACKFILL_FIELDS = '_id text embedding embedModel embeddingNext embedNextModel embedNextHash';
+async function diaryEmbedBacklog(model, dimensions, limit) {
+  const filter = {
+    $or: [{ embedding: null }, { embedding: { $size: 0 } }, { embedModel: { $ne: model } }],
+  };
+  const rows = [];
+  let needing = 0;
+  for await (const r of KadeDiaryEntry.find(filter).select(BACKFILL_FIELDS).lean().cursor()) {
+    if (indexedEmbedding(r, model, String(r.text || ''), dimensions)) continue;
+    needing += 1;
+    if (rows.length < limit) {
+      const otherIndex =
+        Array.isArray(r.embedding) &&
+        r.embedding.length > 0 &&
+        !!r.embedModel &&
+        r.embedModel !== model;
+      rows.push({ _id: r._id, text: r.text, otherIndex });
+    }
+  }
+  return { needing, rows };
+}
+
+async function backfillDiaryEmbeddings({ dry = false, limit = 300, pauseMs = 150 } = {}) {
+  const lane = embedLane();
+  const model = currentEmbedModel();
+  if (!lane || !model) return null;
+  const { needing, rows } = await diaryEmbedBacklog(model, lane.dimensions, dry ? 0 : limit);
+  if (dry) return { dry: true, needing, model };
+  let embedded = 0;
+  let failed = 0;
+  for (const r of rows) {
+    const text = String(r.text || '');
+    const vec = await embedText(text.slice(0, 4000));
+    if (vec) {
+      await KadeDiaryEntry.updateOne(
+        { _id: r._id, text: r.text },
+        {
+          $set: r.otherIndex
+            ? { embeddingNext: vec, embedNextModel: model, embedNextHash: embeddingTextHash(text) }
+            : { embedding: vec, embedModel: model },
+        },
+      );
+      embedded += 1;
+    } else {
+      failed += 1;
+      /* Provider still failing? Stop after three straight so a dead lane
+       * costs three calls, not a thousand. */
+      if (failed >= 3 && embedded === 0) {
+        break;
+      }
+    }
+    if (pauseMs > 0) await new Promise((ok) => setTimeout(ok, pauseMs));
+  }
+  const remaining = (await diaryEmbedBacklog(model, lane.dimensions, 0)).needing;
+  return { scanned: rows.length, embedded, failed, remaining, model };
+}
+
 module.exports = {
   KadeDiaryEntry,
   diaryEnabled,
   centralDateString,
   embedText,
+  embedPurpose,
   currentEmbedModel,
   readEmbedHealth,
   stripLeadingDateStamp,
   logDiaryEntry,
   editDiaryEntry,
+  backfillDiaryEmbeddings,
   searchDiary,
   countEntries,
 };

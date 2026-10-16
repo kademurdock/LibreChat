@@ -86,7 +86,12 @@ ENV BUILD_DATE=${BUILD_DATE}
 # Node API setup
 EXPOSE 3080
 ENV HOST=0.0.0.0
-CMD ["npm", "run", "backend"]
+# Kade fork (Oct 16 2026): the API ran on V8's default ~1 GB heap and died with a heap OOM on
+# Oct 15 (NODE_MAX_OLD_SPACE_SIZE above reaches only the frontend build). KADE_NODE_HEAP_MB
+# sizes the heap at run time (default 3072 MB, well inside the service's 24 GB limit; anything not a
+# whole number falls back to it), and --report-on-fatalerror prints a diagnostic report into
+# the deploy log if a fatal error ever happens again. Any NODE_OPTIONS already set rides after.
+CMD ["sh", "-c", "heap=${KADE_NODE_HEAP_MB:-3072}; case \"$heap\" in ''|*[!0-9]*) heap=3072;; esac; export NODE_OPTIONS=\"--max-old-space-size=$heap --report-on-fatalerror --report-filename=stdout${NODE_OPTIONS:+ $NODE_OPTIONS}\"; exec npm run backend"]
 
 # Optional: for client with nginx routing
 # FROM nginx:stable-alpine AS nginx-client
