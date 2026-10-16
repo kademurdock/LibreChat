@@ -130,3 +130,10 @@ test('real output RMS retains energy and zero crossings without classifying tran
   assert.ok(Math.abs(level.level - 0.2) < 1e-6);
   assert.equal(level.sibilance, 0.75);
 });
+
+test('a listening pose says so (puppet bodies nod along); speaking and thinking do not', () => {
+  const controller = createCallPresentation();
+  assert.equal(sample(controller, { status: 'listening', level: 0 }).listening, true);
+  assert.equal(sample(controller, { status: 'thinking', level: 0 }).listening, undefined);
+  assert.equal(sample(controller, { status: 'listening', reducedMotion: true }).listening, undefined);
+});

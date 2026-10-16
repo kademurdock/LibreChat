@@ -124,7 +124,17 @@ export function createCallPresentation() {
         if (identity.moment)
           cues.push({ at: clip.start, expression: identity.moment, kind: 'moment' });
       }
-      return voiceMessagePose({ id, time, level: ownsSpeech ? level : 0, sibilance, active, cues });
+      const pose = voiceMessagePose({
+        id,
+        time,
+        level: ownsSpeech ? level : 0,
+        sibilance,
+        active,
+        cues,
+      });
+      // Puppet bodies nod along and soften while the person is talking.
+      const listening = pose.active && !ownsSpeech && status === 'listening';
+      return listening ? { ...pose, listening: true } : pose;
     },
   };
 }

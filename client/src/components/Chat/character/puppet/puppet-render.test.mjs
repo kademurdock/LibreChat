@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { groupMatrices, morphPath, shapeOpacity, drawScene, createSceneCache } from './puppet-render.mjs';
+import {
+  groupMatrices,
+  morphPath,
+  shapeOpacity,
+  drawScene,
+  createSceneCache,
+} from './puppet-render.mjs';
 
-const golden = JSON.parse(readFileSync(new URL('./fixtures/scene-golden.json', import.meta.url), 'utf8'));
+const golden = JSON.parse(
+  readFileSync(new URL('./fixtures/scene-golden.json', import.meta.url), 'utf8'),
+);
 const near = (actual, expected, tol, where) =>
   assert.ok(Math.abs(actual - expected) <= tol, `${where}: ${actual} vs ${expected}`);
 
@@ -21,7 +29,8 @@ test('every group world matrix matches the golden values', () => {
       const mats = groupMatrices(scene, set.channels);
       assert.deepEqual(Object.keys(mats).sort(), Object.keys(set.groups).sort());
       for (const [id, m] of Object.entries(set.groups)) {
-        for (let i = 0; i < 6; i++) near(mats[id][i], m[i], golden.tolerance, `case ${c} set ${e} ${id}[${i}]`);
+        for (let i = 0; i < 6; i++)
+          near(mats[id][i], m[i], golden.tolerance, `case ${c} set ${e} ${id}[${i}]`);
         checked++;
       }
     }
@@ -40,7 +49,9 @@ test('every listed morphed path matches the golden values', () => {
         path.forEach((cmd, k) => {
           assert.equal(got[k].op, cmd.op);
           assert.equal(got[k].v.length, cmd.v.length);
-          cmd.v.forEach((v, j) => near(got[k].v[j], v, golden.tolerance, `case ${c} set ${e} ${id} ${k}.${j}`));
+          cmd.v.forEach((v, j) =>
+            near(got[k].v[j], v, golden.tolerance, `case ${c} set ${e} ${id} ${k}.${j}`),
+          );
         });
         checked++;
       }
@@ -55,7 +66,12 @@ test('every channel-driven opacity matches the golden values', () => {
     const byId = new Map(scene.shapes.map((s) => [s.id, s]));
     for (const [e, set] of expect.entries()) {
       for (const [id, alpha] of Object.entries(set.alpha)) {
-        near(shapeOpacity(byId.get(id), set.channels), alpha, golden.tolerance, `case ${c} set ${e} ${id}`);
+        near(
+          shapeOpacity(byId.get(id), set.channels),
+          alpha,
+          golden.tolerance,
+          `case ${c} set ${e} ${id}`,
+        );
         checked++;
       }
     }
@@ -133,6 +149,8 @@ test('hidden shapes are skipped and every drawn shape saves and restores its sta
   drawScene(ctx, scene, { 'eye.blink': 1, 'mouth.open': 1 }, { x: 0, y: 0, w: 100, h: 100 });
   const saves = calls.filter(([k]) => k === 'save').length;
   assert.equal(saves, calls.filter(([k]) => k === 'restore').length);
-  const hidden = scene.shapes.filter((s) => s.hide && s.hide.some(([n, a]) => ({ 'eye.blink': 1, 'mouth.open': 1 })[n] > a));
+  const hidden = scene.shapes.filter(
+    (s) => s.hide && s.hide.some(([n, a]) => ({ 'eye.blink': 1, 'mouth.open': 1 })[n] > a),
+  );
   assert.equal(saves, scene.shapes.length - hidden.length);
 });

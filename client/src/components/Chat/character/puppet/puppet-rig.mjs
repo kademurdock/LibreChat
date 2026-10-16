@@ -48,38 +48,81 @@ const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 function pathValid(d) {
   if (!Array.isArray(d) || !d.length || d.length > 600) return false;
   for (const c of d) {
-    if (!c || !Object.hasOwn(OPS, c.op) || !Array.isArray(c.v) || c.v.length !== OPS[c.op]) return false;
+    if (!c || !Object.hasOwn(OPS, c.op) || !Array.isArray(c.v) || c.v.length !== OPS[c.op])
+      return false;
     for (const n of c.v) if (!finite(n) || Math.abs(n) > 1e5) return false;
   }
   return true;
 }
 const sameShape = (a, b) => a.length === b.length && a.every((c, i) => c.op === b[i].op);
 const driveValid = (list) =>
-  list === undefined || (Array.isArray(list) && list.every((p) => Array.isArray(p) && typeof p[0] === 'string' && finite(p[1])));
+  list === undefined ||
+  (Array.isArray(list) &&
+    list.every((p) => Array.isArray(p) && typeof p[0] === 'string' && finite(p[1])));
 
 /** A defensive check of a server scene: a bad one leaves the plain portrait, never a crash. */
 export function validPuppetScene(scene) {
   if (!scene || scene.schema !== PUPPET_SCENE_SCHEMA) return false;
-  if (!Array.isArray(scene.size) || scene.size.length !== 2 || !scene.size.every((n) => finite(n) && n > 0)) return false;
-  if (scene.view !== undefined && (!Array.isArray(scene.view) || scene.view.length !== 4 || !scene.view.every(finite) || scene.view[2] <= 0 || scene.view[3] <= 0)) return false;
+  if (
+    !Array.isArray(scene.size) ||
+    scene.size.length !== 2 ||
+    !scene.size.every((n) => finite(n) && n > 0)
+  )
+    return false;
+  if (
+    scene.view !== undefined &&
+    (!Array.isArray(scene.view) ||
+      scene.view.length !== 4 ||
+      !scene.view.every(finite) ||
+      scene.view[2] <= 0 ||
+      scene.view[3] <= 0)
+  )
+    return false;
   if (!scene.gradients || typeof scene.gradients !== 'object') return false;
   for (const g of Object.values(scene.gradients)) {
-    if (!g || !Array.isArray(g.stops) || !g.stops.length || g.stops.some((s) => !finite(s.at) || typeof s.color !== 'string')) return false;
-    if (g.kind === 'linear' ? !(g.start?.every(finite) && g.end?.every(finite)) : !(g.kind === 'radial' && g.center?.every(finite) && finite(g.radius))) return false;
+    if (
+      !g ||
+      !Array.isArray(g.stops) ||
+      !g.stops.length ||
+      g.stops.some((s) => !finite(s.at) || typeof s.color !== 'string')
+    )
+      return false;
+    if (
+      g.kind === 'linear'
+        ? !(g.start?.every(finite) && g.end?.every(finite))
+        : !(g.kind === 'radial' && g.center?.every(finite) && finite(g.radius))
+    )
+      return false;
   }
-  if (!Array.isArray(scene.groups) || scene.groups.length > 500 || !Array.isArray(scene.shapes) || !scene.shapes.length || scene.shapes.length > 4000) return false;
+  if (
+    !Array.isArray(scene.groups) ||
+    scene.groups.length > 500 ||
+    !Array.isArray(scene.shapes) ||
+    !scene.shapes.length ||
+    scene.shapes.length > 4000
+  )
+    return false;
   const groups = new Set();
   for (const g of scene.groups) {
     if (!g || typeof g.id !== 'string' || groups.has(g.id)) return false;
     if (g.parent != null && !groups.has(g.parent)) return false; // parents come first
-    if (g.pivot !== undefined && !(Array.isArray(g.pivot) && g.pivot.length === 2 && g.pivot.every(finite))) return false;
+    if (
+      g.pivot !== undefined &&
+      !(Array.isArray(g.pivot) && g.pivot.length === 2 && g.pivot.every(finite))
+    )
+      return false;
     if (![g.tx, g.ty, g.r, g.sx, g.sy].every(driveValid)) return false;
     groups.add(g.id);
   }
   const shapes = new Set();
   for (const s of scene.shapes) {
     if (!s || typeof s.id !== 'string' || !groups.has(s.g) || !pathValid(s.d)) return false;
-    if (s.m !== undefined && (!Array.isArray(s.m) || s.m.some((m) => !m || typeof m.c !== 'string' || !pathValid(m.d) || !sameShape(m.d, s.d)))) return false;
+    if (
+      s.m !== undefined &&
+      (!Array.isArray(s.m) ||
+        s.m.some((m) => !m || typeof m.c !== 'string' || !pathValid(m.d) || !sameShape(m.d, s.d)))
+    )
+      return false;
     if (s.clip !== undefined && !shapes.has(s.clip)) return false;
     if (!driveValid(s.oc) || !driveValid(s.hide)) return false;
     shapes.add(s.id);
@@ -87,7 +130,7 @@ export function validPuppetScene(scene) {
   return true;
 }
 
-const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 // Index into the mouth sheet (voice-message-motion visemeAt) -> a nudge to the engine's shape.
 const VISEMES = {
@@ -186,7 +229,9 @@ export function createPuppetRig(
       const playing = t < playUntil ? playName : '';
       if (!frame.active) {
         // Paused, finished, off screen or reduced motion: one still frame, drawn once.
-        const [name, strength] = playing ? [playing, 1] : puppetExpression(frame.expression, frame.face);
+        const [name, strength] = playing
+          ? [playing, 1]
+          : puppetExpression(frame.expression, frame.face);
         const key = `${w}x${h}/${name}/${strength}`;
         if (key !== signature) {
           draw(rest(name, strength), w, h);
@@ -208,12 +253,17 @@ export function createPuppetRig(
       const level = Number.isFinite(frame.mouth) ? clamp(frame.mouth, 0, 1) : 0;
       if (level > 0.05) voiceAt = t;
       const speaking = t - voiceAt < SPEECH_HANGOVER_MS;
-      const out = motion.update(dt, { speaking, level, listening: !speaking && frame.listening === true });
+      const out = motion.update(dt, {
+        speaking,
+        level,
+        listening: !speaking && frame.listening === true,
+      });
       let ch = out;
       const nudge = speaking && level > 0.06 ? VISEMES[frame.viseme] : null;
       if (nudge) {
         ch = { ...out };
-        for (const [c, v] of Object.entries(nudge)) ch[c] = clamp((ch[c] || 0) + v * Math.min(1, level * 1.5), 0, 1);
+        for (const [c, v] of Object.entries(nudge))
+          ch[c] = clamp((ch[c] || 0) + v * Math.min(1, level * 1.5), 0, 1);
       }
       draw(ch, w, h);
       show(true);
@@ -228,7 +278,8 @@ export function createPuppetRig(
     /** Swap in a newly compiled scene (the editor's live preview); motion carries on. */
     setScene(next) {
       if (disposed || !validPuppetScene(next)) return false;
-      const energyChanged = JSON.stringify(next.motion || {}) !== JSON.stringify(current.motion || {});
+      const energyChanged =
+        JSON.stringify(next.motion || {}) !== JSON.stringify(current.motion || {});
       current = next;
       cache = createSceneCache();
       backdrop = null;

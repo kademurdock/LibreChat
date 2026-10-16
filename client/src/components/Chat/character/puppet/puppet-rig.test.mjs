@@ -3,9 +3,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import AvatarExpression from '../avatar-expression.mjs';
 import { EXPRESSIONS } from './puppet-motion.mjs';
-import { createPuppetRig, validPuppetScene, puppetExpression, PUPPET_EXPRESSIONS } from './puppet-rig.mjs';
+import {
+  createPuppetRig,
+  validPuppetScene,
+  puppetExpression,
+  PUPPET_EXPRESSIONS,
+} from './puppet-rig.mjs';
 
-const golden = JSON.parse(readFileSync(new URL('./fixtures/scene-golden.json', import.meta.url), 'utf8'));
+const golden = JSON.parse(
+  readFileSync(new URL('./fixtures/scene-golden.json', import.meta.url), 'utf8'),
+);
 const scene = golden.cases[0].scene;
 
 function fakeCanvas() {
@@ -36,7 +43,14 @@ function fakeCanvas() {
   return { canvas, calls, attrs };
 }
 
-const frame = (over = {}) => ({ characterId: 'agent_a', active: true, expression: 'neutral', mouth: 0, viseme: 0, ...over });
+const frame = (over = {}) => ({
+  characterId: 'agent_a',
+  active: true,
+  expression: 'neutral',
+  mouth: 0,
+  viseme: 0,
+  ...over,
+});
 const fills = (calls) => calls.filter(([k]) => k === 'fill').length;
 
 test('every one of the 22 voice expressions maps onto a real engine expression', () => {
@@ -44,7 +58,10 @@ test('every one of the 22 voice expressions maps onto a real engine expression',
     assert.ok(PUPPET_EXPRESSIONS[name], name);
     assert.ok(Object.hasOwn(EXPRESSIONS, PUPPET_EXPRESSIONS[name][0]), name);
   }
-  assert.deepEqual(puppetExpression('amused', { from: 'smile', to: 'laugh', blend: 0.8 }), ['laughing', 1]);
+  assert.deepEqual(puppetExpression('amused', { from: 'smile', to: 'laugh', blend: 0.8 }), [
+    'laughing',
+    1,
+  ]);
   assert.deepEqual(puppetExpression('unknown'), ['neutral', 1]);
 });
 
@@ -70,7 +87,12 @@ test('the rig draws at device pixels, stays aria-hidden and hides the fallback p
     const { canvas, calls, attrs } = fakeCanvas();
     const shown = [];
     let ready = 0;
-    const rig = createPuppetRig(canvas, { id: 'agent_a', scene, onReady: () => ready++, onVisibilityChange: (v) => shown.push(v) });
+    const rig = createPuppetRig(canvas, {
+      id: 'agent_a',
+      scene,
+      onReady: () => ready++,
+      onVisibilityChange: (v) => shown.push(v),
+    });
     assert.equal(ready, 1);
     assert.equal(attrs['aria-hidden'], 'true');
     assert.equal(canvas.hidden, true);
@@ -111,11 +133,19 @@ test('another character, a broken scene or a thrown draw never shows the canvas'
   assert.equal(canvas.hidden, true);
   let failures = 0;
   const bad = fakeCanvas();
-  createPuppetRig(bad.canvas, { id: 'agent_a', scene: { schema: 'nope' }, onFailure: () => failures++ }).render(frame());
+  createPuppetRig(bad.canvas, {
+    id: 'agent_a',
+    scene: { schema: 'nope' },
+    onFailure: () => failures++,
+  }).render(frame());
   assert.equal(failures, 1);
   assert.equal(bad.canvas.hidden, true);
   const throwing = fakeCanvas();
-  throwing.canvas.getContext = () => ({ setTransform() { throw new Error('lost context'); } });
+  throwing.canvas.getContext = () => ({
+    setTransform() {
+      throw new Error('lost context');
+    },
+  });
   const r = createPuppetRig(throwing.canvas, { id: 'agent_a', scene, onFailure: () => failures++ });
   r.render(frame());
   assert.equal(failures, 2);

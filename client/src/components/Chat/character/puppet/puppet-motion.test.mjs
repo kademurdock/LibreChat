@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createMotion, CHANNELS, EXPRESSIONS, hashSeed } from './puppet-motion.mjs';
 
-const golden = JSON.parse(readFileSync(new URL('./fixtures/motion-golden.json', import.meta.url), 'utf8'));
+const golden = JSON.parse(
+  readFileSync(new URL('./fixtures/motion-golden.json', import.meta.url), 'utf8'),
+);
 
 test('the motion fixture is the one this engine is held to', () => {
   assert.equal(golden.schema, 'kade-puppet-motion-golden/1');
@@ -28,7 +30,10 @@ for (const run of golden.runs) {
       if (!expected) return;
       for (const channel of CHANNELS) {
         const diff = Math.abs(out[channel] - expected[channel]);
-        assert.ok(diff <= golden.tolerance, `frame ${frame} ${channel}: ${out[channel]} vs ${expected[channel]}`);
+        assert.ok(
+          diff <= golden.tolerance,
+          `frame ${frame} ${channel}: ${out[channel]} vs ${expected[channel]}`,
+        );
       }
       checked++;
     });
@@ -57,7 +62,8 @@ test('reduced motion stops breathing, drift and the physics channels', () => {
 
 test('expressions name only real channels and seeds are stable', () => {
   for (const [name, targets] of Object.entries(EXPRESSIONS))
-    for (const channel of Object.keys(targets)) assert.ok(CHANNELS.includes(channel), `${name}: ${channel}`);
+    for (const channel of Object.keys(targets))
+      assert.ok(CHANNELS.includes(channel), `${name}: ${channel}`);
   assert.equal(hashSeed('agent_x'), hashSeed('agent_x'));
   assert.notEqual(hashSeed('agent_x'), hashSeed('agent_y'));
 });

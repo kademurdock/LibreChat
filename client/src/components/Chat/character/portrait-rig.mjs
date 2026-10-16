@@ -99,9 +99,9 @@ export function preparedPortrait(id, url) {
 // drawn by the puppet rig. The hand-made faces above always win, so Kiana, Della, both
 // Lillys, Harley, Witherspoon and Angel keep theirs even if a body is saved for them.
 export function puppetPortrait(body) {
-  return body && validPuppetScene(body.scene)
-    ? { vector: 'puppet', scene: body.scene, description: typeof body.description === 'string' ? body.description : '' }
-    : null;
+  if (!body || !validPuppetScene(body.scene)) return null;
+  const description = typeof body.description === 'string' ? body.description : '';
+  return { vector: 'puppet', scene: body.scene, description };
 }
 
 export function portraitPlan(id, url, body) {
@@ -127,7 +127,7 @@ const EYES = [
 /**
  * @typedef {{ kind: string, from: number[], to: number[] }} PortraitFeature
  * @param {HTMLCanvasElement} canvas
- * @param {{ id: string, portrait: string, atlas?: string, blink?: string,
+ * @param {{ id: string, portrait?: string, atlas?: string, blink?: string,
  *   features?: PortraitFeature[], eyeFeatures?: PortraitFeature[], expression?: string,
  *   browFeatures?: PortraitFeature[], sheet?: { expressions: string, mouths: string,
  *   face: number[], mouth: number[], eyes: number[] }, onReady?: () => void,

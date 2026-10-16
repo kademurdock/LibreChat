@@ -100,6 +100,44 @@ export function visemeAt(time, strength, sibilance = 0, seed = 0) {
   return r < 0.4 ? 3 : r < 0.75 ? 8 : 2;
 }
 
+// Oct 16 2026: the auto-read stream plays from a MediaSource URL, which cannot be fetched
+// back and decoded, so it has no loudness envelope and the mouth stayed shut for the whole
+// first play. While audio with no envelope is playing the mouth follows this stand-in:
+// syllables at 4 to 6 a second, of varied length and strength, with the odd gap between
+// words, fixed by a seed (the message id) so a replay moves the same way. Returned in the
+// units of CharacterMotion.envelope levels; paused audio is inactive, so the mouth closes.
+const SYLLABLE_GROUP = 1.2; // seconds, holding 5 to 7 syllables (4.2 to 5.8 a second)
+
+export function textSeed(text) {
+  let h = 2166136261;
+  for (const c of String(text)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return h >>> 0;
+}
+
+export function syllableLevel(time, seed = 0) {
+  if (!Number.isFinite(time) || time < 0) return 0;
+  const group = Math.floor(time / SYLLABLE_GROUP);
+  const rand = (k) => {
+    let h = (Math.imul(group * 64 + k + 1, 2654435761) ^ seed) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  };
+  const count = 5 + Math.floor(rand(0) * 3);
+  const widths = [];
+  let total = 0;
+  for (let i = 0; i < count; i++) total += widths[i] = 0.7 + 0.6 * rand(1 + i);
+  let at = ((time - group * SYLLABLE_GROUP) / SYLLABLE_GROUP) * total,
+    i = 0;
+  while (i < count - 1 && at >= widths[i]) at -= widths[i++];
+  if (rand(16 + i) < 0.12) return 0; // a gap between words
+  const u = Math.min(1, at / widths[i]);
+  // Opens quickly, closes more slowly, like a spoken syllable.
+  const shape =
+    u < 0.35 ? Math.sin((u / 0.35) * Math.PI * 0.5) : Math.cos(((u - 0.35) / 0.65) * Math.PI * 0.5);
+  return 0.008 + 0.17 * shape * (0.45 + 0.55 * rand(32 + i));
+}
+
 export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance = 0 }) {
   const still = { characterId: id, active: false, expression: 'neutral', mouth: 0, blink: 0, brow: 0, tilt: 0, nod: 0 };
   if (!active || !Number.isFinite(time) || time < 0) return still;

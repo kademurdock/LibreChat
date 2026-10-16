@@ -1,19 +1,26 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { VoicePlayback } from './voice-playback.mjs';
-import { useGetAgentByIdQuery } from '~/data-provider';
+import { useLiveAnnouncer } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { voicePlayback } from './voice-playback.mjs';
-import { createPortraitRig, preparedPortrait } from './portrait-rig.mjs';
+import { createPortraitRig } from './portrait-rig.mjs';
 import CharacterMotion from './character-motion.mjs';
-import { voiceMessagePose, expressionSchedule } from './voice-message-motion.mjs';
+import {
+  voiceMessagePose,
+  expressionSchedule,
+  syllableLevel,
+  textSeed,
+} from './voice-message-motion.mjs';
 import { useVoicePortraitPreference } from './useVoicePortraitPreference';
-import { characterAppearanceKey } from './appearance';
+import { useCharacterLook } from './useCharacterLook';
 
 const phaseLabels = {
   paused: 'com_ui_voice_portrait_paused',
   waiting: 'com_ui_voice_portrait_waiting',
   playing: 'com_ui_voice_portrait_playing',
 } as const;
+
+type PortraitPlan = NonNullable<ReturnType<typeof useCharacterLook>['plan']>;
 
 export default function VoiceMessagePortrait({
   messageId,
@@ -27,18 +34,19 @@ export default function VoiceMessagePortrait({
   const playback = useSyncExternalStore(voicePlayback.subscribe, voicePlayback.snapshot);
   const [enabled] = useVoicePortraitPreference();
   const selected = playback?.messageId === messageId;
-  const { data: agent } = useGetAgentByIdQuery(agentId, { enabled: selected });
-  if (!selected || !playback || !agentId || !agent) return null;
-  const path = agent.avatar?.filepath;
-  if (!path) return null;
-  if (!enabled && !characterAppearanceKey(agentId, path)) return null;
+  const { agent, path, plan } = useCharacterLook(agentId, selected && enabled);
+  // The description lives on the message (CharacterDescription), so with animation off
+  // there is nothing for this card to carry.
+  if (!enabled || !selected || !playback || !agentId || !agent) return null;
+  if (!path && !plan) return null;
   return (
     <PortraitSurface
       key={agentId + path}
       playback={playback}
+      messageId={messageId}
       agentId={agentId}
       path={path}
-      enabled={enabled}
+      plan={plan}
       name={agent.name ?? ''}
       text={text ?? ''}
     />
@@ -47,32 +55,59 @@ export default function VoiceMessagePortrait({
 
 function PortraitSurface({
   playback,
+  messageId,
   agentId,
   path,
-  enabled,
+  plan,
   name,
   text,
 }: {
   playback: VoicePlayback;
+  messageId: string;
   agentId: string;
   path: string;
-  enabled: boolean;
+  plan: PortraitPlan | null;
   name: string;
   text: string;
 }) {
   const localize = useLocalize();
-  const appearanceKey = characterAppearanceKey(agentId, path);
+  const { announcePolite } = useLiveAnnouncer();
   const [playError, setPlayError] = useState(false);
   const refreshRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     refreshRef.current?.();
     setPlayError(false);
   }, [playback.phase]);
+  const root = useRef<HTMLDivElement>(null);
   const element = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const fallbackImage = useRef<HTMLImageElement>(null);
   const latest = useRef(playback);
   latest.current = playback;
+  const words = useRef({ localize, announcePolite });
+  words.current = { localize, announcePolite };
+  // The card goes when its clip ends. If keyboard or screen-reader focus is inside it,
+  // hand focus to something that stays on the message (its description, else the message
+  // itself) before the card leaves, instead of letting it fall to the top of the page.
+  useLayoutEffect(() => {
+    const card = root.current;
+    return () => {
+      if (!card || !card.contains(document.activeElement)) return;
+      const message = document.getElementById(messageId);
+      const summary = document.querySelector<HTMLElement>(
+        `[data-character-description="${CSS.escape(messageId)}"] summary`,
+      );
+      const target = summary ?? message;
+      if (target === message && message && !message.hasAttribute('tabindex'))
+        message.setAttribute('tabindex', '-1');
+      target?.focus({ preventScroll: true });
+      if (!voicePlayback.snapshot()) {
+        const { localize: say, announcePolite: announce } = words.current;
+        const message = say('com_ui_voice_portrait_finished');
+        setTimeout(() => announce({ message, isStatus: true }), 0);
+      }
+    };
+  }, [messageId]);
   // The character's own %%%directions%%%, placed along the audio once its
   // length is known (and again if a streamed file's length arrives late).
   const spoken = useRef(text);
@@ -88,7 +123,7 @@ function PortraitSurface({
   });
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!enabled || failed || !element.current || !canvas.current) return;
+    if (failed || !element.current || !canvas.current) return;
     const surface = element.current,
       target = canvas.current;
     const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -102,7 +137,11 @@ function PortraitSurface({
     let source = '',
       generation = 0;
     let abort: AbortController | undefined;
-    const prepared = preparedPortrait(agentId, path);
+    const prepared = plan;
+    // A puppet has no matching picture underneath, so it stays drawn (as a still) when the
+    // other rigs would hide and leave the photo: paused, reduced motion.
+    const selfDrawn = !!prepared && 'vector' in prepared && prepared.vector === 'puppet';
+    const seed = textSeed(messageId);
     async function readEnvelope(audio: HTMLAudioElement) {
       const src = audio.currentSrc || audio.src;
       if (source === src) return;
@@ -123,13 +162,14 @@ function PortraitSurface({
         const decoded = await context.decodeAudioData(await blob.arrayBuffer());
         if (!disposed && mine === generation) envelope = CharacterMotion.envelope(decoded);
       } catch {
-        /* streaming/unsupported blobs keep a closed mouth */
+        /* streaming (MediaSource) and unsupported blobs talk with the syllable stand-in */
       }
     }
     function tick(now: number) {
       frame = 0;
       if (disposed) return;
-      const usable = inView && !document.hidden && !motion.matches;
+      const visible = inView && !document.hidden;
+      const usable = visible && !motion.matches;
       const value = latest.current;
       const audio = value.audio;
       const active =
@@ -141,7 +181,7 @@ function PortraitSurface({
         !audio.ended &&
         !audio.seeking &&
         audio.readyState >= 3;
-      if (usable && prepared && !rig && !rigFailed)
+      if ((usable || (selfDrawn && visible)) && prepared && !rig && !rigFailed)
         rig = createPortraitRig(target, {
           id: agentId,
           ...prepared,
@@ -155,7 +195,8 @@ function PortraitSurface({
           },
         });
       if (usable && prepared) void readEnvelope(audio);
-      const level = envelope?.levels[Math.floor(audio.currentTime / envelope.step)] || 0;
+      const at = envelope ? Math.floor(audio.currentTime / envelope.step) : 0;
+      const level = envelope ? envelope.levels[at] || 0 : syllableLevel(audio.currentTime, seed);
       const length = Number.isFinite(audio.duration) ? audio.duration : 0;
       if (schedule.current.text !== spoken.current || schedule.current.duration !== length)
         schedule.current = {
@@ -167,13 +208,14 @@ function PortraitSurface({
         id: agentId,
         time: audio.currentTime,
         level,
-        sibilance: envelope?.sibilance?.[Math.floor(audio.currentTime / envelope.step)] || 0,
+        sibilance: envelope?.sibilance?.[at] || 0,
         active,
         cues: schedule.current.cues,
       });
       rig?.render(pose);
+      // Vector rigs (Angel, puppets) move their own head; the others sway the card.
       surface.style.transform =
-        prepared?.vector === 'angel' ? '' : `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
+        prepared && 'vector' in prepared ? '' : `rotate(${pose.tilt}deg) translateY(${pose.nod}px)`;
       // Rig also moves its canvas; neutralize the duplicate transform.
       target.style.transform = '';
       lastTick = now;
@@ -223,9 +265,11 @@ function PortraitSurface({
       motion.removeEventListener('change', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [agentId, path, playback.audio, failed, enabled]);
+    // `plan` is rebuilt only when the agent, its avatar or its body changes (useMemo).
+  }, [agentId, messageId, path, plan, playback.audio, failed]);
   return (
     <div
+      ref={root}
       className="my-3 max-w-full rounded-3xl border border-border-light bg-surface-secondary p-2.5 shadow-sm"
       style={{ width: '16rem' }}
     >
@@ -235,16 +279,18 @@ function PortraitSurface({
           {localize(phaseLabels[playback.phase])}
         </span>
       </div>
-      {enabled && !failed && (
+      {!failed && (
         <div aria-hidden="true" className="pointer-events-none">
           <div ref={element} className="relative aspect-square overflow-hidden rounded-2xl">
-            <img
-              ref={fallbackImage}
-              src={path}
-              alt=""
-              onError={() => setFailed(true)}
-              className="h-full w-full object-cover"
-            />
+            {path && (
+              <img
+                ref={fallbackImage}
+                src={path}
+                alt=""
+                onError={() => setFailed(true)}
+                className="h-full w-full object-cover"
+              />
+            )}
             <canvas
               hidden
               ref={canvas}
@@ -274,14 +320,6 @@ function PortraitSurface({
             : 'com_ui_voice_portrait_pause',
         )}
       </button>
-      {appearanceKey && (
-        <details className="rounded-xl px-3 text-sm text-text-primary">
-          <summary className="min-h-[44px] cursor-pointer py-3 focus-visible:outline focus-visible:outline-2">
-            {localize('com_ui_character_describe')}
-          </summary>
-          <p className="pb-3 leading-relaxed">{localize(appearanceKey)}</p>
-        </details>
-      )}
       {playError && <p role="status">{localize('com_ui_voice_portrait_play_error')}</p>}
     </div>
   );
