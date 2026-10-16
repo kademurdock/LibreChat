@@ -30,6 +30,8 @@ function dialog(appearance = true, notices = false) {
     error: '',
     orbRef: ref,
     preparedCallPortrait: true,
+    puppetFace: false,
+    bodyDescription: '',
     liveMode: !appearance,
     avatarUrl: '',
     ringClass: '',

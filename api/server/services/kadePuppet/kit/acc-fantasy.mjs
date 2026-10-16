@@ -615,7 +615,7 @@ function stalks(ctx, id, opt) {
     const tone = opt.tip;
     const t0 = tip({});
     if (opt.glow) {
-      b.grad(sx + '-glow', { kind: 'radial', center: t0, radius: opt.ball * 2.6, stops: [{ at: 0, color: tone, opacity: 0.7 }, { at: 0.45, color: tone, opacity: 0.25 }, { at: 1, color: tone, opacity: 0 }] });
+      b.grad(sx + '-glow', { kind: 'radial', center: [t0[0], t0[1]], radius: opt.ball * 2.6, stops: [{ at: 0, color: tone, opacity: 0.7 }, { at: 0.45, color: tone, opacity: 0.25 }, { at: 1, color: tone, opacity: 0 }] });
       b.add({ id: sx + '-halo', g, ...morph((p) => { const c = tip(p); return ellipse(c[0], c[1], opt.ball * 2.6, opt.ball * 2.6); }, {}, ch), fill: sx + '-glow', op: 0.75, oc: [['extras.float', 0.25]] });
     }
     b.grad(sx + '-ball', { kind: 'radial', center: [t0[0] - opt.ball * 0.35, t0[1] - opt.ball * 0.4], radius: opt.ball * 1.3, stops: [{ at: 0, color: shade(tone, 0.55) }, { at: 0.5, color: tone }, { at: 1, color: shade(tone, -0.3) }] });

@@ -80,7 +80,7 @@ export function normalizeRecipe(input) {
   };
   const bySlot = new Map();
   for (const id of Array.isArray(r.accessories) ? r.accessories.slice(0, 16) : []) {
-    const a = ACCESSORIES[id];
+    const a = typeof id === 'string' && Object.hasOwn(ACCESSORIES, id) ? ACCESSORIES[id] : null;
     if (a) bySlot.set(a.slot || id, id);
   }
   out.accessories = [...bySlot.values()].slice(0, 8);
@@ -145,11 +145,11 @@ export function describeRecipe(input) {
   const pat = r.outfit.pattern !== 'solid' ? PATTERNS[r.outfit.pattern].note + ' ' : '';
   const wear = [`${article(`${nameOf(CLOTH, r.outfit.color)} ${pat}${lc(top.note || top.name).replace(/^(a |an )/, '')}`)}`];
   for (const id of r.accessories) {
-    const a = ACCESSORIES[id];
+    const a = typeof id === 'string' && Object.hasOwn(ACCESSORIES, id) ? ACCESSORIES[id] : null;
     if (a && a.slot !== 'back' && a.slot !== 'halo') wear.push(a.note || lc(a.name));
   }
   s.push(`Wearing ${joinList(wear)}.`);
-  const extras = r.accessories.map((id) => ACCESSORIES[id]).filter((a) => a && (a.slot === 'back' || a.slot === 'halo'));
+  const extras = r.accessories.filter((id) => typeof id === 'string' && Object.hasOwn(ACCESSORIES, id)).map((id) => ACCESSORIES[id]).filter((a) => a.slot === 'back' || a.slot === 'halo');
   if (extras.length) s.push(cap(`${joinList(extras.map((a) => a.note || lc(a.name)))}.`));
   s.push(`${BUILDS[r.body.build].name} build; moves in ${article(ENERGY[r.motion.energy].note)} way.`);
   return s.join(' ').replace(/\s+/g, ' ').trim();

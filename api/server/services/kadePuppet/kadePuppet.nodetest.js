@@ -101,3 +101,16 @@ test('service compiles, caches and writes the character note', async () => {
   assert.equal(cat.schema, 1);
   assert.ok(cat.catalog.sections.length >= 6);
 });
+
+test('hand-painted characters are never told they look like a puppet', async () => {
+  const puppet = require('./index.js');
+  assert.ok(puppet.HAND_PAINTED.has('agent_6llV0eMu4fmIaj8f2x1Sb'));
+  assert.equal(await puppet.bodyNoteFor('agent_6llV0eMu4fmIaj8f2x1Sb'), '');
+});
+
+test('accessory ids must be real catalog entries', async () => {
+  const { normalizeRecipe, describeRecipe } = await load('recipe.mjs');
+  const r = normalizeRecipe({ accessories: ['__proto__', 'constructor', 'toString', ['round-glasses'], 'round-glasses'] });
+  assert.deepEqual(r.accessories, ['round-glasses']);
+  assert.ok(!/object|tostring/i.test(describeRecipe(r)));
+});

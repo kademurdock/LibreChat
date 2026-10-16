@@ -83,6 +83,19 @@ async function random(seed, fantasy) {
   return compile(k.randomRecipe(String(seed || Date.now()), { fantasy: !!fantasy }), { cache: false });
 }
 
+/* Characters with a hand-made animated face. Chat, calls and the iPhone keep showing that
+ * face even when a body is saved, so the body note is skipped for them (they would describe
+ * a puppet nobody sees) and the backfill leaves them alone. */
+const HAND_PAINTED = new Set([
+  'agent_6llV0eMu4fmIaj8f2x1Sb', // Kiana
+  'agent_BSOLa3eNEZyjs-7abCjMt', // Della
+  'agent_TOdYS8v-bRxeNw0dia_Md', // Lilly (public)
+  'agent_JhouuajXMYsfhCTVMQCv_', // Lilly (Skylee's)
+  'agent_d26Mtu8mgOzkVGQECqO1a', // Harley
+  'agent_o7TKU3lK0Euo0MKgpNpvZ', // Witherspoon
+  'agent_NkG_Fb8_xLz8HFJyx4gNv', // Angel
+]);
+
 /* ---------- the character's own sense of its body ---------- */
 const BODY_NOTE_TTL_MS = 60 * 1000;
 const noteCache = new Map();
@@ -101,7 +114,7 @@ function bodyNoteText(description) {
 
 /** The note for one agent, or '' when it has no body or the note is switched off. */
 async function bodyNoteFor(agentId) {
-  if (process.env.KADE_BODY_NOTE === '0' || !agentId) {
+  if (process.env.KADE_BODY_NOTE === '0' || !agentId || HAND_PAINTED.has(String(agentId))) {
     return '';
   }
   const id = String(agentId);
@@ -244,6 +257,7 @@ async function recipeFromPicture(imageUrl, hint) {
 
 module.exports = {
   KIT_VERSION,
+  HAND_PAINTED,
   kit,
   catalog,
   normalize,

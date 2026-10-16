@@ -286,7 +286,7 @@ export function compileScene(input) {
     hairShine: hctx.shine,
   };
   const outfit = OUTFITS[r.outfit.top] || OUTFITS['crew-tee'];
-  const acc = (r.accessories || []).map((id) => ACCESSORIES[id]).filter(Boolean);
+  const acc = (r.accessories || []).filter((id) => typeof id === 'string' && Object.hasOwn(ACCESSORIES, id)).map((id) => ACCESSORIES[id]);
   const layer = (name) => {
     if (outfit && typeof outfit[name] === 'function') outfit[name](ctx);
     for (const a of acc) if (typeof a[name] === 'function') a[name](ctx);

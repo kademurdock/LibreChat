@@ -15,8 +15,11 @@ export function checkScene(scene) {
   for (const [id, g] of Object.entries(grads)) {
     if (!Array.isArray(g.stops) || g.stops.length < 2) fail(`gradient ${id} stops`);
     for (const st of g.stops || []) if (!HEX.test(st.color) || !(st.at >= 0 && st.at <= 1)) fail(`gradient ${id} stop`);
-    if (g.kind === 'linear' && !(g.start && g.end)) fail(`gradient ${id} linear`);
-    if (g.kind === 'radial' && !(g.center && g.radius > 0)) fail(`gradient ${id} radial`);
+    // Points are exactly two finite numbers: the web and iPhone renderers reject anything else.
+    const pt = (v) => Array.isArray(v) && v.length === 2 && v.every(Number.isFinite);
+    if (g.kind === 'linear' && !(pt(g.start) && pt(g.end))) fail(`gradient ${id} linear`);
+    if (g.kind === 'radial' && !(pt(g.center) && Number.isFinite(g.radius) && g.radius > 0
+      && (g.focal === undefined || pt(g.focal)))) fail(`gradient ${id} radial`);
     if (g.kind !== 'linear' && g.kind !== 'radial') fail(`gradient ${id} kind`);
   }
   const groups = new Set();

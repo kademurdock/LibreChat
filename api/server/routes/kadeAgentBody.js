@@ -34,16 +34,11 @@ const router = express.Router();
  * description. Hand-painted characters keep their own faces and are skipped. Same
  * trust model as /api/kade/agent-promote (KADE_USAGE_EVENT_SECRET). Spend stops at
  * maxUSD. GET /admin/backfill?secret= reports progress. */
-const HAND_PAINTED = new Set([
-  'agent_6llV0eMu4fmIaj8f2x1Sb', // Kiana
-  'agent_BSOLa3eNEZyjs-7abCjMt', // Della
-  'agent_TOdYS8v-bRxeNw0dia_Md', // Lilly (public)
-  'agent_JhouuajXMYsfhCTVMQCv_', // Lilly (Skylee's)
-  'agent_d26Mtu8mgOzkVGQECqO1a', // Harley
-  'agent_o7TKU3lK0Euo0MKgpNpvZ', // Witherspoon
-  'agent_NkG_Fb8_xLz8HFJyx4gNv', // Angel
-]);
+const { HAND_PAINTED } = puppet;
+const ADMIN_USER_ID = () => process.env.ADMIN_USER_ID || '6a3cba4d0b0afa92194e42f7';
 let backfill = null;
+/* Set before the first await so two quick POSTs cannot both start a paid run. */
+let backfillStarting = false;
 const machine = (req) => {
   const expected = process.env.KADE_USAGE_EVENT_SECRET;
   const given = (req.body && req.body.secret) || req.get('x-kade-secret') || req.query.secret;
@@ -61,9 +56,18 @@ router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res)
   if (!machine(req)) {
     return res.status(403).json({ error: 'Unauthorized' });
   }
-  if (backfill && backfill.state === 'running') {
+  if (backfillStarting || (backfill && backfill.state === 'running')) {
     return res.status(409).json({ error: 'A backfill is already running', backfill });
   }
+  backfillStarting = true;
+  try {
+    await startBackfill(req, res);
+  } finally {
+    backfillStarting = false;
+  }
+});
+
+async function startBackfill(req, res) {
   const b = req.body || {};
   const maxUSD = Math.min(5, Math.max(0.01, Number(b.maxUSD) || 1));
   const limit = Math.min(500, Math.max(1, parseInt(b.limit, 10) || 300));
@@ -106,6 +110,7 @@ router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res)
           out = await puppet.recipeFromWords(`A character called ${hint || 'a friendly helper'}`);
         }
         backfill.spentUSD += out.costUSD || 0;
+        logUsage(out, from);
         const compiled = await puppet.compile(out.recipe, { cache: false });
         const saved = await bodies.saveAgentBody(a.id, {
           recipe: compiled.recipe,
@@ -116,6 +121,9 @@ router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res)
         });
         backfill.results.push({ agentId: a.id, name: a.name, from, ok: saved.ok, costUSD: out.costUSD, description: compiled.description });
       } catch (e) {
+        // A billed answer that could not be read still costs money.
+        backfill.spentUSD += e.costUSD || 0;
+        if (e.costUSD) logUsage({ costUSD: e.costUSD }, from);
         backfill.results.push({ agentId: a.id, name: a.name, from, ok: false, error: String(e.message || e).slice(0, 200) });
       }
       backfill.done += 1;
@@ -131,7 +139,20 @@ router.post('/admin/backfill', express.json({ limit: '32kb' }), async (req, res)
     backfill.error = e.message;
     logger.error(`[kadeAgentBody] backfill failed: ${e.message}`);
   });
-});
+}
+
+/* Backfill calls are logged against the admin seat, so the real cost shows on the usage
+ * page without charging anyone. */
+function logUsage(out, via) {
+  logKadeUsage({
+    userId: ADMIN_USER_ID(),
+    service: 'openrouter',
+    quantity: 1,
+    unit: 'body-design',
+    costUSD: out.costUSD || 0,
+    metadata: { via: `body-backfill-${via}`, inTok: out.inTok, outTok: out.outTok },
+  }).catch(() => {});
+}
 
 router.use(requireJwtAuth);
 
