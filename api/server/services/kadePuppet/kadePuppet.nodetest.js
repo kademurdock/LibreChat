@@ -114,3 +114,71 @@ test('accessory ids must be real catalog entries', async () => {
   assert.deepEqual(r.accessories, ['round-glasses']);
   assert.ok(!/object|tostring/i.test(describeRecipe(r)));
 });
+
+/* Oct 16 2026: what the body designer sends to OpenRouter. MiMo Pro by default,
+ * thinking off, zero retention, and Pro's rates when a reply names no cost.
+ * axios.post is swapped on the shared axios object, so nothing leaves the machine. */
+async function designerCall(env, run) {
+  const axios = require('axios');
+  const puppet = require('./index.js');
+  const keys = ['OPENROUTER_KEY', 'KADE_BODY_MODEL', 'KADE_BODY_IN_USD_PER_M', 'KADE_BODY_OUT_USD_PER_M'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const realPost = axios.post;
+  const posts = [];
+  for (const k of keys) delete process.env[k];
+  Object.assign(process.env, { OPENROUTER_KEY: 'test-only' }, env);
+  axios.post = async (...args) => {
+    posts.push(args);
+    return {
+      data: {
+        choices: [{ message: { content: '{"hair":{"style":"afro"}}' } }],
+        usage: { prompt_tokens: 1e6, completion_tokens: 1e6 },
+      },
+    };
+  };
+  try {
+    const out = await run(puppet);
+    return { out, posts };
+  } finally {
+    axios.post = realPost;
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+
+const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+
+test('the body designer asks MiMo Pro with thinking off and zero retention', async () => {
+  const { out, posts } = await designerCall({}, (p) => p.recipeFromWords('a tall cowboy with a gray handlebar mustache'));
+  assert.equal(posts.length, 1);
+  const [url, body] = posts[0];
+  assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
+  assert.deepEqual(body.reasoning, { enabled: false });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', allow_fallbacks: true });
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(out.recipe.hair.style, 'afro');
+  /* 1M tokens in and 1M out with no reported cost: Pro's two per-million rates added. */
+  near(out.costUSD, 0.435 + 0.87);
+});
+
+test('a portrait goes to the designer as a picture under the same settings', async () => {
+  const { posts } = await designerCall({}, (p) => p.recipeFromPicture('https://example.invalid/portrait.png', 'a cowboy'));
+  const body = posts[0][1];
+  assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
+  assert.deepEqual(body.reasoning, { enabled: false });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', allow_fallbacks: true });
+  assert.deepEqual(body.messages[1].content[1], { type: 'image_url', image_url: { url: 'https://example.invalid/portrait.png' } });
+});
+
+test('KADE_BODY_MODEL and the KADE_BODY rates still override the defaults', async () => {
+  const { out, posts } = await designerCall(
+    { KADE_BODY_MODEL: 'xiaomi/mimo-v2.6-flash', KADE_BODY_IN_USD_PER_M: '0.14', KADE_BODY_OUT_USD_PER_M: '0.28' },
+    (p) => p.recipeFromWords('a robot'),
+  );
+  assert.equal(posts[0][1].model, 'xiaomi/mimo-v2.6-flash');
+  assert.deepEqual(posts[0][1].reasoning, { enabled: false });
+  near(out.costUSD, 0.14 + 0.28);
+});

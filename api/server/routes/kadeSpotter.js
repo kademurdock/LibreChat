@@ -11,8 +11,9 @@
  * Design notes: the Spotter is per-ACCOUNT (one each). Voices are Google's 8
  * prebuilt Live voices — samples pre-generated once and committed under
  * client/public/assets/spotter-voices/ (served same as game sounds). The
- * generate endpoint goes through reframe-proxy with the cheapest non-thinking
- * model; it writes NOTHING — the user still has to press Save.
+ * generate endpoint goes through reframe-proxy with a cheap model, thinking
+ * off (MiMo Pro since Oct 16 2026); it writes NOTHING — the user still has to
+ * press Save.
  */
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
@@ -90,15 +91,21 @@ router.post('/generate', requireJwtAuth, async (req, res) => {
       'vs gentle, formal vs slangy, sense of humor, and how they handle not being sure of what they see. Plain ' +
       'text only, no headings, no name (the user names them separately), no mention of AI or Gemini.' +
       (seed ? ' Build it around what the user asked for: "' + seed.replace(/"/g, "'") + '"' : ' Invent a distinctive, likable one — surprise them.');
+    /* Oct 16 2026, Kade's ask: MiMo Pro over Flash. It goes through the
+     * gateway, which holds every MiMo body to zero retention (DeepInfra first,
+     * Flash as Pro's backup). Thinking is switched off out loud so a 400-token
+     * draft is never spent on reasoning, and Pro gets a longer wait than
+     * Flash's 25 seconds. */
     const r = await axios.post(
       (process.env.REFRAME_PROXY_URL || 'https://reframe-proxy-production.up.railway.app') + '/chat/completions',
       {
-        model: 'xiaomi/mimo-v2.6-flash',
+        model: 'xiaomi/mimo-v2.6-pro',
         stream: false,
         max_tokens: 400,
+        reasoning: { enabled: false, effort: 'none' },
         messages: [{ role: 'user', content: prompt }],
       },
-      { timeout: 25000, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' } },
+      { timeout: 45000, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' } },
     );
     const text = r.data && r.data.choices && r.data.choices[0] && r.data.choices[0].message && r.data.choices[0].message.content;
     if (!text) return res.status(502).json({ error: 'generator returned nothing' });

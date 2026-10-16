@@ -142,9 +142,12 @@ function forgetBodyNote(agentId) {
 }
 
 /* ---------- words or a picture -> a starting recipe (paid, small) ---------- */
-const MODEL = () => process.env.KADE_BODY_MODEL || 'xiaomi/mimo-v2.6-flash';
-const PRICE_IN = () => Number(process.env.KADE_BODY_IN_USD_PER_M || 0.14);
-const PRICE_OUT = () => Number(process.env.KADE_BODY_OUT_USD_PER_M || 0.28);
+/* Oct 16 2026, Kade's ask: MiMo Pro over Flash for media jobs (reading a
+ * portrait is one). Reasoning stays off below; Pro honours that like Flash.
+ * The fallback rates are Pro's ($0.435/$0.87 per million in/out). */
+const MODEL = () => process.env.KADE_BODY_MODEL || 'xiaomi/mimo-v2.6-pro';
+const PRICE_IN = () => Number(process.env.KADE_BODY_IN_USD_PER_M || 0.435);
+const PRICE_OUT = () => Number(process.env.KADE_BODY_OUT_USD_PER_M || 0.87);
 
 function choicesText(cat) {
   const lines = [];
