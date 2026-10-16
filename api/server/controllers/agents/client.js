@@ -89,6 +89,7 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { KADE_PLATFORM_NOTE, carriesPlatformNote, KADE_CHARACTER_CONTINUITY } = require('~/server/utils/kadePlatformNote');
 const { getWorldBlock, KADE_WHISPER_LINE } = require('~/server/utils/kadeWorldPulse');
+const { bodyNoteFor } = require('~/server/services/kadePuppet');
 const { getAnniversaryLine } = require('~/server/utils/kadeAnniversaries');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
@@ -955,6 +956,19 @@ class AgentClient extends BaseClient {
           } catch (_e) {
             /* an anniversary is garnish — never break the turn */
           }
+        }
+        /** KADE Oct 16 2026 — the character's puppet body: people see each
+         * character as an animated, code-drawn puppet built in the Body editor,
+         * so the character is told how it looks and can answer "what do you look
+         * like?" from the same words the screen reader speaks. Byte-stable per
+         * agent until the body is saved again. Kill: KADE_BODY_NOTE=0. */
+        try {
+          const bodyNote = isBareProbe ? '' : await bodyNoteFor(agentId);
+          if (bodyNote) {
+            headParts.push(bodyNote);
+          }
+        } catch (_e) {
+          /* a turn without its body note beats a broken turn */
         }
         /* Last, so the character is the thing closest to the conversation. */
         if (personaLast) {

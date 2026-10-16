@@ -337,6 +337,8 @@ const startServer = async () => {
   app.use('/api/kade/features', require('./routes/kadeFeatures'));
   // Sep 29 2026: Family history, private to matched family (docs/FAMILY_HISTORY.md).
   app.use('/api/kade/family-history', require('./routes/kadeFamilyHistory'));
+  // Oct 16 2026: puppet bodies for characters (services/kadePuppet, models/kadeAgentBody).
+  app.use('/api/kade/agent-body', require('./routes/kadeAgentBody'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
