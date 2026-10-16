@@ -424,10 +424,12 @@ export { createAnnouncementRouter, announcementURL, announcementPayloadHash } fr
 export type { AnnouncementDependencies } from './announcements/router';
 export {
   memoryEmbeddingLane,
+  memoryEmbeddingPurpose,
+  memoryEmbeddingTimeoutMs,
   requestMemoryEmbedding,
   embeddingTextHash,
   indexedEmbedding,
   indexedCardEmbedding,
   validEmbedding,
 } from './memory/embedding';
-export type { EmbeddingLane, IndexedEmbedding } from './memory/embedding';
+export type { EmbeddingLane, IndexedEmbedding, MemoryEmbeddingPurpose } from './memory/embedding';

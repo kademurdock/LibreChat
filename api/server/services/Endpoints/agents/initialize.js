@@ -214,8 +214,9 @@ function createToolLoader(
       });
       /* KADE 2026-09-05 (Part 132) — TOOLS AS RETRIEVAL. A core set rides
        * every turn; the rest attach only when the person's words call for
-       * them (keyword aliases + the same Gemini embed the diary takes for
-       * this turn, memoised on req). Sticky per conversation so the cached
+       * them (keyword aliases + a tools embed of their words, memoised on req
+       * beside the memory query card recall takes, at most 2.5 s; Oct 16 2026).
+       * Sticky per conversation so the cached
        * prefix only ever grows. Kill switch KADE_TOOLS_RAG=0. Agents with
        * action tools (Forge) and turns without user text are never touched.
        * Everything about it lives in services/kadeToolRetrieval.js. */
@@ -230,7 +231,7 @@ function createToolLoader(
       if (ragPool) {
         try {
           const rag = require('~/server/services/kadeToolRetrieval');
-          const { embedText } = require('~/models/kadeDiary');
+          const { embedText, embedPurpose } = require('~/models/kadeDiary');
           const hasFiles =
             Array.isArray(tool_resources?.file_search?.file_ids) &&
             tool_resources.file_search.file_ids.length > 0;
@@ -241,7 +242,7 @@ function createToolLoader(
             conversationId: req?.body?.conversationId || null,
             agentId,
             hasFiles,
-            embed: rag.memoEmbed(req, embedText),
+            embed: rag.memoEmbed(req, embedText, embedPurpose),
           });
           const dropped = rag.applySelection(loaded, sel.keep);
           if (req && dropped.includes('web_search')) {

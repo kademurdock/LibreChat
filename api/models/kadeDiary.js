@@ -44,6 +44,7 @@ const {
   diaryWriteOrigins,
   diaryWriteOrigin,
   memoryEmbeddingLane,
+  memoryEmbeddingPurpose,
   requestMemoryEmbedding,
   indexedEmbedding,
 } = require('@librechat/api');
@@ -231,14 +232,31 @@ function embedErrorText(e) {
   return status ? `HTTP ${status}: ${providerMsg}` : String(providerMsg);
 }
 
-/** Embed one string. Returns float array or null (never throws). */
+/** A timeout, as axios reports one (code depends on its transitional settings). */
+const embedTimedOut = (e) =>
+  e?.code === 'ECONNABORTED' ||
+  e?.code === 'ETIMEDOUT' ||
+  /\btimeout\b/i.test(String(e?.message || ''));
+
+/** Embed one string. Returns float array or null (never throws).
+ * Oct 16 2026: a memory query that times out is asked once more (the lane's
+ * timeouts come and go); documents, backfills and tool queries fail soft at once. */
 async function embedText(text, { purpose = 'document' } = {}) {
   const lane = embedLane();
   if (!lane || !text) {
     return null;
   }
   try {
-    const vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    let vec;
+    try {
+      vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    } catch (e) {
+      if (purpose !== 'query' || !embedTimedOut(e)) throw e;
+      logger.warn(
+        `[kadeDiary] query embedding timed out (${lane.provider}/${lane.model}); asking once more`,
+      );
+      vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    }
     embedHealth.ok += 1;
     embedHealth.lastOkAt = new Date().toISOString();
     return vec;
@@ -263,6 +281,14 @@ async function embedText(text, { purpose = 'document' } = {}) {
     }
     return null;
   }
+}
+
+/** The purpose a per-turn memo should key `purpose` under on the live lane (a lane that reads
+ * no instruction embeds a tools query exactly like a memory query, so they share one call). */
+function embedPurpose(purpose = 'query') {
+  return typeof memoryEmbeddingPurpose === 'function'
+    ? memoryEmbeddingPurpose(embedLane(), purpose)
+    : purpose;
 }
 
 function cosine(a, b) {
@@ -709,6 +735,7 @@ module.exports = {
   diaryEnabled,
   centralDateString,
   embedText,
+  embedPurpose,
   currentEmbedModel,
   readEmbedHealth,
   stripLeadingDateStamp,

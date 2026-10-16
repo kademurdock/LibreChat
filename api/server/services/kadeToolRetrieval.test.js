@@ -9,7 +9,7 @@ const R = require('./kadeToolRetrieval.js');
 
 test('library tool stays attached for follow-ups without search keywords', async () => {
   R._resetForTests();
-  const result = await R.selectTools({ tools: [{ name: 'kade_library', description: 'Catalog' }, { name: 'kade_help', description: 'Help' }], text: 'Tell me more about the second one.', agentId: 'librarian' });
+  const result = await select({ tools: [{ name: 'kade_library', description: 'Catalog' }, { name: 'kade_help', description: 'Help' }], text: 'Tell me more about the second one.', agentId: 'librarian' });
   assert.ok(result.keep.has('kade_library'));
 });
 
@@ -37,9 +37,16 @@ function fakeEmbed(names) {
   };
 }
 
+/** Since Oct 16 2026 the turn never waits on tool-description embeds; a running server
+ *  has them cached. These tests warm them first, then select as a turn would. */
+async function select(p) {
+  if (p.embed) await R.primeToolDescriptions(p.tools, p.embed);
+  return R.selectTools(p);
+}
+
 test('no text → everything rides (regenerate / edit safety)', async () => {
   R._resetForTests();
-  const r = await R.selectTools({ tools: T(KIANA), text: '', agentId: 'a', conversationId: 'c1' });
+  const r = await select({ tools: T(KIANA), text: '', agentId: 'a', conversationId: 'c1' });
   assert.strictEqual(r.dropped.length, 0);
   assert.strictEqual(r.reason, 'no-text');
 });
@@ -47,14 +54,14 @@ test('no text → everything rides (regenerate / edit safety)', async () => {
 test('kill switch keeps the old behaviour byte for byte', async () => {
   R._resetForTests();
   process.env.KADE_TOOLS_RAG = '0';
-  const r = await R.selectTools({ tools: T(KIANA), text: 'tell me a joke', agentId: 'a' });
+  const r = await select({ tools: T(KIANA), text: 'tell me a joke', agentId: 'a' });
   delete process.env.KADE_TOOLS_RAG;
   assert.strictEqual(r.dropped.length, 0);
 });
 
 test('an agent with action tools (Forge) is never filtered', async () => {
   R._resetForTests();
-  const r = await R.selectTools({
+  const r = await select({
     tools: T([...KIANA, 'getServiceStatus_action_aW53b3JsZC']),
     text: 'hey', agentId: 'forge', embed: fakeEmbed(KIANA),
   });
@@ -64,7 +71,7 @@ test('an agent with action tools (Forge) is never filtered', async () => {
 
 test('a plain companion turn rides core only', async () => {
   R._resetForTests();
-  const r = await R.selectTools({
+  const r = await select({
     tools: T(KIANA), text: 'ugh work was rough today and my back hurts',
     agentId: 'a', conversationId: 'c2', embed: fakeEmbed(KIANA),
   });
@@ -88,7 +95,7 @@ test('studio requests retain the tool when embeddings miss, without a prior conv
     'Continue my recording.',
   ]) {
     R._resetForTests();
-    const result = await R.selectTools({
+    const result = await select({
       tools: T(names), text, agentId: 'studio', embed: fakeEmbed(names),
     });
     assert.ok(result.keep.has('fal_studio'), text);
@@ -100,7 +107,7 @@ test('lyrics writing and ordinary listening do not automatically retrieve genera
   const names = [...KIANA, 'fal_studio'];
   for (const text of ['Write lyrics for a rap song.', 'I listened to a good song.', 'My microphone is quiet.']) {
     R._resetForTests();
-    const result = await R.selectTools({
+    const result = await select({
       tools: T(names), text, agentId: 'studio', embed: fakeEmbed(names),
     });
     assert.ok(!result.keep.has('fal_studio'), text);
@@ -110,15 +117,15 @@ test('lyrics writing and ordinary listening do not automatically retrieve genera
 test('keywords pull the obvious tool; embedding pulls by meaning; both stick', async () => {
   R._resetForTests();
   const embed = fakeEmbed(KIANA);
-  let r = await R.selectTools({ tools: T(KIANA), text: 'call my mom for me', agentId: 'a', conversationId: 'c3', embed });
+  let r = await select({ tools: T(KIANA), text: 'call my mom for me', agentId: 'a', conversationId: 'c3', embed });
   assert.ok(r.keep.has('kade_phone_call'), 'keyword: phone call');
   assert.ok(!r.keep.has('kade_joke'));
-  r = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: 'c3', embed });
+  r = await select({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: 'c3', embed });
   assert.ok(r.keep.has('kade_lyrics'), 'embedding: lyrics');
   assert.ok(r.keep.has('kade_phone_call'), 'sticky: phone call from the earlier turn');
-  r = await R.selectTools({ tools: T(KIANA), text: 'night night', agentId: 'a', conversationId: 'c3', embed });
+  r = await select({ tools: T(KIANA), text: 'night night', agentId: 'a', conversationId: 'c3', embed });
   assert.ok(r.keep.has('kade_phone_call') && r.keep.has('kade_lyrics'), 'sticky survives a quiet turn');
-  const r4 = await R.selectTools({ tools: T(KIANA), text: 'night night', agentId: 'a', conversationId: 'OTHER', embed });
+  const r4 = await select({ tools: T(KIANA), text: 'night night', agentId: 'a', conversationId: 'OTHER', embed });
   assert.ok(!r4.keep.has('kade_phone_call'), 'sticky is per conversation');
 });
 
@@ -126,28 +133,28 @@ test('embedding floor: a weak best match does not attach', async () => {
   R._resetForTests();
   const embed = async () => new Array(KIANA.length).fill(0.3); // everything equally meh, cos≈1... so use env floor above 1
   process.env.KADE_TOOLS_MIN_SCORE = '1.5';
-  const r = await R.selectTools({ tools: T(KIANA), text: 'hmm okay', agentId: 'a', conversationId: 'c5', embed });
+  const r = await select({ tools: T(KIANA), text: 'hmm okay', agentId: 'a', conversationId: 'c5', embed });
   delete process.env.KADE_TOOLS_MIN_SCORE;
   assert.deepStrictEqual([...r.keep].sort(), [...R.DEFAULT_CORE].sort());
 });
 
 test('embed lane down + no keyword → the full set rides (fail toward the old behaviour)', async () => {
   R._resetForTests();
-  const r = await R.selectTools({ tools: T(KIANA), text: 'how are you feeling', agentId: 'a', conversationId: 'c6', embed: async () => null });
+  const r = await select({ tools: T(KIANA), text: 'how are you feeling', agentId: 'a', conversationId: 'c6', embed: async () => null });
   assert.strictEqual(r.reason, 'embed-down');
   assert.strictEqual(r.dropped.length, 0);
 });
 
 test('embed lane down + keyword → keyword tool rides, rest deferred', async () => {
   R._resetForTests();
-  const r = await R.selectTools({ tools: T(KIANA), text: 'tell me a joke', agentId: 'a', conversationId: 'c7', embed: async () => null });
+  const r = await select({ tools: T(KIANA), text: 'tell me a joke', agentId: 'a', conversationId: 'c7', embed: async () => null });
   assert.ok(r.keep.has('kade_joke'));
   assert.ok(r.dropped.includes('web_search'));
 });
 
 test('files on the turn keep file_search attached', async () => {
   R._resetForTests();
-  const r = await R.selectTools({ tools: T(KIANA), text: 'what do you think', agentId: 'a', conversationId: 'c8', hasFiles: true, embed: fakeEmbed(KIANA) });
+  const r = await select({ tools: T(KIANA), text: 'what do you think', agentId: 'a', conversationId: 'c8', hasFiles: true, embed: fakeEmbed(KIANA) });
   assert.ok(r.keep.has('file_search'));
 });
 
@@ -241,8 +248,8 @@ test('Part 132.1 regression: her Clancy-trial sentence brings the search (no que
 test('Part 132.3: placeholder conversation ids never share a sticky bucket; greetings are not fact questions', async () => {
   R._resetForTests();
   const embed = fakeEmbed(KIANA);
-  await R.selectTools({ tools: T(KIANA), text: 'call my mom for me', agentId: 'a', conversationId: 'new', embed });
-  const r = await R.selectTools({ tools: T(KIANA), text: "Hey. I'm about to go on the boat. It's Labor Day weekend. What's up?", agentId: 'a', conversationId: 'new', embed });
+  await select({ tools: T(KIANA), text: 'call my mom for me', agentId: 'a', conversationId: 'new', embed });
+  const r = await select({ tools: T(KIANA), text: "Hey. I'm about to go on the boat. It's Labor Day weekend. What's up?", agentId: 'a', conversationId: 'new', embed });
   assert.ok(!r.keep.has('kade_phone_call'), 'nothing sticks to "new"');
   assert.ok(!r.keep.has('web_search'), "what's up is a greeting");
   assert.deepStrictEqual([...r.keep].sort(), [...R.DEFAULT_CORE].sort());
@@ -270,15 +277,15 @@ test('Part 176 regression: the iPhone-lineup turn brings the search; a go-ahead 
   R._resetForTests();
   const embed = fakeEmbed(KIANA);
   const convo = 'c-176';
-  const first = await R.selectTools({ tools: T(KIANA), text: 'what do you think about that thing my brother mentioned', agentId: 'a', conversationId: convo, embed });
+  const first = await select({ tools: T(KIANA), text: 'what do you think about that thing my brother mentioned', agentId: 'a', conversationId: convo, embed });
   assert.ok(!first.keep.has('web_search'), 'no world referent, no search yet');
-  const yes = await R.selectTools({ tools: T(KIANA), text: 'yeah go ahead and look it up', agentId: 'a', conversationId: convo, embed });
+  const yes = await select({ tools: T(KIANA), text: 'yeah go ahead and look it up', agentId: 'a', conversationId: convo, embed });
   assert.ok(yes.keep.has('web_search'), 'a go-ahead after a declined lookup attaches the search');
-  const later = await R.selectTools({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-other', embed });
+  const later = await select({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-other', embed });
   assert.ok(!later.keep.has('web_search'), 'a bare ok with nothing pending stays quiet');
   R._resetForTests();
-  const chat = await R.selectTools({ tools: T(KIANA), text: 'love you too, night', agentId: 'a', conversationId: 'c-night', embed });
-  const ok2 = await R.selectTools({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-night', embed });
+  const chat = await select({ tools: T(KIANA), text: 'love you too, night', agentId: 'a', conversationId: 'c-night', embed });
+  const ok2 = await select({ tools: T(KIANA), text: 'ok', agentId: 'a', conversationId: 'c-night', embed });
   assert.ok(!chat.keep.has('web_search') && !ok2.keep.has('web_search'), 'a good-night is not an information shape, so no pending search');
 });
 
@@ -309,12 +316,63 @@ test('Part 291: money-with-Kade asks attach kade_funding_balance; chatter does n
     'is my tab square yet',
   ]) {
     R._resetForTests();
-    const r = await R.selectTools({ tools: T(names), text, agentId: 'a', conversationId: null, embed: async () => null });
+    const r = await select({ tools: T(names), text, agentId: 'a', conversationId: null, embed: async () => null });
     assert.ok(r.keep.has('kade_funding_balance'), text);
   }
   for (const chat of ['night night, love you', 'Owen is coming over later', 'what should I cook tonight']) {
     R._resetForTests();
-    const r = await R.selectTools({ tools: T(names), text: chat, agentId: 'a', conversationId: null, embed: fakeEmbed(names) });
+    const r = await select({ tools: T(names), text: chat, agentId: 'a', conversationId: null, embed: fakeEmbed(names) });
     assert.ok(!r.keep.has('kade_funding_balance'), chat);
   }
+});
+
+test('Oct 16: a slow query embed costs the turn at most the wait, and the full set rides', async () => {
+  R._resetForTests();
+  const embed = fakeEmbed(KIANA);
+  await R.primeToolDescriptions(T(KIANA), embed);
+  process.env.KADE_TOOLS_EMBED_WAIT_MS = '50';
+  const started = Date.now();
+  const r = await R.selectTools({
+    tools: T(KIANA), text: 'how are you feeling', agentId: 'a', conversationId: 'c-slow',
+    embed: (text, options) => (options && options.purpose === 'document' ? embed(text) : new Promise(() => {})),
+  });
+  delete process.env.KADE_TOOLS_EMBED_WAIT_MS;
+  assert.ok(Date.now() - started < 1000, 'the turn did not wait on the hung embed');
+  assert.strictEqual(r.reason, 'embed-slow');
+  assert.strictEqual(r.dropped.length, 0);
+});
+
+test('Oct 16: cold tool descriptions are never awaited; they fill in the background for the next turn', async () => {
+  R._resetForTests();
+  const base = fakeEmbed(KIANA);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const asked = [];
+  const embed = async (text, options) => {
+    asked.push((options && options.purpose) || 'query');
+    if (options && options.purpose === 'document') await gate;
+    return base(text);
+  };
+  const cold = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: null, embed });
+  assert.strictEqual(cold.reason, 'embed-down', 'nothing cached yet: the full set rides');
+  assert.ok(asked.includes('tools') && asked.includes('query'), 'the tools query and the shared memory query both went out');
+  release();
+  await R.primeToolDescriptions(T(KIANA), embed);
+  const warm = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: null, embed });
+  assert.ok(warm.keep.has('kade_lyrics'), 'the next turn scores the descriptions filled in the background');
+  assert.strictEqual(asked.filter((purpose) => purpose === 'document').length, KIANA.length, 'each description embedded once');
+});
+
+test('Oct 16: memoEmbed folds a tools query into the memory query where the lane reads no instruction', async () => {
+  let calls = 0;
+  const seen = [];
+  const embed = async (text, options) => { calls += 1; seen.push(options.purpose); return [1, 2]; };
+  const plain = R.memoEmbed({}, embed, (purpose) => (purpose === 'tools' ? 'query' : purpose));
+  await Promise.all([plain('hello'), plain('hello', { purpose: 'tools' })]);
+  assert.strictEqual(calls, 1);
+  assert.deepStrictEqual(seen, ['query']);
+  const instructed = R.memoEmbed({}, embed, (purpose) => purpose);
+  await Promise.all([instructed('hello'), instructed('hello', { purpose: 'tools' })]);
+  assert.strictEqual(calls, 3);
+  assert.deepStrictEqual(seen.slice(1).sort(), ['query', 'tools']);
 });

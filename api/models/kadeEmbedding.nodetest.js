@@ -82,3 +82,37 @@ test('a staged index keeps scope, exclusions, current content and the original v
     assert.equal((await cards.searchCardVectors('person', 'a', vector, options)).length, 0);
   } finally { await mongoose.disconnect(); await server.stop(); }
 });
+
+/** kadeDiary with the provider call replaced; returns the module and the calls it made. */
+function diaryWith(provider) {
+  const calls = [];
+  const original = api.requestMemoryEmbedding;
+  api.requestMemoryEmbedding = async (lane, text, purpose) => { calls.push({ text, purpose }); return provider(calls.length, purpose); };
+  try { return { diary: model('kadeDiary.js'), calls }; } finally { api.requestMemoryEmbedding = original; }
+}
+const timeoutError = () => Object.assign(new Error('timeout of 3000ms exceeded'), { code: 'ECONNABORTED' });
+
+test('Oct 16: a memory query that times out is asked once more; documents fail soft at once', async () => {
+  process.env.KADE_EMBED_MODEL = 'qwen/qwen3-embedding-8b';
+  process.env.KADE_EMBED_DIMENSIONS = '32';
+  process.env.OPENROUTER_KEY = 'test-only';
+  const vector = Array.from({ length: 32 }, (_, i) => i === 0 ? 1 : 0);
+  const query = diaryWith((n) => { if (n === 1) throw timeoutError(); return vector; });
+  assert.deepEqual(await query.diary.embedText('what concert did I see', { purpose: 'query' }), vector);
+  assert.equal(query.calls.length, 2);
+  const doc = diaryWith(() => { throw timeoutError(); });
+  assert.equal(await doc.diary.embedText('A concert memory.'), null);
+  assert.equal(doc.calls.length, 1, 'a document is not retried');
+  const tools = diaryWith(() => { throw timeoutError(); });
+  assert.equal(await tools.diary.embedText('what is the weather', { purpose: 'tools' }), null);
+  assert.equal(tools.calls.length, 1, 'the tools query is raced on the turn path; no retry');
+  const refused = diaryWith(() => { throw Object.assign(new Error('Request failed with status code 402'), { response: { status: 402 } }); });
+  assert.equal(await refused.diary.embedText('what concert', { purpose: 'query' }), null);
+  assert.equal(refused.calls.length, 1, 'only a timeout is retried');
+  assert.equal(query.diary.embedPurpose('tools'), 'tools', 'Qwen3 reads the tools instruction');
+  delete process.env.KADE_EMBED_MODEL;
+  process.env.KADE_EMBED_GEMINI_KEY = 'test-only';
+  assert.equal(query.diary.embedPurpose('tools'), 'query', 'a lane with no instruction shares the memory query');
+  delete process.env.KADE_EMBED_GEMINI_KEY;
+});
+
