@@ -937,7 +937,11 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
         ],
       },
       {
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': UA },
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'User-Agent': UA,
+        },
         timeout: timeoutMs,
         ...(streamed ? { responseType: 'stream', signal } : {}),
       },
@@ -947,8 +951,12 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
     /* Oct 16 2026: the streamed writer's only wall clock is the signal (keep-alive comments
      * keep axios's idle timer from firing), and its abort arrives as ERR_CANCELED, which
      * the handlers below read as "the desk had trouble". Every timeout is ECONNABORTED. */
-    if (!(signal && (signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'TimeoutError'))) throw e;
-    const timedOut = new Error(`writer timed out after ${timeoutMs}ms (${e?.message || 'aborted'})`);
+    const aborted =
+      signal && (signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'TimeoutError');
+    if (!aborted) throw e;
+    const timedOut = new Error(
+      `writer timed out after ${timeoutMs}ms (${e?.message || 'aborted'})`,
+    );
     timedOut.code = 'ECONNABORTED';
     throw timedOut;
   }
