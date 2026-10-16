@@ -48,6 +48,19 @@ type ListenerReply = {
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 };
 
+/* Oct 16 2026, Kade's zero-retention rule: audio goes only to zero-retention hosts that really
+ * hear it. Measured that day: DeepInfra and Venice silently drop MiMo Flash's audio (the prompt is
+ * counted as text only, and the model then invents a song), Io Net refuses it, Makora and Novita
+ * hear it. Pro hears audio on DeepInfra and Novita. KADE_AUDIO_HOSTS (comma list) overrides. */
+function audioHosts(model: string): string[] {
+  const chosen = (process.env.KADE_AUDIO_HOSTS || '')
+    .split(',')
+    .map((host) => host.trim())
+    .filter(Boolean);
+  if (chosen.length) return chosen;
+  return model.endsWith('-pro') ? ['DeepInfra', 'Novita'] : ['Makora', 'Novita'];
+}
+
 async function mimoAudio(
   buffer: Buffer,
   mime: string,
@@ -105,7 +118,13 @@ async function mimoAudio(
       ...(routed
         ? {
             reasoning: { enabled: false, effort: 'none' },
-            provider: { order: ['Xiaomi'], allow_fallbacks: false, max_price: prices },
+            provider: {
+              only: audioHosts(model),
+              allow_fallbacks: true,
+              zdr: true,
+              data_collection: 'deny',
+              max_price: prices,
+            },
           }
         : { thinking: { type: 'disabled' } }),
       max_tokens: maxTokens,
@@ -293,7 +312,11 @@ export function tidySectionTags(transcript: string): string {
  * whose prompt counted under a third of that rate, taking the prompt's words at their fewest
  * possible tokens, was not listened to and is not shown as the singer's words. Only the measured
  * model is judged; any other listener, or a reply without usage figures, is taken as heard. */
-const listenerTokensPerSecond: Record<string, number> = { 'xiaomi/mimo-v2.6-flash': 6.25 };
+const listenerTokensPerSecond: Record<string, number> = {
+  'xiaomi/mimo-v2.6-flash': 6.25,
+  // Pro on DeepInfra, Oct 16 2026: about 5.8-5.9 audio tokens a second on three songs.
+  'xiaomi/mimo-v2.6-pro': 5.8,
+};
 function heardRecording(
   usage: { inputTokens: number } | undefined,
   prompt: string,
@@ -435,7 +458,9 @@ export async function transcribeMusicLyrics(
       if (!heardRecording(reply.usage, lyricPrompt, seconds))
         throw new GeminiMiss(`unheard:tokens=${reply.usage?.inputTokens}`);
       const transcript = tidySectionTags(reply.text);
-      if (!transcript) throw new GeminiMiss('finish:STOP-empty');
+      // A draft of section labels alone (an instrumental, or a reply that heard nothing) is empty.
+      const sung = transcript.split('\n').some((line) => line.trim() && !/^\[[^\]]*\]$/.test(line.trim()));
+      if (!transcript || !sung) throw new GeminiMiss('finish:STOP-empty');
       draft = { transcript, seconds, model: musicListenerModel(), usage: reply.usage };
     }
     /* Countable: grep "opens on a repeated chorus" to see whether the sung-order rule holds. */

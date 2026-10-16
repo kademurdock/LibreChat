@@ -391,10 +391,13 @@ test('MiMo: a reply whose prompt counted no audio is not shown as the singer\'s 
       mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: '[Verse]\nHeard words' } }], usage });
       assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', seconds)).model, 'xiaomi/mimo-v2.6-flash', String(seconds));
     }
-    /* Only the measured listener is judged: Pro's audio rate was never measured. */
+    /* Pro is judged too (about 5.8 audio tokens a second on DeepInfra, Oct 16): a heard reply
+     * passes and one that counted only the words falls back. */
     process.env.KADE_MUSIC_LISTENER_MODEL = 'xiaomi/mimo-v2.6-pro';
+    mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: '[Verse]\nHeard words' } }], usage: { prompt_tokens: 1453, completion_tokens: 9 } });
+    assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 186)).model, 'xiaomi/mimo-v2.6-pro');
     mimo = () => ({ choices: [{ finish_reason: 'stop', message: { content: '[Verse]\nHeard words' } }], usage: { prompt_tokens: 288, completion_tokens: 9 } });
-    assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199)).model, 'xiaomi/mimo-v2.6-pro');
+    assert.equal((await lyrics.transcribeMusicLyrics(MP3, 'audio/mpeg', 199)).model, 'scribe_v2');
   } finally {
     process.env.KADE_MUSIC_LISTENER_MODEL = savedModel;
     delete process.env.OPENROUTER_KEY;
