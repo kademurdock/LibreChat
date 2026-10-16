@@ -19,11 +19,11 @@ export default function StreamAudio({ index = 0 }) {
   const { token } = useAuthContext();
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
-  const playbackRate = useRecoilValue(store.playbackRate);
+  const pacePreference = useRecoilValue(store.voicePacePreference);
 
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
-  const speed = generationRate(voiceSpeed, playbackRate);
+  const speed = generationRate(voiceSpeed, pacePreference);
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const voiceCallActive = useRecoilValue(store.voiceCallActiveState);

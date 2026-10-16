@@ -16,7 +16,7 @@ export default function PlaybackRate() {
   const textToSpeech = useRecoilValue(store.textToSpeech);
   const voice = useRecoilValue(store.voice);
   const base = useRecoilValue(store.voiceSpeed);
-  const [rate, setRate] = useRecoilState(store.playbackRate);
+  const [rate, setRate] = useRecoilState(store.voicePacePreference);
   const { providers } = useVoiceCatalog();
   const fish = isFishVoice(voice, providers);
   const value = generationRate(base, rate);

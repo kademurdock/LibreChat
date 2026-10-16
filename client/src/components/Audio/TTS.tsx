@@ -4,12 +4,10 @@ import {
   watchVoiceAudio,
   stopWatchingVoiceAudio,
 } from '~/components/Chat/character/voice-playback.mjs';
-import { useRecoilValue } from 'recoil';
 import type { TMessageAudio } from '~/common';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '@librechat/client';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
 import { logger } from '~/utils';
-import store from '~/store';
 
 export function BrowserTTS({
   isLast,
@@ -20,7 +18,6 @@ export function BrowserTTS({
   renderButton,
 }: TMessageAudio) {
   const localize = useLocalize();
-  const playbackRate = useRecoilValue(store.playbackRate);
 
   const { toggleSpeech, isSpeaking, isLoading, audioRef } = useTTSBrowser({
     isLast,
@@ -46,10 +43,8 @@ export function BrowserTTS({
     if (!messageAudio) {
       return;
     }
-    if (playbackRate != null && playbackRate > 0 && messageAudio.playbackRate !== playbackRate) {
-      messageAudio.playbackRate = playbackRate;
-    }
-  }, [audioRef, isSpeaking, playbackRate, messageId]);
+    messageAudio.playbackRate = 1;
+  }, [audioRef, isSpeaking, messageId]);
 
   logger.log(
     'MessageAudio: audioRef.current?.src, audioRef.current',

@@ -41,8 +41,8 @@ function useTextToSpeechExternal({
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed); // Kade D2d
   const cacheTTS = useRecoilValue(store.cacheTTS);
-  const playbackRate = useRecoilValue(store.playbackRate);
-  const speed = generationRate(voiceSpeed, playbackRate);
+  const pacePreference = useRecoilValue(store.voicePacePreference);
+  const speed = generationRate(voiceSpeed, pacePreference);
 
   const [downloadFile, setDownloadFile] = useState(false);
 

@@ -60,7 +60,7 @@ export default function DownloadAudioButton({
   const engineTTS = useRecoilValue<string>(store.engineTTS);
   const voice = useRecoilValue(store.voice);
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
-  const preference = useRecoilValue(store.playbackRate);
+  const preference = useRecoilValue(store.voicePacePreference);
   const [loading, setLoading] = useState(false);
 
   const { mutate } = useTextToSpeechMutation({
