@@ -108,10 +108,21 @@ async function mirrorAsset(doc) {
  * the reasoning-off request below was refused on every clip from Sep 3 and
  * My Creations wrote no descriptions for a month. Flash-lite is the original
  * gallery model and the cheapest that reads pictures and video. */
-const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'xiaomi/mimo-v2.6-flash';
-/* A Pro-class model cannot switch reasoning off: think briefly, hide the
- * thinking, and leave room for it so the words are not cut short. */
-const describeIsPro = /-pro/.test(DESCRIBE_MODEL);
+/* Oct 16 2026, Kade's ask: MiMo Pro over Flash for media jobs. A measured
+ * Flash-vs-Pro comparison favoured Pro, still far below Google or GPT
+ * ($0.435/$0.87 per million in/out against Flash's $0.14/$0.28). Railway's
+ * KADE_ASSET_DESCRIBE_MODEL picks the model; this is only the default. */
+const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'xiaomi/mimo-v2.6-pro';
+/* Only Gemini's Pro models cannot switch reasoning off: for those, think
+ * briefly, hide the thinking, and leave room for it so the words are not cut
+ * short. This used to match any "-pro" slug, which on MiMo Pro would turn on a
+ * reasoning pass that thinks ~2,400 tokens and truncates the description. MiMo
+ * Pro switches reasoning off like Flash and keeps the normal token limit. */
+const describeIsGeminiPro = /(?:^|\/)gemini-[^/]*-pro(?:-|$)/i.test(DESCRIBE_MODEL);
+/* Rates for a reply that names no cost: Flash's on MiMo Flash, Pro's otherwise. */
+const describeIsMimoFlash = /mimo-v2\.6-flash/i.test(DESCRIBE_MODEL);
+const DESCRIBE_IN_USD_PER_M = describeIsMimoFlash ? 0.14 : 0.435;
+const DESCRIBE_OUT_USD_PER_M = describeIsMimoFlash ? 0.28 : 0.87;
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
 
 /** The reason a call failed, with the provider's own words when it sent some. */
@@ -142,8 +153,11 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
      * a place to be stingy. */
     {
       model: DESCRIBE_MODEL,
-      max_tokens: describeIsPro ? maxTokens + 2000 : maxTokens,
-      reasoning: describeIsPro ? { effort: 'low', exclude: true } : { enabled: false },
+      max_tokens: describeIsGeminiPro ? maxTokens + 2000 : maxTokens,
+      reasoning: describeIsGeminiPro ? { effort: 'low', exclude: true } : { enabled: false },
+      /* Oct 16 2026: people's own pictures and videos go only to hosts that
+       * keep no copy and train on nothing (her zero-retention rule). */
+      provider: { zdr: true, data_collection: 'deny' },
       messages: [{ role: 'user', content }],
       usage: { include: true },
     },
@@ -157,8 +171,8 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
       const usage = r.data?.usage || {};
       const cost =
         require('~/server/services/kadeRealCost').openRouterCost(usage) ??
-        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || 0.14) +
-          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || 0.28)) /
+        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || DESCRIBE_IN_USD_PER_M) +
+          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || DESCRIBE_OUT_USD_PER_M)) /
           1e6;
       const { logKadeUsage } = require('~/models/kadeUsage');
       logKadeUsage({
