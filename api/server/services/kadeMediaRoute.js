@@ -20,10 +20,18 @@
  *   anyone as a description.
  * - Novita refuses a strict json_schema reply format (HTTP 400); json_object works.
  * KADE_VIDEO_HOSTS (a comma list) overrides the video hosts, as it does for the described-video
- * engine in packages/api/src/description/providers.ts.
+ * engine in packages/api/src/description/providers.ts. Use the names OpenRouter reports as a reply's
+ * `provider` ("Novita"), not endpoint tags ("novita/fp8"): `heardBy` compares them.
  */
 
 const ZERO_RETENTION = Object.freeze({ zdr: true, data_collection: 'deny' });
+
+/**
+ * How a refused request is asked again: Novita's two refusals on Oct 16 2026 came in one burst
+ * about 11 s apart, so up to three tries, 20 s apart. Tests shorten the wait.
+ */
+const limits = { refusalTries: 3, refusalMs: 20000 };
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isMimo = (model) => String(model || '').startsWith('xiaomi/mimo-');
 
@@ -108,6 +116,8 @@ function readReply(data, model, kind, env = process.env) {
 
 module.exports = {
   ZERO_RETENTION,
+  limits,
+  pause,
   videoHosts,
   contentKind,
   mediaProvider,

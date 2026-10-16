@@ -954,14 +954,16 @@ export async function soundtrack(
   return { ...measured, ...events, oneSided: live };
 }
 
+/** The largest look clip by default; a model's hosts may take less (providers.ts `clipBytes`). */
 const clipLimit = 40 * 1024 ** 2;
 
 /**
- * Video bitrate ceiling (bits/s) that keeps an analysis clip of `outputSeconds` under about 38 MB
- * with its 48 kbit/s sound, and never above 600 kbit/s. crf still decides below the ceiling.
+ * Video bitrate ceiling (bits/s) that keeps an analysis clip of `outputSeconds` about 2 MB under
+ * `limit` (38 MB by default) with its 48 kbit/s sound, and never above 600 kbit/s. crf still
+ * decides below the ceiling.
  */
-export function videoCeiling(outputSeconds: number): number {
-  const budget = (38 * 1024 ** 2 * 8) / Math.max(1, outputSeconds) - 48000;
+export function videoCeiling(outputSeconds: number, limit: number = clipLimit): number {
+  const budget = ((limit - 2 * 1024 ** 2) * 8) / Math.max(1, outputSeconds) - 48000;
   return Math.max(100000, Math.floor(Math.min(600000, budget)));
 }
 
@@ -1107,12 +1109,13 @@ export async function lookClip(
   media?: Media,
   film?: number,
   nativeClose: boolean = false,
+  limit: number = clipLimit,
 ): Promise<{ file: string; stamped: boolean }> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
   const video = join(directory, 'analysis.mp4');
   const outputSeconds = closeLook ? seconds * 4 : seconds;
-  const ceiling = videoCeiling(outputSeconds);
+  const ceiling = videoCeiling(outputSeconds, limit);
   const font = film !== undefined && tools.drawtext ? await stripFont() : null;
   let stamped = font !== null;
   const stripFor = (width: number): string[] =>
@@ -1195,12 +1198,12 @@ export async function lookClip(
     return encode(width, []);
   };
   const width = closeLook || nativeClose ? 1440 : 960;
-  if ((await attempt(width)) <= clipLimit) return { file: video, stamped };
-  if ((await attempt(closeLook ? 960 : 640)) <= clipLimit) return { file: video, stamped };
+  if ((await attempt(width)) <= limit) return { file: video, stamped };
+  if ((await attempt(closeLook ? 960 : 640)) <= limit) return { file: video, stamped };
   await rm(video, { force: true });
   throw new MediaError(
     'too-detailed',
-    `clip over ${clipLimit} bytes`,
+    `clip over ${limit} bytes`,
     closeLook
       ? 'This part of the video is too detailed to send for a close look.'
       : plainWords['too-detailed'],

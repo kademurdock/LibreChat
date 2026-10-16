@@ -61,6 +61,7 @@ import {
 import {
   analyze,
   billed,
+  clipBytes,
   expectedLook,
   visionModel,
   failureClass,
@@ -786,6 +787,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         media,
         nativeVideo ? undefined : film,
         nativeClose,
+        clipBytes(),
       );
       if (!nativeVideo && film !== undefined && !stamped && !stripMissing) {
         stripMissing = true;

@@ -37,7 +37,7 @@ const { execFile } = require('child_process');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
-const { mediaProvider, readReply } = require('~/server/services/kadeMediaRoute');
+const { limits, mediaProvider, pause, readReply } = require('~/server/services/kadeMediaRoute');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
@@ -46,7 +46,10 @@ const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'xiaomi/mimo-v2.6-p
 const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.435);
 const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 0.87);
 const TOKENS_PER_SECOND = 400; // Estimate only; the provider's actual receipt is booked.
-const SEGMENT_SECONDS = () => Math.max(60, parseInt(process.env.KADE_DESCRIBE_SEGMENT_SECONDS, 10) || 900);
+/* Oct 16 2026: Novita, the zero-retention host that hears a MiMo video, looks at about 150 frames
+ * of a clip whatever its length. A 15-minute segment had not answered after ten minutes; a 5-minute
+ * one answered in 51 s, about a frame every 2 s. So MiMo segments are 5 minutes unless set. */
+const SEGMENT_SECONDS = () => Math.max(60, parseInt(process.env.KADE_DESCRIBE_SEGMENT_SECONDS, 10) || (MODEL().startsWith('xiaomi/mimo-') ? 300 : 900));
 const MAX_MINUTES = () => Math.max(1, parseFloat(process.env.KADE_DESCRIBE_MAX_MINUTES) || 180);
 const DAILY_USD = () => Math.max(0, parseFloat(process.env.KADE_DESCRIBE_DAILY_USD) || 2.0);
 const ENABLED = () => process.env.KADE_LIBRARY_DESCRIBE !== '0';
@@ -108,7 +111,8 @@ async function askModel(fileBuf, mime, prompt) {
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     { model: MODEL(), max_tokens: 24000, ...(MODEL().startsWith('xiaomi/mimo-') ? { reasoning: { enabled: true, effort: 'medium' } } : {}), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' }, provider: mediaProvider(MODEL(), 'video') },
-    { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 300000 },
+    /* A background job: ten minutes for the upload, the look and its thinking. */
+    { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 600000 },
   );
   const { text, refused, unheard } = readReply(r.data, MODEL(), 'video');
   const usage = r.data?.usage || {};
@@ -119,22 +123,25 @@ async function askModel(fileBuf, mime, prompt) {
 }
 
 /**
- * Asks about one segment, once more after a refusal (Novita's filter refuses a harmless clip now and
- * then). A second refusal, or an answer from a host that cannot hear the soundtrack, stops the job
- * with a plain reason rather than saving it; `costUSD` carries every call's cost either way.
+ * Asks about one segment, again after a refusal (Novita's filter refuses a harmless clip now and
+ * then, in bursts): up to three tries, 20 s apart (kadeMediaRoute `limits`). A segment still refused
+ * comes back `refused` with no text, and the job carries on without it. An answer from a host that
+ * cannot hear the soundtrack stops the job with a plain reason rather than saving it. `costUSD`
+ * carries every call's cost either way.
  */
 async function lookAt(fileBuf, mime, prompt) {
   let costUSD = 0;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= limits.refusalTries; attempt++) {
+    if (attempt > 1) await pause(limits.refusalMs);
     const r = await askModel(fileBuf, mime, prompt);
     costUSD += r.costUSD;
     if (r.unheard) {
       throw Object.assign(new Error(`The video went to ${r.provider}, which cannot hear its soundtrack, so that description was not used.`), { costUSD });
     }
     if (!r.refused) return { ...r, costUSD };
-    logger.warn(`[library/describe] ${r.provider || 'the host'} refused a segment (content_filter)${attempt === 1 ? '; asking once more' : ''}`);
+    logger.warn(`[library/describe] ${r.provider || 'the host'} refused a segment (content_filter), try ${attempt} of ${limits.refusalTries}`);
   }
-  throw Object.assign(new Error('The video service refused to describe part of this video twice. Try again later.'), { costUSD });
+  return { text: '', costUSD, refused: true };
 }
 
 function parseScenes(text) {
@@ -196,12 +203,22 @@ async function describeTrack({ signedUrl, mime, title, category, onProgress, fro
         e.costUSD = out.costUSD + (e.costUSD || 0);
         throw e;
       }
-      const parsed = parseScenes(r.text);
       out.costUSD += r.costUSD;
+      if (r.refused) {
+        /* Said where it happens, so a listener knows the gap is there, not that nothing happened. */
+        out.refused = (out.refused || 0) + 1;
+        out.scenes.push({ t: Math.round(start * 10) / 10, text: `The describing service would not describe this part, from ${Math.round(start)} to ${Math.round(start + len)} seconds.` });
+        await fs.rm(small, { force: true });
+        continue;
+      }
+      const parsed = parseScenes(r.text);
       out.frames += Math.round(len * 6);
       if (parsed.summary) summaries.push(parsed.summary);
       for (const s of parsed.scenes) out.scenes.push({ t: Math.round((start + s.t) * 10) / 10, text: s.text });
       await fs.rm(small, { force: true });
+    }
+    if (out.refused && out.refused === segments) {
+      throw Object.assign(new Error('The video service would not describe this video. Try again later.'), { costUSD: out.costUSD });
     }
     out.scenes.sort((a, b) => a.t - b.t);
     out.summary = summaries.join(' ').slice(0, 4000);
@@ -252,4 +269,4 @@ function enqueue(job) {
   return queue.length;
 }
 
-module.exports = { enqueue, estimate, progressOf: (bookId, t) => progress[`${bookId}:${t}`] || '', queued: () => queue.length, ENABLED, _internals: { parseScenes, INSTRUCTION, askModel, lookAt } };
+module.exports = { enqueue, estimate, progressOf: (bookId, t) => progress[`${bookId}:${t}`] || '', queued: () => queue.length, ENABLED, _internals: { parseScenes, INSTRUCTION, askModel, lookAt, describeTrack } };

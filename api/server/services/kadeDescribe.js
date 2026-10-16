@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { openRouterCost } = require('./kadeRealCost');
-const { contentKind, mediaProvider, readReply } = require('./kadeMediaRoute');
+const { contentKind, limits, mediaProvider, pause, readReply } = require('./kadeMediaRoute');
 
 const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
@@ -141,7 +141,8 @@ function visionReasoning(model) {
 /**
  * One describer call. Oct 16 2026: only zero-retention hosts (kadeMediaRoute) — a video only to the
  * hosts that hear its soundtrack, pictures and text DeepInfra first. A refusal (Novita's filter
- * sometimes refuses a harmless request) is asked once more and is never returned as text; a video
+ * sometimes refuses a harmless request) is asked again, up to three tries 20 s apart, and is never
+ * returned as text; a video
  * answered by a host that cannot hear it is not used. Every call's cost is counted, used or not.
  * The scanned-PDF `file` part is still turned into text by OpenRouter's Mistral OCR plugin, which
  * zero retention does not cover (OpenRouter: ZDR "only applies to provider routing").
@@ -153,7 +154,10 @@ async function orChat(content, maxTokens = 900) {
   }
   const kind = contentKind(content);
   let costUSD = 0;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= limits.refusalTries; attempt++) {
+    if (attempt > 1) {
+      await pause(limits.refusalMs);
+    }
     const r = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
@@ -186,7 +190,7 @@ async function orChat(content, maxTokens = 900) {
       return { text: reply.text, costUSD };
     }
     logger.warn(
-      `[kadeDescribe] ${r.data?.provider || 'the host'} refused (content_filter)${attempt === 1 ? '; asking once more' : ''}`,
+      `[kadeDescribe] ${r.data?.provider || 'the host'} refused (content_filter), try ${attempt} of ${limits.refusalTries}`,
     );
   }
   return { text: null, costUSD };

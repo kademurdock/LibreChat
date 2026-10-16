@@ -1,13 +1,18 @@
 /* Oct 16 2026 — what the Library's video describer sends to OpenRouter (Kade's zero-retention
  * rule). A shrunk segment, soundtrack included, goes only to the zero-retention host that hears it
  * (Novita for MiMo; DeepInfra drops the soundtrack), as plain JSON (Novita refuses a strict
- * schema). A refusal is asked once more and never becomes scenes; an answer from a host that cannot
- * hear the soundtrack stops the job. Run: node --test
+ * schema). A refusal is asked up to twice more and never becomes scenes; a segment still refused is
+ * marked as not described and the job carries on; an answer from a host that cannot hear the
+ * soundtrack stops the job. Run: node --test
  * api/server/routes/kadeReadingRoomDescribe.nodetest.js (no network, no database, no ffmpeg). */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
+const { Readable } = require('node:stream');
+
+/* Novita's refusals are waited out 20 s apart in production; not here. */
+require('../services/kadeMediaRoute').limits.refusalMs = 0;
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const refusal = {
@@ -32,14 +37,19 @@ function load(reply, env = {}) {
       if (['fs/promises', 'fs', 'os', 'path'].includes(id)) return require(id);
       if (id === 'child_process')
         return {
-          execFile() {
-            throw Error('no ffmpeg in this test');
+          /* Stand-in tools: ffprobe says the track runs 600 s (two MiMo segments of 300 s); ffmpeg
+           * writes a tiny clip where it was told to. */
+          execFile(_bin, args, _opts, done) {
+            if (args.includes('-show_entries')) return done(null, '600\n', '');
+            fs.writeFileSync(args[args.length - 1], Buffer.from('mp4'));
+            return done(null, '', '');
           },
         };
       if (id === 'axios') {
         return {
-          post: async (url, body) => {
-            calls.push({ url, body });
+          get: async () => ({ data: Readable.from([Buffer.from('original')]) }),
+          post: async (url, body, config) => {
+            calls.push({ url, body, config });
             return { data: await reply(body, calls.length) };
           },
         };
@@ -86,7 +96,7 @@ test('a Library segment goes only to Novita with zero retention, as plain JSON, 
   assert.equal(result.costUSD, 0.002);
 });
 
-test('a refused segment is asked once more; the refusal never becomes a scene and both calls count', async () => {
+test('a refused segment is asked again; the refusal never becomes a scene and both calls count', async () => {
   const { internals, calls } = load((_body, n) =>
     n === 1 ? answer('Novita', refusal, 0.00004) : answer('Novita'),
   );
@@ -96,14 +106,43 @@ test('a refused segment is asked once more; the refusal never becomes a scene an
   assert.ok(Math.abs(result.costUSD - 0.00204) < 1e-9, String(result.costUSD));
 });
 
-test('refused twice, the job stops with a plain reason, carrying what the calls cost', async () => {
+test('refused three times, the segment comes back marked refused with no text, carrying what the calls cost', async () => {
+  const { internals, calls } = load(() => answer('Novita', refusal, 0.00004));
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 3, 'not asked a fourth time');
+  assert.equal(result.refused, true);
+  assert.equal(result.text, '');
+  assert.ok(Math.abs(result.costUSD - 0.00012) < 1e-9);
+});
+
+test('a segment still refused is marked where it falls and the job carries on; the paid segments are kept', async () => {
+  /* Segment one is refused all three times; segment two (300 s on) is described. */
+  const { internals, calls } = load((_body, n) =>
+    n <= 3 ? answer('Novita', refusal, 0.00004) : answer('Novita'),
+  );
+  const out = await internals.describeTrack({
+    signedUrl: 'https://example.invalid/track',
+    mime: 'video/mp4',
+    title: 'Furniture ad',
+    category: 'commercial',
+  });
+  assert.equal(calls.length, 4);
+  assert.deepEqual(plain(out.scenes.map((s) => [s.t, s.text])), [
+    [0, 'The describing service would not describe this part, from 0 to 300 seconds.'],
+    [302, 'A sofa on sale.'],
+  ]);
+  assert.equal(out.summary, 'A furniture store ad.');
+  assert.ok(Math.abs(out.costUSD - 0.00212) < 1e-9, String(out.costUSD));
+});
+
+test('a track refused in every segment fails with a plain reason, carrying its cost', async () => {
   const { internals, calls } = load(() => answer('Novita', refusal, 0.00004));
   const failure = await internals
-    .lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.')
+    .describeTrack({ signedUrl: 'https://example.invalid/track', mime: 'video/mp4', title: 'Ad' })
     .catch((e) => e);
-  assert.equal(calls.length, 2);
-  assert.match(failure.message, /refused to describe part of this video twice/);
-  assert.ok(Math.abs(failure.costUSD - 0.00008) < 1e-9);
+  assert.equal(calls.length, 6);
+  assert.match(failure.message, /would not describe this video/);
+  assert.ok(Math.abs(failure.costUSD - 0.00024) < 1e-9);
 });
 
 test('an answer from a host that cannot hear the soundtrack is never used, and not asked again', async () => {
@@ -136,4 +175,33 @@ test('KADE_VIDEO_HOSTS overrides the hearing hosts; a Google model never reaches
     data_collection: 'deny',
     ignore: ['google-ai-studio'],
   });
+});
+
+test('MiMo segments default to five minutes and each look may take ten; the env setting still wins', async () => {
+  /* Novita looks at about 150 frames whatever the length: a 15-minute segment had not answered in
+   * ten minutes on Oct 16 2026, a 5-minute one answered in 51 s. */
+  const mimo = load(() => answer('Novita'));
+  await mimo.internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(mimo.calls[0].config.timeout, 600000);
+  const stubs = {
+    '~/server/services/kadeMediaRoute': require('../services/kadeMediaRoute'),
+    '~/server/services/kadeRealCost': require('../services/kadeRealCost'),
+    '~/models/kadeUsage': { logKadeUsage() {}, KadeUsage: {} },
+    '@librechat/data-schemas': { logger: { warn() {}, info() {} } },
+  };
+  const library = (env) => {
+    const module = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(require.resolve('./kadeReadingRoomDescribe'), 'utf8'), {
+      module,
+      process: { env },
+      require: (id) => stubs[id] || require(id),
+    });
+    return module.exports;
+  };
+  assert.equal(library({}).estimate(1800).segments, 6);
+  assert.equal(
+    library({ KADE_LIBRARY_VISION_MODEL: 'google/gemini-3.8-flash' }).estimate(1800).segments,
+    2,
+  );
+  assert.equal(library({ KADE_DESCRIBE_SEGMENT_SECONDS: '600' }).estimate(1800).segments, 3);
 });

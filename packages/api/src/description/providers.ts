@@ -56,7 +56,8 @@ export const aiStudio = 'google-ai-studio';
  * words, each sent with `only` one host and `zdr`: Novita wrote every word, even four times slowed;
  * DeepInfra and Venice answered "silent" or invented music, and counted the same 3,688 prompt
  * tokens for a 12, 15 and 47 s clip, so they also look at a fixed handful of frames. Xiaomi itself
- * keeps data, so it is never asked (Kade's zero-retention rule).
+ * keeps data, so it is never asked (Kade's zero-retention rule). Use the names OpenRouter reports
+ * as a reply's `provider` ("Novita"), not endpoint tags ("novita/fp8"): `heardBy` compares them.
  */
 export const videoHosts = (): string[] => {
   const chosen = (process.env.KADE_VIDEO_HOSTS ?? '')
@@ -84,6 +85,16 @@ export function strictFormat(model: string = visionModel()): boolean {
 export function heardBy(model: string, provider: string | null | undefined): boolean {
   if (!model.startsWith('xiaomi/mimo-') || !provider) return true;
   return videoHosts().some((host) => host.toLowerCase() === provider.toLowerCase());
+}
+/**
+ * The largest look clip this model's hosts take, in bytes. Novita answered a 27 MB and a 34 MB
+ * clip and refused a 40 MB one with HTTP 400 "invalid request error" (Oct 16 2026; the clip travels
+ * base64 inside the JSON request), so a MiMo clip stays under 32 MB. Natural-speed MiMo sections
+ * (120 s at most) come nowhere near it; a slowed clip would. Other models keep the 40 MB the clips
+ * were sized for.
+ */
+export function clipBytes(model: string = visionModel()): number {
+  return (model.startsWith('xiaomi/mimo-') ? 32 : 40) * 1024 ** 2;
 }
 export const voiceBase = (): string =>
   process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app';
@@ -288,8 +299,8 @@ async function fetchVoices(): Promise<VoiceCatalog> {
 /**
  * The video model declined a clip (a safety filter). Google declines the same clip again, so it is
  * not asked twice; Novita's filter (MiMo) refused 2 of 12 harmless test clips on Oct 16 2026 ("The
- * request was rejected because it was considered high risk") and passed them later, so a MiMo look
- * asks once more.
+ * request was rejected because it was considered high risk") in one burst and passed them later,
+ * so a MiMo look asks up to twice more, `visionLimits.refusalMs` apart.
  */
 export class Refusal extends Error {}
 /**
@@ -982,7 +993,9 @@ const chatURL = 'https://openrouter.ai/api/v1/chat/completions';
  * flex try is asked again on the standard tier, a separate queue, so a Retry-After that flex sent
  * is not waited out. `flexQueueMs` is added to a flex try's deadline for Google's queue: in the
  * Sep 26 bake-off flex's first byte came 19 to 112 s in, and the 420 s second-look deadline was
- * sized for a 48,000-token reply on standard. Tests shorten them.
+ * sized for a 48,000-token reply on standard. `refusalMs` is the wait before a MiMo look that
+ * Novita's filter refused is asked again: its two refusals on Oct 16 2026 came in one burst about
+ * 11 s apart. Tests shorten them.
  */
 export const visionLimits: {
   requestMs: number;
@@ -991,6 +1004,7 @@ export const visionLimits: {
   lookupMs: number;
   fallbackMs: number;
   flexQueueMs: number;
+  refusalMs: number;
 } = {
   requestMs: 300000,
   secondRequestMs: 420000,
@@ -998,6 +1012,7 @@ export const visionLimits: {
   lookupMs: 60000,
   fallbackMs: 1000,
   flexQueueMs: 120000,
+  refusalMs: 20000,
 };
 /**
  * What a failed look request tells the meter, set on the error it throws: OpenRouter's generation
@@ -1441,7 +1456,7 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
     isTimeout(error) || (error instanceof Upstream && [408, 504].includes(error.status ?? 0));
   const retryable = (error: unknown) => {
     /** Novita's filter refuses a harmless clip now and then; Google's refusals stand. */
-    if (error instanceof Refusal) return model.startsWith('xiaomi/mimo-') && ++refusals <= 1;
+    if (error instanceof Refusal) return model.startsWith('xiaomi/mimo-') && ++refusals <= 2;
     if (error instanceof CutOff) return ++cutoffs <= 1;
     /** Flex's queue says nothing of standard's: its timeout leaves standard's one retry. */
     if (timedOut(error)) return lane === 'flex' || ++timeouts <= 1;
@@ -1454,8 +1469,11 @@ export async function analyze(look: Look, signal: AbortSignal, meter: Meter): Pr
    * A failed flex try goes to the standard queue at once; standard's own retries then wait as a
    * look that began on standard would (5 s, then 15 s), since flex's trouble says nothing of it.
    */
-  const wait: Wait = (i, error) =>
-    lane === 'flex' ? visionLimits.fallbackMs : growing(tier === 'flex' ? i - 1 : i, error);
+  const wait: Wait = (i, error) => {
+    /** A refusal is waited out apart from the others: Novita's came in a burst. */
+    if (error instanceof Refusal) return visionLimits.refusalMs;
+    return lane === 'flex' ? visionLimits.fallbackMs : growing(tier === 'flex' ? i - 1 : i, error);
+  };
   await attempt(
     4,
     signal,

@@ -1,12 +1,15 @@
 /* Oct 16 2026 — what share-to-describe sends to OpenRouter (Kade's zero-retention rule).
  * Pictures and documents go only to hosts that keep nothing, DeepInfra first; a video only to the
- * zero-retention host that hears its soundtrack (Novita); a refusal is asked once more and is never
+ * zero-retention host that hears its soundtrack (Novita); a refusal is asked up to twice more and is never
  * a description; a video answered by a host that cannot hear it is not used.
  * Run: node --test api/server/services/kadeDescribe.nodetest.js (no network, no database). */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
+
+/* Novita's refusals are waited out 20 s apart in production; not here. */
+require('./kadeMediaRoute').limits.refusalMs = 0;
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const ZERO_RETENTION = {
@@ -88,7 +91,7 @@ test('a video answered by a host that cannot hear it is not used, and not asked 
   assert.equal(calls.length, 1);
 });
 
-test('a refusal is asked once more, its text is never the description, and both calls are counted', async () => {
+test('a refusal is asked again, its text is never the description, and both calls are counted', async () => {
   const { describe, calls } = load((_body, n) =>
     n === 1
       ? { provider: 'Novita', choices: [refusal], usage: { cost: 0.00004 } }
@@ -100,7 +103,7 @@ test('a refusal is asked once more, its text is never the description, and both 
   assert.ok(Math.abs(result.costUSD - 0.00104) < 1e-9, String(result.costUSD));
 });
 
-test('refused twice: no description at all, and not asked a third time', async () => {
+test('refused three times: no description at all, and not asked a fourth time', async () => {
   const { describe, calls } = load(() => ({
     provider: 'Novita',
     choices: [refusal],
@@ -110,7 +113,7 @@ test('refused twice: no description at all, and not asked a third time', async (
     describe.runDescribe({ buf: Buffer.from('png'), mime: 'image/png' }),
     /came back empty/,
   );
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test('a shared text document is summarized on zero-retention hosts too', async () => {

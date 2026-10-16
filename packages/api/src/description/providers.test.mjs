@@ -9,6 +9,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import {
   analyze,
   billed,
+  clipBytes,
   expectedLook,
   failureClass,
   providerDetail,
@@ -28,7 +29,7 @@ import {
   tierFor,
   videoHosts,
 } from './providers.ts';
-import { MediaError } from './media.ts';
+import { MediaError, videoCeiling } from './media.ts';
 import { folderBytes } from './youtube.ts';
 
 const axios = createRequire(import.meta.url)('axios');
@@ -1504,6 +1505,17 @@ test('providers: MiMo hosts come from KADE_VIDEO_HOSTS (default Novita), and onl
   }
 });
 
+test('providers: MiMo clips stay under 32 MB, the size Novita takes; other models keep 40 MB', () => {
+  /* Novita answered 27 MB and 34 MB clips and refused a 40 MB one with HTTP 400 (Oct 16 2026). */
+  assert.equal(clipBytes('xiaomi/mimo-v2.6-pro'), 32 * 1024 ** 2);
+  assert.equal(clipBytes('xiaomi/mimo-v2.6-flash'), 32 * 1024 ** 2);
+  assert.equal(clipBytes('google/gemini-3.8-flash'), 40 * 1024 ** 2);
+  /* The bitrate ceiling leaves about 2 MB under the limit; the default is the old 38 MB budget. */
+  assert.equal(videoCeiling(60), 600000);
+  assert.equal(videoCeiling(1200), Math.floor((38 * 1024 ** 2 * 8) / 1200 - 48000));
+  assert.equal(videoCeiling(1200, clipBytes('xiaomi/mimo-v2.6-pro')), Math.floor((30 * 1024 ** 2 * 8) / 1200 - 48000));
+});
+
 /**
  * A MiMo look probes its clip (ffprobe) before asking, so these use a real two-second clip made
  * with FFMPEG_PATH / ffmpeg-static and probed with FFPROBE_PATH / ffprobe-static, and skip without them.
@@ -1548,9 +1560,12 @@ async function onMimo(run) {
   const saved = { model: process.env.KADE_DESCRIPTION_MODEL, hosts: process.env.KADE_VIDEO_HOSTS };
   process.env.KADE_DESCRIPTION_MODEL = 'xiaomi/mimo-v2.6-pro';
   delete process.env.KADE_VIDEO_HOSTS;
+  const refusalMs = visionLimits.refusalMs;
+  visionLimits.refusalMs = 20;
   try {
     return await run();
   } finally {
+    visionLimits.refusalMs = refusalMs;
     process.env.KADE_DESCRIPTION_MODEL = saved.model;
     if (saved.hosts === undefined) delete process.env.KADE_VIDEO_HOSTS;
     else process.env.KADE_VIDEO_HOSTS = saved.hosts;
@@ -1581,7 +1596,7 @@ test('providers: a MiMo look goes only to zero-retention Novita, asks for plain 
   }
 });
 
-test('providers: a MiMo look that Novita’s filter refuses is asked once more; the refusal text is never a description', async (t) => {
+test('providers: a MiMo look that Novita’s filter refuses is asked up to twice more, apart; the refusal text is never a description', async (t) => {
   process.env.OPENROUTER_KEY = 'test-key';
   const look = await mimoClip('mimo-refused.mp4');
   if (!look) return t.skip('no ffmpeg/ffprobe');
@@ -1589,20 +1604,21 @@ test('providers: a MiMo look that Novita’s filter refuses is asked once more; 
   const once = fakeAxios((_call, n) => ({ data: n === 1 ? refused : novitaReply() }));
   try {
     const result = await onMimo(() => analyze(look, signal, kept));
-    assert.equal(once.calls.length, 2, 'a flaky refusal is asked once more');
+    assert.equal(once.calls.length, 2, 'a flaky refusal is asked again');
     assert.ok(result.cues.every((cue) => !/high risk/.test(cue.text)));
     assert.equal(entries.length, 2, 'the refused call is still paid for');
   } finally {
     once.restore();
   }
-  const twice = fakeAxios(() => ({ data: refused }));
+  assert.equal(visionLimits.refusalMs, 20000, 'twenty seconds apart outside tests: one burst refused twice');
+  const always = fakeAxios(() => ({ data: refused }));
   try {
     const failure = await onMimo(() => analyze(look, signal, meter)).catch((error) => error);
-    assert.equal(twice.calls.length, 2, 'refused twice: not asked a third time');
+    assert.equal(always.calls.length, 3, 'refused three times: not asked a fourth time');
     assert.ok(failure instanceof Refusal, String(failure));
     assert.equal(providerProblem(failure, 'The video model'), 'The video model declined to describe this scene.');
   } finally {
-    twice.restore();
+    always.restore();
   }
 });
 
