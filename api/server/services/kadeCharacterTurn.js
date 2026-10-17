@@ -46,6 +46,30 @@ function db() {
   return require('~/models');
 }
 
+/* Oct 17 2026: two live checks hung after the reply was written, with no error. Every
+ * database step now logs how long it took and gives up after 30 seconds by name, so a
+ * stall says where it is instead of holding the call open. */
+async function step(name, promise, ms = 30000) {
+  const t0 = Date.now();
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${name} took longer than ${ms / 1000} s`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    logger.info(`[kadeCharacterTurn] step ${name} ${Date.now() - t0} ms`);
+  }
+}
+
+/** Only what a post needs: the full record carries every saved version (megabytes for some). */
+function agentBasics(agentId) {
+  return require('mongoose').models.Agent.findOne({ id: String(agentId) }).select('id name model').lean();
+}
+
 /** The text of a finished turn from the stream's final event. */
 function finalText(d) {
   const msg = d && d.responseMessage;
@@ -151,6 +175,7 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
     });
     if (!stream.ok) throw new Error(`could not follow the turn (${stream.status})`);
     result = await readStream(stream, timeoutMs);
+    logger.info(`[kadeCharacterTurn] step compose-read ${String(result.text || '').length} chars`);
   } finally {
     const convoId = tempConvo || streamId;
     db()
@@ -204,17 +229,20 @@ async function pickConversation({ userId, agent, conversationId, title }) {
  * @returns {Promise<{ conversationId: string, messageId: string, created: boolean }>}
  */
 async function post({ userId, agentId, text, conversationId, title, kind = 'post' }) {
-  const agent = await db().getAgent({ id: agentId });
+  const agent = await step('agent', agentBasics(agentId));
   if (!agent) throw new Error('no such character');
-  const picked = await pickConversation({ userId, agent, conversationId, title });
+  const picked = await step('pick-conversation', pickConversation({ userId, agent, conversationId, title }));
   const Message = require('mongoose').models.Message;
-  const leaf = await Message.findOne({ conversationId: picked.conversationId, user: String(userId) })
-    .sort({ createdAt: -1 })
-    .select('messageId')
-    .lean();
+  const leaf = await step(
+    'leaf',
+    Message.findOne({ conversationId: picked.conversationId, user: String(userId) })
+      .sort({ createdAt: -1 })
+      .select('messageId')
+      .lean(),
+  );
   const messageId = uuidv4();
   const clean = String(text).trim();
-  await db().saveMessage(
+  await step('save-message', db().saveMessage(
     { userId: String(userId), isTemporary: false },
     {
       messageId,
@@ -231,10 +259,13 @@ async function post({ userId, agentId, text, conversationId, title, kind = 'post
       metadata: { kadePost: { kind, at: new Date().toISOString(), agentId } },
     },
     { context: 'kadeCharacterTurn.post' },
-  );
-  await require('mongoose').models.Conversation.updateOne(
-    { conversationId: picked.conversationId, user: String(userId) },
-    { $set: { updatedAt: new Date() } },
+  ));
+  await step(
+    'touch-conversation',
+    require('mongoose').models.Conversation.updateOne(
+      { conversationId: picked.conversationId, user: String(userId) },
+      { $set: { updatedAt: new Date() } },
+    ),
   );
   return { conversationId: picked.conversationId, messageId, created: picked.created, agentName: agent.name || '' };
 }

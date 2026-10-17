@@ -74,7 +74,8 @@ async function personMayAsk(req) {
 
 /** Price of a job of `steps` rounds for this character, at the asker's price. */
 async function priceFor({ agentId, steps, role }) {
-  const agent = await db().getAgent({ id: agentId });
+  /* Only the model: a full agent record carries every saved version. */
+  const agent = await require('mongoose').models.Agent.findOne({ id: String(agentId) }).select('model').lean();
   const model = agent && agent.model;
   const { platformFactor, userPriceFactor } = require('~/server/services/kadeRealCost');
   const factor = platformFactor();
