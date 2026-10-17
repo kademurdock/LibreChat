@@ -650,6 +650,59 @@ const createDiaryTool = ({ logDiary }: { logDiary: DiaryLogFn }): DynamicStructu
   );
 };
 
+/**
+ * KADE SOUL (Oct 16 2026): "our stuff". The api layer passes a `keepMoment`
+ * function (services/kadeSoul.js keepMoment) that checks the quote is really in
+ * the conversation and honours the same memory gates as the diary. Presence of
+ * the function turns the tool on for a chat with a character.
+ */
+export type MomentKeepFn = (params: {
+  quote: string;
+  speaker: 'them' | 'me';
+  kind: 'nickname' | 'joke' | 'first' | 'milestone' | 'line';
+  why?: string;
+}) => Promise<{ ok: boolean; error?: string; duplicate?: boolean }>;
+
+const createMomentTool = ({ keepMoment }: { keepMoment: MomentKeepFn }): DynamicStructuredTool => {
+  return tool(
+    async ({ quote, speaker, kind, why }) => {
+      try {
+        const result = await keepMoment({ quote, speaker, kind, why });
+        if (result.ok) {
+          return result.duplicate ? 'That moment is already kept.' : 'Moment kept.';
+        }
+        return `Moment not kept: ${result.error ?? 'unknown error'}`;
+      } catch (error) {
+        logger.error('Memory Agent failed to keep a moment', error);
+        return 'Error keeping moment';
+      }
+    },
+    {
+      name: 'keep_moment',
+      description:
+        'Keeps one short real quote from this conversation as a shared moment between the user and the character: a joke that landed, a nickname, a first, a milestone, a line that stuck. Exact words only, copied from the chat above.',
+      schema: z.object({
+        quote: z
+          .string()
+          .min(3)
+          .max(200)
+          .describe('The exact words as they were said in the chat above, 3 to 200 characters. Copy them; never paraphrase or invent.'),
+        speaker: z
+          .enum(['them', 'me'])
+          .describe('"them" when the user said it, "me" when the character said it in an earlier reply above.'),
+        kind: z
+          .enum(['nickname', 'joke', 'first', 'milestone', 'line'])
+          .describe('nickname: a name one calls the other. joke: a running bit or a joke that really landed. first: a first time. milestone: a real achievement or turning point. line: a line that stuck.'),
+        why: z
+          .string()
+          .max(160)
+          .optional()
+          .describe('A few plain words on why it matters, like a friend would remember it.'),
+      }),
+    },
+  );
+};
+
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
   constructor(callback?: ToolEndCallback) {
@@ -716,6 +769,7 @@ async function processMemoryCore({
   user,
   forceAgentScope = false,
   logDiary,
+  keepMoment,
   existingBuckets = [],
   actualUserEvidence,
   actualAssistantEvidence,
@@ -742,6 +796,8 @@ async function processMemoryCore({
   forceAgentScope?: boolean;
   /** KADE diary (Aug 7 2026): when provided, the keeper also gets `log_diary` for episodic archive entries. */
   logDiary?: DiaryLogFn;
+  /** KADE soul (Oct 16 2026): when provided, the keeper also gets `keep_moment` for real quotes. */
+  keepMoment?: MomentKeepFn;
   existingBuckets?: MemoryBucket[];
   sourceAt?: string | Date;
   actualUserEvidence?: string;
@@ -997,6 +1053,7 @@ ${memory ?? 'No existing memories'}`;
           memoryTool,
           deleteMemoryTool,
           ...(logDiary ? [createDiaryTool({ logDiary })] : []),
+          ...(keepMoment && agentId && !forceAgentScope ? [createMomentTool({ keepMoment })] : []),
           ...(peopleTool ? [peopleTool] : []),
           ...(resetTool ? [resetTool] : []),
         ],
@@ -1054,6 +1111,7 @@ export async function createMemoryProcessor({
   streamId = null,
   user,
   logDiary,
+  keepMoment,
   sourceAt = new Date(),
   currentOffRecord = false,
 }: {
@@ -1069,6 +1127,8 @@ export async function createMemoryProcessor({
   user?: IUser;
   /** KADE diary (Aug 7 2026): api-layer write function; presence turns the diary lane on for this run. */
   logDiary?: DiaryLogFn;
+  /** KADE soul (Oct 16 2026): api-layer moment writer; presence turns keep_moment on for this run. */
+  keepMoment?: MomentKeepFn;
   sourceAt?: string | Date;
   currentOffRecord?: boolean;
 }): Promise<
@@ -1151,6 +1211,12 @@ export async function createMemoryProcessor({
       '\n\nSELF-CANON (scope "self") — THE CHARACTER\'S OWN LIFE, WHICH IS REAL AND NOT A CHILDHOOD: when the CHARACTER (not the user) states something TRUE of itself — a thing that actually happened to it on this platform ("a render of mine sat 98 minutes"), a standing position in its own voice ("I don\'t buy the alpha-dog stuff"), a taste or habit it claims — file it with scope "self" under a snake_case key naming it, letters and underscores only (render_hung_ninety_eight_minutes, position_alpha_dog), one card per fact, one plain sentence, absolute dates. Invented childhood scenes (an aunt, a first car, a concert at twelve) are NOT canon — let them pass; a written background is not a memory. Once filed it is shown to the character in every conversation with anyone, so public positions and actual platform history stay consistent. The canon block above lists what already exists — if the claim is already there, file nothing; if the character merely contradicted a prior statement, file nothing. If it explicitly revised a general position because of new evidence and explained the change, update the SAME key, keeping the prior position and reason for revision briefly. Never file anything about the USER with scope "self"; never file private opinions about a user or their family, private feelings or promises there (promises have their own rule). General positions, tastes and verified platform events belong here; relationship-specific views stay in the private take. A passing figure of speech ("girl, I would have died") is not autobiography. ⚠️ ONLY EVER FROM WHAT THE CHARACTER ACTUALLY SAID in the chat above — an assistant turn, paraphrased. Never anticipate or invent a story from the user\'s question: you see the chat up to the user\'s latest message, so the character\'s answer to it is NOT in front of you yet; it will be next turn, and that is when to file. Receipt: asked only "what was your first concert", a keeper invented a county-fair story and filed it as canon while the character was telling a different one. A self card whose words do not appear in the character\'s own turns is refused.';
   }
 
+  /** KADE soul (Oct 16 2026): "our stuff". Appended in code beside the tool, like the logbook rule. */
+  if (keepMoment && agentId) {
+    finalInstructions +=
+      '\n\nOUR STUFF (keep_moment): friends remember the exact words of a few moments. When something in the chat above is worth keeping word for word, keep it with keep_moment: a joke that really landed or a running bit, a nickname one of you calls the other, a first, a real milestone, or a line that stuck with both of you. Copy the quote exactly from the chat (3 to 200 characters); "them" is the user, "me" is the character in an earlier reply. Most turns keep nothing, and one moment a conversation is plenty. Never keep task chatter, tool talk, questions about memory, in-game fiction, or anything sad they would not want quoted back. A moment is a quote; facts about their life still go to cards and the logbook.';
+  }
+
   return [
     withoutKeys,
     async function (
@@ -1216,6 +1282,7 @@ export async function createMemoryProcessor({
           deleteMemory: memoryMethods.deleteMemory,
           user,
           logDiary,
+          keepMoment,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);

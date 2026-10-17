@@ -532,7 +532,11 @@ async function getRelationshipSummaryBlock(userId, agentId) {
       `\n${s}` +
       /* Part 125: she notices time. One line, once, when it has been a while;
        * the persona decides whether to say anything about it. */
-      (daysSince >= 2 ? `\n(It has been ${daysSince} days since you two last talked.)` : '') +
+      /* Oct 16 2026: the soul tail now says it to the minute from the last real
+       * turn; this nightly count could be a day or two stale, so it steps aside. */
+      (daysSince >= 2 && (process.env.KADE_SOUL === '0' || process.env.KADE_SOUL_TIME === '0')
+        ? `\n(It has been ${daysSince} days since you two last talked.)`
+        : '') +
       /* Part 124: HER TAKE rides beside the summary. Private to the character;
        * the frame says how to hold it — a spine for "what do you think", not a
        * speech. Empty take, nothing added. */

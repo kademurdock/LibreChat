@@ -753,6 +753,36 @@ class AgentClient extends BaseClient {
       }
     }
 
+    /** KADE SOUL (Oct 16 2026): the time of day where the person is and how long
+     * since the two of them talked, the mood the character carried out of last
+     * time, and a few real moments ("our stuff") to call back. Per turn, so it
+     * rides the tail; the head stays byte-stable. Same gates as memory (see
+     * services/kadeSoul.js). Kill: KADE_SOUL=0. */
+    this._kadeSoulRecalled = [];
+    if (withoutKeys !== undefined && this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)) {
+      try {
+        const { getSoulTailBlock } = require('~/server/services/kadeSoul');
+        const latestUserText =
+          typeof this.options.req?.body?.text === 'string'
+            ? this.options.req.body.text
+            : [...orderedMessages].reverse().find(message => message.isCreatedByUser === true)?.text || '';
+        const { block: soulBlock, recalledIds } = await getSoulTailBlock({
+          userId: String(this.options.req.user.id),
+          agentId: this.options.agent.id,
+          req: this.options.req,
+          conversationId: this.conversationId,
+          userText: latestUserText,
+          offRecord: this.memoryOffRecord,
+        });
+        this._kadeSoulRecalled = recalledIds;
+        if (soulBlock) {
+          volatileTurnContext = [volatileTurnContext, soulBlock].filter(Boolean).join('\n\n');
+        }
+      } catch (soulError) {
+        logger.warn('[AgentClient] soul tail failed (non-fatal):', soulError.message);
+      }
+    }
+
     /** KADE CANON (Part 124, Sep 4 2026): the character's own life — what it has
      * said about itself to anyone — rides the STABLE head for every person it
      * talks to. Lives under a fixed owner id (see packages/api memory.ts,
@@ -1261,6 +1291,24 @@ class AgentClient extends BaseClient {
         }
         return result;
       },
+      /** KADE SOUL (Oct 16 2026): "our stuff". The quote is checked against the
+       * same chat window the keeper read (runMemory stores it), so a keeper can
+       * only keep words that were really said. */
+      keepMoment: activeAgentId
+        ? async ({ quote, speaker, kind, why }) => {
+            const { keepMoment } = require('~/server/services/kadeSoul');
+            return keepMoment({
+              userId,
+              agentId: activeAgentId,
+              quote,
+              speaker,
+              kind,
+              why,
+              conversationId,
+              evidence: this._kadeKeeperEvidence || '',
+            });
+          }
+        : undefined,
     });
 
     this.processMemory = processMemory;
@@ -1420,6 +1468,8 @@ class AgentClient extends BaseClient {
         this.stripContextReplay(this.filterImageUrls(msg)),
       );
       const bufferString = getBufferString(filteredMessages);
+      /* KADE SOUL: keep_moment checks its quote against exactly this window. */
+      this._kadeKeeperEvidence = bufferString;
       const configuredMaxInputTokens = Number.isFinite(memoryConfig?.maxInputTokens)
         ? Math.floor(memoryConfig.maxInputTokens)
         : undefined;
@@ -1583,6 +1633,30 @@ class AgentClient extends BaseClient {
       });
     } catch (e) {
       logger.warn('[kade/promise-guard] skipped:', e.message);
+    }
+    /* KADE SOUL (Oct 16 2026): the reply's own voice directions become the mood
+     * the character carries into next time, the turn's time is stamped, and any
+     * offered moment it actually called back rests for a few days. After the
+     * reply, never waited on. */
+    try {
+      if (this.options?.agent?.id && this.options?.req?.user?.id && !isEphemeralAgentId(this.options.agent.id)) {
+        const replyText = (Array.isArray(completion) ? completion : [])
+          .filter((part) => part && part.type === ContentTypes.TEXT && typeof part.text === 'string')
+          .map((part) => part.text)
+          .join('\n');
+        const { noteAfterReply } = require('~/server/services/kadeSoul');
+        noteAfterReply({
+          userId: String(this.options.req.user.id),
+          agentId: this.options.agent.id,
+          req: this.options.req,
+          conversationId: this.conversationId,
+          text: replyText,
+          recalledIds: this._kadeSoulRecalled || [],
+          offRecord: this.memoryOffRecord,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('[kadeSoul] after-reply hook skipped:', e.message);
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };

@@ -2804,7 +2804,9 @@ router.get('/call-memories', async (req, res) => {
     const caller = await getUserById(String(uid), 'personalization');
     const memoryAllowed = !!caller && caller.personalization?.memories !== false;
     const { withoutKeys } = memoryAllowed ? await getFormattedMemories({ userId: uid, agentId }) : {};
-    let text = (withoutKeys || '').slice(0, 6000);
+    /* Oct 16 2026: newest kept. A front slice of this oldest-first list cut the
+     * newest things a person had shared off the phone call's memory. */
+    let text = require('~/server/utils/kadeClipNewest').clipKeepNewest(withoutKeys || '', 6000);
     /* DREAMING: append this relationship's rolling EPISODIC summary so calls
      * get the same "what's been going on lately" continuity text chat gets.
      * Fail-soft; empty when there's no summary yet. */

@@ -10,6 +10,7 @@
  */
 const { getFormattedMemories } = require('~/models');
 const { CANON_USER_ID, CANON_HEADER } = require('@librechat/api');
+const { clipKeepNewest } = require('~/server/utils/kadeClipNewest');
 
 const CANON_MAX_CHARS = parseInt(process.env.KADE_CANON_MAX_CHARS || '4000', 10);
 
@@ -18,7 +19,9 @@ async function getCanonBlock(agentId) {
   const { withoutKeys } = await getFormattedMemories({ userId: CANON_USER_ID, agentId });
   const body = String(withoutKeys || '').trim();
   if (!body) return '';
-  const clipped = body.length > CANON_MAX_CHARS ? body.slice(0, CANON_MAX_CHARS) + '\n(…canon clipped; retire old cards)' : body;
+  /* Oct 16 2026: cards come oldest first, so the old front slice dropped the
+   * NEWEST things the character had said about itself. Keep the newest. */
+  const clipped = clipKeepNewest(body, CANON_MAX_CHARS, '(…older canon left out to fit; retire old cards)');
   return `${CANON_HEADER}\n${clipped}`;
 }
 
