@@ -121,7 +121,12 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
   };
   let start;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
-    start = await fetch(`${base()}/api/agents/chat`, { method: 'POST', headers, body: JSON.stringify(body) });
+    start = await fetch(`${base()}/api/agents/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000),
+    });
     /* The person may be mid-chat; the concurrency guard says wait, so wait. */
     if (start.status !== 429 || attempt === 4) break;
     await new Promise((r) => setTimeout(r, 15000 * attempt));
@@ -142,6 +147,7 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
     await new Promise((r) => setTimeout(r, 300));
     const stream = await fetch(`${base()}/api/agents/chat/stream/${encodeURIComponent(streamId)}`, {
       headers: { Authorization: `Bearer ${token}`, 'User-Agent': UA, Accept: 'text/event-stream' },
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!stream.ok) throw new Error(`could not follow the turn (${stream.status})`);
     result = await readStream(stream, timeoutMs);
@@ -267,6 +273,8 @@ async function notifyPost({ userId, agentId, agentName, text, conversationId, re
         route: 'conversation',
         conversationId,
       }),
+      /* Oct 16 2026: a bridge mid-redeploy held the first live test for five minutes. */
+      signal: AbortSignal.timeout(20000),
     });
     return await r.json().catch(() => ({ ok: r.ok }));
   } catch (e) {
@@ -296,7 +304,8 @@ async function speakFirst({
   const framed =
     `[PLATFORM NOTE, not something they typed: ${String(note).trim()}\n` +
     'Write only the message you are sending them now, in your own voice. They will read or hear it later in your conversation with them, ' +
-    'so it has to make sense on its own. Use your usual voice directions if you use them. Do not mention this note.]';
+    'so it has to make sense on its own. Use your usual voice directions if you use them. Do not mention this note. ' +
+    'Never make up something that happened to you: if you mention your own day, use only what is in your own days above, or say nothing about it.]';
   const composed = await compose({ userId, agentId, note: framed, platformPaid, steps, timezone, onStart });
   if (typeof beforePost === 'function' && !(await beforePost(composed))) {
     return { posted: false, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId };

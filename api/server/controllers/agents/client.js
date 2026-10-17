@@ -974,6 +974,21 @@ class AgentClient extends BaseClient {
         } catch (_e) {
           /* a worldless turn beats a broken one */
         }
+        /** KADE Oct 16 2026 — A LIFE OF THEIR OWN: the character's last two true
+         * days (news and weather where it lives, what it is following) and the
+         * other characters' one-liners, written nightly by
+         * services/kadeCharacterDays.js. The same for everyone it talks to, so it
+         * is one consistent someone; changes once a night, so the head caches.
+         * Kill: KADE_CHARACTER_DAYS=0. */
+        try {
+          const { getCharacterLifeBlock } = require('~/server/services/kadeCharacterDays');
+          const lifeBlock = isBareProbe ? '' : await getCharacterLifeBlock(agentId);
+          if (lifeBlock) {
+            headParts.push(lifeBlock);
+          }
+        } catch (_e) {
+          /* a day-less turn beats a broken one */
+        }
         /** KADE Aug 6 2026 — WHISPER MODE (idea 13): night-quiet delivery,
          * a user toggle riding the request body (createPayload, same pattern
          * as userLocation). Line is byte-stable while the toggle is on. */

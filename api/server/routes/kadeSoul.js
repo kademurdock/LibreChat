@@ -83,7 +83,20 @@ router.get('/:agentId', requireJwtAuth, async (req, res) => {
   if (!AGENT_ID.test(agentId)) return res.status(400).json({ error: 'not a character id' });
   try {
     const snap = await soul.soulSnapshot({ userId: String(req.user.id), agentId });
-    return res.json(snap);
+    /* The character's own public days (the same for everyone it talks to). */
+    let days = [];
+    try {
+      days = await require('mongoose')
+        .connection.collection('kadecharacterdays')
+        .find({ agentId, kind: 'day' })
+        .sort({ day: -1 })
+        .limit(3)
+        .project({ _id: 0, day: 1, text: 1, following: 1, home: 1 })
+        .toArray();
+    } catch (_) {
+      days = [];
+    }
+    return res.json({ ...snap, days });
   } catch (e) {
     logger.warn('[kadeSoul] snapshot failed: ' + e.message);
     return res.status(500).json({ error: 'could not read this right now' });

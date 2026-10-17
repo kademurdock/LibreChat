@@ -98,6 +98,24 @@ router.post('/summary', async (req, res) => {
   }
 });
 
+/* KADE Oct 16 2026: each character's nightly day of its own (services/kadeCharacterDays.js).
+ * Body (optional): { day: 'YYYY-MM-DD', agentIds: [...] } to write one day or one character. */
+router.post('/character-days', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { writeDays } = require('~/server/services/kadeCharacterDays');
+    const b = req.body || {};
+    const out = await writeDays({
+      ...(typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) ? { day: b.day } : {}),
+      ...(Array.isArray(b.agentIds) ? { agentIds: b.agentIds.map(String).slice(0, 20) } : {}),
+    });
+    res.json(out);
+  } catch (e) {
+    logger.error('[kadeClock] character days failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.post('/consolidation', async (req, res) => {
   if (!authed(req, res)) return;
   try {
