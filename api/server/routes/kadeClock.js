@@ -117,6 +117,35 @@ router.post('/character-days', async (req, res) => {
   }
 });
 
+/* KADE Oct 17 2026: numbers only, for the session brief — is the soul layer working on real
+ * traffic? Moments kept, moods carried, background tasks by status, approvals waiting. */
+router.get('/soul-stats', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const db = require('mongoose').connection;
+    const day = new Date(Date.now() - 86400000);
+    const [moments, moments24h, moods, tasks, approvalsWaiting, days24h] = await Promise.all([
+      db.collection('kademoments').countDocuments({}),
+      db.collection('kademoments').countDocuments({ createdAt: { $gte: day } }),
+      db.collection('kadesoulstates').countDocuments({ userId: { $ne: '*' }, mood: { $exists: true } }),
+      db.collection('kadetasks').aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]).toArray(),
+      db.collection('kadeapprovals').countDocuments({ status: 'pending', expiresAt: { $gt: new Date() } }),
+      db.collection('kadecharacterdays').countDocuments({ kind: 'day', createdAt: { $gte: day } }),
+    ]);
+    res.json({
+      ok: true,
+      moments,
+      moments24h,
+      moods,
+      tasks: Object.fromEntries(tasks.map((t) => [t._id, t.n])),
+      approvalsWaiting,
+      days24h,
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 router.get('/character-days', async (req, res) => {
   if (!authed(req, res)) return;
   try {
