@@ -477,9 +477,10 @@ test('keeperGate: asks all three and skips; KADE_JEV_KEEPER_GATE=0 keeps the rea
   const spy = async (state, questions) => { sawQuestions = Object.keys(questions); return quiet(); };
 
   const on = await withEnv(ON, () => J.keeperGate(msgs, { ask: spy }));
-  assert.deepStrictEqual(sawQuestions, ['card', 'log', 'promise']);
+  /* Oct 17 2026: the fourth question (moments) is asked; an unreadable answer to it is ignored. */
+  assert.deepStrictEqual(sawQuestions, ['card', 'log', 'promise', 'moment']);
   assert.strictEqual(on.skip, true);
-  assert.deepStrictEqual(on.scores, { card: 0.04, log: 0.07, promise: 0.02 });
+  assert.deepStrictEqual(on.scores, { card: 0.04, log: 0.07, promise: 0.02, moment: undefined });
 
   const gated = await withEnv({ ...ON, KADE_JEV_KEEPER_GATE: '0' }, () => J.keeperGate(msgs, { ask: quiet }));
   assert.strictEqual(gated.skip, false, 'gate off must never skip');
@@ -1207,4 +1208,16 @@ test('sameReports: an explicit window is still available for a deliberate sweep'
     await J.sameReports(rows, { window: 2, ask: async () => { asked++; return { answers: { same: { noul: 0.01 } } }; }, concurrency: 1 });
   });
   assert.strictEqual(asked, 2 + 2 + 2 + 1);
+});
+
+test('keeperGate: a nickname that is none of card, log or promise still lets the keeper run (moments)', async () => {
+  const msgs = [{ role: 'user', content: 'you are officially my Chaos Biscuit' }];
+  const nick = async () => ({ answers: { card: { noul: 0.18 }, log: { noul: 0.08 }, promise: { noul: 0.05 }, moment: { noul: 0.86 } } });
+  const out = await withEnv(ON, () => J.keeperGate(msgs, { ask: nick }));
+  assert.strictEqual(out.skip, false);
+  assert.strictEqual(out.scores.moment, 0.86);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.1, promise: 0.1, moment: 0.2 }, 0.3), true);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.1, promise: 0.1, moment: 0.9 }, 0.3), false);
+  const off = await withEnv({ ...ON, KADE_SOUL_MOMENTS: '0' }, () => J.keeperGate(msgs, { ask: async (st, q) => { assert.ok(!('moment' in q)); return nick(); } }));
+  assert.strictEqual(off.skip, true, 'moments off: the old three-question rule');
 });

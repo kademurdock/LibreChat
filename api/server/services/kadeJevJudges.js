@@ -894,6 +894,23 @@ const KEEPER_PROMISE_Q = {
   },
 };
 
+/* Oct 17 2026 (the soul layer): the keeper now keeps short real quotes (keep_moment, services/kadeSoul.js).
+ * A nickname or a joke that lands is none of card, log or promise, so the three questions above skipped
+ * the keeper on exactly those turns (first live check: "you are officially my Chaos Biscuit" read
+ * card 0.18, log 0.08, promise 0.05 and was skipped). The fourth question lets such a turn through. */
+const KEEPER_MOMENT_Q = {
+  type: 'noul',
+  instructions:
+    'A memory keeper also keeps a few exact quotes a friend would remember. Does `latestUser` (with `earlier` and `latestAssistant` for context) contain words worth keeping exactly as said?',
+  criteria: {
+    true: 'A nickname one of them gives the other, a joke or running bit that clearly landed with both, a first ("first time I..."), a real milestone or achievement, or a line that plainly mattered to the person.',
+    false: 'Ordinary chatter, questions, requests, task or work talk, plain facts, events inside a game or roleplay, sad or private things they would not want quoted back, and anything said off the record.',
+  },
+};
+function momentsAsked() {
+  return process.env.KADE_SOUL !== '0' && process.env.KADE_SOUL_MOMENTS !== '0';
+}
+
 function messageText(m) {
   const c = m && m.content;
   if (typeof c === 'string') return c;
@@ -994,11 +1011,14 @@ function keeperFloor() {
 /** Pure, so a test can hold the rule still: may the keeper be skipped? */
 function keeperGateDecide(v, floor = keeperFloor()) {
   if (!v) return false;
-  const { card, log, promise } = v;
+  const { card, log, promise, moment } = v;
   for (const p of [card, log, promise]) {
     if (typeof p !== 'number' || !(p >= 0 && p <= 1)) return false;
   }
-  return card < floor && log < floor && promise < floor;
+  /* moment is optional (older callers, moments switched off); when it is there it can only keep the keeper running. */
+  if (moment !== undefined && moment !== null && (typeof moment !== 'number' || !(moment >= 0 && moment <= 1))) return false;
+  const momentLow = typeof moment === 'number' ? moment < floor : true;
+  return card < floor && log < floor && promise < floor && momentLow;
 }
 
 /**
@@ -1012,15 +1032,15 @@ async function keeperGate(messages, { ask = jev.ask, timeoutMs } = {}) {
     if (!jev.enabled('KADE_JEV_KEEPER_SHADOW')) return { skip: false, scores: null };
     const state = keeperState(messages);
     if (!state) return { skip: false, scores: null };
-    const { answers } = await ask(
-      state,
-      { card: KEEPER_CARD_Q, log: KEEPER_LOG_Q, promise: KEEPER_PROMISE_Q },
-      ms,
-    );
+    const questions = { card: KEEPER_CARD_Q, log: KEEPER_LOG_Q, promise: KEEPER_PROMISE_Q };
+    if (momentsAsked()) questions.moment = KEEPER_MOMENT_Q;
+    const { answers } = await ask(state, questions, ms);
     const scores = {
       card: jev.noulOf(answers, 'card'),
       log: jev.noulOf(answers, 'log'),
       promise: jev.noulOf(answers, 'promise'),
+      /* An unreadable moment answer is ignored, never a reason to fail the other three. */
+      ...(questions.moment ? { moment: (() => { try { return jev.noulOf(answers, 'moment'); } catch (_) { return undefined; } })() } : {}),
     };
     /* The gate may be off while the reading still happens: that is the shadow,
      * and it is what keeps producing lines to audit. */
@@ -1045,7 +1065,8 @@ function keeperGateLog(scores, { skipped, attachments, logged, failed, messageId
     if (typeof log !== 'function') return;
     const wrote = skipped ? 'SKIPPED' : keeperWrote({ attachments, logged, failed });
     const n = scores
-      ? `card=${scores.card.toFixed(2)} log=${scores.log.toFixed(2)} promise=${scores.promise.toFixed(2)}`
+      ? `card=${scores.card.toFixed(2)} log=${scores.log.toFixed(2)} promise=${scores.promise.toFixed(2)}` +
+        (typeof scores.moment === 'number' ? ` moment=${scores.moment.toFixed(2)}` : '')
       : 'card=? log=? promise=? (jev silent)';
     log(`[kadeJev][keeper-gate] ${n} floor=${keeperFloor().toFixed(2)} keeper=${wrote} msg=${messageId || '?'}`);
   } catch (_) {
