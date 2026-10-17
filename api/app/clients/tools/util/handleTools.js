@@ -383,6 +383,7 @@ const loadTools = async ({
       userId: kadeActingUserId,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+      conversationId: options.req?.body?.conversationId,
     },
     /** DRIVE-PC (Aug 14 2026): the NVDA agent lane, owner-gated INSIDE the
      * tool — it checks the authenticated seat, the ADMIN role, AND the

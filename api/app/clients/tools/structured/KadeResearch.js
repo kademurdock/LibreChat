@@ -60,6 +60,8 @@ class KadeResearch extends Tool {
     this.userId = fields.userId;
     this.agentId = fields.agentId;
     this.agentName = fields.agentName;
+    /* Oct 16 2026: the finished report comes back into THIS conversation as the character's message. */
+    this.conversationId = fields.conversationId;
     this.name = 'kade_research';
     this.description =
       'Run REAL background research on a question: many web searches, many sources read and cross-checked, then a ' +
@@ -116,6 +118,7 @@ class KadeResearch extends Tool {
         depth: depth || 'standard',
         focus: focus || undefined,
         include_personal_notes: include_personal_notes === true,
+        conversationId: this.conversationId && this.conversationId !== 'new' ? String(this.conversationId) : undefined,
       },
       { headers: this._hdrs(), timeout: 15000 },
     );
