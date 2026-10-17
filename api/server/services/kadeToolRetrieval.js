@@ -153,6 +153,10 @@ const ALIASES = {
     /\b(living memory|project memory|the (folder|repo|record)|help (doc|manual|page)|how does (the platform|the site|kade.?ai)|what did (forge|the last session)|project status)\b/i,
   ],
   kade_errand: [/\b(errand)\b/i],
+  /* Oct 16 2026: background tasks ride when the person hands off a job to come back to. */
+  kade_task: [
+    /\b(?:in the background|background (?:task|job)|get back to me|let me know (?:what you find|when you(?:'re| are)? done)|come back (?:to me )?with|take your time|go (?:work on|look into|dig into|figure out)|work on (?:it|that|this) and|look into (?:it|that|this) (?:and|for me)|while i(?:'m| am) (?:gone|away|busy|asleep|at work)|ping me when|report back|(?:my|the|that|your) (?:background )?tasks?|(?:the|that) job you|how(?:'s| is) (?:the|that|my) (?:task|job) (?:going|coming)|cancel (?:the|that|my) (?:task|job))\b/i,
+  ],
   kade_council: [/\b(council|advisors?)\b/i],
   kade_drive_pc: [
     /\b(my pc|my computer|my laptop|nvda|screen reader|listen run|drive (my|the) (pc|computer))\b/i,

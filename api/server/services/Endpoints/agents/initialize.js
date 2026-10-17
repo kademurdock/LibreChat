@@ -182,6 +182,9 @@ function createToolLoader(
        * and dropped even from an agent that lists it itself, so its description (paying Kade
        * back) never reaches that model. If the check itself fails, the tool is left out. */
       'kade_funding_balance',
+      /* KADE 2026-10-16: background tasks to every seat at her word ("you and adult family"),
+       * adults only inside the tool; it attaches per turn by keyword (kadeToolRetrieval ALIASES). */
+      'kade_task',
     ];
     let fundingHidden = true;
     try {

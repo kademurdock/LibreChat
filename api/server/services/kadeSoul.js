@@ -348,15 +348,21 @@ async function ensureIndexes() {
   }
 }
 
-/** May this turn read or write soul state for this person? */
-async function soulAllowed({ userId, agentId, req, conversationId, offRecord }) {
+/**
+ * May this turn read or write soul state for this person? A hidden run (the
+ * character speaking first, services/kadeHiddenRun.js) runs in a throwaway
+ * temporary chat on the person's own seat: it may READ, so the message carries
+ * the mood and the time, and never WRITES.
+ */
+async function soulAllowed({ userId, agentId, req, conversationId, offRecord, write = false }) {
   if (process.env.KADE_SOUL === '0' || !userId || !agentId || String(agentId).startsWith('ephemeral')) return false;
   if (offRecord) return false;
   if (req) {
     const { ownsPrivateMemory } = require('@librechat/api');
     if (!ownsPrivateMemory(req)) return false;
-    if (req.kadeHiddenRun === true) return false;
-    if (req.body && req.body.isTemporary) return false;
+    const hidden = req.kadeHiddenRun === true;
+    if (hidden && write) return false;
+    if (!hidden && req.body && req.body.isTemporary) return false;
   }
   const ds = require('@librechat/data-schemas');
   if (conversationId && typeof ds.getConversationMemoryPolicy === 'function') {
@@ -477,7 +483,7 @@ async function getSoulTailBlock({ userId, agentId, req, conversationId, userText
 
 async function noteAfterReply({ userId, agentId, req, conversationId, text, recalledIds = [], offRecord, now = new Date() }) {
   try {
-    if (!(await soulAllowed({ userId, agentId, req, conversationId, offRecord }))) return { ok: false, skipped: true };
+    if (!(await soulAllowed({ userId, agentId, req, conversationId, offRecord, write: true }))) return { ok: false, skipped: true };
     await ensureIndexes();
     const feeling = on('KADE_SOUL_MOOD') ? replyFeeling(text) : null;
     const { row, base } = await readState(userId, agentId);

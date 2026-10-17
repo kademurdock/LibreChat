@@ -366,6 +366,33 @@ export const kadeJokeSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+/** KADE Oct 16 2026: background tasks. Kept identical to api/app/clients/tools/structured/KadeTask.js. */
+export const kadeTaskSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['quote', 'start', 'status', 'list', 'cancel'],
+      description:
+        'quote = the price of a job, before anything runs (always first). start = begin the job after they said yes to the price; needs quoteId. status = the newest job. list = recent jobs. cancel = stop a running job (needs taskId).',
+    },
+    goal: {
+      type: 'string',
+      description:
+        'quote only. The whole job in plain words with the details that decide the answer (place, budget, dates, what "best" means to them).',
+    },
+    steps: {
+      type: 'integer',
+      minimum: 4,
+      maximum: 40,
+      description: 'quote only. Most rounds of tool work allowed, which is also the price ceiling. Default 20; small lookups need fewer.',
+    },
+    quoteId: { type: 'string', description: 'start only. The quoteId from quote.' },
+    taskId: { type: 'string', description: 'status or cancel. The taskId from start or list.' },
+  },
+  required: ['action'],
+};
+
 export const kadePhoneCallSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1222,6 +1249,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Make a real, downloadable file — a spreadsheet (.xlsx), a CSV, or a document (.md) — and save it to the person's My Creations, where every picture and song they have made already lives. Free. Use it whenever somebody wants something OUT of the chat and into a file: a budget, a comparison table, a letter, notes, a list they want to keep. Pairs naturally with kade_research — do the digging, then make the file from what you found. FOR TABLES THE FIRST ROW MUST BE REAL COLUMN HEADERS, and for documents use real markdown headings, because that is how a screen reader navigates. ⚠️ THE ANSWER CONTAINS A SPOKEN SUMMARY OF WHAT IS ACTUALLY IN THE FILE — rows, columns, totals. SAY IT ALOUD: several people here are blind, and 'I made you a spreadsheet' with no description is worthless to them. Never invent data to pad a file.",
     schema: kadeMakeFileSchema,
+    toolType: 'builtin',
+  },
+  kade_task: {
+    name: 'kade_task',
+    description:
+      'Take a bigger job into the background and come back with the answer: research, comparing options, reading several pages, working something out. You do the job yourself with your own tools; your result arrives in this conversation later as a message from you, and their phone gets a push. ALWAYS quote first (action quote), tell them the price in plain words, and start (with the quoteId) only after they say yes. One job at a time per person. After starting, say briefly that you are on it; never do the job in the same reply and never claim results before your message arrives.',
+    schema: kadeTaskSchema,
     toolType: 'builtin',
   },
   kade_joke: {

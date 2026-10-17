@@ -10,6 +10,7 @@ const {
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const { resolveKadeOnBehalfOf } = require('~/server/services/kadeOnBehalfOf');
+const { markHiddenRun } = require('~/server/services/kadeHiddenRun');
 const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { getRoleByName } = require('~/models');
@@ -33,6 +34,8 @@ router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 /** KADE session 23: voice-lane identity threading — see services/kadeOnBehalfOf. */
 router.use(resolveKadeOnBehalfOf);
+/** KADE Oct 16 2026: server-built character turns — see services/kadeHiddenRun. */
+router.use(markHiddenRun);
 router.use(buildEndpointOption);
 
 const controller = async (req, res, next) => {

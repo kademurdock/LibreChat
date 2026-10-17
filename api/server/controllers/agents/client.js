@@ -98,6 +98,16 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
+/** KADE Oct 16 2026: a hidden background run may ask for more tool rounds
+ * (each round is about two graph steps), never past the yaml maximum. */
+function kadeStepLimit(resolved, stepBudget, maxRecursionLimit) {
+  if (!Number.isFinite(stepBudget) || stepBudget <= 0) {
+    return resolved;
+  }
+  const wanted = Math.max(resolved, stepBudget * 2 + 2);
+  return Number.isFinite(maxRecursionLimit) && maxRecursionLimit > 0 ? Math.min(wanted, maxRecursionLimit) : wanted;
+}
+
 /**
  * The voice/phone lane's replayed-transcript envelope, as written by
  * inworld-tts-proxy's `composeTextWithHistory`. Matched by its own opening and
@@ -1808,8 +1818,11 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         collectedUsage,
         model: model ?? this.model ?? this.options.agent.model_parameters.model,
-        /* KADE Part 291: voice rows stay apart from typed chat on the funding page. */
-        context: this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
+        /* KADE Part 291: voice rows stay apart from typed chat on the funding page.
+         * Oct 16 2026: a character texting first is the platform's own outreach. */
+        context: this.options.req?.kadePlatformPaid && context === 'message'
+          ? 'outreach'
+          : this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
         messageId: this.responseMessageId,
         balance,
         transactions,
@@ -1963,7 +1976,11 @@ class AgentClient extends BaseClient {
           },
           user: createSafeUser(this.options.req.user),
         },
-        recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
+        recursionLimit: kadeStepLimit(
+          resolveRecursionLimit(agentsEConfig, this.options.agent),
+          this.options.req?.kadeStepBudget,
+          agentsEConfig?.maxRecursionLimit,
+        ),
         signal: abortController.signal,
         streamMode: 'values',
         version: 'v2',
@@ -2171,7 +2188,9 @@ class AgentClient extends BaseClient {
         //   messages = addCacheControl(messages);
         // }
 
-        if (this.processMemory) {
+        /* KADE Oct 16 2026: a hidden run (services/kadeHiddenRun.js) starts from
+         * a platform note, not from anything the person said: no keeper. */
+        if (this.processMemory && this.options.req?.kadeHiddenRun !== true) {
           memoryPromise = this.runMemory(memoryMessages);
           this.memoryResult = memoryPromise;
         }

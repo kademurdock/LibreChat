@@ -147,6 +147,11 @@ const startServer = async () => {
     startNudgeSweep();
     startMemorySummarySweep(); // KADE DREAMING nightly episodic-summary sweep + decay
   }
+  /* KADE Oct 16 2026: background tasks a restart cut off are marked and the
+   * character says so in the conversation (services/kadeTasks.js). */
+  setTimeout(() => {
+    require('./services/kadeTasks').sweepInterrupted().catch(() => {});
+  }, 90 * 1000).unref();
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
@@ -339,6 +344,8 @@ const startServer = async () => {
   app.use('/api/kade/family-history', require('./routes/kadeFamilyHistory'));
   // Oct 16 2026: puppet bodies for characters (services/kadePuppet, models/kadeAgentBody).
   app.use('/api/kade/agent-body', require('./routes/kadeAgentBody'));
+  // Oct 16 2026: a character's soul state for the person, and characters speaking first.
+  app.use('/api/kade/soul', require('./routes/kadeSoul'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

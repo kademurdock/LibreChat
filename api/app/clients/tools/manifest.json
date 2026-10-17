@@ -155,6 +155,14 @@
     "authConfig": []
   },
   {
+    "name": "Background tasks",
+    "pluginKey": "kade_task",
+    "description": "Lets a character take a bigger job into the background (research, comparing options, reading several pages) and send you the answer later as a message in your conversation, with a notification. The price is told first. Try: \"look into the best cheap chest freezer around Springfield and get back to me.\"",
+    "icon": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Jokes",
     "pluginKey": "kade_joke",
     "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",

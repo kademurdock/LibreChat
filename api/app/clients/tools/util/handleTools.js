@@ -47,6 +47,7 @@ const {
   KadeDrivePc,
   KadeLivingMemory,
   KadeErrand,
+  KadeTask,
   KadeCouncil,
   KadeReadPage,
   KadeAdventure,
@@ -229,6 +230,7 @@ const loadTools = async ({
     kade_drive_pc: KadeDrivePc,
     kade_living_memory: KadeLivingMemory,
     kade_errand: KadeErrand,
+    kade_task: KadeTask,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
@@ -408,6 +410,14 @@ const loadTools = async ({
     kade_errand: {
       req: options.req,
       userId: kadeActingUserId,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** BACKGROUND TASKS (Oct 16 2026): the character takes a job into the background
+     * and posts the result back here. `req` carries the seat, the acting identity
+     * and the conversation; adults only, checked inside services/kadeTasks.js. */
+    kade_task: {
+      req: options.req,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
     },
