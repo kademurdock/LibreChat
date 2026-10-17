@@ -236,7 +236,7 @@ async function post({ userId, agentId, text, conversationId, title, kind = 'post
     { conversationId: picked.conversationId, user: String(userId) },
     { $set: { updatedAt: new Date() } },
   );
-  return { conversationId: picked.conversationId, messageId, created: picked.created };
+  return { conversationId: picked.conversationId, messageId, created: picked.created, agentName: agent.name || '' };
 }
 
 /** The first sentence or so, without voice directions, for the lock screen. */
@@ -258,6 +258,7 @@ async function notifyPost({ userId, agentId, agentName, text, conversationId, re
   const bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
   const secret = process.env.BRIDGE_SECRET || '';
   if (!secret) return { ok: false, blocked: 'no bridge secret' };
+  logger.info(`[kadeCharacterTurn] push starting to ${bridgeUrl.replace(/^https?:\/\//, '')}`);
   try {
     const r = await fetch(`${bridgeUrl}/notify`, {
       method: 'POST',
@@ -301,6 +302,7 @@ async function speakFirst({
   timeoutMs,
   onStart,
   beforePost,
+  onPosted,
 }) {
   const framed =
     `[PLATFORM NOTE, not something they typed: ${String(note).trim()}\n` +
@@ -321,22 +323,28 @@ async function speakFirst({
     return { posted: false, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId };
   }
   const placed = await post({ userId, agentId, text: composed.text, conversationId, title, kind });
+  logger.info(
+    `[kadeCharacterTurn] posted ${kind} agent=${agentId} user=${String(userId).slice(0, 8)} convo=${placed.conversationId.slice(0, 8)} ` +
+      `created=${placed.created} tools=${composed.toolCalls}`,
+  );
+  /* The message is in the conversation: whatever happens to the push, the work is done. */
+  if (typeof onPosted === 'function') {
+    try {
+      await onPosted(placed, composed);
+    } catch (e) {
+      logger.warn('[kadeCharacterTurn] onPosted failed: ' + e.message);
+    }
+  }
   let pushed = null;
   if (push) {
-    const agent = await db().getAgent({ id: agentId });
-    pushed = await notifyPost({
-      userId,
-      agentId,
-      agentName: agent && agent.name,
-      text: composed.text,
-      conversationId: placed.conversationId,
-      requested,
-    });
+    /* Oct 17 2026: the push once never reached the bridge and held the whole call open; a
+     * hard 25-second ceiling, and the outcome is logged either way. */
+    pushed = await Promise.race([
+      notifyPost({ userId, agentId, agentName: placed.agentName, text: composed.text, conversationId: placed.conversationId, requested }),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'push timed out after 25 s' }), 25000)),
+    ]);
+    logger.info(`[kadeCharacterTurn] push ${kind} convo=${placed.conversationId.slice(0, 8)} -> ${JSON.stringify(pushed).slice(0, 160)}`);
   }
-  logger.info(
-    `[kadeCharacterTurn] ${kind} agent=${agentId} user=${String(userId).slice(0, 8)}… convo=${placed.conversationId.slice(0, 8)}… ` +
-      `created=${placed.created} tools=${composed.toolCalls} pushed=${pushed ? JSON.stringify(pushed).slice(0, 120) : 'no'}`,
-  );
   return { ...placed, posted: true, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId, pushed };
 }
 

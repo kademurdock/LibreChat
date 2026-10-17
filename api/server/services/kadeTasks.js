@@ -203,6 +203,21 @@ async function run(task) {
       timeoutMs: Math.min(15 * 60000, 60000 + task.steps * 25000),
       onStart: ({ streamId }) => coll(TASKS).updateOne({ taskId: task.taskId }, { $set: { streamId } }),
       /* A cancelled task never posts what it had so far. */
+      /* Done the moment the answer is in the conversation, before the push. */
+      onPosted: (placed, composed) =>
+        coll(TASKS).updateOne(
+          { taskId: task.taskId },
+          {
+            $set: {
+              status: 'done',
+              finishedAt: new Date(),
+              conversationId: placed.conversationId,
+              messageId: placed.messageId,
+              toolCalls: composed.toolCalls,
+              preview: String(composed.text || '').replace(/%%%[^%\n]{0,160}%%%/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300),
+            },
+          },
+        ),
       beforePost: async () => {
         const now = await coll(TASKS).findOne({ taskId: task.taskId });
         return !(now && now.status === 'cancel-requested');
