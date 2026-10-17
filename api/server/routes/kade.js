@@ -2829,6 +2829,18 @@ router.get('/call-memories', async (req, res) => {
         logger.warn('[kade/call-memories] character continuity failed (non-fatal): ' + (e && e.message));
       }
     }
+    /* Oct 16 2026: calls carry the same soul as chat: the time where the caller
+     * is, how long since they talked, the mood the character carried out of last
+     * time, and a few real moments (services/kadeSoul.js; same memory gates). */
+    if (memoryAllowed && agentId) {
+      try {
+        const { getSoulTailBlock } = require('~/server/services/kadeSoul');
+        const { block: soulBlock } = await getSoulTailBlock({ userId: String(uid), agentId, req: null, conversationId: null, userText: '' });
+        if (soulBlock) text += `\n\n${soulBlock}`;
+      } catch (e) {
+        logger.warn('[kade/call-memories] soul block failed (non-fatal): ' + (e && e.message));
+      }
+    }
     if (memoryAllowed && agentId) {
       try {
         const { getKnownPeopleBlock } = require('@librechat/api');
