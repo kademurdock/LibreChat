@@ -260,11 +260,15 @@ async function post({ userId, agentId, text, conversationId, title, kind = 'post
     },
     { context: 'kadeCharacterTurn.post' },
   ));
+  /* Oct 17 2026: a raw Conversation.updateOne here hung every time (found by the step timer:
+   * "touch-conversation took longer than 30 s"). The site's own saveConvo is what every chat
+   * turn uses; it lifts the conversation and records the new message on it. */
   await step(
     'touch-conversation',
-    require('mongoose').models.Conversation.updateOne(
-      { conversationId: picked.conversationId, user: String(userId) },
-      { $set: { updatedAt: new Date() } },
+    db().saveConvo(
+      { userId: String(userId), isTemporary: false },
+      { conversationId: picked.conversationId },
+      { context: 'kadeCharacterTurn.post touch', noUpsert: true },
     ),
   );
   return { conversationId: picked.conversationId, messageId, created: picked.created, agentName: agent.name || '' };
