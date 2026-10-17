@@ -155,6 +155,14 @@
     "authConfig": []
   },
   {
+    "name": "Approvals",
+    "pluginKey": "kade_approvals",
+    "description": "Kade's yes before Forge ships: merges into live branches, deploys and setting changes wait for her approval. Forge only.",
+    "icon": "https://cdn-icons-png.flaticon.com/512/190/190411.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Background tasks",
     "pluginKey": "kade_task",
     "description": "Lets a character take a bigger job into the background (research, comparing options, reading several pages) and send you the answer later as a message in your conversation, with a notification. The price is told first. Try: \"look into the best cheap chest freezer around Springfield and get back to me.\"",

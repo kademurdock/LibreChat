@@ -393,6 +393,21 @@ export const kadeTaskSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+/** KADE Oct 16 2026: approvals. Kept identical to api/app/clients/tools/structured/KadeApprovals.js. */
+export const kadeApprovalsSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['list', 'approve', 'deny'],
+      description:
+        'list = requests waiting on Kade and recent outcomes. approve = run a waiting request, ONLY when the message Kade just sent says yes to it. deny = drop it when she says no.',
+    },
+    approvalId: { type: 'string', description: 'approve or deny: the request id (starts with "a"), from list or from the held action.' },
+  },
+  required: ['action'],
+};
+
 export const kadePhoneCallSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1249,6 +1264,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       "Make a real, downloadable file — a spreadsheet (.xlsx), a CSV, or a document (.md) — and save it to the person's My Creations, where every picture and song they have made already lives. Free. Use it whenever somebody wants something OUT of the chat and into a file: a budget, a comparison table, a letter, notes, a list they want to keep. Pairs naturally with kade_research — do the digging, then make the file from what you found. FOR TABLES THE FIRST ROW MUST BE REAL COLUMN HEADERS, and for documents use real markdown headings, because that is how a screen reader navigates. ⚠️ THE ANSWER CONTAINS A SPOKEN SUMMARY OF WHAT IS ACTUALLY IN THE FILE — rows, columns, totals. SAY IT ALOUD: several people here are blind, and 'I made you a spreadsheet' with no description is worthless to them. Never invent data to pad a file.",
     schema: kadeMakeFileSchema,
+    toolType: 'builtin',
+  },
+  kade_approvals: {
+    name: 'kade_approvals',
+    description:
+      "Kade's approvals for shipping work: merges into live branches, commits straight to live branches, deploys and setting changes wait for her yes. list shows what is waiting. approve runs a waiting request and only works when the message she just sent says yes; never call it on your own judgment. deny drops one.",
+    schema: kadeApprovalsSchema,
     toolType: 'builtin',
   },
   kade_task: {

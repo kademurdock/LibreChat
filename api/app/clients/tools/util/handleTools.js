@@ -48,6 +48,7 @@ const {
   KadeLivingMemory,
   KadeErrand,
   KadeTask,
+  KadeApprovals,
   KadeCouncil,
   KadeReadPage,
   KadeAdventure,
@@ -231,6 +232,7 @@ const loadTools = async ({
     kade_living_memory: KadeLivingMemory,
     kade_errand: KadeErrand,
     kade_task: KadeTask,
+    kade_approvals: KadeApprovals,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
     kade_adventure: KadeAdventure,
@@ -417,6 +419,10 @@ const loadTools = async ({
     /** BACKGROUND TASKS (Oct 16 2026): the character takes a job into the background
      * and posts the result back here. `req` carries the seat, the acting identity
      * and the conversation; adults only, checked inside services/kadeTasks.js. */
+    /** APPROVALS (Oct 16 2026): Kade's yes before Forge ships; checks her own words on this turn. */
+    kade_approvals: {
+      req: options.req,
+    },
     kade_task: {
       req: options.req,
       agentId: agent?.id || agent?.agent_id,

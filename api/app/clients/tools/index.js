@@ -24,6 +24,7 @@ const KadeDrivePc = require('./structured/KadeDrivePc');
 const KadeLivingMemory = require('./structured/KadeLivingMemory');
 const KadeErrand = require('./structured/KadeErrand');
 const KadeTask = require('./structured/KadeTask');
+const KadeApprovals = require('./structured/KadeApprovals');
 const KadeCouncil = require('./structured/KadeCouncil');
 const KadeReadPage = require('./structured/KadeReadPage');
 const KadeAdventure = require('./structured/KadeAdventure');
@@ -71,6 +72,7 @@ module.exports = {
   KadeLivingMemory,
   KadeErrand,
   KadeTask,
+  KadeApprovals,
   KadeCouncil,
   KadeReadPage,
   KadeAdventure,

@@ -346,6 +346,8 @@ const startServer = async () => {
   app.use('/api/kade/agent-body', require('./routes/kadeAgentBody'));
   // Oct 16 2026: a character's soul state for the person, and characters speaking first.
   app.use('/api/kade/soul', require('./routes/kadeSoul'));
+  // Oct 16 2026: Kade's yes before Forge ships (services/kadeApprovals.js).
+  app.use('/api/kade/approvals', require('./routes/kadeApprovals'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

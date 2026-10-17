@@ -108,10 +108,21 @@ router.post('/character-days', async (req, res) => {
     const out = await writeDays({
       ...(typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) ? { day: b.day } : {}),
       ...(Array.isArray(b.agentIds) ? { agentIds: b.agentIds.map(String).slice(0, 20) } : {}),
+      redo: b.redo === true,
     });
     res.json(out);
   } catch (e) {
     logger.error('[kadeClock] character days failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.get('/character-days', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const { latest } = require('~/server/services/kadeCharacterDays');
+    res.json({ ok: true, entries: await latest(Number(req.query.limit) || 20) });
+  } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });

@@ -141,9 +141,13 @@ async function homeOf(agent, llmConfig) {
 async function weatherFor(home) {
   try {
     const KadeWeather = require('~/app/clients/tools/structured/KadeWeather');
-    return String(await new KadeWeather({})._call({ location: home, days: 1 })).slice(0, 700);
+    const report = String(await new KadeWeather({})._call({ location: home, days: 1 }));
+    /* A failed lookup is not part of anyone's day (Kiana's first entry said her "weather feed
+     * wouldn't load"); the writer just gets no weather. */
+    if (/fail|error|couldn|could not|need a location|not find|no results/i.test(report) || report.length < 40) return '';
+    return report.slice(0, 700);
   } catch (e) {
-    return '(the weather service did not answer)';
+    return '';
   }
 }
 
@@ -172,7 +176,7 @@ Write the entry for the day named below, in the character's own first-person voi
 Never invent anything that did not happen: no meals, walks, errands, places visited, people met, or things done with a body. Never mention anyone they talk with, any conversation, or any user. No lists, no voice directions, no quotation of these instructions. 60 to 110 words, plain spoken sentences.
 
 Then add exactly these two lines:
-ONE-LINE: one short third-person line the other characters can see (under 25 words)
+ONE-LINE: one short third-person line the other characters can see (under 25 words), using the pronoun this character uses for themself
 FOLLOWING: the one topic this character keeps reading about this week (under 8 words)`;
 
 function parseEntry(text) {
@@ -184,7 +188,7 @@ function parseEntry(text) {
 }
 
 /** Write tonight's day for each character. `day` is the Central date the entry is about. */
-async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)), agentIds } = {}) {
+async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)), agentIds, redo = false } = {}) {
   if (!on()) return { ok: false, disabled: true };
   const { getAgent } = require('~/models');
   const llmConfig = await keeperLLM();
@@ -195,7 +199,7 @@ async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)),
   for (const id of ids) {
     try {
       const done = await coll().findOne({ agentId: id, kind: 'day', day });
-      if (done) {
+      if (done && !redo) {
         results.push({ agentId: id, skipped: 'already written' });
         continue;
       }
@@ -203,6 +207,7 @@ async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)),
       if (!agent) continue;
       const kid = KID_CAST.has(id);
       const home = await homeOf(agent, llmConfig);
+      const weather = await weatherFor(home);
       const others = prior
         .filter((p) => p.agentId !== id && p.oneLine)
         .reduce((acc, p) => (acc.some((x) => x.agentId === p.agentId) ? acc : [...acc, p]), [])
@@ -214,7 +219,10 @@ async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)),
         `THE DAY: ${spokenDay(day)}\n` +
         `CHARACTER: ${agent.name}${kid ? ' (a kid; pick only kid-friendly stories, nothing scary or grim)' : ''}\n` +
         `WHO THEY ARE (their own description, opening):\n${String(agent.instructions || '').slice(0, 2500)}\n\n` +
-        `WHERE THEY LIVE: ${home}\nTHE WEATHER THERE:\n${await weatherFor(home)}\n\n` +
+        `WHERE THEY LIVE: ${home}\n` +
+        (weather
+          ? `THE WEATHER THERE:\n${weather}\n\n`
+          : 'THE WEATHER THERE: (no report today; leave the weather out, and never mention a lookup)\n\n') +
         `THE TOPIC THEY HAVE BEEN FOLLOWING: ${(last && last.following) || '(none yet; pick one from the news that fits them)'}\n` +
         (last && last.text ? `THEIR LAST ENTRY (do not repeat it): ${last.text.slice(0, 500)}\n` : '') +
         `\nTODAY'S HEADLINES:\n${await headlines(kid)}\n\n` +
@@ -273,4 +281,14 @@ async function getCharacterLifeBlock(agentId) {
   }
 }
 
-module.exports = { writeDays, getCharacterLifeBlock, castForTonight, parseEntry, centralDay, MAIN_CAST };
+/** Machine read for checking (clock route): the newest entries and homes. */
+async function latest(limit = 20) {
+  return coll()
+    .find({})
+    .sort({ day: -1, createdAt: -1 })
+    .limit(Math.min(60, limit))
+    .project({ _id: 0 })
+    .toArray();
+}
+
+module.exports = { latest, writeDays, getCharacterLifeBlock, castForTonight, parseEntry, centralDay, MAIN_CAST };
