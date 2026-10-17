@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { createModels } = require('@librechat/data-schemas');
 
+/* A Stop landing on another server is looked for every 15 s live; here, quickly. */
+process.env.KADE_TASK_CANCEL_LOOK_MS = '60';
+
 jest.mock('~/server/services/kadeRealCost', () => ({
   platformFactor: () => 2,
   userPriceFactor: (role) => (String(role).toUpperCase() === 'ADMIN' ? 1 : 2),
@@ -104,7 +107,13 @@ describe('tasks', () => {
   });
 
   test('one task at a time, and a quote starts only once', async () => {
-    const spy = jest.spyOn(turn, 'speakFirst').mockImplementation(() => new Promise(() => {}));
+    let release;
+    const spy = jest.spyOn(turn, 'speakFirst').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     const q1 = await tasks.quote({ req: req(userId), agentId: AGENT, goal: 'compare three phone plans for my mom' });
     const s1 = await tasks.start({ req: req(userId), agentId: AGENT, agentName: 'Testa', quoteId: q1.quoteId });
     expect(s1.ok).toBe(true);
@@ -118,6 +127,11 @@ describe('tasks', () => {
     expect(listed[0]).toMatchObject({ status: 'running', title: 'compare three phone plans for my mom' });
     const c = await tasks.cancel({ userId, taskId: s1.taskId });
     expect(c.ok).toBe(true);
+    /* The stopped turn ends; nothing is posted and this server's job is over. */
+    release({ posted: false, composeConversationId: null });
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await tasks.list({ userId }))[0].status).toBe('cancelled');
+    expect(tasks.runningHere()).toBe(0);
     spy.mockRestore();
   });
 
@@ -157,5 +171,216 @@ describe('tasks', () => {
     expect(row).toMatchObject({ status: 'done', conversationId: 'c-done' });
     expect(row.preview).toBe('Done: the cheapest is forty dollars at the hardware store.');
     spy.mockRestore();
+  });
+});
+
+describe('deploys and restarts (Oct 17 2026)', () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const answer = {
+    posted: true,
+    conversationId: 'c-1',
+    messageId: 'm-1',
+    text: 'Found it.',
+    toolCalls: 1,
+    composeConversationId: null,
+  };
+  let otherAdult;
+
+  beforeAll(async () => {
+    otherAdult = String(
+      (
+        await mongoose.models.User.create({
+          name: 'Other Grown Up',
+          email: 'adult2@example.com',
+          username: 'adult2',
+          provider: 'local',
+          role: 'USER',
+        })
+      )._id,
+    );
+  });
+
+  beforeEach(async () => {
+    await mongoose.connection.collection('kadetasks').deleteMany({});
+    tasks.holdStarts(false);
+  });
+
+  afterEach(() => {
+    tasks.holdStarts(false);
+    jest.restoreAllMocks();
+  });
+
+  test('a shutdown waits for the running job and refuses new starts; the refused price still stands', async () => {
+    let finish;
+    const speak = jest.spyOn(turn, 'speakFirst').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(answer);
+        }),
+    );
+    const q1 = await tasks.quote({
+      req: req(userId),
+      agentId: AGENT,
+      goal: 'find a dentist open on Saturdays',
+    });
+    expect(
+      (
+        await tasks.start({
+          req: req(userId),
+          agentId: AGENT,
+          agentName: 'Testa',
+          quoteId: q1.quoteId,
+        })
+      ).ok,
+    ).toBe(true);
+    await sleep(50);
+    let drained = null;
+    const draining = tasks.drain({ budgetMs: 10000 }).then((out) => {
+      drained = out;
+    });
+    await sleep(50);
+    expect(drained).toBeNull();
+    const q2 = await tasks.quote({
+      req: req(otherAdult),
+      agentId: AGENT,
+      goal: 'compare two library card renewals',
+    });
+    const refused = await tasks.start({
+      req: req(otherAdult),
+      agentId: AGENT,
+      quoteId: q2.quoteId,
+    });
+    expect(refused).toMatchObject({ ok: false, draining: true });
+    expect(refused.error).toMatch(/restarting/);
+    expect(await tasks.busy()).toMatchObject({ here: 1, running: 1, draining: true });
+    finish();
+    await draining;
+    expect(drained).toMatchObject({ cutOff: 0 });
+    expect((await tasks.list({ userId }))[0].status).toBe('done');
+    /* The new server takes the same price. */
+    tasks.holdStarts(false);
+    speak.mockResolvedValue(answer);
+    expect(
+      (await tasks.start({ req: req(otherAdult), agentId: AGENT, quoteId: q2.quoteId })).ok,
+    ).toBe(true);
+    await sleep(100);
+  });
+
+  test('a job the shutdown cannot wait for is marked interrupted at once, told, and never posts late', async () => {
+    let finish;
+    jest.spyOn(turn, 'speakFirst').mockImplementation(async (opts) => {
+      await new Promise((r) => {
+        finish = r;
+      });
+      return (await opts.beforePost({})) ? answer : { posted: false, composeConversationId: null };
+    });
+    const postSpy = jest
+      .spyOn(turn, 'post')
+      .mockResolvedValue({ conversationId: 'c-x', messageId: 'm-x', created: false });
+    jest.spyOn(turn, 'notifyPost').mockResolvedValue({ ok: true });
+    const q = await tasks.quote({
+      req: req(userId),
+      agentId: AGENT,
+      goal: 'read every review of three freezers',
+    });
+    await tasks.start({ req: req(userId), agentId: AGENT, agentName: 'Testa', quoteId: q.quoteId });
+    await sleep(50);
+    const out = await tasks.drain({ budgetMs: 100 });
+    expect(out.cutOff).toBe(1);
+    expect((await tasks.list({ userId }))[0].status).toBe('interrupted');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0][0].text).toMatch(/restarted while I was working/);
+    finish();
+    await sleep(150);
+    expect((await tasks.list({ userId }))[0].status).toBe('interrupted');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('busy counts fresh running jobs anywhere, never stale rows the sweep has yet to close', async () => {
+    await mongoose.connection.collection('kadetasks').insertMany([
+      {
+        taskId: 'tf',
+        userId,
+        agentId: AGENT,
+        title: 'fresh',
+        status: 'running',
+        createdAt: new Date(Date.now() - 2 * 60000),
+        bootId: 'other',
+      },
+      {
+        taskId: 'ts',
+        userId,
+        agentId: AGENT,
+        title: 'stale',
+        status: 'running',
+        createdAt: new Date(Date.now() - 30 * 60000),
+        bootId: 'other',
+      },
+      {
+        taskId: 'td',
+        userId,
+        agentId: AGENT,
+        title: 'done',
+        status: 'done',
+        createdAt: new Date(),
+      },
+    ]);
+    expect(await tasks.busy()).toMatchObject({
+      here: 0,
+      running: 1,
+      draining: false,
+      dbCounted: true,
+    });
+  });
+
+  test("the drain budget leaves room inside Railway's window", () => {
+    const keep = { ...process.env };
+    delete process.env.KADE_TASK_DRAIN_MS;
+    process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS = '1200';
+    expect(tasks.drainBudgetMs()).toBe(1155000);
+    delete process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS;
+    expect(tasks.drainBudgetMs()).toBe(17.5 * 60000);
+    process.env.KADE_TASK_DRAIN_MS = '0';
+    expect(tasks.drainBudgetMs()).toBe(0);
+    process.env = keep;
+  });
+
+  test('a Stop that lands on another server is noticed by the server running the job', async () => {
+    let finish;
+    jest.spyOn(turn, 'speakFirst').mockImplementation(async (opts) => {
+      await opts.onStart({ streamId: 'stream-elsewhere' });
+      await new Promise((r) => {
+        finish = r;
+      });
+      return (await opts.beforePost({})) ? answer : { posted: false, composeConversationId: null };
+    });
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue({ ok: true, json: async () => ({}) });
+    const q = await tasks.quote({
+      req: req(userId),
+      agentId: AGENT,
+      goal: 'find a plumber who works weekends',
+    });
+    const s = await tasks.start({
+      req: req(userId),
+      agentId: AGENT,
+      agentName: 'Testa',
+      quoteId: q.quoteId,
+    });
+    await sleep(50);
+    /* What cancel() on the other server writes. */
+    await mongoose.connection
+      .collection('kadetasks')
+      .updateOne({ taskId: s.taskId }, { $set: { status: 'cancel-requested' } });
+    await sleep(250);
+    const aborts = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).endsWith('/api/agents/chat/abort'),
+    );
+    expect(aborts).toHaveLength(1);
+    expect(JSON.parse(aborts[0][1].body)).toEqual({ streamId: 'stream-elsewhere' });
+    finish();
+    await sleep(150);
+    expect((await tasks.list({ userId }))[0].status).toBe('cancelled');
   });
 });

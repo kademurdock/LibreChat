@@ -27,6 +27,7 @@ const {
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
   setupGracefulShutdown,
+  registerDrainTask,
   configureBookUploadTimeouts,
   updateInterfacePermissions,
 } = require('@librechat/api');
@@ -153,6 +154,9 @@ const startServer = async () => {
     require('./services/kadeTasks').sweepInterrupted().catch(() => {});
   }, 90 * 1000).unref();
   require('./services/kadeTasks').startTaskSweep();
+  /* KADE Oct 17 2026: a deploy or restart waits for running background tasks (their hidden
+   * turn runs over loopback, so this runs before the HTTP server closes) and refuses new ones. */
+  registerDrainTask('background tasks', () => require('./services/kadeTasks').drain());
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });

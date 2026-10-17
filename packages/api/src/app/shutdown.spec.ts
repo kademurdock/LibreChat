@@ -3,6 +3,7 @@ import http from 'http';
 import {
   setupGracefulShutdown,
   registerShutdownTask,
+  registerDrainTask,
   __resetShutdownStateForTests,
 } from './shutdown';
 
@@ -257,5 +258,81 @@ describe('setupGracefulShutdown', () => {
     await flush();
     expect(calls).toEqual(['async-done']);
     expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  describe('drain tasks (KADE: background jobs finish before the HTTP server closes)', () => {
+    const mockClose = (calls: string[]) =>
+      jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
+        calls.push('server.close');
+        if (cb) {
+          setImmediate(() => cb());
+        }
+        return server;
+      });
+
+    afterEach(() => {
+      delete process.env.SHUTDOWN_DRAIN_TIMEOUT_MS;
+    });
+
+    it('waits for drain tasks while the server still listens, then closes and cleans up', async () => {
+      const calls: string[] = [];
+      mockClose(calls);
+      let finishJob: () => void = () => undefined;
+      registerDrainTask(
+        'background job',
+        () =>
+          new Promise<void>((resolve) => {
+            finishJob = () => {
+              calls.push('job done');
+              resolve();
+            };
+          }),
+      );
+      registerShutdownTask('cleanup', () => {
+        calls.push('cleanup');
+      });
+      setupGracefulShutdown(server);
+      triggerSignal('SIGTERM');
+      await flush();
+      await flush();
+      expect(calls).toEqual([]);
+      expect(exitSpy).not.toHaveBeenCalled();
+      finishJob();
+      await flush();
+      await flush();
+      await flush();
+      expect(calls).toEqual(['job done', 'server.close', 'cleanup']);
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
+
+    it('a drain task that throws does not hold the shutdown', async () => {
+      const calls: string[] = [];
+      mockClose(calls);
+      registerDrainTask('broken', () => {
+        throw new Error('boom');
+      });
+      setupGracefulShutdown(server);
+      triggerSignal('SIGTERM');
+      await flush();
+      await flush();
+      await flush();
+      expect(calls).toEqual(['server.close']);
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
+
+    it('closes the server anyway once the drain ceiling passes', async () => {
+      process.env.SHUTDOWN_DRAIN_TIMEOUT_MS = '30';
+      const calls: string[] = [];
+      mockClose(calls);
+      registerDrainTask('never ends', () => new Promise<void>(() => undefined));
+      setupGracefulShutdown(server);
+      triggerSignal('SIGTERM');
+      await flush();
+      expect(calls).toEqual([]);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      await flush();
+      expect(calls).toEqual(['server.close']);
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    });
   });
 });

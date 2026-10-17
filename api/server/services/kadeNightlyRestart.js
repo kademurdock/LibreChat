@@ -35,6 +35,16 @@ function startKadeNightlyRestart() {
       if (new Date().getUTCHours() !== targetHour) {
         return;
       }
+      /* Oct 17 2026: never in the middle of a background task (this exit is not a SIGTERM, so
+       * nothing waits for it); the next tick looks again inside the same hour. */
+      const tasks = require('./kadeTasks');
+      if (tasks.runningHere() > 0) {
+        logger.info(
+          `[kadeNightlyRestart] Waiting: ${tasks.runningHere()} background task(s) running`,
+        );
+        return;
+      }
+      tasks.holdStarts(true);
       logger.info(
         '[kadeNightlyRestart] Nightly window reached -- exiting for a clean restart (memory hygiene). Railway restart policy revives this container.',
       );

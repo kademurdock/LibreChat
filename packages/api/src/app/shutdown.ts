@@ -10,8 +10,28 @@ type ShutdownTask = {
 };
 
 const tasks: ShutdownTask[] = [];
+const drainTasks: ShutdownTask[] = [];
 let isShuttingDown = false;
 let httpServer: Server | null = null;
+
+/** The longest the drain phase may hold the HTTP server open (each drain task bounds itself too). */
+function drainTimeoutMs(): number {
+  const ms = Number(process.env.SHUTDOWN_DRAIN_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 20 * 60_000;
+}
+
+/**
+ * KADE (Oct 17 2026): register work that must finish BEFORE the HTTP server
+ * closes. Kade's background tasks run their hidden agent turn over loopback
+ * HTTP, so closing the server first would cut them off mid-job. Drain tasks
+ * run together while the server still listens (on a deploy, Railway has
+ * already moved outside traffic to the new deployment), all bounded by
+ * SHUTDOWN_DRAIN_TIMEOUT_MS; the HTTP close and its force-exit timer start
+ * after them. With none registered, shutdown behaves exactly as before.
+ */
+export function registerDrainTask(name: string, fn: () => void | Promise<void>): void {
+  drainTasks.push({ name, fn });
+}
 
 /**
  * Register a cleanup task to run after the HTTP server has closed.
@@ -49,8 +69,31 @@ export function setupGracefulShutdown(server: Server): void {
  */
 export function __resetShutdownStateForTests(): void {
   tasks.length = 0;
+  drainTasks.length = 0;
   isShuttingDown = false;
   httpServer = null;
+}
+
+async function runDrainTasks(): Promise<void> {
+  logger.info(`Waiting for ${drainTasks.length} drain task(s) before closing the HTTP server`);
+  let timer: NodeJS.Timeout | undefined;
+  const all = Promise.allSettled(
+    drainTasks.map(async (task) => {
+      try {
+        await task.fn();
+      } catch (err) {
+        logger.error(`Drain task "${task.name}" failed:`, err);
+      }
+    }),
+  );
+  const ceiling = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      logger.warn(`Drain tasks exceeded ${drainTimeoutMs()}ms, closing the HTTP server anyway`);
+      resolve();
+    }, drainTimeoutMs());
+  });
+  await Promise.race([all, ceiling]);
+  clearTimeout(timer);
 }
 
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
@@ -59,6 +102,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }
   isShuttingDown = true;
   logger.info(`Received ${signal}, draining HTTP server...`);
+
+  if (drainTasks.length) {
+    await runDrainTasks();
+  }
 
   const forceExit = setTimeout(() => {
     logger.warn(`Graceful shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms, forcing exit`);

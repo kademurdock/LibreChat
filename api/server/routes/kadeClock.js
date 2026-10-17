@@ -14,7 +14,7 @@
  *   POST /api/kade/clock/summary        — nightly "dreaming" relationship-summary sweep
  *   POST /api/kade/clock/consolidation  — platform-wide weekly memory consolidation
  *   POST /api/kade/clock/files          — expired-file sweep
- *   POST /api/kade/clock/restart        — memory-hygiene process exit (refused within 2h of boot)
+ *   POST /api/kade/clock/restart        — memory-hygiene process exit (refused within 2h of boot or while a background task runs)
  *   GET  /api/kade/clock/status         — uptime + whether internal timers are externalized
  *
  * NOTE (App Sleeping, the end goal): the 60s nudge poke keeps the app awake,
@@ -132,12 +132,18 @@ router.get('/soul-stats', async (req, res) => {
       db.collection('kadeapprovals').countDocuments({ status: 'pending', expiresAt: { $gt: new Date() } }),
       db.collection('kadecharacterdays').countDocuments({ kind: 'day', createdAt: { $gte: day } }),
     ]);
+    /* Oct 17 2026: what a restart or deploy would cut off right now (fresh running tasks, not
+     * stale rows the sweep has yet to close). The bridge's restart job and the pre-deploy check
+     * read this. */
+    const busy = await require('~/server/services/kadeTasks').busy();
     res.json({
       ok: true,
       moments,
       moments24h,
       moods,
       tasks: Object.fromEntries(tasks.map((t) => [t._id, t.n])),
+      tasksRunningNow: busy.running,
+      draining: busy.draining,
       approvalsWaiting,
       days24h,
     });
@@ -186,12 +192,38 @@ router.post('/files', async (req, res) => {
   }
 });
 
-router.post('/restart', (req, res) => {
+router.post('/restart', async (req, res) => {
   if (!authed(req, res)) return;
   /* Same guard the in-process timer had: never restart within 2h of boot —
    * covers deploy bounces and guarantees no restart loop. */
   if (process.uptime() < 2 * 60 * 60) {
     return res.json({ ok: true, restarted: false, reason: 'booted <2h ago' });
+  }
+  /* KADE Oct 17 2026: never in the middle of someone's background task (this exit is not a
+   * SIGTERM, so nothing would wait for it). The bridge clock tries again a few minutes later.
+   * New starts are held from the moment the exit is decided. */
+  const tasks = require('~/server/services/kadeTasks');
+  const busy = await tasks.busy();
+  if (busy.running > 0) {
+    logger.info(`[kadeClock] restart poke declined: ${busy.running} background task(s) running`);
+    return res.json({
+      ok: true,
+      restarted: false,
+      busy: true,
+      running: busy.running,
+      reason: 'background task running',
+    });
+  }
+  tasks.holdStarts(true);
+  if (tasks.runningHere() > 0) {
+    tasks.holdStarts(false);
+    return res.json({
+      ok: true,
+      restarted: false,
+      busy: true,
+      running: tasks.runningHere(),
+      reason: 'background task running',
+    });
   }
   logger.info('[kadeClock] restart poke accepted — exiting for a clean restart (memory hygiene).');
   res.json({ ok: true, restarted: true });
