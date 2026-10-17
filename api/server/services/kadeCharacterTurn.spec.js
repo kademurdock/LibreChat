@@ -121,6 +121,24 @@ describe('tasks', () => {
     spy.mockRestore();
   });
 
+  test('only a task older than the work limit is called lost; a fresh one keeps running', async () => {
+    await mongoose.connection.collection('kadetasks').deleteMany({});
+    const postSpy = jest.spyOn(turn, 'post').mockResolvedValue({ conversationId: 'c-x', messageId: 'm-x', created: false });
+    const pushSpy = jest.spyOn(turn, 'notifyPost').mockResolvedValue({ ok: true });
+    await mongoose.connection.collection('kadetasks').insertMany([
+      { taskId: 'told', userId, agentId: AGENT, title: 'old job', status: 'running', createdAt: new Date(Date.now() - 30 * 60000), bootId: 'other' },
+      { taskId: 'tfresh', userId, agentId: AGENT, title: 'fresh job', status: 'running', createdAt: new Date(Date.now() - 60000), bootId: 'other' },
+    ]);
+    await tasks.sweepInterrupted();
+    const rows = await tasks.list({ userId });
+    expect(rows.find((r) => r.taskId === 'told').status).toBe('interrupted');
+    expect(rows.find((r) => r.taskId === 'tfresh').status).toBe('running');
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    expect(postSpy.mock.calls[0][0].text).toMatch(/restarted while I was working/);
+    postSpy.mockRestore();
+    pushSpy.mockRestore();
+  });
+
   test('a finished task records where its answer went', async () => {
     await mongoose.connection.collection('kadetasks').deleteMany({});
     const spy = jest.spyOn(turn, 'speakFirst').mockResolvedValue({

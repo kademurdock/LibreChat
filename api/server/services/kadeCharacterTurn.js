@@ -298,6 +298,7 @@ async function speakFirst({
   steps,
   push = true,
   timezone,
+  timeoutMs,
   onStart,
   beforePost,
 }) {
@@ -306,7 +307,16 @@ async function speakFirst({
     'Write only the message you are sending them now, in your own voice. They will read or hear it later in your conversation with them, ' +
     'so it has to make sense on its own. Use your usual voice directions if you use them. Do not mention this note. ' +
     'Never make up something that happened to you: if you mention your own day, use only what is in your own days above, or say nothing about it.]';
-  const composed = await compose({ userId, agentId, note: framed, platformPaid, steps, timezone, onStart });
+  const composed = await compose({
+    userId,
+    agentId,
+    note: framed,
+    platformPaid,
+    steps,
+    timezone,
+    onStart,
+    ...(timeoutMs ? { timeoutMs } : {}),
+  });
   if (typeof beforePost === 'function' && !(await beforePost(composed))) {
     return { posted: false, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId };
   }

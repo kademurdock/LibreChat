@@ -152,6 +152,7 @@ const startServer = async () => {
   setTimeout(() => {
     require('./services/kadeTasks').sweepInterrupted().catch(() => {});
   }, 90 * 1000).unref();
+  require('./services/kadeTasks').startTaskSweep();
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });

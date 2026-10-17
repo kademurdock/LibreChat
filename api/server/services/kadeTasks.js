@@ -199,6 +199,8 @@ async function run(task) {
       requested: true,
       steps: task.steps,
       timezone: task.timezone,
+      /* About 25 seconds a round, never past 15 minutes (the default 4 minutes cut real jobs short). */
+      timeoutMs: Math.min(15 * 60000, 60000 + task.steps * 25000),
       onStart: ({ streamId }) => coll(TASKS).updateOne({ taskId: task.taskId }, { $set: { streamId } }),
       /* A cancelled task never posts what it had so far. */
       beforePost: async () => {
@@ -292,12 +294,19 @@ async function cancel({ userId, taskId }) {
   return { ok: true, note: 'Stopped. What already ran is still charged, and nothing is posted.' };
 }
 
-/* Each process start has its own id, so a task left "running" by an earlier process is known lost. */
+/* Each process start has its own id (recorded on the task, for the logs). */
 const BOOT_ID = crypto.randomBytes(6).toString('hex');
+/* No task outlives this: the work limit is 15 minutes. A task still "running" after it was cut
+ * off by a restart or a deploy. Age, never the boot id, decides: during a deploy the old server
+ * keeps working for a while, and a new server that called those tasks lost would post a false
+ * failure next to a real answer. */
+const LOST_AFTER_MS = 20 * 60000;
 
 async function sweepInterrupted() {
   try {
-    const lost = await coll(TASKS).find({ status: { $in: ['running', 'cancel-requested'] }, bootId: { $ne: BOOT_ID } }).toArray();
+    const lost = await coll(TASKS)
+      .find({ status: { $in: ['running', 'cancel-requested'] }, createdAt: { $lt: new Date(Date.now() - LOST_AFTER_MS) } })
+      .toArray();
     for (const t of lost) {
       await coll(TASKS).updateOne({ _id: t._id }, { $set: { status: 'interrupted', finishedAt: new Date() } });
       if (t.status === 'running') {
@@ -310,4 +319,13 @@ async function sweepInterrupted() {
   }
 }
 
-module.exports = { quote, start, list, cancel, sweepInterrupted, priceFor, money, personMayAsk };
+/** Check every five minutes (started from server boot). */
+function startTaskSweep() {
+  const timer = setInterval(() => {
+    sweepInterrupted().catch(() => {});
+  }, 5 * 60000);
+  if (timer.unref) timer.unref();
+  return timer;
+}
+
+module.exports = { quote, start, list, cancel, sweepInterrupted, startTaskSweep, priceFor, money, personMayAsk };
