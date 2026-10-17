@@ -78,6 +78,26 @@ router.post('/speak', express.json({ limit: '64kb' }), async (req, res) => {
   }
 });
 
+/* The person's own background tasks (services/kadeTasks.js), newest first. */
+router.get('/tasks/list', requireJwtAuth, async (req, res) => {
+  try {
+    const { list } = require('~/server/services/kadeTasks');
+    return res.json({ tasks: await list({ userId: String(req.user.id), limit: 20 }) });
+  } catch (e) {
+    return res.status(500).json({ error: 'could not read your tasks right now' });
+  }
+});
+
+router.post('/tasks/:taskId/cancel', requireJwtAuth, async (req, res) => {
+  try {
+    const { cancel } = require('~/server/services/kadeTasks');
+    const out = await cancel({ userId: String(req.user.id), taskId: String(req.params.taskId || '') });
+    return res.status(out.ok ? 200 : 409).json(out);
+  } catch (e) {
+    return res.status(500).json({ error: 'could not stop it right now' });
+  }
+});
+
 router.get('/:agentId', requireJwtAuth, async (req, res) => {
   const agentId = String(req.params.agentId || '');
   if (!AGENT_ID.test(agentId)) return res.status(400).json({ error: 'not a character id' });
