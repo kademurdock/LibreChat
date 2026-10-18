@@ -138,6 +138,10 @@ async function covers(post, base, sentInputs, provider) {
     assert.deepEqual(Object.keys(song), LEGACY_KEYS);
     assert.equal(song.cot, 'full');
     assert.throws(() => yueInput({ script: 'Jazz', lyrics: ' ' }, ON), /or choose Instrumental under Singing or instrumental/);
+    // Oct 18 2026: an over-long Lyrics box says its length instead of asking for words that are already there.
+    assert.throws(() => yueInput({ script: 'Jazz', lyrics: 'la '.repeat(3001) }, ON), { message: 'Lyrics holds 9,003 characters, and YuE2 takes up to 8,000, about six minutes of singing. Shorten Lyrics and generate again.' });
+    assert.throws(() => yueInput({ script: 'Jazz', lyrics: 'la '.repeat(3001), reference_voice_url: recording }, ON), /^Error: Lyrics holds 9,003 characters.*choose Transcribe reference lyrics to replace them with the words of the recording; Undo writing change brings yours back\.$/);
+    assert.equal(yueInput({ script: 'Jazz', lyrics: 'a'.repeat(8000) }, ON).lyrics.length, 8000, 'exactly 8,000 is still taken');
 
     // A sung cover: the server default keeps the chords (YUE_COVER_KEEP_CHORDS_DEFAULT unset = 1).
     const kept = yueInput({ script: 'Jazz trio', lyrics: 'Words', seed: 5, reference_voice_url: recording }, ON);

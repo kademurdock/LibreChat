@@ -267,6 +267,17 @@ export function yueKeepChordsChoice(
   throw new Error('Under Keep the original chords, choose Yes or No.');
 }
 
+/** The refusal for a Lyrics box past YuE2's 8,000 characters (about a thousand words, more than six minutes of singing),
+ * with its length, so it can be found and shortened without seeing it. A cover can start again from its recording's words. */
+function yueLongLyrics(characters: number, cover: boolean): string {
+  return (
+    `Lyrics holds ${characters.toLocaleString('en-US')} characters, and YuE2 takes up to 8,000, about six minutes of singing. ` +
+    (cover
+      ? 'Shorten Lyrics, or choose Transcribe reference lyrics to replace them with the words of the recording; Undo writing change brings yours back.'
+      : 'Shorten Lyrics and generate again.')
+  );
+}
+
 export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env): Input {
   const covers = yueCoversEnabled(env);
   const instrumental = covers && yueInstrumentalChoice(body.singing);
@@ -277,7 +288,11 @@ export function yueInput(body: InputBody, env: NodeJS.ProcessEnv = process.env):
   if (instrumental) {
     if (body.lyrics != null && (typeof body.lyrics !== 'string' || body.lyrics.length > 8000))
       throw new Error('Keep Lyrics to 8000 characters. An instrumental sings none of them.');
-  } else if (typeof body.lyrics !== 'string' || !body.lyrics.trim() || body.lyrics.length > 8000)
+  } else if (typeof body.lyrics === 'string' && body.lyrics.length > 8000)
+    /* Oct 18 2026: an over-long Lyrics box used to get the same sentence as an empty one, so a person who could not see the
+     * box was told to add words that were already there. */
+    throw new Error(yueLongLyrics(body.lyrics.length, !!body.reference_voice_url));
+  else if (typeof body.lyrics !== 'string' || !body.lyrics.trim())
     throw new Error(
       covers
         ? 'Add the words to sing in Lyrics, up to 8000 characters, or choose Instrumental under Singing or instrumental.'

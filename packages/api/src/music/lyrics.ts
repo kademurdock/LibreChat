@@ -1016,7 +1016,7 @@ const soundTokensNote = (usage?: SoundUsage): string =>
 
 /**
  * A reply the check refuses is asked for once more while the first call took less than this. MiMo's wording and capitals
- * change from call to call, so a second answer usually passes; it costs about a hundredth of a cent, and the whole
+ * change from call to call, so a second answer usually passes; it costs about $0.00003 (measured), and the whole
  * description still has soundDeadlineMs. KADE_SOUND_RETRY=0 asks once, as before Oct 18 2026.
  */
 const soundRetryWithinMs = 30000;

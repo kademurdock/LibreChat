@@ -213,6 +213,22 @@ router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   }
   next();
 });
+/* Oct 18 2026: three refused renders of her cover ("Still not working") left no line in the log; only Railway's request log
+ * showed the 400s. Every refused render is now logged with its sentence and the sizes of what was sent, never the words. */
+router.post('/render', (req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (data) => {
+    if (res.statusCode >= 400) {
+      const b = req.body || {};
+      const size = (v) => (typeof v === 'string' ? v.length : v == null ? 'none' : typeof v);
+      logger.warn(
+        `[soundbooth/render] REFUSED ${res.statusCode} user=${req.user && req.user.id} engine=${String(b.engine || '?').slice(0, 20)} lyrics=${size(b.lyrics)} script=${size(b.script)}${req.songPaste ? ` pasted=${req.songPaste.field}` : ''}: ${String((data && data.error) || '').slice(0, 200)}`,
+      );
+    }
+    return json(data);
+  };
+  next();
+});
 router.use(createLyricsRouter(musicReferenceHooks));
 /* Part 295 (Sep 27 2026): the trained styles are part of the Family feature pack. The Soul style
  * was taught from commercial soul and R&B records. A style taught from songs made with Suno
