@@ -32,7 +32,6 @@ import {
   steps,
   synthesize,
   transcribe,
-  voiceInput,
 } from './providers.ts';
 import { Halt, settingsSchema } from './types.ts';
 import {
@@ -1856,14 +1855,13 @@ test('providers: Deepgram gets keyterms and filler words, reports the language, 
   }
 });
 
-test('providers: Inworld voices get no delivery direction, fish voices keep it, and every byte sent is booked', async () => {
+test('providers: every voice gets the words alone, Fish and Inworld, and every byte sent is booked', async () => {
   const file = join(scratch, 'voice.wav');
   charges.length = 0;
   const audio = { data: new Uint8Array(400).buffer, headers: { 'content-type': 'audio/wav' } };
   const speech = (fake) => fake.calls.filter((call) => call.url.endsWith('/v1/audio/speech'));
   let fake = fakeAxios((call) => (call.url.endsWith('/voices.json') ? httpError(503, {}) : audio));
   try {
-    assert.equal(await voiceInput('Mickey waves.', 'Fish Voice'), 'Mickey waves.', 'an unreadable voice list means no direction');
     await synthesize('Mickey waves.', 'Fish Voice', 'session', file, 1.2, signal, meter);
     assert.equal(speech(fake).at(-1).body.input, 'Mickey waves.');
   } finally {
@@ -1889,10 +1887,9 @@ test('providers: Inworld voices get no delivery direction, fish voices keep it, 
     assert.equal(charges.at(-1).cost, 0, 'subscription narration is included');
     await synthesize('Pluto flies off the slide.', 'Fish Voice', 'session', file, 1.5, signal, meter);
     const fish = speech(fake).at(-1).body;
-    assert.equal(fish.input, '[clear engaged audio description] Pluto flies off the slide.', 'a fish voice keeps its direction');
+    assert.equal(fish.input, 'Pluto flies off the slide.', 'a fish voice gets no direction of its own: the proxy paces it');
     assert.equal(fish.delivery, 'STABLE');
-    assert.equal(charges.at(-1).cost, Buffer.byteLength(fish.input, 'utf8') * speechPerByte, 'the direction a fish voice is billed for is booked');
-    assert.equal(await voiceInput('Pluto flies off the slide.', 'Voice 1'), 'Pluto flies off the slide.');
+    assert.equal(charges.at(-1).cost, Buffer.byteLength(fish.input, 'utf8') * speechPerByte);
     await synthesize('Baby Wile E. Coyote totters out of a cave door.', 'Voice 1', 'session', file, 1.5, signal, meter);
     assert.equal(speech(fake).at(-1).body.input, 'Baby Wiley Coyote totters out of a cave door.', 'every voice call, samples too, says Wiley');
   } finally {

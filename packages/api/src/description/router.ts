@@ -80,7 +80,8 @@ import type { Credit, CreditLogo } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
 import { settingsSchema, Halt, tiers } from './types';
-import { sampleRate } from './mix';
+import { pcmSeconds, sampleRate, trimSilence } from './mix';
+import { ranOn } from './timing';
 
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
 /** How a rehearsal ended; every ending leaves the video ready to describe. */
@@ -2212,8 +2213,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       const issue = error.issues[0];
       throw new Problem(
         issue?.code === 'custom' ||
-        issue?.path.includes('text') ||
-        issue?.path.includes('shortText')
+          issue?.path.includes('text') ||
+          issue?.path.includes('shortText')
           ? issue.message
           : 'A correction could not be read. Reopen the script and try again.',
         400,
@@ -3809,21 +3810,33 @@ export function createDescriptionRouter(hooks: Hooks): {
         const signal = AbortSignal.timeout(90 * second);
         const native = Math.min(1.5, rate);
         const file = join(directory, 'sample.wav');
-        await (hooks.providers?.synthesize ?? synthesize)(
-          text,
-          input.voice,
-          `sample:${owner}`,
-          file,
-          native,
-          signal,
-          async (kind, _reserve, action) => {
-            const result = await action();
-            spent += result.costUSD;
-            /* Voice samples are free to everyone: booked for the operator, charged to no one. */
-            await hooks.usage(owner, 'voice-sample', kind, result.costUSD, 0).catch(() => {});
-          },
-        );
-        audio = wav(await stretch(await decodeVoice(file, signal), rate / native, signal));
+        /* A short word or name is where a voice most often runs on (engine.ts `voice`). */
+        let heard: Float32Array | null = null;
+        for (let take = 0; take < 2 && !heard; take++) {
+          await (hooks.providers?.synthesize ?? synthesize)(
+            text,
+            input.voice,
+            take ? `sample:${owner}:again` : `sample:${owner}`,
+            file,
+            native,
+            signal,
+            async (kind, _reserve, action) => {
+              const result = await action();
+              spent += result.costUSD;
+              /* Voice samples are free to everyone: booked for the operator, charged to no one. */
+              await hooks.usage(owner, 'voice-sample', kind, result.costUSD, 0).catch(() => {});
+            },
+          );
+          const decoded = await decodeVoice(file, signal);
+          if (!ranOn(text, pcmSeconds(trimSilence(decoded)))) heard = decoded;
+        }
+        if (!heard)
+          throw new Problem(
+            'That voice kept talking past the words. Try the sample again.',
+            502,
+            'ranOn',
+          );
+        audio = wav(await stretch(heard, rate / native, signal));
       } finally {
         await release(reservation, spent).catch((error: Error) =>
           hooks.log('description sample release: ' + error.message),

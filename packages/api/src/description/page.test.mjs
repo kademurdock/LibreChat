@@ -2541,6 +2541,25 @@ test('voice picker: when samples fail for any other reason, the list goes quiet 
   assert.equal($('voice').value, 'warm man · oak', 'picking still works');
 });
 
+test('voice picker: a voice that kept talking past the words is said for that voice only, and the others keep playing', async () => {
+  const server = makeServer();
+  const env = await boot({ server, audio: webAudio() });
+  const heard = listen(env.$('status'));
+  server.override(
+    (method, path, body) => path === '/sample' && body.audition && body.voice === 'clear woman · flint',
+    () => ({ status: 502, body: { error: 'That voice kept talking past the words. Try the sample again.', field: 'ranOn' } }),
+    false,
+  );
+  await env.click('voice-open');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 1);
+  assert.ok(heard.some((text) => /^Flint kept talking past the words\./.test(text)), heard.join(' | '));
+  assert.ok(!heard.some((text) => /not playing right now/.test(text)), 'not an outage');
+  await key(env, 'ArrowDown');
+  await env.timers.advance(260);
+  assert.equal(auditions(server).length, 2, 'the next voice is still asked for');
+});
+
 test('voice picker: on an iPhone or iPad the samples play on an audio element, so the silent switch cannot mute them; the help says what to do on a phone', async () => {
   const iPhone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1';
   const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15';

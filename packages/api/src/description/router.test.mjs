@@ -89,6 +89,9 @@ let voicesDown = false;
 let realTranscribe = false;
 let simulateConcurrentCosts = false;
 let sampleCost = 0;
+/** Voice samples that come back as a 30 s run-on before a good take, and the long file. */
+let sampleRunsOn = 0;
+let longWav;
 /** When set, narration goes through the meter the way the real synthesize sends it (free today). */
 let meteredNarration = false;
 let beforeEngine = null;
@@ -513,6 +516,11 @@ before(async () => {
       },
       synthesize: async (text, _voice, _session, file, _speed, _signal, meter) => {
         calls.synthesize++;
+        if (sampleRunsOn && file.endsWith('sample.wav')) {
+          sampleRunsOn--;
+          await copyFile(longWav, file);
+          return;
+        }
         if (simulateConcurrentCosts || sampleCost) {
           await meter('speech', 0.3, async () => {
             await new Promise((resolve) => setTimeout(resolve, 75));
@@ -2018,6 +2026,33 @@ test('voice samples: any short text, cached per voice, speed and text, counted i
     sampleCost = 0;
   }
   await Budgets.deleteMany({});
+});
+
+test('voice samples: a voice that runs on past the words is asked once more; twice is an error that is never cached', async () => {
+  await Budgets.deleteMany({});
+  longWav = join(root, 'long.wav');
+  await command(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=660:sample_rate=24000:duration=30', longWav],
+    new AbortController().signal,
+  );
+  const voiced = calls.synthesize;
+  try {
+    sampleRunsOn = 1;
+    const again = await call('post', '/sample', 'runon-owner').send({ voice: 'Voice 1', rate: 1.5, text: 'Meeks' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 2, 'asked once more');
+    assert.ok(again.body.length < 48000 * 4 * 5, 'the good take is the one sent');
+    sampleRunsOn = 2;
+    const failed = await call('post', '/sample', 'runon-owner').send({ voice: 'Voice 1', rate: 1.5, text: 'Ozark' }).expect(502);
+    assert.match(failed.body.error, /kept talking past the words/);
+    assert.equal(failed.body.field, 'ranOn', 'so the picker can tell it from an outage');
+    sampleRunsOn = 0;
+    await call('post', '/sample', 'runon-owner').send({ voice: 'Voice 1', rate: 1.5, text: 'Ozark' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 5, 'the failed sample was not cached');
+  } finally {
+    sampleRunsOn = 0;
+    await Budgets.deleteMany({});
+  }
 });
 
 test('voice samples: the picker’s listen-as-you-move has its own hourly allowance; a voice already heard plays free', async () => {

@@ -40,12 +40,16 @@ const sentenceEnd = (word: string) => /[.!?…]["')\]]?$/.test(word);
 export const narrationGap = 0.35;
 /** Seconds kept free before speech starts again, so the soundtrack can come back up. */
 const clearance = 0.5;
+/** The gap left after another description's words before a freeze may start. */
+const breath = 0.05;
 
 /**
  * Finds where a description fits in the soundtrack, from the moment the event appears until its
  * last sensible moment, at no more than the listener's fastest speed. Among the gaps that fit, it
  * takes the first one unless a gap starting within 3 seconds of it holds the narration near her
  * usual speed and leaves room before the next line. `base` is the narration's length at 1x.
+ * `late` (pause mode, `lateWindow`) lets the narration start as late as `late.start` and run on
+ * to `late.end` instead of the cue's `until`, as long as its gap is free.
  */
 export function fitCue(
   cue: Cue,
@@ -54,12 +58,16 @@ export function fitCue(
   settings: Settings,
   blocked: Interval[],
   seconds: number,
+  late?: Interval,
 ): Placement | null {
   if (!Number.isFinite(base) || base <= 0) return null;
   const fits: { start: number; rate: number; room: number }[] = [];
+  const lastStart = late?.start ?? Infinity;
+  const lastEnd = late?.end ?? cue.until;
   for (const gap of gaps(blocked, seconds)) {
     const start = Math.max(gap.start, cue.at);
-    const end = Math.min(gap.end, cue.until, seconds);
+    if (start > lastStart + 1e-9) break;
+    const end = Math.min(gap.end, lastEnd, seconds);
     const available = end - start - 0.08;
     if (available <= 0) continue;
     const rate = Math.max(settings.rate, base / available);
@@ -155,6 +163,20 @@ export function pausePoint(
   return Math.min(point, seconds - 0.02);
 }
 
+/**
+ * How late pause mode may start a description over the running film before it freezes the
+ * picture instead (Napoleon, Oct 17 2026: Kade heard the picture stop during the opening credits
+ * "where it could have talked over the music"). An action may start as late as a freeze for it
+ * already could, up to 4 s after its last sensible moment; a card reading up to 2.5 s after the
+ * card leaves. Either may then run on to the next dialogue, protected sound or section edge.
+ */
+export const actionLate = 4;
+export const readingLate = 2.5;
+export const lateWindow = (cue: Cue): Interval => ({
+  start: cue.until + (cue.reading ? readingLate : actionLate),
+  end: Infinity,
+});
+
 /** Seconds of frozen picture kept after the narration so it does not butt into the next line. */
 export const pauseTail = 0.35;
 
@@ -224,6 +246,41 @@ export function toOutput(time: number, placements: Placement[]): number {
 export function tempoFilters(rate: number): string {
   if (!Number.isFinite(rate) || rate < 1 || rate > 3) throw new Error('Invalid narration rate.');
   return rate > 2 ? `atempo=2,atempo=${(rate / 2).toFixed(6)}` : `atempo=${rate.toFixed(6)}`;
+}
+
+/**
+ * Seconds a line of narration needs at 1x, the slowest any voice is asked for: the engine's
+ * starting length per UTF-8 byte (engine.ts seedSecondsPerByte), with digits, short all-capital
+ * words (often said letter by letter) and inner dots ("www.mgm.com", said "dot") counted as the
+ * longer words they become. Fish voices come back near this length whatever speed is asked for,
+ * because the voice proxy never stretches them.
+ */
+export function spokenSeconds(words: string): number {
+  const digits = (words.match(/\p{N}/gu) ?? []).length;
+  const spelled = (words.match(/\b\p{Lu}{2,5}\b/gu) ?? []).reduce(
+    (sum, word) => sum + word.length,
+    0,
+  );
+  const dots = (words.match(/[\p{L}\p{N}]\.[\p{L}\p{N}]/gu) ?? []).length;
+  return (Buffer.byteLength(words, 'utf8') + 4 * digits + 2 * spelled + 3 * dots) * 0.0625;
+}
+
+/** How far past `spokenSeconds` a clip may run before it counts as the voice running on. */
+export type RunOnLimit = { factor: number; slack: number };
+export const lineRunOn: RunOnLimit = { factor: 2.5, slack: 3 };
+/** The credit's words are fixed and plain, so its limit is tighter. */
+export const creditRunOn: RunOnLimit = { factor: 2, slack: 2.5 };
+
+/**
+ * A clip this long is a voice that ran on past its words, not a slow read (Napoleon, Oct 17
+ * 2026: Kade's Fish voice said the five-word opening credit about fifteen times over 48 s, and in
+ * later tests it went on into made-up chatter after the line, 2 takes in 6). Measured against
+ * that job's 33 real descriptions, the slowest (the MGM card, 14.9 s) sat under half its limit.
+ * KADE_VOICE_RUNON=0 turns the check off.
+ */
+export function ranOn(words: string, seconds: number, limit: RunOnLimit = lineRunOn): boolean {
+  if (process.env.KADE_VOICE_RUNON === '0') return false;
+  return seconds > limit.factor * spokenSeconds(words) + limit.slack;
 }
 
 /**
@@ -309,15 +366,8 @@ const spanOf = (placement: Placement): Interval =>
         end: placement.at + placement.duration + narrationGap,
       };
 
-/**
- * Places a section's descriptions in the order their events happen. Each one takes its full
- * text near the listener's usual speed if it can, then the short text, then either text up to
- * her fastest speed. A description is not allowed to take the room a later, more important one
- * needs; it is shortened, paused for (extended mode), or left out instead. `length` gives each
- * text's length at 1x, or undefined when that text cannot be used. Marked readings use only
- * the full text; chunks sharing a card window are spoken together or omitted together.
- */
-export function arrange(input: {
+/** What `arrange` places a section's descriptions from. */
+export type ArrangeInput = {
   cues: Cue[];
   length: (index: number, variant: Variant) => number | undefined;
   settings: Settings;
@@ -330,7 +380,161 @@ export function arrange(input: {
   prefer?: (index: number) => Variant | undefined;
   /** The earliest a freeze may start, clear of the section start. */
   earliest?: number;
-}): Arrangement {
+};
+/** One planning pass: whether late starts are tried, and what is kept from them. */
+type Pass = {
+  late: boolean;
+  /** Freeze exactly as the describer did before Oct 17 2026 (no moved freeze points). */
+  legacy: boolean;
+  /** Card windows (`readingWindow`) whose chunks freeze on the card rather than start late. */
+  onCard: Set<string>;
+  /** Descriptions that may not start late in this pass. */
+  noLate: Set<Cue>;
+};
+
+/**
+ * Places a section's descriptions in the order their events happen. Each one takes its full
+ * text near the listener's usual speed if it can, then the short text, then either text up to
+ * her fastest speed. A description is not allowed to take the room a later, more important one
+ * needs; it is shortened, paused for (extended mode), or left out instead. `length` gives each
+ * text's length at 1x, or undefined when that text cannot be used. Marked readings use only
+ * the full text; chunks sharing a card window are spoken together or omitted together.
+ *
+ * Pause mode keeps that plan, exactly as it was before Oct 17 2026, unless a newer one beats it
+ * on every count. The newer plans let a description start a little late over whatever music or
+ * sound follows (`lateWindow`) before freezing the picture, and move a freeze off another
+ * description still talking. One counts only when it speaks every description the old plan
+ * spoke, freezes no longer, and puts no more descriptions out of order, no more voices on top of
+ * each other and no more card lines out of order; when the late plan falls short, the late
+ * starts behind the shortfall are barred one pass at a time. Of those that count, the one that
+ * freezes least wins, then the one that speaks most, then the one with fewer voices overlapping.
+ */
+export function arrange(input: ArrangeInput): Arrangement {
+  const empty = { onCard: new Set<string>(), noLate: new Set<Cue>() };
+  const base = plan(input, { late: false, legacy: true, ...empty });
+  if (input.settings.mode !== 'extended') return base;
+  const calm = base.left.length === 0 && base.placed.every((item) => item.placement.pause === 0);
+  /** Nothing frozen and nothing left out: no other plan can do better. */
+  if (calm) return base;
+  const { cues } = input;
+  const eps = 1e-6;
+  const frozen = (result: Arrangement) =>
+    result.placed.reduce((sum, item) => sum + item.placement.pause, 0);
+  /** Descriptions heard before one whose event happened more than half a second earlier. */
+  const outOfOrder = (result: Arrangement) =>
+    result.placed.filter((item) =>
+      result.placed.some(
+        (other) =>
+          cues[item.index].at + 0.5 < cues[other.index].at &&
+          item.placement.at > other.placement.at + eps,
+      ),
+    );
+  /** Pairs heard the wrong way round, as listened to, among cues or among one card's lines. */
+  const pairs = (result: Arrangement, wrong: (a: number, b: number) => boolean) => {
+    /** Sorted as outputTimeline sorts (stably), so its answers line up with these. */
+    const sorted = [...result.placed].sort(
+      (a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt,
+    );
+    const heard = outputTimeline(sorted.map((item) => item.placement));
+    const order = sorted.map((item, n) => ({ index: item.index, at: heard[n].outputAt }));
+    return order.reduce(
+      (count, a) =>
+        count + order.filter((b) => wrong(a.index, b.index) && a.at > b.at + eps).length,
+      0,
+    );
+  };
+  const swapped = (result: Arrangement) => pairs(result, (a, b) => cues[a].until <= cues[b].at);
+  const cardSwapped = (result: Arrangement) =>
+    pairs(
+      result,
+      (a, b) => a < b && !!cues[a].reading && readingWindow(cues[a]) === readingWindow(cues[b]),
+    );
+  /** Pairs of descriptions heard on top of each other. */
+  const overlaps = (result: Arrangement) => {
+    const heard = outputTimeline(result.placed.map((item) => item.placement));
+    return heard.reduce(
+      (count, a) =>
+        count +
+        heard.filter(
+          (b) => a !== b && a.outputAt <= b.outputAt && b.outputAt < a.outputAt + a.duration - 1e-3,
+        ).length,
+      0,
+    );
+  };
+  const kept = base.placed.map((item) => item.index);
+  const limits = {
+    frozen: frozen(base),
+    disorder: outOfOrder(base).length,
+    swaps: swapped(base),
+    cards: cardSwapped(base),
+    overlaps: overlaps(base),
+  };
+  const shortfall = (tried: Arrangement) => {
+    const spoken = new Set(tried.placed.map((item) => item.index));
+    const lost = kept.filter((index) => !spoken.has(index)).map((index) => cues[index]);
+    const longer = frozen(tried) > limits.frozen + eps;
+    const shuffled = outOfOrder(tried);
+    const worse =
+      shuffled.length > limits.disorder ||
+      swapped(tried) > limits.swaps ||
+      cardSwapped(tried) > limits.cards ||
+      overlaps(tried) > limits.overlaps;
+    return lost.length || longer || worse ? { lost, longer, shuffled } : null;
+  };
+  const startedLate = (item: Arranged) =>
+    item.placement.pause === 0 &&
+    item.placement.at + item.placement.duration > cues[item.index].until - 0.08 + eps;
+  const late = (): Arrangement | null => {
+    const noLate = new Set<Cue>();
+    for (let pass = 0; pass <= cues.length; pass++) {
+      const tried = plan(input, { late: true, legacy: false, onCard: new Set(), noLate });
+      const short = shortfall(tried);
+      if (!short) return tried;
+      const started = tried.placed.filter(
+        (item) => startedLate(item) && !noLate.has(cues[item.index]),
+      );
+      if (!started.length) return null;
+      const from = Math.min(...short.lost.map((cue) => cue.at));
+      const to = Math.max(...short.lost.map((cue) => cue.until + actionLate));
+      const behind = short.lost.length
+        ? started.filter((item) => {
+            const span = spanOf(item.placement);
+            return span.end > from && span.start < to;
+          })
+        : short.longer
+          ? started
+          : started.filter((item) => short.shuffled.includes(item));
+      for (const item of behind.length ? behind : started) noLate.add(cues[item.index]);
+    }
+    return null;
+  };
+  const moved = plan(input, { late: false, legacy: false, ...empty });
+  const better = (a: Arrangement, b: Arrangement) =>
+    frozen(a) < frozen(b) - eps ||
+    (frozen(a) <= frozen(b) + eps &&
+      (a.placed.length > b.placed.length ||
+        (a.placed.length === b.placed.length && overlaps(a) < overlaps(b))));
+  const chosen = [late(), shortfall(moved) ? null : moved].reduce<Arrangement>(
+    (best, option) => (option && better(option, best) ? option : best),
+    base,
+  );
+  /**
+   * A description the old plan left out for room or as minor keeps that reason, never 'priority',
+   * so the engine can still carry it into the next section as before.
+   */
+  const reasons = new Map(base.left.map((item) => [item.index, item.reason]));
+  return {
+    ...chosen,
+    left: chosen.left.map((item) => {
+      const before = reasons.get(item.index);
+      return item.reason === 'priority' && before && before !== 'priority'
+        ? { ...item, reason: before }
+        : item;
+    }),
+  };
+}
+
+function plan(input: ArrangeInput, pass: Pass): Arrangement {
   const { cues, settings, seconds } = input;
   const order = cues
     .map((cue, index) => ({ cue, index }))
@@ -381,8 +585,57 @@ export function arrange(input: {
       [...input.blocked, ...taken, { start: 0, end: from }],
       seconds,
     );
+  const extended = settings.mode === 'extended';
+  const lateOn = (index: number) =>
+    pass.late &&
+    extended &&
+    cues[index].importance >= 2 &&
+    !pass.noLate.has(cues[index]) &&
+    !(cues[index].reading && pass.onCard.has(readingWindow(cues[index])));
+  /** A late try never speaks slower than `least` (at most `limit`), to leave room for later ones. */
+  const fitLate = (
+    index: number,
+    variant: Variant,
+    limit: number,
+    taken: Interval[],
+    from: number,
+    least: number,
+  ) =>
+    fitCue(
+      cues[index],
+      textOf(cues[index], variant),
+      lengths(index)[variant] ?? NaN,
+      { ...settings, rate: Math.min(limit, least), maxRate: limit },
+      [...input.blocked, ...taken, { start: 0, end: from }],
+      seconds,
+      lateWindow(cues[index]),
+    );
   const fitsAnywhere = (index: number, taken: Interval[], from: number) =>
     tries(index).some(([variant]) => !!fit(index, variant, settings.maxRate, taken, from));
+  /** Spoken over the running film, on time or late: anything but a freeze. */
+  const overFilm = (index: number, taken: Interval[], from: number) =>
+    tries(index).some(
+      ([variant, limit]) =>
+        !!fit(index, variant, limit, taken, from) ||
+        (lateOn(index) && !!fitLate(index, variant, limit, taken, from, settings.rate)),
+    );
+  const later = (position: number, span: Interval) =>
+    order.slice(position + 1).filter((item) => item.cue.at < span.end);
+  /** True when taking `span` would make a later important description freeze instead. */
+  const forcesFreeze = (position: number, span: Interval) =>
+    later(position, span).some(
+      (item) =>
+        item.cue.importance >= 2 &&
+        overFilm(item.index, spans, floor) &&
+        !overFilm(item.index, [...spans, span], Math.max(floor, span.end)),
+    );
+  /** True when taking `span` would leave a later description of any importance no gap. */
+  const crowds = (position: number, span: Interval) =>
+    later(position, span).some(
+      (item) =>
+        fitsAnywhere(item.index, spans, floor) &&
+        !fitsAnywhere(item.index, [...spans, span], Math.max(floor, span.end)),
+    );
   const hurts = (position: number, span: Interval) =>
     order
       .slice(position + 1)
@@ -394,6 +647,8 @@ export function arrange(input: {
       );
   const placed: Arranged[] = [];
   const left: Arrangement['left'] = [];
+  /** Placements a late try made, the only ones a card is re-planned for. */
+  const startedLate = new Set<Arranged>();
   order.forEach(({ cue, index }, position) => {
     let chosen: Arranged | null = null;
     let crowded = false;
@@ -407,8 +662,31 @@ export function arrange(input: {
       chosen = { index, variant, placement: { ...placement, shortened: variant === 'short' } };
       break;
     }
+    if (!chosen && lateOn(index)) {
+      /** The first late start that crowds nothing out wins; otherwise the first that fits. */
+      let fallback: Arranged | null = null;
+      late: for (const [variant, limit] of tries(index))
+        for (const least of new Set([settings.rate, Math.min(limit, settings.rate * 1.2), limit])) {
+          const placement = fitLate(index, variant, limit, spans, floor, least);
+          if (!placement) break;
+          const span = spanOf(placement);
+          if (hurts(position, span) || forcesFreeze(position, span)) continue;
+          const option = {
+            index,
+            variant,
+            placement: { ...placement, shortened: variant === 'short' },
+          };
+          if (!crowds(position, span)) {
+            chosen = option;
+            break late;
+          }
+          fallback ??= option;
+        }
+      chosen ??= fallback;
+      if (chosen) startedLate.add(chosen);
+    }
     const full = lengths(index).full;
-    if (!chosen && settings.mode === 'extended' && cue.importance >= 2 && full !== undefined) {
+    if (!chosen && extended && cue.importance >= 2 && full !== undefined) {
       const earlierReading = cue.reading
         ? placed.find(
             (item) =>
@@ -428,15 +706,74 @@ export function arrange(input: {
           input.earliest,
         );
       const end = cue.reading ? Math.min(seconds, cue.until) : seconds;
-      const point =
+      const aimed =
         cue.reading && !earlierReading
           ? Math.min(Math.max(cue.at, end - 0.05), Math.max(cue.at, suggested))
           : suggested;
-      const latest = Math.min(seconds - 0.05, cue.until + (cue.reading ? 0 : 4));
-      const readingInWord =
-        cue.reading &&
-        input.words.some((word) => word.start - 0.03 < point && point < word.end + 0.03);
-      if (point > latest + 1e-9 || inside(point, input.hard) || readingInWord) {
+      /**
+       * A freeze never starts while an earlier description is still talking over the film, on its
+       * own or before its own freeze, nor before an earlier chunk of its own card has been read.
+       * Chunks of one card keep sharing their first chunk's freeze, with the grace that freeze was
+       * given. When the moved point cannot freeze, the old one is used, as before.
+       */
+      const talking = earlierReading
+        ? []
+        : placed
+            .map(({ placement }) => ({
+              start: placement.at,
+              end: placement.pause ? placement.pauseAt : placement.at + placement.duration,
+            }))
+            .filter((span) => span.end > span.start)
+            .sort((a, b) => a.start - b.start);
+      const cardRead = cue.reading
+        ? placed
+            .filter(
+              (item) =>
+                cues[item.index].reading &&
+                readingWindow(cues[item.index]) === readingWindow(cue) &&
+                item.placement.pause === 0,
+            )
+            .reduce(
+              (time, item) => Math.max(time, item.placement.at + item.placement.duration + breath),
+              -Infinity,
+            )
+        : -Infinity;
+      const moved = Math.max(
+        cardRead,
+        talking.reduce(
+          (time, span) =>
+            span.start - 0.01 < time && time < span.end + breath
+              ? Math.max(span.end, Math.min(span.end + breath, seconds - 0.05))
+              : time,
+          aimed,
+        ),
+      );
+      const freezable = (time: number) => {
+        const grace = cue.reading ? (time > aimed || earlierReading ? readingLate : 0) : actionLate;
+        const latest = Math.min(seconds - 0.05, cue.until + grace);
+        const inWord =
+          cue.reading &&
+          input.words.some((word) => word.start - 0.03 < time && time < word.end + 0.03);
+        return time <= latest + 1e-9 && !inside(time, input.hard) && !inWord;
+      };
+      /** Before Oct 17 2026 a freeze stayed where it was aimed, its card's end the limit. */
+      const asBefore = (time: number) =>
+        time <= Math.min(seconds - 0.05, cue.until + (cue.reading ? 0 : actionLate)) + 1e-9 &&
+        !inside(time, input.hard) &&
+        !(
+          cue.reading &&
+          input.words.some((word) => word.start - 0.03 < time && time < word.end + 0.03)
+        );
+      const point = pass.legacy
+        ? asBefore(aimed)
+          ? aimed
+          : undefined
+        : freezable(moved)
+          ? moved
+          : freezable(aimed)
+            ? aimed
+            : undefined;
+      if (point === undefined) {
         left.push({ index, reason: 'room' });
         return;
       }
@@ -457,7 +794,7 @@ export function arrange(input: {
     if (!chosen) {
       const reason: Leftover = crowded
         ? 'priority'
-        : settings.mode === 'extended' && cue.importance === 1
+        : extended && cue.importance === 1
           ? 'minor'
           : 'room';
       left.push({ index, reason });
@@ -468,40 +805,64 @@ export function arrange(input: {
     floor = Math.max(floor, span.end);
     placed.push(chosen);
   });
+  const readings = new Map<string, number[]>();
+  cues.forEach((cue, index) => {
+    if (!cue.reading) return;
+    const window = readingWindow(cue);
+    readings.set(window, [...(readings.get(window) ?? []), index]);
+  });
   {
-    const readings = new Map<string, number[]>();
-    cues.forEach((cue, index) => {
-      if (!cue.reading) return;
-      const window = readingWindow(cue);
-      readings.set(window, [...(readings.get(window) ?? []), index]);
-    });
-    const spoken = new Set(placed.map((item) => item.index));
-    const incomplete = new Set(
-      [...readings.values()]
-        .filter(
-          (group) =>
-            group.some((index) => spoken.has(index)) && group.some((index) => !spoken.has(index)),
-        )
-        .flat(),
-    );
-    if (incomplete.size) {
-      // A finite card is one reading: omit all its chunks when only part fits, then release
-      // their room for other descriptions. Each retry removes at least one reading group.
-      const indices = cues.map((_cue, index) => index).filter((index) => !incomplete.has(index));
-      const rest = arrange({
+    const ranLate = (item: Arranged) =>
+      startedLate.has(item) &&
+      item.placement.at + item.placement.duration > cues[item.index].until + 1e-6;
+    const windows = new Map<string, Arranged[]>();
+    for (const item of placed) {
+      if (!cues[item.index].reading) continue;
+      const window = readingWindow(cues[item.index]);
+      windows.set(window, [...(windows.get(window) ?? []), item]);
+    }
+    /** A card read partly late and partly frozen, or late with chunks missing, freezes whole. */
+    const split = [...windows]
+      .filter(
+        ([window, items]) =>
+          !pass.onCard.has(window) &&
+          items.some(ranLate) &&
+          (items.some((item) => item.placement.pause > 0) ||
+            items.length < (readings.get(window)?.length ?? 0)),
+      )
+      .map(([window]) => window);
+    // Each pass adds at least one card window, so this ends.
+    if (split.length) return plan(input, { ...pass, onCard: new Set([...pass.onCard, ...split]) });
+  }
+  const spoken = new Set(placed.map((item) => item.index));
+  const incomplete = new Set(
+    [...readings.values()]
+      .filter(
+        (group) =>
+          group.some((index) => spoken.has(index)) && group.some((index) => !spoken.has(index)),
+      )
+      .flat(),
+  );
+  if (incomplete.size) {
+    // A finite card is one reading: omit all its chunks when only part fits, then release
+    // their room for other descriptions. Each retry removes at least one reading group.
+    const indices = cues.map((_cue, index) => index).filter((index) => !incomplete.has(index));
+    const rest = plan(
+      {
         ...input,
         cues: indices.map((index) => cues[index]),
         length: (index, variant) => input.length(indices[index], variant),
         prefer: (index) => input.prefer?.(indices[index]),
-      });
-      return {
-        placed: rest.placed.map((item) => ({ ...item, index: indices[item.index] })),
-        left: [
-          ...rest.left.map((item) => ({ ...item, index: indices[item.index] })),
-          ...[...incomplete].map((index) => ({ index, reason: 'room' as const })),
-        ].sort((a, b) => a.index - b.index),
-      };
-    }
+      },
+      pass,
+    );
+    return {
+      placed: rest.placed.map((item) => ({ ...item, index: indices[item.index] })),
+      left: [
+        ...rest.left.map((item) => ({ ...item, index: indices[item.index] })),
+        ...[...incomplete].map((index) => ({ index, reason: 'room' as const })),
+      ].sort((a, b) => a.index - b.index),
+    };
   }
   return { placed, left };
 }

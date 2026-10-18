@@ -22,6 +22,11 @@ import {
   mergeIntervals,
   outputTimeline,
   stretchSigns,
+  ranOn,
+  creditRunOn,
+  spokenSeconds,
+  actionLate,
+  readingLate,
 } from './timing.ts';
 import {
   mix,
@@ -458,7 +463,7 @@ test('the short text wins over the full text squeezed toward the fastest speed',
 test('finite card readings use their exact full text despite a sticky short preference', () => {
   const reading = { ...cue, at: 1, until: 2.5, pauseAt: 1.2, reading: true };
   const lengths = [];
-  const layout = (mode, full) =>
+  const layout = (mode, full, blocked = []) =>
     arrange({
       cues: [reading],
       length: (_index, variant) => {
@@ -467,17 +472,21 @@ test('finite card readings use their exact full text despite a sticky short pref
       },
       prefer: () => 'short',
       settings: { ...settings, mode },
-      blocked: [],
+      blocked,
       hard: [],
       words: [],
       seconds: 10,
     });
-  const extended = layout('extended', 12);
+  const extended = layout('extended', 12, [{ start: 2.6, end: 10 }]);
   assert.equal(extended.placed[0].variant, 'full');
   assert.equal(extended.placed[0].placement.text, reading.text);
   assert.equal(extended.placed[0].placement.shortened, false);
-  assert.ok(extended.placed[0].placement.pause > 0);
+  assert.ok(extended.placed[0].placement.pause > 0, 'speech right after the card: it freezes');
   assert.ok(extended.placed[0].placement.pauseAt < reading.until);
+  const overMusic = layout('extended', 12);
+  assert.equal(overMusic.placed[0].placement.text, reading.text);
+  assert.equal(overMusic.placed[0].placement.shortened, false);
+  assert.equal(overMusic.placed[0].placement.pause, 0, 'nothing after the card: it reads on over the film');
   assert.deepEqual(layout('standard', 12).left, [{ index: 0, reason: 'room' }]);
   const standard = layout('standard', 1);
   assert.equal(standard.placed[0].variant, 'full');
@@ -623,21 +632,26 @@ test('extended pauses respect complete protected speech and the existing event g
     layout(protectedSpeech, { ...cue, at: 7, until: 9, pauseAt: 8, reading: true }).left,
     [{ index: 0, reason: 'room' }],
   );
-  const words = [{ start: 1, end: 3, word: 'Dialogue' }];
-  const crossing = arrange({
-    cues: [{ ...cue, at: 1, until: 2, pauseAt: 1.2, reading: true }],
-    length: () => 4,
-    settings: { ...settings, mode: 'extended' },
-    blocked: mergeIntervals(words, 10, 0.22),
-    hard: [],
-    words,
-    seconds: 10,
-  });
+  const crossingAt = (end) => {
+    const words = [{ start: 1, end, word: 'Dialogue' }];
+    return arrange({
+      cues: [{ ...cue, at: 1, until: 2, pauseAt: 1.2, reading: true }],
+      length: () => 4,
+      settings: { ...settings, mode: 'extended' },
+      blocked: mergeIntervals(words, 10, 0.22),
+      hard: [],
+      words,
+      seconds: 10,
+    });
+  };
   assert.deepEqual(
-    crossing.left,
+    crossingAt(5).left,
     [{ index: 0, reason: 'room' }],
     'clamping back to a card cannot move a freeze into a recognized word',
   );
+  const waited = crossingAt(3).placed[0].placement;
+  assert.ok(waited.at >= 3.22 && waited.at <= 2 + readingLate, 'a short line is waited out');
+  assert.equal(waited.pause, 0);
   const nearEnd = layout([{ start: 5, end: 25 }], { ...cue, at: 23, until: 24, pauseAt: 23 });
   assert.deepEqual(
     nearEnd.left,
@@ -667,6 +681,369 @@ test('extended mode pauses for important descriptions and leaves minor ones out'
   assert.equal(placed.length, 1);
   assert.ok(placed[0].placement.pause > 0);
   assert.deepEqual(left, [{ index: 1, reason: 'minor' }]);
+});
+
+test('run-on check: real Napoleon lines at their measured lengths pass; the looped credit does not', () => {
+  const mgm =
+    'The Metro Goldwyn Mayer logo appears: a roaring lion inside a gold film reel. Text reads Metro Goldwyn Mayer, Ars Gratia Artis, TRADE MARK, and www.mgm.com.';
+  const herald =
+    'Text reads HERALD ACE INC, AUSTRALIAN FILM FINANCE CORPORATION LIMITED, THE SAMUEL GOLDWYN COMPANY present.';
+  assert.equal(ranOn(mgm, 14.92), false, 'the slowest real line of the job');
+  assert.ok(14.92 < (2.5 * spokenSeconds(mgm) + 3) / 2, 'and it sits under half its limit');
+  assert.equal(ranOn('Text reads NAPOLEON.', 2.01), false);
+  assert.equal(ranOn(herald, 9.63), false);
+  const numbers = 'Text reads 1-800-555-0199, open 24 hours, or call 417-555-0123 today.';
+  assert.equal(ranOn(numbers, Buffer.byteLength(numbers) * 0.09), false, 'a slow read of a number card');
+  const start = 'Audio description by Kade-AI.';
+  assert.equal(ranOn(start, 2.5, creditRunOn), false);
+  assert.equal(ranOn('Described by Kade-AI. More at kademurdock dot com.', 4.27, creditRunOn), false);
+  for (const looped of [9.96, 18.76, 46.42]) assert.equal(ranOn(start, looped, creditRunOn), true);
+  assert.equal(ranOn('A red balloon floats down.', 43.1), true, 'made-up chatter after a short line');
+  process.env.KADE_VOICE_RUNON = '0';
+  try {
+    assert.equal(ranOn(start, 46.42, creditRunOn), false, 'the switch turns the check off');
+  } finally {
+    delete process.env.KADE_VOICE_RUNON;
+  }
+});
+
+test('pause mode reads opening credit cards back to back over the music instead of freezing', () => {
+  const cards = [1, 3, 9, 15].map((at, n) => ({
+    ...cue,
+    at,
+    until: at + 2,
+    pauseAt: at,
+    text: `Card ${n + 1} names a company.`,
+    reading: true,
+  }));
+  const words = [{ start: 31, end: 33, word: 'Hello' }];
+  const layout = (mode) =>
+    arrange({
+      cues: cards,
+      length: () => 8,
+      settings: { ...settings, mode, rate: 2, maxRate: 3 },
+      blocked: mergeIntervals(words, 40, 0.22),
+      hard: [],
+      words,
+      seconds: 40,
+    });
+  const extended = layout('extended');
+  assert.deepEqual(extended.left, []);
+  assert.deepEqual(
+    extended.placed.map((item) => item.index),
+    [0, 1, 2, 3],
+  );
+  for (const { index, placement } of extended.placed) {
+    assert.equal(placement.pause, 0, `card ${index + 1} is read over the film`);
+    assert.ok(placement.at <= cards[index].until + readingLate + 1e-9);
+    assert.ok(placement.at + placement.duration <= 31 - 0.22);
+  }
+  for (let n = 1; n < 4; n++) {
+    const before = extended.placed[n - 1].placement;
+    assert.ok(extended.placed[n].placement.at >= before.at + before.duration, 'one at a time');
+  }
+  assert.equal(layout('standard').left.length, 4, 'standard mode is unchanged');
+});
+
+test('pause mode waits out a short line instead of freezing just before it', () => {
+  const words = [
+    { start: 3.88, end: 4.44, word: 'Hey.' },
+    { start: 12.44, end: 14, word: 'Later.' },
+  ];
+  const cues = [
+    { ...cue, at: 3.61, until: 6.5, pauseAt: 3.61, text: 'The children run from the pool.' },
+    { ...cue, at: 4.68, until: 9, pauseAt: 4.68, text: 'He looks around.', shortText: 'He looks.' },
+  ];
+  const { placed, left } = arrange({
+    cues,
+    length: (index, variant) => (index === 0 ? 7.3 : variant === 'full' ? 7.22 : 3.5),
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals(words, 20, 0.22),
+    hard: [],
+    words,
+    seconds: 20,
+  });
+  assert.deepEqual(left, []);
+  const [first, second] = placed.map((item) => item.placement);
+  assert.ok(first.at >= 4.44 + 0.22 - 1e-9 && first.at <= cues[0].until + actionLate);
+  assert.ok(second.at >= first.at + first.duration && second.at <= cues[1].until + actionLate);
+  assert.ok(second.at + second.duration <= 12.44 - 0.22);
+  assert.equal(first.pause + second.pause, 0);
+});
+
+test('a description never starts later than a freeze for it could; past that it freezes as before', () => {
+  const words = [{ start: 3, end: 9, word: 'Talking' }];
+  const { placed } = arrange({
+    cues: [{ ...cue, at: 2.8, until: 4, pauseAt: 2.8 }],
+    length: () => 7.3,
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals(words, 20, 0.22),
+    hard: [],
+    words,
+    seconds: 20,
+  });
+  assert.equal(placed.length, 1);
+  assert.ok(placed[0].placement.pause > 0);
+  assert.ok(placed[0].placement.pauseAt < 3);
+});
+
+test('a late start that would make an important card freeze is not taken', () => {
+  const words = [
+    { start: 1.3, end: 1.6, word: 'Hey.' },
+    { start: 4.9, end: 10, word: 'Talking' },
+  ];
+  const { placed } = arrange({
+    cues: [
+      { ...cue, at: 1, until: 1.5, pauseAt: 1 },
+      { ...cue, at: 2, until: 4, pauseAt: 2, text: 'A sign reads Open.', reading: true },
+    ],
+    length: (index) => (index === 0 ? 6 : 4),
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals(words, 12, 0.22),
+    hard: [],
+    words,
+    seconds: 12,
+  });
+  const byIndex = Object.fromEntries(placed.map((item) => [item.index, item.placement]));
+  assert.ok(byIndex[0].pause > 0, 'the action freezes');
+  assert.equal(byIndex[1].pause, 0, 'so the card is still read on time over the film');
+});
+
+test('a card reading never freezes while an earlier description is still talking', () => {
+  const words = [{ start: 7, end: 15, word: 'Talking' }];
+  const { placed } = arrange({
+    cues: [
+      { ...cue, at: 4, until: 9, pauseAt: 4 },
+      { ...cue, at: 5, until: 6, pauseAt: 5, text: 'A sign reads Open.', reading: true },
+    ],
+    length: (index) => (index === 0 ? 5 : 4),
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals(words, 20, 0.22),
+    hard: [],
+    words,
+    seconds: 20,
+  });
+  const [action, card] = [0, 1].map((index) => placed.find((item) => item.index === index).placement);
+  assert.equal(action.pause, 0);
+  assert.ok(card.at >= action.at + action.duration, 'no two narrations at once');
+  assert.ok(card.pause > 0);
+});
+
+test('chunks of one card are either all read late over the film or all frozen on the card', () => {
+  const words = [{ start: 4.6, end: 12, word: 'Talking' }];
+  const cards = ['First complete line.', 'Second complete line.'].map((text) => ({
+    ...cue,
+    at: 1,
+    until: 2,
+    pauseAt: 1.2,
+    text,
+    reading: true,
+  }));
+  const { placed, left } = arrange({
+    cues: cards,
+    length: () => 6,
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals(words, 14, 0.22),
+    hard: [],
+    words,
+    seconds: 14,
+  });
+  assert.deepEqual(left, []);
+  assert.ok(placed.every((item) => item.placement.pause > 0));
+  assert.equal(placed[0].placement.pauseAt, placed[1].placement.pauseAt);
+});
+
+test('pause mode never drops a card the old plan kept: chunks that share a moved freeze keep its grace', () => {
+  const words = [{ start: 6, end: 20, word: 'Talking' }];
+  const chunks = [1, 3, 3].map((_length, n) => ({
+    ...cue,
+    at: 1,
+    until: 2,
+    pauseAt: 1.2,
+    text: `Card line ${n + 1}.`,
+    reading: true,
+  }));
+  const one = arrange({
+    cues: chunks,
+    length: (index) => [1, 3, 3][index],
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+    blocked: mergeIntervals(words, 20, 0.22),
+    hard: [],
+    words,
+    seconds: 20,
+  });
+  assert.deepEqual(one.left, []);
+  const frozen = one.placed.filter((item) => item.placement.pause > 0);
+  assert.ok(frozen.length >= 2 && frozen.every((item) => item.placement.pauseAt === frozen[0].placement.pauseAt));
+
+  const action = { ...cue, at: 2, until: 6, pauseAt: 2, importance: 2 };
+  const card = ['A sign reads Open.', 'Below: hours nine to five.'].map((text) => ({
+    ...cue,
+    at: 2.5,
+    until: 3.5,
+    pauseAt: 2.5,
+    text,
+    reading: true,
+  }));
+  const talk = [{ start: 5, end: 20, word: 'Talking' }];
+  const two = arrange({
+    cues: [action, ...card],
+    length: (index) => [2, 6, 5][index],
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+    blocked: mergeIntervals(talk, 20, 0.22),
+    hard: [],
+    words: talk,
+    seconds: 20,
+  });
+  assert.deepEqual(two.left, []);
+});
+
+test('pause mode: a late start never pushes out a later important card, and never crowds out a minor one', () => {
+  const talk = [
+    { start: 0, end: 3, word: 'Talking' },
+    { start: 10, end: 20, word: 'Talking' },
+  ];
+  const pushed = arrange({
+    cues: [
+      { ...cue, at: 1, until: 2.5, pauseAt: 1, importance: 2 },
+      { ...cue, at: 3.5, until: 6, pauseAt: 3.5, text: 'A long sign.', reading: true },
+    ],
+    length: (index) => (index === 0 ? 5.5 : 12),
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+    blocked: mergeIntervals(talk, 20, 0.22),
+    hard: [],
+    words: talk,
+    seconds: 20,
+  });
+  assert.deepEqual(pushed.left, [], 'both are spoken, as before');
+
+  const words = [{ start: 1.3, end: 3, word: 'Hello there.' }];
+  const minor = arrange({
+    cues: [
+      { ...cue, at: 1, until: 2, pauseAt: 1, importance: 3 },
+      { ...cue, at: 5, until: 8, pauseAt: 5, importance: 1, text: 'A bird lands.', shortText: 'A bird.' },
+    ],
+    length: (index, variant) => (index === 0 ? (variant === 'full' ? 6 : 5) : variant === 'full' ? 2 : 1.8),
+    settings: { ...settings, mode: 'extended' },
+    blocked: mergeIntervals(words, 20, 0.22),
+    hard: [],
+    words,
+    seconds: 20,
+  });
+  assert.deepEqual(minor.left, [], 'the minor description is still spoken');
+});
+
+test('pause mode: a card read partly late with a chunk that does not fit freezes whole on the card instead of being dropped', () => {
+  const talk = [
+    { start: 0, end: 1.5, word: 'Talking' },
+    { start: 8, end: 20, word: 'Talking' },
+  ];
+  const { placed, left } = arrange({
+    cues: ['First line.', 'Second, much longer line.'].map((text) => ({
+      ...cue,
+      at: 1,
+      until: 2,
+      pauseAt: 1.2,
+      text,
+      reading: true,
+    })),
+    length: (index) => (index === 0 ? 4 : 12),
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+    blocked: mergeIntervals(talk, 20, 0.22),
+    hard: [],
+    words: talk,
+    seconds: 20,
+  });
+  assert.deepEqual(left, []);
+  assert.ok(placed.every((item) => item.placement.pause > 0));
+});
+
+test('pause mode: a freeze never starts while an earlier description is still talking before its own freeze', () => {
+  const talk = [
+    { start: 0, end: 2, word: 'Talking' },
+    { start: 6, end: 20, word: 'Talking' },
+  ];
+  const { placed } = arrange({
+    cues: [
+      { ...cue, at: 2.5, until: 3, pauseAt: 2.5 },
+      { ...cue, at: 3, until: 5, pauseAt: 3, text: 'A sign reads Open.', reading: true },
+    ],
+    length: (index) => (index === 0 ? 10 : 4),
+    settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+    blocked: mergeIntervals(talk, 20, 0.22),
+    hard: [],
+    words: talk,
+    seconds: 20,
+  });
+  const output = outputTimeline(placed.map((item) => item.placement));
+  for (const a of output)
+    for (const b of output)
+      if (a !== b && a.outputAt < b.outputAt)
+        assert.ok(b.outputAt >= a.outputAt + a.duration - 1e-6, 'one voice at a time');
+});
+
+test('pause mode: an event during a protected sound is spoken right after it instead of freezing', () => {
+  const hard = [{ start: 0, end: 6.5 }];
+  const words = [
+    { start: 6.8, end: 7.36, word: 'Hey.' },
+    { start: 15.36, end: 20, word: 'Talking' },
+  ];
+  const { placed } = arrange({
+    cues: [{ ...cue, at: 0.1, until: 7.1, pauseAt: 7 }],
+    length: () => 7.3,
+    settings: { ...settings, mode: 'extended', rate: 2, maxRate: 3 },
+    blocked: mergeIntervals([...mergeIntervals(words, 20, 0.22), ...mergeIntervals(hard, 20, 0.1)], 20),
+    hard,
+    words,
+    seconds: 20,
+  });
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].placement.pause, 0, 'spoken after the sound and the short line, no freeze');
+  assert.ok(placed[0].placement.at <= 7.1 + actionLate, 'no later than a freeze for it could start');
+});
+
+test('pause mode: a card with a one-character last line after a long action is planned, not retried forever', () => {
+  const card = { ...cue, at: 10, until: 14, pauseAt: 10, reading: true };
+  const cues = [
+    { ...cue, at: 8, until: 14, pauseAt: 8, text: 'A long action line', shortText: 'Action' },
+    { ...card, text: 'x'.repeat(179), shortText: 'x'.repeat(179) },
+    { ...card, text: '2', shortText: '2' },
+  ];
+  const words = Array.from({ length: 11 }, (_, i) => ({ start: 14.6 + i * 0.5, end: 15 + i * 0.5, word: 'w' }));
+  for (const action of [10.4, 11.5, 11.8]) {
+    const { placed, left } = arrange({
+      cues,
+      length: (index, variant) =>
+        index === 0 ? (variant === 'full' ? action : undefined) : variant === 'full' ? cues[index].text.length * 0.0625 : undefined,
+      settings: { ...settings, mode: 'extended', rate: 1.5, maxRate: 2 },
+      blocked: mergeIntervals(words, 30, 0.22),
+      hard: [],
+      words,
+      seconds: 30,
+    });
+    assert.equal(placed.length + left.length, 3);
+  }
+});
+
+test('pause mode: the last card of a film is still read when its first line runs to the very end', () => {
+  const card = { ...cue, at: 17, until: 20, pauseAt: 17, reading: true };
+  const cues = [
+    { ...card, text: 'THE END', shortText: 'THE END' },
+    { ...card, text: 'Copyright MCMLXX Metro-Goldwyn-Mayer', shortText: 'Copyright MCMLXX Metro-Goldwyn-Mayer' },
+  ];
+  for (const first of [2.92, 3.5, 4.2]) {
+    const { placed, left } = arrange({
+      cues,
+      length: (index) => (index === 0 ? first : 3.5),
+      settings: { ...settings, mode: 'extended', rate: 1, maxRate: 1.5 },
+      blocked: [],
+      hard: [],
+      words: [],
+      seconds: 20,
+    });
+    assert.deepEqual(left, [], `first line ${first} s`);
+    assert.equal(placed.length, 2);
+  }
 });
 
 test('a pause near the section end freezes the last frame instead of running past the end', () => {
@@ -2283,6 +2660,106 @@ test('a description whose voice fails twice is reported, not fatal', async () =>
   assert.ok((await stat(result.video)).size > 1000);
 });
 
+test('a description whose voice runs on is asked once more under a fresh session, and the good take is used', async () => {
+  const f = await fixture('voice-runs-on');
+  const long = await toneFile(f.dir, 'long.wav', 660, 20);
+  const backend = providers(f.voice, [], [cue]);
+  const sessions = [];
+  backend.synthesize = async (_text, _voice, session, file) => {
+    sessions.push(session);
+    await copyFile(sessions.length === 1 ? long : f.voice, file);
+  };
+  const log = [];
+  const result = await run(f, [], [], { providers: backend, log });
+  assert.equal(result.report.descriptions.length, 1);
+  assert.equal(result.report.skipped.length, 0);
+  assert.ok(result.report.descriptions[0].duration < 5, 'the 20 s take was never used');
+  assert.deepEqual(sessions.slice(0, 2), ['synthetic-test', 'synthetic-test:again']);
+  assert.ok(
+    log.some((line) => /^Voice ran on: 20\.0 s for about 2\.2 s of words \("A red square/.test(line) && line.endsWith('asked once more.')),
+    log.join('\n'),
+  );
+});
+
+test('a full text whose voice keeps running on is spoken as its short text; both running on leaves it out with its own reason', async () => {
+  const f = await fixture('voice-runs-on-full');
+  const long = await toneFile(f.dir, 'long.wav', 660, 20);
+  const backend = providers(f.voice, [], [cue]);
+  backend.synthesize = async (text, _voice, _session, file) => {
+    await copyFile(text === cue.text ? long : f.voice, file);
+  };
+  const shortened = await run(f, [], [], { providers: backend });
+  assert.equal(shortened.report.descriptions.length, 1);
+  assert.equal(shortened.report.descriptions[0].text, cue.shortText);
+  assert.equal(shortened.report.descriptions[0].shortened, true);
+
+  const g = await fixture('voice-runs-on-both');
+  const always = providers(g.voice, [], [cue]);
+  const asked = [];
+  always.synthesize = async (text, _voice, _session, file) => {
+    asked.push(text);
+    await copyFile(long, file);
+  };
+  const left = await run(g, [], [], { providers: always });
+  assert.equal(left.report.descriptions.length, 0);
+  assert.equal(left.report.skipped.length, 1);
+  assert.match(left.report.skipped[0].reason, /kept talking far past these words/);
+  assert.ok(asked.includes(cue.text) && asked.includes(cue.shortText), 'both texts were tried');
+  assert.ok((await stat(left.video)).size > 1000, 'the copy is still made');
+});
+
+test('a full text whose voice runs on after a dropped first try is spoken as its short text', async () => {
+  const f = await fixture('voice-runs-on-after-drop');
+  const long = await toneFile(f.dir, 'long.wav', 660, 20);
+  const backend = providers(f.voice, [], [cue]);
+  const asked = [];
+  backend.synthesize = async (text, _voice, _session, file) => {
+    asked.push({ text, file: file.split(/[\\/]/).pop() });
+    if (asked.length === 1) throw new Error('The selected voice did not return playable audio.');
+    await copyFile(text === cue.text ? long : f.voice, file);
+  };
+  const log = [];
+  const result = await run(f, [], [], { providers: backend, log });
+  assert.ok(log.some((line) => /whose voice ran on are tried as their short text/.test(line)), log.join('\n'));
+  assert.ok(asked.some((item) => item.text === cue.shortText && item.file.includes('short')));
+  assert.equal(result.report.descriptions.length, 1);
+  assert.equal(result.report.descriptions[0].text, cue.shortText);
+  assert.equal(result.report.descriptions[0].shortened, true);
+});
+
+test('a description whose short text is its full text and whose voice runs on is left out with its own reason, with no extra take', async () => {
+  const f = await fixture('voice-runs-on-same-short');
+  const long = await toneFile(f.dir, 'long.wav', 660, 20);
+  const same = { ...cue, text: 'He nods.', shortText: 'He nods.' };
+  const backend = providers(f.voice, [], [same]);
+  let takes = 0;
+  backend.synthesize = async (_text, _voice, _session, file) => {
+    takes++;
+    await copyFile(long, file);
+  };
+  const result = await run(f, [], [], { providers: backend });
+  assert.equal(result.report.descriptions.length, 0);
+  assert.match(result.report.skipped[0].reason, /kept talking far past these words/);
+  assert.equal(takes, 2, 'two takes of the same words, no third');
+});
+
+test('a description whose short text ran on but whose full text has a good clip is still carried into the next section', async () => {
+  const f = await fixture('carry-after-short-ran-on', 20);
+  const long = await toneFile(f.dir, 'long.wav', 660, 20);
+  const words = Array.from({ length: 7 }, (_, i) => ({ word: 'talk', start: 7 + i * 0.5, end: 7.4 + i * 0.5 }));
+  const reply = (look) => (look.brief.position.index === 0 ? [{ ...cue, at: 5, until: 9.9, pauseAt: 5 }] : []);
+  const backend = providers(f.voice, words, reply);
+  backend.synthesize = async (text, _voice, _session, file) => {
+    await copyFile(text === cue.shortText ? long : f.voice, file);
+  };
+  const { keeper } = keeperFor(savedPlan(20, [10]), words);
+  const result = await run(f, words, [], { providers: backend, keeper });
+  assert.equal(result.report.skipped.length, 0, JSON.stringify(result.report.skipped));
+  assert.equal(result.report.descriptions.length, 1);
+  assert.equal(result.report.descriptions[0].text, cue.text);
+  assert.ok(result.report.descriptions[0].at >= 10, 'spoken in the next section');
+});
+
 test('pauses in every section of a 29.97 fps film keep picture and sound the same length', async () => {
   const dir = join(root, 'drift');
   await mkdir(dir);
@@ -2392,6 +2869,8 @@ test('pause mode keeps the word before a freeze and the word after it at full le
     { word: 'there.', start: 1.35, end: 2.0 },
     { word: 'Now', start: 2.25, end: 2.6 },
     { word: 'go', start: 2.65, end: 3.0 },
+    /* Talk to the end, so the description cannot simply start late after it. */
+    ...Array.from({ length: 12 }, (_, i) => ({ word: 'on', start: 3.05 + i * 0.4, end: 3.4 + i * 0.4 })),
   ];
   const result = await run(f, words, [{ ...cue, at: 1.2, until: 2.4, pauseAt: 1.2 }], {
     settings: { ...settings, mode: 'extended' },
@@ -3114,10 +3593,12 @@ test('the real renderer voices every card chunk in full and freezes before the c
     'NOTICE: All passengers must keep this ticket for the entire journey and show it at the destination.',
     'For assistance, please speak to the conductor before leaving the train. Thank you for travelling.',
   ].map((text) => ({ ...cue, at: 1, until: 2, pauseAt: 1.2, text, reading: true }));
-  const backend = providers(f.voice, [], chunks);
+  /* Someone talks from just after the card to the end, so the reading cannot start late. */
+  const talk = Array.from({ length: 23 }, (_, i) => ({ word: 'on', start: 2.3 + i * 0.4, end: 2.65 + i * 0.4 }));
+  const backend = providers(f.voice, talk, chunks);
   const voice = measuredVoice();
   backend.synthesize = voice.synthesize;
-  const { keeper } = keeperFor(savedPlan(12, []));
+  const { keeper } = keeperFor(savedPlan(12, []), talk);
   const result = await run(f, [], [], {
     providers: backend,
     keeper,
@@ -3374,7 +3855,8 @@ test('a freeze at the start of a later section keeps the join from clicking', as
   const fps = { num: 24000, den: 1001 };
   const boundary = (240 * fps.den) / fps.num;
   const f = await synthetic('start-freeze', 20, '0.125*sin(2*PI*440*t)', '24000/1001');
-  const words = Array.from({ length: 50 }, (_, i) => ({
+  /* Talk to the end of the section, so the description cannot simply start late over the film. */
+  const words = Array.from({ length: 95 }, (_, i) => ({
     word: 'talk',
     start: boundary + 0.45 + i / 10,
     end: boundary + 0.55 + i / 10,
@@ -4067,6 +4549,49 @@ test('Kade-AI credit, picture re-encoded: the first frame is held under the open
   for (let k = 1; k < count; k++)
     for (let i = 0; i < 256; i++) drift = Math.max(drift, Math.abs(gray[k * 256 + i] - gray[i]));
   assert.ok(drift <= 4, `one still picture under the opening credit (largest change ${drift})`);
+});
+
+test('Kade-AI credit: a credit voice that runs on is asked again; three run-ons leave that end out and hold no frame', async () => {
+  const f = await fixture('credit-runs-on');
+  const good = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
+  const looped = await toneFile(f.dir, 'credit-looped.wav', 880, 30);
+  const looping = (base, loops) => {
+    const said = [];
+    return {
+      ...base,
+      said,
+      synthesize: async (text, voice, session, file, speed, sig, meter) => {
+        if (!/:credit(:again\d)?$/.test(session)) return base.synthesize(text, voice, session, file, speed, sig, meter);
+        said.push(session);
+        await meter('speech', 0.002, async () => {
+          await copyFile(said.length <= loops ? looped : good, file);
+          return { costUSD: 0.001 };
+        });
+      },
+    };
+  };
+  const log = [];
+  const once = looping(providers(f.voice, [], [{ ...cue, at: 2, until: 6 }]), 1);
+  const retried = await run(f, [], [], { providers: once, credit: { where: 'both' }, log });
+  assert.ok(retried.report.credit.start, 'the second take is used');
+  assert.ok(retried.report.credit.lead < 3, `opening ${retried.report.credit.lead} s`);
+  assert.deepEqual(once.said.slice(0, 2), ['synthetic-test:credit', 'synthetic-test:credit:again1']);
+  assert.ok(
+    log.some((line) => /^The Kade-AI opening credit's voice ran on: 30\.0 s for about \d\.\d s of words \(take 1 of 3\)\.$/.test(line)),
+    log.join('\n'),
+  );
+
+  const g = await fixture('credit-runs-on-thrice');
+  const failed = [];
+  const thrice = looping(providers(g.voice, [], [{ ...cue, at: 2, until: 6 }]), 3);
+  const plain = await run(g, [], [], { providers: thrice, credit: { where: 'both' }, log: failed });
+  assert.equal(plain.report.credit.start, undefined, 'the opening is left out');
+  assert.equal(plain.report.credit.lead, 0, 'so no first frame is held');
+  assert.ok(plain.report.credit.end, 'the closing card took its own first take');
+  assert.ok(
+    failed.includes('The Kade-AI opening credit was left out: its voice ran on past the words 3 times'),
+    failed.join('\n'),
+  );
 });
 
 test('Kade-AI credit: a preview gets the opening only; the closing card only by the server switch; a missing logo leaves the words; a voice failure leaves the copy without it', async () => {

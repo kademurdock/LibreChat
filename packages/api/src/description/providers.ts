@@ -101,7 +101,9 @@ export const voiceBase = (): string =>
 /** Oct 16 2026: the voice proxy only answers callers holding KADE_SPEECH_SECRET (the same
  * Railway variable on the proxy, the fork and the bridge); the lane only names the caller. */
 function speechProxyHeaders(lane: string): Record<string, string> {
-  const secret = String(process.env.KADE_SPEECH_SECRET || '').split(',')[0].trim();
+  const secret = String(process.env.KADE_SPEECH_SECRET || '')
+    .split(',')[0]
+    .trim();
   return secret ? { 'x-kade-caller': lane, 'x-proxy-secret': secret } : { 'x-kade-caller': lane };
 }
 
@@ -120,14 +122,6 @@ export const speechPerByte: number = 0;
  * approved at $0.00, and the margin alone met the over-quote stop on its first line.
  */
 export const speechReserve = (cost: number): number => (cost > 0 ? cost + 0.0005 : 0);
-/**
- * Delivery direction for fish.audio voices only, which read a leading [tag] as their style and
- * bill it as text, so it is counted with the spoken words. Inworld voices get none: the proxy
- * lifted it into Inworld's instruction field, and with it TTS-2 put unpunctuated pauses of up to
- * 383 ms after names and first words (5 to 10 of 24 test lines; none without it, Sep 25 A/B).
- * Fish voices had no such pauses with it.
- */
-const fishDirection = '[clear engaged audio description] ';
 const dialogueService = 'Dialogue timing (Deepgram)';
 
 const speechSchema = z.object({
@@ -1643,25 +1637,18 @@ function visionCall(
 }
 
 /**
- * The words sent for a voice: fish.audio voices (named in the catalog's `fish` list) get the
- * delivery direction in front; Inworld voices, and any voice when the catalog cannot be read,
- * get the words alone.
- */
-export async function voiceInput(words: string, voice: string): Promise<string> {
-  const fish = await voices().then(
-    (list) => !!list.fish?.includes(voice) || !!list.retainedFish?.includes(voice),
-    () => false,
-  );
-  return fish ? fishDirection + words : words;
-}
-
-/**
  * Speaks one description through the platform voice proxy. `speed` is the voice engine's own
  * rate (1 to 1.5), which sounds more natural than stretching the audio afterwards. A failed call
  * is tried up to three times (after 5 s and 20 s, or when the proxy's Retry-After says) before
  * the description is given up, because the words were already paid for. Every byte sent is
- * booked, including a fish voice's direction. Names are sent in their spoken form (`spokenForm`),
- * so a voice sample says them as a description would; the engine has already added its ledger.
+ * booked. Names are sent in their spoken form (`spokenForm`), so a voice sample says them as a
+ * description would; the engine has already added its ledger.
+ *
+ * Every voice gets the words alone. Fish voices used to get '[clear engaged audio description]'
+ * in front (Sep 25 2026); the voice proxy already gives them its own pace direction for the speed
+ * asked ("fast-talking, rapid delivery with almost no pauses" from 1.35 up), and on Kade's Fish
+ * voice the words alone came out 7% faster with every word still heard (Oct 17 2026, 16 lines x 2
+ * takes, Deepgram).
  */
 export async function synthesize(
   text: string,
@@ -1672,9 +1659,8 @@ export async function synthesize(
   signal: AbortSignal,
   meter: Meter,
 ): Promise<void> {
-  const words = spokenForm(speakable(text));
-  if (!words) throw new Plain('There was nothing to say for this description.');
-  const input = await voiceInput(words, voice);
+  const input = spokenForm(speakable(text));
+  if (!input) throw new Plain('There was nothing to say for this description.');
   const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
   await attempt(
     3,

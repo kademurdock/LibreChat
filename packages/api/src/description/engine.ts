@@ -73,10 +73,13 @@ import {
 } from './providers';
 import {
   arrange,
+  creditRunOn,
   mergeIntervals,
   outputTimeline,
   planSections,
+  ranOn,
   snapToCuts,
+  spokenSeconds,
   stretchSigns,
   toOutput,
 } from './timing';
@@ -411,6 +414,12 @@ const lookRetryMilliseconds = () => {
   return (Number.isFinite(seconds) && seconds >= 0 ? seconds : 60) * 1000;
 };
 const voiceRetryMilliseconds = 1500;
+/**
+ * Takes the Kade-AI credit gets before it is left out. Its five-word opening line ran on in 4 of
+ * 16 takes on Kade's Fish voice (Oct 17 2026; the two-sentence closing line in none), so three
+ * takes leave it out of about one copy in sixty.
+ */
+const creditTakes = 3;
 /** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
 const seedSecondsPerByte = 0.0625;
 /**
@@ -488,11 +497,12 @@ const blank = (state: Continuity | null): Analysis => ({
   cues: [],
   protectedSounds: [],
 });
-const leftReasons: Record<Leftover | 'voice', string> = {
+const leftReasons: Record<Leftover | 'voice' | 'ranOn', string> = {
   room: 'No gap was long enough at the fastest narration speed chosen.',
   minor: 'Left out rather than pausing the video for a minor detail.',
   priority: 'Left out to make room for a more important description.',
   voice: 'The voice service did not return this description.',
+  ranOn: 'The voice kept talking far past these words, so this description was left out.',
 };
 /** Account problems (bad key, empty balance) stop the job instead of skipping a section. */
 const accountProblem = (error: unknown) =>
@@ -1043,35 +1053,50 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
   }
 
-  async function voice(text: string, file: string): Promise<Voiced | null> {
-    try {
-      await providers.synthesize(
-        text,
-        settings.voice,
-        request.session,
-        file,
-        native,
-        signal,
-        meter,
-      );
-      const pcm = trimSilence(await decodeVoice(file, signal));
-      voiceFailures = 0;
-      if (pcm.length <= sampleRate * 0.2) return null;
-      const base = pcmSeconds(pcm) * native;
-      measured.bytes += bytes(text);
-      measured.seconds += base;
-      secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);
-      return { pcm, base };
-    } catch (error) {
-      if (signal.aborted || error instanceof Halt) throw error;
-      if (++voiceFailures >= 6)
-        throw new Error(
-          `${providerProblem(error, 'The voice service')} Six descriptions in a row could not be voiced.`,
+  /**
+   * One spoken description. A clip that runs far past its words (timing.ts `ranOn`) is asked for
+   * once more under a fresh voice session, and when that one runs on too the description answers
+   * `ranOn` instead of a clip: it never lengthens a pause, a placement or the job's learned speed.
+   */
+  async function voice(text: string, file: string): Promise<Voiced | 'ranOn' | null> {
+    for (let take = 0; take < 2; take++) {
+      try {
+        await providers.synthesize(
+          text,
+          settings.voice,
+          take ? `${request.session}:again` : request.session,
+          file,
+          native,
+          signal,
+          meter,
         );
-      return null;
-    } finally {
-      await rm(file, { force: true });
+        const pcm = trimSilence(await decodeVoice(file, signal));
+        voiceFailures = 0;
+        if (pcm.length <= sampleRate * 0.2) return null;
+        const said = pcmSeconds(pcm);
+        if (ranOn(text, said)) {
+          log(
+            `Voice ran on: ${seconds1(said)} for about ${seconds1(spokenSeconds(text))} of words ("${text.slice(0, 32)}")${take ? '.' : '; asked once more.'}`,
+          );
+          continue;
+        }
+        const base = said * native;
+        measured.bytes += bytes(text);
+        measured.seconds += base;
+        secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);
+        return { pcm, base };
+      } catch (error) {
+        if (signal.aborted || error instanceof Halt) throw error;
+        if (++voiceFailures >= 6)
+          throw new Error(
+            `${providerProblem(error, 'The voice service')} Six descriptions in a row could not be voiced.`,
+          );
+        return null;
+      } finally {
+        await rm(file, { force: true });
+      }
     }
+    return 'ranOn';
   }
 
   const records = new Map<number, SectionRecord>();
@@ -1166,6 +1191,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     );
     const failing = new Set<string>();
     const failed = new Set<string>();
+    /** Variants whose voice ran on past the words twice (`voice`), a subset of `failed`. */
+    const ranLong = new Set<string>();
     const textOf = (index: number, variant: Variant) =>
       variant === 'full' ? cues[index].text : cues[index].shortText;
     /** Names this section's ledger knows; one with an initial is said without its full stop. */
@@ -1216,7 +1243,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           saidOf(item.index, item.variant),
           join(dir, `voice-${n}${suffix}.wav`),
         );
-        if (clip) clips.set(name, clip);
+        if (clip === 'ranOn') {
+          ranLong.add(name);
+          failed.add(name);
+        } else if (clip) clips.set(name, clip);
         else failing.add(name);
       });
     };
@@ -1239,7 +1269,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       },
     );
     await speak(corrected.placed, 'b');
-    if (failing.size) {
+    /**
+     * Dropped clips get one more try, and a full text whose voice ran on twice is tried as its
+     * short text, when it has a different one, before it is given up.
+     */
+    const retryDropped = async (tag: string) => {
+      if (!failing.size) return;
       log(`Section ${i + 1} of ${count}: trying ${failing.size} dropped voice clip(s) once more.`);
       await wait(voiceRetryMilliseconds, signal);
       const retry = [...failing].map((name) => {
@@ -1248,12 +1283,39 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       });
       await pool(retry, 1, async (item, n) => {
         const name = key(item.index, item.variant);
-        const clip = await voice(saidOf(item.index, item.variant), join(dir, `retry-${n}.wav`));
+        const clip = await voice(
+          saidOf(item.index, item.variant),
+          join(dir, `retry-${n}${tag}.wav`),
+        );
         failing.delete(name);
-        if (clip) clips.set(name, clip);
+        if (clip && clip !== 'ranOn') clips.set(name, clip);
         else failed.add(name);
+        if (clip === 'ranOn') ranLong.add(name);
       });
-    }
+    };
+    const recover = async (tag: string) => {
+      await retryDropped(tag);
+      const shorts = [...ranLong]
+        .map((name) => Number(name.split(':')[0]))
+        .filter(
+          (index, n, all) =>
+            all.indexOf(index) === n &&
+            ranLong.has(key(index, 'full')) &&
+            !cues[index].reading &&
+            !!cues[index].shortText &&
+            cues[index].shortText !== cues[index].text &&
+            !clips.has(key(index, 'short')) &&
+            !failed.has(key(index, 'short')),
+        )
+        .map((index) => ({ index, variant: 'short' as Variant }));
+      if (!shorts.length) return;
+      log(
+        `Section ${i + 1} of ${count}: ${shorts.length} description(s) whose voice ran on are tried as their short text.`,
+      );
+      await speak(shorts, `short${tag}`);
+      await retryDropped(`-short${tag}`);
+    };
+    await recover('');
     let final = layout(length);
     for (let pass = 0; gate && pass < cues.length; pass++) {
       const changes = gate.rejoin(
@@ -1267,10 +1329,16 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         if (!change) return;
         const cueIndex = final.placed[index].index;
         cues[cueIndex] = change;
-        clips.delete(key(cueIndex, 'full'));
-        clips.delete(key(cueIndex, 'short'));
+        for (const variant of ['full', 'short'] as const) {
+          const name = key(cueIndex, variant);
+          clips.delete(name);
+          failing.delete(name);
+          failed.delete(name);
+          ranLong.delete(name);
+        }
       });
       await speak(final.placed, `join-${pass}`);
+      await recover(`-join-${pass}`);
       final = layout(length);
     }
     const skipped: (Skip & { id?: string })[] = [];
@@ -1278,9 +1346,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const nextCut = i + 1 < count ? cutsIn(fixed.sections[i + 1])[0] : undefined;
     for (const item of final.left) {
       const cue = cues[item.index];
+      /** A short text that ran on loses nothing while the full text has a good clip. */
+      const shortLost =
+        failed.has(key(item.index, 'short')) &&
+        !(ranLong.has(key(item.index, 'short')) && clips.has(key(item.index, 'full')));
       const voiceLost =
-        failed.has(key(item.index, 'short')) ||
-        (failed.has(key(item.index, 'full')) && !clips.has(key(item.index, 'short')));
+        shortLost || (failed.has(key(item.index, 'full')) && !clips.has(key(item.index, 'short')));
       const shotEnds = (fixed.cuts ?? []).some(
         (time) => time > section.start + cue.at + 0.05 && time <= section.end + 0.3,
       );
@@ -1308,11 +1379,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         ]);
         continue;
       }
+      /** The run-on is the reason only when it cost the description its voice. */
+      const ranAway =
+        voiceLost &&
+        (ranLong.has(key(item.index, 'full')) || ranLong.has(key(item.index, 'short')));
       left.push(cue.text);
       skipped.push({
         at: cue.at + section.start,
         text: cue.text,
-        reason: leftReasons[voiceLost ? 'voice' : item.reason],
+        reason: leftReasons[ranAway ? 'ranOn' : voiceLost ? 'voice' : item.reason],
         id: ids[item.index],
       });
     }
@@ -1607,22 +1682,30 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     try {
       await mkdir(dir, { recursive: true });
       const spoken = join(dir, `${which}-voice.wav`);
-      let words: Float32Array;
-      try {
-        await providers.synthesize(
-          line.said,
-          settings.voice,
-          `${request.session}:credit`,
-          spoken,
-          native,
-          signal,
-          booked,
-        );
-        words = trimSilence(await decodeVoice(spoken, signal));
-      } finally {
-        await rm(spoken, { force: true });
+      let words: Float32Array | null = null;
+      for (let take = 0; take < creditTakes && !words; take++) {
+        try {
+          await providers.synthesize(
+            line.said,
+            settings.voice,
+            `${request.session}:credit${take ? `:again${take}` : ''}`,
+            spoken,
+            native,
+            signal,
+            booked,
+          );
+          const said = trimSilence(await decodeVoice(spoken, signal));
+          if (said.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
+          if (ranOn(line.said, pcmSeconds(said), creditRunOn))
+            log(
+              `The Kade-AI ${where} credit's voice ran on: ${seconds1(pcmSeconds(said))} for about ${seconds1(spokenSeconds(line.said))} of words (take ${take + 1} of ${creditTakes}).`,
+            );
+          else words = said;
+        } finally {
+          await rm(spoken, { force: true });
+        }
       }
-      if (words.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
+      if (!words) throw new Error(`its voice ran on past the words ${creditTakes} times`);
       let logo: Float32Array | null = null;
       if (own)
         try {

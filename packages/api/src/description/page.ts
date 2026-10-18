@@ -577,6 +577,9 @@ export const descriptionBrowserScript: string = String.raw`
     }catch(e){
       if(e&&(e.auth||e.name==='AbortError'))return;
       if(e&&e.status===409){if(!auditionsOff)say(e.message,true);auditionsOff=e.message;return;}
+      /* Oct 17 2026: one voice that kept talking past the words is said for that voice only; the
+         others keep playing, and moving back onto it asks again. */
+      if(e&&e.field==='ranOn'){if(seq===aseq&&!$('voice-panel').hidden)say(voiceName(v)+' kept talking past the words. Move away and back to hear it again.',true);return;}
       /* Part 291 review F33: any other failure quiets the list until it is opened again, said once,
          instead of an error on every voice she moves to. */
       if(!auditionsOff){auditionsOff=SAMPLES_DOWN;if(!$('voice-panel').hidden)say(SAMPLES_DOWN,true);}
