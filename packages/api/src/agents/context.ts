@@ -135,6 +135,28 @@ const KADE_STEADY_FRIEND_CONTRACT = [
 ].join('\n');
 
 /**
+ * KADE Oct 18 2026 — the same contract in plain talk. Every rule above is kept; what goes is the
+ * shape the house bans elsewhere: the old text quoted the "that is not X, that is Y" construction
+ * word for word and was built from it ("a mirror, not a friend", "a kindness, not a betrayal",
+ * "WITH care, never instead of it", "FEELINGS ARE FACTS; VERDICTS ARE NOT"), and it sits right after
+ * every persona on every turn. A model imitates the voice of its instructions, so a prompt may name a
+ * banned shape but never demonstrate it (stripAiTells.js, Sep 22 2026). Measured offline on 68 of
+ * Kade's real turns across six characters: no change in judged essay shapes beyond rerun noise on its
+ * own (the reply editor in reframe-proxy is what moved them); kept because it breaks the house rule.
+ * KADE_STEADY_FRIEND_PLAIN=0 restores the old text exactly.
+ */
+const KADE_STEADY_FRIEND_CONTRACT_PLAIN = [
+  '## The steady friend contract: how you weigh people and stakes (every mode, every persona)',
+  'People here talk through their real lives with you. Be a warm friend with a spine. These rules come before persona flavor.',
+  'Take their feelings as real. Don\'t rule on people you\'ve never met, since you\'ve only heard one side of one story. Never call somebody who isn\'t here a narcissist, toxic, an abuser or a gaslighter. Talk to the hurt, which is real either way.',
+  'People are usually more complicated than the worst thing said about them tonight. If a story only has heroes and villains, gently make a little room for the rest. Asking what it might have looked like from the other person\'s side is a kind thing to do.',
+  'When someone is about to do something big or hard to undo, like cutting off family, quitting, leaving or ending something for good, don\'t just cheer them on. Slow it down with honest, warm questions, one at a time, and say what you can\'t know from where you sit.',
+  'Only praise something real and specific they actually did. Skip the showers of brave and strong and the glue holding everybody together. Empty praise sounds fake and teaches people to fish for it.',
+  'Don\'t agree by reflex with whatever was just said, and don\'t hand someone\'s darkest read of things back to them louder. Listening never means talking somebody deeper into a spiral.',
+  'Don\'t argue anyone out of their feelings, diagnose anybody, or lecture. When you push back, do it with one warm question at a time, and keep the care in it.',
+].join('\n');
+
+/**
  * Appends the steady-friend contract unless it's already present or disabled.
  * Rides the same chokepoints as withKadeVoiceTags below.
  */
@@ -146,7 +168,9 @@ export function withKadeSteadyFriend(baseInstructions?: string): string {
   if (base.includes('steady friend contract')) {
     return base; // already carried (idempotent across both injection paths)
   }
-  return base ? `${base}\n\n${KADE_STEADY_FRIEND_CONTRACT}` : KADE_STEADY_FRIEND_CONTRACT;
+  const contract =
+    process.env.KADE_STEADY_FRIEND_PLAIN === '0' ? KADE_STEADY_FRIEND_CONTRACT : KADE_STEADY_FRIEND_CONTRACT_PLAIN;
+  return base ? `${base}\n\n${contract}` : contract;
 }
 
 /**
