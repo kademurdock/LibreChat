@@ -399,9 +399,74 @@ test('junk from the model is no description, logged with its reason and tokens b
   ];
   for (const [text, reason] of bad) {
     logs.length = 0;
+    calls.length = 0;
     gemini = () => say(text, { usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 } });
     assert.equal(await lyrics.describeMusicSound(MP3, 'audio/mpeg', 30), null, reason);
-    assert.deepEqual(logs, [['warn', `[music/lyrics] sound describe rejected reason=${reason} model=gemini-3.8-flash audio/mpeg 17B 30s tokens=in:10,out:5`]]);
+    const line = `[music/lyrics] sound describe rejected reason=${reason} model=gemini-3.8-flash audio/mpeg 17B 30s tokens=in:10,out:5`;
+    assert.deepEqual(logs, [['warn', line], ['warn', `${line} attempt=2`]], 'asked once more, then no description');
+    assert.equal(calls.length, 2);
+  }
+});
+
+/* Oct 18 2026: Kade's country cover got "I could not describe the sound" twice. Replayed 40 times on MiMo Flash, 9 good lines
+ * were refused: 8 as names for MiMo's uneven capitals, 1 for a vocal part with more words. These are the same shapes. */
+const MIMO_SHAPES = [
+  ['a genre in Title Case inside a lowercase line', 'English, Country Pop, mid-tempo, male lead vocal, twangy male voice, strummed acoustic guitar, steady drum kit', 'English, country pop, mid-tempo, male lead vocal, twangy male voice, strummed acoustic guitar, steady drum kit'],
+  ['only the genre opens with a capital', 'English, Country rock, up-tempo, male lead vocal, twangy vocals, acoustic and electric guitars, clean 90s production', 'English, country rock, up-tempo, male lead vocal, twangy vocals, acoustic and electric guitars, clean 90s production'],
+  ['a part that opens with a decade in a sentence-case line', 'English, Country, Slow tempo, Male lead vocal, Raspy twangy voice, Pedal steel accents, Warm bass, 80s-style mix', 'English, country, slow tempo, male lead vocal, raspy twangy voice, pedal steel accents, warm bass, 80s-style mix'],
+  ['most parts open with a capital and one slips', 'English, Country Pop, mid-tempo, male lead vocal, warm baritone voice, Backing male vocal harmonies, Acoustic guitar strumming, Punchy drum kit', 'English, country pop, mid-tempo, male lead vocal, warm baritone voice, backing male vocal harmonies, acoustic guitar strumming, punchy drum kit'],
+  ['a vocal part that goes on', 'English, blues rock, mid-tempo, male lead vocal with backing harmonies, warm raspy baritone, electric guitar licks', 'English, blues rock, mid-tempo, male lead vocal, backing harmonies, warm raspy baritone, electric guitar licks'],
+  ['a duet part that goes on', 'English, pop, mid-tempo, female and male vocals in harmony, bright synths', 'English, pop, mid-tempo, female and male vocals, in harmony, bright synths'],
+  ['a vocal part with nothing a joiner leaves', 'English, female lead vocal and choir, pop, mid-tempo, warm pads', 'English, pop, mid-tempo, female lead vocal, choir, warm pads'],
+  ['vocal chops on an instrumental are a sound, not a singer', 'Instrumental, lo-fi, slow tempo, female vocal chops, dusty drums', 'Instrumental, lo-fi, slow tempo, female vocal chops, dusty drums'],
+];
+for (const [label, input, expected] of MIMO_SHAPES)
+  test(`accepts MiMo's shape: ${label}`, () => {
+    assert.deepEqual(check(input), { direction: expected });
+  });
+
+test('names still refused in those shapes: a capital opener among lowercase ones, a name inside a genre-capital line, a shouted genre line', () => {
+  assert.deepEqual(check('English, country, mid-tempo, male lead vocal, Garland vocals, acoustic guitar, steady drums'), { reason: 'name' });
+  assert.deepEqual(check('English, Country Pop, mid-tempo, male lead vocal, Marla Quinn harmonies, steady drums'), { reason: 'name' });
+  assert.deepEqual(check('English, COUNTRY, mid-tempo, male lead vocal, twangy vocals, steady drums'), { reason: 'name' });
+  assert.deepEqual(check('English, pop, mid-tempo, female lead vocal with Marla Quinn, bright synths'), { reason: 'name' });
+});
+
+test('a refused reply is asked once more: the second line is used and both calls are counted in its tokens', async () => {
+  const replies = [say('English, pop, mid-tempo, female lead vocal, sounds like a famous diva', { usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 } }), say(GOOD, { usageMetadata: { promptTokenCount: 4100, candidatesTokenCount: 41 } })];
+  gemini = () => replies.shift();
+  const got = await lyrics.describeMusicSound(MP3, 'audio/mpeg', 30);
+  assert.deepEqual(got, { direction: GOOD, seconds: 30, model: 'gemini-3.8-flash', usage: { inputTokens: 4110, outputTokens: 46 } });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(logs, [
+    ['warn', '[music/lyrics] sound describe rejected reason=comparison model=gemini-3.8-flash audio/mpeg 17B 30s tokens=in:10,out:5'],
+    ['info', '[music/lyrics] sound described model=gemini-3.8-flash audio/mpeg 17B 30s tokens=in:4110,out:46 attempt=2'],
+  ]);
+});
+
+test('no second ask after a provider failure, after a first call over 30 s, or with KADE_SOUND_RETRY=0', async () => {
+  gemini = httpError(500, 'INTERNAL');
+  assert.equal(await lyrics.describeMusicSound(MP3, 'audio/mpeg', 30), null);
+  assert.equal(calls.length, 1, 'a failure is not a refused line');
+  calls.length = 0;
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    gemini = () => { now += 31000; return say('English, pop, mid-tempo, female lead vocal, 120 BPM, bright synths'); };
+    assert.equal(await lyrics.describeMusicSound(MP3, 'audio/mpeg', 30), null);
+    assert.equal(calls.length, 1, 'a slow first call leaves no time for a second');
+  } finally {
+    Date.now = realNow;
+  }
+  calls.length = 0;
+  process.env.KADE_SOUND_RETRY = '0';
+  try {
+    gemini = () => say('English, pop, mid-tempo, female lead vocal, 120 BPM, bright synths');
+    assert.equal(await lyrics.describeMusicSound(MP3, 'audio/mpeg', 30), null);
+    assert.equal(calls.length, 1);
+  } finally {
+    delete process.env.KADE_SOUND_RETRY;
   }
 });
 

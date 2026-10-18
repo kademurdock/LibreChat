@@ -690,6 +690,15 @@ const soundPlaces: ReadonlySet<string> = new Set(
     ' ',
   ),
 );
+/**
+ * Genre words a model capitalizes as a style, not a name: MiMo writes "Country Pop" and "Country rock" in lines that are
+ * otherwise lowercase (Oct 18 2026: 8 of 40 descriptions of one country song were refused as names, and none named anyone).
+ */
+const soundGenres: ReadonlySet<string> = new Set(
+  'pop rock country blues soul folk jazz funk gospel hip hop hip-hop rap metal punk disco reggae ska house techno trance ambient indie alternative alt electronic electro dance trap swing bluegrass honky-tonk rockabilly boogie shuffle ballad power synth synthpop synth-pop synthwave new wave grunge emo lo-fi classical orchestral cinematic opera bossa nova samba salsa cumbia afrobeats dancehall dub garage grime drill doo-wop outlaw neo-soul christian worship contemporary soft hard yacht arena glam psychedelic progressive prog surf lounge chamber choral dream shoegaze industrial goth gothic darkwave chillwave chill downtempo trip-hop breakbeat jungle dubstep eurodance polka waltz tango march anthem lullaby christmas holiday tejano mariachi ranchera bachata merengue reggaeton flamenco zydeco cajun klezmer afropop highlife amapiano bhangra'.split(
+    ' ',
+  ),
+);
 const soundLabel =
   /^(?:music\s+direction|description|caption|direction|style|sound|prompt|genre|tags?|answer|output|result)\s*[:\-–—]\s*/i;
 const soundDecade = /\b(?:19|20)?\d0s\b/g;
@@ -734,23 +743,31 @@ const soundNeutral = (token: string): boolean =>
   soundAcronyms.has(token) ||
   soundPlaces.has(token.toLowerCase()) ||
   soundGear.has(token.toLowerCase());
-const soundCapital = (token: string): boolean => /^\p{Lu}/u.test(token) && !soundNeutral(token);
+/** A word whose capital says nothing about a name: an acronym, a place, gear or a genre word. */
+const soundPlainCapital = (token: string): boolean =>
+  soundNeutral(token) || soundGenres.has(token.toLowerCase());
+const soundCapital = (token: string): boolean =>
+  /^\p{Lu}/u.test(token) && !soundPlainCapital(token);
+/** A word whose case can tell anything: it starts with a letter ("80s-style" and "808" do not) and is not a plain capital. */
+const soundCased = (token: string): boolean => /^\p{L}/u.test(token) && !soundPlainCapital(token);
 
 /**
  * Whether a capital letter in the description points to a person's, band's or song's name. A line written wholly in
  * Title Case or wholly in sentence case per part is a style, not names. Capitals mixed into lowercase words are names,
- * and so is any shouted word (three capitals or more) that is not a known acronym.
+ * and so is any shouted word (three capitals or more) that is not a known acronym. The prompt asks for a capital on the
+ * first word of every part, and MiMo follows it only now and then: while most parts open with a capital, a part that
+ * opens in lowercase is a slip; while most open in lowercase, a part that opens with a capital stands out as a name.
  */
 function soundHasName(parts: string[]): boolean {
   const tokens = soundTokens(parts);
   if (tokens.some(({ token }) => /^\p{Lu}{3,}$/u.test(token) && !soundNeutral(token))) return true;
-  const inner = tokens.filter(({ initial }) => !initial);
+  const inner = tokens.filter(({ initial, token }) => !initial && soundCased(token));
   const innerCapitals = inner.filter(({ token }) => soundCapital(token)).length;
   const titleCase = inner.length > 0 && innerCapitals / inner.length >= 0.6;
   if (innerCapitals > 0 && !titleCase) return true;
-  const openers = tokens.filter(({ initial, token }) => initial && !soundNeutral(token));
+  const openers = tokens.filter(({ initial, token }) => initial && soundCased(token));
   const capitalOpeners = openers.filter(({ token }) => soundCapital(token)).length;
-  return capitalOpeners > 0 && capitalOpeners < openers.length;
+  return capitalOpeners > 0 && capitalOpeners * 2 <= openers.length;
 }
 
 const soundLower = (part: string): string =>
@@ -803,6 +820,21 @@ function soundLine(raw: string): { text: string } | { reason: string } {
     soundWrapperOrDot,
   );
   return text ? { text } : soundReject('empty');
+}
+
+/** The vocal wordings, longest first, so "female lead vocals" is found before "female lead". */
+const soundVocalForms: string[] = [...soundVocal.keys()].sort((a, b) => b.length - a.length);
+
+/**
+ * A part that opens with a vocal wording and goes on (Oct 18 2026, MiMo: "male lead vocal with backing harmonies"): the
+ * vocal, and the words after it without a joining "with", "and", "plus" or "over". Undefined for any other part.
+ */
+function soundVocalLead(part: string): { vocal: string; after: string } | undefined {
+  const lower = soundLower(part);
+  const form = soundVocalForms.find((known) => lower.startsWith(`${known} `));
+  if (!form || lower.length !== part.length) return undefined;
+  const after = part.slice(form.length).replace(/^\s*(?:(?:with|and|plus|over)\b|&)?\s*/i, '');
+  return { vocal: soundVocal.get(form) ?? form, after };
 }
 
 /** The language part: one language, two joined by "and", or "instrumental". Undefined when it is none of them. */
@@ -870,7 +902,8 @@ function soundOrdered(
  * The strict check on the model's reply. Returns the line to show or the reason it was refused. It accepts exactly:
  * language (or "instrumental", or two languages joined by "and"), a genre part, slow tempo, mid-tempo or up-tempo,
  * female lead vocal, male lead vocal, female and male vocals or group vocals (not for an instrumental), then voice,
- * instrument and production words, one line, at most 240 characters, cut at a comma.
+ * instrument and production words, one line, at most 240 characters, cut at a comma. On a sung line, a vocal part that
+ * goes on ("male lead vocal with backing harmonies") gives the vocal, and its other words become a phrase of their own.
  *
  * It refuses the whole reply when it is long (over soundMaxRaw characters), empty, on a second line, has brackets
  * (section tags), quoted words, lyric-like sentences or first-person words, repeated words, an apology or refusal,
@@ -897,13 +930,21 @@ export function checkSoundDirection(raw: string): SoundCheck {
     return soundReject('segment');
   const lower = rest.map(soundLower);
   const pace = lower.map((part) => soundPace.get(part)).find(Boolean);
-  const vocal = lower.map((part) => soundVocal.get(part)).find(Boolean);
+  const exact = lower.map((part) => soundVocal.get(part)).find(Boolean);
   if (!pace) return soundReject('pace');
+  /* A sung line whose only vocal part says more ("male lead vocal with backing harmonies"). Never on an instrumental,
+   * where "female vocal chops" is a sound and not a singer. */
+  const leadAt = exact || language.instrumental ? -1 : rest.findIndex((part) => soundVocalLead(part));
+  const lead = leadAt === -1 ? undefined : soundVocalLead(rest[leadAt]);
+  const vocal = exact ?? lead?.vocal;
   if (language.instrumental === Boolean(vocal)) return soundReject('vocal');
-  const free = rest.filter(
-    (_, index) => !soundPace.has(lower[index]) && !soundVocal.has(lower[index]),
+  const sounds = rest.filter(
+    (_, index) =>
+      index !== leadAt && !soundPace.has(lower[index]) && !soundVocal.has(lower[index]),
   );
-  if (free.length === 0) return soundReject('genre');
+  if (sounds.length === 0) return soundReject('genre');
+  /* What the vocal part said after the vocal is a phrase about the voice, so it goes first after the genre. */
+  const free = lead?.after ? [sounds[0], lead.after, ...sounds.slice(1)] : sounds;
   const fault = soundFault(free[0]);
   if (fault) return soundReject(fault);
   const kept = [free[0], ...free.slice(1).filter((part) => !soundFault(part))];
@@ -974,9 +1015,26 @@ const soundTokensNote = (usage?: SoundUsage): string =>
   usage ? `tokens=in:${usage.inputTokens},out:${usage.outputTokens}` : 'tokens=unknown';
 
 /**
+ * A reply the check refuses is asked for once more while the first call took less than this. MiMo's wording and capitals
+ * change from call to call, so a second answer usually passes; it costs about a hundredth of a cent, and the whole
+ * description still has soundDeadlineMs. KADE_SOUND_RETRY=0 asks once, as before Oct 18 2026.
+ */
+const soundRetryWithinMs = 30000;
+const soundRetryEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env.KADE_SOUND_RETRY !== '0';
+const addSoundUsage = (paid?: SoundUsage, more?: SoundUsage): SoundUsage | undefined =>
+  paid && more
+    ? {
+        inputTokens: paid.inputTokens + more.inputTokens,
+        outputTokens: paid.outputTokens + more.outputTokens,
+      }
+    : (paid ?? more);
+
+/**
  * One plain line about how a recording sounds, for the Music direction box of a cover, or null when no usable line
- * could be made. It never throws. Its log lines carry the model, the recording's size and length, the token counts
- * (what the house paid for the call) and the reason for a miss, never the reply, the request or the key.
+ * could be made. A reply the check refuses is asked for once more (soundRetryWithinMs). It never throws. Its log lines
+ * carry the model, the recording's size and length, the token counts (what the house paid, both calls together on a
+ * line that passed) and the reason for a miss, never the reply, the request or the key.
  * `onGeminiError` hears every Gemini HTTP failure, as transcribeMusicLyrics does, so the fork's Google key alarm can tell
  * an empty prepaid balance from a refused recording; a throw inside it is ignored.
  */
@@ -988,24 +1046,31 @@ export async function describeMusicSound(
 ): Promise<SoundDescription | null> {
   mime = audioMime(buffer, mime);
   const detail = `model=${musicListenerModel()} ${mime} ${buffer.length}B ${Math.round(seconds)}s`;
+  const started = Date.now();
+  let paid: SoundUsage | undefined;
   try {
-    const reply = geminiListener()
-      ? await geminiSound(buffer, mime)
-      : await mimoAudio(buffer, mime, mimoSoundPrompt, 1024);
-    const checked = checkSoundDirection(reply.text);
-    if (!('direction' in checked)) {
+    for (let attempt = 1; ; attempt += 1) {
+      const reply = geminiListener()
+        ? await geminiSound(buffer, mime)
+        : await mimoAudio(buffer, mime, mimoSoundPrompt, 1024);
+      paid = addSoundUsage(paid, reply.usage);
+      const again = attempt > 1 ? ' attempt=2' : '';
+      const checked = checkSoundDirection(reply.text);
+      if ('direction' in checked) {
+        logger.info(`[music/lyrics] sound described ${detail} ${soundTokensNote(paid)}${again}`);
+        return {
+          direction: checked.direction,
+          seconds,
+          model: musicListenerModel(),
+          usage: paid,
+        };
+      }
       logger.warn(
-        `[music/lyrics] sound describe rejected reason=${checked.reason} ${detail} ${soundTokensNote(reply.usage)}`,
+        `[music/lyrics] sound describe rejected reason=${checked.reason} ${detail} ${soundTokensNote(reply.usage)}${again}`,
       );
-      return null;
+      if (attempt > 1 || !soundRetryEnabled() || Date.now() - started > soundRetryWithinMs)
+        return null;
     }
-    logger.info(`[music/lyrics] sound described ${detail} ${soundTokensNote(reply.usage)}`);
-    return {
-      direction: checked.direction,
-      seconds,
-      model: musicListenerModel(),
-      usage: reply.usage,
-    };
   } catch (error) {
     const line = `[music/lyrics] sound describe failed reason=${geminiFailureReason(error)} ${detail}`;
     if (error instanceof GeminiMiss && error.skipped) logger.info(line);
