@@ -720,7 +720,7 @@ test('MiMo Pro config quotes its own model and never offers Google tiers', async
     assert.equal(config.videoModel, 'xiaomi/mimo-v2.6-pro');
     assert.equal(config.videoModelLabel, 'MiMo Pro');
     assert.equal(config.tiers, undefined);
-    assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.025, firstLook: 0.015 });
+    assert.deepEqual(config.extrasPerMinuteUSD, { closeLook: 0.005, firstLook: 0.015 });
   } finally { process.env.KADE_DESCRIPTION_MODEL = previous; }
 });
 const flint = 'clear woman · flint';

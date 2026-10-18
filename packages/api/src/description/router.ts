@@ -689,9 +689,17 @@ const rates: Record<Tier, { vision: number; closeLook: number; firstLook: number
   standard: { vision: 0.021, closeLook: 0.025, firstLook: 0.021 },
   flex: { vision: 0.014, closeLook: 0.021, firstLook: 0.014 },
 };
+/**
+ * MiMo Pro on Novita sees about 150 frames a look whatever the clip's length, so a look costs
+ * about the same per section. Napoleon's three close looks of Oct 17 2026 (77-86 s sections) cost
+ * $0.0140 to $0.0178: about 21,000 prompt tokens and 5,200 to 10,100 written. That is about
+ * $0.011 a minute, and $0.02 is quoted for a close look. A look that wrote 32,000 tokens would
+ * cost about $0.026 a minute, still under her approval of 1.5 times the quote. A normal look sees
+ * the same frames and thinks less. The first look has not been measured on MiMo.
+ */
 const quoteRates = (tier: Tier): { vision: number; closeLook: number; firstLook: number } => {
   if (visionModel() === 'xiaomi/mimo-v2.6-pro')
-    return { vision: 0.025, closeLook: 0.025, firstLook: 0.015 };
+    return { vision: 0.015, closeLook: 0.005, firstLook: 0.015 };
   if (visionModel() === 'xiaomi/mimo-v2.6-flash')
     return { vision: 0.008, closeLook: 0.012, firstLook: 0.008 };
   return rates[tier];
