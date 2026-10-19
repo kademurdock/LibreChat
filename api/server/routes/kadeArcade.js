@@ -1,14 +1,14 @@
 /* /api/kade/arcade (Oct 18 2026): the Arcade's catalog, game manifests and one-hour signed pack
  * links. packages/api arcade/router.ts holds every route and the family-shelf gate; its ARCADE.md
  * is the contract. This file only wires the private bucket (read-only here), the Library's
- * signGet, a shared rate limiter for diagnostics, and the logger. Game files never pass through
- * the server and never live in this repository. */
+ * signGet and isChild, shared rate limiters, and the logger. Game files never pass through the
+ * server and never live in this repository. */
 const rateLimit = require('express-rate-limit');
 const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { logger } = require('@librechat/data-schemas');
 const { initializeS3, createArcadeRouter, limiterCache } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
-const { signGet } = require('./kadeReadingRoom')._internals;
+const { signGet, isChild } = require('./kadeReadingRoom')._internals;
 
 const BUCKET = () => process.env.KADE_MEDIA_BUCKET || process.env.AWS_BUCKET_NAME || '';
 
@@ -31,21 +31,37 @@ async function loadObject(key) {
   return Buffer.from(await out.Body.transformToByteArray());
 }
 
-/* A report every five seconds is 12 a minute; this is the ceiling per account. */
+/* A report every five seconds is 12 a minute; 30 leaves room for timer drift and retries. */
 const diagLimit = rateLimit({
   windowMs: 60 * 1000,
-  max: 12,
+  max: 30,
   handler: (_req, res) =>
     res.status(429).json({ error: 'That is a lot of reports at once. Try again in a minute.' }),
   keyGenerator: (req) => String(req.user?.id || ''),
   store: limiterCache('kade_arcade_diag_limiter'),
 });
 
+/* Manifests and pack links: a download needs a handful a minute. Each made-up version can cost a
+ * storage read, so this is the ceiling per account. */
+const readLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  handler: (_req, res) =>
+    res
+      .status(429)
+      .set('Cache-Control', 'no-store')
+      .json({ error: 'That is a lot of arcade requests at once. Try again in a minute.' }),
+  keyGenerator: (req) => String(req.user?.id || ''),
+  store: limiterCache('kade_arcade_read_limiter'),
+});
+
 module.exports = createArcadeRouter({
   auth: requireJwtAuth,
+  child: isChild,
   loadObject,
   signGet: (key, mime, seconds) => signGet(key, mime, seconds),
   diag: (row) => logger.info(`[arcade/diag] ${JSON.stringify(row)}`),
   diagLimit,
+  readLimit,
   log: (message) => logger.warn(`[arcade] ${message}`),
 });

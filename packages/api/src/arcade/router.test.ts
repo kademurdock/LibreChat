@@ -14,9 +14,11 @@ import {
   ARCADE_SHELF_ID,
   arcadeDiagRow,
   arcadeId,
+  arcadePath,
   arcadeVersion,
   createArcadeRouter,
   parseArcadeCatalog,
+  parseArcadePackIndex,
 } from './router';
 import type { ArcadeDiagRow } from './router';
 
@@ -59,11 +61,12 @@ const CATALOG = {
     },
   ],
 };
-const index = (sha256: string, size: number) => ({
+const index = (sha256: string, size: number, path = 'rom.z64') => ({
   format: 1,
   blob: { size, sha256 },
-  files: [{ path: 'rom.z64', offset: 0, size: 12 }],
+  files: [{ path, offset: 0, size: 12 }],
 });
+const KIT_FILES = [{ path: 'emulator/loader.js', offset: 0, size: 12 }];
 
 /* ── fakes ─────────────────────────────────────────────────────────── */
 let objects = new Map<string, Buffer>();
@@ -74,13 +77,16 @@ let logs: string[] = [];
 let clock = Date.parse('2026-10-18T12:00:00Z');
 let storageDown = false;
 let signedIn: LibraryAccount | null = null;
+let children = new Set<string>();
+let childCheckFails = false;
+let childAsks = 0;
 
 const put = (key: string, value: unknown) => objects.set(key, Buffer.from(JSON.stringify(value)));
 function stock() {
   put('arcade/catalog.json', CATALOG);
   put('arcade/games/xena/2026-10-20a/pack.json', index(SHA_A, 47000123));
   put('arcade/games/super-tilt-bro/1.0.0/pack.json', index(SHA_B, 900123));
-  put('arcade/kit/4.2.3-1/pack.json', index(SHA_K, 4000123));
+  put('arcade/kit/4.2.3-1/pack.json', index(SHA_K, 4000123, 'emulator/loader.js'));
 }
 
 let server: Server;
@@ -108,6 +114,11 @@ async function mount() {
         }
         (req as { user?: LibraryAccount }).user = signedIn;
         next();
+      },
+      child: async (req) => {
+        childAsks += 1;
+        if (childCheckFails) throw new Error('the account could not be read');
+        return children.has(String((req as { user?: LibraryAccount }).user?.id));
       },
       loadObject: async (key) => {
         loads.push(key);
@@ -151,6 +162,9 @@ beforeEach(async () => {
   diags = [];
   logs = [];
   storageDown = false;
+  children = new Set();
+  childCheckFails = false;
+  childAsks = 0;
   clock = Date.parse('2026-10-18T12:00:00Z');
   signedIn = FAMILY;
   stock();
@@ -351,18 +365,46 @@ test('the manifest: a family game opens inside the pack and is refused outside i
   const res = await get('/games/xena/manifest', FAMILY);
   assert.equal(res.status, 200);
   assert.equal(res.cache, 'no-store');
+  /* The app's contract (ArcadeModels.swift ArcadeManifest and ArcadePackRef): the kit and the
+   * game as two packs, each with blob.bin's size and sha256, the path that signs its link, and its
+   * file table as an ARRAY of { path, offset, size }. */
   assert.deepEqual(res.body, {
     id: 'xena',
     title: 'Xena Warrior Princess',
     console: 'N64',
     access: 'family',
     version: '2026-10-20a',
-    size: 47000123,
-    sha256: SHA_A,
-    kit: '4.2.3-1',
     ready: true,
-    index: index(SHA_A, 47000123),
+    packs: [
+      {
+        kind: 'kit',
+        id: 'kit',
+        version: '4.2.3-1',
+        size: 4000123,
+        sha256: SHA_K,
+        signPath: '/api/kade/arcade/kit/4.2.3-1/pack',
+        files: KIT_FILES,
+      },
+      {
+        kind: 'game',
+        id: 'xena',
+        version: '2026-10-20a',
+        size: 47000123,
+        sha256: SHA_A,
+        signPath: '/api/kade/arcade/games/xena/2026-10-20a/pack',
+        files: [{ path: 'rom.z64', offset: 0, size: 12 }],
+      },
+    ],
   });
+  for (const pack of res.body.packs as Body[]) {
+    assert.ok(Array.isArray(pack.files), 'the file table is an array the app decodes');
+    const signed = await get(String(pack.signPath).replace('/api/kade/arcade', ''), FAMILY);
+    assert.equal(signed.status, 200, `${pack.signPath} signs`);
+    assert.equal(signed.body.sha256, pack.sha256);
+  }
+  const top = res.body as Body;
+  assert.equal(top.index, undefined, 'no object-valued index beside the packs');
+  assert.equal(top.sha256, undefined, 'no one-pack fallback fields at the top');
   keysAreSafe();
   loads = [];
   for (const who of [OUTSIDE, REVIEW]) {
@@ -394,18 +436,133 @@ test('a public game opens for everyone signed in, the App Review seat too', asyn
     const res = await get('/games/super-tilt-bro/manifest', who);
     assert.equal(res.status, 200);
     assert.equal(res.body.access, 'public');
-    assert.equal(res.body.sha256, SHA_B);
+    assert.equal(((res.body.packs as Body[])[1] as Body).sha256, SHA_B);
   }
 });
 
-test('a game listed before its pack is uploaded answers ready: false', async () => {
+/* ── child accounts ────────────────────────────────────────────────── */
+test('a grown-ups-only game is absent for a child: not listed, and opened like a game that is not there', async () => {
+  const KID: LibraryAccount = { id: madeAt('2026-03-01T15:00:00Z'), kadeLibraryAccess: 'family' };
+  const KID_OUTSIDE: LibraryAccount = { id: madeAt('2026-10-03T15:00:00Z') };
+  children = new Set([String(KID.id), String(KID_OUTSIDE.id)]);
+  put('arcade/catalog.json', {
+    ...CATALOG,
+    games: [
+      { ...CATALOG.games[0], grownUpsOnly: true },
+      { ...CATALOG.games[1], id: 'grown-up-public', grownUpsOnly: true },
+      CATALOG.games[1],
+    ],
+  });
+  put('arcade/games/grown-up-public/1.0.0/pack.json', index(SHA_B, 900123));
+  await mount();
+
+  const grown = await get('/config', FAMILY);
+  assert.deepEqual(
+    (grown.body.catalog as Body[]).map((row) => row.id),
+    ['xena', 'grown-up-public', 'super-tilt-bro'],
+    'a grown-up in the pack sees every game',
+  );
+  const kid = await get('/config', KID);
+  assert.equal(kid.body.familyPack, true, 'the child is in the family pack');
+  assert.deepEqual(
+    (kid.body.catalog as Body[]).map((row) => row.id),
+    ['super-tilt-bro'],
+  );
+  assert.doesNotMatch(kid.text, /xena|warrior|grown-up-public/i);
+  const kidOutside = await get('/config', KID_OUTSIDE);
+  assert.deepEqual(
+    (kidOutside.body.catalog as Body[]).map((row) => row.id),
+    ['super-tilt-bro'],
+    'no shelf for games the child would not see anyway',
+  );
+
+  /* Inside the pack: the same 404 as an unknown id. Outside it: the same refusal as any family id. */
+  const unknownInside = await get('/games/not-a-game/manifest', KID);
+  for (const path of [
+    '/games/xena/manifest',
+    '/games/xena/2026-10-20a/pack',
+    '/games/grown-up-public/manifest',
+    '/games/grown-up-public/1.0.0/pack',
+  ]) {
+    const res = await get(path, KID);
+    assert.equal(res.status, 404, path);
+    assert.equal(res.text, unknownInside.text, path);
+    const outside = await get(path, KID_OUTSIDE);
+    assert.equal(outside.status, 403, path);
+    assert.equal(outside.body.error, FAMILY_PACK_ARCADE_REFUSAL);
+  }
+  assert.equal(signs.length, 0, 'nothing was signed for a child');
+  assert.ok(
+    loads.every((key) => key === 'arcade/catalog.json'),
+    'no pack.json was read for a child',
+  );
+  assert.equal((await get('/games/super-tilt-bro/1.0.0/pack', KID)).status, 200);
+  assert.equal((await get('/games/xena/2026-10-20a/pack', FAMILY)).status, 200);
+
+  /* When the account cannot be read, it counts as a child (the Library's isChild rule). */
+  childCheckFails = true;
+  assert.equal((await get('/games/xena/manifest', ADMIN)).status, 404);
+  assert.deepEqual(
+    ((await get('/config', ADMIN)).body.catalog as Body[]).map((row) => row.id),
+    ['super-tilt-bro'],
+  );
+});
+
+test('with no grown-ups-only rows the child check never runs', async () => {
+  children = new Set([String(FAMILY.id)]);
+  assert.equal((await get('/config', FAMILY)).status, 200);
+  assert.equal((await get('/games/xena/manifest', FAMILY)).status, 200, 'not marked: plays');
+  assert.equal(childAsks, 0);
+});
+
+test('a game listed before its pack (or the kit) is uploaded answers ready: false and no packs', async () => {
   objects.delete('arcade/games/xena/2026-10-20a/pack.json');
   const res = await get('/games/xena/manifest', FAMILY);
   assert.equal(res.status, 200);
   assert.equal(res.body.ready, false);
-  assert.equal(res.body.index, null);
-  assert.equal(res.body.size, 47000000, 'the catalog size stands in');
-  assert.equal(res.body.sha256, SHA_A);
+  assert.deepEqual(res.body.packs, [], 'never the kit alone');
+  assert.equal(res.body.size, undefined);
+  assert.equal(res.body.sha256, undefined, 'nothing the app could take for a one-pack manifest');
+
+  stock();
+  objects.delete('arcade/kit/4.2.3-1/pack.json');
+  await mount();
+  const noKit = await get('/games/xena/manifest', FAMILY);
+  assert.equal(noKit.body.ready, false);
+  assert.deepEqual(noKit.body.packs, [], 'never the game without its kit');
+
+  stock();
+  put('arcade/catalog.json', { games: CATALOG.games });
+  await mount();
+  const noKitRow = await get('/games/xena/manifest', FAMILY);
+  assert.equal(noKitRow.body.ready, false, 'a catalog with no kit row is not ready either');
+  assert.deepEqual(noKitRow.body.packs, []);
+});
+
+test('the manifest passes on a game page and an emulator folder from pack.json when they are safe', async () => {
+  put('arcade/games/xena/2026-10-20a/pack.json', {
+    ...index(SHA_A, 47000123),
+    entry: 'games/xena/play.html',
+  });
+  put('arcade/kit/4.2.3-1/pack.json', {
+    ...index(SHA_K, 4000123, 'emulator/loader.js'),
+    emulatorData: 'emulator',
+  });
+  const res = await get('/games/xena/manifest', FAMILY);
+  assert.equal(res.body.entry, 'games/xena/play.html');
+  assert.equal(res.body.emulatorData, 'emulator/');
+  const kit = await get('/kit/4.2.3-1/manifest', OUTSIDE);
+  assert.equal(kit.body.emulatorData, 'emulator/');
+
+  put('arcade/games/xena/2026-10-21/pack.json', {
+    ...index(SHA_A, 47000123),
+    entry: '../../etc/passwd',
+  });
+  assert.equal(
+    (await get('/games/xena/2026-10-21/pack', FAMILY)).status,
+    404,
+    'an unsafe page path means the pack is not ready',
+  );
 });
 
 /* ── GET /games/:id/:ver/pack ──────────────────────────────────────── */
@@ -450,7 +607,7 @@ test('a version with no pack.json, or one that does not name the blob, is not re
   assert.equal((await get('/games/xena/2026-10-22/pack', FAMILY)).status, 404);
   assert.equal(signs.length, 0);
   /* An older uploaded version still signs, so a resumed download can finish. */
-  put('arcade/games/xena/2026-10-19/pack.json', index(SHA_B, 5));
+  put('arcade/games/xena/2026-10-19/pack.json', index(SHA_B, 500));
   const old = await get('/games/xena/2026-10-19/pack', FAMILY);
   assert.equal(old.status, 200);
   assert.equal(old.body.sha256, SHA_B);
@@ -497,11 +654,14 @@ test('the kit is open-source code: every signed-in account gets its manifest and
     const manifest = await get('/kit/4.2.3-1/manifest', who);
     assert.equal(manifest.status, 200);
     assert.deepEqual(manifest.body, {
+      kind: 'kit',
+      id: 'kit',
       version: '4.2.3-1',
       size: 4000123,
       sha256: SHA_K,
+      signPath: '/api/kade/arcade/kit/4.2.3-1/pack',
+      files: KIT_FILES,
       ready: true,
-      index: index(SHA_K, 4000123),
     });
     const pack = await get('/kit/4.2.3-1/pack', who);
     assert.equal(pack.status, 200);
@@ -512,6 +672,119 @@ test('the kit is open-source code: every signed-in account gets its manifest and
   assert.equal((await get('/kit/9.9.9/manifest', OUTSIDE)).status, 404);
   assert.ok(signs.every((s) => s.key === 'arcade/kit/4.2.3-1/blob.bin' && s.seconds === 3600));
   keysAreSafe();
+});
+
+test('pack.json never passes through as is: extra fields are dropped, and a kit that lists games/ files is refused', async () => {
+  /* What a careless pack tool might write: build notes with a local path, and game files. */
+  put('arcade/kit/4.2.3-1/pack.json', {
+    ...index(SHA_K, 4000123, 'emulator/loader.js'),
+    built: 'C:\\Users\\KADE\\Documents\\Revival kit',
+    generator: { note: 'made for xena' },
+  });
+  for (const who of [REVIEW, OUTSIDE]) {
+    const res = await get('/kit/4.2.3-1/manifest', who);
+    assert.equal(res.status, 200);
+    assert.deepEqual(Object.keys(res.body).sort(), [
+      'files',
+      'id',
+      'kind',
+      'ready',
+      'sha256',
+      'signPath',
+      'size',
+      'version',
+    ]);
+    assert.deepEqual(res.body.files, KIT_FILES);
+    assert.doesNotMatch(res.text, /Revival|Users|xena|built|generator/i);
+  }
+  put('arcade/kit/4.2.3-2/pack.json', {
+    format: 1,
+    blob: { size: 4000123, sha256: SHA_K },
+    files: [
+      { path: 'emulator/loader.js', offset: 0, size: 12 },
+      { path: 'games/xena/profile.json', offset: 12, size: 40 },
+    ],
+  });
+  for (const who of [REVIEW, OUTSIDE, FAMILY, ADMIN]) {
+    const manifest = await get('/kit/4.2.3-2/manifest', who);
+    assert.equal(manifest.status, 404, 'a kit carrying game files is not ready for anyone');
+    assert.doesNotMatch(manifest.text, /xena/i);
+    assert.equal((await get('/kit/4.2.3-2/pack', who)).status, 404);
+  }
+  assert.ok(
+    signs.every((s) => s.key !== 'arcade/kit/4.2.3-2/blob.bin'),
+    'never signed',
+  );
+  assert.ok(logs.some((line) => /kit\/4\.2\.3-2\/pack\.json lists files under games\//.test(line)));
+
+  /* The game manifest gets the same projection. */
+  put('arcade/games/xena/2026-10-20a/pack.json', {
+    ...index(SHA_A, 47000123),
+    built: 'C:\\Users\\KADE\\Documents\\Revival kit',
+  });
+  const game = await get('/games/xena/manifest', FAMILY);
+  assert.equal(game.body.ready, true);
+  assert.doesNotMatch(game.text, /Revival|built/);
+});
+
+test('a pack.json file table must be safe relative paths inside the blob, or the pack is not ready', async () => {
+  const bad: unknown[] = [
+    { path: '../secret', offset: 0, size: 1 },
+    { path: '/etc/passwd', offset: 0, size: 1 },
+    { path: 'a\\b.js', offset: 0, size: 1 },
+    { path: 'C:/x.js', offset: 0, size: 1 },
+    { path: 'a//b.js', offset: 0, size: 1 },
+    { path: './a.js', offset: 0, size: 1 },
+    { path: 'a/', offset: 0, size: 1 },
+    { path: '.hidden', offset: 0, size: 1 },
+    { path: 'rom.z64', offset: 4000120, size: 12 },
+    { path: 'rom.z64', offset: -1, size: 1 },
+    { path: 'rom.z64', offset: 0 },
+    'rom.z64',
+  ];
+  let n = 0;
+  for (const row of bad) {
+    n += 1;
+    put(`arcade/kit/bad-${n}/pack.json`, {
+      blob: { size: 4000123, sha256: SHA_K },
+      files: [{ path: 'emulator/loader.js', offset: 0, size: 12 }, row],
+    });
+    assert.equal(
+      (await get(`/kit/bad-${n}/manifest`, FAMILY)).status,
+      404,
+      `${JSON.stringify(row)} is refused`,
+    );
+  }
+  put('arcade/kit/dupe/pack.json', {
+    blob: { size: 4000123, sha256: SHA_K },
+    files: [KIT_FILES[0], KIT_FILES[0]],
+  });
+  assert.equal((await get('/kit/dupe/manifest', FAMILY)).status, 404, 'a path listed twice');
+  put('arcade/kit/empty/pack.json', { blob: { size: 4000123, sha256: SHA_K }, files: [] });
+  assert.equal((await get('/kit/empty/manifest', FAMILY)).status, 404, 'an empty table');
+  assert.equal(signs.length, 0);
+
+  /* A voice clip's name may have spaces; "length" is read as the size. */
+  assert.deepEqual(
+    parseArcadePackIndex({
+      blob: { size: 100, sha256: SHA_A },
+      files: [
+        { path: 'games/xena/audio/voice/2 of 3.mp3', offset: 10, length: 90, mime: 'audio/mpeg' },
+      ],
+      extra: true,
+    }),
+    {
+      format: 1,
+      blob: { size: 100, sha256: SHA_A },
+      files: [
+        { path: 'games/xena/audio/voice/2 of 3.mp3', offset: 10, size: 90, mime: 'audio/mpeg' },
+      ],
+    },
+  );
+  for (const value of ['games/xena/play.html', 'emulator/cores/mupen64plus_next-wasm.data', 'a'])
+    assert.equal(arcadePath(value), true, value);
+  for (const value of ['', '/a', 'a/', '..', 'a/../b', 'a\\b', 'C:x', ' a', 'a ', '.a', 'a//b'])
+    assert.equal(arcadePath(value), false, value);
 });
 
 /* ── POST /diag ────────────────────────────────────────────────────── */
@@ -528,8 +801,12 @@ test('diagnostics keep known small fields and the account id, nothing else', asy
         heap: 67108864,
         reloads: 0,
         audio: 'running',
+        mode: 'fight',
         lowPower: false,
+        device: 'iPhone16,2',
         note: 'my name is Bob and I live at 12 Elm St, Springfield',
+        email: 'kade murdock gmail.com',
+        kademurdock_gmail_com: 1,
         'bad key': 1,
         nested: { a: 1 },
       },
@@ -544,10 +821,23 @@ test('diagnostics keep known small fields and the account id, nothing else', asy
       kind: 'soak',
       game: 'xena',
       version: '2026-10-20a',
-      stats: { fps: 58.7, heap: 67108864, reloads: 0, audio: 'running', lowPower: false },
+      stats: {
+        fps: 58.7,
+        heap: 67108864,
+        reloads: 0,
+        audio: 'running',
+        mode: 'fight',
+        lowPower: false,
+        device: 'iPhone16,2',
+      },
     },
   ]);
   assert.equal((await post('/diag', JSON.stringify({ kind: 'Not A Kind' }))).status, 400);
+  assert.equal(
+    (await post('/diag', JSON.stringify({ kind: 'kademurdock' }))).status,
+    400,
+    'a kind that is not on the list is refused, so it cannot carry a word either',
+  );
   assert.equal((await post('/diag', '[]')).status, 400);
   assert.equal(
     (await post('/diag', JSON.stringify({ kind: 'soak', pad: 'x'.repeat(5000) }))).status,
@@ -555,8 +845,8 @@ test('diagnostics keep known small fields and the account id, nothing else', asy
   );
 });
 
-test('diagnostics are rate-limited per account', async () => {
-  for (let i = 0; i < 12; i++)
+test('diagnostics are rate-limited per account, with room over one report every five seconds', async () => {
+  for (let i = 0; i < 30; i++)
     assert.equal((await post('/diag', '{"kind":"tick"}', FAMILY)).status, 204, `report ${i}`);
   const limited = await post('/diag', '{"kind":"tick"}', FAMILY);
   assert.equal(limited.status, 429);
@@ -567,7 +857,45 @@ test('diagnostics are rate-limited per account', async () => {
   );
   clock += 61 * 1000;
   assert.equal((await post('/diag', '{"kind":"tick"}', FAMILY)).status, 204, 'the minute passes');
-  assert.equal(diags.length, 14);
+  assert.equal(diags.length, 32);
+});
+
+test('manifest and pack requests are rate-limited per account', async () => {
+  const paths = ['/kit/4.2.3-1/manifest', '/kit/4.2.3-1/pack', '/games/xena/manifest'];
+  for (let i = 0; i < 60; i++) {
+    const path = i < 57 ? `/kit/v${i}/pack` : paths[i - 57];
+    const res = await get(path, FAMILY);
+    assert.ok(res.status === 200 || res.status === 404, `${path} answered ${res.status}`);
+  }
+  for (const path of [...paths, '/games/xena/2026-10-20a/pack', '/kit/v99/manifest']) {
+    assert.equal((await get(path, FAMILY)).status, 429, path);
+  }
+  assert.equal((await get('/config', FAMILY)).status, 200, '/config reads only the cached catalog');
+  assert.equal((await get('/kit/4.2.3-1/pack', OUTSIDE)).status, 200, 'another account is fine');
+  clock += 61 * 1000;
+  assert.equal((await get('/kit/4.2.3-1/pack', FAMILY)).status, 200, 'the minute passes');
+});
+
+test('made-up versions never push a real pack index out of the cache', async () => {
+  const kitKey = 'arcade/kit/4.2.3-1/pack.json';
+  assert.equal((await get('/kit/4.2.3-1/pack', FAMILY)).status, 200);
+  for (let i = 0; i < 200; i++) {
+    signedIn = {
+      id: madeAt('2026-10-02T15:00:00Z').slice(0, 20) + i.toString(16).padStart(4, '0'),
+    };
+    assert.equal((await get(`/kit/junk-${i}/manifest`)).status, 404);
+  }
+  assert.equal((await get('/kit/4.2.3-1/pack', FAMILY)).status, 200);
+  assert.equal(
+    loads.filter((key) => key === kitKey).length,
+    1,
+    'the real index was read once and stayed cached',
+  );
+  /* Recent misses are cached too: asking again for the newest made-up version reads nothing. */
+  const before = loads.length;
+  signedIn = OUTSIDE;
+  assert.equal((await get('/kit/junk-199/manifest')).status, 404);
+  assert.equal(loads.length, before);
 });
 
 test('a router without a diag store logs the report instead', async () => {
@@ -620,6 +948,7 @@ test('catalog rows are checked: bad rows are dropped, and anything not exactly p
         },
         { id: 'xena', title: 'Duplicate', version: '2', access: 'public' },
         { id: ARCADE_SHELF_ID, title: 'Impostor shelf', version: '1', access: 'public' },
+        { id: 'kit', title: 'Impostor kit', version: '1', access: 'public' },
         { id: '../etc', title: 'Escape', version: '1' },
         { id: 'no-version', title: 'No version' },
         { id: 'no-title', version: '1' },
@@ -635,29 +964,60 @@ test('catalog rows are checked: bad rows are dropped, and anything not exactly p
       { id: 'open', title: 'Open game', console: '', access: 'public', version: '1', size: 0 },
     ],
   });
-  assert.equal(lines.length, 7, 'six bad rows and the bad kit are named in the log');
+  assert.equal(lines.length, 8, 'seven bad rows and the bad kit are named in the log');
+  assert.deepEqual(
+    parseArcadeCatalog({
+      games: [
+        { id: 'a', title: 'A', version: '1', grownUpsOnly: true },
+        { id: 'b', title: 'B', version: '1', grownUpsOnly: 'yes' },
+      ],
+    }).games.map((game) => game.grownUpsOnly),
+    [true, undefined],
+    'grown-ups-only only when the catalog says exactly true',
+  );
   assert.deepEqual(parseArcadeCatalog(null), { games: [], kit: null });
   assert.deepEqual(parseArcadeCatalog({ games: 'nope' }), { games: [], kit: null });
 });
 
-test('arcadeDiagRow never keeps free text', () => {
+test('arcadeDiagRow never keeps free text: only listed stat names, and words only from their lists', () => {
   const row = arcadeDiagRow(
     'u1',
     {
       kind: 'crash',
       game: '../x',
       version: 'a/b',
-      stats: { reason: 'WebContent process ended', where: "Kade's phone" },
+      stats: {
+        reason: 'WebContent process ended',
+        where: "Kade's phone",
+        who: 'Kade Murdock',
+        city: 'Springfield MO',
+        audio: 'kade murdock',
+        mode: 'Springfield',
+        thermal: 'serious',
+        device: 'iPhone of Kade',
+        os: '26.0.1',
+        heap: '67108864',
+        fps: Infinity,
+        lowPower: 'yes',
+        voiceOver: true,
+      },
     },
     new Date(0),
   );
+  const inherited = arcadeDiagRow(
+    'u1',
+    JSON.parse('{"kind":"tick","stats":{"__proto__":1,"constructor":1,"toString":"x"}}'),
+    new Date(0),
+  );
+  assert.deepEqual(inherited?.stats, {}, 'names inherited from Object are not on the list');
   assert.deepEqual(row, {
     user: 'u1',
     at: '1970-01-01T00:00:00.000Z',
     kind: 'crash',
     game: null,
     version: null,
-    stats: { reason: 'WebContent process ended' },
+    stats: { thermal: 'serious', os: '26.0.1', voiceOver: true },
   });
   assert.equal(arcadeDiagRow('u1', { stats: {} }, new Date(0)), null);
+  assert.equal(arcadeDiagRow('u1', { kind: 'hello-kade' }, new Date(0)), null);
 });

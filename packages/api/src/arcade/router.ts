@@ -29,6 +29,14 @@ import type { FamilyFeatures } from '../family/pack';
  * game and an id that does not exist, so the routes never tell an account
  * outside the pack which family games there are.
  *
+ * A catalog row marked grownUpsOnly is absent for a child account, as a
+ * grown-ups-only Library book is: not listed, and opened like an id that is
+ * not in the catalog.
+ *
+ * pack.json is never passed through as is: only the blob and a checked file
+ * table leave the server, and a kit pack that lists anything under games/ is
+ * refused, so no route can name a family game to an account outside the pack.
+ *
  * No catalog in storage yet means an empty arcade, never a crash.
  * -------------------------------------------------------------------------- */
 
@@ -36,6 +44,8 @@ import type { FamilyFeatures } from '../family/pack';
 export const ARCADE_PREFIX: string = 'arcade';
 /** The one greyed entry that stands for the whole family shelf outside the pack. */
 export const ARCADE_SHELF_ID: string = 'family-shelf';
+/** The kit's pack id in a manifest's `packs`, so no game may use it. */
+export const ARCADE_KIT_ID: string = 'kit';
 
 const CATALOG_KEY = `${ARCADE_PREFIX}/catalog.json`;
 /** Lower-case letters, digits and inner hyphens: "xena", "super-tilt-bro". */
@@ -43,21 +53,99 @@ const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
 /** Letters, digits, dots, hyphens and underscores, starting and ending on a letter or digit: "2026-10-20a", "4.2.3-1". */
 const VERSION_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+/** One part of a file path inside a pack: no "." or ".." part, no slash, backslash or colon. */
+const PATH_PART = /^[A-Za-z0-9_](?:[A-Za-z0-9 ._,'()+-]{0,118}[A-Za-z0-9._,'()+-])?$/;
+const PATH_MAX = 240;
+const PATH_PARTS_MAX = 16;
+const MIME_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,40}\/[a-z0-9][a-z0-9.+-]{0,80}$/;
 const SIGN_SECONDS = 3600;
 const CATALOG_TTL_MS = 60 * 1000;
 /** After a failed storage read, try again this soon (the last good catalog is served meanwhile). */
 const CATALOG_RETRY_MS = 10 * 1000;
 const INDEX_TTL_MS = 10 * 60 * 1000;
 const INDEX_MISSING_TTL_MS = 60 * 1000;
+/** Found and missing pack.json answers are kept in separate caches of this size, oldest out first. */
 const INDEX_CACHE_MAX = 64;
 const MAX_CATALOG_BYTES = 256 * 1024;
 const MAX_INDEX_BYTES = 2 * 1024 * 1024;
+/** Manifest and pack requests a minute per account (each new version can cost a storage read). */
+const READ_PER_MINUTE = 60;
 const DIAG_BYTES = 4096;
-const DIAG_PER_MINUTE = 12;
-const DIAG_FIELDS = 24;
-const DIAG_KIND = /^[a-z][a-z0-9_-]{0,31}$/;
-const DIAG_FIELD = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
-const DIAG_WORD = /^[A-Za-z0-9 ._:-]{0,40}$/;
+/** A report every five seconds is 12 a minute; this leaves room for timer drift and retries. */
+const DIAG_PER_MINUTE = 30;
+
+/** The kinds of report POST /diag keeps. */
+const DIAG_KINDS: ReadonlySet<string> = new Set([
+  'boot',
+  'tick',
+  'soak',
+  'telemetry',
+  'mode',
+  'audio',
+  'saved',
+  'download',
+  'install',
+  'start',
+  'pause',
+  'resume',
+  'exit',
+  'reload',
+  'terminated',
+  'recovered',
+  'crash',
+  'error',
+]);
+
+/** How one stat is checked: a number, a flag, a word from a fixed list, or a fixed pattern. */
+type DiagRule = 'number' | 'boolean' | readonly string[] | RegExp;
+
+/** The only stats a report keeps. Names and words are fixed here, so no field can carry free
+ * text: a stat with any other name, or a string outside its list, is dropped. */
+const DIAG_STATS: ReadonlyMap<string, DiagRule> = new Map<string, DiagRule>([
+  /* The kit's soak telemetry (core/telemetry.js, every five seconds). */
+  ['loads', 'number'],
+  ['uptime', 'number'],
+  ['heap', 'number'],
+  ['heapMax', 'number'],
+  ['fps', 'number'],
+  ['fpsMin', 'number'],
+  ['frames', 'number'],
+  ['opus', 'number'],
+  ['flac', 'number'],
+  ['clips', 'number'],
+  ['clipBytes', 'number'],
+  ['contexts', 'number'],
+  ['audio', ['running', 'suspended', 'closed', 'interrupted']],
+  ['mode', ['menu', 'fight', 'pause']],
+  ['core', ['mupen64plus_next', 'parallel_n64']],
+  /* The app's own counters (ArcadeTelemetry). */
+  ['reloads', 'number'],
+  ['terminations', 'number'],
+  ['recoveries', 'number'],
+  ['touchSends', 'number'],
+  ['infoSends', 'number'],
+  ['keySends', 'number'],
+  ['controllerSends', 'number'],
+  ['errors', 'number'],
+  ['saves', 'number'],
+  ['downloadBytes', 'number'],
+  ['downloadMs', 'number'],
+  ['latencyMs', 'number'],
+  ['input', ['touch', 'keyboard', 'controller']],
+  /* The phone. */
+  ['battery', 'number'],
+  ['lowPower', 'boolean'],
+  ['lockdown', 'boolean'],
+  ['voiceOver', 'boolean'],
+  ['headphones', 'boolean'],
+  ['charging', 'boolean'],
+  ['vision', 'boolean'],
+  ['thermal', ['nominal', 'fair', 'serious', 'critical']],
+  ['route', ['speaker', 'receiver', 'wired', 'bluetooth', 'airplay', 'usb', 'carplay', 'other']],
+  ['device', /^(?:iPhone|iPad|iPod)\d{1,2},\d{1,2}$/],
+  ['os', /^\d{1,2}(?:\.\d{1,2}){0,2}$/],
+  ['app', /^\d{1,4}(?:\.\d{1,4}){0,3}$/],
+]);
 
 export type ArcadeAccess = 'family' | 'public';
 
@@ -73,6 +161,8 @@ export interface ArcadeGame {
   size: number;
   sha256?: string;
   note?: string;
+  /** Absent for child accounts (only when the catalog says exactly true). */
+  grownUpsOnly?: boolean;
 }
 
 /** One row of GET /config. */
@@ -98,10 +188,35 @@ export interface ArcadeCatalog {
   kit: ArcadeKit | null;
 }
 
-/** A pack.json index: blob.bin's size and sha256, plus whatever file table the kit reads. */
+/** One file inside blob.bin, as the phone serves it. */
+export interface ArcadePackFile {
+  path: string;
+  offset: number;
+  size: number;
+  mime?: string;
+  sha256?: string;
+}
+
+/** A checked pack.json: blob.bin's size and sha256 and its file table, nothing else. */
 export interface ArcadePackIndex {
+  format: number;
   blob: { size: number; sha256: string };
-  [field: string]: unknown;
+  files: ArcadePackFile[];
+  /** The game page inside the pack, when it is not games/<id>/play.html. */
+  entry?: string;
+  /** EmulatorJS's data folder inside the kit pack, when it is not emulator/. */
+  emulatorData?: string;
+}
+
+/** One pack in a manifest's `packs`: what to download, how to check it and where to ask for its link. */
+export interface ArcadePackRef {
+  kind: 'kit' | 'game';
+  id: string;
+  version: string;
+  size: number;
+  sha256: string;
+  signPath: string;
+  files: ArcadePackFile[];
 }
 
 /** One diagnostics report, as stored or logged: nothing about the person but the account id. */
@@ -119,14 +234,18 @@ export interface ArcadeDependencies {
   auth: RequestHandler;
   /** The signed-in account; defaults to req.user. */
   actor?(req: Request): LibraryAccount | null | undefined;
+  /** True for a child account (the Library's isChild). Without it nobody is a child. */
+  child?(req: Request): boolean | Promise<boolean>;
   /** The object's bytes from private storage, or null when there is no such object. */
   loadObject(key: string): Promise<Buffer | null>;
   /** A signed GET link for exactly this one key (the Library's signGet). */
   signGet(key: string, mime: string, seconds: number): Promise<string>;
   /** Keep one diagnostics report; without it the report is logged. */
   diag?(row: ArcadeDiagRow): void | Promise<void>;
-  /** A shared rate limiter for POST /diag; without it a per-process one allows 12 a minute per account. */
+  /** A shared rate limiter for POST /diag; without it a per-process one allows 30 a minute per account. */
   diagLimit?: RequestHandler;
+  /** A shared rate limiter for the manifest and pack routes; without it a per-process one allows 60 a minute per account. */
+  readLimit?: RequestHandler;
   now?(): number;
   log(message: string): void;
 }
@@ -139,6 +258,14 @@ export function arcadeId(value: unknown): value is string {
 /** True for a pack version the router will ever build a storage key from. */
 export function arcadeVersion(value: unknown): value is string {
   return typeof value === 'string' && VERSION_PATTERN.test(value) && !value.includes('..');
+}
+
+/** True for a relative file path inside a pack: "games/xena/play.html", "audio/voice/2 of 3.mp3".
+ * Never absolute, never a "." or ".." part, never a backslash or colon. */
+export function arcadePath(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value.length > PATH_MAX) return false;
+  const parts = value.split('/');
+  return parts.length <= PATH_PARTS_MAX && parts.every((part) => PATH_PART.test(part));
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -166,6 +293,7 @@ export function parseArcadeCatalog(
       !isRecord(row) ||
       !arcadeId(id) ||
       id === ARCADE_SHELF_ID ||
+      id === ARCADE_KIT_ID ||
       seen.has(id) ||
       !arcadeVersion(row.version) ||
       !title
@@ -185,6 +313,7 @@ export function parseArcadeCatalog(
     if (typeof row.sha256 === 'string' && SHA256_PATTERN.test(row.sha256)) game.sha256 = row.sha256;
     const note = shortText(row.note, 200);
     if (note) game.note = note;
+    if (row.grownUpsOnly === true) game.grownUpsOnly = true;
     games.push(game);
   });
   let kit: ArcadeKit | null = null;
@@ -199,32 +328,69 @@ export function parseArcadeCatalog(
   return { games, kit };
 }
 
-/** Reads a pack.json; null unless it names blob.bin's size and sha256. */
+/** Reads a pack.json into only the fields the phone needs: blob.bin's size and sha256 and a file
+ * table whose every row is a safe relative path inside the blob. Any other field is dropped, and
+ * null comes back unless the whole table checks out (one bad row and the pack is not ready). */
 export function parseArcadePackIndex(raw: unknown): ArcadePackIndex | null {
-  if (!isRecord(raw) || !isRecord(raw.blob)) return null;
-  const size = byteCount(raw.blob.size);
-  const sha256 = raw.blob.sha256;
-  if (size === null || size === 0 || typeof sha256 !== 'string' || !SHA256_PATTERN.test(sha256)) {
-    return null;
+  if (!isRecord(raw) || !isRecord(raw.blob) || !Array.isArray(raw.files)) return null;
+  const blobSize = byteCount(raw.blob.size);
+  const blobSha = raw.blob.sha256;
+  if (blobSize === null || blobSize === 0) return null;
+  if (typeof blobSha !== 'string' || !SHA256_PATTERN.test(blobSha)) return null;
+  const files: ArcadePackFile[] = [];
+  const seen = new Set<string>();
+  for (const row of raw.files as unknown[]) {
+    if (!isRecord(row) || !arcadePath(row.path) || seen.has(row.path)) return null;
+    const offset = byteCount(row.offset);
+    const size = byteCount(row.size !== undefined ? row.size : row.length);
+    if (offset === null || size === null || offset > blobSize || size > blobSize - offset) {
+      return null;
+    }
+    seen.add(row.path);
+    const file: ArcadePackFile = { path: row.path, offset, size };
+    if (typeof row.mime === 'string' && MIME_PATTERN.test(row.mime)) file.mime = row.mime;
+    if (typeof row.sha256 === 'string' && SHA256_PATTERN.test(row.sha256)) file.sha256 = row.sha256;
+    files.push(file);
   }
-  return raw as ArcadePackIndex;
+  if (!files.length) return null;
+  const index: ArcadePackIndex = {
+    format: byteCount(raw.format) || 1,
+    blob: { size: blobSize, sha256: blobSha },
+    files,
+  };
+  if (raw.entry !== undefined) {
+    if (!arcadePath(raw.entry)) return null;
+    index.entry = raw.entry;
+  }
+  if (raw.emulatorData !== undefined) {
+    const folder = typeof raw.emulatorData === 'string' ? raw.emulatorData.replace(/\/$/, '') : '';
+    if (!arcadePath(folder)) return null;
+    index.emulatorData = `${folder}/`;
+  }
+  return index;
 }
 
-/** One diagnostics report, kept to known small fields: no free text, nothing but the account id. */
+/** One stat kept as is, or undefined when its name or value is not on the list. */
+function diagStat(name: string, value: unknown): number | boolean | string | undefined {
+  const rule = DIAG_STATS.get(name);
+  if (rule === undefined) return undefined;
+  if (rule === 'number') {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+  if (rule === 'boolean') return typeof value === 'boolean' ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  if (rule instanceof RegExp) return rule.test(value) ? value : undefined;
+  return rule.includes(value) ? value : undefined;
+}
+
+/** One diagnostics report, kept to the listed stats: no free text, nothing but the account id. */
 export function arcadeDiagRow(user: string, body: unknown, at: Date): ArcadeDiagRow | null {
-  if (!isRecord(body) || typeof body.kind !== 'string' || !DIAG_KIND.test(body.kind)) return null;
+  if (!isRecord(body) || typeof body.kind !== 'string' || !DIAG_KINDS.has(body.kind)) return null;
   const stats: Record<string, number | boolean | string> = {};
-  let kept = 0;
   const raw = isRecord(body.stats) ? body.stats : {};
   for (const name of Object.keys(raw)) {
-    if (kept >= DIAG_FIELDS) break;
-    if (!DIAG_FIELD.test(name)) continue;
-    const value = raw[name];
-    if (typeof value === 'number' && Number.isFinite(value)) stats[name] = value;
-    else if (typeof value === 'boolean') stats[name] = value;
-    else if (typeof value === 'string' && DIAG_WORD.test(value)) stats[name] = value;
-    else continue;
-    kept += 1;
+    const value = diagStat(name, raw[name]);
+    if (value !== undefined) stats[name] = value;
   }
   return {
     user,
@@ -240,6 +406,16 @@ const gameKey = (id: string, version: string, file: 'pack.json' | 'blob.bin'): s
   `${ARCADE_PREFIX}/games/${id}/${version}/${file}`;
 const kitKey = (version: string, file: 'pack.json' | 'blob.bin'): string =>
   `${ARCADE_PREFIX}/kit/${version}/${file}`;
+
+/** Sets a cache entry, dropping the oldest entry first when the cache is full. */
+function remember<V>(cache: Map<string, V>, key: string, value: V, max: number): void {
+  cache.delete(key);
+  if (cache.size >= max) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+  cache.set(key, value);
+}
 
 export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof Router> {
   const router = Router();
@@ -274,6 +450,30 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       .json({ error: FAMILY_PACK_ARCADE_REFUSAL, refusal: FAMILY_PACK_ARCADE_REFUSAL });
   };
 
+  /* A per-process limit per account, used when the server passes no shared limiter. */
+  const perMinute = (max: number, error: string): RequestHandler => {
+    const hits = new Map<string, number[]>();
+    return (req, res, next) => {
+      const key = uid(req);
+      const at = now();
+      const recent = (hits.get(key) || []).filter((t) => at - t < 60 * 1000);
+      if (recent.length >= max) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(429).json({ error });
+        return;
+      }
+      recent.push(at);
+      remember(hits, key, recent, 5000);
+      next();
+    };
+  };
+  const readLimit =
+    deps.readLimit ||
+    perMinute(READ_PER_MINUTE, 'That is a lot of arcade requests at once. Try again in a minute.');
+  const diagLimit =
+    deps.diagLimit ||
+    perMinute(DIAG_PER_MINUTE, 'That is a lot of reports at once. Try again in a minute.');
+
   /* The catalog, read at most once a minute; a failed read keeps serving the last good one. */
   let cached: { at: number; ttl: number; value: ArcadeCatalog } | null = null;
   let loading: Promise<ArcadeCatalog> | null = null;
@@ -306,12 +506,30 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
     return loading;
   };
 
+  /* The catalog rows this account may see: a grown-ups-only game is absent for a child. The child
+   * check runs only when some row needs it, and a failed check counts as a child. */
+  const visibleGames = async (req: Request, games: ArcadeGame[]): Promise<ArcadeGame[]> => {
+    if (!deps.child || !games.some((game) => game.grownUpsOnly)) return games;
+    let child = true;
+    try {
+      child = (await deps.child(req)) !== false;
+    } catch {
+      child = true;
+    }
+    return child ? games.filter((game) => !game.grownUpsOnly) : games;
+  };
+
   /* pack.json indexes: versioned keys are never overwritten, so a found index is kept ten minutes
-   * and a missing one a minute (it may be uploaded later). A failed read is not kept. */
-  const indexes = new Map<string, { at: number; value: ArcadePackIndex | null }>();
-  const packIndex = async (key: string): Promise<ArcadePackIndex | null> => {
-    const hit = indexes.get(key);
-    if (hit && now() - hit.at < (hit.value ? INDEX_TTL_MS : INDEX_MISSING_TTL_MS)) return hit.value;
+   * and a missing one a minute (it may be uploaded later). Found and missing answers live in
+   * separate caches that each drop their oldest entry when full, so a flood of made-up versions
+   * never pushes out a real index. A failed read is not kept. */
+  const found = new Map<string, { at: number; value: ArcadePackIndex }>();
+  const absent = new Map<string, number>();
+  const packIndex = async (key: string, kit: boolean): Promise<ArcadePackIndex | null> => {
+    const hit = found.get(key);
+    if (hit && now() - hit.at < INDEX_TTL_MS) return hit.value;
+    const miss = absent.get(key);
+    if (miss !== undefined && now() - miss < INDEX_MISSING_TTL_MS) return null;
     const bytes = await deps.loadObject(key);
     let value: ArcadePackIndex | null = null;
     if (bytes) {
@@ -321,10 +539,23 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       } catch {
         value = null;
       }
-      if (!value) deps.log(`${key} is not a pack index naming blob.bin's size and sha256`);
+      if (!value) {
+        deps.log(
+          `${key} is not a usable pack index: it needs blob.bin's size and sha256 and a file table of safe relative paths inside the blob`,
+        );
+      } else if (kit && value.files.some((file) => /^games\//i.test(file.path))) {
+        /* The kit is open to every account: a kit that carries game files would hand them out. */
+        deps.log(`${key} lists files under games/, so the kit pack is refused`);
+        value = null;
+      }
     }
-    if (indexes.size >= INDEX_CACHE_MAX) indexes.clear();
-    indexes.set(key, { at: now(), value });
+    if (value) {
+      absent.delete(key);
+      remember(found, key, { at: now(), value }, INDEX_CACHE_MAX);
+    } else {
+      found.delete(key);
+      remember(absent, key, now(), INDEX_CACHE_MAX);
+    }
     return value;
   };
 
@@ -335,7 +566,8 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       missing(res);
       return null;
     }
-    const game = (await catalog()).games.find((row) => row.id === id);
+    const games = await visibleGames(req, (await catalog()).games);
+    const game = games.find((row) => row.id === id);
     if (game && game.access === 'public') return game;
     if (!familyPack(actor(req))) {
       refuse(res);
@@ -347,6 +579,26 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
     }
     return game;
   };
+
+  const packRef = (
+    kind: 'kit' | 'game',
+    id: string,
+    version: string,
+    index: ArcadePackIndex,
+    signPath: string,
+  ): ArcadePackRef => ({
+    kind,
+    id,
+    version,
+    size: index.blob.size,
+    sha256: index.blob.sha256,
+    signPath,
+    files: index.files,
+  });
+  const kitSignPath = (req: Request, version: string): string =>
+    `${req.baseUrl}/kit/${version}/pack`;
+  const gameSignPath = (req: Request, id: string, version: string): string =>
+    `${req.baseUrl}/games/${id}/${version}/pack`;
 
   const signedPack = async (
     res: Response,
@@ -375,7 +627,8 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       const account = actor(req);
       const pack = familyPack(account);
       const features: FamilyFeatures = familyFeatures(account);
-      const { games, kit } = await catalog();
+      const { games: listed, kit } = await catalog();
+      const games = await visibleGames(req, listed);
       const rows: ArcadeEntry[] = [];
       let shelf = false;
       for (const game of games) {
@@ -417,32 +670,53 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
     }),
   );
 
+  /* The manifest names both packs a game needs, the kit first, each with its file table and the
+   * path that signs its link. Until both pack.json files are uploaded and check out, `packs` is
+   * empty and `ready` is false, so the phone never installs half a game. */
   router.get(
     '/games/:id/manifest',
     deps.auth,
+    readLimit,
     run(async (req, res) => {
       const game = await openGame(req, res);
       if (!game) return;
       const { kit } = await catalog();
-      const index = await packIndex(gameKey(game.id, game.version, 'pack.json'));
-      res.json({
+      const [gameIndex, kitIndex] = await Promise.all([
+        packIndex(gameKey(game.id, game.version, 'pack.json'), false),
+        kit ? packIndex(kitKey(kit.version, 'pack.json'), true) : Promise.resolve(null),
+      ]);
+      const ready = !!(kit && kitIndex && gameIndex);
+      const body: Record<string, unknown> = {
         id: game.id,
         title: game.title,
         console: game.console,
         access: game.access,
         version: game.version,
-        size: index ? index.blob.size : game.size,
-        sha256: index ? index.blob.sha256 : game.sha256 || null,
-        kit: kit ? kit.version : null,
-        ready: !!index,
-        index,
-      });
+        ready,
+        packs:
+          kit && kitIndex && gameIndex
+            ? [
+                packRef('kit', ARCADE_KIT_ID, kit.version, kitIndex, kitSignPath(req, kit.version)),
+                packRef(
+                  'game',
+                  game.id,
+                  game.version,
+                  gameIndex,
+                  gameSignPath(req, game.id, game.version),
+                ),
+              ]
+            : [],
+      };
+      if (ready && gameIndex?.entry) body.entry = gameIndex.entry;
+      if (ready && kitIndex?.emulatorData) body.emulatorData = kitIndex.emulatorData;
+      res.json(body);
     }),
   );
 
   router.get(
     '/games/:id/:ver/pack',
     deps.auth,
+    readLimit,
     run(async (req, res) => {
       const version = String(req.params.ver || '');
       const game = await openGame(req, res);
@@ -451,7 +725,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         missing(res, 'That pack is not ready yet.');
         return;
       }
-      const index = await packIndex(gameKey(game.id, version, 'pack.json'));
+      const index = await packIndex(gameKey(game.id, version, 'pack.json'), false);
       await signedPack(res, index, gameKey(game.id, version, 'blob.bin'), version);
     }),
   );
@@ -460,51 +734,44 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
   router.get(
     '/kit/:ver/manifest',
     deps.auth,
+    readLimit,
     run(async (req, res) => {
       const version = String(req.params.ver || '');
       if (!arcadeVersion(version)) {
         missing(res, 'That kit is not in the arcade.');
         return;
       }
-      const index = await packIndex(kitKey(version, 'pack.json'));
+      const index = await packIndex(kitKey(version, 'pack.json'), true);
       if (!index) {
         missing(res, 'That pack is not ready yet.');
         return;
       }
-      res.json({ version, size: index.blob.size, sha256: index.blob.sha256, ready: true, index });
+      const body: Record<string, unknown> = {
+        ...packRef('kit', ARCADE_KIT_ID, version, index, kitSignPath(req, version)),
+        ready: true,
+      };
+      if (index.emulatorData) body.emulatorData = index.emulatorData;
+      res.json(body);
     }),
   );
 
   router.get(
     '/kit/:ver/pack',
     deps.auth,
+    readLimit,
     run(async (req, res) => {
       const version = String(req.params.ver || '');
       if (!arcadeVersion(version)) {
         missing(res, 'That kit is not in the arcade.');
         return;
       }
-      const index = await packIndex(kitKey(version, 'pack.json'));
+      const index = await packIndex(kitKey(version, 'pack.json'), true);
       await signedPack(res, index, kitKey(version, 'blob.bin'), version);
     }),
   );
 
   /* Diagnostics from the phone (frames a second, memory, reloads): small, rate-limited, and kept
    * with nothing about the person but the account id. */
-  const hits = new Map<string, number[]>();
-  const memoryLimit: RequestHandler = (req, res, next) => {
-    const key = uid(req);
-    const at = now();
-    const recent = (hits.get(key) || []).filter((t) => at - t < 60 * 1000);
-    if (recent.length >= DIAG_PER_MINUTE) {
-      res.status(429).json({ error: 'That is a lot of reports at once. Try again in a minute.' });
-      return;
-    }
-    recent.push(at);
-    if (!hits.has(key) && hits.size >= 5000) hits.clear();
-    hits.set(key, recent);
-    next();
-  };
   const sizeCap: RequestHandler = (req, res, next) => {
     if (Number(req.headers['content-length'] || 0) > DIAG_BYTES) {
       res.status(413).json({ error: 'That report is too large.' });
@@ -515,7 +782,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
   router.post(
     '/diag',
     deps.auth,
-    deps.diagLimit || memoryLimit,
+    diagLimit,
     sizeCap,
     json({ limit: DIAG_BYTES }),
     run(async (req, res) => {
