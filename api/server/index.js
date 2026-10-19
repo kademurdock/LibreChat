@@ -353,6 +353,8 @@ const startServer = async () => {
   app.use('/api/kade/soul', require('./routes/kadeSoul'));
   // Oct 16 2026: Kade's yes before Forge ships (services/kadeApprovals.js).
   app.use('/api/kade/approvals', require('./routes/kadeApprovals'));
+  // Oct 18 2026: the Arcade: catalog, manifests and one-hour signed game packs (packages/api arcade/ARCADE.md).
+  app.use('/api/kade/arcade', require('./routes/kadeArcade'));
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);

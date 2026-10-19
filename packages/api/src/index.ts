@@ -370,6 +370,15 @@ export {
   FAMILY_PACK_ARCADE_REFUSAL,
 } from './family/pack';
 export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
+/* Oct 18 2026: the Arcade (/api/kade/arcade): catalog, manifests and signed game packs (arcade/ARCADE.md). */
+export { createArcadeRouter, ARCADE_PREFIX, ARCADE_SHELF_ID } from './arcade/router';
+export type {
+  ArcadeDependencies,
+  ArcadeDiagRow,
+  ArcadeEntry,
+  ArcadeGame,
+  ArcadeKit,
+} from './arcade/router';
 /* Sep 29 2026: Family history, the owner's family research for matched family (docs/FAMILY_HISTORY.md). */
 export {
   familyHistoryRouter,
