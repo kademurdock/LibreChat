@@ -61,7 +61,9 @@ import type { FamilyFeatures } from '../family/pack';
  * access pack with their files, entry, emulatorData and the pack's romPath, where the phone puts
  * the person's own ROM) and its link /games/<id>/<accessVersion>/pack, behind the same gate. A
  * pack served under an accessVersion must be an access pack (accessOnly, romPath inside
- * games/<id>/, no file at romPath), so a match never hands out a pack that carries the ROM.
+ * games/<id>/, no file at romPath), so a match never hands out a pack that carries the ROM, and
+ * its blob must be the one the catalog's accessSize and accessSha256 name, so /match never
+ * advertises one size while the manifest and link serve another.
  * -------------------------------------------------------------------------- */
 
 /** Every arcade object lives under this storage prefix (never media-library/ or book-imports/). */
@@ -111,9 +113,11 @@ const MATCH_PER_MINUTE = 60;
  * every N64 sha1 is about a thousand. */
 const MATCH_LOCKED_PER_DAY = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** A kit file under games/ that is not the plain player's folder. No game can own games/_plain/:
- * an id starts with a letter or digit (ID_PATTERN). */
-const KIT_GAME_FILES = /^games\/(?!_plain\/)/i;
+/** A kit file under games/ (in any letter case) that is not the plain player's folder, spelled
+ * exactly games/_plain/. No game can own games/_plain/: an id starts with a letter or digit
+ * (ID_PATTERN). */
+const kitGameFile = (path: string): boolean =>
+  /^games\//i.test(path) && !path.startsWith('games/_plain/');
 const DIAG_BYTES = 4096;
 /** A report every five seconds is 12 a minute; this leaves room for timer drift and retries. */
 const DIAG_PER_MINUTE = 30;
@@ -161,7 +165,9 @@ const DIAG_STATS: ReadonlyMap<string, DiagRule> = new Map<string, DiagRule>([
   ['contexts', 'number'],
   ['audio', ['running', 'suspended', 'closed', 'interrupted']],
   ['mode', ['menu', 'fight', 'pause']],
-  ['core', ['mupen64plus_next', 'parallel_n64']],
+  /* N64 packs, then the plain player's cores (games/_plain/systems.json): NES, Game Boy and
+   * Game Boy Color, Game Boy Advance. */
+  ['core', ['mupen64plus_next', 'parallel_n64', 'fceumm', 'gambatte', 'mgba']],
   /* The app's own counters (ArcadeTelemetry). */
   ['reloads', 'number'],
   ['terminations', 'number'],
@@ -750,7 +756,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         deps.log(
           `${key} is not a usable pack index: it needs blob.bin's size (blob.bytes) and sha256 and a file table of safe relative paths inside the blob`,
         );
-      } else if (kit && value.files.some((file) => KIT_GAME_FILES.test(file.path))) {
+      } else if (kit && value.files.some((file) => kitGameFile(file.path))) {
         /* The kit is open to every account: a kit that carries game files would hand them out.
          * The plain player (games/_plain/, no game's folder) is the kit's own. */
         deps.log(
@@ -772,7 +778,9 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
   /* A game's pack.json for one version, checked against what that version is for. Under the
    * game's accessVersion it must be an access pack: pack.json says accessOnly, its romPath lies
    * inside games/<id>/, and no file sits at romPath, so a match never hands out a pack that
-   * carries the ROM (an accessVersion naming an older full upload, say). Under the game's own
+   * carries the ROM (an accessVersion naming an older full upload, say). Its blob's size and
+   * sha256 must also be the catalog's accessSize and accessSha256, which /match advertises: a
+   * catalog edited by hand never shows one pack and serves another. Under the game's own
    * version it must not be one, so the shelf never installs a game without its ROM. Any other
    * version (an older upload a resumed download finishes) is read as is. */
   const gamePack = async (game: ArcadeGame, version: string): Promise<ArcadePackIndex | null> => {
@@ -789,6 +797,12 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       ) {
         deps.log(
           `${key} is not an access pack: it needs "accessOnly": true, a romPath under games/${game.id}/ and no file at that path`,
+        );
+        return null;
+      }
+      if (index.blob.size !== game.accessSize || index.blob.sha256 !== game.accessSha256) {
+        deps.log(
+          `${key} does not match the catalog: its blob (blob.bytes, blob.sha256) must be the game's accessSize and accessSha256, so the access pack is not ready`,
         );
         return null;
       }

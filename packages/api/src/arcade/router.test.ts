@@ -1068,7 +1068,8 @@ test('the kit may carry the plain player (games/_plain/) and nothing else under 
   );
   assert.equal((await get('/kit/plain-bad/manifest', REVIEW)).body.plain, undefined);
 
-  /* Game files anywhere else under games/ still refuse the whole kit, whatever the case. */
+  /* Game files anywhere else under games/ still refuse the whole kit, whatever the case. Only
+   * games/_plain/ spelled exactly that way is the plain player's. */
   let n = 0;
   for (const path of [
     'games/xena/x.js',
@@ -1076,6 +1077,9 @@ test('the kit may carry the plain player (games/_plain/) and nothing else under 
     'games/x/_plain/a.js',
     'games/_plain',
     'Games/xena/x.js',
+    'games/_PLAIN/a.js',
+    'games/_Plain/a.js',
+    'GAMES/_plain/a.js',
   ]) {
     n += 1;
     objects.set(
@@ -1742,6 +1746,68 @@ test("add a game: a pack under the accessVersion must be an access pack, and the
   assert.equal((await get('/games/xena/2026-10-19-access/pack', FAMILY)).status, 200);
 });
 
+test("add a game: the access pack's blob must be the catalog's accessSize and accessSha256", async () => {
+  /* /match advertises the catalog's accessSize and accessSha256 while the manifest and the link
+   * serve pack.json's blob, so a catalog edited by hand must never show one pack and serve
+   * another. The real packs agree (make_catalog.py copies blob.bytes and blob.sha256). */
+  const romPath = 'games/xena/local/rom.z64';
+  const key = `arcade/family/xena/${XENA_ACCESS}/pack.json`;
+  const mismatched: Array<[string, unknown]> = [
+    ['another size', accessIndex(SHA_XA, 46000124, romPath)],
+    ['another sha256', accessIndex(SHA_A, 46000123, romPath)],
+    [
+      'blob.size (which wins over blob.bytes) is another size',
+      {
+        ...accessIndex(SHA_XA, 46000123, romPath),
+        blob: { file: 'blob.bin', bytes: 46000123, size: 46000999, sha256: SHA_XA },
+      },
+    ],
+  ];
+  for (const [what, pack] of mismatched) {
+    stockAccess();
+    put(key, pack);
+    logs = [];
+    signs = [];
+    await mount();
+    assert.deepEqual(
+      (await get(`/match?sha1=${ROM_XENA}`, FAMILY)).body,
+      { match: XENA_MATCH },
+      `${what}: /match reads only the catalog`,
+    );
+    const res = await get(rel(XENA_MATCH.manifestPath), FAMILY);
+    assert.equal(res.status, 200, what);
+    assert.equal(res.body.ready, false, what);
+    assert.deepEqual(res.body.packs, [], what);
+    assert.equal(res.body.romPath, undefined, what);
+    assert.equal((await get(rel(XENA_MATCH.signPath), FAMILY)).status, 404, what);
+    assert.equal(signs.length, 0, what);
+    assert.ok(
+      logs.some((line) => line.startsWith(`${key} does not match the catalog`)),
+      `${what}: ${logs.join('\n')}`,
+    );
+    assert.equal(
+      (await get('/games/xena/manifest', FAMILY)).body.ready,
+      true,
+      'the shelf plays on',
+    );
+  }
+
+  /* Matching again: ready, and the manifest and link serve what /match advertised. */
+  stockAccess();
+  logs = [];
+  await mount();
+  const ok = await get(rel(XENA_MATCH.manifestPath), FAMILY);
+  assert.equal(ok.body.ready, true);
+  const pack = (ok.body.packs as Body[])[1] as Body;
+  assert.equal(pack.size, XENA_MATCH.size);
+  assert.equal(pack.sha256, XENA_MATCH.sha256);
+  const link = await get(rel(XENA_MATCH.signPath), FAMILY);
+  assert.equal(link.status, 200);
+  assert.equal(link.body.size, XENA_MATCH.size);
+  assert.equal(link.body.sha256, XENA_MATCH.sha256);
+  assert.ok(!logs.some((line) => line.includes('does not match the catalog')), logs.join('\n'));
+});
+
 test('add a game: catalog romSha1 and access pack fields are checked one by one', () => {
   const lines: string[] = [];
   const row = { title: 'T', version: '1', access: 'public' };
@@ -2260,4 +2326,17 @@ test('arcadeDiagRow never keeps free text: only listed stat names, and words onl
   });
   assert.equal(arcadeDiagRow('u1', { stats: {} }, new Date(0)), null);
   assert.equal(arcadeDiagRow('u1', { kind: 'hello-kade' }, new Date(0)), null);
+});
+
+test("arcadeDiagRow keeps every core the kit's telemetry names, the plain player's included", () => {
+  /* core/telemetry.js reports the page's core: mupen64plus_next for N64 packs, and the plain
+   * player's fceumm (NES), gambatte (Game Boy, Game Boy Color) or mgba (Game Boy Advance). */
+  for (const core of ['mupen64plus_next', 'parallel_n64', 'fceumm', 'gambatte', 'mgba']) {
+    const row = arcadeDiagRow('u1', { kind: 'telemetry', stats: { core, fps: 60 } }, new Date(0));
+    assert.deepEqual(row?.stats, { core, fps: 60 }, core);
+  }
+  for (const core of ['MGBA', 'snes9x', 'mgba ', 'gambatte-legacy']) {
+    const row = arcadeDiagRow('u1', { kind: 'telemetry', stats: { core, fps: 60 } }, new Date(0));
+    assert.deepEqual(row?.stats, { fps: 60 }, `${core} is dropped, the rest of the row kept`);
+  }
 });
