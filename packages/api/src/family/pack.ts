@@ -41,6 +41,13 @@ import type { LibraryAccount } from '../library/access';
  * one pack answer covers every style, and no style is opened to everyone.
  * YuE2's Sona (Oct 2026, taught from songs made with Sonauto) is one more row
  * behind that same answer.
+ *
+ * Oct 18 2026: the Arcade's family games (arcadeFamily) join the pack. A game
+ * on the family shelf is played from a pack of game files kept in private
+ * storage, so it is the family's alone; one pack answer covers every family
+ * game. Outside the pack the arcade shows one greyed "Family shelf" entry with
+ * no game names (the App Review seat included), and its routes refuse with
+ * FAMILY_PACK_ARCADE_REFUSAL (arcade/router.ts).
  * -------------------------------------------------------------------------- */
 
 /** One person's pack features. True means usable now; false means shown greyed out. */
@@ -58,6 +65,8 @@ export interface FamilyFeatures {
    * commercial songs among them; Suno and Sona from songs made with Suno and with Sonauto. They are one
    * pack feature, so one answer covers every style (Part 295, Sep 27 2026; ACE-Step XL, Oct 11 2026). */
   trainedStyles: boolean;
+  /** The Arcade's family shelf: every game whose catalog entry says access 'family' (Oct 18 2026). */
+  arcadeFamily: boolean;
 }
 
 /** What GET /api/kade/features answers. */
@@ -80,6 +89,10 @@ export const FAMILY_PACK_REFUSAL: string =
 export const FAMILY_PACK_STYLES_REFUSAL: string =
   'Trained styles are part of the Family feature pack, and this account does not have it. Set Style to None, then make the music again.';
 
+/** What the Arcade answers (403) when an account outside the pack asks for a family game. */
+export const FAMILY_PACK_ARCADE_REFUSAL: string =
+  'This game is on the family shelf. Ask Kade for the Family feature pack to play it.';
+
 /** True when the describer's and the jukebox's links belong to the pack (env exactly '1'). */
 export function familyPackLinksGated(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.KADE_FAMILY_PACK_LINKS === '1';
@@ -97,7 +110,14 @@ export function familyFeatures(
 ): FamilyFeatures {
   const pack = familyPack(user);
   const open = !!user && (pack || !familyPackLinksGated(env));
-  return { mediaLinks: pack, describerLinks: open, jukeboxLinks: open, familyLibrary: pack, trainedStyles: pack };
+  return {
+    mediaLinks: pack,
+    describerLinks: open,
+    jukeboxLinks: open,
+    familyLibrary: pack,
+    trainedStyles: pack,
+    arcadeFamily: pack,
+  };
 }
 
 export function familyFeaturesView(

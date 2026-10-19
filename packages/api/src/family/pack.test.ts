@@ -10,6 +10,7 @@ import express from 'express';
 import { FAMILY_LIBRARY_CUTOFF, familyLibraryMember, libraryReviewSeat } from '../library/access';
 import type { LibraryAccount } from '../library/access';
 import {
+  FAMILY_PACK_ARCADE_REFUSAL,
   FAMILY_PACK_NAME,
   FAMILY_PACK_NOTE,
   FAMILY_PACK_REFUSAL,
@@ -79,7 +80,7 @@ test('truth table: the pack is exactly the Library family permission', () => {
   });
 });
 
-test('truth table: media links, the family library and trained styles follow the pack whatever the switch says', () => {
+test('truth table: media links, the family library, trained styles and the arcade family shelf follow the pack whatever the switch says', () => {
   withEnv({ KADE_LIBRARY_HIDDEN_FROM: undefined, NOTIFY_TEST_USER_IDS: undefined, KADE_APP_REVIEW_USER_IDS: undefined }, () => {
     for (const env of [OFF, ON]) {
       for (const row of table) {
@@ -87,6 +88,7 @@ test('truth table: media links, the family library and trained styles follow the
         assert.equal(map.mediaLinks, row.pack, `${row.who} mediaLinks`);
         assert.equal(map.familyLibrary, row.pack, `${row.who} familyLibrary`);
         assert.equal(map.trainedStyles, row.pack, `${row.who} trainedStyles`);
+        assert.equal(map.arcadeFamily, row.pack, `${row.who} arcadeFamily`);
       }
     }
   });
@@ -124,7 +126,7 @@ test('a second App Review or demo seat listed only in KADE_APP_REVIEW_USER_IDS n
       assert.equal(familyLibraryMember(user), false, 'and no family shelves');
       for (const env of [OFF, ON]) assert.equal(familyFeatures(user, env).mediaLinks, false, 'the downloader stays shut');
     }
-    assert.deepEqual(familyFeatures({ id: EARLY }, ON), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false });
+    assert.deepEqual(familyFeatures({ id: EARLY }, ON), { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false, arcadeFamily: false });
     assert.equal(familyPack({ id: VISCHECK }), false);
     assert.equal(familyPack({ id: AMBER_A }), true, 'everyone else is unchanged');
     assert.equal(familyPack({ id: BOB, role: 'ADMIN' }), true);
@@ -133,7 +135,7 @@ test('a second App Review or demo seat listed only in KADE_APP_REVIEW_USER_IDS n
 
 test('the map has one boolean per feature, and the view names the pack in plain words', () => {
   const map = familyFeatures({ id: AMBER_A }, OFF);
-  assert.deepEqual(Object.keys(map).sort(), ['describerLinks', 'familyLibrary', 'jukeboxLinks', 'mediaLinks', 'trainedStyles']);
+  assert.deepEqual(Object.keys(map).sort(), ['arcadeFamily', 'describerLinks', 'familyLibrary', 'jukeboxLinks', 'mediaLinks', 'trainedStyles']);
   for (const value of Object.values(map)) assert.equal(typeof value, 'boolean');
   assert.equal(FAMILY_PACK_NAME, 'Family feature pack');
   assert.equal(FAMILY_PACK_NOTE, 'Part of the Family feature pack');
@@ -144,12 +146,18 @@ test('the map has one boolean per feature, and the view names the pack in plain 
     'Trained styles are part of the Family feature pack, and this account does not have it. Set Style to None, then make the music again.',
   );
   assert.doesNotMatch(FAMILY_PACK_STYLES_REFUSAL, /Kade/);
+  /* Oct 18 2026: the Arcade's family shelf has its own words, not the media-link ones. */
+  assert.equal(
+    FAMILY_PACK_ARCADE_REFUSAL,
+    'This game is on the family shelf. Ask Kade for the Family feature pack to play it.',
+  );
+  assert.notEqual(FAMILY_PACK_ARCADE_REFUSAL, FAMILY_PACK_REFUSAL);
   assert.deepEqual(familyFeaturesView({ id: BOB }, ON), {
     familyPack: false,
     name: FAMILY_PACK_NAME,
     note: FAMILY_PACK_NOTE,
     refusal: FAMILY_PACK_REFUSAL,
-    features: { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false },
+    features: { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false, arcadeFamily: false },
   });
 });
 
@@ -195,7 +203,7 @@ test('GET /api/kade/features answers the signed-in person, fresh every time, and
     res = await fetch(`${base}/api/kade/features`);
     const body = (await res.json()) as { familyPack: boolean; features: Record<string, boolean> };
     assert.equal(body.familyPack, false);
-    assert.deepEqual(body.features, { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false });
+    assert.deepEqual(body.features, { mediaLinks: false, describerLinks: false, jukeboxLinks: false, familyLibrary: false, trainedStyles: false, arcadeFamily: false });
   } finally {
     if (saved === undefined) delete process.env.KADE_FAMILY_PACK_LINKS;
     else process.env.KADE_FAMILY_PACK_LINKS = saved;

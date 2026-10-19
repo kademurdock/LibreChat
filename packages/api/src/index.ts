@@ -367,6 +367,7 @@ export {
   FAMILY_PACK_NOTE,
   FAMILY_PACK_REFUSAL,
   FAMILY_PACK_STYLES_REFUSAL,
+  FAMILY_PACK_ARCADE_REFUSAL,
 } from './family/pack';
 export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
 /* Sep 29 2026: Family history, the owner's family research for matched family (docs/FAMILY_HISTORY.md). */
