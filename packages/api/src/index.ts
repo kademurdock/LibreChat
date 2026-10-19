@@ -373,6 +373,7 @@ export type { FamilyFeatures, FamilyFeaturesView } from './family/pack';
 /* Oct 18 2026: the Arcade (/api/kade/arcade): catalog, manifests and signed game packs (arcade/ARCADE.md). */
 export { createArcadeRouter, ARCADE_PREFIX, ARCADE_SHELF_ID } from './arcade/router';
 export type {
+  ArcadeCounterStore,
   ArcadeDependencies,
   ArcadeDiagRow,
   ArcadeEntry,

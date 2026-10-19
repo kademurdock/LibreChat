@@ -55,6 +55,19 @@ const readLimit = rateLimit({
   store: limiterCache('kade_arcade_read_limiter'),
 });
 
+/* Add a game: one /match per ROM the person adds, in a bucket of its own, so adding a pile of
+ * ROMs at once never blocks a download. A 429 here means "ask again in a minute", never "no pack". */
+const matchLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  handler: (_req, res) =>
+    res.status(429).set('Cache-Control', 'no-store').json({
+      error: 'That is a lot of games to check at once. The rest will be checked in a minute.',
+    }),
+  keyGenerator: (req) => String(req.user?.id || ''),
+  store: limiterCache('kade_arcade_match_limiter'),
+});
+
 module.exports = createArcadeRouter({
   auth: requireJwtAuth,
   child: isChild,
@@ -63,5 +76,10 @@ module.exports = createArcadeRouter({
   diag: (row) => logger.info(`[arcade/diag] ${JSON.stringify(row)}`),
   diagLimit,
   readLimit,
+  matchLimit,
+  /* The daily cap on locked /match answers (distinct family-shelf ROMs an account outside the
+   * Family feature pack may ask about), kept a day in Redis when it is on; the router sets the
+   * window. Without Redis the router counts per process, as the limiters above do. */
+  matchLockedStore: limiterCache('kade_arcade_match_locked'),
   log: (message) => logger.warn(`[arcade] ${message}`),
 });

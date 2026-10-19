@@ -30,16 +30,19 @@ import type { FamilyFeatures } from '../family/pack';
  * otherwise. Outside the pack the family games collapse into ONE greyed
  * "Family shelf" entry with no game names, and the manifest and pack routes
  * refuse with FAMILY_PACK_ARCADE_REFUSAL. The refusal is the same for a family
- * game and an id that does not exist, so the routes never tell an account
- * outside the pack which family games there are.
+ * game and an id that does not exist, so /config and the manifest and pack
+ * routes never tell an account outside the pack which family games there are.
+ * GET /match is the one exception (below): it confirms that a ROM the caller
+ * already has is on the family shelf, so it is capped.
  *
  * A catalog row marked grownUpsOnly is absent for a child account, as a
  * grown-ups-only Library book is: not listed, and opened like an id that is
  * not in the catalog.
  *
  * pack.json is never passed through as is: only the blob and a checked file
- * table leave the server, and a kit pack that lists anything under games/ is
- * refused, so no route can name a family game to an account outside the pack.
+ * table leave the server, and a kit pack that lists anything under games/ but
+ * the plain player's games/_plain/ is refused, so no route can name a family
+ * game to an account outside the pack.
  *
  * No catalog in storage yet means an empty arcade, never a crash.
  *
@@ -48,10 +51,17 @@ import type { FamilyFeatures } from '../family/pack';
  * is, when that game has an accessibility pack (the game pack without the ROM, under its own
  * accessVersion). The pack follows its game's shelf: outside the Family feature pack a family
  * game answers only the locked "Family shelf" row with the pack note and the console, never its
- * id, title or links, as /config never names a family game to an outsider. A grown-ups-only row
- * never matches for a child. The access pack is fetched like any pack: its manifest is
- * /games/<id>/manifest?version=<accessVersion> (which adds the pack's romPath, where the phone
- * puts the person's own ROM) and its link /games/<id>/<accessVersion>/pack, behind the same gate.
+ * id, title or links. That row still confirms that the caller's ROM is on the family shelf, and
+ * No-Intro's public lists name every ROM by its sha1, so an account outside the pack hears it for
+ * at most MATCH_LOCKED_PER_DAY distinct ROMs a day; past that it hears { match: null }. A
+ * grown-ups-only row never matches for a child. /match has its own rate limit, so adding a pile
+ * of ROMs never blocks a download, and a catalog that could not be read at all answers 503, never
+ * a "no pack" the phone would keep. The match carries no file table: the access pack is fetched
+ * like any pack, from its manifest /games/<id>/manifest?version=<accessVersion> (the kit and the
+ * access pack with their files, entry, emulatorData and the pack's romPath, where the phone puts
+ * the person's own ROM) and its link /games/<id>/<accessVersion>/pack, behind the same gate. A
+ * pack served under an accessVersion must be an access pack (accessOnly, romPath inside
+ * games/<id>/, no file at romPath), so a match never hands out a pack that carries the ROM.
  * -------------------------------------------------------------------------- */
 
 /** Every arcade object lives under this storage prefix (never media-library/ or book-imports/). */
@@ -93,6 +103,17 @@ const MAX_CATALOG_BYTES = 256 * 1024;
 const MAX_INDEX_BYTES = 2 * 1024 * 1024;
 /** Manifest and pack requests a minute per account (each new version can cost a storage read). */
 const READ_PER_MINUTE = 60;
+/** /match requests a minute per account, in a bucket of their own: adding a pile of ROMs at once
+ * must never use up the downloads' limit. */
+const MATCH_PER_MINUTE = 60;
+/** Distinct ROMs a day for which one account outside the Family feature pack may hear the locked
+ * "Family shelf" row. A person rarely owns more than a handful of family-shelf ROMs; a list of
+ * every N64 sha1 is about a thousand. */
+const MATCH_LOCKED_PER_DAY = 200;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A kit file under games/ that is not the plain player's folder. No game can own games/_plain/:
+ * an id starts with a letter or digit (ID_PATTERN). */
+const KIT_GAME_FILES = /^games\/(?!_plain\/)/i;
 const DIAG_BYTES = 4096;
 /** A report every five seconds is 12 a minute; this leaves room for timer drift and retries. */
 const DIAG_PER_MINUTE = 30;
@@ -186,10 +207,12 @@ export interface ArcadeGame {
   note?: string;
   /** Absent for child accounts (only when the catalog says exactly true). */
   grownUpsOnly?: boolean;
-  /** The ROM's No-Intro sha1 (40 lower-case hex), which /match looks up. One game per sha1. */
+  /** The ROM's No-Intro sha1 (40 lower-case hex), which /match looks up. One game with an access
+   * pack per sha1. */
   romSha1?: string;
   /** The accessibility pack (the game pack without the ROM): its own version under this game's
-   * id and shelf, never the game's version, and its blob.bin's size and sha256. */
+   * id and shelf, never the game's version, and its blob.bin's size (above 0) and sha256. The
+   * three are kept together or not at all. */
   accessVersion?: string;
   accessSize?: number;
   accessSha256?: string;
@@ -205,6 +228,7 @@ export interface ArcadeMatch {
   version: string;
   /** The access pack's blob.bin size (0 when locked). */
   size: number;
+  /** The access pack's blob.bin sha256: always there when unlocked, never when locked. */
   sha256?: string;
   locked: boolean;
   note?: string;
@@ -255,9 +279,25 @@ export interface ArcadePackIndex {
   entry?: string;
   /** EmulatorJS's data folder inside the kit pack (the kit writes emulatorjs/). */
   emulatorData?: string;
-  /** An access pack's ROM path (games/<id>/local/rom.<ext>): where the phone serves the
-   * person's own ROM, since the pack carries none. */
+  /** Where the game page expects the ROM (games/<id>/local/rom.<ext>). The kit's make_pack.py
+   * writes it into every game pack; only an access pack's manifest passes it on, as where the
+   * phone serves the person's own ROM. */
   romPath?: string;
+  /** True only when pack.json says exactly `"accessOnly": true` (make_pack.py --access-only).
+   * Server-side only: it is never sent. */
+  accessOnly?: boolean;
+  /** The kit's plain player page (games/_plain/play.html), kept only when it is a file in the
+   * pack. */
+  plain?: string;
+}
+
+/** The calls of an express-rate-limit store (limiterCache's RedisStore, or the package's own
+ * MemoryStore) that the daily cap on locked /match answers uses: counters that expire a window
+ * after their first hit. The router calls init with a one-day window. */
+export interface ArcadeCounterStore {
+  init?(options: { windowMs: number }): void;
+  get(key: string): Promise<{ totalHits: number } | undefined> | { totalHits: number } | undefined;
+  increment(key: string): Promise<{ totalHits: number }> | { totalHits: number };
 }
 
 /** One pack in a manifest's `packs`: what to download, how to check it and where to ask for its link. */
@@ -298,6 +338,10 @@ export interface ArcadeDependencies {
   diagLimit?: RequestHandler;
   /** A shared rate limiter for the manifest and pack routes; without it a per-process one allows 60 a minute per account. */
   readLimit?: RequestHandler;
+  /** A shared rate limiter for GET /match alone; without it a per-process one allows 60 a minute per account. */
+  matchLimit?: RequestHandler;
+  /** Shared counters for the daily cap on locked /match answers; without it a per-process count. */
+  matchLockedStore?: ArcadeCounterStore;
   now?(): number;
   log(message: string): void;
 }
@@ -368,31 +412,44 @@ export function parseArcadeCatalog(
     const note = shortText(row.note, 200);
     if (note) game.note = note;
     if (row.grownUpsOnly === true) game.grownUpsOnly = true;
-    /* Add a game: the ROM's sha1 and the accessibility pack, each checked on its own; a bad value
-     * is dropped (and named in the log) and the game itself stays. */
+    /* Add a game. The accessibility pack counts only whole: a version of its own, a size above 0
+     * and a sha256, so an unlocked match always has something to download and check. Anything
+     * less drops all three, the log names each bad field, and the game itself stays. */
+    if (
+      row.accessVersion !== undefined ||
+      row.accessSize !== undefined ||
+      row.accessSha256 !== undefined
+    ) {
+      const bad: string[] = [];
+      if (row.accessVersion === undefined) bad.push('accessVersion is missing');
+      else if (!arcadeVersion(row.accessVersion) || row.accessVersion === row.version) {
+        bad.push("accessVersion must be a version of its own, not the game's");
+      }
+      const accessSize = byteCount(row.accessSize);
+      if (!accessSize) bad.push('accessSize must be a whole number of bytes above 0');
+      if (typeof row.accessSha256 !== 'string' || !SHA256_PATTERN.test(row.accessSha256)) {
+        bad.push('accessSha256 must be 64 lower-case hex digits');
+      }
+      if (bad.length) {
+        log(`catalog row ${index} (${id}): the access pack was dropped: ${bad.join('; ')}`);
+      } else {
+        game.accessVersion = row.accessVersion as string;
+        game.accessSize = accessSize as number;
+        game.accessSha256 = row.accessSha256 as string;
+      }
+    }
+    /* The ROM's sha1. One game per ROM, but only a row that keeps an access pack claims it, so a
+     * row that can never match never blocks a later one that can. */
     if (row.romSha1 !== undefined) {
       if (typeof row.romSha1 !== 'string' || !SHA1_PATTERN.test(row.romSha1)) {
         log(
           `catalog row ${index} (${id}): romSha1 was dropped: it must be 40 lower-case hex digits`,
         );
-      } else if (roms.has(row.romSha1)) {
+      } else if (game.accessVersion && roms.has(row.romSha1)) {
         log(`catalog row ${index} (${id}): romSha1 was dropped: an earlier game has that ROM`);
       } else {
-        roms.add(row.romSha1);
+        if (game.accessVersion) roms.add(row.romSha1);
         game.romSha1 = row.romSha1;
-      }
-    }
-    if (row.accessVersion !== undefined) {
-      if (!arcadeVersion(row.accessVersion) || row.accessVersion === row.version) {
-        log(
-          `catalog row ${index} (${id}): the access pack was dropped: accessVersion must be a version of its own, not the game's`,
-        );
-      } else {
-        game.accessVersion = row.accessVersion;
-        game.accessSize = byteCount(row.accessSize) ?? 0;
-        if (typeof row.accessSha256 === 'string' && SHA256_PATTERN.test(row.accessSha256)) {
-          game.accessSha256 = row.accessSha256;
-        }
       }
     }
     games.push(game);
@@ -414,8 +471,10 @@ export function parseArcadeCatalog(
  * null comes back unless the whole table checks out (one bad row and the pack is not ready).
  * The kit's tools/packlib.py names the blob's size `bytes`, a row's size `length` and its MIME
  * `type`; `blob.size` and a row's `size` and `mime` are read as well, and win when both are there.
- * An access pack's `romPath` is kept when it is a safe path (an unsafe one refuses the pack); its
- * `romSha1` is a build fact like the rest (the catalog row is the source). */
+ * A game pack's `romPath` is kept when it is a safe path (an unsafe one refuses the pack), and
+ * `accessOnly` only when it is exactly true; `romSha1` is a build fact like the rest (the catalog
+ * row is the source). The kit's `plain` (its plain player page) is kept only when it is a safe
+ * path listed in the pack; otherwise it is left out and the app's default holds. */
 export function parseArcadePackIndex(raw: unknown): ArcadePackIndex | null {
   if (!isRecord(raw) || !isRecord(raw.blob) || !Array.isArray(raw.files)) return null;
   const blobSize = byteCount(raw.blob.size !== undefined ? raw.blob.size : raw.blob.bytes);
@@ -457,6 +516,8 @@ export function parseArcadePackIndex(raw: unknown): ArcadePackIndex | null {
     if (!arcadePath(raw.romPath)) return null;
     index.romPath = raw.romPath;
   }
+  if (raw.accessOnly === true) index.accessOnly = true;
+  if (arcadePath(raw.plain) && seen.has(raw.plain)) index.plain = raw.plain;
   return index;
 }
 
@@ -571,10 +632,57 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
   const diagLimit =
     deps.diagLimit ||
     perMinute(DIAG_PER_MINUTE, 'That is a lot of reports at once. Try again in a minute.');
+  const matchLimit =
+    deps.matchLimit ||
+    perMinute(
+      MATCH_PER_MINUTE,
+      'That is a lot of games to check at once. The rest will be checked in a minute.',
+    );
 
-  /* The catalog, read at most once a minute; a failed read keeps serving the last good one. */
+  /* Per-process counters for the locked-answer cap, used when the server passes no shared store:
+   * each counter lives a window from its first hit, oldest out first past 50,000. */
+  const memoryCounters = (): ArcadeCounterStore => {
+    const counts = new Map<string, { at: number; hits: number }>();
+    let windowMs = DAY_MS;
+    const live = (key: string) => {
+      const hit = counts.get(key);
+      return hit && now() - hit.at < windowMs ? hit : undefined;
+    };
+    return {
+      init: (options) => {
+        windowMs = options.windowMs;
+      },
+      get: (key) => {
+        const hit = live(key);
+        return hit ? { totalHits: hit.hits } : undefined;
+      },
+      increment: (key) => {
+        const hit = live(key) || { at: now(), hits: 0 };
+        hit.hits += 1;
+        remember(counts, key, hit, 50000);
+        return { totalHits: hit.hits };
+      },
+    };
+  };
+  const lockedStore: ArcadeCounterStore = deps.matchLockedStore || memoryCounters();
+  lockedStore.init?.({ windowMs: DAY_MS });
+  /* True while this account outside the pack may hear the locked row for this ROM: a ROM it already
+   * heard today always may; a new one counts against MATCH_LOCKED_PER_DAY. */
+  const lockedAllowed = async (user: string, sha1: string): Promise<boolean> => {
+    const heard = `match-locked:${user}:${sha1}`;
+    if (Number((await lockedStore.get(heard))?.totalHits) > 0) return true;
+    const count = await lockedStore.increment(`match-locked:${user}`);
+    if (!(Number(count.totalHits) <= MATCH_LOCKED_PER_DAY)) return false;
+    await lockedStore.increment(heard);
+    return true;
+  };
+
+  /* The catalog, read at most once a minute; a failed read keeps serving the last good one.
+   * catalogOk stays false until one read succeeds (a missing catalog.json is a success: an empty
+   * arcade), so /match can tell "no such pack" from "storage could not answer". */
   let cached: { at: number; ttl: number; value: ArcadeCatalog } | null = null;
   let loading: Promise<ArcadeCatalog> | null = null;
+  let catalogOk = false;
   const readCatalog = async (): Promise<ArcadeCatalog> => {
     const bytes = await deps.loadObject(CATALOG_KEY);
     if (!bytes) return { games: [], kit: null };
@@ -587,6 +695,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       loading = readCatalog().then(
         (value) => {
           cached = { at: now(), ttl: CATALOG_TTL_MS, value };
+          catalogOk = true;
           loading = null;
           return value;
         },
@@ -641,9 +750,12 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         deps.log(
           `${key} is not a usable pack index: it needs blob.bin's size (blob.bytes) and sha256 and a file table of safe relative paths inside the blob`,
         );
-      } else if (kit && value.files.some((file) => /^games\//i.test(file.path))) {
-        /* The kit is open to every account: a kit that carries game files would hand them out. */
-        deps.log(`${key} lists files under games/, so the kit pack is refused`);
+      } else if (kit && value.files.some((file) => KIT_GAME_FILES.test(file.path))) {
+        /* The kit is open to every account: a kit that carries game files would hand them out.
+         * The plain player (games/_plain/, no game's folder) is the kit's own. */
+        deps.log(
+          `${key} lists game files under games/ (only games/_plain/ is allowed), so the kit pack is refused`,
+        );
         value = null;
       }
     }
@@ -655,6 +767,36 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       remember(absent, key, now(), INDEX_CACHE_MAX);
     }
     return value;
+  };
+
+  /* A game's pack.json for one version, checked against what that version is for. Under the
+   * game's accessVersion it must be an access pack: pack.json says accessOnly, its romPath lies
+   * inside games/<id>/, and no file sits at romPath, so a match never hands out a pack that
+   * carries the ROM (an accessVersion naming an older full upload, say). Under the game's own
+   * version it must not be one, so the shelf never installs a game without its ROM. Any other
+   * version (an older upload a resumed download finishes) is read as is. */
+  const gamePack = async (game: ArcadeGame, version: string): Promise<ArcadePackIndex | null> => {
+    const key = gameKey(game.access, game.id, version, 'pack.json');
+    const index = await packIndex(key, false);
+    if (!index) return null;
+    if (version === game.accessVersion) {
+      const romPath = index.romPath;
+      if (
+        index.accessOnly !== true ||
+        !romPath ||
+        !romPath.startsWith(`games/${game.id}/`) ||
+        index.files.some((file) => file.path === romPath)
+      ) {
+        deps.log(
+          `${key} is not an access pack: it needs "accessOnly": true, a romPath under games/${game.id}/ and no file at that path`,
+        );
+        return null;
+      }
+    } else if (version === game.version && index.accessOnly) {
+      deps.log(`${key} is an access pack (no ROM), so it cannot be the game's own version`);
+      return null;
+    }
+    return index;
   };
 
   /** The catalog entry this account may open, or null once the answer has been sent. */
@@ -772,7 +914,9 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
    * path that signs its link. Until both pack.json files are uploaded and check out, `packs` is
    * empty and `ready` is false, so the phone never installs half a game. `?version=` may name the
    * game's accessVersion (Add a game: the accessibility pack for a ROM the person brings) or its
-   * own version, nothing else; the access manifest also carries the pack's `romPath`. */
+   * own version; only the access manifest carries the pack's `romPath`. A well-formed version
+   * that is neither (a stored manifestPath whose access pack was since replaced) has its own 404,
+   * so the phone asks /match again instead of waiting for a pack that will never be ready. */
   router.get(
     '/games/:id/manifest',
     deps.auth,
@@ -783,15 +927,20 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       const asked = req.query.version;
       let version = game.version;
       if (asked !== undefined) {
-        if (typeof asked !== 'string' || (asked !== game.version && asked !== game.accessVersion)) {
+        if (typeof asked !== 'string' || !arcadeVersion(asked)) {
           missing(res, 'That pack is not ready yet.');
+          return;
+        }
+        if (asked !== game.version && asked !== game.accessVersion) {
+          missing(res, 'That accessibility pack has changed. Check the game again.');
           return;
         }
         version = asked;
       }
+      const access = version === game.accessVersion;
       const { kit } = await catalog();
       const [gameIndex, kitIndex] = await Promise.all([
-        packIndex(gameKey(game.access, game.id, version, 'pack.json'), false),
+        gamePack(game, version),
         kit ? packIndex(kitKey(kit.version, 'pack.json'), true) : Promise.resolve(null),
       ]);
       const ready = !!(kit && kitIndex && gameIndex);
@@ -812,7 +961,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       };
       if (ready && gameIndex?.entry) body.entry = gameIndex.entry;
       if (ready && kitIndex?.emulatorData) body.emulatorData = kitIndex.emulatorData;
-      if (ready && gameIndex?.romPath) body.romPath = gameIndex.romPath;
+      if (ready && access && gameIndex?.romPath) body.romPath = gameIndex.romPath;
       res.json(body);
     }),
   );
@@ -821,11 +970,15 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
    * leaves the phone) and hears whether an accessibility pack exists for it. Only rows with both a
    * romSha1 and an access pack match, after the child rule. A family game matched by an account
    * outside the pack answers the locked shelf row: the pack note and the console, no id, title,
-   * version, size, hash or links, so the answer names no family game. */
+   * version, size, hash or links. The row still says the caller's ROM is on the family shelf, so
+   * an account outside the pack hears it for at most MATCH_LOCKED_PER_DAY distinct ROMs a day and
+   * { match: null } after that (a real person never hears an error for it). Until the catalog has
+   * been read once, a failed read answers 503, never a "no pack" the phone would keep. The answer
+   * has no file table: the phone fetches manifestPath for the packs, files and romPath. */
   router.get(
     '/match',
     deps.auth,
-    readLimit,
+    matchLimit,
     run(async (req, res) => {
       const raw = req.query.sha1;
       const sha1 = typeof raw === 'string' ? raw.toLowerCase() : '';
@@ -833,13 +986,22 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         res.status(400).json({ error: "That is not a ROM's sha1 (40 hex digits)." });
         return;
       }
-      const games = await visibleGames(req, (await catalog()).games);
+      const { games: listed } = await catalog();
+      if (!catalogOk) {
+        res.status(503).json({ error: 'The arcade could not answer just now. Please try again.' });
+        return;
+      }
+      const games = await visibleGames(req, listed);
       const game = games.find((row) => row.romSha1 === sha1 && row.accessVersion);
-      if (!game || !game.accessVersion) {
+      if (!game || !game.accessVersion || !game.accessSize || !game.accessSha256) {
         res.json({ match: null });
         return;
       }
       if (game.access !== 'public' && !familyPack(actor(req))) {
+        if (!(await lockedAllowed(uid(req), sha1))) {
+          res.json({ match: null });
+          return;
+        }
         const locked: ArcadeMatch = {
           id: ARCADE_SHELF_ID,
           title: 'Family shelf',
@@ -859,8 +1021,8 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         console: game.console,
         access: game.access,
         version: game.accessVersion,
-        size: game.accessSize ?? 0,
-        ...(game.accessSha256 ? { sha256: game.accessSha256 } : {}),
+        size: game.accessSize,
+        sha256: game.accessSha256,
         locked: false,
         ...(game.note ? { note: game.note } : {}),
         manifestPath: `${req.baseUrl}/games/${game.id}/manifest?version=${game.accessVersion}`,
@@ -872,7 +1034,8 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
 
   /* Any uploaded version of a game signs behind the game's gate: the catalog version, an older
    * one (a resumed download can finish after the catalog moves on), and the accessVersion, whose
-   * pack lives under the same id and shelf. */
+   * pack lives under the same id and shelf. The catalog and access versions are checked as in the
+   * manifest (gamePack). */
   router.get(
     '/games/:id/:ver/pack',
     deps.auth,
@@ -885,12 +1048,14 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         missing(res, 'That pack is not ready yet.');
         return;
       }
-      const index = await packIndex(gameKey(game.access, game.id, version, 'pack.json'), false);
+      const index = await gamePack(game, version);
       await signedPack(res, index, gameKey(game.access, game.id, version, 'blob.bin'), version);
     }),
   );
 
-  /* The kit (EmulatorJS and the access code) is open-source code: every signed-in account. */
+  /* The kit (EmulatorJS, the access code and the plain player) is open-source code: every
+   * signed-in account. Its manifest passes on the plain player page (`plain`) when the kit names
+   * one. */
   router.get(
     '/kit/:ver/manifest',
     deps.auth,
@@ -911,6 +1076,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         ready: true,
       };
       if (index.emulatorData) body.emulatorData = index.emulatorData;
+      if (index.plain) body.plain = index.plain;
       res.json(body);
     }),
   );
