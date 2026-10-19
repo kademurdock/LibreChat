@@ -378,6 +378,7 @@ export type {
   ArcadeEntry,
   ArcadeGame,
   ArcadeKit,
+  ArcadeMatch,
 } from './arcade/router';
 /* Sep 29 2026: Family history, the owner's family research for matched family (docs/FAMILY_HISTORY.md). */
 export {

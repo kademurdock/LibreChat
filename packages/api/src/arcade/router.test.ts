@@ -221,6 +221,7 @@ test('every route refuses nobody signed in', async () => {
     '/games/xena/2026-10-20a/pack',
     '/kit/4.2.3-1/manifest',
     '/kit/4.2.3-1/pack',
+    `/match?sha1=${'0'.repeat(40)}`,
   ]) {
     assert.equal((await get(path, null)).status, 401, path);
   }
@@ -1083,6 +1084,480 @@ test('the shelf folder comes from the catalog access: the old layout and the oth
   keysAreSafe();
 });
 
+/* ── Add a game: GET /match and access packs (Oct 19 2026) ─────────── */
+/* A ROM the person adds stays on the phone; the app sends its No-Intro sha1. The sha1s, versions
+ * and hashes here are made up: no ROM bytes. */
+const ROM_XENA = '0123456789abcdef0123456789abcdef01234567';
+const ROM_TILT = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd';
+const ROM_PLAIN = '1111111111222222222233333333334444444444';
+const ROM_UNKNOWN = '9999999999888888888877777777776666666666';
+const XENA_ACCESS = '2026-10-20a-access';
+const TILT_ACCESS = '1.0.0-access';
+const SHA_XA = 'd'.repeat(64);
+const SHA_TA = 'e'.repeat(64);
+const ADD_CATALOG = {
+  ...CATALOG,
+  games: [
+    {
+      ...CATALOG.games[0],
+      romSha1: ROM_XENA,
+      accessVersion: XENA_ACCESS,
+      accessSize: 46000123,
+      accessSha256: SHA_XA,
+    },
+    {
+      ...CATALOG.games[1],
+      romSha1: ROM_TILT,
+      accessVersion: TILT_ACCESS,
+      accessSize: 800123,
+      accessSha256: SHA_TA,
+    },
+    /* Known ROM, no access pack yet (make_catalog.py writes romSha1 only with one). */
+    {
+      id: 'plain',
+      title: 'Plain Game',
+      console: 'GB',
+      access: 'public',
+      version: '1',
+      romSha1: ROM_PLAIN,
+    },
+  ],
+};
+/** An access pack: the game pack's rows minus the ROM, plus where the page expects the ROM. */
+const accessIndex = (sha256: string, bytes: number, romPath: string) => ({
+  ...index(sha256, bytes, romPath.replace(/rom\.[a-z0-9]+$/, 'play.html')),
+  romPath,
+  romSha1: ROM_XENA,
+});
+function stockAccess() {
+  put('arcade/catalog.json', ADD_CATALOG);
+  put(
+    `arcade/family/xena/${XENA_ACCESS}/pack.json`,
+    accessIndex(SHA_XA, 46000123, 'games/xena/local/rom.z64'),
+  );
+  put(
+    `arcade/public/super-tilt-bro/${TILT_ACCESS}/pack.json`,
+    accessIndex(SHA_TA, 800123, 'games/super-tilt-bro/local/rom.nes'),
+  );
+}
+const XENA_MATCH = {
+  id: 'xena',
+  title: 'Xena Warrior Princess',
+  console: 'N64',
+  access: 'family',
+  version: XENA_ACCESS,
+  size: 46000123,
+  sha256: SHA_XA,
+  locked: false,
+  note: 'Plays by ear',
+  manifestPath: `/api/kade/arcade/games/xena/manifest?version=${XENA_ACCESS}`,
+  signPath: `/api/kade/arcade/games/xena/${XENA_ACCESS}/pack`,
+};
+const TILT_MATCH = {
+  id: 'super-tilt-bro',
+  title: 'Super Tilt Bro',
+  console: 'NES',
+  access: 'public',
+  version: TILT_ACCESS,
+  size: 800123,
+  sha256: SHA_TA,
+  locked: false,
+  manifestPath: `/api/kade/arcade/games/super-tilt-bro/manifest?version=${TILT_ACCESS}`,
+  signPath: `/api/kade/arcade/games/super-tilt-bro/${TILT_ACCESS}/pack`,
+};
+/** What an account outside the pack hears for a family ROM: no id, title, version or links. */
+const SHELF_MATCH = {
+  id: ARCADE_SHELF_ID,
+  title: 'Family shelf',
+  console: 'N64',
+  access: 'family',
+  version: '',
+  size: 0,
+  locked: true,
+  note: FAMILY_PACK_NOTE,
+};
+const rel = (signPath: unknown) => String(signPath).replace('/api/kade/arcade', '');
+
+test('add a game: inside the pack a family ROM matches its access pack, which installs and signs like any pack', async () => {
+  stockAccess();
+  await mount();
+  for (const who of [FAMILY, ADMIN]) {
+    const res = await get(`/match?sha1=${ROM_XENA}`, who);
+    assert.equal(res.status, 200);
+    assert.equal(res.cache, 'no-store');
+    assert.deepEqual(res.body, { match: XENA_MATCH });
+  }
+  const upper = await get(`/match?sha1=${ROM_XENA.toUpperCase()}`, FAMILY);
+  assert.deepEqual(upper.body, { match: XENA_MATCH }, 'the app may send upper-case hex');
+
+  const manifest = await get(rel(XENA_MATCH.manifestPath), FAMILY);
+  assert.equal(manifest.status, 200);
+  assert.deepEqual(manifest.body, {
+    id: 'xena',
+    title: 'Xena Warrior Princess',
+    console: 'N64',
+    access: 'family',
+    version: XENA_ACCESS,
+    ready: true,
+    packs: [
+      {
+        kind: 'kit',
+        id: 'kit',
+        version: '4.2.3-1',
+        size: 4000123,
+        sha256: SHA_K,
+        signPath: '/api/kade/arcade/kit/4.2.3-1/pack',
+        files: KIT_FILES,
+      },
+      {
+        kind: 'game',
+        id: 'xena',
+        version: XENA_ACCESS,
+        size: 46000123,
+        sha256: SHA_XA,
+        signPath: XENA_MATCH.signPath,
+        files: [{ path: 'games/xena/local/play.html', offset: 0, size: 12 }],
+      },
+    ],
+    romPath: 'games/xena/local/rom.z64',
+  });
+  assert.doesNotMatch(
+    manifest.text,
+    new RegExp(ROM_XENA),
+    "the pack's romSha1 stays on the server",
+  );
+
+  const signed = await get(rel(XENA_MATCH.signPath), FAMILY);
+  assert.deepEqual(signed.body, {
+    url: `https://b2.test/arcade/family/xena/${XENA_ACCESS}/blob.bin?X-Amz-Expires=3600`,
+    sha256: SHA_XA,
+    size: 46000123,
+    version: XENA_ACCESS,
+    expiresIn: 3600,
+  });
+  /* The plain manifest still names the full game pack, without romPath. */
+  const full = await get('/games/xena/manifest', FAMILY);
+  assert.equal(((full.body.packs as Body[])[1] as Body).version, '2026-10-20a');
+  assert.equal(full.body.romPath, undefined);
+  assert.equal(
+    (await get('/games/xena/manifest?version=2026-10-20a', FAMILY)).text,
+    full.text,
+    "?version= naming the game's own version is the plain manifest",
+  );
+  keysAreSafe();
+});
+
+test('add a game: outside the pack (the App Review seat too) a family ROM answers only the locked shelf row', async () => {
+  stockAccess();
+  await mount();
+  for (const who of [OUTSIDE, REVIEW]) {
+    const res = await get(`/match?sha1=${ROM_XENA}`, who);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { match: SHELF_MATCH });
+    assert.doesNotMatch(
+      res.text,
+      /xena|warrior|2026-10-20a|-access|Plays by ear|signPath|manifest/i,
+    );
+    for (const refused of [XENA_MATCH.manifestPath, XENA_MATCH.signPath]) {
+      const gate = await get(rel(refused), who);
+      assert.equal(gate.status, 403, refused);
+      assert.equal(gate.body.error, FAMILY_PACK_ARCADE_REFUSAL);
+    }
+  }
+  assert.equal(signs.length, 0, 'nothing was signed');
+  assert.deepEqual(
+    [...new Set(loads)],
+    ['arcade/catalog.json'],
+    'no family pack.json was read for an outsider',
+  );
+});
+
+test('add a game: a public ROM matches for every signed-in account', async () => {
+  stockAccess();
+  await mount();
+  for (const who of [OUTSIDE, REVIEW, FAMILY]) {
+    assert.deepEqual((await get(`/match?sha1=${ROM_TILT}`, who)).body, { match: TILT_MATCH });
+  }
+  const manifest = await get(rel(TILT_MATCH.manifestPath), REVIEW);
+  assert.equal(manifest.body.ready, true);
+  assert.equal(manifest.body.romPath, 'games/super-tilt-bro/local/rom.nes');
+  const signed = await get(rel(TILT_MATCH.signPath), REVIEW);
+  assert.equal(
+    signed.body.url,
+    `https://b2.test/arcade/public/super-tilt-bro/${TILT_ACCESS}/blob.bin?X-Amz-Expires=3600`,
+  );
+  keysAreSafe();
+});
+
+test('add a game: an unknown ROM, or a known one with no access pack, is no match', async () => {
+  stockAccess();
+  await mount();
+  for (const who of [FAMILY, OUTSIDE]) {
+    for (const sha1 of [ROM_UNKNOWN, ROM_PLAIN]) {
+      const res = await get(`/match?sha1=${sha1}`, who);
+      assert.equal(res.status, 200);
+      assert.equal(res.text, '{"match":null}');
+    }
+  }
+  /* A blob's sha256 or a game id is not a ROM sha1. */
+  assert.equal((await get(`/match?sha1=${SHA_XA.slice(0, 40)}`, FAMILY)).text, '{"match":null}');
+  objects = new Map();
+  await mount();
+  assert.equal(
+    (await get(`/match?sha1=${ROM_XENA}`, FAMILY)).text,
+    '{"match":null}',
+    'no catalog yet: no match, no crash',
+  );
+});
+
+test('add a game: a sha1 that is not 40 hex digits is refused before the catalog is read', async () => {
+  stockAccess();
+  await mount();
+  for (const query of [
+    '',
+    '?sha1=',
+    `?sha1=${ROM_XENA.slice(1)}`,
+    `?sha1=${ROM_XENA}0`,
+    `?sha1=${ROM_XENA.slice(1)}g`,
+    `?sha1=%20${ROM_XENA}`,
+    `?sha1=${ROM_XENA}&sha1=${ROM_TILT}`,
+    `?sha1[a]=${ROM_XENA}`,
+    `?sha1=..%2F${ROM_XENA.slice(3)}`,
+  ]) {
+    const res = await get(`/match${query}`, FAMILY);
+    assert.equal(res.status, 400, query);
+    assert.equal(res.body.error, "That is not a ROM's sha1 (40 hex digits).");
+  }
+  assert.equal(loads.length, 0);
+});
+
+test('add a game: a grown-ups-only game never matches for a child, inside or outside the pack', async () => {
+  const KID: LibraryAccount = { id: madeAt('2026-03-01T15:00:00Z'), kadeLibraryAccess: 'family' };
+  const KID_OUTSIDE: LibraryAccount = { id: madeAt('2026-10-03T15:00:00Z') };
+  children = new Set([String(KID.id), String(KID_OUTSIDE.id)]);
+  stockAccess();
+  put('arcade/catalog.json', {
+    ...ADD_CATALOG,
+    games: ADD_CATALOG.games.map((game) => ({ ...game, grownUpsOnly: true })),
+  });
+  await mount();
+  for (const who of [KID, KID_OUTSIDE]) {
+    for (const sha1 of [ROM_XENA, ROM_TILT]) {
+      const res = await get(`/match?sha1=${sha1}`, who);
+      assert.equal(res.text, '{"match":null}', 'not even the locked shelf row');
+    }
+    assert.equal((await get(rel(XENA_MATCH.manifestPath), who)).status, who === KID ? 404 : 403);
+  }
+  assert.deepEqual((await get(`/match?sha1=${ROM_XENA}`, FAMILY)).body, { match: XENA_MATCH });
+  assert.deepEqual((await get(`/match?sha1=${ROM_XENA}`, OUTSIDE)).body, { match: SHELF_MATCH });
+  childCheckFails = true;
+  assert.equal(
+    (await get(`/match?sha1=${ROM_TILT}`, ADMIN)).text,
+    '{"match":null}',
+    'an account that cannot be read counts as a child',
+  );
+});
+
+test("add a game: ?version= names only the game's own version or its access pack", async () => {
+  stockAccess();
+  put('arcade/family/xena/2026-10-19/pack.json', index(SHA_B, 500));
+  await mount();
+  for (const query of [
+    '?version=2026-10-19',
+    '?version=1.0.0-access',
+    '?version=..%2F..%2Fpublic%2Fkit%2F4.2.3-1',
+    `?version=${XENA_ACCESS}&version=${XENA_ACCESS}`,
+    '?version=',
+  ]) {
+    const res = await get(`/games/xena/manifest${query}`, FAMILY);
+    assert.equal(res.status, 404, query);
+    assert.equal(res.body.error, 'That pack is not ready yet.');
+  }
+  assert.ok(!loads.includes('arcade/family/xena/2026-10-19/pack.json'));
+  /* An uploaded older version still signs (a resumed download can finish). */
+  assert.equal((await get('/games/xena/2026-10-19/pack', FAMILY)).status, 200);
+
+  /* Listed before its access pack is uploaded: ready false, nothing to install. */
+  objects.delete(`arcade/family/xena/${XENA_ACCESS}/pack.json`);
+  await mount();
+  const early = await get(rel(XENA_MATCH.manifestPath), FAMILY);
+  assert.equal(early.body.ready, false);
+  assert.deepEqual(early.body.packs, []);
+  assert.equal(early.body.romPath, undefined);
+  assert.equal((await get(rel(XENA_MATCH.signPath), FAMILY)).status, 404);
+
+  /* An unsafe romPath makes the access pack unusable. */
+  put(`arcade/family/xena/${XENA_ACCESS}/pack.json`, {
+    ...accessIndex(SHA_XA, 46000123, 'games/xena/local/rom.z64'),
+    romPath: '../../rom.z64',
+  });
+  await mount();
+  assert.equal((await get(rel(XENA_MATCH.manifestPath), FAMILY)).body.ready, false);
+  assert.equal((await get(rel(XENA_MATCH.signPath), FAMILY)).status, 404);
+  assert.equal(signs.length, 1);
+  keysAreSafe();
+});
+
+test('add a game: catalog romSha1 and access pack fields are checked one by one', () => {
+  const lines: string[] = [];
+  const row = { title: 'T', version: '1', access: 'public' };
+  const parsed = parseArcadeCatalog(
+    {
+      games: [
+        {
+          ...row,
+          id: 'a',
+          romSha1: ROM_XENA,
+          accessVersion: '1-access',
+          accessSize: 5,
+          accessSha256: SHA_A,
+        },
+        { ...row, id: 'b', romSha1: ROM_XENA, accessVersion: '1-access' },
+        { ...row, id: 'c', romSha1: ROM_TILT.toUpperCase() },
+        { ...row, id: 'd', romSha1: ROM_TILT.slice(1) },
+        { ...row, id: 'e', romSha1: 7 },
+        { ...row, id: 'f', accessVersion: '1' },
+        { ...row, id: 'g', accessVersion: '../x', accessSize: 5 },
+        { ...row, id: 'h', accessVersion: '2', accessSize: -1, accessSha256: 'nope' },
+        { ...row, id: 'i', accessSize: 5, accessSha256: SHA_A },
+      ],
+    },
+    (message) => lines.push(message),
+  );
+  const base = { title: 'T', console: '', access: 'public', version: '1', size: 0 };
+  assert.deepEqual(parsed.games, [
+    {
+      ...base,
+      id: 'a',
+      romSha1: ROM_XENA,
+      accessVersion: '1-access',
+      accessSize: 5,
+      accessSha256: SHA_A,
+    },
+    { ...base, id: 'b', accessVersion: '1-access', accessSize: 0 },
+    { ...base, id: 'c' },
+    { ...base, id: 'd' },
+    { ...base, id: 'e' },
+    { ...base, id: 'f' },
+    { ...base, id: 'g' },
+    { ...base, id: 'h', accessVersion: '2', accessSize: 0 },
+    { ...base, id: 'i' },
+  ]);
+  assert.deepEqual(lines, [
+    'catalog row 1 (b): romSha1 was dropped: an earlier game has that ROM',
+    'catalog row 2 (c): romSha1 was dropped: it must be 40 lower-case hex digits',
+    'catalog row 3 (d): romSha1 was dropped: it must be 40 lower-case hex digits',
+    'catalog row 4 (e): romSha1 was dropped: it must be 40 lower-case hex digits',
+    "catalog row 5 (f): the access pack was dropped: accessVersion must be a version of its own, not the game's",
+    "catalog row 6 (g): the access pack was dropped: accessVersion must be a version of its own, not the game's",
+  ]);
+});
+
+test("add a game: the kit's real access pack.json (make_pack.py --access-only) matches, installs and signs", async () => {
+  const ACCESS_VER = `${GAME_VER}-access`;
+  const ACCESS_ROWS = packRows(
+    GAME_ROWS.filter((row) => row.path !== 'games/xena/local/rom.z64').map(
+      (row): [string, number, string] => [row.path, row.length, row.type],
+    ),
+  );
+  const ACCESS_SHA = `5a17c0de${'3'.repeat(56)}`;
+  const ACCESS_PACK = {
+    ...GAME_PACK,
+    version: ACCESS_VER,
+    romPath: 'games/xena/local/rom.z64',
+    romSha1: ROM_XENA,
+    files: ACCESS_ROWS,
+    blob: { file: 'blob.bin', bytes: blobBytes(ACCESS_ROWS), sha256: ACCESS_SHA },
+  };
+  objects = new Map();
+  put('arcade/catalog.json', {
+    kit: { version: KIT_VER, size: KIT_PACK.blob.bytes, sha256: KIT_BLOB_SHA },
+    games: [
+      {
+        id: 'xena',
+        title: 'Xena Warrior Princess',
+        console: 'N64',
+        access: GAME_PACK.shelf,
+        version: GAME_VER,
+        size: GAME_PACK.blob.bytes,
+        sha256: GAME_BLOB_SHA,
+        romSha1: ACCESS_PACK.romSha1,
+        accessVersion: ACCESS_PACK.version,
+        accessSize: ACCESS_PACK.blob.bytes,
+        accessSha256: ACCESS_PACK.blob.sha256,
+      },
+    ],
+  });
+  objects.set(`arcade/public/kit/${KIT_VER}/pack.json`, packJson(KIT_PACK));
+  objects.set(`arcade/family/xena/${GAME_VER}/pack.json`, packJson(GAME_PACK));
+  objects.set(`arcade/family/xena/${ACCESS_VER}/pack.json`, packJson(ACCESS_PACK));
+  await mount();
+
+  const res = await get(`/match?sha1=${ROM_XENA}`, FAMILY);
+  assert.deepEqual(res.body, {
+    match: {
+      id: 'xena',
+      title: 'Xena Warrior Princess',
+      console: 'N64',
+      access: 'family',
+      version: ACCESS_VER,
+      size: blobBytes(ACCESS_ROWS),
+      sha256: ACCESS_SHA,
+      locked: false,
+      manifestPath: `/api/kade/arcade/games/xena/manifest?version=${ACCESS_VER}`,
+      signPath: `/api/kade/arcade/games/xena/${ACCESS_VER}/pack`,
+    },
+  });
+  const match = res.body.match as Body;
+  const manifest = await get(rel(match.manifestPath), FAMILY);
+  assert.deepEqual(manifest.body, {
+    id: 'xena',
+    title: 'Xena Warrior Princess',
+    console: 'N64',
+    access: 'family',
+    version: ACCESS_VER,
+    ready: true,
+    packs: [
+      {
+        kind: 'kit',
+        id: 'kit',
+        version: KIT_VER,
+        size: KIT_PACK.blob.bytes,
+        sha256: KIT_BLOB_SHA,
+        signPath: `/api/kade/arcade/kit/${KIT_VER}/pack`,
+        files: served(KIT_ROWS),
+      },
+      {
+        kind: 'game',
+        id: 'xena',
+        version: ACCESS_VER,
+        size: blobBytes(ACCESS_ROWS),
+        sha256: ACCESS_SHA,
+        signPath: match.signPath,
+        files: served(ACCESS_ROWS),
+      },
+    ],
+    entry: 'games/xena/play.html',
+    emulatorData: 'emulatorjs/',
+    romPath: 'games/xena/local/rom.z64',
+  });
+  const files = (manifest.body.packs as Body[]).flatMap((pack) => pack.files as Body[]);
+  assert.ok(!files.some((file) => file.path === 'games/xena/local/rom.z64'), 'no ROM in the pack');
+  assert.doesNotMatch(manifest.text, new RegExp(`${ROM_XENA}|Talisman|needsKit`));
+  assert.deepEqual(logs, [], 'no pack or catalog field was refused');
+
+  const signed = await get(rel(match.signPath), FAMILY);
+  assert.equal(signed.status, 200);
+  assert.equal(signed.body.sha256, match.sha256);
+  assert.equal(signed.body.size, match.size);
+  assert.deepEqual(
+    signs.map((s) => s.key),
+    [`arcade/family/xena/${ACCESS_VER}/blob.bin`],
+  );
+  assert.deepEqual((await get(`/match?sha1=${ROM_XENA}`, REVIEW)).body, { match: SHELF_MATCH });
+  keysAreSafe();
+});
+
 /* ── POST /diag ────────────────────────────────────────────────────── */
 test('diagnostics keep known small fields and the account id, nothing else', async () => {
   const res = await post(
@@ -1163,7 +1638,12 @@ test('manifest and pack requests are rate-limited per account', async () => {
     const res = await get(path, FAMILY);
     assert.ok(res.status === 200 || res.status === 404, `${path} answered ${res.status}`);
   }
-  for (const path of [...paths, '/games/xena/2026-10-20a/pack', '/kit/v99/manifest']) {
+  for (const path of [
+    ...paths,
+    '/games/xena/2026-10-20a/pack',
+    '/kit/v99/manifest',
+    `/match?sha1=${'0'.repeat(40)}`,
+  ]) {
     assert.equal((await get(path, FAMILY)).status, 429, path);
   }
   assert.equal((await get('/config', FAMILY)).status, 200, '/config reads only the cached catalog');

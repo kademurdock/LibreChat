@@ -28,18 +28,30 @@ shared rate limiters, logger), mounted at `/api/kade/arcade` in `api/server/inde
   shelf), and the manifest and pack routes answer exactly as for an id that is not in the catalog
   (404 inside the pack, the family refusal outside it), before any `pack.json` is read. A row
   without the flag is open to children; whether a game carries it is Kade's call, row by row.
+- **Add a game** (Oct 19 2026, Kade: "People can add roms to the arcade for their own personal
+  use, and family shelf is for the people behind my flag"). Every account may add its own ROM
+  files on the phone; they never reach the server. The app asks `GET /match` with the ROM's
+  No-Intro sha1 whether an **accessibility pack** (the game pack without the ROM) exists for it.
+  The pack follows its game's shelf: a family game's pack is for the Family feature pack only.
+  Outside the pack a family ROM answers one locked row, `{ id: 'family-shelf', title: 'Family
+  shelf', console, locked: true, note: 'Part of the Family feature pack' }`, with the console but
+  never the game's id, title, version, size, hash or links (the same rule as `/config`: an
+  outsider never sees a family game's name), and the person plays the plain game. A
+  grown-ups-only row never matches for a child, not even as the locked row.
 
 ## Routes
 
 Every route needs sign-in (`requireJwtAuth`, a Bearer header) and answers `Cache-Control: no-store`.
-The manifest and pack routes (`/games/...` and `/kit/...`) allow 60 requests a minute per account
-(a shared limiter); `/config` reads only the cached catalog and is not limited.
+The manifest, pack and match routes (`/games/...`, `/kit/...` and `/match`) share one limit of
+60 requests a minute per account (a shared limiter); `/config` reads only the cached catalog and is
+not limited.
 
 | Route | Answer |
 | --- | --- |
 | `GET /config` | `{ catalog: [{ id, title, console, access, version, size, locked, note? }], features, familyPack, note, kit: { version, size } \| null }`. `features` is the person's whole pack map, `arcadeFamily` included. |
-| `GET /games/:id/manifest` | `{ id, title, console, access, version, ready, packs, entry?, emulatorData? }`. `packs` is `[kitPack, gamePack]`, each `{ kind: 'kit' \| 'game', id, version, size, sha256, signPath, files: [{ path, offset, size, mime?, sha256? }] }`: `size` and `sha256` are `blob.bin`'s, `files` is the checked file table from that pack's `pack.json` (the kit's `length` served as `size`, its `type` as `mime`), and `signPath` (for example `/api/kade/arcade/kit/20261018-27899e08/pack`) answers the pack's signed link. The kit pack's id is always `kit`. Until both `pack.json` files are uploaded and pass the checks below, `ready` is false and `packs` is `[]`, so the phone never installs a game without its kit. `entry` (the game page, from the game pack) and `emulatorData` (EmulatorJS's folder, from the kit pack: `emulatorjs/`) appear only when the packs name them; otherwise the app's defaults hold, which must be the kit's own: `games/<id>/play.html` and `emulatorjs/`. 403 with the refusal outside the pack for a family game. |
-| `GET /games/:id/:ver/pack` | `{ url, sha256, size, version, expiresIn: 3600 }`. `url` is a signed GET for exactly `blob.bin` of that version, good for one hour. `sha256` and `size` come from that version's `pack.json`. 404 until `pack.json` exists and passes the checks. Any uploaded version signs, so a resumed download can finish. |
+| `GET /games/:id/manifest` | `{ id, title, console, access, version, ready, packs, entry?, emulatorData? }`. `packs` is `[kitPack, gamePack]`, each `{ kind: 'kit' \| 'game', id, version, size, sha256, signPath, files: [{ path, offset, size, mime?, sha256? }] }`: `size` and `sha256` are `blob.bin`'s, `files` is the checked file table from that pack's `pack.json` (the kit's `length` served as `size`, its `type` as `mime`), and `signPath` (for example `/api/kade/arcade/kit/20261018-27899e08/pack`) answers the pack's signed link. The kit pack's id is always `kit`. Until both `pack.json` files are uploaded and pass the checks below, `ready` is false and `packs` is `[]`, so the phone never installs a game without its kit. `entry` (the game page, from the game pack) and `emulatorData` (EmulatorJS's folder, from the kit pack: `emulatorjs/`) appear only when the packs name them; otherwise the app's defaults hold, which must be the kit's own: `games/<id>/play.html` and `emulatorjs/`. 403 with the refusal outside the pack for a family game. `?version=<accessVersion>` answers the same shape for the game's accessibility pack (the access pack in place of the game pack, `version` the access version) plus `romPath` (from the access pack's `pack.json`: where the phone serves the person's own ROM, `games/<id>/local/rom.<ext>`) when ready. `?version=` may name only the game's `accessVersion` or its own `version` (the plain manifest); anything else, an older version included, is a 404 `"That pack is not ready yet."` after the family gate. |
+| `GET /games/:id/:ver/pack` | `{ url, sha256, size, version, expiresIn: 3600 }`. `url` is a signed GET for exactly `blob.bin` of that version, good for one hour. `sha256` and `size` come from that version's `pack.json`. 404 until `pack.json` exists and passes the checks. Any uploaded version signs, so a resumed download can finish; that includes the `accessVersion`, whose pack lives under the same id and shelf (`arcade/<family\|public>/<id>/<accessVersion>/`) behind the same gate. |
+| `GET /match?sha1=<40 hex>` | Add a game. `sha1` is the ROM's No-Intro sha1, either case; anything else (missing, the wrong length, not hex, given twice) is a 400 `"That is not a ROM's sha1 (40 hex digits)."` before the catalog is read. Answers `{ "match": null }` unless a catalog row the account may see (after the child rule) has that `romSha1` and an `accessVersion`. A public game, or a family game inside the pack: `{ "match": { id, title, console, access, version, size, sha256?, locked: false, note?, manifestPath, signPath } }`, where `version`, `size` and `sha256` are the access pack's (`accessVersion`, `accessSize`, `accessSha256`), `manifestPath` is `/api/kade/arcade/games/<id>/manifest?version=<accessVersion>` and `signPath` is `/api/kade/arcade/games/<id>/<accessVersion>/pack`. A family game outside the pack (the App Review seats included): `{ "match": { id: "family-shelf", title: "Family shelf", console, access: "family", version: "", size: 0, locked: true, note: "Part of the Family feature pack" } }`, and its manifest and pack routes refuse as for any family game. The app reads the reason out ("The accessibility pack for this game is on the family shelf") and offers the plain game. |
 | `GET /kit/:ver/manifest` | `{ kind: 'kit', id: 'kit', version, size, sha256, signPath, files, ready: true, emulatorData? }` (the same pack shape as in a game manifest) for every signed-in account. |
 | `GET /kit/:ver/pack` | Same shape as a game pack, for every signed-in account (the kit is open-source code). |
 | `POST /diag` | Body `{ kind, game?, version?, stats? }`, at most 4 KB, 30 a minute per account (a report every five seconds is 12). `kind` must be one of the listed kinds below, or the answer is 400. Kept: `kind`, a valid game id and version, and only the listed `stats`, each checked for its type; a string stat is kept only when it is one of its listed words or matches its fixed pattern. Any other stat name, and any other string, is dropped, so no field can carry free text. Logged as `[arcade/diag]` with the account id and nothing else about the person. Answers 204. |
@@ -119,7 +131,11 @@ arcade/public/<id>/<ver>/pack.json
       "size": 46518427,
       "sha256": "<blob.sha256 of that pack, optional>",
       "note": "optional, under 200 characters",
-      "grownUpsOnly": true
+      "grownUpsOnly": true,
+      "romSha1": "<the ROM's No-Intro sha1, 40 lower-case hex, optional>",
+      "accessVersion": "20261018-5a17c0de-access",
+      "accessSize": 12345678,
+      "accessSha256": "<blob.sha256 of the access pack>"
     }
   ]
 }
@@ -130,6 +146,18 @@ Each value comes from that pack's `pack.json`: `version` is its `version`, `size
 unique `id`, a `version` and a `title`, or it is skipped and the log names it. An `access` that is
 not exactly `"public"` makes the game a family game, so a typo never opens a game to everyone. The
 ids `family-shelf` and `kit` are reserved. `grownUpsOnly` counts only when it is exactly `true`.
+
+Add a game fields (optional; `make_catalog.py` writes them together when an access pack is
+given). Each is checked on its own; a bad one is dropped and named in the log, and the game stays.
+
+- `romSha1`: the ROM's sha1 as No-Intro hashes it (NES without its 16-byte iNES header, N64 in
+  big-endian `.z64` byte order, other systems the whole file), exactly 40 lower-case hex digits.
+  One game per ROM: a sha1 an earlier row already has is dropped from the later row.
+- `accessVersion`: the access pack's version under the same id and shelf (the kit's tools add
+  `-access`). It must be a valid version and must not equal the game's `version`, so a match can
+  never point at the pack that carries the ROM. `accessSize` (its `blob.bytes`, else 0) and
+  `accessSha256` (its `blob.sha256`, else left out) count only with it.
+- Only a row with both `romSha1` and `accessVersion` answers `/match`.
 
 ### pack.json, as the kit writes it
 
@@ -173,7 +201,8 @@ A game pack has `"kind": "game"`, `"id": "xena"`, `"name"`, `"console": "n64"`,
 | `blob.bytes`, `blob.sha256` | the size and sha256 of the whole `blob.bin`, which is what the phone checks after downloading. The name is `bytes` | the pack's `size` and `sha256` (reads `blob.size` too, which wins) |
 | `entry` (game) | the game page, `games/<id>/play.html` | the manifest's `entry` |
 | `emulatorData` (kit) | EmulatorJS's folder inside the kit pack, `emulatorjs/` | the manifest's `emulatorData` |
-| everything else (`format`, `version`, `kind`, `id`, `name`, `shelf`, `console`, `voices`, `needsKit`, `created`, `publicBuilds`, `emulatorjs*`, `core`) | build facts | dropped: the catalog is the source for id, title, version and access |
+| `romPath` (access pack) | where the page expects the ROM the access pack leaves out, `games/<id>/local/rom.<ext>` | checked like a file path (an unsafe one refuses the pack); the access manifest's `romPath` |
+| everything else (`format`, `version`, `kind`, `id`, `name`, `shelf`, `console`, `voices`, `needsKit`, `created`, `publicBuilds`, `emulatorjs*`, `core`, an access pack's `romSha1`) | build facts | dropped: the catalog is the source for id, title, version, access and the ROM's sha1 |
 
 `pack.json` never reaches the phone as is: only the blob's size and sha256, the checked file
 table and `entry` / `emulatorData` leave the server, so build notes or a local path in it go
@@ -212,5 +241,18 @@ The default EmulatorJS folder is `emulatorjs/` (EmulatorJS 4.2.3's pinned files:
 
 A new kit version works the same way under `arcade/public/kit/<ver>/`, then the catalog's `kit`
 row.
+
+### An accessibility pack for Add a game
+
+1. `make_pack.py --access-only` builds the same game pack without the ROM file; its `pack.json`
+   gains `romPath` and `romSha1`, and its version ends in `-access`.
+2. Upload it with `upload_pack.py` like any pack: it lands under the game's own id and shelf,
+   `arcade/<family|public>/<id>/<accessVersion>/`.
+3. Add `romSha1`, `accessVersion`, `accessSize` and `accessSha256` to the game's catalog row
+   (`make_catalog.py` writes them), after the upload.
+4. Check it: `GET /match?sha1=<romSha1>` as a family account answers the game unlocked with its
+   `manifestPath`, which answers `ready: true` with the kit, the access pack (no ROM in its
+   files) and `romPath`; as an account outside the pack it answers only the locked
+   "Family shelf" row for a family game.
 
 Uploads, the catalog and deploys need Kade's yes. This router reads storage and never writes it.
