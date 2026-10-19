@@ -15,7 +15,11 @@ import type { FamilyFeatures } from '../family/pack';
  *
  * Games are played on the phone from packs of files kept in private storage
  * under arcade/: a pack is one pack.json index plus one blob.bin, under a
- * version key that is never overwritten. This router never streams a pack: it
+ * version key that is never overwritten, in the layout the Revival kit's
+ * tools/upload_pack.py writes: arcade/public/kit/<ver>/ for the kit and
+ * arcade/<family|public>/<id>/<ver>/ for a game (the catalog row's access picks
+ * the folder). pack.json is read in the shape tools/packlib.py writes it
+ * (blob.bytes; rows with length and type). This router never streams a pack: it
  * answers a one-hour signed GET link for exactly one object, so no game bytes
  * pass through the server and nothing here needs Range or no-transform.
  *
@@ -50,14 +54,20 @@ export const ARCADE_KIT_ID: string = 'kit';
 const CATALOG_KEY = `${ARCADE_PREFIX}/catalog.json`;
 /** Lower-case letters, digits and inner hyphens: "xena", "super-tilt-bro". */
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
-/** Letters, digits, dots, hyphens and underscores, starting and ending on a letter or digit: "2026-10-20a", "4.2.3-1". */
+/** Letters, digits, dots, hyphens and underscores, starting and ending on a letter or digit. The
+ * kit's versions are YYYYMMDD-<first 8 hex of blob.bin's sha256>: "20261018-27899e08". */
 const VERSION_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,30}[A-Za-z0-9])?$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-/** One part of a file path inside a pack: no "." or ".." part, no slash, backslash or colon. */
-const PATH_PART = /^[A-Za-z0-9_](?:[A-Za-z0-9 ._,'()+-]{0,118}[A-Za-z0-9._,'()+-])?$/;
-const PATH_MAX = 240;
+/** One part of a file path inside a pack, up to 255 characters (the kit's cloned-voice clip names
+ * are the spoken line, 163 characters in the longest so far): no "." or ".." part, no slash,
+ * backslash or colon. */
+const PATH_PART = /^[A-Za-z0-9_](?:[A-Za-z0-9 ._,'()+-]{0,253}[A-Za-z0-9._,'()+-])?$/;
+/** A B2 key's limit. The phone only looks paths up in the pack's table; it never makes these files. */
+const PATH_MAX = 1024;
 const PATH_PARTS_MAX = 16;
-const MIME_PATTERN = /^[a-z0-9][a-z0-9.+-]{0,40}\/[a-z0-9][a-z0-9.+-]{0,80}$/;
+/** A MIME type, with an optional charset as the kit writes for text: "text/javascript; charset=utf-8". */
+const MIME_PATTERN =
+  /^[a-z0-9][a-z0-9.+-]{0,40}\/[a-z0-9][a-z0-9.+-]{0,80}(?:; ?charset=[a-z0-9-]{1,20})?$/;
 const SIGN_SECONDS = 3600;
 const CATALOG_TTL_MS = 60 * 1000;
 /** After a failed storage read, try again this soon (the last good catalog is served meanwhile). */
@@ -204,7 +214,7 @@ export interface ArcadePackIndex {
   files: ArcadePackFile[];
   /** The game page inside the pack, when it is not games/<id>/play.html. */
   entry?: string;
-  /** EmulatorJS's data folder inside the kit pack, when it is not emulator/. */
+  /** EmulatorJS's data folder inside the kit pack (the kit writes emulatorjs/). */
   emulatorData?: string;
 }
 
@@ -260,8 +270,9 @@ export function arcadeVersion(value: unknown): value is string {
   return typeof value === 'string' && VERSION_PATTERN.test(value) && !value.includes('..');
 }
 
-/** True for a relative file path inside a pack: "games/xena/play.html", "audio/voice/2 of 3.mp3".
- * Never absolute, never a "." or ".." part, never a backslash or colon. */
+/** True for a relative file path inside a pack: "games/xena/play.html", "emulatorjs/loader.js",
+ * "games/xena/local/audio/voice/2 of 3.mp3". Never absolute, never a "." or ".." part, never a
+ * backslash or colon. */
 export function arcadePath(value: unknown): value is string {
   if (typeof value !== 'string' || !value || value.length > PATH_MAX) return false;
   const parts = value.split('/');
@@ -330,10 +341,12 @@ export function parseArcadeCatalog(
 
 /** Reads a pack.json into only the fields the phone needs: blob.bin's size and sha256 and a file
  * table whose every row is a safe relative path inside the blob. Any other field is dropped, and
- * null comes back unless the whole table checks out (one bad row and the pack is not ready). */
+ * null comes back unless the whole table checks out (one bad row and the pack is not ready).
+ * The kit's tools/packlib.py names the blob's size `bytes`, a row's size `length` and its MIME
+ * `type`; `blob.size` and a row's `size` and `mime` are read as well, and win when both are there. */
 export function parseArcadePackIndex(raw: unknown): ArcadePackIndex | null {
   if (!isRecord(raw) || !isRecord(raw.blob) || !Array.isArray(raw.files)) return null;
-  const blobSize = byteCount(raw.blob.size);
+  const blobSize = byteCount(raw.blob.size !== undefined ? raw.blob.size : raw.blob.bytes);
   const blobSha = raw.blob.sha256;
   if (blobSize === null || blobSize === 0) return null;
   if (typeof blobSha !== 'string' || !SHA256_PATTERN.test(blobSha)) return null;
@@ -348,7 +361,8 @@ export function parseArcadePackIndex(raw: unknown): ArcadePackIndex | null {
     }
     seen.add(row.path);
     const file: ArcadePackFile = { path: row.path, offset, size };
-    if (typeof row.mime === 'string' && MIME_PATTERN.test(row.mime)) file.mime = row.mime;
+    const mime = typeof row.mime === 'string' ? row.mime : row.type;
+    if (typeof mime === 'string' && MIME_PATTERN.test(mime)) file.mime = mime;
     if (typeof row.sha256 === 'string' && SHA256_PATTERN.test(row.sha256)) file.sha256 = row.sha256;
     files.push(file);
   }
@@ -402,10 +416,18 @@ export function arcadeDiagRow(user: string, body: unknown, at: Date): ArcadeDiag
   };
 }
 
-const gameKey = (id: string, version: string, file: 'pack.json' | 'blob.bin'): string =>
-  `${ARCADE_PREFIX}/games/${id}/${version}/${file}`;
+/* The keys tools/upload_pack.py writes: arcade/<shelf>/<id>/<version>/, where the shelf is
+ * 'public' only for a pack whose shelf is exactly public and 'family' otherwise. A game's folder
+ * comes from its catalog access, which must equal its pack's shelf; the kit is always public. */
+const gameKey = (
+  access: ArcadeAccess,
+  id: string,
+  version: string,
+  file: 'pack.json' | 'blob.bin',
+): string =>
+  `${ARCADE_PREFIX}/${access === 'public' ? 'public' : 'family'}/${id}/${version}/${file}`;
 const kitKey = (version: string, file: 'pack.json' | 'blob.bin'): string =>
-  `${ARCADE_PREFIX}/kit/${version}/${file}`;
+  `${ARCADE_PREFIX}/public/${ARCADE_KIT_ID}/${version}/${file}`;
 
 /** Sets a cache entry, dropping the oldest entry first when the cache is full. */
 function remember<V>(cache: Map<string, V>, key: string, value: V, max: number): void {
@@ -541,7 +563,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       }
       if (!value) {
         deps.log(
-          `${key} is not a usable pack index: it needs blob.bin's size and sha256 and a file table of safe relative paths inside the blob`,
+          `${key} is not a usable pack index: it needs blob.bin's size (blob.bytes) and sha256 and a file table of safe relative paths inside the blob`,
         );
       } else if (kit && value.files.some((file) => /^games\//i.test(file.path))) {
         /* The kit is open to every account: a kit that carries game files would hand them out. */
@@ -682,7 +704,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       if (!game) return;
       const { kit } = await catalog();
       const [gameIndex, kitIndex] = await Promise.all([
-        packIndex(gameKey(game.id, game.version, 'pack.json'), false),
+        packIndex(gameKey(game.access, game.id, game.version, 'pack.json'), false),
         kit ? packIndex(kitKey(kit.version, 'pack.json'), true) : Promise.resolve(null),
       ]);
       const ready = !!(kit && kitIndex && gameIndex);
@@ -725,8 +747,8 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         missing(res, 'That pack is not ready yet.');
         return;
       }
-      const index = await packIndex(gameKey(game.id, version, 'pack.json'), false);
-      await signedPack(res, index, gameKey(game.id, version, 'blob.bin'), version);
+      const index = await packIndex(gameKey(game.access, game.id, version, 'pack.json'), false);
+      await signedPack(res, index, gameKey(game.access, game.id, version, 'blob.bin'), version);
     }),
   );
 
