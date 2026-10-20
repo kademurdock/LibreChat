@@ -25,6 +25,8 @@ import {
   ranOn,
   creditRunOn,
   spokenSeconds,
+  paceCheck,
+  repeatsWords,
   actionLate,
   readingLate,
 } from './timing.ts';
@@ -52,7 +54,7 @@ import {
   reasoningFloor,
   relookMargin,
 } from './engine.ts';
-import { readAnalysis, nextContinuity, analysisPrompt } from './prompt.ts';
+import { readAnalysis, nextContinuity, analysisPrompt, plainCapitals } from './prompt.ts';
 import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
@@ -705,6 +707,60 @@ test('run-on check: real Napoleon lines at their measured lengths pass; the loop
   } finally {
     delete process.env.KADE_VOICE_RUNON;
   }
+});
+
+test('repeat check: Napoleon clean lines pass against the film pace; the card said three times is caught by length and by ear', () => {
+  const pace = 0.0602;
+  const card = 'Text reads, Sound Designers JAMES CURRIE and CRAIG CARTER.';
+  assert.equal(ranOn(card, 10.56), false, 'the run-on limit let the triple read through');
+  const triple = paceCheck(card, 10.56, pace);
+  assert.ok(triple.suspect && triple.strong, JSON.stringify(triple));
+  for (const [line, seconds] of [
+    ['Text reads, NAPOLEON.', 2.0],
+    ['Napoleon sighs.', 1.4],
+    ['A wet echidna on a rock.', 2.0],
+    ['Text reads, Director MARIO ANDREACCHIO.', 3.5],
+    ['Text reads, Written by MICHAEL BOURCHIER MARIO ANDREACCHIO MARK SALTZMAN.', 6.2],
+    ['Text reads, Executive Producers MASATO HARA RON SAUNDERS.', 5.0],
+    ['Birdo takes off.', 1.0],
+  ])
+    assert.equal(paceCheck(line, seconds, pace).suspect, false, line);
+  assert.equal(paceCheck('Birdo takes off.', 2.3, pace).suspect, true, 'a short line said twice');
+  const heard =
+    'Text reads: Sound designers James Curry and Craig Carter. Sound designers James Curry and Craig Carter. Sound designers James Curry and Craig Carter.';
+  assert.equal(repeatsWords(card, heard), true);
+  assert.equal(repeatsWords(card, 'Text reads: sound designers james curry and craig carter.'), false, 'misheard names are not a repeat');
+  const twice = "The wild dog and Napoleon sit together on the rocks. The wild dog licks Napoleon's face.";
+  assert.equal(repeatsWords(twice, twice), false, 'a line that says a phrase twice itself');
+  assert.equal(repeatsWords('Birdo takes off.', 'Berto takes off.'), false);
+  assert.equal(repeatsWords('Birdo takes off.', 'Birdo takes off. Birdo takes off.'), true);
+  assert.equal(repeatsWords('Snow.', 'Snow. Snow.'), true);
+  assert.equal(
+    repeatsWords('A red balloon floats.', 'A red balloon floats. No, I mean I kind of see both sides, no actually wait.'),
+    true,
+    'a run-on into the reference recording',
+  );
+  process.env.KADE_VOICE_RUNON = '0';
+  try {
+    assert.equal(paceCheck(card, 10.56, pace).suspect, false, 'the switch turns the check off');
+  } finally {
+    delete process.env.KADE_VOICE_RUNON;
+  }
+});
+
+test('capital words from the screen are sent to a Fish voice in ordinary case; letters stay letters', () => {
+  assert.equal(
+    plainCapitals('Text reads, Sound Designers JAMES CURRIE and CRAIG CARTER.'),
+    'Text reads, Sound Designers James Currie and Craig Carter.',
+  );
+  assert.equal(
+    plainCapitals('Text reads, HERALD ACE INC, AUSTRALIAN FILM FINANCE CORPORATION LIMITED, THE SAMUEL GOLDWYN COMPANY, present.'),
+    'Text reads, Herald ACE INC, Australian FILM Finance Corporation Limited, The Samuel Goldwyn Company, present.',
+  );
+  assert.equal(plainCapitals('The MGM lion roars on KOLR and ESPN.'), 'The MGM lion roars on KOLR and ESPN.');
+  assert.equal(plainCapitals("Text reads, O'BRIEN and JEAN-LUC, ROCKY III."), "Text reads, O'Brien and Jean-Luc, Rocky III.");
+  assert.equal(plainCapitals('Text reads, THE END.'), 'Text reads, THE END.');
+  assert.equal(plainCapitals('Napoleon runs.'), 'Napoleon runs.');
 });
 
 test('pause mode reads opening credit cards back to back over the music instead of freezing', () => {
@@ -2221,6 +2277,7 @@ async function run(f, words, cues, overrides = {}) {
     sourceSeconds: overrides.sourceSeconds,
     log: overrides.log ? (line) => overrides.log.push(line) : undefined,
     credit: overrides.credit,
+    fishVoice: overrides.fishVoice,
   });
   return { ...result, backend };
 }
@@ -2681,6 +2738,95 @@ test('a description whose voice runs on is asked once more under a fresh session
   );
 });
 
+test('a take that says its line twice is heard back and asked again, and the clean take is used', async () => {
+  const f = await fixture('voice-repeats');
+  const twice = await toneFile(f.dir, 'twice.wav', 660, 7);
+  const backend = providers(f.voice, [], [cue]);
+  const sessions = [];
+  backend.synthesize = async (_text, _voice, session, file) => {
+    sessions.push(session);
+    await copyFile(sessions.length === 1 ? twice : f.voice, file);
+  };
+  const listened = [];
+  backend.listen = async (pcm) => {
+    listened.push(pcm.length / sampleRate);
+    return pcm.length / sampleRate > 5 ? `${cue.text} ${cue.text}` : cue.text;
+  };
+  const log = [];
+  const result = await run(f, [], [], { providers: backend, log });
+  assert.equal(result.report.descriptions.length, 1);
+  assert.ok(result.report.descriptions[0].duration < 5, 'the 7 s take was never used');
+  assert.deepEqual(sessions.slice(0, 2), ['synthetic-test', 'synthetic-test:again']);
+  assert.ok(listened[0] > 6.5, 'the long take was heard back');
+  assert.ok(log.some((line) => /^Voice take 1 of 3 repeated itself: 7\.0 s/.test(line)), log.join('\n'));
+});
+
+test('a slow take heard back once is kept, and with nobody to listen a long first take is kept as read', async () => {
+  const f = await fixture('voice-slow-heard');
+  const slow = await toneFile(f.dir, 'slow.wav', 660, 4);
+  const backend = providers(slow, [], [cue]);
+  backend.listen = async () => cue.text;
+  const log = [];
+  const heard = await run(f, [], [], { providers: backend, log, settings: { ...settings, mode: 'extended' } });
+  assert.equal(heard.report.descriptions.length, 1);
+  assert.equal(backend.calls.synthesize, 1, 'no second take');
+  assert.ok(log.some((line) => /^Voice take 1 of 3 was read slowly: 4\.0 s/.test(line)), log.join('\n'));
+
+  const g = await fixture('voice-slow-unheard');
+  const deaf = providers(slow, [], [cue]);
+  const unheardLog = [];
+  const kept = await run(g, [], [], { providers: deaf, log: unheardLog, settings: { ...settings, mode: 'extended' } });
+  assert.equal(kept.report.descriptions.length, 1);
+  assert.equal(deaf.calls.synthesize, 1, 'the voice pace is not known yet, so length alone retakes nothing');
+  assert.ok(unheardLog.some((line) => /could not be heard back: .*; kept\.$/.test(line)), unheardLog.join('\n'));
+});
+
+test('a short text that repeats in every take is tried as its longer full text', async () => {
+  const f = await fixture('voice-short-repeats');
+  const twice = await toneFile(f.dir, 'twice.wav', 660, 4);
+  const backend = providers(f.voice, [], [cue]);
+  const asked = [];
+  backend.synthesize = async (text, _voice, _session, file) => {
+    asked.push(text);
+    await copyFile(text === cue.shortText ? twice : f.voice, file);
+  };
+  backend.listen = async (pcm) => (pcm.length / sampleRate > 3.5 ? `${cue.shortText} ${cue.shortText}` : cue.text);
+  const log = [];
+  backend.analyze = async () => ({ kind: 'other', setting: 'x', people: [], speakers: [], protectedSounds: [], cues: [{ ...cue, until: 1.8 }] });
+  const result = await run(f, [], [], { providers: backend, log });
+  assert.deepEqual(asked, [cue.shortText, cue.shortText, cue.shortText, cue.text]);
+  assert.ok(log.some((line) => /1 short description\(s\) whose voice repeated or ran on are tried as their full text/.test(line)), log.join('\n'));
+  assert.equal(result.report.descriptions.length, 0, 'the full text does not fit this gap without pausing');
+  assert.doesNotMatch(result.report.skipped[0].reason, /kept talking/);
+
+  asked.length = 0;
+  const g = await fixture('voice-short-repeats-paused');
+  const paused = await run(g, [], [], { providers: backend, settings: { ...settings, mode: 'extended' } });
+  assert.equal(paused.report.descriptions.length, 1, asked.join(' | '));
+  assert.equal(paused.report.descriptions[0].text, cue.text, 'pause mode says the longer text');
+});
+
+test('a Fish narrator hears screen capitals in ordinary case and says the credit in two sentences; captions keep the written words', async () => {
+  const f = await fixture('fish-forms');
+  const creditVoice = await toneFile(f.dir, 'credit-voice.wav', 880, 1.2);
+  const words = 'Text reads, Sound Designers JAMES CURRIE and CRAIG CARTER.';
+  const card = { ...cue, text: words, shortText: words, reading: true };
+  const backend = withCreditVoice(providers(f.voice, [], [card]), creditVoice);
+  const result = await run(f, [], [], { providers: backend, fishVoice: true, credit: { where: 'both' } });
+  const said = backend.said.map((item) => item.text);
+  assert.ok(said.includes('Text reads, Sound Designers James Currie and Craig Carter.'), said.join(' | '));
+  assert.ok(said.includes('Audio description by Kadie A I. Enjoy the show.'), said.join(' | '));
+  assert.ok(said.includes('Described by Kade-AI. More at kademurdock dot com.'), 'the closing line is unchanged');
+  assert.equal(result.report.descriptions[0].text, words, 'the report and captions keep the capitals');
+  assert.equal(result.report.credit.start.text, 'Audio description by Kade-AI.');
+
+  const g = await fixture('classic-forms');
+  const classic = withCreditVoice(providers(g.voice, [], [card]), creditVoice);
+  await run(g, [], [], { providers: classic, credit: { where: 'both' } });
+  const plain = classic.said.map((item) => item.text);
+  assert.ok(plain.includes(words) && plain.includes('Audio description by Kade-AI.'), plain.join(' | '));
+});
+
 test('a full text whose voice keeps running on is spoken as its short text; both running on leaves it out with its own reason', async () => {
   const f = await fixture('voice-runs-on-full');
   const long = await toneFile(f.dir, 'long.wav', 660, 20);
@@ -2740,7 +2886,7 @@ test('a description whose short text is its full text and whose voice runs on is
   const result = await run(f, [], [], { providers: backend });
   assert.equal(result.report.descriptions.length, 0);
   assert.match(result.report.skipped[0].reason, /kept talking far past these words/);
-  assert.equal(takes, 2, 'two takes of the same words, no third');
+  assert.equal(takes, 3, 'three takes of the same words, no fourth');
 });
 
 test('a description whose short text ran on but whose full text has a good clip is still carried into the next section', async () => {

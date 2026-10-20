@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { narratorLabel, retainedNarrators } from './voiceCatalog';
+import { narratorLabel, retainedNarrators, sameNarrator } from './voiceCatalog';
 import type { NarratorCatalog } from './voiceCatalog';
 import axios from 'axios';
 import mongoose from 'mongoose';
@@ -1124,14 +1124,14 @@ const listedAll = (catalog: Catalog, list: string[]): string[] => [
 /** What to store for a label: its catalog number when it has one, so a later relabel cannot lose it. */
 function stable(catalog: Catalog, label: string): string {
   const number = Object.entries(catalog.renames ?? {}).find(
-    ([from, to]) => to === label && /^Voice \d+$/.test(from),
+    ([from, to]) => sameNarrator(to, label) && /^Voice \d+$/.test(from),
   );
   return number ? number[0] : label;
 }
 /** Every stored spelling that means this voice, so removing one removes them all. */
 function spellings(catalog: Catalog, label: string): string[] {
   const old = Object.entries(catalog.renames ?? {})
-    .filter(([, to]) => to === label)
+    .filter(([, to]) => sameNarrator(to, label))
     .map(([from]) => from);
   return [...new Set([label, ...old])];
 }
@@ -1140,7 +1140,10 @@ function houseVoice(catalog: Catalog): string | undefined {
     const label = listed(catalog, name);
     if (label) return label;
   }
-  return catalog.voices.find((voice) => /^clear woman . flint$/.test(voice)) || catalog.voices[0];
+  return (
+    catalog.voices.find((voice) => /^clear woman . flint(?: \(Classic\))?$/.test(voice)) ||
+    catalog.voices[0]
+  );
 }
 type NarrationPrefs = {
   _id: string;
@@ -4890,6 +4893,7 @@ export function createDescriptionRouter(hooks: Hooks): {
            * against her approval. A rehearsal's stand-in voice never calls a meter.
            */
           credit: creditFor(settings, rehearsal ? meter : includedMeter, hooks.creditLogos),
+          fishVoice: !!(await voiceCatalog()).fish?.includes(runSettings.voice),
         };
         const output = await (hooks.describe ?? describeVideo)(request);
         await progress('Saving the described copy', 97);

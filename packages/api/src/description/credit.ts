@@ -14,10 +14,24 @@ import { decibels, mix, sampleRate } from './mix';
  * "Kade-AI" as "Kadie A I" and "kademurdock" as "Kadie Murdock" on every speech request, so the
  * lines are written plainly. A preview gets the start line only: its film has not ended.
  */
-export const creditLines: Record<'start' | 'end', { written: string; said: string }> = {
+export const creditLines: Record<
+  'start' | 'end',
+  { written: string; said: string; fish?: string }
+> = {
   start: {
     written: 'Audio description by Kade-AI.',
     said: 'Audio description by Kade-AI.',
+    /**
+     * What a Fish voice says instead (the written line and the captions stay as above). Kade said
+     * on Oct 19 2026 a line may grow to keep the voice from repeating. Live on her Fish voice
+     * "Kade (HQ)" on Oct 20, first takes before the proxy's own retry: the line above ran on in
+     * 12 of 30 (the proxy hears "Kadie A.I.." with a doubled stop), "Audio description by Kadie
+     * A I." in 4 of 24, "This audio description is by Kadie A I." in 1 of 21, and this
+     * two-sentence line in 0 of 20, like the two-sentence closing line (0 of 10). It is said
+     * "Kadie A I" already, so the proxy's own spelling of the name does not touch it.
+     * KADE_DESCRIPTION_CREDIT_FISH replaces it (empty: the plain line above).
+     */
+    fish: 'Audio description by Kadie A I. Enjoy the show.',
   },
   end: {
     written: 'Described by Kade-AI. More at kademurdock.com.',

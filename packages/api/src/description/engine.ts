@@ -77,15 +77,18 @@ import {
   mergeIntervals,
   outputTimeline,
   planSections,
+  paceCheck,
   ranOn,
+  repeatsWords,
   snapToCuts,
   spokenSeconds,
   stretchSigns,
   toOutput,
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
-import { nextContinuity, readsTimeStrip, spokenForm } from './prompt';
+import { nextContinuity, plainCapitals, readsTimeStrip, spokenForm } from './prompt';
 import { gateCues, recognized } from './ledger';
+import { listen } from './listen';
 import { Halt } from './types';
 
 export { buildReport } from './transcript';
@@ -114,12 +117,18 @@ export type Providers = {
    * providers): the first look's real cost alone is weighed.
    */
   expected?: (look: Look) => number;
+  /**
+   * The words heard in one narration take that ran long (production: listen.ts `listen`), or null
+   * when nobody could listen. Absent (test providers): length alone decides.
+   */
+  listen?: (pcm: Float32Array, signal: AbortSignal) => Promise<string | null>;
 };
 export const productionProviders: Providers = {
   transcribe,
   analyze,
   synthesize,
   expected: expectedLook,
+  listen,
 };
 
 export type SectionFiles = { sound: string; picture?: string };
@@ -207,6 +216,12 @@ export type Request = {
    * none (tests, and a job the administrator left it out of).
    */
   credit?: Credit | null;
+  /**
+   * The narrator speaks through Fish Audio (the catalog's `fish` list). A Fish clone can repeat a
+   * short line or run on into its reference recording, so its credit is said as two sentences and
+   * all-capital words on screen are sent to it in ordinary case (prompt.ts `plainCapitals`).
+   */
+  fishVoice?: boolean;
 };
 export type Outcome = {
   video: string;
@@ -420,6 +435,11 @@ const voiceRetryMilliseconds = 1500;
  * takes leave it out of about one copy in sixty.
  */
 const creditTakes = 3;
+/**
+ * Takes a description gets before it is given up as `ranOn`. Two until Oct 2026; three since a
+ * take that repeats its line (engine.ts `repeated`) is retaken as well as one that runs on.
+ */
+const voiceTakes = 3;
 /** Narration length per UTF-8 byte at 1x before this job's own clips have been measured. */
 const seedSecondsPerByte = 0.0625;
 /**
@@ -1054,17 +1074,60 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   }
 
   /**
-   * One spoken description. A clip that runs far past its words (timing.ts `ranOn`) is asked for
-   * once more under a fresh voice session, and when that one runs on too the description answers
-   * `ranOn` instead of a clip: it never lengthens a pause, a placement or the job's learned speed.
+   * Whether a take that ran long for its words (timing.ts `paceCheck`, against this voice's own
+   * pace) said them more than once. A listener hears it back (listen.ts): `repeated` or `clean`.
+   * With nobody to listen, a take long enough to be `strong` against a pace measured on this job's
+   * own clips (200 bytes or more) is `long`: retaken, and kept only when no take does better.
+   * Before that pace is known, length alone never retakes, since a slow voice is not a repeat.
+   */
+  async function heardBack(
+    text: string,
+    pcm: Float32Array,
+    what: string,
+  ): Promise<'clean' | 'repeated' | 'long'> {
+    const said = pcmSeconds(pcm);
+    const known = measured.bytes >= 200;
+    const pace = known ? measured.seconds / measured.bytes / native : secondsPerByte / native;
+    const check = paceCheck(text, said, pace);
+    if (!check.suspect) return 'clean';
+    const heard = providers.listen ? await providers.listen(pcm, signal) : null;
+    const verdict =
+      heard !== null
+        ? repeatsWords(text, heard)
+          ? 'repeated'
+          : 'clean'
+        : check.strong && known
+          ? 'long'
+          : 'clean';
+    const said1 = `${seconds1(said)} for about ${seconds1(check.expected)} of words ("${text.slice(0, 32)}")`;
+    log(
+      heard !== null
+        ? `${what} ${verdict === 'repeated' ? 'repeated itself' : 'was read slowly'}: ${said1}, heard "${heard.slice(0, 80)}".`
+        : `${what} ran long and could not be heard back: ${said1}${verdict === 'long' ? '; asked again' : '; kept'}.`,
+    );
+    return verdict;
+  }
+
+  /**
+   * One spoken description. A clip that runs far past its words (timing.ts `ranOn`) or says them
+   * more than once (`heardBack`) is asked for again under a fresh voice session, up to three
+   * takes. When every take fails, a take that was only long by length (never heard repeating) is
+   * kept, the shortest one; otherwise the description answers `ranOn` instead of a clip. Neither
+   * lengthens a pause, a placement or the job's learned speed.
    */
   async function voice(text: string, file: string): Promise<Voiced | 'ranOn' | null> {
-    for (let take = 0; take < 2; take++) {
+    let fallback: Voiced | undefined;
+    const settle = (): Voiced | 'ranOn' => {
+      if (!fallback) return 'ranOn';
+      log(`Voice: kept the shortest of the long takes ("${text.slice(0, 32)}").`);
+      return fallback;
+    };
+    for (let take = 0; take < voiceTakes; take++) {
       try {
         await providers.synthesize(
           text,
           settings.voice,
-          take ? `${request.session}:again` : request.session,
+          take ? `${request.session}:again${take > 1 ? take : ''}` : request.session,
           file,
           native,
           signal,
@@ -1072,15 +1135,22 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         );
         const pcm = trimSilence(await decodeVoice(file, signal));
         voiceFailures = 0;
-        if (pcm.length <= sampleRate * 0.2) return null;
+        if (pcm.length <= sampleRate * 0.2) return fallback ?? null;
         const said = pcmSeconds(pcm);
+        const last = take + 1 >= voiceTakes;
         if (ranOn(text, said)) {
           log(
-            `Voice ran on: ${seconds1(said)} for about ${seconds1(spokenSeconds(text))} of words ("${text.slice(0, 32)}")${take ? '.' : '; asked once more.'}`,
+            `Voice ran on: ${seconds1(said)} for about ${seconds1(spokenSeconds(text))} of words ("${text.slice(0, 32)}")${last ? '.' : '; asked once more.'}`,
           );
           continue;
         }
+        const verdict = await heardBack(text, pcm, `Voice take ${take + 1} of ${voiceTakes}`);
+        if (verdict === 'repeated') continue;
         const base = said * native;
+        if (verdict === 'long') {
+          if (!fallback || base < fallback.base) fallback = { pcm, base };
+          continue;
+        }
         measured.bytes += bytes(text);
         measured.seconds += base;
         secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);
@@ -1091,12 +1161,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           throw new Error(
             `${providerProblem(error, 'The voice service')} Six descriptions in a row could not be voiced.`,
           );
-        return null;
+        return fallback ?? null;
       } finally {
         await rm(file, { force: true });
       }
     }
-    return 'ranOn';
+    return settle();
   }
 
   const records = new Map<number, SectionRecord>();
@@ -1202,7 +1272,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       ...(saved.firstLook?.state.people ?? []),
     ].flatMap((person) => [person.name, person.label]);
     /** The words the voice is sent; placements, captions and the script keep `textOf`. */
-    const saidOf = (index: number, variant: Variant) => spokenForm(textOf(index, variant), ledger);
+    const saidOf = (index: number, variant: Variant) => {
+      const said = spokenForm(textOf(index, variant), ledger);
+      return request.fishVoice ? plainCapitals(said) : said;
+    };
     const estimate = (index: number, variant: Variant) =>
       bytes(saidOf(index, variant)) * secondsPerByte;
     const length = (index: number, variant: Variant) => clips.get(key(index, variant))?.base;
@@ -1308,11 +1381,33 @@ export async function describeVideo(request: Request): Promise<Outcome> {
             !failed.has(key(index, 'short')),
         )
         .map((index) => ({ index, variant: 'short' as Variant }));
-      if (!shorts.length) return;
-      log(
-        `Section ${i + 1} of ${count}: ${shorts.length} description(s) whose voice ran on are tried as their short text.`,
-      );
-      await speak(shorts, `short${tag}`);
+      /**
+       * Kade (Oct 19 2026): "If a description needs to be longer or something to keep from
+       * repeating, whatever." A short text whose voice repeated or ran on in every take is tried as
+       * its longer full text, which a Fish voice says through to the end far more often.
+       */
+      const longs = [...ranLong]
+        .map((name) => Number(name.split(':')[0]))
+        .filter(
+          (index, n, all) =>
+            all.indexOf(index) === n &&
+            ranLong.has(key(index, 'short')) &&
+            !cues[index].reading &&
+            cues[index].shortText !== cues[index].text &&
+            !clips.has(key(index, 'full')) &&
+            !failed.has(key(index, 'full')),
+        )
+        .map((index) => ({ index, variant: 'full' as Variant }));
+      if (!shorts.length && !longs.length) return;
+      if (shorts.length)
+        log(
+          `Section ${i + 1} of ${count}: ${shorts.length} description(s) whose voice ran on are tried as their short text.`,
+        );
+      if (longs.length)
+        log(
+          `Section ${i + 1} of ${count}: ${longs.length} short description(s) whose voice repeated or ran on are tried as their full text.`,
+        );
+      await speak([...shorts, ...longs], `short${tag}`);
       await retryDropped(`-short${tag}`);
     };
     await recover('');
@@ -1674,6 +1769,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   async function creditPart(which: 'start' | 'end', credit: Credit): Promise<CreditPart | null> {
     const dir = join(directory, 'credit');
     const line = creditLines[which];
+    const fishSaid =
+      which === 'start' ? (process.env.KADE_DESCRIPTION_CREDIT_FISH ?? line.fish) : line.fish;
+    /** The words the voice is sent; the captions and the report keep `line.written`. */
+    const sayLine = request.fishVoice && fishSaid ? fishSaid : line.said;
     const where = which === 'start' ? 'opening' : 'closing';
     const own = credit.logos?.[which];
     /** The credit's speech is its own part of the run's cost, whichever meter it goes through. */
@@ -1683,10 +1782,12 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       await mkdir(dir, { recursive: true });
       const spoken = join(dir, `${which}-voice.wav`);
       let words: Float32Array | null = null;
+      /** The shortest take that was long by length alone, never heard repeating. */
+      let longTake: Float32Array | undefined;
       for (let take = 0; take < creditTakes && !words; take++) {
         try {
           await providers.synthesize(
-            line.said,
+            sayLine,
             settings.voice,
             `${request.session}:credit${take ? `:again${take}` : ''}`,
             spoken,
@@ -1696,15 +1797,25 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           );
           const said = trimSilence(await decodeVoice(spoken, signal));
           if (said.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
-          if (ranOn(line.said, pcmSeconds(said), creditRunOn))
+          if (ranOn(sayLine, pcmSeconds(said), creditRunOn))
             log(
-              `The Kade-AI ${where} credit's voice ran on: ${seconds1(pcmSeconds(said))} for about ${seconds1(spokenSeconds(line.said))} of words (take ${take + 1} of ${creditTakes}).`,
+              `The Kade-AI ${where} credit's voice ran on: ${seconds1(pcmSeconds(said))} for about ${seconds1(spokenSeconds(sayLine))} of words (take ${take + 1} of ${creditTakes}).`,
             );
-          else words = said;
+          else {
+            const verdict = await heardBack(
+              sayLine,
+              said,
+              `The Kade-AI ${where} credit (take ${take + 1} of ${creditTakes})`,
+            );
+            if (verdict === 'clean') words = said;
+            else if (verdict === 'long' && (!longTake || said.length < longTake.length))
+              longTake = said;
+          }
         } finally {
           await rm(spoken, { force: true });
         }
       }
+      words ??= longTake ?? null;
       if (!words) throw new Error(`its voice ran on past the words ${creditTakes} times`);
       let logo: Float32Array | null = null;
       if (own)

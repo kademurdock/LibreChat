@@ -250,6 +250,64 @@ test('ledger: names in her notes are known from the start, and a known link is n
   assert.equal(cues[0].text, 'Uncle Bob lifts the cake.');
 });
 
+test('ledger: a character the listener knows by name keeps the name when the model drifts back to the label (Napoleon, Oct 18 2026)', () => {
+  const napoleon = { id: 'P1', label: 'the white puppy', name: 'Napoleon', look: '' };
+  const birdo = { id: 'P6', label: 'the pink and grey bird', name: 'Birdo', look: '' };
+  const state = {
+    kind: 'film or TV',
+    setting: '',
+    people: [napoleon, birdo],
+    speakers: [],
+    recent: [],
+    reveals: { napoleon: 85.96, birdo: 611.69 },
+    heard: { labels: ['the white puppy', 'the pink and grey bird'], names: { Napoleon: 'the white puppy', Birdo: 'the pink and grey bird' } },
+  };
+  const gate = (cues, people = [napoleon, birdo]) =>
+    gateCues({ cues, people, state, words: [], notes: '', sectionStart: 2168 }).cues.map((item) => item.text);
+  assert.deepEqual(
+    gate([
+      cue(0.5, 'The pink and grey bird glides over a snowy mountain slope.', 'The pink and grey bird glides.', { who: ['P6'] }),
+      cue(14, 'Napoleon and the pink and grey bird look at one another.', 'Napoleon and the bird look.', { who: ['P1', 'P6'] }),
+      cue(36.5, "Napoleon sniffs the pink and grey bird's neck.", "Napoleon sniffs the bird's neck.", { who: ['P1', 'P6'] }),
+      cue(71.7, 'A horse gallops through the bushes and knocks the bird aside.', 'A horse knocks the bird aside.', { who: ['P6'] }),
+      cue(80, 'The white puppy glares at the bird.', 'The puppy glares.', { who: ['P1'] }),
+      cue(84, 'Napoleon the puppy watches from the shadows.', 'Napoleon watches.', { who: ['P1'] }),
+    ]),
+    [
+      'Birdo glides over a snowy mountain slope.',
+      'Napoleon and Birdo look at one another.',
+      "Napoleon sniffs Birdo's neck.",
+      'A horse gallops through the bushes and knocks Birdo aside.',
+      'Napoleon glares at Birdo.',
+      'Napoleon watches from the shadows.',
+    ],
+  );
+  assert.deepEqual(
+    gate([cue(1, 'A pink and grey bird lands beside Napoleon.'), cue(2, 'Four birds squawk at the puppy.')]),
+    ['A pink and grey bird lands beside Napoleon.', 'Four birds squawk at Napoleon.'],
+    'another bird of the same kind is left alone; a plural is another noun',
+  );
+  const nancy = { id: 'P18', label: 'the cream-colored puppy', name: '', look: '' };
+  assert.deepEqual(
+    gate([cue(1, 'The puppy climbs onto the white puppy\'s back.', 'The puppy climbs on.', { who: ['P18', 'P1'] })], [napoleon, nancy]),
+    ["The puppy climbs onto Napoleon's back."],
+    'with two puppies in the clip, "the puppy" could be either one',
+  );
+  const bob = { id: 'P2', label: 'the man in the red cap', name: 'Uncle Bob', look: '' };
+  const withBob = { ...state, people: [bob], reveals: { 'uncle bob': 0 }, heard: { labels: ['the man in the red cap'], names: { 'Uncle Bob': 'the man in the red cap' } } };
+  const gateBob = (cues) =>
+    gateCues({ cues, people: [bob], state: withBob, words: [], notes: '', sectionStart: 0 }).cues.map((item) => item.text);
+  assert.deepEqual(
+    gateBob([
+      cue(1, 'The man in the red cap lifts the cake.', 'He lifts it.', { who: ['P2'] }),
+      cue(2, 'The man waves.', 'He waves.', { who: ['P2'] }),
+      cue(3, 'A dog barks at the man.', 'A dog barks.'),
+    ]),
+    ['Uncle Bob lifts the cake.', 'Uncle Bob waves.', 'A dog barks at the man.'],
+    'an everyday noun like "the man" becomes the name only in a description about him',
+  );
+});
+
 test('ledger: the first cue about a person the listener has not met becomes essential', () => {
   const { cues } = gateCues({
     cues: [

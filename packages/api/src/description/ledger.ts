@@ -411,6 +411,55 @@ function dropJoin(text: string, name: string, label: string): string {
     .replace(/\s+([,.!?])/g, '$1');
 }
 
+/** The noun a label is built on: "the pink and grey bird" -> "bird", "the man in a red coat" -> "man". */
+function labelHead(label: string): string | undefined {
+  const core = labelCore(label).split(
+    /\s+(?:in|with|on|at|of|from|wearing|holding|carrying|near|under|by|beside|behind|who|that)\s+/,
+  )[0];
+  const head = core.split(/\s+/).pop();
+  return head && /^\p{L}[\p{L}'’-]*$/u.test(head) ? head : undefined;
+}
+/** Heads too common to stand for one person unless the description is about that person. */
+const everyday = new Set(['man', 'woman', 'boy', 'girl', 'person', 'kid', 'child', 'guy', 'lady']);
+
+/**
+ * Once the listener knows a character's name, the model sometimes drifts back to the label: on
+ * Kade's Napoleon (Oct 18 2026) the cockatoo was "Birdo" from minute 10, then "the pink and grey
+ * bird" and "the bird" for nine descriptions around minute 37, and Napoleon "the white puppy",
+ * while the look itself still listed both by name. Here the label with "the" ("the pink and grey
+ * bird", "the pink and grey bird's") becomes the name, and so does its bare noun ("the bird") when
+ * nobody else in the clip is labelled with that noun (an everyday noun such as "the man" only in a
+ * description about that person). "A pink and grey bird" is left alone: it may be another one.
+ */
+function useName(text: string, person: Person, present: Person[], about: boolean): string {
+  const name = person.name.trim();
+  /** "Napoleon the white puppy" keeps the name once, not "Napoleon Napoleon". */
+  const swap = (out: string, words: string) =>
+    out.replace(
+      pattern(
+        `${edge}(?:(${escape(name).replace(/\s+/g, '\\s+')})\\s+)?the\\s+${escape(words).replace(/\s+/g, '\\s+')}((?:['’]s)?)${after}`,
+        'giu',
+      ),
+      (_match: string, written: string | undefined, possessive: string) =>
+        (written ?? name) + (possessive ? "'s" : ''),
+    );
+  const core = labelCore(person.label);
+  let out = core ? swap(text, core) : text;
+  const head = labelHead(person.label);
+  if (
+    head &&
+    head.toLowerCase() !== core &&
+    (about || !everyday.has(head.toLowerCase())) &&
+    !present.some(
+      (other) =>
+        other.label.toLowerCase() !== person.label.toLowerCase() &&
+        labelHead(other.label)?.toLowerCase() === head.toLowerCase(),
+    )
+  )
+    out = swap(out, head);
+  return out;
+}
+
 function known(people: Person[], state: Continuity | null): Person[] {
   const all: Person[] = [];
   for (const person of [...people, ...(state?.people ?? [])]) {
@@ -506,6 +555,10 @@ export function gateCues(input: {
     } else everyone.push({ ...ref, id: undefined });
   }
   const people = everyone.filter((person) => person.name);
+  /** Everyone the look saw in this clip, as the ledger knows them. */
+  const present = input.people.map(
+    (person) => resolvePerson(person.id ?? person.label, everyone) ?? person,
+  );
   const names = [...new Set(people.map((person) => person.name))];
   const labels = everyone.map((person) => person.label);
   const reveals = revealsFor(names, input.words, input.notes, input.state?.reveals);
@@ -551,8 +604,11 @@ export function gateCues(input: {
         continue;
       }
       if (linked.has(key)) {
-        text = dropJoin(text, person.name, person.label);
-        shortText = dropJoin(shortText, person.name, person.label);
+        const about = (cue.who ?? []).some(
+          (id) => resolvePerson(id, everyone)?.label.toLowerCase() === person.label.toLowerCase(),
+        );
+        text = useName(dropJoin(text, person.name, person.label), person, present, about);
+        shortText = useName(dropJoin(shortText, person.name, person.label), person, present, about);
         continue;
       }
       if (recognized(person)) {

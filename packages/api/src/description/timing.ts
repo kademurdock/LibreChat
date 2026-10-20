@@ -284,6 +284,58 @@ export function ranOn(words: string, seconds: number, limit: RunOnLimit = lineRu
 }
 
 /**
+ * How long a take is against this voice's own pace in this job (`pace`: raw seconds per byte of
+ * what was sent, after the engine's speed). `ranOn` is sized for the slowest voice on the slowest
+ * line, so a voice that says a line two or three times passes it: on Napoleon (Oct 18 2026) Kade's
+ * Fish voice said "Text reads, Sound Designers JAMES CURRIE and CRAIG CARTER." three times in one
+ * 10.6 s take, under both `ranOn` (15.2 s) and the voice proxy's own guard (12.4 s). Against that
+ * film's own pace its 615 other clips took at most 1.58 times their words, and the repeat 3.03.
+ * `suspect` asks for a listen (engine.ts `voice`); `strong` alone retakes when nothing could
+ * listen. KADE_VOICE_RUNON=0 turns both off.
+ */
+export type PaceCheck = { expected: number; suspect: boolean; strong: boolean };
+export function paceCheck(words: string, seconds: number, pace: number): PaceCheck {
+  const expected = (spokenSeconds(words) / 0.0625) * pace;
+  if (process.env.KADE_VOICE_RUNON === '0' || !(expected > 0))
+    return { expected, suspect: false, strong: false };
+  return {
+    expected,
+    suspect: seconds > 1.4 * expected + 0.3,
+    strong: seconds > 1.8 * expected + 0.6,
+  };
+}
+
+const heardWords = (text: string): string[] =>
+  text
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .match(/[\p{L}\p{N}']+/gu) ?? [];
+
+/**
+ * Whether what a listener heard in a take says the line more often than the line itself does, or
+ * carries on well past it (a run-on into the voice's reference recording). Misheard names only
+ * lower the matches, so they never make a clean take look repeated.
+ */
+export function repeatsWords(line: string, heard: string): boolean {
+  const said = heardWords(line);
+  const got = heardWords(heard);
+  if (!said.length || !got.length) return false;
+  if (got.length >= 1.6 * said.length + 2) return true;
+  const size = Math.min(3, said.length);
+  const count = (list: string[], gram: string) => {
+    let found = 0;
+    for (let i = 0; i + size <= list.length; i++)
+      if (list.slice(i, i + size).join(' ') === gram) found++;
+    return found;
+  };
+  for (let i = 0; i + size <= said.length; i++) {
+    const gram = said.slice(i, i + size).join(' ');
+    if (count(got, gram) > count(said, gram)) return true;
+  }
+  return false;
+}
+
+/**
  * Moves each description onto a scene cut that follows its time within 0.8 s, since the model
  * samples only a few frames a second. Never earlier, so nothing is described before it appears.
  * Finite card readings keep their exact visible window.

@@ -108,6 +108,64 @@ export function spokenForm(text: string, names: readonly string[] = []): string 
   return said;
 }
 
+/** An all-capital word, apostrophes and inner hyphens included ("O'BRIEN", "JEAN-LUC"). */
+const capitalWord = /(?<![\p{L}\p{N}])\p{Lu}[\p{Lu}'’-]*\p{Lu}(?![\p{L}\p{N}])/gu;
+/** Short words that join capital names on cards ("THE SAMUEL GOLDWYN COMPANY"). */
+const joiningWords = new Set(['THE', 'AND', 'OF', 'FOR', 'IN', 'ON', 'AT', 'TO', 'BY', 'AN', 'OR']);
+
+/** A capital word that reads as a name or word, not letters: "CURRIE", "NASA"; not "KOLR", "ESPN". */
+function wordLike(word: string): boolean {
+  const letters = word.replace(/['’-]/g, '');
+  if (/^[IVXLCDM]+$/.test(letters)) return false;
+  const vowels = (letters.match(/[AEIOU]/g) ?? []).length;
+  if (letters.length >= 5) return vowels > 0 || /Y/.test(letters.slice(1));
+  return letters.length === 4 && vowels >= 2;
+}
+
+/** "O'BRIEN" -> "O'Brien", "JEAN-LUC" -> "Jean-Luc", "IT'S" -> "It's". */
+function ordinaryCase(word: string): string {
+  return word
+    .toLowerCase()
+    .replace(
+      /^(\p{L})(['’])(\p{L})/u,
+      (_: string, a: string, mark: string, b: string) => a.toUpperCase() + mark + b.toUpperCase(),
+    )
+    .replace(
+      /(^|-)(\p{L})/gu,
+      (_: string, mark: string, first: string) => mark + first.toUpperCase(),
+    );
+}
+
+/**
+ * All-capital words copied from the screen ("Sound Designers JAMES CURRIE and CRAIG CARTER"), as a
+ * Fish voice is sent them: in ordinary case. On Napoleon (Oct 18 2026) that card is the line Kade's
+ * Fish voice said three times in one take. Captions and the saved text keep the capitals. Only
+ * words that read as words change; letters stay letters ("MGM", "FBI", "ESPN", call letters such as
+ * "KOLR", Roman numerals), and a short joining word changes with a name beside it ("THE END" stays,
+ * "THE SAMUEL GOLDWYN COMPANY" becomes "The Samuel Goldwyn Company").
+ */
+export function plainCapitals(text: string): string {
+  const words = [...text.matchAll(capitalWord)];
+  const change = words.map((match) => wordLike(match[0]));
+  const touching = (a: number, b: number) =>
+    a >= 0 &&
+    b < words.length &&
+    /^\s+$/.test(text.slice((words[a].index ?? 0) + words[a][0].length, words[b].index));
+  for (let pass = 0; pass < 2; pass++)
+    words.forEach((match, i) => {
+      if (change[i] || !joiningWords.has(match[0])) return;
+      change[i] = (touching(i - 1, i) && change[i - 1]) || (touching(i, i + 1) && change[i + 1]);
+    });
+  let result = '';
+  let from = 0;
+  words.forEach((match, i) => {
+    const at = match.index ?? 0;
+    result += text.slice(from, at) + (change[i] ? ordinaryCase(match[0]) : match[0]);
+    from = at + match[0].length;
+  });
+  return result + text.slice(from);
+}
+
 /** Words that judge character or motive rather than describe; removing them never breaks a sentence. */
 const opinions =
   /\s*\b(?:evilly|mockingly|hysterically|blissfully|menacingly|smugly|sinisterly|maliciously|wickedly|deviously|slyly|sneakily|arrogantly|cruelly|spitefully|sarcastically|condescendingly|happily|gleefully|joyfully|triumphantly|proudly|in (?:horror|disbelief|shock|confusion|terror|dismay|astonishment|fury|anger|rage|glee|triumph|frustration|delight|panic)|with (?:rage|contempt|disdain|glee|delight|fury))\b/g;
@@ -254,7 +312,7 @@ function continuityText(state: Continuity | null): string {
       ? `Labels the listener has heard: ${JSON.stringify(state.heard.labels)}`
       : '',
     names.length
-      ? `Names the listener has heard, with the label each belongs to: ${names.map(([name, label]) => `${name} = ${label}`).join('; ')}`
+      ? `NAMES THE LISTENER ALREADY KNOWS, with the label each belongs to. Call these by name in every description from now on, never by their label or by what kind of animal or person they are: ${names.map(([name, label]) => `${name} = ${label}`).join('; ')}`
       : '',
     state.left?.length
       ? `Descriptions from the last clip that were left out, so the listener never heard them: ${JSON.stringify(state.left)}`
@@ -475,7 +533,7 @@ PEOPLE AND NAMES
 Give every person an id. Reuse the id from PEOPLE SO FAR for someone already listed and keep that person's label exactly; give a new person the next unused number (P1, P2 and so on).
 Introduce each new person with a few words about how they look. Describe approximate age, build, hair, skin tone and clothing in neutral words, and the same way for everyone. Use neutral build words such as slim, tall or heavyset, never judgmental ones about weight or attractiveness. Do not state ethnicity, nationality, religion or gender identity unless the video or the listener's notes establish it. Mention a disability or mobility aid only when it is visible and matters to what happens.
 ${brief.survey ? "Record a person's name only when it is spoken in the dialogue or shown on screen in this clip, or given in the listener's notes, or when they are a well-known character as described below." : "Use a name only once it has been spoken in the dialogue, read from the screen in one of your cues, or given in the listener's notes; before that, use the same short visual label every time. Well-known characters, below, are the one exception."} Never invent a name, and never guess a real person's identity from their face.
-The first time you use a name, join it to the label the listener already knows: the label first, then a comma and the name. After that, use the name alone.
+The first time you use a name, join it to the label the listener already knows: the label first, then a comma and the name. After that, use the name alone, for the rest of the video: in this clip and every later one, a character the listener knows by name is always called by that name, never again by the label or by what kind of animal or person they are.
 WELL-KNOWN CHARACTERS: a cartoon, animated, puppet, mascot, video game or comic character with a famous design, such as Bugs Bunny, Big Bird, Mario or SpongeBob SquarePants, is named from their first appearance, because recognizing a famous fictional design is not identifying a real person. Do this only when you are confident: the design is unmistakable and fits the show, the other characters, the voices and the source metadata. Set nameFrom to known, and start its look with what kind of character it is, such as cartoon, puppet, mascot costume or game character. The first time, give the full name followed by a few words about how the character looks; after that, use the short name the character usually goes by. If the listener already heard this character under a visual label, join the label and the name once, as above. When you are unsure, or a character only resembles a famous one, keep a visual label and leave the name empty. A performer in a character costume is named as the character, never as the performer. A cartoon or caricature of a real person counts as a real person. Never name a character whose identity the story is still hiding, such as one in a disguise that fools the audience too.
 The title and the source metadata may name a brand, station or programme only when a matching logo, call letters or text is at least partly visible, and may confirm a well-known character whose look on screen matches. Never use them to name a real person, or to give a year or a market the screen does not show.
 In a compilation of commercials, idents or clips, people in one item are different people from those in another unless it is clearly the same person.

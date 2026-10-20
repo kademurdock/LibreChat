@@ -18,8 +18,20 @@ export function narratorLabel(
     : catalog.voices;
   if (allowed.includes(name)) return name;
   const renamed = catalog.renames?.[name];
-  return renamed && allowed.includes(renamed) ? renamed : undefined;
+  /**
+   * Since Oct 15 2026 every Inworld voice is listed as "<label> (Classic)" while a stored "Voice N"
+   * still renames to the plain label, which is hidden: without the Classic spelling the house
+   * narrator fell back to the first voice in the list (a Fish voice) and "Good for describing"
+   * came up empty.
+   */
+  for (const candidate of [renamed, renamed && `${renamed} (Classic)`, `${name} (Classic)`])
+    if (candidate && allowed.includes(candidate)) return candidate;
+  return undefined;
 }
+
+/** Whether a catalog label is this visible choice, itself or its "(Classic)" spelling. */
+export const sameNarrator = (label: string, visible: string): boolean =>
+  label === visible || `${label} (Classic)` === visible;
 
 export const retainedNarrators = (catalog: NarratorCatalog): string[] => [
   ...new Set([...(catalog.hidden ?? []), ...(catalog.aliases ?? [])]),
