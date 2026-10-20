@@ -59,7 +59,10 @@ function fakeLedger() {
     find: (q) => ({ sort: () => ({ limit: () => lean(rows.filter((r) => matches(r, q)).slice().reverse()) }) }),
     findOneAndUpdate: (q, u) => {
       const row = rows.find((r) => matches(r, q));
-      if (row) Object.assign(row, u.$set);
+      if (row) {
+        Object.assign(row, u.$set);
+        for (const [k, n] of Object.entries(u.$inc || {})) row[k] = (row[k] || 0) + n;
+      }
       return lean(row ? { ...row } : null);
     },
     updateOne: async (q, u) => {
@@ -78,10 +81,12 @@ function fakeLedger() {
 /** Oct 20 2026: the balances collection the refund route credits ($inc with upsert, like add-credits). */
 function fakeBalances(start = {}) {
   const credits = { ...start };
-  const ctl = { fail: false, calls: [] };
+  /* fail: the write is refused; failAfterWrite: the write lands but the reply is lost (a timeout). */
+  const ctl = { fail: false, failAfterWrite: false, calls: [] };
   return {
     credits,
     ctl,
+    findOne: (q) => lean(String(q.user) in credits ? { user: q.user, tokenCredits: credits[String(q.user)] } : null),
     findOneAndUpdate: (q, u, opts) => {
       ctl.calls.push({ q, u, opts });
       const k = String(q.user);
@@ -89,6 +94,7 @@ function fakeBalances(start = {}) {
         lean: async () => {
           if (ctl.fail) throw new Error('balance write refused');
           credits[k] = (credits[k] || 0) + u.$inc.tokenCredits;
+          if (ctl.failAfterWrite) throw new Error('socket timeout');
           return { user: q.user, tokenCredits: credits[k] };
         },
       };
@@ -254,6 +260,7 @@ test('a refund credits the balance once per clientKey and leaves a refund row wi
   assert.equal(ledger.rows[0].note, 'Family at-cost refund Sept-Oct 2026');
   assert.equal(ledger.rows[0].clientKey, REFUND_KEY);
   assert.equal(ledger.rows[0].balanceAfterUSD, 39.74);
+  assert.equal(ledger.rows[0].creditState, 'paid');
   assert.equal(String(ledger.rows[0].addedBy), KADE);
   assert.equal(ledger.rows[0].via, 'admin');
   assert.equal(first.body.entry.kind, 'refund');
@@ -295,18 +302,72 @@ test('refunds: only Kade or the ops secret; a clientKey is required; bad amounts
   }
 });
 
-test('refunds: a balance write that fails lets go of the key, so a retry can pay it', async () => {
+test('refunds: a refused balance write keeps the row; a retry asks for confirmUnpaid, then pays once', async () => {
   const request = require('supertest');
   const balances = fakeBalances({ [HOLLY]: 1000000 });
   const { a, ledger } = app({ balances });
   const body = { userId: HOLLY, usd: 0.17, clientKey: `family-atcost-refund-2026-09-10:${HOLLY}` };
   balances.ctl.fail = true;
-  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(503);
-  assert.equal(ledger.rows.length, 0, 'no refund row is left claiming money that never landed');
+  const failed = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(503);
+  assert.equal(failed.body.creditState, 'unknown');
+  assert.equal(ledger.rows.length, 1, 'the row keeps the key');
+  assert.equal(ledger.rows[0].creditState, 'unknown');
+  assert.equal(ledger.rows[0].balanceAfterUSD ?? null, null);
   balances.ctl.fail = false;
-  const ok = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(200);
+  /* A plain retry moves no money: it shows the balance and asks for confirmation. */
+  const ask = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(409);
+  assert.equal(ask.body.balanceUSD, 1);
+  assert.match(ask.body.error, /confirmUnpaid: true/);
+  assert.equal(ask.body.entry.creditState, 'unknown');
+  assert.equal(balances.ctl.calls.length, 1);
+  /* Confirming a different amount under the same key is refused. */
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, usd: 0.5, confirmUnpaid: true }).expect(409);
+  assert.equal(balances.ctl.calls.length, 1);
+  const ok = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, confirmUnpaid: true }).expect(200);
+  assert.equal(ok.body.retried, true);
   assert.equal(ok.body.balanceUSD, 1.17);
+  assert.equal(balances.credits[HOLLY], 1170000);
   assert.equal(ledger.rows.length, 1);
+  assert.equal(ledger.rows[0].creditState, 'paid');
+  assert.equal(ledger.rows[0].balanceAfterUSD, 1.17);
+  assert.equal(ledger.rows[0].creditAttempts, 2);
+  /* Paid now: the same key, even with confirmUnpaid, is a duplicate. */
+  const dup = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, confirmUnpaid: true }).expect(200);
+  assert.equal(dup.body.duplicate, true);
+  assert.equal(balances.credits[HOLLY], 1170000);
+  assert.equal(balances.ctl.calls.length, 2);
+});
+
+test('refunds: a write that landed but lost its reply is never paid twice by a same-key retry', async () => {
+  const request = require('supertest');
+  const balances = fakeBalances({ [AMBER]: 20431341 });
+  const { a, ledger } = app({ balances });
+  const body = { userId: AMBER, usd: 19.31, clientKey: REFUND_KEY };
+  balances.ctl.failAfterWrite = true;
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(503);
+  balances.ctl.failAfterWrite = false;
+  assert.equal(balances.credits[AMBER], 20431341 + 19310000, 'the credit landed');
+  for (let i = 0; i < 3; i += 1) {
+    const r = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(409);
+    assert.equal(r.body.balanceUSD, 39.74, 'the operator sees the refund is already in the balance');
+  }
+  assert.equal(balances.credits[AMBER], 20431341 + 19310000, 'retries moved no money');
+  assert.equal(balances.ctl.calls.length, 1);
+  assert.equal(ledger.rows.length, 1);
+  /* Two confirmed retries sent at once: only one can claim the row. */
+  const send = () => request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, userId: HOLLY, clientKey: 'race-key-holly-0001', confirmUnpaid: true });
+  balances.ctl.fail = true;
+  await send().expect(503);
+  balances.ctl.fail = false;
+  const before = balances.ctl.calls.length;
+  const raced = await Promise.all([send(), send()]);
+  /* The other one either lost the claim (409) or came after and saw a paid row (duplicate). */
+  assert.equal(raced.filter((r) => r.body.retried === true).length, 1, 'one confirmed retry paid');
+  assert.ok(raced.every((r) => r.status === 409 || (r.status === 200 && (r.body.retried || r.body.duplicate))));
+  assert.equal(balances.ctl.calls.length, before + 1, 'one balance write');
+  assert.equal(ledger.rows.find((r) => r.clientKey === 'race-key-holly-0001').creditAttempts, 2);
+  const schema = require('fs').readFileSync(require('path').join(API, 'models/kadeFunding.js'), 'utf8');
+  assert.match(schema, /creditState: \{ type: String, enum: \['paying', 'paid', 'unknown'\] \}/);
 });
 
 test('refunds are listed with kind=refund and never count as paid back', async () => {

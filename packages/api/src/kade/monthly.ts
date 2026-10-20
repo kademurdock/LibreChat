@@ -37,6 +37,7 @@ export interface MonthlyBooksReport {
   extraRecords: { costUSD: number; voiceEstimateUSD: number; voiceEstimateRows: number };
   repayments: { recordedUSD: number; count: number };
   grants: { netUSD: number; count: number };
+  refunds: { netUSD: number; count: number };
   coverage: {
     chatRows: number;
     extraRows: number;
@@ -125,7 +126,7 @@ export interface MonthlyExtraGroup {
 }
 
 export interface MonthlyLedgerGroup {
-  _id: 'repayment' | 'grant';
+  _id: 'repayment' | 'grant' | 'refund';
   usd: number;
   count: number;
 }
@@ -212,7 +213,7 @@ export function monthlyPipelines(
       $match: {
         at: { $gte: window.from, $lt: window.to },
         voidedAt: null,
-        kind: { $in: ['repayment', 'grant'] },
+        kind: { $in: ['repayment', 'grant', 'refund'] },
       },
     },
     { $group: { _id: '$kind', usd: { $sum: '$usd' }, count: { $sum: 1 } } },
@@ -258,6 +259,7 @@ export function summarizeMonthlyBooks(
     voiceEstimate: 0,
     repayment: 0,
     grant: 0,
+    refund: 0,
   };
   const counts = {
     chatRows: 0,
@@ -270,6 +272,7 @@ export function summarizeMonthlyBooks(
     missingAccountRows: 0,
     repayment: 0,
     grant: 0,
+    refund: 0,
   };
   const unknownAccounts = new Set<string>();
   const missingAccounts = new Set<string>();
@@ -326,6 +329,9 @@ export function summarizeMonthlyBooks(
     } else if (row._id === 'grant') {
       sums.grant += finite(row.usd);
       counts.grant += finite(row.count);
+    } else if (row._id === 'refund') {
+      sums.refund += finite(row.usd);
+      counts.refund += finite(row.count);
     }
   }
 
@@ -360,6 +366,7 @@ export function summarizeMonthlyBooks(
     },
     repayments: { recordedUSD: cents(sums.repayment), count: counts.repayment },
     grants: { netUSD: cents(sums.grant), count: counts.grant },
+    refunds: { netUSD: cents(sums.refund), count: counts.refund },
     coverage: {
       chatRows: counts.chatRows,
       extraRows: counts.extraRows,
@@ -386,6 +393,7 @@ export function summarizeMonthlyBooks(
         'extrasChargedUSD and walletChargedUSD include inferred legacy extras; recorded fields exclude them.',
         'Extras and wallet amounts are signed net charges, preserving recorded negative refunds.',
         'Repayments are recorded cash received; grants are net credit allocations, not repayments.',
+        'Refunds are credit returned to balances for overcharges; they are never repayments and are not in grants.',
         'Provider-wide spend, unrecorded helpers and missing records are outside this accounting report.',
       ],
     },

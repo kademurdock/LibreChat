@@ -209,14 +209,17 @@ function createFundingRouter(options = {}) {
 
   /**
    * KADE Oct 20 2026, her words: "Yes: the fuller refund ($20.91), plus Amber's failed turns..."
-   * POST /refunds { userId, usd, note, clientKey }: gives usd back to a person's balance.
-   *   1. A ledger row of kind 'refund' (never counted as a repayment) claims the clientKey; the
-   *      ledger's unique index makes a second send with the same key answer duplicate: true and
-   *      move no money.
+   * POST /refunds { userId, usd, note, clientKey, confirmUnpaid? }: gives usd back to a balance.
+   *   1. A ledger row of kind 'refund' (never counted as a repayment) claims the clientKey, with
+   *      creditState 'paying'; the ledger's unique index makes a second send with the same key
+   *      answer duplicate: true and move no money.
    *   2. balances.tokenCredits += round(usd x 1e6), with the same upsert add-credits uses.
-   *   3. balanceAfterUSD is written back onto the row; a refund row whose balanceAfterUSD is null
-   *      means the credit did not land (the row is removed again when the balance write fails, so
-   *      a retry with the same key can pay it).
+   *   3. balanceAfterUSD and creditState 'paid' are written back onto the row.
+   * Review fix: a balance write that throws may still have landed (a timeout can hide a write that
+   * went through), so the row is KEPT, marked creditState 'unknown', and the answer is 503. A
+   * retry with the same key then answers 409 with the person's current balance and pays only
+   * when the operator, having checked that balance, sends confirmUnpaid: true (same person and
+   * amount). Only one request at a time can claim that second try (creditAttempts guards it).
    * Never a Transaction row: every chat readout sums tokenValue over all transaction rows, so a
    * credits row would be netted against a month's charges.
    */
@@ -226,9 +229,96 @@ function createFundingRouter(options = {}) {
       const v = funding.validateRefund(req.body || {});
       if (v.error) return res.status(400).json({ error: v.error });
       const { userId, usd, note, clientKey } = v.value;
+      const confirmUnpaid = Boolean(req.body && req.body.confirmUnpaid === true);
       const L = Ledger();
-      const duplicate = async () => {
+      const toUSD = (credits) => Math.round((Number(credits) || 0) / 1e4) / 100;
+      const currentBalanceUSD = async (uid) => {
+        const b = await Balances()
+          .findOne({ user: new mongoose.Types.ObjectId(String(uid)) }, { tokenCredits: 1 })
+          .lean();
+        return b ? toUSD(b.tokenCredits) : null;
+      };
+      const settled = (e) => e && (e.balanceAfterUSD != null || e.creditState === 'paid');
+      const person = await Users().findById(userId, { name: 1, username: 1 }).lean();
+      if (!person) return res.status(404).json({ error: 'No account for that person.' });
+      const name = person.name || person.username || 'them';
+      const names = new Map([[userId, name]]);
+      const via = req.kadeOps ? 'ops' : 'admin';
+
+      /** Move the money for a claimed row and record what it left. */
+      const pay = async (row, retried = false) => {
+        const credits = Math.round(usd * 1e6);
+        let balance;
+        try {
+          balance = await Balances()
+            .findOneAndUpdate(
+              { user: new mongoose.Types.ObjectId(userId) },
+              { $inc: { tokenCredits: credits } },
+              { new: true, upsert: true, setDefaultsOnInsert: true },
+            )
+            .lean();
+        } catch (e) {
+          /* The credit may or may not have landed. Keep the row, so the key can never pay twice. */
+          await L.updateOne({ _id: row._id }, { $set: { creditState: 'unknown' } }).catch(() => {});
+          logger.error(
+            `[kade/funding] refund ${row._id} to ${userId}: balance write failed, credit state unknown: ${e && e.message}`,
+          );
+          return res.status(503).json({
+            error:
+              'The balance write failed, so it is not known whether the refund landed. Check the balance before trying again; a retry with the same clientKey will ask you to confirm.',
+            creditState: 'unknown',
+            entry: { ...view(row, names), creditState: 'unknown' },
+          });
+        }
+        const balanceUSD = toUSD(balance && balance.tokenCredits);
+        await L.updateOne({ _id: row._id }, { $set: { balanceAfterUSD: balanceUSD, creditState: 'paid' } }).catch((e) =>
+          logger.warn(`[kade/funding] refund ${row._id}: balanceAfterUSD not written: ${e && e.message}`),
+        );
+        logger.info(
+          `[kade/funding] refund +$${usd.toFixed(2)} to ${userId} -> $${balanceUSD.toFixed(2)} via ${via}${retried ? ' (confirmed retry)' : ''}`,
+        );
+        return res.json({
+          ok: true,
+          ...(retried ? { retried: true } : {}),
+          entry: { ...view({ ...row, balanceAfterUSD: balanceUSD }, names), creditState: 'paid' },
+          credits,
+          balanceUSD,
+          spoken: `Refunded ${funding.dollars(usd)} to ${name}. Their balance is now ${funding.dollars(balanceUSD)}.`,
+        });
+      };
+
+      /** A row whose credit did not land for sure: tell the operator, or pay on confirmUnpaid. */
+      const unsettled = async (existing) => {
+        const balanceUSD = await currentBalanceUSD(existing.user).catch(() => null);
+        const entry = { ...view(existing, await nameOf([existing.user])), creditState: existing.creditState || 'unknown' };
+        if (!confirmUnpaid) {
+          return res.status(409).json({
+            error:
+              'A refund with this clientKey was recorded, but it is not known whether the credit reached the balance. Check the balance; if the refund is not in it, send the same request again with confirmUnpaid: true.',
+            entry,
+            balanceUSD,
+          });
+        }
+        if (String(existing.user) !== userId || Number(existing.usd) !== usd) {
+          return res.status(409).json({ error: 'That clientKey belongs to a different person or amount.', entry, balanceUSD });
+        }
+        const attempts = Number(existing.creditAttempts) || 0;
+        const claimed = await L.findOneAndUpdate(
+          { _id: existing._id, balanceAfterUSD: null, creditAttempts: attempts },
+          { $set: { creditState: 'paying' }, $inc: { creditAttempts: 1 } },
+          { new: true },
+        ).lean();
+        if (!claimed) {
+          return res
+            .status(409)
+            .json({ error: 'Another request is crediting this refund right now. Check again in a moment.', entry, balanceUSD });
+        }
+        return pay(claimed, true);
+      };
+
+      const duplicateOrUnsettled = async () => {
         const dup = await L.findOne({ clientKey }).lean();
+        if (dup && !settled(dup)) return unsettled(dup);
         return res.json({
           ok: true,
           duplicate: true,
@@ -236,11 +326,7 @@ function createFundingRouter(options = {}) {
           balanceUSD: dup && dup.balanceAfterUSD != null ? dup.balanceAfterUSD : null,
         });
       };
-      if (await L.exists({ clientKey })) return duplicate();
-      const person = await Users().findById(userId, { name: 1, username: 1 }).lean();
-      if (!person) return res.status(404).json({ error: 'No account for that person.' });
-      const name = person.name || person.username || 'them';
-      const via = req.kadeOps ? 'ops' : 'admin';
+      if (await L.exists({ clientKey })) return duplicateOrUnsettled();
       let doc;
       try {
         doc = await L.create({
@@ -252,39 +338,14 @@ function createFundingRouter(options = {}) {
           clientKey,
           addedBy: actorId(req),
           via,
+          creditState: 'paying',
+          creditAttempts: 1,
         });
       } catch (e) {
-        if (e && e.code === 11000) return duplicate();
+        if (e && e.code === 11000) return duplicateOrUnsettled();
         throw e;
       }
-      const row = doc.toObject ? doc.toObject() : doc;
-      const credits = Math.round(usd * 1e6);
-      let balance;
-      try {
-        balance = await Balances()
-          .findOneAndUpdate(
-            { user: new mongoose.Types.ObjectId(userId) },
-            { $inc: { tokenCredits: credits } },
-            { new: true, upsert: true, setDefaultsOnInsert: true },
-          )
-          .lean();
-      } catch (e) {
-        /* The credit did not land: let go of the key so a retry can pay it. */
-        await L.deleteOne({ _id: row._id }).catch(() => {});
-        throw e;
-      }
-      const balanceUSD = Math.round(((balance && balance.tokenCredits) || 0) / 1e4) / 100;
-      await L.updateOne({ _id: row._id }, { $set: { balanceAfterUSD: balanceUSD } }).catch((e) =>
-        logger.warn(`[kade/funding] refund ${row._id}: balanceAfterUSD not written: ${e && e.message}`),
-      );
-      logger.info(`[kade/funding] refund +$${usd.toFixed(2)} to ${userId} -> $${balanceUSD.toFixed(2)} via ${via}`);
-      res.json({
-        ok: true,
-        entry: view({ ...row, balanceAfterUSD: balanceUSD }, new Map([[userId, name]])),
-        credits,
-        balanceUSD,
-        spoken: `Refunded ${funding.dollars(usd)} to ${name}. Their balance is now ${funding.dollars(balanceUSD)}.`,
-      });
+      return pay(doc.toObject ? doc.toObject() : doc);
     }),
   );
 

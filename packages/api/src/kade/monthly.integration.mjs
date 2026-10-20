@@ -251,12 +251,15 @@ test('real ledger excludes voided/outside rows and keeps repayments apart from n
       entry('repayment', 100, { at: window.to }),
       entry('grant', 100, { at: beforeMonth }),
       entry('grant', 100, { at: window.to }),
+      entry('refund', 19.31),
+      entry('refund', 100, { voidedAt: inside }),
       entry('other', 100),
     ],
   });
   const result = await data.books();
   assert.deepEqual(result.repayments, { recordedUSD: 35, count: 2 });
   assert.deepEqual(result.grants, { netUSD: 8, count: 2 });
+  assert.deepEqual(result.refunds, { netUSD: 19.31, count: 1 });
   assert.equal(result.nonAdmin.walletChargedUSD, 0);
 });
 

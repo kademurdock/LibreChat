@@ -30,6 +30,11 @@ const kadeFundingEntrySchema = new mongoose.Schema(
     via: { type: String, enum: ['admin', 'ops'], default: 'admin' },
     /* Balance after a grant or a refund, for the record. */
     balanceAfterUSD: { type: Number, default: null },
+    /* Refunds only (Oct 20 2026 review): 'paying' while the balance write is in flight, 'paid' once
+     * it landed, 'unknown' when the write threw (it may still have landed; a same-key retry must be
+     * confirmed with confirmUnpaid). creditAttempts lets only one retry claim the row. */
+    creditState: { type: String, enum: ['paying', 'paid', 'unknown'] },
+    creditAttempts: { type: Number },
     /* One per form submit: a double tap records once. */
     clientKey: { type: String, maxlength: 64 },
     voidedAt: { type: Date, default: null },

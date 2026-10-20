@@ -70,7 +70,7 @@ test('query contracts use half-open bounds and chat debit rows only', async () =
     $match: {
       at: { $gte: window.from, $lt: window.to },
       voidedAt: null,
-      kind: { $in: ['repayment', 'grant'] },
+      kind: { $in: ['repayment', 'grant', 'refund'] },
     },
   });
   assert.equal(pipelines.chat[1].$lookup.from, 'accountcollection');
@@ -191,11 +191,14 @@ test('repayments and net grants do not change recorded usage charges', async () 
       { _id: 'repayment', usd: 30, count: 2 },
       { _id: 'grant', usd: 5, count: 1 },
       { _id: 'grant', usd: -2, count: 1 },
+      { _id: 'refund', usd: 19.31, count: 1 },
     ],
   );
   assert.deepEqual(result.repayments, { recordedUSD: 30, count: 2 });
   assert.deepEqual(result.grants, { netUSD: 3, count: 2 });
+  assert.deepEqual(result.refunds, { netUSD: 19.31, count: 1 }, 'a refund is its own line, never a repayment or a grant');
   assert.equal(result.nonAdmin.walletChargedUSD, 10);
+  assert.match(result.coverage.notes.join(' '), /Refunds are credit returned to balances for overcharges/);
 });
 
 test('refund-only months retain signed recorded and inferred extras separately', async () => {
