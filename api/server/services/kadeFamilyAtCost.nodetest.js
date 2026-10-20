@@ -292,6 +292,124 @@ test('client.js: the recursion limit gives a plain line, no raw error, and marks
   assert.match(src, /async recordTokenUsage\(\{[^]*?const pricing = this\.kadeChargePricing\(\);/);
 });
 
+/* ---- review: failed turns are uncharged only at the platform's own limit, a few a day -------- */
+
+/* The platform's yaml: agents.recursionLimit 14, maxRecursionLimit 1000 (kade-config.yaml). */
+const AGENTS_YAML = { recursionLimit: 14, maxRecursionLimit: 1000 };
+const resolveLimit = (() => {
+  if (tsx) {
+    try {
+      return require(path.join(ROOT, 'packages/api/src/agents/config.ts')).resolveRecursionLimit;
+    } catch (_) {
+      /* fall through */
+    }
+  }
+  /* The same cascade as packages/api/src/agents/config.ts, for runs without tsx. */
+  return (cfg, agent) => {
+    let limit = cfg?.recursionLimit ?? 50;
+    if (typeof agent?.recursion_limit === 'number' && agent.recursion_limit > 0) limit = agent.recursion_limit;
+    if (typeof cfg?.maxRecursionLimit === 'number' && cfg.maxRecursionLimit > 0 && limit > cfg.maxRecursionLimit) limit = cfg.maxRecursionLimit;
+    return limit;
+  };
+})();
+const limitsFor = (agent) => ({ agent: resolveLimit(AGENTS_YAML, agent), platform: resolveLimit(AGENTS_YAML, {}) });
+const SEARCHING = [{ type: 'tool_call', tool_call: { name: 'web_search' } }, { type: 'text', text: 'Let me look that up.' }];
+const ANSWERED = [{ type: 'text', text: 'Here is your full answer. '.repeat(12) }, { type: 'tool_call', tool_call: { name: 'kade_wikipedia' } }];
+
+test('failed turns: uncharged at the platform limit; an agent whose limit was lowered to 2 is charged', async () => {
+  const none = async () => 0;
+  const kiana = await R.failedTurnUncharged({ ...toLimits(limitsFor({})), contentParts: SEARCHING, countRecent: none, env: {} });
+  assert.deepEqual(kiana, { uncharged: true, why: 'recursion_limit', recent: 0 });
+  const forge = await R.failedTurnUncharged({ ...toLimits(limitsFor({ recursion_limit: 999 })), contentParts: SEARCHING, countRecent: none, env: {} });
+  assert.equal(forge.uncharged, true, 'a raised limit (Forge 999) still counts as the platform limit or above');
+  const lowered = await R.failedTurnUncharged({ ...toLimits(limitsFor({ recursion_limit: 2 })), contentParts: SEARCHING, countRecent: none, env: {} });
+  assert.deepEqual(lowered, { uncharged: false, why: 'agent_limit_below_platform' });
+  const thirteen = await R.failedTurnUncharged({ ...toLimits(limitsFor({ recursion_limit: 13 })), contentParts: SEARCHING, countRecent: none, env: {} });
+  assert.equal(thirteen.uncharged, false);
+  const unknown = await R.failedTurnUncharged({ contentParts: SEARCHING, countRecent: none, env: {} });
+  assert.equal(unknown.uncharged, false, 'no limits recorded: charged as usual');
+});
+function toLimits(l) {
+  return { agentLimit: l.agent, platformLimit: l.platform };
+}
+
+test('failed turns: the 4th in 24 hours is charged; a streamed answer is charged; the switch and a failed count charge', async () => {
+  const at = toLimits(limitsFor({}));
+  for (const n of [0, 1, 2]) {
+    assert.equal((await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => n, env: {} })).uncharged, true, `${n} before`);
+  }
+  assert.deepEqual(await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => 3, env: {} }), { uncharged: false, why: 'daily_cap', recent: 3 });
+  assert.equal((await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => 3, env: { KADE_UNCHARGED_PER_DAY: '5' } })).uncharged, true);
+  assert.equal((await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => 0, env: { KADE_UNCHARGED_PER_DAY: '0' } })).uncharged, false);
+  assert.deepEqual(await R.failedTurnUncharged({ ...at, contentParts: ANSWERED, countRecent: async () => 0, env: {} }), { uncharged: false, why: 'answer_streamed' });
+  assert.deepEqual(await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => 0, env: { KADE_UNCHARGED_FAILED_TURNS: '0' } }), { uncharged: false, why: 'switched_off' });
+  assert.deepEqual(
+    await R.failedTurnUncharged({ ...at, contentParts: SEARCHING, countRecent: async () => { throw new Error('db down'); }, env: {} }),
+    { uncharged: false, why: 'count_failed' },
+  );
+  assert.equal(R.unchargedPerDay({}), 3);
+  assert.equal(R.unchargedPerDay({ KADE_UNCHARGED_PER_DAY: 'x' }), 3);
+});
+
+test('failed turns: the daily count is distinct uncharged turns for the payer in the last 24 hours', async () => {
+  const seen = [];
+  const Transaction = { distinct: async (field, q) => (seen.push([field, q]), ['m1', 'm2', null, 'm3']) };
+  const now = new Date('2026-10-20T21:00:00Z');
+  assert.equal(await R.countUnchargedRecent(AMBER._id, { Transaction, now }), 3);
+  assert.equal(seen[0][0], 'messageId');
+  assert.deepEqual(seen[0][1], { user: AMBER._id, kadeUncharged: { $exists: true }, createdAt: { $gte: new Date('2026-10-19T21:00:00Z') } });
+  assert.equal(await R.countUnchargedRecent(null, { Transaction, now }), 0);
+});
+
+test('client.js: the verdict uses the recorded limits and the payer; the 4th failed turn and a lowered agent are charged', async () => {
+  const src = fs.readFileSync(path.join(ROOT, 'api/server/controllers/agents/client.js'), 'utf8');
+  const start = src.indexOf('  kadePayer() {');
+  const end = src.lastIndexOf('  /**', src.indexOf('  kadeUsageDeps(balance) {'));
+  assert.ok(src.slice(start, end).includes('async kadeFailedTurnVerdict()'), 'the verdict sits with the pricing methods');
+  const counted = [];
+  let recent = 0;
+  const realCost = { ...R, countUnchargedRecent: async (user) => (counted.push(user), recent) };
+  const ctx = { db: fakeDb(2), require: (name) => (assert.equal(name, '~/server/services/kadeRealCost'), realCost) };
+  vm.createContext(ctx);
+  vm.runInContext(`this.C = class C {\n${src.slice(start, end)}\n};`, ctx);
+  const make = (limits, parts = SEARCHING) =>
+    Object.assign(new ctx.C(), { options: { req: { user: AMBER } }, kadeRecursionLimits: limits, contentParts: parts, kadeUsageUser: () => AMBER._id });
+  assert.equal((await make(limitsFor({})).kadeFailedTurnVerdict()).uncharged, true);
+  assert.deepEqual(counted, [AMBER._id], 'counted for the payer');
+  assert.equal((await make(limitsFor({ recursion_limit: 2 })).kadeFailedTurnVerdict()).uncharged, false, 'recursion_limit 2 is charged');
+  recent = 3;
+  assert.equal((await make(limitsFor({})).kadeFailedTurnVerdict()).why, 'daily_cap', 'the 4th failed turn in a day is charged');
+  /* The switch also covers a turn already marked. */
+  const prev = process.env.KADE_UNCHARGED_FAILED_TURNS;
+  process.env.KADE_UNCHARGED_FAILED_TURNS = '0';
+  try {
+    const marked = Object.assign(make(limitsFor({})), { kadeUncharged: 'recursion_limit' });
+    assert.notEqual(marked.kadeChargePricing().factor, 0);
+  } finally {
+    if (prev === undefined) delete process.env.KADE_UNCHARGED_FAILED_TURNS;
+    else process.env.KADE_UNCHARGED_FAILED_TURNS = prev;
+  }
+  /* Wiring: chatCompletion records both limits, and the catch marks the turn only on a yes, before
+   * the plain line goes in. */
+  assert.match(src, /const kadeAgentRecursionLimit = resolveRecursionLimit\(agentsEConfig, this\.options\.agent\);/);
+  assert.match(src, /platform: resolveRecursionLimit\(agentsEConfig, \{\}\),/);
+  assert.match(src, /recursionLimit: kadeStepLimit\(\s+kadeAgentRecursionLimit,/);
+  const handler = src.slice(src.indexOf('const isRecursion = isKadeRecursionLimit(err);'), src.indexOf('} finally {', src.indexOf('const isRecursion = isKadeRecursionLimit(err);')));
+  assert.match(handler, /const verdict = await this\.kadeFailedTurnVerdict\(\)[^;]*;\s+if \(verdict\.uncharged\) \{\s+this\.kadeUncharged = 'recursion_limit';\s+\} else \{/);
+  assert.ok(handler.indexOf('kadeFailedTurnVerdict') < handler.indexOf('text: KADE_RECURSION_REPLY'));
+});
+
+test('client.js: only the graph\'s own recursion error counts, not any message that mentions a recursion limit', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'api/server/controllers/agents/client.js'), 'utf8');
+  const helpers = src.slice(src.indexOf('function isKadeRecursionLimit('), src.indexOf('function kadeStepLimit('));
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(`${helpers}; this.is = isKadeRecursionLimit;`, ctx);
+  assert.equal(ctx.is(new Error('Recursion limit of 14 reached without hitting a stop condition.')), true);
+  assert.equal(ctx.is(new Error('Tool said: the recursion limit was too low')), false);
+  assert.equal(ctx.is(new Error('Upstream: Recursion limit of 14 reached')), false);
+});
+
 /* ---- the old chat paths ------------------------------------------------------------------- */
 
 test('spendTokensAs writes the legacy rows through the bulk writer at the payer price, and never throws', async () => {

@@ -106,9 +106,10 @@ const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 const KADE_RECURSION_REPLY =
   "I got stuck looking things up and couldn't finish this reply. Try asking again or rephrasing. If I was in the middle of doing something for you, ask me to check whether it finished before trying it again.";
 
-/** True for the agents graph's recursion-limit failure (GraphRecursionError or its message). */
+/** True for the agents graph's recursion-limit failure (GraphRecursionError, or a message that
+ * STARTS with LangGraph's own wording; a message that merely mentions a recursion limit is not). */
 function isKadeRecursionLimit(err) {
-  return err?.name === 'GraphRecursionError' || /recursion limit/i.test(String(err?.message ?? ''));
+  return err?.name === 'GraphRecursionError' || /^Recursion limit of \d+ reached/.test(String(err?.message ?? ''));
 }
 
 /** KADE Oct 16 2026: a hidden background run may ask for more tool rounds
@@ -1829,10 +1830,28 @@ class AgentClient extends BaseClient {
    */
   kadeChargePricing() {
     const realCost = require('~/server/services/kadeRealCost');
-    if (this.kadeUncharged) {
+    if (this.kadeUncharged && realCost.unchargedFailedTurnsOn()) {
       return realCost.unchargedPricing(this.kadeUncharged);
     }
     return realCost.chargePricing(this.kadePayer(), db);
+  }
+
+  /**
+   * KADE Oct 20 2026 review: whether a turn that hit the recursion limit goes uncharged. Only at the
+   * platform's own limit (an agent whose recursion_limit was lowered is charged), only when no
+   * answer streamed before the cut, and only for the payer's first KADE_UNCHARGED_PER_DAY (3) such
+   * turns in 24 hours (kadeRealCost.failedTurnUncharged). Never throws.
+   * @returns {Promise<{ uncharged: boolean, why: string, recent?: number }>}
+   */
+  async kadeFailedTurnVerdict() {
+    const realCost = require('~/server/services/kadeRealCost');
+    const limits = this.kadeRecursionLimits || {};
+    return realCost.failedTurnUncharged({
+      agentLimit: limits.agent,
+      platformLimit: limits.platform,
+      contentParts: this.contentParts,
+      countRecent: () => realCost.countUnchargedRecent(this.kadeUsageUser()),
+    });
   }
 
   /**
@@ -2020,6 +2039,14 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      /* KADE Oct 20 2026 review: the agent's own resolved limit and the platform's (what an agent
+       * with no recursion_limit gets). A failed turn goes uncharged only when the first is at least
+       * the second (kadeFailedTurnVerdict), so a creator cannot lower the limit to get free turns. */
+      const kadeAgentRecursionLimit = resolveRecursionLimit(agentsEConfig, this.options.agent);
+      this.kadeRecursionLimits = {
+        agent: kadeAgentRecursionLimit,
+        platform: resolveRecursionLimit(agentsEConfig, {}),
+      };
 
       config = {
         runName: 'AgentRun',
@@ -2036,7 +2063,7 @@ class AgentClient extends BaseClient {
           user: createSafeUser(this.options.req.user),
         },
         recursionLimit: kadeStepLimit(
-          resolveRecursionLimit(agentsEConfig, this.options.agent),
+          kadeAgentRecursionLimit,
           this.options.req?.kadeStepBudget,
           agentsEConfig?.maxRecursionLimit,
         ),
@@ -2422,10 +2449,21 @@ class AgentClient extends BaseClient {
          * "Recursion limit of 14 reached without hitting a stop condition" seven
          * times and paid for each. Now the turn is recorded but not charged
          * (kadeChargePricing: factor 0, kadeUncharged 'recursion_limit'), and the
-         * person hears a plain line instead of the raw error (no error part). */
+         * person hears a plain line instead of the raw error (no error part).
+         * Review: uncharged only at the platform's own limit, before any answer streamed, and
+         * for the payer's first few such turns a day (kadeFailedTurnVerdict); otherwise the turn
+         * is charged as usual. The verdict reads the parts BEFORE the plain line goes in. */
         const isRecursion = isKadeRecursionLimit(err);
         if (isRecursion) {
-          this.kadeUncharged = 'recursion_limit';
+          const verdict = await this.kadeFailedTurnVerdict().catch(() => ({ uncharged: false, why: 'verdict_failed' }));
+          if (verdict.uncharged) {
+            this.kadeUncharged = 'recursion_limit';
+          } else {
+            logger.info(
+              `[api/server/controllers/agents/client.js #sendCompletion] recursion-limit turn charged as usual (${verdict.why})`,
+              { conversationId: this.conversationId, recent: verdict.recent },
+            );
+          }
           this.contentParts.push({ type: ContentTypes.TEXT, text: KADE_RECURSION_REPLY });
         } else {
           this.contentParts.push({

@@ -459,6 +459,81 @@ function unchargedPricing(reason) {
   return { getMultiplier: () => 0, getCacheMultiplier: () => 0, factor: 0, uncharged: String(reason || 'failed') };
 }
 
+/** KADE_UNCHARGED_FAILED_TURNS=0 charges recursion-limit turns again (the rollback switch). */
+function unchargedFailedTurnsOn(env = process.env) {
+  return String((env && env.KADE_UNCHARGED_FAILED_TURNS) ?? '') !== '0';
+}
+
+/** How many failed turns a payer may have uncharged in 24 hours (KADE_UNCHARGED_PER_DAY, default 3). */
+function unchargedPerDay(env = process.env) {
+  const raw = String((env && env.KADE_UNCHARGED_PER_DAY) ?? '').trim();
+  const n = Number(raw);
+  return raw !== '' && Number.isInteger(n) && n >= 0 ? n : 3;
+}
+
+/** A text part this long means the person already got an answer before the cut. */
+const UNCHARGED_TEXT_MAX = 200;
+
+/**
+ * Oct 20 2026 review: the recursion limit is not only something that happens TO a person. An
+ * agent's recursion_limit is the creator's setting (every account may create agents), so an agent
+ * set to 2 steps that answers in round 1 and then calls a tool would make every turn free. A failed
+ * turn is uncharged only when all of these hold:
+ *   - KADE_UNCHARGED_FAILED_TURNS is not '0';
+ *   - the agent ran at the platform's own limit or above (its resolved recursion_limit is at least
+ *     what an agent with no setting gets), so a lowered limit is charged normally;
+ *   - no answer streamed before the cut (no text part over UNCHARGED_TEXT_MAX characters), as in
+ *     Part 142's "only when no text was produced";
+ *   - the payer has had fewer than unchargedPerDay() uncharged turns in the last 24 hours.
+ * Anything that cannot be checked (a missing limit, a failed count) charges normally. Never throws.
+ * @param {{ agentLimit?: number, platformLimit?: number, contentParts?: object[],
+ *   countRecent?: () => Promise<number>, env?: object }} opts
+ * @returns {Promise<{ uncharged: boolean, why: string, recent?: number }>}
+ */
+async function failedTurnUncharged({ agentLimit, platformLimit, contentParts = [], countRecent, env = process.env } = {}) {
+  if (!unchargedFailedTurnsOn(env)) return { uncharged: false, why: 'switched_off' };
+  const agent = Number(agentLimit);
+  const platform = Number(platformLimit);
+  if (!Number.isFinite(agent) || !Number.isFinite(platform) || platform <= 0 || agent < platform) {
+    return { uncharged: false, why: 'agent_limit_below_platform' };
+  }
+  const answered = (Array.isArray(contentParts) ? contentParts : []).some(
+    (p) => p && p.type === 'text' && String(p.text ?? '').trim().length > UNCHARGED_TEXT_MAX,
+  );
+  if (answered) return { uncharged: false, why: 'answer_streamed' };
+  const cap = unchargedPerDay(env);
+  let recent;
+  try {
+    recent = Number(await countRecent());
+  } catch (_) {
+    return { uncharged: false, why: 'count_failed' };
+  }
+  if (!Number.isFinite(recent)) return { uncharged: false, why: 'count_failed' };
+  if (recent >= cap) return { uncharged: false, why: 'daily_cap', recent };
+  return { uncharged: true, why: 'recursion_limit', recent };
+}
+
+/**
+ * How many distinct turns (messageIds) a payer had recorded uncharged in the 24 hours before `now`.
+ * @param {string | object} user the payer's id
+ * @param {{ Transaction?: { distinct: Function }, now?: Date }} [opts]
+ */
+async function countUnchargedRecent(user, { Transaction, now = new Date() } = {}) {
+  if (!user) return 0;
+  let T = Transaction;
+  if (!T) {
+    const mongoose = require('mongoose');
+    T = mongoose.models.Transaction || mongoose.model('Transaction');
+  }
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const ids = await T.distinct('messageId', {
+    user,
+    kadeUncharged: { $exists: true },
+    createdAt: { $gte: since },
+  });
+  return Array.isArray(ids) ? ids.filter((id) => id != null).length : 0;
+}
+
 /**
  * Oct 20 2026 ("include the old chat paths"): the legacy db.spendTokens / spendStructuredTokens
  * paths priced every row at the platform factor whoever paid. This writes the same rows
@@ -519,6 +594,11 @@ module.exports = {
   realPricing,
   chargePricing,
   unchargedPricing,
+  unchargedFailedTurnsOn,
+  unchargedPerDay,
+  UNCHARGED_TEXT_MAX,
+  failedTurnUncharged,
+  countUnchargedRecent,
   spendTokensAs,
   openRouterCost,
   voiceBilledReal,
