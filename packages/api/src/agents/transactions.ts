@@ -22,6 +22,21 @@ interface GetCacheMultiplierParams {
 export interface PricingFns {
   getMultiplier: (params: GetMultiplierParams) => number;
   getCacheMultiplier: (params: GetCacheMultiplierParams) => number | null;
+  /** KADE Oct 20 2026: the price factor these rates carry, stamped on each row as kadeFactor
+   *  (api/server/services/kadeRealCost.js chargePricing). */
+  factor?: number;
+  /** KADE Oct 20 2026: set when the rows are recorded but not charged; stamped as kadeUncharged. */
+  uncharged?: string;
+}
+
+/** The audit stamps a pricing carries (none when it carries none). */
+function kadeStamp(pricing: PricingFns): { kadeFactor?: number; kadeUncharged?: string } {
+  return {
+    ...(typeof pricing.factor === 'number' && Number.isFinite(pricing.factor)
+      ? { kadeFactor: pricing.factor }
+      : {}),
+    ...(pricing.uncharged ? { kadeUncharged: pricing.uncharged } : {}),
+  };
 }
 
 interface BaseTxData {
@@ -192,7 +207,7 @@ function prepareStandardTx(
 
   const { tokenValue, rate } = calculateTokenValue(txData, pricing);
   return {
-    doc: { ...txData, tokenValue, rate },
+    doc: { ...txData, tokenValue, rate, ...kadeStamp(pricing) },
     tokenValue,
     balance,
   };
@@ -221,6 +236,7 @@ function prepareStructuredTx(
       rate,
       rawAmount,
       ...(rateDetail && { rateDetail }),
+      ...kadeStamp(pricing),
     },
     tokenValue,
     balance,

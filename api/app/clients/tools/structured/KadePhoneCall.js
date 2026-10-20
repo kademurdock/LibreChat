@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
-const { platformFactor } = require('~/server/services/kadeRealCost');
+const { platformFactor, userPriceFactor, payerFromReq } = require('~/server/services/kadeRealCost');
 
 // July 2 2026 round 3: guards against agent tool-loops (a live turn hit
 // langgraph's recursion limit polling check_result 17 times, and dialed twice).
@@ -111,7 +111,10 @@ class KadePhoneCall extends Tool {
     /* Part 295 ("Yes, double everything"): the person the call is billed to pays the platform factor
      * x the phone line's price; Kade (the seat, calling for herself) is quoted the real price. */
     const payerIsKade = this.isAdmin && this.actingUserId === String(fields.req?.user?.id || fields.userId || '');
-    const f = payerIsKade ? 1 : platformFactor();
+    /* Oct 20 2026: a payer the request holds (the signed-in person, or the caller on a phone turn)
+     * is quoted their own price (factor 1 for a Family pack member); anyone else the platform's. */
+    const payer = payerIsKade ? null : payerFromReq(fields.req, this.actingUserId);
+    const f = payerIsKade ? 1 : payer ? userPriceFactor(payer) : platformFactor();
     const c = (cents) => +(cents * f).toFixed(1);
     this.priceNote = { perMinute: c(1.5), perCallLow: c(5), perCallHigh: c(10) };
     this.name = 'kade_phone_call';

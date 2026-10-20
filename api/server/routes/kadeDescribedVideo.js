@@ -13,7 +13,7 @@ const {
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
-const { userPriceFactor } = require('~/server/services/kadeRealCost');
+const { userPriceFactor, payerTier } = require('~/server/services/kadeRealCost');
 const { SHARED_HEAD } = require('./kadePages');
 
 const MEDIA_PREFIX = () => process.env.KADE_MEDIA_PREFIX || 'media-library';
@@ -307,6 +307,9 @@ const { router, close } = createDescriptionRouter({
     id: String(req.user.id || req.user._id),
     role: req.user.role,
     child: req.user.kadeAccountType === 'child',
+    /* Oct 20 2026 (family at cost): the Family pack answer for the full signed-in account, so the
+     * quote, the hold and the settle (which reuses the factor stored at reserve) are at cost. */
+    familyPack: payerTier(req.user) === 'family',
   }),
   storage: () => initializeS3(),
   log: (message) => logger.info(`[described-video] ${message}`),
@@ -314,7 +317,7 @@ const { router, close } = createDescriptionRouter({
   /* Part 295, her words: "Yes, double everything." A person's run is quoted, held and settled at
    * the platform factor (KADE_BILLING_MULTIPLIER) x its real cost; the administrator's stays real
    * and her balance is never held. Dialogue timing and voice samples stay free. */
-  priceFactor: (actor) => userPriceFactor(actor.role),
+  priceFactor: (actor) => userPriceFactor(actor),
   /* costUSD is real; chargedUSD is what the describer's wallet takes for it (0 for included work and
    * for the administrator). The wallet already took the money, so the row is never debited. */
   usage: (userId, job, kind, costUSD, chargedUSD) =>

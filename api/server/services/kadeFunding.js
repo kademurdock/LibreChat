@@ -36,6 +36,7 @@ const {
   createPricer,
   priceGroup,
   isAdminRole,
+  userPriceFactor,
   voiceBilledReal,
   VOICE_KEY,
   isVoiceEstimate,
@@ -129,6 +130,7 @@ function compose({
   factor,
   window = {},
   voiceReal = false,
+  env = process.env,
 }) {
   const byFeature = new Map();
   const add = (key, realUSD, chargedUSD, extra = {}) => {
@@ -194,7 +196,10 @@ function compose({
     repayments: (repaid && repaid.entries) || 0,
     lastRepaymentAt: (repaid && repaid.last) || null,
     walletBalanceUSD: balanceCredits == null ? null : cents(balanceCredits * CREDIT_USD),
-    multiplier: factor,
+    /* Oct 20 2026 (family at cost): the factor this person is charged at now (1 for the
+     * administrator and a Family pack member); the platform's own is platformMultiplier. */
+    multiplier: userPriceFactor(user, env || process.env),
+    platformMultiplier: factor,
     voiceBilledReal: Boolean(voiceReal),
     breakdown: all
       .map((f) => ({ ...f, realUSD: cents(f.realUSD), chargedUSD: cents(f.chargedUSD) }))
@@ -216,7 +221,10 @@ function defaultDeps() {
   };
 }
 
-const USER_FIELDS = { name: 1, username: 1, role: 1, kadeAccountType: 1 };
+/* Oct 20 2026: email and kadeLibraryAccess too (kadeRealCost.PAYER_FIELDS), so the per-person
+ * factor sees the Family pack exactly (without kadeLibraryAccess the pack rule falls back to the
+ * account's age). */
+const USER_FIELDS = { name: 1, username: 1, role: 1, kadeAccountType: 1, email: 1, kadeLibraryAccess: 1 };
 const usageGroupStage = (byUser) => ({
   $group: {
     _id: byUser ? { user: '$user', service: '$service' } : '$service',
@@ -257,6 +265,7 @@ async function fundingSummary(userId, window = {}, deps = defaultDeps()) {
     factor,
     window,
     voiceReal: voiceBilledReal(deps.env || process.env),
+    env: deps.env,
   });
 }
 
@@ -307,6 +316,7 @@ async function fundingPeople(window = {}, deps = defaultDeps()) {
         factor,
         window,
         voiceReal,
+        env: deps.env,
       });
     })
     .filter((s) => s.realCostUSD > 0 || s.paidBackUSD > 0)
@@ -464,6 +474,26 @@ function validateRepayment(body = {}, now = new Date()) {
   return { value: { userId, usd, at, note: String(body.note || '').trim().slice(0, 280), clientKey } };
 }
 
+/**
+ * KADE Oct 20 2026: POST /api/kade/funding/refunds. Her words: "Yes: the fuller refund ($20.91),
+ * plus Amber's failed turns..." A refund puts money back on a balance and leaves a ledger row of
+ * kind 'refund' (never counted as a repayment). clientKey is REQUIRED (the ledger's unique index
+ * makes a second send with the same key a no-op), and may carry ':' and '.' so a key can name the
+ * batch and the person ('family-atcost-refund-2026-09-10:<userId>').
+ */
+function validateRefund(body = {}) {
+  const userId = String(body.userId || '').trim();
+  if (!mongoose.Types.ObjectId.isValid(userId)) return { error: 'Pick who the refund is for (userId).' };
+  const usd = Math.round(Number(String(body.usd ?? '').replace(/[$,\s]/g, '')) * 100) / 100;
+  if (!Number.isFinite(usd) || usd < 0.01) return { error: 'The refund must be at least one cent.' };
+  if (usd > 1000) return { error: 'That is over $1,000. Check the amount and try again.' };
+  const clientKey = String(body.clientKey || '').trim();
+  if (!/^[A-Za-z0-9:._-]{8,64}$/.test(clientKey)) {
+    return { error: 'A refund needs a clientKey (8 to 64 letters, digits, - _ . :) so it can never be paid twice.' };
+  }
+  return { value: { userId, usd, note: String(body.note || '').trim().slice(0, 280), clientKey } };
+}
+
 module.exports = {
   FEATURES,
   featureLabel,
@@ -482,4 +512,5 @@ module.exports = {
   account,
   findPerson,
   validateRepayment,
+  validateRefund,
 };

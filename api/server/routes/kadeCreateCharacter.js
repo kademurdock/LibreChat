@@ -402,7 +402,7 @@ router.get('/model-menu', (req, res) => {
 /* Part 295 review: a portrait is logged at its real price and the balance pays the platform factor
  * times that (logKadeUsage), so the page quotes this person's price (the real one for Kade). */
 router.get('/quiz', (req, res) => {
-  const factor = userPriceFactor(req.user && req.user.role);
+  const factor = userPriceFactor(req.user);
   res.json({ quiz: QUIZ, priceFactor: factor, portraitUSD: Math.round(fluxCost(FLUX_ENDPOINT, 1) * factor * 1000) / 1000 });
 });
 
@@ -623,7 +623,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       questions: parsed.questions,
       notes: parsed.notes,
       /* Part 295 review: what this person paid (the real cost for Kade); the log line keeps the real one. */
-      costUSD: Number((costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
+      costUSD: Number((costUSD * userPriceFactor(req.user)).toFixed(5)),
       costMeasured: measured,
       remainingToday: PERSONA_DAILY_CAP - used - 1,
       model: PERSONA_MODEL,

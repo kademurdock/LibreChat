@@ -1566,7 +1566,7 @@ function suggestEngine(text) {
  * A test that stubs the module gets 1. */
 function priceFactor(user) {
   try {
-    return require('../services/kadeRealCost').userPriceFactor(user && user.role);
+    return require('../services/kadeRealCost').userPriceFactor(user);
   } catch (_) {
     return 1;
   }

@@ -130,9 +130,11 @@ describe('abortMiddleware - spendCollectedUsage', () => {
         {
           spendTokens: expect.any(Function),
           spendStructuredTokens: expect.any(Function),
+          /* KADE Oct 20 2026: kadeRealCost.chargePricing (no payer here: db pricing, its factor stamped). */
           pricing: {
             getMultiplier: mockGetMultiplier,
             getCacheMultiplier: mockGetCacheMultiplier,
+            factor: expect.any(Number),
           },
           bulkWriteOps: {
             insertMany: mockBulkInsertTransactions,

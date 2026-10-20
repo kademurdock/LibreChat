@@ -98,6 +98,19 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
 
+/**
+ * KADE Oct 20 2026: what a person hears when the agents graph stops on its recursion limit (the
+ * raw "Recursion limit of N reached without hitting a stop condition" is never shown). It also
+ * keeps Part 142's warning: a tool may have acted before the cut, so check before redoing it.
+ */
+const KADE_RECURSION_REPLY =
+  "I got stuck looking things up and couldn't finish this reply. Try asking again or rephrasing. If I was in the middle of doing something for you, ask me to check whether it finished before trying it again.";
+
+/** True for the agents graph's recursion-limit failure (GraphRecursionError or its message). */
+function isKadeRecursionLimit(err) {
+  return err?.name === 'GraphRecursionError' || /recursion limit/i.test(String(err?.message ?? ''));
+}
+
 /** KADE Oct 16 2026: a hidden background run may ask for more tool rounds
  * (each round is about two graph steps), never past the yaml maximum. */
 function kadeStepLimit(resolved, stepBudget, maxRecursionLimit) {
@@ -1792,6 +1805,37 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * KADE Oct 20 2026 (family at cost): the ACCOUNT this turn's usage is priced for.
+   *   - A voice turn billed to its caller (req.kadeBillTo): the caller, from req.kadeOnBehalfOf
+   *     (kadeOnBehalfOf.js projects kadeRealCost.PAYER_FIELDS), when it is the same account.
+   *   - Any other kadeBillTo (outreach billed to the owner seat): null, today's platform price.
+   *   - Otherwise the signed-in person (req.user, the full account).
+   * @returns {object | null}
+   */
+  kadePayer() {
+    const req = this.options.req;
+    if (req?.kadeBillTo) {
+      const o = req.kadeOnBehalfOf;
+      return o && String(o.id ?? o._id) === String(req.kadeBillTo) ? o : null;
+    }
+    return req?.user ?? null;
+  }
+
+  /**
+   * KADE Oct 20 2026: what this turn's chat rows are priced at. A Family pack payer pays the real
+   * sticker (factor 1), everyone else the platform factor (kadeRealCost.chargePricing). A turn that
+   * ended in the recursion limit (this.kadeUncharged) is recorded at factor 0: tokens kept, nothing
+   * charged (kadeRealCost.unchargedPricing).
+   */
+  kadeChargePricing() {
+    const realCost = require('~/server/services/kadeRealCost');
+    if (this.kadeUncharged) {
+      return realCost.unchargedPricing(this.kadeUncharged);
+    }
+    return realCost.chargePricing(this.kadePayer(), db);
+  }
+
+  /**
    * KADE Part 291 review (F10, F13): the writers this turn's usage goes through. A voice turn
    * billed to its caller (req.kadeBillTo) draws the caller's wallet with an $inc and no floor, so
    * a debt left by phone minutes posted after hang-up is never forgiven, and a first-time caller
@@ -1806,7 +1850,7 @@ class AgentClient extends BaseClient {
     return {
       spendTokens: db.spendTokens,
       spendStructuredTokens: db.spendStructuredTokens,
-      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      pricing: this.kadeChargePricing(),
       bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance },
     };
   }
@@ -1894,7 +1938,7 @@ class AgentClient extends BaseClient {
           ? computeUsageCostUSD(
               usage,
               require('~/server/services/kadeRealCost').gaugePricing(
-                this.options.req?.user?.role,
+                this.options.req?.user,
                 db,
               ),
               this.resolveAgentEndpointTokenConfig(usage),
@@ -2373,20 +2417,22 @@ class AgentClient extends BaseClient {
          * an error part and NO text, which the voice lane and the admin
          * export both read as silence (Kiana, "Sounds good to me" → six
          * research checks → limit 14 → dead air for a VoiceOver user). A
-         * spoken text part goes in FIRST so something is actually said; the
-         * error part stays for the screen. */
-        const isRecursion =
-          err?.name === 'GraphRecursionError' || /recursion limit/i.test(String(err?.message ?? ''));
-        if (isRecursion && !this.contentParts.some((p) => p?.type === ContentTypes.TEXT && p.text?.trim())) {
+         * spoken text part goes in so something is actually said.
+         * Oct 20 2026, her words: "stop charging failed turns." Amber saw the raw
+         * "Recursion limit of 14 reached without hitting a stop condition" seven
+         * times and paid for each. Now the turn is recorded but not charged
+         * (kadeChargePricing: factor 0, kadeUncharged 'recursion_limit'), and the
+         * person hears a plain line instead of the raw error (no error part). */
+        const isRecursion = isKadeRecursionLimit(err);
+        if (isRecursion) {
+          this.kadeUncharged = 'recursion_limit';
+          this.contentParts.push({ type: ContentTypes.TEXT, text: KADE_RECURSION_REPLY });
+        } else {
           this.contentParts.push({
-            type: ContentTypes.TEXT,
-            text: "I hit a limit while using tools and couldn't finish this reply. I haven't confirmed the final status of that work. Ask me to check its status before trying it again.",
+            type: ContentTypes.ERROR,
+            [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
           });
         }
-        this.contentParts.push({
-          type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
-        });
       }
     } finally {
       /** Capture calibration state from the run for persistence on the response message.
@@ -2738,58 +2784,27 @@ class AgentClient extends BaseClient {
     try {
       /* KADE Part 291 review (F10): the estimated-usage fallback for a voice turn billed to its
        * caller writes the same rows spendTokens would (prompt, completion, reasoning), through the
-       * caller's no-floor wallet writer instead of updateBalance's clamp at zero. */
-      if (this.options.req?.kadeBillTo) {
-        const pricing = { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier };
-        const txData = {
-          model,
-          balance,
-          user: this.kadeUsageUser(),
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          endpointTokenConfig: this.options.endpointTokenConfig,
-          context: context === 'message' ? 'voice' : context,
-        };
-        const docs = prepareTokenSpend(txData, { promptTokens, completionTokens }, pricing);
-        const reasoning = usage && typeof usage === 'object' ? usage.reasoning_tokens : undefined;
-        if (typeof reasoning === 'number') {
-          docs.push(...prepareTokenSpend({ ...txData, context: 'reasoning' }, { completionTokens: reasoning }, pricing));
-        }
-        await bulkWriteTransactions({ user: txData.user, docs }, this.kadeUsageDeps(balance).bulkWriteOps);
-        return;
+       * caller's no-floor wallet writer instead of updateBalance's clamp at zero.
+       * Oct 20 2026 (family at cost, "include the old chat paths"): every estimate now goes this
+       * way, priced for the payer (kadeChargePricing: factor 1 for a Family pack account, 0 for a
+       * failed turn) with kadeFactor on each row; only a billed voice turn keeps context 'voice'
+       * and the caller's wallet writer (kadeUsageDeps). */
+      const pricing = this.kadeChargePricing();
+      const txData = {
+        model,
+        balance,
+        user: this.kadeUsageUser(),
+        messageId: this.responseMessageId,
+        conversationId: this.conversationId,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        context: this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
+      };
+      const docs = prepareTokenSpend(txData, { promptTokens, completionTokens }, pricing);
+      const reasoning = usage && typeof usage === 'object' ? usage.reasoning_tokens : undefined;
+      if (typeof reasoning === 'number') {
+        docs.push(...prepareTokenSpend({ ...txData, context: 'reasoning' }, { completionTokens: reasoning }, pricing));
       }
-      await db.spendTokens(
-        {
-          model,
-          context: this.options.req?.kadeBillTo && context === 'message' ? 'voice' : context,
-          balance,
-          messageId: this.responseMessageId,
-          conversationId: this.conversationId,
-          user: this.kadeUsageUser(),
-          endpointTokenConfig: this.options.endpointTokenConfig,
-        },
-        { promptTokens, completionTokens },
-      );
-
-      if (
-        usage &&
-        typeof usage === 'object' &&
-        'reasoning_tokens' in usage &&
-        typeof usage.reasoning_tokens === 'number'
-      ) {
-        await db.spendTokens(
-          {
-            model,
-            balance,
-            context: 'reasoning',
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            user: this.kadeUsageUser(),
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-          { completionTokens: usage.reasoning_tokens },
-        );
-      }
+      await bulkWriteTransactions({ user: txData.user, docs }, this.kadeUsageDeps(balance).bulkWriteOps);
     } catch (error) {
       logger.error(
         '[api/server/controllers/agents/client.js #recordTokenUsage] Error recording token usage',

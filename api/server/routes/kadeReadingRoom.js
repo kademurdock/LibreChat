@@ -1600,7 +1600,7 @@ router.get('/book/:id/describe/:t/estimate', requireJwtAuth, async (req, res) =>
     const est = describer.estimate(tr.seconds || 0);
     /* Part 295 review: the run is logged at its real cost and the balance pays the platform factor
      * times that (logKadeUsage), so the price asked before spending is this person's (real for Kade). */
-    est.usd = Math.round(est.usd * userPriceFactor(req.user && req.user.role) * 10000) / 10000;
+    est.usd = Math.round(est.usd * userPriceFactor(req.user) * 10000) / 10000;
     res.json({ ok: true, enabled: describer.ENABLED(), ...est, hasSeconds: !!tr.seconds, queued: describer.queued(), progress: describer.progressOf(String(book.fileId || book._id), t), state: (tr.description || {}).state || '' });
   } catch (e) {
     res.status(500).json({ error: 'Could not estimate.' });
@@ -1632,7 +1632,7 @@ router.post('/book/:id/describe/:t', requireJwtAuth, async (req, res) => {
           return;
         }
         /* chargedUSD: what logKadeUsage takes from the asker's balance for it (0 for Kade). */
-        const chargedUSD = extraChargeUSD(result.costUSD, req.user && req.user.role);
+        const chargedUSD = extraChargeUSD(result.costUSD, req.user);
         const set = { [`tracks.${t}.description`]: { summary: result.summary, scenes: result.scenes, model: result.model, costUSD: result.costUSD, chargedUSD, frames: result.frames, state: 'done', error: '', at: new Date() } };
         if (result.seconds && !tr.seconds) set[`tracks.${t}.seconds`] = result.seconds;
         await KadeBook.updateOne({ _id: bookId }, { $set: set });

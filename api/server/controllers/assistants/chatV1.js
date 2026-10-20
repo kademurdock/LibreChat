@@ -299,7 +299,10 @@ const chatV1 = async (req, res) => {
         },
         {
           findBalanceByUser,
-          getMultiplier,
+          /* KADE Oct 20 2026: checked at the payer's price (factor 1 for a Family pack member). */
+          getMultiplier: require('~/server/services/kadeRealCost').chargePricing(req.user, {
+            getMultiplier,
+          }).getMultiplier,
           createAutoRefillTransaction,
           logViolation,
           balanceConfig,

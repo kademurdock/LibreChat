@@ -13,7 +13,7 @@ const {
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { spendTokens, getFiles } = require('~/models');
+const { getFiles } = require('~/models');
 
 /**
  * Configure proxy support for Google APIs
@@ -284,7 +284,10 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
   });
 
   try {
-    await spendTokens(
+    /* KADE Oct 20 2026: priced for the payer (factor 1 for a Family pack member), same rows. */
+    const realCost = require('~/server/services/kadeRealCost');
+    await realCost.spendTokensAs(
+      realCost.payerFromReq(req, userId),
       {
         user: userId,
         model,
@@ -298,6 +301,7 @@ async function recordTokenUsage({ usageMetadata, req, userId, conversationId, mo
         promptTokens,
         completionTokens,
       },
+      { db: require('~/models') },
     );
   } catch (error) {
     logger.error('[GeminiImageGen] Error recording token usage:', error);

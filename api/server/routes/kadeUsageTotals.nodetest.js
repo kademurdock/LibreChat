@@ -27,7 +27,14 @@ function slice(start, end) {
 }
 const helpers = slice('const usd = (credits)', 'const monthStart = ');
 function run(code, vars, out) {
-  const context = { ...vars, isAdminRole: R.isAdminRole, isVoiceEstimate: R.isVoiceEstimate, VOICE_ESTIMATE_SERVICE: R.VOICE_ESTIMATE_SERVICE };
+  const context = {
+    mult: 2,
+    userPriceFactor: (account) => R.userPriceFactor(account, { KADE_BILLING_MULTIPLIER: '2' }),
+    ...vars,
+    isAdminRole: R.isAdminRole,
+    isVoiceEstimate: R.isVoiceEstimate,
+    VOICE_ESTIMATE_SERVICE: R.VOICE_ESTIMATE_SERVICE,
+  };
   vm.createContext(context);
   vm.runInContext(`${helpers}\n${code}\n${out}`, context);
   return context;
@@ -179,6 +186,24 @@ test('Part 295 /my-cost: charged extras beside the real cost; the administrator 
   const admin = run(code, vars('ADMIN'), 'this.r = { extrasUSD, chargedExtrasUSD };');
   assert.equal(admin.r.extrasUSD, 0.08);
   assert.equal(admin.r.chargedExtrasUSD, 0);
+});
+
+test('Oct 20 2026 /my-cost: a Family pack member has factor 1, so the iPhone drops its "charged 2 times" note', () => {
+  const code = slice('    const subjectAdmin = isAdminRole(', '    const label = ');
+  const vars = (subject) => ({ subject, tx: { spend: -1e6, turns: 1 }, real: [{ realUSD: 1 }], extras: [] });
+  const factor = (subject) => run(code, vars(subject), 'this.f = subjectFactor;').f;
+  assert.equal(factor({ role: 'USER', kadeLibraryAccess: 'family', familyPack: true }), 1);
+  assert.equal(factor({ role: 'USER', kadeLibraryAccess: 'none', familyPack: false }), 2);
+  assert.equal(factor({ role: 'USER' }), 2, 'no pack answer: the platform factor');
+  assert.equal(factor({ role: 'ADMIN' }), 1);
+  /* The reply carries that factor as both priceFactor and multiplier, and the platform's own
+   * factor as platformMultiplier; the subject is read with the payer fields. */
+  const route = slice("router.get('/my-cost'", '    const subjectAdmin = isAdminRole(');
+  assert.match(route, /User\.findById\(uid\)\.select\(PAYER_FIELDS\)/);
+  const reply = slice('      monthStart: since.toISOString(),', '      modelUSD,');
+  assert.match(reply, /multiplier: subjectFactor,/);
+  assert.match(reply, /platformMultiplier: mult,/);
+  assert.match(reply, /priceFactor: subjectFactor,/);
 });
 
 test('Part 295 /books: "charged" uses the charged extras; "cost the server" stays real', () => {

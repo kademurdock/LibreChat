@@ -336,7 +336,12 @@ describe('OpenAIChatCompletionController', () => {
         {
           spendTokens: mockSpendTokens,
           spendStructuredTokens: mockSpendStructuredTokens,
-          pricing: { getMultiplier: mockGetMultiplier, getCacheMultiplier: mockGetCacheMultiplier },
+          /* KADE Oct 20 2026: kadeRealCost.chargePricing for req.user (db pricing, factor stamped). */
+          pricing: {
+            getMultiplier: mockGetMultiplier,
+            getCacheMultiplier: mockGetCacheMultiplier,
+            factor: expect.any(Number),
+          },
           bulkWriteOps: {
             insertMany: mockBulkInsertTransactions,
             updateBalance: mockUpdateBalance,

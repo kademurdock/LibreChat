@@ -5,7 +5,7 @@ const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, KadeUsage, priceFactorForUser, refundUsageOnce } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
-const { userPriceFactor } = require('~/server/services/kadeRealCost');
+const { userPriceFactor, payerFromReq } = require('~/server/services/kadeRealCost');
 
 /**
  * FalAI ("fal_studio") — video + design-image generation via fal.ai.
@@ -65,7 +65,9 @@ class FalAI extends Tool {
     this.name = 'fal_studio';
     /* Part 295 ("Yes, double everything"): every price the model is told is what THIS person pays,
      * the platform factor x fal's price, and the real price for Kade. */
-    const f = userPriceFactor(fields.req?.user?.role);
+    /* Oct 20 2026: priced for the account (factor 1 for a Family pack member); a tool built for
+     * someone the request does not hold keeps the signed-in person's role price, as before. */
+    const f = userPriceFactor(payerFromReq(fields.req, fields.userId) || fields.req?.user?.role);
     const p = (usd) => (usd * f).toFixed(2);
     this.description =
       'Generate short AI VIDEOS (Kling 3.0 standard / Veo 3.1 Fast premium), ANIMATE still images into video (image-to-video), make best-in-class design IMAGES with legible text (Seedream 4.5), and generate CINEMATIC AUDIO — dialogue, sound effects, music and voice cloning (Seed Audio 1.0) — via fal.ai. ' +

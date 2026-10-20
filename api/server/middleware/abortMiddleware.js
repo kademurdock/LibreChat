@@ -60,6 +60,8 @@ const isAbortError = (error) => {
  * @param {Array<Object>} params.collectedUsage - Usage metadata from all models
  * @param {string} [params.fallbackModel] - Fallback model name if not in usage
  * @param {string} [params.messageId] - The response message ID for transaction correlation
+ * @param {object} [params.account] - KADE Oct 20 2026: the payer (req.user), so a Family pack
+ *   member's stopped turn is priced at cost (kadeRealCost.chargePricing)
  */
 async function spendCollectedUsage({
   userId,
@@ -67,6 +69,7 @@ async function spendCollectedUsage({
   collectedUsage,
   fallbackModel,
   messageId,
+  account,
 }) {
   if (!collectedUsage || collectedUsage.length === 0) {
     return;
@@ -76,7 +79,7 @@ async function spendCollectedUsage({
     {
       spendTokens: db.spendTokens,
       spendStructuredTokens: db.spendStructuredTokens,
-      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      pricing: require('~/server/services/kadeRealCost').chargePricing(account ?? null, db),
       bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
     },
     {
@@ -158,12 +161,22 @@ async function abortMessage(req, res) {
       collectedUsage,
       fallbackModel: jobData?.model,
       messageId: jobData?.responseMessageId,
+      account: req.user,
     });
   } else {
     // Fallback: no collected usage, use text-based token counting for primary model only
-    await db.spendTokens(
-      { ...responseMessage, context: 'incomplete', user: userId },
+    /* KADE Oct 20 2026: priced for the payer (factor 1 for a Family pack member), same rows. */
+    await require('~/server/services/kadeRealCost').spendTokensAs(
+      req.user,
+      {
+        user: userId,
+        model: responseMessage.model,
+        context: 'incomplete',
+        messageId: responseMessage.messageId,
+        conversationId: responseMessage.conversationId,
+      },
       { promptTokens, completionTokens },
+      { db },
     );
   }
 

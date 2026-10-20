@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
-const { isAdminRole, userPriceFactor, extraChargeUSD } = require('../server/services/kadeRealCost');
+const { isAdminRole, userPriceFactor, extraChargeUSD, PAYER_FIELDS } = require('../server/services/kadeRealCost');
 
 /**
  * KadeUsage — per-user, server-side API usage that LibreChat does NOT already
@@ -102,12 +102,17 @@ async function debit(userId, usd) {
   await Balance.updateOne({ user: userId }, { $inc: { tokenCredits: -credits } });
 }
 
-/** The account's role (null when there is no User model or no such account). Throws on a DB error. */
-async function roleOf(userId) {
+/**
+ * The paying account with the fields its price depends on (kadeRealCost.PAYER_FIELDS: role and the
+ * Family pack's kadeLibraryAccess, email, name, username); null when there is no User model or no
+ * such account. Throws on a DB error. Oct 20 2026: was roleOf (role only), which could not see the
+ * Family pack; a lookup without kadeLibraryAccess must never be used for a price.
+ */
+async function accountOf(userId) {
   const User = mongoose.models.User;
   if (!User) return null;
-  const u = await User.findById(userId).select('role').lean();
-  return u ? u.role || null : null;
+  const u = await User.findById(userId).select(PAYER_FIELDS).lean();
+  return u || null;
 }
 
 /**
@@ -116,7 +121,7 @@ async function roleOf(userId) {
  */
 async function priceFactorForUser(userId) {
   try {
-    return userId ? userPriceFactor(await roleOf(userId)) : 1;
+    return userId ? userPriceFactor(await accountOf(userId)) : 1;
   } catch (_) {
     return 1;
   }
@@ -129,7 +134,7 @@ async function priceFactorForUser(userId) {
  */
 async function chargedFor(userId, costUSD) {
   try {
-    return extraChargeUSD(costUSD, await roleOf(userId));
+    return extraChargeUSD(costUSD, await accountOf(userId));
   } catch (_) {
     return undefined;
   }
@@ -145,7 +150,8 @@ async function chargedFor(userId, costUSD) {
 async function deductKadeCredits(userId, usd) {
   try {
     if (!userId || !(usd > 0)) return;
-    if (isAdminRole(await roleOf(userId))) return; // Kade uncapped
+    const acct = await accountOf(userId);
+    if (isAdminRole(acct && acct.role)) return; // Kade uncapped
     await debit(userId, usd);
   } catch (err) {
     try {
@@ -188,19 +194,21 @@ async function logKadeUsage({ userId, service, quantity, unit, costUSD, chargedU
     );
     let charged = 0;
     if (cost !== 0 || said) {
-      let role = null;
+      let account = null;
       let known = true;
       try {
-        role = await roleOf(userId);
+        account = await accountOf(userId);
       } catch (err) {
         known = false; /* an unknown payer is never charged: it might be Kade */
         logger.warn(`[KadeUsage] role lookup failed, ${service} not charged: ${err && err.message}`);
       }
-      if (known && !isAdminRole(role)) {
+      if (known && !isAdminRole(account && account.role)) {
+        /* Oct 20 2026: the account (not its role) prices the row, so a Family pack member pays
+         * the real cost (factor 1) and everyone else the platform factor. */
         if (said !== undefined) charged = said;
-        else if (refund) charged = -extraChargeUSD(-cost, role);
+        else if (refund) charged = -extraChargeUSD(-cost, account);
         else if (walletHandled) charged = describedVideoIncluded(metadata) ? 0 : cost;
-        else charged = extraChargeUSD(cost, role);
+        else charged = extraChargeUSD(cost, account);
       }
     }
     await KadeUsage.create({ user: userId, service, quantity, unit, costUSD: cost, chargedUSD: charged, metadata });
@@ -285,6 +293,7 @@ module.exports = {
   deductKadeCredits,
   priceFactorForUser,
   chargedFor,
+  accountOf,
   CHARGED_USD,
   fluxCost,
   RATES,

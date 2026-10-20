@@ -82,13 +82,16 @@ async function personMayAsk(req) {
   const onBehalf = req.kadeOnBehalfOf && req.kadeOnBehalfOf.id;
   if (onBehalf && String(onBehalf) !== String(user.id)) return { ok: false, why: 'phone lane' };
   if (req.kadeOnBehalfOfUnresolved === true) return { ok: false, why: 'phone lane' };
-  const u = await db().getUserById(String(user.id), 'kadeAccountType role');
+  /* Oct 20 2026: read with kadeRealCost.PAYER_FIELDS so the quote is this account's own price
+   * (factor 1 for a Family pack member). */
+  const { PAYER_FIELDS } = require('~/server/services/kadeRealCost');
+  const u = await db().getUserById(String(user.id), `kadeAccountType ${PAYER_FIELDS}`);
   if (u && u.kadeAccountType === 'child') return { ok: false, why: 'child', soft: true };
-  return { ok: true, role: (u && u.role) || user.role };
+  return { ok: true, role: (u && u.role) || user.role, account: u || user };
 }
 
 /** Price of a job of `steps` rounds for this character, at the asker's price. */
-async function priceFor({ agentId, steps, role }) {
+async function priceFor({ agentId, steps, role, account }) {
   /* Only the model: a full agent record carries every saved version. */
   const agent = await require('mongoose').models.Agent.findOne({ id: String(agentId) }).select('model').lean();
   const model = agent && agent.model;
@@ -105,7 +108,7 @@ async function priceFor({ agentId, steps, role }) {
   const inRate = per('prompt') || 0.5;
   const outRate = per('completion') || 1.5;
   const round = (TOKENS_PER_ROUND * inRate + OUTPUT_PER_ROUND * outRate) / 1e6;
-  const priceFactor = userPriceFactor(role);
+  const priceFactor = userPriceFactor(account || role);
   const typical = round * Math.min(steps, 6) * priceFactor;
   const most = round * steps * priceFactor;
   return { typical, most, model };
@@ -118,7 +121,7 @@ async function quote({ req, agentId, goal, steps = DEFAULT_STEPS }) {
   const s = Math.max(4, Math.min(MAX_STEPS, Math.round(Number(steps) || DEFAULT_STEPS)));
   const g = String(goal || '').trim();
   if (g.length < 8) return { ok: false, error: 'say the job in a full sentence first' };
-  const { typical, most } = await priceFor({ agentId, steps: s, role: who.role });
+  const { typical, most } = await priceFor({ agentId, steps: s, role: who.role, account: who.account });
   const quoteId = `q${crypto.randomBytes(6).toString('hex')}`;
   await coll(QUOTES).insertOne({
     quoteId,

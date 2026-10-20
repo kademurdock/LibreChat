@@ -21,6 +21,7 @@ const {
   realChat,
   isAdminRole,
   userPriceFactor,
+  PAYER_FIELDS,
   voiceUsageEvent,
   isVoiceEstimate,
   VOICE_ESTIMATE_SERVICE,
@@ -191,8 +192,12 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
     const mult = billingMultiplierNow();
     const uid = new mongoose.Types.ObjectId(userId);
     /* KADE Part 291: real cost is each meter row re-priced at the real sticker (kadeRealCost), not
-     * this month's charged total divided by today's multiplier. `multiplier` keeps meaning the
-     * platform factor (bridge/monthly.js reads it); `priceFactor` is this person's own. */
+     * this month's charged total divided by today's multiplier. `priceFactor` is this person's own.
+     * Oct 20 2026 (family at cost): `multiplier` is now ALSO this person's own factor (1 for the
+     * administrator and a Family pack member), because the iPhone's Usage screen shows "Balances
+     * are charged N times..." whenever it is not 1; the platform factor moves to
+     * `platformMultiplier`. Nothing else reads `multiplier` (bridge main 0444a0d monthly.js does
+     * not; the inworld proxy passes the body through). The subject is read with PAYER_FIELDS. */
     const [[tx], real, extras, subject] = await Promise.all([
       Transaction.aggregate([
         { $match: { user: uid, createdAt: { $gte: since } } },
@@ -203,9 +208,10 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
         { $match: { user: uid, createdAt: { $gte: since } } },
         { $group: { _id: '$service', costUSD: { $sum: '$costUSD' }, chargedUSD: { $sum: CHARGED_USD }, quantity: { $sum: '$quantity' } } },
       ]),
-      userId === String(req.user.id) ? req.user : User.findById(uid, { role: 1 }).lean(),
+      userId === String(req.user.id) ? req.user : User.findById(uid).select(PAYER_FIELDS).lean(),
     ]);
     const subjectAdmin = isAdminRole(subject && subject.role);
+    const subjectFactor = subject ? userPriceFactor(subject) : mult;
     const chargedModelUSD = subjectAdmin ? 0 : round(Math.abs(usd(tx ? tx.spend : 0)));
     const modelUSD = round(real.reduce((s, r) => s + r.realUSD, 0));
     /* Part 291 review (F14): an administrator's own voice_chat estimates are the same turns as
@@ -219,8 +225,9 @@ router.get('/my-cost', requireJwtAuth, async (req, res) => {
     res.json({
       userId,
       monthStart: since.toISOString(),
-      multiplier: mult,
-      priceFactor: subjectAdmin ? 1 : mult,
+      multiplier: subjectFactor,
+      platformMultiplier: mult,
+      priceFactor: subjectFactor,
       modelUSD,
       chargedModelUSD,
       modelTurns: tx ? tx.turns : 0,
@@ -1880,7 +1887,7 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
     return res.json({
       image: `data:${mime};base64,${Buffer.from(img.data).toString('base64')}`,
       /* Part 295: the price this person paid (real for the administrator). */
-      costUSD: round(costUSD * userPriceFactor(req.user && req.user.role)),
+      costUSD: round(costUSD * userPriceFactor(req.user)),
     });
   } catch (err) {
     logger.error(`[kade/avatar-generate] failed: ${err && err.message}`);

@@ -134,7 +134,8 @@ type FinishedCopy = {
   /** Seconds of opening Kade-AI credit before the film's first frame (`report.credit.lead`). */
   lead?: number;
 };
-type Actor = { id: string; role?: string; child?: boolean };
+/** familyPack (Oct 20 2026): the wrapper's Family pack answer, read by its priceFactor (at cost). */
+type Actor = { id: string; role?: string; child?: boolean; familyPack?: boolean };
 /** A library track the owner may describe, found and checked by the library's own access rules. */
 type LibrarySource = {
   key: string;

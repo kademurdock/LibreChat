@@ -342,7 +342,7 @@ async function paidDesign(req, res, run, via) {
       res,
       {
         ...payload(null, null, compiled),
-        costUSD: Number((out.costUSD * userPriceFactor(req.user && req.user.role)).toFixed(5)),
+        costUSD: Number((out.costUSD * userPriceFactor(req.user)).toFixed(5)),
       },
       compiled,
     );

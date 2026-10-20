@@ -47,21 +47,99 @@ function platformFactor(env = process.env) {
 const isAdminRole = (role) => String(role || '').toUpperCase() === 'ADMIN';
 
 /**
+ * KADE Oct 20 2026, her words: "Yes: the fuller refund ($20.91), plus Amber's failed turns, stop
+ * charging failed turns, record her $20 repayment, include the old chat paths, and deploy the
+ * at-cost change." FAMILY AT COST: an account in the Family feature pack (packages/api
+ * family/pack.ts familyPack, the Library's family permission, unchanged: the App Review seat and
+ * test seats are never in it) is still CHARGED, but at factor 1, the real provider price. The
+ * administrator stays exempt; everyone else stays at KADE_BILLING_MULTIPLIER.
+ *
+ * Every payer lookup selects PAYER_FIELDS. familyPack falls back to the Sep 24 cutoff rule when
+ * kadeLibraryAccess is missing, so a lookup that left the field out could price an account Kade
+ * set to 'none' at cost. A bare role STRING (the pre-Oct 20 calling style) is never family.
+ *
+ * KADE_FAMILY_AT_COST: absent or anything but '0' = on; '0' puts family back at the platform
+ * factor. Read per call.
+ */
+const PAYER_FIELDS = 'role email name username kadeLibraryAccess';
+
+function familyAtCost(env = process.env) {
+  return String((env && env.KADE_FAMILY_AT_COST) ?? '').trim() !== '0';
+}
+
+/** The pack rule itself, loaded lazily so node --test still loads this file without a build. */
+let familyPackResolver = null;
+function familyPackRule() {
+  if (familyPackResolver) return familyPackResolver;
+  try {
+    const fn = require('@librechat/api').familyPack;
+    if (typeof fn === 'function') familyPackResolver = fn;
+  } catch (_) {
+    /* no build (a node test): nobody is family unless the account says so explicitly */
+  }
+  return familyPackResolver;
+}
+
+/** Tests only: stand in for packages/api familyPack (null puts the real one back). */
+function setFamilyPackRuleForTests(fn) {
+  familyPackResolver = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * 'admin' | 'family' | 'user' for an account object (or a bare role string, never family).
+ * An explicit account.familyPack boolean (set by trusted server code, e.g. the describer actor)
+ * stands in for the lookup.
+ * @param {string | { role?: string, familyPack?: boolean, kadeLibraryAccess?: string } | null | undefined} account
+ */
+function payerTier(account, env = process.env) {
+  const role = typeof account === 'string' ? account : account && account.role;
+  if (isAdminRole(role)) return 'admin';
+  if (!account || typeof account !== 'object' || !familyAtCost(env)) return 'user';
+  if (typeof account.familyPack === 'boolean') return account.familyPack ? 'family' : 'user';
+  const rule = familyPackRule();
+  try {
+    return rule && rule(account) === true ? 'family' : 'user';
+  } catch (_) {
+    return 'user';
+  }
+}
+
+/**
  * KADE Sep 26 2026 (Part 295), her words: "Yes, double everything." Every paid extra (Spotter,
  * camera video, describing, Lyria, games, the clubhouse, the debate room, fal and the rest) costs a
  * person the platform factor times its real provider price, the way chat and voice turns already
  * do. The administrator pays the providers herself: she is never charged, and every price she is
  * quoted is the real one. Quotes use userPriceFactor; the wallet uses extraChargeUSD.
+ * Oct 20 2026: takes the ACCOUNT (a bare role string still works and is never family); a Family
+ * pack account's factor is 1.
  */
-function userPriceFactor(role, env = process.env) {
-  return isAdminRole(role) ? 1 : platformFactor(env);
+function userPriceFactor(account, env = process.env) {
+  return payerTier(account, env) === 'user' ? platformFactor(env) : 1;
 }
 
-/** What a person's balance pays for an extra that really cost costUSD: 0 for the administrator. */
-function extraChargeUSD(costUSD, role, env = process.env) {
+/** What a person's balance pays for an extra that really cost costUSD: 0 for the administrator,
+ * the real cost for a Family pack account, the platform factor x it for everyone else. */
+function extraChargeUSD(costUSD, account, env = process.env) {
   const cost = Number(costUSD);
-  if (!Number.isFinite(cost) || cost <= 0 || isAdminRole(role)) return 0;
-  return Math.round(cost * platformFactor(env) * 1e6) / 1e6;
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+  const tier = payerTier(account, env);
+  if (tier === 'admin') return 0;
+  return Math.round(cost * (tier === 'family' ? 1 : platformFactor(env)) * 1e6) / 1e6;
+}
+
+/**
+ * The account `userId` names, taken from what the request already holds (req.user, or the voice
+ * caller in req.kadeOnBehalfOf); null when neither is that account, so the caller keeps the
+ * platform price rather than guessing.
+ */
+function payerFromReq(req, userId) {
+  if (!req) return null;
+  const id = userId == null ? null : String(userId);
+  const u = req.user;
+  if (u && (id == null || String(u.id ?? u._id) === id)) return u;
+  const o = req.kadeOnBehalfOf;
+  if (o && id != null && String(o.id ?? o._id) === id) return o;
+  return null;
 }
 
 /**
@@ -224,6 +302,8 @@ function txGroupStage(keys = {}) {
         tokenType: '$tokenType',
         structured: { $in: [{ $type: '$inputTokens' }, NUMERIC] },
         afterSwitch: { $gte: ['$createdAt', FACTOR_SINCE] },
+        /* Oct 20 2026: the factor stamped on the row (null on rows written before the stamp). */
+        kadeFactor: { $ifNull: ['$kadeFactor', null] },
       },
       raw: { $sum: { $abs: { $ifNull: ['$rawAmount', 0] } } },
       input: { $sum: { $abs: { $ifNull: ['$inputTokens', 0] } } },
@@ -266,11 +346,14 @@ function createPricer(db, factor) {
 function priceGroup(g, price, factor) {
   const id = (g && g._id) || {};
   const model = id.model || '';
-  const chargedUSD = -(Number(g.charged) || 0) * CREDIT_USD;
+  const chargedUSD = -(Number(g.charged) || 0) * CREDIT_USD || 0;
   const main = price(model, id.tokenType);
   if (!main.priced || main.rate == null) {
-    const f = id.afterSwitch ? factor : 1;
-    return { realUSD: chargedUSD / f, chargedUSD, unpriced: model || '(no model)' };
+    /* Oct 20 2026: a row stamped with kadeFactor says its own factor (1 for a Family pack row, 0
+     * for an uncharged failed turn, whose real cost cannot be recovered from a charge of 0). */
+    const stamped = typeof id.kadeFactor === 'number' && Number.isFinite(id.kadeFactor) ? id.kadeFactor : null;
+    const f = stamped != null ? stamped : id.afterSwitch ? factor : 1;
+    return { realUSD: f > 0 ? chargedUSD / f : 0, chargedUSD, unpriced: model || '(no model)' };
   }
   let credits;
   if (id.tokenType === 'prompt' && id.structured) {
@@ -333,16 +416,91 @@ async function realChat({ Transaction, db, env = process.env, match = {}, keys =
  * providers herself, so she sees the real sticker; everyone else keeps exactly db.getMultiplier and
  * db.getCacheMultiplier. Only the gauge uses this: recorded rows are priced as before.
  */
-function gaugePricing(role, db, env = process.env) {
+function gaugePricing(account, db, env = process.env) {
   const base = { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier };
-  if (!isAdminRole(role)) return base;
+  if (payerTier(account, env) === 'user') return base;
+  return realPricing(db, env);
+}
+
+/** db's pricing with the platform factor divided back out: the raw provider sticker. */
+function realPricing(db, env = process.env) {
   return {
-    getMultiplier: (args) => base.getMultiplier(args) / platformFactor(env),
+    getMultiplier: (args) => db.getMultiplier(args) / platformFactor(env),
     getCacheMultiplier: (args) => {
-      const c = base.getCacheMultiplier(args);
+      const c = typeof db.getCacheMultiplier === 'function' ? db.getCacheMultiplier(args) : null;
       return c == null ? null : c / platformFactor(env);
     },
   };
+}
+
+/**
+ * Oct 20 2026: the pricing a person's CHAT transactions are recorded (and their balance charged)
+ * at. A Family pack account pays the real sticker (factor 1); everyone else, the administrator
+ * included (her balance is never drawn), keeps db's own platform-factor pricing exactly as before.
+ * `factor` is stamped on every row as kadeFactor (transactions.ts), so an audit can tell a 1x row
+ * from a 2x one without the cutover time.
+ * @returns {{ getMultiplier: Function, getCacheMultiplier: Function, factor: number }}
+ */
+function chargePricing(account, db, env = process.env) {
+  const f = platformFactor(env);
+  if (payerTier(account, env) === 'family') return { ...realPricing(db, env), factor: 1 };
+  return { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier, factor: f };
+}
+
+/**
+ * Oct 20 2026, her words: "stop charging failed turns." A turn that ends in the agents recursion
+ * limit ("Recursion limit of N reached") is recorded at factor 0: every row keeps its token counts
+ * (so the real-cost readouts, which re-price tokens at today's rows, still show what the providers
+ * charged Kade), tokenValue is 0 (so every "charged" readout and the balance stay truthful with no
+ * filter), kadeFactor is 0 and kadeUncharged names the reason.
+ * @param {string} reason
+ */
+function unchargedPricing(reason) {
+  return { getMultiplier: () => 0, getCacheMultiplier: () => 0, factor: 0, uncharged: String(reason || 'failed') };
+}
+
+/**
+ * Oct 20 2026 ("include the old chat paths"): the legacy db.spendTokens / spendStructuredTokens
+ * paths priced every row at the platform factor whoever paid. This writes the same rows
+ * (prompt, completion; structured prompt rows with cache splits) through prepareTokenSpend and
+ * bulkWriteTransactions at chargePricing(account), so a Family pack account pays factor 1 and every
+ * row carries kadeFactor. Balance and transactions config ride on txData exactly as spendTokens
+ * reads them (no balance.enabled = rows only). Never throws.
+ * @param {object | string | null} account the payer (a full user, PAYER_FIELDS at least)
+ * @param {object} txData { user, model, context, conversationId, messageId, balance, transactions, endpointTokenConfig }
+ * @param {{ promptTokens?: number | { input?: number, write?: number, read?: number }, completionTokens?: number }} tokenUsage
+ * @param {{ db: object, structured?: boolean, pricing?: object, updateBalance?: Function, api?: object }} opts
+ */
+async function spendTokensAs(account, txData, tokenUsage, opts = {}) {
+  const { db, structured = false } = opts;
+  try {
+    const api = opts.api || require('@librechat/api');
+    const pricing = opts.pricing || chargePricing(account, db);
+    const data = {
+      user: String(txData.user),
+      model: txData.model,
+      context: txData.context || 'message',
+      messageId: txData.messageId,
+      conversationId: txData.conversationId,
+      endpointTokenConfig: txData.endpointTokenConfig ?? undefined,
+      balance: txData.balance,
+      transactions: txData.transactions,
+      ...(txData.valueKey ? { valueKey: txData.valueKey } : {}),
+    };
+    const docs = structured
+      ? api.prepareStructuredTokenSpend(data, tokenUsage, pricing)
+      : api.prepareTokenSpend(data, tokenUsage, pricing);
+    await api.bulkWriteTransactions(
+      { user: data.user, docs },
+      { insertMany: db.bulkInsertTransactions, updateBalance: opts.updateBalance || db.updateBalance },
+    );
+  } catch (err) {
+    try {
+      require('@librechat/data-schemas').logger.error('[kadeRealCost #spendTokensAs]', err);
+    } catch (_) {
+      /* noop */
+    }
+  }
 }
 
 module.exports = {
@@ -351,8 +509,17 @@ module.exports = {
   SPEND_TYPES,
   platformFactor,
   isAdminRole,
+  PAYER_FIELDS,
+  familyAtCost,
+  payerTier,
+  payerFromReq,
+  setFamilyPackRuleForTests,
   userPriceFactor,
   extraChargeUSD,
+  realPricing,
+  chargePricing,
+  unchargedPricing,
+  spendTokensAs,
   openRouterCost,
   voiceBilledReal,
   VOICE_KEY,

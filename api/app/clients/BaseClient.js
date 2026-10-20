@@ -696,7 +696,12 @@ class BaseClient {
         },
         {
           logViolation,
-          getMultiplier: db.getMultiplier,
+          /* Oct 20 2026: the estimate is priced the way the turn will be charged, so a Family
+           * pack member is checked at the real price, not the platform factor. */
+          getMultiplier: require('~/server/services/kadeRealCost').chargePricing(
+            this.options?.req?.user,
+            db,
+          ).getMultiplier,
           findBalanceByUser: db.findBalanceByUser,
           createAutoRefillTransaction: db.createAutoRefillTransaction,
           balanceConfig,

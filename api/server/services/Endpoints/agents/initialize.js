@@ -433,7 +433,7 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
    * Recorded transaction rows are priced elsewhere and are untouched. */
   const usageCost = {
     enabled: appConfig?.interfaceConfig?.contextCost === true,
-    pricing: require('~/server/services/kadeRealCost').gaugePricing(req.user?.role, db),
+    pricing: require('~/server/services/kadeRealCost').gaugePricing(req.user, db),
   };
 
   /** Latest visible context snapshot + every emitted usage payload for this

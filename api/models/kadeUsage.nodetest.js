@@ -12,7 +12,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ROLES = { kade: 'ADMIN', amber: 'USER', holly: null };
+const ROLES = { kade: 'ADMIN', amber: 'USER', holly: null, fam: 'USER', tee: 'USER' };
+/* Oct 20 2026 (family at cost): kadeLibraryAccess as Kade set it. 'fam' is in the Family pack. */
+const ACCESS = { fam: 'family', tee: 'none' };
+/* Every User lookup's projection, so a test can see the payer fields were asked for. */
+const SELECTS = [];
 
 /** A dotted-path read and the few query shapes kadeUsage.js asks the collection for. */
 const at = (doc, p) => p.split('.').reduce((v, k) => (v == null ? undefined : v[k]), doc);
@@ -28,7 +32,7 @@ const matches = (doc, query) =>
 /** Every database answer waits a turn, so two callers really do interleave. */
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', ownerLookupFails = false } = {}) {
+function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', ownerLookupFails = false, familyAtCost } = {}) {
   const rows = [];
   const moves = [];
   const warnings = [];
@@ -81,12 +85,20 @@ function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', owner
     },
     User: {
       findById: (id) => ({
-        select: () => ({
-          lean: async () => {
-            if (roleLookupFails) throw new Error('db down');
-            return id in ROLES ? { role: ROLES[id] } : null;
-          },
-        }),
+        select: (fields) => {
+          SELECTS.push(fields);
+          return {
+            lean: async () => {
+              if (roleLookupFails) throw new Error('db down');
+              if (!(id in ROLES)) return null;
+              const wants = (f) => String(fields || '').split(/\s+/).includes(f);
+              return {
+                role: ROLES[id],
+                ...(wants('kadeLibraryAccess') && ACCESS[id] ? { kadeLibraryAccess: ACCESS[id] } : {}),
+              };
+            },
+          };
+        },
       }),
     },
     Balance: { updateOne: async (query, update) => moves.push({ user: query.user, inc: update.$inc.tokenCredits }) },
@@ -103,7 +115,7 @@ function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', owner
       if (name === '@librechat/data-schemas') return { logger: { warn: (m) => warnings.push(m), info() {} } };
       if (name === '../server/services/kadeRealCost') {
         /* The real rules, reading this test's platform factor. */
-        const env = { KADE_BILLING_MULTIPLIER: multiplier };
+        const env = { KADE_BILLING_MULTIPLIER: multiplier, ...(familyAtCost !== undefined ? { KADE_FAMILY_AT_COST: familyAtCost } : {}) };
         return {
           ...realCost,
           userPriceFactor: (role) => realCost.userPriceFactor(role, env),
@@ -207,6 +219,63 @@ test('quotes: the factor a person is shown, and a failed lookup quotes 1x', asyn
   assert.equal(await U.priceFactorForUser(null), 1);
   assert.equal(await load({ roleLookupFails: true }).U.priceFactorForUser('amber'), 1);
 });
+
+/* Oct 20 2026 (family at cost). The pack rule stands in for packages/api familyPack here (it is
+ * TypeScript); kadeFamilyAtCost.nodetest.js runs the real rule. */
+async function withFamilyRule(fn) {
+  const realCost = require('../server/services/kadeRealCost');
+  realCost.setFamilyPackRuleForTests((a) => a && a.kadeLibraryAccess === 'family');
+  try {
+    await fn();
+  } finally {
+    realCost.setFamilyPackRuleForTests(null);
+  }
+}
+
+test('Oct 20 2026: a Family pack member pays the real cost; kadeLibraryAccess none pays the factor', () =>
+  withFamilyRule(async () => {
+    const { U, rows, moves } = load();
+    await U.logKadeUsage({ userId: 'fam', service: 'video_live', quantity: 3, unit: 'minutes', costUSD: 0.42 });
+    await U.logKadeUsage({ userId: 'tee', service: 'video_live', quantity: 3, unit: 'minutes', costUSD: 0.42 });
+    await U.logKadeUsage({ userId: 'kade', service: 'video_live', quantity: 3, unit: 'minutes', costUSD: 0.42 });
+    assert.deepEqual(rows.map((r) => [r.user, r.costUSD, r.chargedUSD]), [
+      ['fam', 0.42, 0.42],
+      ['tee', 0.42, 0.84],
+      ['kade', 0.42, 0],
+    ]);
+    assert.deepEqual(moves, [
+      { user: 'fam', inc: -420000 },
+      { user: 'tee', inc: -840000 },
+    ]);
+    /* Quotes and My Creations prices follow the same account. */
+    assert.equal(await U.priceFactorForUser('fam'), 1);
+    assert.equal(await U.priceFactorForUser('tee'), 2);
+    assert.equal(await U.chargedFor('fam', 0.63), 0.63);
+    /* A refund row gives a family member back what was charged (1x). */
+    await U.logKadeUsage({ userId: 'fam', service: 'fal_video', quantity: 5, unit: 'seconds', costUSD: -0.42 });
+    assert.equal(rows.at(-1).chargedUSD, -0.42);
+  }));
+
+test('Oct 20 2026: every payer lookup asks for kadeLibraryAccess (without it the pack rule falls back to account age)', async () => {
+  SELECTS.length = 0;
+  const { U } = load();
+  await U.logKadeUsage({ userId: 'amber', service: 'google_lyria', quantity: 1, unit: 'songs', costUSD: 0.08 });
+  await U.priceFactorForUser('amber');
+  await U.chargedFor('amber', 0.1);
+  await U.deductKadeCredits('amber', 0.1);
+  assert.equal(SELECTS.length, 4);
+  for (const fields of SELECTS) {
+    assert.match(String(fields), /\bkadeLibraryAccess\b/);
+    assert.match(String(fields), /\brole\b/);
+  }
+});
+
+test('Oct 20 2026: with KADE_FAMILY_AT_COST=0 a Family pack member pays the factor again', () =>
+  withFamilyRule(async () => {
+    const { U, rows } = load({ familyAtCost: '0' });
+    await U.logKadeUsage({ userId: 'fam', service: 'video_live', quantity: 3, unit: 'minutes', costUSD: 0.42 });
+    assert.equal(rows[0].chargedUSD, 0.84);
+  }));
 
 test('chargedFor: what a My Creations asset cost its owner; unknown when the account cannot be read', async () => {
   const { U } = load();

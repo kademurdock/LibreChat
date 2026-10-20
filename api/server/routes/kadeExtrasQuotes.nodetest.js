@@ -15,6 +15,9 @@ const ENV = { KADE_BILLING_MULTIPLIER: '2' };
 const userPriceFactor = (role) => realCost.userPriceFactor(role, ENV);
 const AMBER = { id: 'amber', role: 'USER' };
 const KADE = { id: 'kade', role: 'ADMIN' };
+/* Oct 20 2026 (family at cost): a Family pack member. The explicit familyPack answer stands in for
+ * packages/api familyPack, which a node test cannot load; kadeRealCost.nodetest.js runs the real rule. */
+const FAMILY = { id: 'holly', role: 'USER', kadeLibraryAccess: 'family', familyPack: true };
 
 function response() {
   return {
@@ -63,6 +66,7 @@ test('the Library Describe confirm quotes what the balance will pay (real for Ka
   assert.equal(amber.usd, 0.5004, 'she confirms the price her balance pays');
   assert.equal(amber.seconds, 7200);
   assert.equal((await quote(KADE)).usd, 0.2502, 'Kade is quoted the real price');
+  assert.equal((await quote(FAMILY)).usd, 0.2502, 'Oct 20 2026: a Family pack member is quoted the real price');
 });
 
 test('a finished Library description says what the asker paid (the real cost for Kade)', () => {
@@ -83,7 +87,11 @@ test('a finished Library description says what the asker paid (the real cost for
   assert.equal(c.descriptionCost({ ...d, chargedUSD: 0 }, { user: AMBER }), 0, 'one Kade asked for names no price');
   assert.equal(c.descriptionCost({ state: 'done', costUSD: 0.04 }, { user: AMBER }), 0.04, 'an older one was charged at its real cost');
   assert.equal(c.descriptionFor({}, { user: AMBER }), null);
-  assert.match(source, /chargedUSD = extraChargeUSD\(result\.costUSD, req\.user && req\.user\.role\)/, 'the done handler stores the charge');
+  assert.match(source, /chargedUSD = extraChargeUSD\(result\.costUSD, req\.user\)/, 'the done handler stores the charge for the account');
+  /* Oct 20 2026: a Family pack member is charged, and shown, the real cost. */
+  const familyCharged = realCost.extraChargeUSD(0.04, FAMILY, ENV);
+  assert.equal(familyCharged, 0.04);
+  assert.equal(c.descriptionFor({ ...d, chargedUSD: familyCharged }, { user: FAMILY }).costUSD, 0.04);
 });
 
 function loadBuilder(logged, usage = { prompt_tokens: 10000, completion_tokens: 20000 }) {
@@ -101,6 +109,11 @@ function loadBuilder(logged, usage = { prompt_tokens: 10000, completion_tokens: 
       post: async () => ({ data: { choices: [{ message: { content: 'draft' } }], usage } }),
     },
     '@librechat/data-schemas': { logger: { info() {}, warn() {}, error() {} } },
+    '@librechat/api': {
+      generateConversationStarters: async () => [],
+      parseConversationStarters: () => [],
+      conversationStartersHandler: () => () => {},
+    },
     '~/server/middleware': { requireJwtAuth() {} },
     '~/models/kadeUsage': { logKadeUsage: async (row) => logged.push(row), fluxCost: (_endpoint, n = 1) => 0.03 * n },
     '~/server/services/kadeRealCost': { ...realCost, userPriceFactor },
@@ -138,6 +151,8 @@ test("the character builder's portrait line and persona price are this person's 
   assert.equal(quiz(AMBER).portraitUSD, 0.06, 'a 3-cent portrait takes 6 cents from her balance');
   assert.equal(quiz(AMBER).priceFactor, 2);
   assert.equal(quiz(KADE).portraitUSD, 0.03);
+  assert.equal(quiz(FAMILY).portraitUSD, 0.03, 'Oct 20 2026: a Family pack member is quoted the real price');
+  assert.equal(quiz(FAMILY).priceFactor, 1);
   assert.ok(Array.isArray(quiz(AMBER).quiz));
 
   const html = response();
@@ -167,13 +182,16 @@ test("the character builder's portrait line and persona price are this person's 
     await handlers['POST /write-persona']({ user, body: { description: 'A warm, funny neighbour.' } }, res);
     return res.body;
   };
-  /* Sol: 10,000 in at $2/M and 20,000 out at $10/M: $0.22 estimated. */
+  /* MiMo v2.6 Pro (the persona model since 6f4b012e8; the test still said Sol): 10,000 in at
+   * $0.435/M and 20,000 out at $0.87/M: $0.02175 estimated. */
   const regular = await write(AMBER);
-  assert.equal(regular.costUSD, 0.44, 'the regular-user estimate includes the contribution once');
+  assert.equal(regular.costUSD, 0.0435, 'the regular-user estimate includes the contribution once');
   assert.equal(regular.costMeasured, false, 'token counts alone are not measured USD cost');
-  assert.equal((await write(KADE)).costUSD, 0.22, 'Kade is told the provider estimate');
+  assert.equal((await write(KADE)).costUSD, 0.02175, 'Kade is told the provider estimate');
+  assert.equal((await write(FAMILY)).costUSD, 0.02175, 'a Family pack member is told the provider estimate');
+  logged.pop();
   assert.equal(logged.length, 2);
-  assert.ok(logged.every((r) => Math.abs(r.costUSD - 0.22) < 1e-12), 'the row keeps the provider estimate; logKadeUsage charges the factor');
+  assert.ok(logged.every((r) => Math.abs(r.costUSD - 0.02175) < 1e-12), 'the row keeps the provider estimate; logKadeUsage charges the factor');
 });
 
 test('persona drafts retain regional or cached measured cost rather than repricing their tokens', async () => {

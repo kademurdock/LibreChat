@@ -265,3 +265,29 @@ test('services land on the right feature', () => {
   assert.equal(F.dollars(1234.5), '$1,234.50');
   assert.equal(F.cents(-0.001), 0);
 });
+
+test('Oct 20 2026: each person shows the factor they are charged at now; the platform factor rides beside it', () => {
+  const env = { KADE_BILLING_MULTIPLIER: '2' };
+  const at = (user) => F.compose({ user, price: createPricer(fakeDb(2), 2), factor: 2, env });
+  const family = at({ _id: '6a5fc5fa351af41332734161', name: 'Amber A', role: 'USER', kadeLibraryAccess: 'family', familyPack: true });
+  assert.equal(family.multiplier, 1);
+  assert.equal(family.platformMultiplier, 2);
+  assert.equal(at({ _id: '6a5ad176c1b837d2fafd4fe5', name: 'T', role: 'USER', kadeLibraryAccess: 'none', familyPack: false }).multiplier, 2);
+  assert.equal(at({ _id: '6a0000000000000000000009', name: 'Kade', role: 'ADMIN' }).multiplier, 1);
+  assert.equal(at({ _id: '6a5fc5fa351af41332734161', name: 'Amber A', role: 'USER', familyPack: true }).platformMultiplier, 2);
+  assert.equal(F.compose({ user: { _id: 'x', role: 'USER', familyPack: true }, price: createPricer(fakeDb(2), 2), factor: 2, env: { ...env, KADE_FAMILY_AT_COST: '0' } }).multiplier, 2);
+});
+
+test('Oct 20 2026: a refund needs a clientKey and a real amount', () => {
+  const id = '6a5fc5fa351af41332734161';
+  assert.deepEqual(F.validateRefund({ userId: id, usd: '$19.31', note: ' n ', clientKey: `family-atcost-refund-2026-09-10:${id}` }).value, {
+    userId: id,
+    usd: 19.31,
+    note: 'n',
+    clientKey: `family-atcost-refund-2026-09-10:${id}`,
+  });
+  assert.match(F.validateRefund({ userId: id, usd: 1 }).error, /clientKey/);
+  assert.match(F.validateRefund({ userId: id, usd: 0.004, clientKey: 'abcdefgh' }).error, /one cent/);
+  assert.match(F.validateRefund({ userId: id, usd: 1000.01, clientKey: 'abcdefgh' }).error, /over \$1,000/);
+  assert.match(F.validateRefund({ userId: 'x', usd: 1, clientKey: 'abcdefgh' }).error, /userId/);
+});

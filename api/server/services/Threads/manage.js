@@ -8,7 +8,7 @@ const {
   AnnotationTypes,
   defaultOrderQuery,
 } = require('librechat-data-provider');
-const { recordMessage, getMessages, spendTokens, saveConvo } = require('~/models');
+const { recordMessage, getMessages, saveConvo } = require('~/models');
 const { retrieveAndProcessFile } = require('~/server/services/Files/process');
 
 /**
@@ -507,7 +507,17 @@ const recordUsage = async ({
   conversationId,
   context = 'message',
 }) => {
-  await spendTokens(
+  /* KADE Oct 20 2026 ("include the old chat paths"): priced for the payer, read with
+   * kadeRealCost.PAYER_FIELDS (factor 1 for a Family pack member); same rows as spendTokens. A
+   * failed lookup keeps the platform price. */
+  let account = null;
+  try {
+    account = await require('~/models/kadeUsage').accountOf(user);
+  } catch (_) {
+    account = null;
+  }
+  await require('~/server/services/kadeRealCost').spendTokensAs(
+    account,
     {
       user,
       model,
@@ -515,6 +525,7 @@ const recordUsage = async ({
       conversationId,
     },
     { promptTokens: prompt_tokens, completionTokens: completion_tokens },
+    { db: require('~/models') },
   );
 };
 

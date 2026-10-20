@@ -106,6 +106,7 @@ function loadRecorder() {
     require: (name) => {
       assert.equal(name, '~/server/services/kadeRealCost');
       return {
+        ...R,
         voiceWalletUpdate: (opts) => {
           wallets.push(opts);
           return R.voiceWalletUpdate(opts);
@@ -187,7 +188,7 @@ test("the caller's wallet is drawn on a billed voice turn; Kade's seat never is"
 test('a call is never cut mid-turn: the pre-turn balance check still skips the service seat', () => {
   const base = read('../../app/clients/BaseClient.js');
   assert.match(base, /const isKadeAdmin = this\.options\?\.req\?\.user\?\.role === 'ADMIN';/);
-  assert.match(base, /!isKadeAdmin &&\s+balanceConfig\?\.enabled/);
+  assert.match(base, /!isKadeAdmin &&\s+(?:!isPlatformPaid &&\s+)?balanceConfig\?\.enabled/);
 });
 
 /* ---- funding page ------------------------------------------------------------------------ */
@@ -410,7 +411,7 @@ test('client.js: the estimated-usage fallback of a billed voice turn uses the sa
       return out;
     },
     bulkWriteTransactions: async (args, ops) => writes.push([args, ops]),
-    require: () => ({ voiceWalletUpdate: () => 'caller-wallet' }),
+    require: () => ({ ...R, voiceWalletUpdate: () => 'caller-wallet' }),
   };
   vm.createContext(context);
   vm.runInContext(`this.C = class C {\n${methods}\n};`, context);
@@ -442,11 +443,14 @@ test('client.js: the estimated-usage fallback of a billed voice turn uses the sa
     ],
   );
   assert.equal(ops.updateBalance, 'caller-wallet');
-  // Kade's own turn keeps spendTokens exactly as before.
+  // Oct 20 2026: every other estimate goes the same bulk way (priced for its payer, kadeFactor on
+  // the rows) and keeps updateBalance and context 'message'; spendTokens is no longer used.
   await make({ user: KADE_SEAT }).recordTokenUsage({ model: 'm', balance, promptTokens: 10, completionTokens: 2 });
-  assert.equal(writes.length, 1);
-  assert.equal(spent[0][0].user, 'kade');
-  assert.equal(spent[0][0].context, 'message');
+  assert.equal(writes.length, 2);
+  assert.equal(spent.length, 0);
+  assert.equal(writes[1][0].user, 'kade');
+  assert.deepEqual(writes[1][0].docs.map((d) => d.context), ['message', 'message']);
+  assert.equal(writes[1][1].updateBalance, db.updateBalance);
 });
 
 /* ---- review fixes: the funding figures (F14, F40) ------------------------------------------ */

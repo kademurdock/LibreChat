@@ -48,14 +48,19 @@ async function resolveKadeOnBehalfOf(req, _res, next) {
     const User = mongoose.models.User || mongoose.model('User');
     const u = await User.findOne(
       { email: { $in: [email, email.toLowerCase()] } },
-      { _id: 1, name: 1, username: 1, email: 1, role: 1 },
+      /* Oct 20 2026: kadeLibraryAccess (and username) too, so a voice turn billed to a Family pack
+       * caller is priced at cost (kadeRealCost.PAYER_FIELDS; without the field the pack rule would
+       * fall back to the account's age). */
+      { _id: 1, name: 1, username: 1, email: 1, role: 1, kadeLibraryAccess: 1 },
     ).lean();
     if (u) {
       req.kadeOnBehalfOf = {
         id: String(u._id),
         name: u.name || u.username || '',
+        username: u.username,
         email: u.email,
         role: u.role || SystemRoles.USER,
+        kadeLibraryAccess: u.kadeLibraryAccess,
       };
       /* KADE Sep 25 2026 (Part 291), her words: "Yes, I do want double on voice." With the fork
        * switch KADE_VOICE_BILL_REAL=1 the real transaction for this turn is billed to the real

@@ -821,7 +821,8 @@ const createResponse = async (req, res) => {
         {
           spendTokens: db.spendTokens,
           spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          /* KADE Oct 20 2026: priced for the payer (factor 1 for a Family pack member). */
+          pricing: require('~/server/services/kadeRealCost').chargePricing(req.user, db),
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
@@ -998,7 +999,8 @@ const createResponse = async (req, res) => {
         {
           spendTokens: db.spendTokens,
           spendStructuredTokens: db.spendStructuredTokens,
-          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          /* KADE Oct 20 2026: priced for the payer (factor 1 for a Family pack member). */
+          pricing: require('~/server/services/kadeRealCost').chargePricing(req.user, db),
           bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
         },
         {
