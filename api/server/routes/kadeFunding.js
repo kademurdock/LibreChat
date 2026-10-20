@@ -9,9 +9,10 @@
  *
  *   GET  /people?period=this_month|all_time         everyone with a cost or a repayment
  *   GET  /summary?userId=&period=&from=&to=          one person (the admin's own when userId is empty)
- *   GET  /ledger?userId=&kind=repayment|grant|all    entries, newest first (voided ones included)
+ *   GET  /ledger?userId=&kind=repayment|grant|refund|all    entries, newest first (voided ones included)
  *   POST /repayments { userId, usd, at, note, clientKey }   idempotent on clientKey
  *   POST /repayments/:id/void { reason }  and  /repayments/:id/restore
+ *   POST /refunds { userId, usd, note, clientKey }   Oct 20 2026: credit a balance back, once per clientKey
  *
  * People ask about their own figures through the agent tool kade_funding_balance, not here.
  */
@@ -30,6 +31,7 @@ function createFundingRouter(options = {}) {
   const deps = options.deps;
   const Ledger = () => options.Ledger || require('~/models/kadeFunding').KadeFundingEntry;
   const Users = () => options.User || mongoose.models.User || mongoose.model('User');
+  const Balances = () => options.Balance || mongoose.models.Balance || mongoose.model('Balance');
   const guard = options.guard || opsOrAdmin((req) => isAdminRole(req.user && req.user.role));
   const actorId = (req) => (req.user && (req.user.id || req.user._id) ? String(req.user.id || req.user._id) : null);
 
@@ -42,6 +44,7 @@ function createFundingRouter(options = {}) {
     at: e.at,
     note: e.note || '',
     via: e.via || 'admin',
+    ...(e.kind === 'refund' || e.balanceAfterUSD != null ? { balanceAfterUSD: e.balanceAfterUSD ?? null } : {}),
     voidedAt: e.voidedAt || null,
     voidReason: e.voidReason || '',
   });
@@ -121,7 +124,7 @@ function createFundingRouter(options = {}) {
     '/ledger',
     wrap(async (req, res) => {
       const kind = String(req.query.kind || 'repayment');
-      const q = kind === 'all' ? {} : { kind: kind === 'grant' ? 'grant' : 'repayment' };
+      const q = kind === 'all' ? {} : { kind: kind === 'grant' || kind === 'refund' ? kind : 'repayment' };
       if (req.query.userId && mongoose.Types.ObjectId.isValid(String(req.query.userId))) {
         q.user = new mongoose.Types.ObjectId(String(req.query.userId));
       }
@@ -203,6 +206,87 @@ function createFundingRouter(options = {}) {
     });
   router.post('/repayments/:id/void', flip(true));
   router.post('/repayments/:id/restore', flip(false));
+
+  /**
+   * KADE Oct 20 2026, her words: "Yes: the fuller refund ($20.91), plus Amber's failed turns..."
+   * POST /refunds { userId, usd, note, clientKey }: gives usd back to a person's balance.
+   *   1. A ledger row of kind 'refund' (never counted as a repayment) claims the clientKey; the
+   *      ledger's unique index makes a second send with the same key answer duplicate: true and
+   *      move no money.
+   *   2. balances.tokenCredits += round(usd x 1e6), with the same upsert add-credits uses.
+   *   3. balanceAfterUSD is written back onto the row; a refund row whose balanceAfterUSD is null
+   *      means the credit did not land (the row is removed again when the balance write fails, so
+   *      a retry with the same key can pay it).
+   * Never a Transaction row: every chat readout sums tokenValue over all transaction rows, so a
+   * credits row would be netted against a month's charges.
+   */
+  router.post(
+    '/refunds',
+    wrap(async (req, res) => {
+      const v = funding.validateRefund(req.body || {});
+      if (v.error) return res.status(400).json({ error: v.error });
+      const { userId, usd, note, clientKey } = v.value;
+      const L = Ledger();
+      const duplicate = async () => {
+        const dup = await L.findOne({ clientKey }).lean();
+        return res.json({
+          ok: true,
+          duplicate: true,
+          entry: dup ? view(dup, await nameOf([dup.user])) : null,
+          balanceUSD: dup && dup.balanceAfterUSD != null ? dup.balanceAfterUSD : null,
+        });
+      };
+      if (await L.exists({ clientKey })) return duplicate();
+      const person = await Users().findById(userId, { name: 1, username: 1 }).lean();
+      if (!person) return res.status(404).json({ error: 'No account for that person.' });
+      const name = person.name || person.username || 'them';
+      const via = req.kadeOps ? 'ops' : 'admin';
+      let doc;
+      try {
+        doc = await L.create({
+          user: userId,
+          kind: 'refund',
+          usd,
+          at: new Date(),
+          note,
+          clientKey,
+          addedBy: actorId(req),
+          via,
+        });
+      } catch (e) {
+        if (e && e.code === 11000) return duplicate();
+        throw e;
+      }
+      const row = doc.toObject ? doc.toObject() : doc;
+      const credits = Math.round(usd * 1e6);
+      let balance;
+      try {
+        balance = await Balances()
+          .findOneAndUpdate(
+            { user: new mongoose.Types.ObjectId(userId) },
+            { $inc: { tokenCredits: credits } },
+            { new: true, upsert: true, setDefaultsOnInsert: true },
+          )
+          .lean();
+      } catch (e) {
+        /* The credit did not land: let go of the key so a retry can pay it. */
+        await L.deleteOne({ _id: row._id }).catch(() => {});
+        throw e;
+      }
+      const balanceUSD = Math.round(((balance && balance.tokenCredits) || 0) / 1e4) / 100;
+      await L.updateOne({ _id: row._id }, { $set: { balanceAfterUSD: balanceUSD } }).catch((e) =>
+        logger.warn(`[kade/funding] refund ${row._id}: balanceAfterUSD not written: ${e && e.message}`),
+      );
+      logger.info(`[kade/funding] refund +$${usd.toFixed(2)} to ${userId} -> $${balanceUSD.toFixed(2)} via ${via}`);
+      res.json({
+        ok: true,
+        entry: view({ ...row, balanceAfterUSD: balanceUSD }, new Map([[userId, name]])),
+        credits,
+        balanceUSD,
+        spoken: `Refunded ${funding.dollars(usd)} to ${name}. Their balance is now ${funding.dollars(balanceUSD)}.`,
+      });
+    }),
+  );
 
   return router;
 }

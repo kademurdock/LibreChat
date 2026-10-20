@@ -62,6 +62,37 @@ function fakeLedger() {
       if (row) Object.assign(row, u.$set);
       return lean(row ? { ...row } : null);
     },
+    updateOne: async (q, u) => {
+      const row = rows.find((r) => matches(r, q));
+      if (row) Object.assign(row, u.$set);
+      return { matchedCount: row ? 1 : 0 };
+    },
+    deleteOne: async (q) => {
+      const i = rows.findIndex((r) => matches(r, q));
+      if (i >= 0) rows.splice(i, 1);
+      return { deletedCount: i >= 0 ? 1 : 0 };
+    },
+  };
+}
+
+/** Oct 20 2026: the balances collection the refund route credits ($inc with upsert, like add-credits). */
+function fakeBalances(start = {}) {
+  const credits = { ...start };
+  const ctl = { fail: false, calls: [] };
+  return {
+    credits,
+    ctl,
+    findOneAndUpdate: (q, u, opts) => {
+      ctl.calls.push({ q, u, opts });
+      const k = String(q.user);
+      return {
+        lean: async () => {
+          if (ctl.fail) throw new Error('balance write refused');
+          credits[k] = (credits[k] || 0) + u.$inc.tokenCredits;
+          return { user: q.user, tokenCredits: credits[k] };
+        },
+      };
+    },
   };
 }
 const fakeUser = {
@@ -69,7 +100,7 @@ const fakeUser = {
   find: (q) => lean(q._id.$in.map((id) => USERS[id]).filter(Boolean)),
 };
 
-function app({ ledger = fakeLedger(), summaries = [] } = {}) {
+function app({ ledger = fakeLedger(), summaries = [], balances = fakeBalances() } = {}) {
   const express = require('express');
   const realFunding = require('../services/kadeFunding');
   const funding = {
@@ -95,8 +126,8 @@ function app({ ledger = fakeLedger(), summaries = [] } = {}) {
   const { createFundingRouter } = require('./kadeFunding');
   const a = express();
   a.use(express.json());
-  a.use('/api/kade/funding', createFundingRouter({ funding, Ledger: ledger, User: fakeUser }));
-  return { a, ledger, summaries };
+  a.use('/api/kade/funding', createFundingRouter({ funding, Ledger: ledger, User: fakeUser, Balance: balances }));
+  return { a, ledger, summaries, balances };
 }
 
 test('nobody signed in, and signed-in people who are not Kade, are turned away', async () => {
@@ -198,4 +229,98 @@ test('people: totals leave Kade out; summary defaults to her own and passes the 
   const amber = await request(a).get(`/api/kade/funding/summary?userId=${AMBER}&period=this_month`).set('x-test-user', as(KADE)).expect(200);
   assert.equal(amber.body.name, 'Amber A');
   assert.ok(summaries[summaries.length - 1].window.from, 'this_month reaches the service as a window');
+});
+
+/* ---- Oct 20 2026: refunds ------------------------------------------------------------------- */
+
+const REFUND_KEY = `family-atcost-refund-2026-09-10:${AMBER}`;
+
+test('a refund credits the balance once per clientKey and leaves a refund row with the balance after', async () => {
+  const request = require('supertest');
+  const balances = fakeBalances({ [AMBER]: 20431341 });
+  const { a, ledger } = app({ balances });
+  const body = { userId: AMBER, usd: '19.31', note: 'Family at-cost refund Sept-Oct 2026', clientKey: REFUND_KEY };
+  const first = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(200);
+  assert.equal(first.body.ok, true);
+  assert.equal(first.body.credits, 19310000);
+  assert.equal(first.body.balanceUSD, 39.74);
+  assert.equal(balances.credits[AMBER], 20431341 + 19310000);
+  assert.deepEqual(balances.ctl.calls[0].u, { $inc: { tokenCredits: 19310000 } });
+  assert.deepEqual(balances.ctl.calls[0].opts, { new: true, upsert: true, setDefaultsOnInsert: true });
+  assert.equal(String(balances.ctl.calls[0].q.user), AMBER);
+  assert.equal(ledger.rows.length, 1);
+  assert.equal(ledger.rows[0].kind, 'refund');
+  assert.equal(ledger.rows[0].usd, 19.31);
+  assert.equal(ledger.rows[0].note, 'Family at-cost refund Sept-Oct 2026');
+  assert.equal(ledger.rows[0].clientKey, REFUND_KEY);
+  assert.equal(ledger.rows[0].balanceAfterUSD, 39.74);
+  assert.equal(String(ledger.rows[0].addedBy), KADE);
+  assert.equal(ledger.rows[0].via, 'admin');
+  assert.equal(first.body.entry.kind, 'refund');
+  assert.equal(first.body.entry.balanceAfterUSD, 39.74);
+  assert.equal(first.body.spoken, 'Refunded $19.31 to Amber A. Their balance is now $39.74.');
+  /* The same key again: no money moves. */
+  const again = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(200);
+  assert.equal(again.body.duplicate, true);
+  assert.equal(again.body.balanceUSD, 39.74);
+  assert.equal(balances.ctl.calls.length, 1);
+  assert.equal(ledger.rows.length, 1);
+});
+
+test('refunds: only Kade or the ops secret; a clientKey is required; bad amounts and unknown people refused', async () => {
+  const request = require('supertest');
+  const balances = fakeBalances();
+  const { a, ledger } = app({ balances });
+  const body = { userId: AMBER, usd: 1, clientKey: REFUND_KEY };
+  await request(a).post('/api/kade/funding/refunds').send(body).expect(401);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(AMBER)).send(body).expect(403);
+  const noKey = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ userId: AMBER, usd: 1 }).expect(400);
+  assert.match(noKey.body.error, /clientKey/);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, clientKey: 'bad key!' }).expect(400);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, usd: 0 }).expect(400);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, usd: -5 }).expect(400);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, usd: 1001 }).expect(400);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, userId: 'nope' }).expect(400);
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ ...body, userId: '6a00000000000000000000ff' }).expect(404);
+  assert.equal(ledger.rows.length, 0);
+  assert.equal(balances.ctl.calls.length, 0);
+  process.env.KADE_OPS_SECRET = 'test-ops-secret-value';
+  try {
+    const ops = await request(a).post('/api/kade/funding/refunds').set('x-kade-ops-secret', 'test-ops-secret-value').send({ ...body, usd: '1.11' }).expect(200);
+    assert.equal(ops.body.balanceUSD, 1.11, 'a person with no balance record gets one (upsert)');
+    assert.equal(ledger.rows[0].via, 'ops');
+    assert.equal(ledger.rows[0].addedBy, null);
+  } finally {
+    delete process.env.KADE_OPS_SECRET;
+  }
+});
+
+test('refunds: a balance write that fails lets go of the key, so a retry can pay it', async () => {
+  const request = require('supertest');
+  const balances = fakeBalances({ [HOLLY]: 1000000 });
+  const { a, ledger } = app({ balances });
+  const body = { userId: HOLLY, usd: 0.17, clientKey: `family-atcost-refund-2026-09-10:${HOLLY}` };
+  balances.ctl.fail = true;
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(503);
+  assert.equal(ledger.rows.length, 0, 'no refund row is left claiming money that never landed');
+  balances.ctl.fail = false;
+  const ok = await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send(body).expect(200);
+  assert.equal(ok.body.balanceUSD, 1.17);
+  assert.equal(ledger.rows.length, 1);
+});
+
+test('refunds are listed with kind=refund and never count as paid back', async () => {
+  const request = require('supertest');
+  const { a } = app();
+  await request(a).post('/api/kade/funding/refunds').set('x-test-user', as(KADE)).send({ userId: AMBER, usd: 19.31, clientKey: REFUND_KEY }).expect(200);
+  await request(a).post('/api/kade/funding/repayments').set('x-test-user', as(KADE)).send({ userId: AMBER, usd: 20, at: '2026-10-20' }).expect(200);
+  const refunds = await request(a).get('/api/kade/funding/ledger?kind=refund').set('x-test-user', as(KADE)).expect(200);
+  assert.deepEqual(refunds.body.entries.map((e) => [e.kind, e.name, e.usd, e.balanceAfterUSD]), [['refund', 'Amber A', 19.31, 19.31]]);
+  const reps = await request(a).get('/api/kade/funding/ledger').set('x-test-user', as(KADE)).expect(200);
+  assert.deepEqual(reps.body.entries.map((e) => e.kind), ['repayment']);
+  const s = await request(a).get(`/api/kade/funding/summary?userId=${AMBER}`).set('x-test-user', as(KADE)).expect(200);
+  assert.equal(s.body.paidBackUSD, 20, 'paid back counts the repayment only');
+  /* The real model accepts the new kind. */
+  const schema = require('fs').readFileSync(require('path').join(API, 'models/kadeFunding.js'), 'utf8');
+  assert.match(schema, /enum: \['repayment', 'grant', 'refund'\]/);
 });

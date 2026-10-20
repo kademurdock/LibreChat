@@ -9,7 +9,9 @@ const mongoose = require('mongoose');
  * Kade pays the real provider bills for everyone. This is her hand-kept record of money people
  * have paid her back ('repayment'), plus an informational row for every credit she loads with
  * add-credits ('grant'). A grant is NEVER counted as a repayment: only kind 'repayment' that is not
- * voided counts toward "paid back". Removing an entry is a void (kept, left out of the sums), never a
+ * voided counts toward "paid back". Oct 20 2026: kind 'refund' is money the platform gave back to a
+ * balance (POST /api/kade/funding/refunds, the family at-cost refund); it is never a repayment
+ * either, and balanceAfterUSD records the balance it left. Removing an entry is a void (kept, left out of the sums), never a
  * delete, and it can be restored.
  *
  * addedBy is the signed-in admin; an entry made through the server-to-server ops secret has no
@@ -18,7 +20,7 @@ const mongoose = require('mongoose');
 const kadeFundingEntrySchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true, required: true },
-    kind: { type: String, enum: ['repayment', 'grant'], default: 'repayment', index: true },
+    kind: { type: String, enum: ['repayment', 'grant', 'refund'], default: 'repayment', index: true },
     /* Repayments are 0.01..1000 (checked by the service); a grant is the credit added, and a
      * balance correction (add-credits setUSD) may be negative. */
     usd: { type: Number, required: true, min: -1000, max: 1000 },
@@ -26,7 +28,7 @@ const kadeFundingEntrySchema = new mongoose.Schema(
     at: { type: Date, required: true, default: Date.now },
     addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     via: { type: String, enum: ['admin', 'ops'], default: 'admin' },
-    /* Balance after a grant, for the record. */
+    /* Balance after a grant or a refund, for the record. */
     balanceAfterUSD: { type: Number, default: null },
     /* One per form submit: a double tap records once. */
     clientKey: { type: String, maxlength: 64 },
