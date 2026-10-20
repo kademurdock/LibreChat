@@ -605,9 +605,20 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
       const canvas = document.createElement('canvas');
       const lumaCanvas = document.createElement('canvas'); // auto-flash brightness probe
+      /* Oct 20 2026: the Spotter (live mode) gets a frame every second, the
+       * most Gemini Live takes, at the iPhone's 0.78 quality. At one frame
+       * every two seconds it kept missing the moment ("the camera panned away
+       * before you pressed it", "you turned pretty quickly"). The plain
+       * camera lane keeps its two-second pace, and the brightness probe keeps
+       * its two-second reads (two dark reads = about four seconds). */
+      let tick = 0;
       camTimerRef.current = setInterval(() => {
         const vid = camVideoRef.current;
         if (!vid || !vid.videoWidth) return;
+        tick += 1;
+        const everyOther = tick % 2 === 0;
+        const live = liveModeRef.current;
+        if (!live && !everyOther) return;
         const w = 768;
         const h = Math.round((vid.videoHeight / vid.videoWidth) * w) || 576;
         canvas.width = w;
@@ -615,11 +626,11 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         const g = canvas.getContext('2d');
         if (!g) return;
         g.drawImage(vid, 0, 0, w, h);
-        const b64 = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+        const b64 = canvas.toDataURL('image/jpeg', live ? 0.78 : 0.65).split(',')[1];
         if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
         // Auto-flash: cheap brightness read on a tiny downsample (see ref note).
         const c = torchCtlRef.current;
-        if (torchOk && !c.manual && !c.autoLit && !c.on) {
+        if (everyOther && torchOk && !c.manual && !c.autoLit && !c.on) {
           try {
             lumaCanvas.width = 48;
             lumaCanvas.height = 36;
@@ -657,7 +668,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             /* brightness read is best-effort */
           }
         }
-      }, 2000);
+      }, 1000);
     },
     [stopCamera, streamingEngine],
   );
@@ -732,7 +743,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           );
           // Live needs eyes: if no camera is running, start one WITHOUT arming
           // the snapshot lane (frames route to the live relay server-side).
-          if (!camStreamRef.current) {
+          // Oct 20 2026: also when the plain lane's FRONT camera is already
+          // running. The Spotter is told it sees through the back camera, held
+          // out in front of the caller, and gives left and right on that basis.
+          if (!camStreamRef.current || camFacingRef.current !== 'environment') {
             // Spotters always use the BACK camera (Kade, July 17): their job is
             // seeing the world, not the caller's face.
             startCamera('standard', 'environment').catch(() => {
