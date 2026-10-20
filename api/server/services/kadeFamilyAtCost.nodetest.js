@@ -410,6 +410,32 @@ test('client.js: only the graph\'s own recursion error counts, not any message t
   assert.equal(ctx.is(new Error('Upstream: Recursion limit of 14 reached')), false);
 });
 
+test('account page: the contribution sentence gives way to the real-cost one when priceFactor is 1', async () => {
+  const pages = fs.readFileSync(path.join(ROOT, 'api/server/routes/kadePages.js'), 'utf8');
+  assert.match(pages, /<span id="contribNote">Model usage includes a contribution toward running the platform;/);
+  const at = pages.indexOf("try { var cr = await apiGet('/api/kade/my-cost'");
+  assert.ok(at > 0);
+  const line = pages.slice(at, pages.indexOf('\n', at));
+  const runPage = async (reply) => {
+    const els = { contribNote: { textContent: 'CONTRIBUTION' }, m_cost: { textContent: '' } };
+    const ctx = {
+      document: { getElementById: (id) => els[id] },
+      apiGet: async () => ({ ok: true, json: async () => reply }),
+      money: (n) => `$${Number(n).toFixed(2)}`,
+      token: 't',
+    };
+    vm.createContext(ctx);
+    await vm.runInContext(`(async () => { ${line} })()`, ctx);
+    return els;
+  };
+  const family = await runPage({ totalUSD: 1.5, multiplier: 1, platformMultiplier: 2, priceFactor: 1 });
+  assert.match(family.contribNote.textContent, /at the real provider cost, with no added contribution\.$/);
+  assert.equal(family.m_cost.textContent, '$1.50');
+  const regular = await runPage({ totalUSD: 1.5, multiplier: 2, platformMultiplier: 2, priceFactor: 2 });
+  assert.equal(regular.contribNote.textContent, 'CONTRIBUTION');
+  assert.match(regular.m_cost.textContent, /balances are charged 2× real cost/);
+});
+
 /* ---- the old chat paths ------------------------------------------------------------------- */
 
 test('spendTokensAs writes the legacy rows through the bulk writer at the payer price, and never throws', async () => {

@@ -238,7 +238,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
 <body>
   <p><a class="back" href="/c/new" aria-label="Back to chat">&larr; Back to chat</a></p>
   <h1>Usage &amp; Balance</h1>
-  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, picture and library descriptions, and phone calls also draw from your balance, with the same contribution. Described video has its own price, shown before it starts. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
+  <p class="muted">Your account starts with <strong>$10 of credit</strong> loaded by Kade. <span id="contribNote">Model usage includes a contribution toward running the platform; the server-cost line below shows the current multiplier alongside your estimated cost. Metered extras such as pictures, videos, songs, picture and library descriptions, and phone calls also draw from your balance, with the same contribution.</span> Described video has its own price, shown before it starts. <strong>Ordinary chat speech is included in Kade's voice plan</strong>. Top up below when you need more credit.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading your usage…</div>
 
@@ -317,7 +317,7 @@ const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</t
        * first of the month." Charged / multiplier + extras, from /my-cost. */
       /* KADE Part 291: priceFactor is this person's own factor; the administrator's is 1 (she pays
        * the providers and is never charged), so the multiplier note is only for people it applies to. */
-      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 && cj.priceFactor !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
+      try { var cr = await apiGet('/api/kade/my-cost', token); if (cr.ok) { var cj = await cr.json(); /* Oct 20 2026: a Family pack member (and the administrator) has priceFactor 1, so the contribution sentence does not apply. */ if (cj.priceFactor === 1) { var cn = document.getElementById('contribNote'); if (cn) cn.textContent = 'Your model usage and metered extras such as pictures, videos, songs, picture and library descriptions, and phone calls draw from your balance at the real provider cost, with no added contribution.'; } document.getElementById('m_cost').textContent = money(cj.totalUSD) + (cj.multiplier && cj.multiplier !== 1 && cj.priceFactor !== 1 ? ' (balances are charged ' + cj.multiplier + '\u00d7 real cost to help cover the rest of the platform)' : ''); } else { document.getElementById('m_cost').textContent = '\u2014'; } } catch(e) { document.getElementById('m_cost').textContent = '\u2014'; }
       document.getElementById('a_total').textContent = money((d.allTime||{}).totalUSD);
       const a = d.allTime || {};
       document.getElementById('qty').textContent =
