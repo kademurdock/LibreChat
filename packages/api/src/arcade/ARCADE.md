@@ -76,9 +76,11 @@ sha256>`, for example `20261018-27899e08`.
 - Kinds: `boot`, `tick`, `soak`, `telemetry`, `mode`, `audio`, `saved`, `download`, `install`,
   `start`, `pause`, `resume`, `exit`, `reload`, `terminated`, `recovered`, `crash`, `error`.
 - Number stats: `loads`, `uptime`, `heap`, `heapMax`, `fps`, `fpsMin`, `frames`, `opus`, `flac`,
-  `clips`, `clipBytes`, `contexts`, `reloads`, `terminations`, `recoveries`, `touchSends`,
-  `infoSends`, `keySends`, `controllerSends`, `errors`, `saves`, `downloadBytes`, `downloadMs`,
-  `latencyMs`, `battery`.
+  `clips`, `clipBytes`, `contexts`, `js` and `jsMax` (script time, ms), `audioQ` (the audio
+  queue), `reloads`, `terminations`, `recoveries`, `touchSends`, `infoSends`, `keySends`,
+  `controllerSends`, `errors`, `saves`, `downloadBytes`, `downloadMs`, `latencyMs`, `battery`.
+- Whole-number stats (0, 1, 2 and up; a fraction or a negative is dropped): `underruns` (audio
+  underruns).
 - Flag stats (true or false): `lowPower`, `lockdown`, `voiceOver`, `headphones`, `charging`,
   `vision`.
 - Word stats: `audio` (running, suspended, closed, interrupted), `mode` (menu, fight, pause),

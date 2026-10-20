@@ -2340,3 +2340,84 @@ test("arcadeDiagRow keeps every core the kit's telemetry names, the plain player
     assert.deepEqual(row?.stats, { fps: 60 }, `${core} is dropped, the rest of the row kept`);
   }
 });
+
+test('arcadeDiagRow keeps the script and audio telemetry: js, jsMax, underruns, audioQ', () => {
+  const at = new Date(0);
+  const kept = arcadeDiagRow(
+    'u1',
+    {
+      kind: 'telemetry',
+      stats: { js: 3.25, jsMax: 41.5, underruns: 7, audioQ: 2048, core: 'mgba', fps: 59.9 },
+    },
+    at,
+  );
+  assert.deepEqual(kept?.stats, {
+    js: 3.25,
+    jsMax: 41.5,
+    underruns: 7,
+    audioQ: 2048,
+    core: 'mgba',
+    fps: 59.9,
+  });
+  const zeros = arcadeDiagRow(
+    'u1',
+    { kind: 'telemetry', stats: { js: 0, jsMax: 0, underruns: 0, audioQ: 0 } },
+    at,
+  );
+  assert.deepEqual(zeros?.stats, { js: 0, jsMax: 0, underruns: 0, audioQ: 0 }, 'zero is kept');
+  /* js, jsMax and audioQ are numbers: a string, a flag or a number that is not finite is dropped. */
+  for (const value of ['3', 'slow', true, null, NaN, Infinity, -Infinity, { ms: 3 }, [3]]) {
+    const row = arcadeDiagRow(
+      'u1',
+      { kind: 'telemetry', stats: { js: value, jsMax: value, audioQ: value, fps: 60 } },
+      at,
+    );
+    assert.deepEqual(row?.stats, { fps: 60 }, `${String(value)} is dropped, the rest kept`);
+  }
+  /* underruns is a count: a fraction, a negative, a string or anything past a safe integer is
+   * dropped. */
+  for (const value of [2.5, -1, '3', true, NaN, Infinity, 2 ** 53, 0.1]) {
+    const row = arcadeDiagRow(
+      'u1',
+      { kind: 'telemetry', stats: { underruns: value, fps: 60 } },
+      at,
+    );
+    assert.deepEqual(row?.stats, { fps: 60 }, `underruns ${String(value)} is dropped`);
+  }
+  assert.deepEqual(
+    arcadeDiagRow('u1', { kind: 'telemetry', stats: { underruns: Number.MAX_SAFE_INTEGER } }, at)
+      ?.stats,
+    { underruns: Number.MAX_SAFE_INTEGER },
+  );
+  /* Near names are not on the list. */
+  const near = arcadeDiagRow(
+    'u1',
+    { kind: 'telemetry', stats: { JS: 3, jsmax: 4, underrun: 1, audioq: 5, audioQueue: 6 } },
+    at,
+  );
+  assert.deepEqual(near?.stats, {});
+});
+
+test('POST /diag stores the script and audio telemetry with the rest of a telemetry report', async () => {
+  const res = await post(
+    '/diag',
+    JSON.stringify({
+      kind: 'telemetry',
+      game: 'xena',
+      version: '2026-10-20a',
+      stats: { js: 4.5, jsMax: 18, underruns: 2, audioQ: 3, core: 'gambatte', note: 'x' },
+    }),
+    OUTSIDE,
+  );
+  assert.equal(res.status, 204);
+  assert.deepEqual(diags, [
+    {
+      user: BOB,
+      at: '2026-10-18T12:00:00.000Z',
+      kind: 'telemetry',
+      game: 'xena',
+      version: '2026-10-20a',
+      stats: { js: 4.5, jsMax: 18, underruns: 2, audioQ: 3, core: 'gambatte' },
+    },
+  ]);
+});

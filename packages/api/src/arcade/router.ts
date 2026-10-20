@@ -144,8 +144,9 @@ const DIAG_KINDS: ReadonlySet<string> = new Set([
   'error',
 ]);
 
-/** How one stat is checked: a number, a flag, a word from a fixed list, or a fixed pattern. */
-type DiagRule = 'number' | 'boolean' | readonly string[] | RegExp;
+/** How one stat is checked: a number, a whole number (a count: 0, 1, 2 and up), a flag, a word
+ * from a fixed list, or a fixed pattern. */
+type DiagRule = 'number' | 'whole' | 'boolean' | readonly string[] | RegExp;
 
 /** The only stats a report keeps. Names and words are fixed here, so no field can carry free
  * text: a stat with any other name, or a string outside its list, is dropped. */
@@ -163,6 +164,11 @@ const DIAG_STATS: ReadonlyMap<string, DiagRule> = new Map<string, DiagRule>([
   ['clips', 'number'],
   ['clipBytes', 'number'],
   ['contexts', 'number'],
+  /* Script time and its highest reading (ms), audio underruns (a count), the audio queue. */
+  ['js', 'number'],
+  ['jsMax', 'number'],
+  ['underruns', 'whole'],
+  ['audioQ', 'number'],
   ['audio', ['running', 'suspended', 'closed', 'interrupted']],
   ['mode', ['menu', 'fight', 'pause']],
   /* N64 packs, then the plain player's cores (games/_plain/systems.json): NES, Game Boy and
@@ -533,6 +539,11 @@ function diagStat(name: string, value: unknown): number | boolean | string | und
   if (rule === undefined) return undefined;
   if (rule === 'number') {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+  if (rule === 'whole') {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+      ? value
+      : undefined;
   }
   if (rule === 'boolean') return typeof value === 'boolean' ? value : undefined;
   if (typeof value !== 'string') return undefined;
