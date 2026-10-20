@@ -594,8 +594,14 @@ function plan(input: ArrangeInput, pass: Pass): Arrangement {
   const lengths = (index: number): Partial<Record<Variant, number>> => {
     const cue = cues[index];
     const full = input.length(index, 'full');
+    /**
+     * A reading's short text is the opening of its own words, its first credit role
+     * (`creditShortText`), and only outside pause mode; a paraphrase is never read as a card.
+     */
     const short =
-      !cue.reading && cue.shortText && cue.shortText !== cue.text
+      cue.shortText &&
+      cue.shortText !== cue.text &&
+      (!cue.reading || (settings.mode !== 'extended' && cue.text.startsWith(cue.shortText)))
         ? input.length(index, 'short')
         : undefined;
     return {
@@ -628,9 +634,17 @@ function plan(input: ArrangeInput, pass: Pass): Arrangement {
   };
   const spans: Interval[] = [];
   let floor = 0;
+  /**
+   * No-pause mode (Oct 20 2026): a reading may run `readingLate` past its card, the grace pause mode
+   * already gives, so a credit group a little longer than its few seconds on screen is still read.
+   */
+  const fitWindow = (cue: Cue): Cue =>
+    cue.reading && settings.mode !== 'extended'
+      ? { ...cue, until: Math.min(seconds, cue.until + readingLate) }
+      : cue;
   const fit = (index: number, variant: Variant, limit: number, taken: Interval[], from: number) =>
     fitCue(
-      cues[index],
+      fitWindow(cues[index]),
       textOf(cues[index], variant),
       lengths(index)[variant] ?? NaN,
       { ...settings, maxRate: limit },

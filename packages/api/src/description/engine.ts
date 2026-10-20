@@ -87,7 +87,13 @@ import {
 } from './timing';
 import { buildReport, captionTrack, clock, descriptionTrack, transcriptText } from './transcript';
 import { nextContinuity, plainCapitals, readsTimeStrip, spokenForm } from './prompt';
-import { gateCues, recognized } from './ledger';
+import {
+  creditShortText,
+  dropRereadCards,
+  gateCues,
+  recognized,
+  splitCardReadings,
+} from './ledger';
 import { listen } from './listen';
 import { Halt } from './types';
 
@@ -1223,9 +1229,20 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const sectionCuts = cutsIn(section);
     const incoming = carried.get(i) ?? [];
     carried.delete(i);
+    const fresh = analysis
+      ? dropRereadCards(
+          splitCardReadings(snapToCuts(analysis.cues, sectionCuts)),
+          stateIn,
+          incoming.map((item) => item.cue),
+        )
+      : undefined;
+    if (fresh?.dropped.length)
+      log(
+        `Section ${i + 1} of ${count}: ${fresh.dropped.length} reading(s) already read are left out ("${fresh.dropped[0].slice(0, 48)}").`,
+      );
     const gate = analysis
       ? gateCues({
-          cues: snapToCuts(analysis.cues, sectionCuts),
+          cues: fresh?.cues ?? [],
           people: analysis.people,
           state: stateIn,
           words,
@@ -1234,7 +1251,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           reference: saved.firstLook?.state.people,
         })
       : undefined;
-    const gated = gate?.cues ?? [];
+    /** No-pause mode lets a credit group fall back to its first role (`creditShortText`). */
+    const gated =
+      settings.mode === 'extended' ? (gate?.cues ?? []) : creditShortText(gate?.cues ?? []);
     const cues = [...incoming.map((item) => item.cue), ...gated];
     const ids = [
       ...incoming.map((item) => item.id),
@@ -1253,7 +1272,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const key = (index: number, variant: Variant) => `${index}:${variant}`;
     const clips = new Map<string, Voiced>();
     const variants = (index: number): Variant[] =>
-      cues[index].reading ? ['full'] : ['full', 'short'];
+      cues[index].reading &&
+      (settings.mode === 'extended' || cues[index].shortText === cues[index].text)
+        ? ['full']
+        : ['full', 'short'];
     incoming.forEach((item, index) =>
       item.clips.forEach((clip, variant) => {
         if (variants(index).includes(variant)) clips.set(key(index, variant), clip);

@@ -795,6 +795,8 @@ const secondLookTokens = 48000;
  * Low was not measured: about a fifth of its 12,000 tokens, OpenRouter's share for low effort.
  */
 const effortReasoningTokens = { low: 2400, medium: 6000, high: 16000 };
+/** How much longer than `visionLimits.requestMs` a MiMo look may take (`planFor`). */
+export const mimoDeadlineFactor = 1.6;
 /**
  * How a look asks. A survey (the whole-film first look) thinks at low effort; a close look (slowed)
  * gets the `closeReasoningTokens` budget in 24,000 output tokens; any other look thinks at medium
@@ -812,7 +814,15 @@ function planFor(look: Look): LookPlan {
       requestMs: visionLimits.secondRequestMs,
     };
   const maxTokens = slowed || denseFrames ? 24000 : 12000;
-  const requestMs = visionLimits.requestMs;
+  /**
+   * MiMo on Novita writes more slowly than Google: on Oct 20 2026 (Napoleon's end credits, read in
+   * full) its looks took 194-291 s and three were cut off at 300 s while still thinking (8-13k
+   * reasoning tokens, each still billed); on Oct 18 the same credit sections took 138-150 s. A
+   * MiMo look gets `mimoDeadlineFactor` times the deadline (480 s).
+   */
+  const requestMs = visionModel().startsWith('xiaomi/mimo-')
+    ? visionLimits.requestMs * mimoDeadlineFactor
+    : visionLimits.requestMs;
   if (survey)
     return {
       reasoning: { effort: 'low' },

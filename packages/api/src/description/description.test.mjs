@@ -558,7 +558,10 @@ test('standard mode speaks a complete card group or releases all of its room', (
       words: [],
       seconds: 10,
     });
-  const partial = layout(0.8);
+  // Oct 20 2026: a reading may run readingLate past its card in no-pause mode too, so 0.8 s
+  // chunks now fit (1 + 3 x 0.8 + gaps < 2 + 2.5); 1.5 s chunks still do not, and go whole.
+  assert.deepEqual(layout(0.8).left.filter((item) => item.index < 3), []);
+  const partial = layout(1.5);
   assert.deepEqual(
     partial.left,
     [0, 1, 2].map((index) => ({ index, reason: 'room' })),
@@ -798,7 +801,12 @@ test('pause mode reads opening credit cards back to back over the music instead 
     const before = extended.placed[n - 1].placement;
     assert.ok(extended.placed[n].placement.at >= before.at + before.duration, 'one at a time');
   }
-  assert.equal(layout('standard').left.length, 4, 'standard mode is unchanged');
+  // Oct 20 2026 (Kade: read the credits): no-pause mode reads each card over the film too, one at
+  // a time, ending within readingLate of its card, at up to her fastest speed.
+  const standard = layout('standard');
+  assert.equal(standard.placed.length, 3, 'three of the four cards fit around each other; none was read before');
+  for (const { index, placement } of standard.placed)
+    assert.ok(placement.at + placement.duration <= cards[index].until + readingLate + 1e-9);
 });
 
 test('pause mode waits out a short line instead of freezing just before it', () => {
@@ -2804,6 +2812,19 @@ test('a short text that repeats in every take is tried as its longer full text',
   const paused = await run(g, [], [], { providers: backend, settings: { ...settings, mode: 'extended' } });
   assert.equal(paused.report.descriptions.length, 1, asked.join(' | '));
   assert.equal(paused.report.descriptions[0].text, cue.text, 'pause mode says the longer text');
+});
+
+test('a credit group the look reads twice in one clip is voiced once', async () => {
+  const f = await fixture('credits-read-once');
+  const words = 'Text reads, Director of Photography, ROGER DOWLING.';
+  const backend = providers(f.voice, [], [
+    { ...cue, at: 1, until: 4, pauseAt: 1, text: words, shortText: words, reading: true },
+    { ...cue, at: 3, until: 6, pauseAt: 3, text: words, shortText: words, reading: true },
+  ]);
+  const log = [];
+  const result = await run(f, [], [], { providers: backend, log, settings: { ...settings, mode: 'extended' } });
+  assert.equal(result.report.descriptions.filter((item) => item.text === words).length, 1);
+  assert.ok(log.some((line) => /1 reading\(s\) already read are left out/.test(line)), log.join('\n'));
 });
 
 test('a Fish narrator hears screen capitals in ordinary case and says the credit in two sentences; captions keep the written words', async () => {

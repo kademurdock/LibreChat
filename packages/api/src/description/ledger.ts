@@ -221,6 +221,114 @@ export function readings(text: string): [number, number][] {
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** A reading's words without its lead-in ("Text reads,"), lowercased, for comparing cards. */
+function cardWords(text: string): string {
+  const read = /\breads?\b[:,]?\s*/i.exec(text);
+  const words = (read ? text.slice(read.index + read[0].length) : text)
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .match(/[\p{L}\p{N}']+/gu);
+  return (words ?? []).join(' ');
+}
+
+/** A sentence that opens with the card lead-in, at the start of a cue or after a sentence end. */
+const cardLeadIn = /(?:^|(?<=[.!?]["”’)]?\s))Text reads\b/;
+
+/**
+ * A description that also reads a card ("A spider sits in its web. Text reads, Wildlife Camera
+ * Malcolm Ludgate ACS.") without being marked a reading: on Napoleon's end credits (Oct 20 2026)
+ * one look marked such cues and another did not, and the unmarked ones, long and never frozen to
+ * finish, crowded each other out of pause mode. The picture part stays an ordinary description
+ * and the card part becomes a reading in the same window, marked or not, so a reading holds only
+ * the card's words.
+ */
+export function splitCardReadings(cues: Cue[]): Cue[] {
+  return cues.flatMap((cue) => {
+    const found = cardLeadIn.exec(cue.text);
+    if (!found || (cue.reading && found.index === 0)) return [cue];
+    const before = cue.text.slice(0, found.index).trim();
+    const card = cue.text.slice(found.index).trim();
+    const reading: Cue = { ...cue, text: card, shortText: card, reading: true };
+    return before
+      ? [{ ...cue, text: before, shortText: before, reading: false }, reading]
+      : [reading];
+  });
+}
+
+/**
+ * No-pause mode only: a credit group alone on its card gets its first sentence (the lead-in, the
+ * first role and its names) as its short text, which the planner tries when the whole group does
+ * not fit while it is on screen. A rolling credit group is on screen 3 to 4 s and takes longer to
+ * say even at the fastest speed (Napoleon's end credits, Oct 20 2026: 1 of 31 groups fit whole),
+ * so the roll is kept pace with by reading each group's first role. A card read in several chunks
+ * keeps its full words or none, and pause mode always reads the whole group.
+ */
+export function creditShortText(cues: Cue[]): Cue[] {
+  const windows = new Map<string, number>();
+  for (const cue of cues)
+    if (cue.reading) {
+      const key = `${cue.at}:${cue.until}:${cue.pauseAt ?? cue.at}`;
+      windows.set(key, (windows.get(key) ?? 0) + 1);
+    }
+  return cues.map((cue) => {
+    if (!cue.reading) return cue;
+    /** Only words from the card are ever said: never a short text the model wrote itself. */
+    const whole = { ...cue, shortText: cue.text };
+    if (windows.get(`${cue.at}:${cue.until}:${cue.pauseAt ?? cue.at}`) !== 1) return whole;
+    const read = /\breads?\b[:,]?\s*/i.exec(cue.text);
+    const from = read ? read.index + read[0].length : 0;
+    for (const end of cue.text.slice(from).matchAll(/[.!?](?=\s+\p{Lu})/gu)) {
+      const at = from + (end.index ?? 0);
+      if (
+        /(?:\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|Dept|Co|Inc|Ltd|No)|\b\p{Lu})$/u.test(cue.text.slice(0, at))
+      )
+        continue;
+      return { ...cue, shortText: cue.text.slice(0, at + 1) };
+    }
+    return whole;
+  });
+}
+
+/**
+ * Credits are read word for word since Oct 20 2026 (Kade: "I would also like it to read the
+ * credits instead of just saying, credits appear"), so a rolling credit group that straddles two
+ * clips could be read at the end of one and again at the start of the next, or twice in one clip.
+ * A reading of three words or more is left out when the previous clip's last spoken lines
+ * (`state.recent`) already said those words, or when an earlier reading of this clip (or one
+ * carried over from the last, still unplaced) with an overlapping window said them.
+ */
+export function dropRereadCards(
+  cues: Cue[],
+  state: Continuity | null,
+  carried: Cue[] = [],
+): { cues: Cue[]; dropped: string[] } {
+  const said = (state?.recent ?? []).map(cardWords).filter(Boolean);
+  const kept: Cue[] = [];
+  /** Readings carried over from the previous clip, still to be placed, count as earlier ones. */
+  const earlier = [...carried];
+  const dropped: string[] = [];
+  for (const cue of cues) {
+    const words = cardWords(cue.text);
+    const again =
+      cue.reading &&
+      words.split(' ').length >= 3 &&
+      (said.some((line) => ` ${line} `.includes(` ${words} `)) ||
+        earlier.some(
+          (other) =>
+            other.reading &&
+            other.at <= cue.until + 1 &&
+            cue.at <= other.until + 1 &&
+            cardWords(other.text) === words,
+        ));
+    if (again) dropped.push(cue.text);
+    else {
+      kept.push(cue);
+      earlier.push(cue);
+    }
+  }
+  return { cues: kept, dropped };
+}
+
 type Hit = { index: number; length: number };
 
 /**

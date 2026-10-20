@@ -10,6 +10,9 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobePath from 'ffprobe-static';
 import {
   gateCues,
+  dropRereadCards,
+  splitCardReadings,
+  creditShortText,
   near,
   notedNames,
   readings,
@@ -306,6 +309,83 @@ test('ledger: a character the listener knows by name keeps the name when the mod
     ['Uncle Bob lifts the cake.', 'Uncle Bob waves.', 'A dog barks at the man.'],
     'an everyday noun like "the man" becomes the name only in a description about him',
   );
+});
+
+test('credits: a description that also reads a card is split into the picture and the reading', () => {
+  const mixed = cue(36, 'A spider sits in its web. Text reads, Wildlife Camera Malcolm Ludgate ACS. Director’s Assistant Meaghan Smith.', 'A spider sits.', { until: 39, importance: 2 });
+  const parts = splitCardReadings([
+    mixed,
+    cue(40, 'Text reads, Gaffers Graeme Shelton.'),
+    cue(44, 'A sign reads, Electricity. The monorail passes.'),
+    { ...cue(48, 'Text reads, Grips Rob Morgan.'), reading: true },
+    { ...cue(52, 'A kangaroo rests. Text reads, Shunsuke Yamada.'), reading: true },
+  ]);
+  assert.deepEqual(
+    parts.map((item) => [item.at, item.reading ?? false, item.text, item.shortText]),
+    [
+      [36, false, 'A spider sits in its web.', 'A spider sits in its web.'],
+      [36, true, 'Text reads, Wildlife Camera Malcolm Ludgate ACS. Director’s Assistant Meaghan Smith.', 'Text reads, Wildlife Camera Malcolm Ludgate ACS. Director’s Assistant Meaghan Smith.'],
+      [40, true, 'Text reads, Gaffers Graeme Shelton.', 'Text reads, Gaffers Graeme Shelton.'],
+      [44, false, 'A sign reads, Electricity. The monorail passes.', 'A sign reads, Electricity. The monorail passes.'],
+      [48, true, 'Text reads, Grips Rob Morgan.', 'Text reads, Grips Rob Morgan.'],
+      [52, false, 'A kangaroo rests.', 'A kangaroo rests.'],
+      [52, true, 'Text reads, Shunsuke Yamada.', 'Text reads, Shunsuke Yamada.'],
+    ],
+  );
+  assert.equal(parts[1].until, 39, 'the reading keeps the card window');
+});
+
+test('credits: in no-pause mode a credit group falls back to its first role; chunked cards and paraphrases never do', () => {
+  const card = (at, text, extra = {}) => ({ ...cue(at, text, 'A paraphrase the model wrote.'), until: at + 3, reading: true, ...extra });
+  const out = creditShortText([
+    card(0, 'Text reads, Assistants to Mr. Hara, Utako Niimi. Assistant to Mr Saunders, Liz Watts.'),
+    card(4, 'Text reads, Voices, Napoleon Adam Wylie, Birdo Bronson Pinchot.'),
+    card(8, 'Text reads, Director of Photography, Nino Martinetti ACS. Aerial Camera, Andre Fleuren ACS.'),
+    card(12, 'Text reads, Recording Engineer, Guy DeFazio.', { pauseAt: 12 }),
+    card(12, 'Recording Assistant, Rich Veltrop.', { pauseAt: 12 }),
+    cue(16, 'A koala sleeps.', 'A koala.'),
+  ]);
+  assert.deepEqual(
+    out.map((item) => item.shortText),
+    [
+      'Text reads, Assistants to Mr. Hara, Utako Niimi.',
+      'Text reads, Voices, Napoleon Adam Wylie, Birdo Bronson Pinchot.',
+      'Text reads, Director of Photography, Nino Martinetti ACS.',
+      'Text reads, Recording Engineer, Guy DeFazio.',
+      'Recording Assistant, Rich Veltrop.',
+      'A koala.',
+    ],
+  );
+});
+
+test('credits: a credit group read at the end of the last clip, or twice in one clip, is read once', () => {
+  const state = {
+    kind: 'film or TV',
+    setting: '',
+    people: [],
+    speakers: [],
+    recent: ['A koala sleeps in a tree.', 'Text reads, Director of Photography, ROGER DOWLING.', 'Text reads, Editor, ANDREW PLAIN.'],
+  };
+  const card = (at, until, text) => ({ ...cue(at, text), until, reading: true });
+  const { cues, dropped } = dropRereadCards(
+    [
+      card(0, 2, 'Text reads, Editor, ANDREW PLAIN.'),
+      card(1, 4, 'Text reads, Composer, BILL CONTI.'),
+      card(3, 6, 'Text reads, Composer, BILL CONTI.'),
+      card(40, 44, 'Text reads, Composer, BILL CONTI.'),
+      cue(5, 'A koala sleeps in a tree.'),
+      card(8, 10, 'Text reads, THE END.'),
+    ],
+    state,
+  );
+  assert.deepEqual(dropped, ['Text reads, Editor, ANDREW PLAIN.', 'Text reads, Composer, BILL CONTI.']);
+  assert.deepEqual(
+    cues.map((item) => `${item.at} ${item.text}`),
+    ['1 Text reads, Composer, BILL CONTI.', '40 Text reads, Composer, BILL CONTI.', '5 A koala sleeps in a tree.', '8 Text reads, THE END.'],
+    'a later card with the same words, ordinary descriptions and short cards stay',
+  );
+  const carried = dropRereadCards([card(0.5, 3, 'Text reads, Gaffer, JOHN SMITH.')], null, [card(0, 4, 'Text reads, Gaffer, JOHN SMITH.')]);
+  assert.equal(carried.cues.length, 0, 'a reading carried over from the last clip is not read again');
 });
 
 test('ledger: the first cue about a person the listener has not met becomes essential', () => {
@@ -1325,8 +1405,8 @@ test('prompt: the clip that ends the video is described to its end, with the clo
   assert.doesNotMatch(last, /never stop describing/, 'a quiet ending may stay quiet at essential detail');
   assert.match(last, /THE ENDING: this clip ends the video\. If the video tells a story, describe how it ends as fully as how it began, and the last thing anyone does\./);
   assert.doesNotMatch(last, /THE ENDING: [^\n]*(?:rescue|reunion|happy ending)/, 'no resolution examples to echo, and none asked of a reel with no story');
-  assert.match(last, /read the closing title card when one is shown, such as The End, and, when there is room, the main names in the end credits/);
-  assert.match(last, /summarize the rest of a long credit roll/);
+  assert.match(last, /read the closing title card when one is shown, such as The End, and the end credits by the CREDITS rule, in order, to the last card/);
+  assert.doesNotMatch(last, /summarize the rest of a long credit roll/, 'Kade, Oct 20 2026: read the credits, not "credits appear"');
   assert.ok(last.indexOf('ROOM TO SPEAK') < last.indexOf('COVER THE WHOLE CLIP'));
   assert.ok(last.indexOf('THE ENDING') < last.indexOf('WHAT TO DESCRIBE'));
   const first = part(0);
@@ -1391,7 +1471,11 @@ test('prompt: the on-screen text, coverage and level rules do not contradict eac
       prompt,
       /Read finite opening disclaimers, warning cards, titles, messages and story captions fully, word for word, even when they are long/,
     );
-    assert.match(prompt, /Summarize long rolling credit lists, continuous crawls and tickers once/);
+    assert.match(prompt, /Summarize continuous news crawls and tickers once/);
+    assert.doesNotMatch(prompt, /Summarize long rolling credit lists/, `${detail}: credits are read`);
+    assert.match(prompt, /CREDITS: opening and closing credits, title cards and rolling credit lists are on-screen words: read them word for word in screen order, never as a summary/);
+    assert.match(prompt, /the heading or role first, then the names under it/);
+    assert.match(prompt, /Read each group once/);
     assert.doesNotMatch(prompt, /summarize long text|reading the rest only when there is room/);
     assert.match(prompt, /summarize crawls and tickers once/, `${detail}: crawls too`);
     assert.doesNotMatch(prompt, /never stop describing/, `${detail}: quiet endings may stay quiet`);
