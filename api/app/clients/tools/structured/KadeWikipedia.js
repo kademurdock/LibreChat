@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
+const turnGuard = require('../util/kadeTurnToolGuard');
 
 const wikiJsonSchema = {
   type: 'object',
@@ -23,8 +24,11 @@ const wikiJsonSchema = {
  * for anything current or local.
  */
 class KadeWikipedia extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
+    /* Oct 20 2026: the request is this turn's key for the lookup cap and the 429 stop
+     * (util/kadeTurnToolGuard); without one the cap counts per tool instance. */
+    this.req = fields.req;
     this.name = 'kade_wikipedia';
     this.description =
       'Look up a topic on Wikipedia — free, instant, no cost (unlike web search). Best for stable encyclopedic facts: ' +
@@ -36,6 +40,10 @@ class KadeWikipedia extends Tool {
   async _call(data) {
     const { query, full_intro } = data || {};
     if (!query) return 'I need a topic to look up.';
+    /* Oct 20 2026: at most 8 lookups per turn, none after Wikipedia says "too many requests". */
+    const turnKey = this.req || this;
+    const gate = turnGuard.beginCall(turnKey, turnGuard.WIKIPEDIA);
+    if (!gate.ok) return gate.text;
     const ua = { 'User-Agent': 'KadeAI/1.0 (kademurdock.com)' };
     try {
       const s = await axios.get('https://en.wikipedia.org/w/rest.php/v1/search/page', {
@@ -70,6 +78,10 @@ class KadeWikipedia extends Tool {
       );
     } catch (err) {
       logger.warn(`[KadeWikipedia] failed: ${err.message}`);
+      if (turnGuard.isProviderQuotaError(err)) {
+        turnGuard.markUnavailable(turnKey, turnGuard.WIKIPEDIA);
+        return turnGuard.UNAVAILABLE[turnGuard.WIKIPEDIA];
+      }
       return `Wikipedia lookup failed: ${err.message}`;
     }
   }

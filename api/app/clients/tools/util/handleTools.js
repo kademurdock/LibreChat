@@ -336,6 +336,8 @@ const loadTools = async ({
     options.req?.user?.username;
 
   const toolOptions = {
+    /* KADE Oct 20 2026: the request is the turn's key for the lookup cap (kadeTurnToolGuard). */
+    kade_wikipedia: { req: options.req },
     kade_library: { req: options.req },
     kade_family_history: { req: options.req },
     kade_library_requests: { req: options.req },
@@ -581,12 +583,17 @@ const loadTools = async ({
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(
           options.req?.conversationCreatedAt,
         );
-        return createSearchTool({
-          ...result.authResult,
-          onSearchResults,
-          onGetHighlights,
-          logger,
-        });
+        /* KADE Oct 20 2026: a provider quota answer (Tavily 432, 429...) ends web search for the
+         * rest of the turn, and a turn makes at most 6 searches (kadeTurnToolGuard). */
+        return require('./kadeTurnToolGuard').guardWebSearchTool(
+          createSearchTool({
+            ...result.authResult,
+            onSearchResults,
+            onGetHighlights,
+            logger,
+          }),
+          { req: options.req, logger },
+        );
       };
       continue;
     } else if (tool && mcpToolPattern.test(tool)) {
