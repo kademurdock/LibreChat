@@ -160,3 +160,57 @@ test('Wikipedia: a 429 is final for the turn, and a turn makes at most 8 lookups
   });
   assert.match(await new Down({ req: {} })._call({ query: 'x' }), /^Wikipedia lookup failed: getaddrinfo/);
 });
+
+/* ---- review: a run promised more rounds gets more lookups; the guard has a switch ------------ */
+
+test('a background task with a step budget of 20 may search more than 6 times', async () => {
+  assert.equal(G.capFor('web_search', {}, { kadeStepBudget: 20 }), 18, 'ceil(6 x 20 / 7)');
+  assert.equal(G.capFor('kade_wikipedia', {}, { kadeStepBudget: 20 }), 23, 'ceil(8 x 20 / 7)');
+  assert.equal(G.capFor('web_search', {}, { kadeStepBudget: 3 }), 6, 'never below the base cap');
+  assert.equal(G.capFor('web_search', {}, {}), 6, 'an ordinary chat turn keeps 6');
+  assert.equal(G.capFor('web_search', { KADE_WEB_SEARCH_TURN_CAP: '3' }, { kadeStepBudget: 14 }), 6, 'the env cap scales too');
+  const req = { kadeStepBudget: 20 };
+  const tool = G.guardWebSearchTool(fakeSearchTool(ok), { req });
+  const answers = await Promise.all(Array.from({ length: 20 }, (_, i) => tool._call({ query: `q${i}` })));
+  assert.equal(tool.calls, 18);
+  assert.match(answers.filter((a) => !a[1])[0][0], /already used web search 18 times/);
+  /* A quota answer still ends search for the run, whatever the budget. */
+  const quota = { kadeStepBudget: 40 };
+  const q = G.guardWebSearchTool(fakeSearchTool(failed(TAVILY_432)), { req: quota });
+  await q._call({ query: 'a' });
+  assert.deepEqual(await q._call({ query: 'b' }), [G.UNAVAILABLE.web_search, undefined]);
+  assert.equal(q.calls, 1);
+});
+
+test('KADE_TURN_TOOL_GUARD=0 turns the guard off: no caps, no quota stop, the tool is not wrapped', async () => {
+  const env = { KADE_TURN_TOOL_GUARD: '0' };
+  assert.equal(G.guardOn(env), false);
+  assert.equal(G.guardOn({}), true);
+  const raw = fakeSearchTool(failed(TAVILY_432));
+  const original = raw._call;
+  const tool = G.guardWebSearchTool(raw, { req: {}, env });
+  assert.equal(tool, raw);
+  assert.equal(tool._call, original, 'left unwrapped');
+  const req = {};
+  for (let i = 0; i < 12; i += 1) assert.deepEqual(G.beginCall(req, 'web_search', env), { ok: true });
+  G.markUnavailable(req, 'web_search');
+  assert.deepEqual(G.beginCall(req, 'web_search', env), { ok: true });
+
+  const prev = process.env.KADE_TURN_TOOL_GUARD;
+  process.env.KADE_TURN_TOOL_GUARD = '0';
+  try {
+    let hits = 0;
+    const KadeWikipedia = loadWikipedia(async () => {
+      hits += 1;
+      throw Object.assign(new Error('Request failed with status code 429'), { response: { status: 429 } });
+    });
+    const turn = {};
+    for (let i = 0; i < 10; i += 1) {
+      assert.match(await new KadeWikipedia({ req: turn })._call({ query: 'Ozarks' }), /^Wikipedia lookup failed: Request failed with status code 429/);
+    }
+    assert.equal(hits, 10, 'every lookup went out, as before the guard');
+  } finally {
+    if (prev === undefined) delete process.env.KADE_TURN_TOOL_GUARD;
+    else process.env.KADE_TURN_TOOL_GUARD = prev;
+  }
+});

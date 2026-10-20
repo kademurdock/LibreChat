@@ -15,6 +15,9 @@
  *     UNAVAILABLE and nothing more is sent to the provider;
  *   - at most KADE_WEB_SEARCH_TURN_CAP web searches (default 6) and KADE_WIKIPEDIA_TURN_CAP
  *     Wikipedia lookups (default 8) per turn; past the cap the tool answers CAP_REACHED.
+ *     A run given more rounds (a background task's x-kade-steps, req.kadeStepBudget) gets caps
+ *     scaled to its budget: cap x budget / 7, 7 being about the rounds in the default 14 steps.
+ *   - KADE_TURN_TOOL_GUARD=0 turns the whole guard off (no caps, no quota stop): the rollback.
  * Counting happens before the provider is called, so a round of parallel calls is capped too.
  * No '~' requires, so node --test loads it.
  */
@@ -36,10 +39,27 @@ function capReachedText(name, cap) {
   return `You have already used ${what} ${cap} times for this reply, which is the limit. Do not call it again in this reply; answer from what you already found.`;
 }
 
-/** The per-turn cap for a tool (env override when it is a positive whole number). */
-function capFor(name, env = process.env) {
+/** About how many tool rounds the platform's default 14-step limit allows. */
+const DEFAULT_ROUNDS = 7;
+
+/** False when KADE_TURN_TOOL_GUARD=0: every call goes through and no tool is wrapped. */
+function guardOn(env = process.env) {
+  return String((env && env.KADE_TURN_TOOL_GUARD) ?? '') !== '0';
+}
+
+/**
+ * The per-turn cap for a tool (env override when it is a positive whole number). A run with a
+ * larger step budget (turnKey.kadeStepBudget, set for background tasks that are promised up to N
+ * rounds) gets the cap scaled to that budget, never below the base cap.
+ */
+function capFor(name, env = process.env, turnKey) {
   const raw = Number(env && env[CAP_ENV[name]]);
-  return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_CAPS[name] || 6;
+  let cap = Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_CAPS[name] || 6;
+  const budget = Number(turnKey && typeof turnKey === 'object' ? turnKey.kadeStepBudget : NaN);
+  if (Number.isFinite(budget) && budget > 0) {
+    cap = Math.max(cap, Math.ceil((cap * budget) / DEFAULT_ROUNDS));
+  }
+  return cap;
 }
 
 const QUOTA_STATUS = /\b(?:status(?: code)?|HTTP)\s*:?\s*(?:402|429|432|433)\b/i;
@@ -83,9 +103,10 @@ function stateFor(turnKey, name) {
  * answers instead of calling the provider.
  */
 function beginCall(turnKey, name, env = process.env) {
+  if (!guardOn(env)) return { ok: true };
   const s = stateFor(turnKey, name);
   if (s.unavailable) return { ok: false, text: UNAVAILABLE[name], why: 'unavailable' };
-  const cap = capFor(name, env);
+  const cap = capFor(name, env, turnKey);
   if (s.calls >= cap) return { ok: false, text: capReachedText(name, cap), why: 'cap' };
   s.calls += 1;
   return { ok: true };
@@ -112,6 +133,7 @@ function peek(turnKey, name) {
  * @param {{ req?: object, env?: object, logger?: { warn: Function } }} [opts]
  */
 function guardWebSearchTool(tool, { req, env = process.env, logger } = {}) {
+  if (!guardOn(env)) return tool;
   if (!tool || typeof tool._call !== 'function' || tool.__kadeTurnGuard) return tool;
   const original = tool._call.bind(tool);
   const turnKey = req || tool;
@@ -141,6 +163,8 @@ module.exports = {
   WIKIPEDIA,
   UNAVAILABLE,
   DEFAULT_CAPS,
+  DEFAULT_ROUNDS,
+  guardOn,
   capFor,
   capReachedText,
   isProviderQuotaError,

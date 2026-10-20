@@ -78,7 +78,7 @@ class KadeWikipedia extends Tool {
       );
     } catch (err) {
       logger.warn(`[KadeWikipedia] failed: ${err.message}`);
-      if (turnGuard.isProviderQuotaError(err)) {
+      if (turnGuard.guardOn() && turnGuard.isProviderQuotaError(err)) {
         turnGuard.markUnavailable(turnKey, turnGuard.WIKIPEDIA);
         return turnGuard.UNAVAILABLE[turnGuard.WIKIPEDIA];
       }
