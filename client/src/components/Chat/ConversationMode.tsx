@@ -546,6 +546,74 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
    * flicker-loop. Manual toggle takes over completely (manual=true). */
   const torchCtlRef = useRef({ on: false, manual: false, autoLit: false, dark: 0 });
 
+  /* Upright pictures (Oct 20 2026, Kade's yes to "the motion and orientation
+   * question"): a phone held upside down, easy when you can't see the screen,
+   * sends an upside-down picture, and the Spotter then gives every left and
+   * right backwards (0 of 8 right in a replay, on both Gemini models). The
+   * page stays portrait, so the browser never turns the camera picture round.
+   * The phone's tilt sensor says when its top points down; frames are then
+   * drawn turned half round. Only that case: when the screen itself rotates
+   * (landscape, or Android's upside-down portrait) the browser already turns
+   * the picture. iPhone Safari asks once for motion access; the ask has to
+   * ride a tap, so it hangs off the buttons that bring a Spotter on. */
+  const tiltRef = useRef<{ upsideDown: boolean; on: boolean }>({ upsideDown: false, on: false });
+  const tiltHandlerRef = useRef<((e: DeviceOrientationEvent) => void) | null>(null);
+  const watchPhoneTilt = useCallback(() => {
+    if (tiltRef.current.on || typeof window === 'undefined') {
+      return;
+    }
+    const handler = (e: DeviceOrientationEvent) => {
+      const beta = e.beta;
+      if (beta == null) {
+        return;
+      }
+      const screenAngle =
+        typeof screen !== 'undefined' && screen.orientation ? screen.orientation.angle : 0;
+      if (screenAngle !== 0 || beta > 45) {
+        tiltRef.current.upsideDown = false;
+      } else if (beta < -45) {
+        tiltRef.current.upsideDown = true;
+      }
+      // Between the two (flat, pointing at the floor or a table): keep the last call.
+    };
+    tiltHandlerRef.current = handler;
+    tiltRef.current.on = true;
+    window.addEventListener('deviceorientation', handler);
+  }, []);
+  const askForPhoneTilt = useCallback(() => {
+    try {
+      const D = (typeof window !== 'undefined' ? window.DeviceOrientationEvent : undefined) as
+        | (typeof DeviceOrientationEvent & { requestPermission?: () => Promise<string> })
+        | undefined;
+      if (!D) {
+        return;
+      }
+      if (typeof D.requestPermission === 'function') {
+        D.requestPermission()
+          .then((state) => {
+            if (state === 'granted') {
+              watchPhoneTilt();
+            }
+          })
+          .catch(() => {
+            /* no tap behind it, or refused: frames simply stay as they were */
+          });
+        return;
+      }
+      watchPhoneTilt();
+    } catch {
+      /* tilt is a helper, never a blocker */
+    }
+  }, [watchPhoneTilt]);
+  useEffect(
+    () => () => {
+      if (tiltHandlerRef.current) {
+        window.removeEventListener('deviceorientation', tiltHandlerRef.current);
+      }
+    },
+    [],
+  );
+
   const stopCamera = useCallback(() => {
     setTorchAvailable(false);
     setTorchOn(false);
@@ -625,7 +693,16 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         canvas.height = h;
         const g = canvas.getContext('2d');
         if (!g) return;
-        g.drawImage(vid, 0, 0, w, h);
+        if (tiltRef.current.upsideDown) {
+          // Phone upside down: turn the picture the right way up (see tiltRef).
+          g.save();
+          g.translate(w, h);
+          g.rotate(Math.PI);
+          g.drawImage(vid, 0, 0, w, h);
+          g.restore();
+        } else {
+          g.drawImage(vid, 0, 0, w, h);
+        }
         const b64 = canvas.toDataURL('image/jpeg', live ? 0.78 : 0.65).split(',')[1];
         if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
         // Auto-flash: cheap brightness read on a tiny downsample (see ref note).
@@ -2458,6 +2535,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         <button
           onClick={() => {
             spotterAutoRef.current = true;
+            askForPhoneTilt();
             void startCall();
           }}
           aria-label="Call your Spotter"
@@ -2663,7 +2741,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           <div className="flex gap-3">
             <button
               ref={liveConfirmRef}
-              onClick={() => streamingEngine.sendJson({ type: 'live', on: true, ack: true })}
+              onClick={() => {
+                askForPhoneTilt();
+                streamingEngine.sendJson({ type: 'live', on: true, ack: true });
+              }}
               className="flex-1 rounded-full bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400"
             >
               {localize('com_ui_call_put_them_on')}
@@ -2733,7 +2814,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
         {streamingRef.current && !liveMode && !liveNotice && (
           <button
-            onClick={() => streamingEngine.sendJson({ type: 'live', on: true })}
+            onClick={() => {
+              askForPhoneTilt();
+              streamingEngine.sendJson({ type: 'live', on: true });
+            }}
             aria-label="Call your Spotter — continuous sight, their own voice"
             title="Your Spotter (live mode — continuous sight, their own voice)"
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white shadow-lg transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-emerald-400"
