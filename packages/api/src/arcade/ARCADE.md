@@ -305,4 +305,29 @@ When an access pack is replaced by a new one, phones that stored the old `manife
 "That accessibility pack has changed. Check the game again." and ask `/match` again, which
 answers the new `accessVersion`.
 
+### Arcade levels: keeping older apps on the packs they were built for (Oct 21 2026)
+
+Some kit or game pack changes need a newer app. The touch-play packs are an example: the game's
+menu Back gesture moved to a two-finger scrub, which build 341 cannot recognize. So every arcade
+request from the iPhone app from build 342 carries `X-Kade-Arcade-Level: 2`. An app that sends
+no level, or one that is not a plain whole number, is level 1.
+
+When the catalog has a top-level `legacy` block, an app below its `below` level gets that block
+instead of the main catalog, on every route: `/config`, `/match`, the manifests and the pack
+links. The block has the main catalog's shape, `kit` and `games`, plus `"below": 2`. A bad
+`below` drops the block, and the log says so. Only one level deep is read.
+
+```json
+{ "kit": { "version": "20261020-716b88ab", ... }, "games": [ ...the new rows... ],
+  "legacy": { "below": 2, "kit": { "version": "20261019-3f893b31", ... },
+              "games": [ ...the rows build 341 already plays... ] } }
+```
+
+- An older app then sees exactly the shelf it had: its kit, its game versions and its
+  accessibility packs, which still pass the same checks against the legacy rows.
+- A newer app sees the main catalog. It is refused an older access pack's `manifestPath`, the
+  same as any replaced access pack.
+- Old packs are never deleted from storage, so this needs no uploads.
+- Drop the block once no phone runs the older build.
+
 Uploads, the catalog and deploys need Kade's yes. This router reads storage and never writes it.

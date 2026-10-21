@@ -16,6 +16,7 @@ import {
   ARCADE_SHELF_ID,
   arcadeDiagRow,
   arcadeId,
+  arcadeLevel,
   arcadePath,
   arcadeVersion,
   createArcadeRouter,
@@ -176,9 +177,13 @@ beforeEach(async () => {
 });
 
 type Body = Record<string, unknown>;
-async function get(path: string, who: LibraryAccount | null = signedIn) {
+async function get(
+  path: string,
+  who: LibraryAccount | null = signedIn,
+  headers: Record<string, string> = {},
+) {
   signedIn = who;
-  const res = await fetch(base + path);
+  const res = await fetch(base + path, { headers });
   const text = await res.text();
   const json = (res.headers.get('content-type') || '').includes('json');
   return {
@@ -2420,4 +2425,134 @@ test('POST /diag stores the script and audio telemetry with the rest of a teleme
       stats: { js: 4.5, jsMax: 18, underruns: 2, audioQ: 3, core: 'gambatte' },
     },
   ]);
+});
+
+/* ── Arcade levels (Oct 21 2026) ───────────────────────────────────── */
+/* The iPhone app from build 342 sends X-Kade-Arcade-Level: 2. Build 341 and older send nothing
+ * and keep the packs they were built for, through the catalog's legacy block. */
+const LEVEL_2 = { 'X-Kade-Arcade-Level': '2' };
+const OLD_ACCESS = '2026-10-19a-access';
+const SHA_OA = '9'.repeat(64);
+const LEVELS_CATALOG = {
+  ...CATALOG,
+  games: [
+    {
+      ...CATALOG.games[0],
+      romSha1: ROM_XENA,
+      accessVersion: XENA_ACCESS,
+      accessSize: 46000123,
+      accessSha256: SHA_XA,
+    },
+    CATALOG.games[1],
+  ],
+  legacy: {
+    below: 2,
+    kit: { version: '4.2.2-9', size: 3900000, sha256: SHA_K },
+    games: [
+      {
+        ...CATALOG.games[0],
+        version: '2026-10-19a',
+        size: 46900000,
+        romSha1: ROM_XENA,
+        accessVersion: OLD_ACCESS,
+        accessSize: 45000123,
+        accessSha256: SHA_OA,
+      },
+    ],
+  },
+};
+function stockLevels() {
+  put('arcade/catalog.json', LEVELS_CATALOG);
+  put('arcade/family/xena/2026-10-19a/pack.json', index(SHA_A, 46900123));
+  put('arcade/public/kit/4.2.2-9/pack.json', index(SHA_K, 3900123, 'emulatorjs/loader.js'));
+  put(
+    `arcade/family/xena/${XENA_ACCESS}/pack.json`,
+    accessIndex(SHA_XA, 46000123, 'games/xena/local/rom.z64'),
+  );
+  put(
+    `arcade/family/xena/${OLD_ACCESS}/pack.json`,
+    accessIndex(SHA_OA, 45000123, 'games/xena/local/rom.z64'),
+  );
+}
+const packVersions = (body: Body) =>
+  ((body.packs as Body[]) || []).map((pack) => `${pack.kind}:${pack.version}`);
+
+test('arcadeLevel reads a plain whole number and treats anything else as level 1', () => {
+  assert.equal(arcadeLevel(undefined), 1);
+  assert.equal(arcadeLevel('2'), 2);
+  assert.equal(arcadeLevel(' 3 '), 3);
+  assert.equal(arcadeLevel(['2', '5']), 2);
+  for (const bad of ['', 'two', '2.5', '-2', '0', '99999', '1e3', 2])
+    assert.equal(arcadeLevel(bad), 1, JSON.stringify(bad));
+});
+
+test('an app with no level gets the legacy catalog everywhere; level 2 and up get the main one', async () => {
+  stockLevels();
+  for (const headers of [{}, { 'X-Kade-Arcade-Level': '1' }, { 'X-Kade-Arcade-Level': 'two' }]) {
+    const config = await get('/config', FAMILY, headers);
+    assert.equal(config.status, 200);
+    assert.deepEqual(
+      (config.body.catalog as Body[]).map((row) => `${row.id}:${row.version}`),
+      ['xena:2026-10-19a'],
+      JSON.stringify(headers),
+    );
+    assert.deepEqual(config.body.kit, { version: '4.2.2-9', size: 3900000 });
+    const manifest = await get('/games/xena/manifest', FAMILY, headers);
+    assert.equal(manifest.body.ready, true);
+    assert.deepEqual(packVersions(manifest.body), ['kit:4.2.2-9', 'game:2026-10-19a']);
+    /* A game only the main catalog lists is not there for the older app. */
+    assert.equal((await get('/games/super-tilt-bro/manifest', FAMILY, headers)).status, 404);
+  }
+  for (const headers of [LEVEL_2, { 'X-Kade-Arcade-Level': '3' }]) {
+    const config = await get('/config', FAMILY, headers);
+    assert.deepEqual(
+      (config.body.catalog as Body[]).map((row) => `${row.id}:${row.version}`),
+      ['xena:2026-10-20a', 'super-tilt-bro:1.0.0'],
+    );
+    assert.deepEqual(config.body.kit, { version: '4.2.3-1', size: 4000000 });
+    const manifest = await get('/games/xena/manifest', FAMILY, headers);
+    assert.deepEqual(packVersions(manifest.body), ['kit:4.2.3-1', 'game:2026-10-20a']);
+  }
+  keysAreSafe();
+});
+
+test('levels keep /match, the access manifest and pack links in step with the catalog the app gets', async () => {
+  stockLevels();
+  const old = await get(`/match?sha1=${ROM_XENA}`, FAMILY);
+  assert.equal((old.body.match as Body).version, OLD_ACCESS);
+  assert.equal((old.body.match as Body).sha256, SHA_OA);
+  const oldManifest = await get(`/games/xena/manifest?version=${OLD_ACCESS}`, FAMILY);
+  assert.equal(oldManifest.body.ready, true);
+  assert.deepEqual(packVersions(oldManifest.body), ['kit:4.2.2-9', `game:${OLD_ACCESS}`]);
+  assert.equal(oldManifest.body.romPath, 'games/xena/local/rom.z64');
+  assert.equal((await get(`/games/xena/${OLD_ACCESS}/pack`, FAMILY)).status, 200);
+
+  const now = await get(`/match?sha1=${ROM_XENA}`, FAMILY, LEVEL_2);
+  assert.equal((now.body.match as Body).version, XENA_ACCESS);
+  /* The level-2 app asking for the older access pack hears that it changed, as before levels. */
+  const stale = await get(`/games/xena/manifest?version=${OLD_ACCESS}`, FAMILY, LEVEL_2);
+  assert.equal(stale.status, 404);
+  /* The family gate is the same at every level. */
+  assert.equal((await get('/games/xena/manifest', OUTSIDE)).status, 403);
+  assert.equal((await get('/games/xena/manifest', OUTSIDE, LEVEL_2)).status, 403);
+  keysAreSafe();
+});
+
+test('a legacy block needs a whole-number below from 2, and is read one level deep', () => {
+  const seen: string[] = [];
+  const main = { kit: { version: '4.2.3-1' }, games: [] };
+  const old = { kit: { version: '4.2.2-9' }, games: [] };
+  for (const below of [undefined, 1, 0, 2.5, '2', 1001]) {
+    const parsed = parseArcadeCatalog({ ...main, legacy: { ...old, below } }, (m) => seen.push(m));
+    assert.equal(parsed.legacy, undefined, JSON.stringify(below));
+  }
+  assert.ok(seen.every((m) => m.includes('legacy block was skipped')));
+  const parsed = parseArcadeCatalog({
+    ...main,
+    legacy: { ...old, below: 2, legacy: { ...main, below: 3 } },
+  });
+  assert.equal(parsed.legacy?.below, 2);
+  assert.equal(parsed.legacy?.catalog.kit?.version, '4.2.2-9');
+  assert.equal(parsed.legacy?.catalog.legacy, undefined);
+  assert.equal(parseArcadeCatalog(main).legacy, undefined);
 });

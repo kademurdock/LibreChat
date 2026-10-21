@@ -72,6 +72,12 @@ export const ARCADE_PREFIX: string = 'arcade';
 export const ARCADE_SHELF_ID: string = 'family-shelf';
 /** The kit's pack id in a manifest's `packs`, so no game may use it. */
 export const ARCADE_KIT_ID: string = 'kit';
+/** The header an app sends to say which arcade it was built for (Oct 21 2026). The iPhone app
+ * from build 342 sends "X-Kade-Arcade-Level: 2"; an app that sends none is level 1. A catalog
+ * with a `legacy` block serves that older catalog to any app below its `below` level, so a kit
+ * or game pack that changed what the app must do never reaches an app that cannot do it. */
+export const ARCADE_LEVEL_HEADER: string = 'x-kade-arcade-level';
+const ARCADE_LEVEL_MAX = 1000;
 
 const CATALOG_KEY = `${ARCADE_PREFIX}/catalog.json`;
 /** Lower-case letters, digits and inner hyphens: "xena", "super-tilt-bro". */
@@ -271,6 +277,17 @@ export interface ArcadeKit {
 export interface ArcadeCatalog {
   games: ArcadeGame[];
   kit: ArcadeKit | null;
+  /** The whole catalog an app below level `below` gets instead (the packs it was built for). */
+  legacy?: { below: number; catalog: ArcadeCatalog };
+}
+
+/** The arcade level an app says it was built for: a whole number from its ARCADE_LEVEL_HEADER,
+ * 1 when the header is missing or not a plain number. */
+export function arcadeLevel(value: unknown): number {
+  const text = Array.isArray(value) ? value[0] : value;
+  if (typeof text !== 'string' || !/^\d{1,4}$/.test(text.trim())) return 1;
+  const level = Number(text.trim());
+  return level >= 1 && level <= ARCADE_LEVEL_MAX ? level : 1;
 }
 
 /** One file inside blob.bin, as the phone serves it. */
@@ -391,6 +408,7 @@ const shortText = (value: unknown, max: number): string =>
 export function parseArcadeCatalog(
   raw: unknown,
   log: (message: string) => void = () => {},
+  nested = false,
 ): ArcadeCatalog {
   const games: ArcadeGame[] = [];
   const seen = new Set<string>();
@@ -475,7 +493,28 @@ export function parseArcadeCatalog(
   } else if (isRecord(raw) && raw.kit !== undefined) {
     log('the catalog kit was skipped: it needs a version');
   }
-  return { games, kit };
+  const result: ArcadeCatalog = { games, kit };
+  /* The older catalog for apps below `below`: read by the same rules, one level deep (a legacy
+   * block inside it is ignored). A bad `below` drops the block, so every app gets the main one. */
+  if (isRecord(raw) && raw.legacy !== undefined && !nested) {
+    const legacy = raw.legacy;
+    const below = isRecord(legacy) ? legacy.below : undefined;
+    if (
+      !isRecord(legacy) ||
+      typeof below !== 'number' ||
+      !Number.isInteger(below) ||
+      below < 2 ||
+      below > ARCADE_LEVEL_MAX
+    ) {
+      log('the catalog legacy block was skipped: it needs "below", a whole number from 2');
+    } else {
+      result.legacy = {
+        below,
+        catalog: parseArcadeCatalog(legacy, (message) => log(`legacy: ${message}`), true),
+      };
+    }
+  }
+  return result;
 }
 
 /** Reads a pack.json into only the fields the phone needs: blob.bin's size and sha256 and a file
@@ -729,6 +768,16 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
     }
     return loading;
   };
+  /* The catalog this app was built for: the legacy block's for an app below its level, else the
+   * main one. Every route reads the catalog through this, so an older app's list, manifests,
+   * matches and pack links all agree with each other. */
+  const catalogFor = async (req: Request): Promise<ArcadeCatalog> => {
+    const main = await catalog();
+    const legacy = main.legacy;
+    return legacy && arcadeLevel(req.headers[ARCADE_LEVEL_HEADER]) < legacy.below
+      ? legacy.catalog
+      : main;
+  };
 
   /* The catalog rows this account may see: a grown-ups-only game is absent for a child. The child
    * check runs only when some row needs it, and a failed check counts as a child. */
@@ -831,7 +880,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       missing(res);
       return null;
     }
-    const games = await visibleGames(req, (await catalog()).games);
+    const games = await visibleGames(req, (await catalogFor(req)).games);
     const game = games.find((row) => row.id === id);
     if (game && game.access === 'public') return game;
     if (!familyPack(actor(req))) {
@@ -892,7 +941,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
       const account = actor(req);
       const pack = familyPack(account);
       const features: FamilyFeatures = familyFeatures(account);
-      const { games: listed, kit } = await catalog();
+      const { games: listed, kit } = await catalogFor(req);
       const games = await visibleGames(req, listed);
       const rows: ArcadeEntry[] = [];
       let shelf = false;
@@ -963,7 +1012,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         version = asked;
       }
       const access = version === game.accessVersion;
-      const { kit } = await catalog();
+      const { kit } = await catalogFor(req);
       const [gameIndex, kitIndex] = await Promise.all([
         gamePack(game, version),
         kit ? packIndex(kitKey(kit.version, 'pack.json'), true) : Promise.resolve(null),
@@ -1011,7 +1060,7 @@ export function createArcadeRouter(deps: ArcadeDependencies): ReturnType<typeof 
         res.status(400).json({ error: "That is not a ROM's sha1 (40 hex digits)." });
         return;
       }
-      const { games: listed } = await catalog();
+      const { games: listed } = await catalogFor(req);
       if (!catalogOk) {
         res.status(503).json({ error: 'The arcade could not answer just now. Please try again.' });
         return;
