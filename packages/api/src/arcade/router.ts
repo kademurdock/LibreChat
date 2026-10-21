@@ -284,9 +284,11 @@ export interface ArcadeCatalog {
 /** The arcade level an app says it was built for: a whole number from its ARCADE_LEVEL_HEADER,
  * 1 when the header is missing or not a plain number. */
 export function arcadeLevel(value: unknown): number {
-  const text = Array.isArray(value) ? value[0] : value;
-  if (typeof text !== 'string' || !/^\d{1,4}$/.test(text.trim())) return 1;
-  const level = Number(text.trim());
+  /* Node joins a repeated header as "2, 2": the first value counts. */
+  const raw = Array.isArray(value) ? value[0] : value;
+  const text = typeof raw === 'string' ? raw.split(',')[0].trim() : '';
+  if (!/^\d{1,4}$/.test(text)) return 1;
+  const level = Number(text);
   return level >= 1 && level <= ARCADE_LEVEL_MAX ? level : 1;
 }
 

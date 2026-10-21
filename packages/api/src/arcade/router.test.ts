@@ -2482,13 +2482,19 @@ test('arcadeLevel reads a plain whole number and treats anything else as level 1
   assert.equal(arcadeLevel('2'), 2);
   assert.equal(arcadeLevel(' 3 '), 3);
   assert.equal(arcadeLevel(['2', '5']), 2);
+  assert.equal(arcadeLevel('2, 2'), 2);
   for (const bad of ['', 'two', '2.5', '-2', '0', '99999', '1e3', 2])
     assert.equal(arcadeLevel(bad), 1, JSON.stringify(bad));
 });
 
 test('an app with no level gets the legacy catalog everywhere; level 2 and up get the main one', async () => {
   stockLevels();
-  for (const headers of [{}, { 'X-Kade-Arcade-Level': '1' }, { 'X-Kade-Arcade-Level': 'two' }]) {
+  const older: Array<Record<string, string>> = [
+    {},
+    { 'X-Kade-Arcade-Level': '1' },
+    { 'X-Kade-Arcade-Level': 'two' },
+  ];
+  for (const headers of older) {
     const config = await get('/config', FAMILY, headers);
     assert.equal(config.status, 200);
     assert.deepEqual(
@@ -2503,7 +2509,8 @@ test('an app with no level gets the legacy catalog everywhere; level 2 and up ge
     /* A game only the main catalog lists is not there for the older app. */
     assert.equal((await get('/games/super-tilt-bro/manifest', FAMILY, headers)).status, 404);
   }
-  for (const headers of [LEVEL_2, { 'X-Kade-Arcade-Level': '3' }]) {
+  const newer: Array<Record<string, string>> = [LEVEL_2, { 'X-Kade-Arcade-Level': '3' }];
+  for (const headers of newer) {
     const config = await get('/config', FAMILY, headers);
     assert.deepEqual(
       (config.body.catalog as Body[]).map((row) => `${row.id}:${row.version}`),
@@ -2532,6 +2539,17 @@ test('levels keep /match, the access manifest and pack links in step with the ca
   /* The level-2 app asking for the older access pack hears that it changed, as before levels. */
   const stale = await get(`/games/xena/manifest?version=${OLD_ACCESS}`, FAMILY, LEVEL_2);
   assert.equal(stale.status, 404);
+  /* The access-pack checks hold on legacy rows too: an old access pack whose blob is not the
+   * legacy row's accessSize and accessSha256 is not ready, and its link is never signed. */
+  put(
+    `arcade/family/xena/${OLD_ACCESS}/pack.json`,
+    accessIndex(SHA_OA, 45000999, 'games/xena/local/rom.z64'),
+  );
+  clock += 11 * 60 * 1000; // past the pack.json cache
+  const signed = signs.length;
+  assert.equal((await get(`/games/xena/manifest?version=${OLD_ACCESS}`, FAMILY)).body.ready, false);
+  assert.equal((await get(`/games/xena/${OLD_ACCESS}/pack`, FAMILY)).status, 404);
+  assert.equal(signs.length, signed);
   /* The family gate is the same at every level. */
   assert.equal((await get('/games/xena/manifest', OUTSIDE)).status, 403);
   assert.equal((await get('/games/xena/manifest', OUTSIDE, LEVEL_2)).status, 403);
@@ -2546,6 +2564,7 @@ test('a legacy block needs a whole-number below from 2, and is read one level de
     const parsed = parseArcadeCatalog({ ...main, legacy: { ...old, below } }, (m) => seen.push(m));
     assert.equal(parsed.legacy, undefined, JSON.stringify(below));
   }
+  assert.equal(seen.length, 6);
   assert.ok(seen.every((m) => m.includes('legacy block was skipped')));
   const parsed = parseArcadeCatalog({
     ...main,

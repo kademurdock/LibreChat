@@ -328,6 +328,11 @@ links. The block has the main catalog's shape, `kit` and `games`, plus `"below":
 - A newer app sees the main catalog. It is refused an older access pack's `manifestPath`, the
   same as any replaced access pack.
 - Old packs are never deleted from storage, so this needs no uploads.
+- Either catalog can be asked for by leaving the header out or sending it, so what is open is
+  both together. When a game is moved to the family shelf or made grown-ups-only, change its
+  legacy row too.
+- `below` must be a plain number. A string such as `"2"` drops the block, and the log says so.
+  Check the log after uploading.
 - Drop the block once no phone runs the older build.
 
 Uploads, the catalog and deploys need Kade's yes. This router reads storage and never writes it.
