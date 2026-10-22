@@ -1,6 +1,10 @@
 import type { CatalogItem } from './catalog';
 
-type OriginalMime = 'application/pdf' | 'image/jpeg';
+type OriginalMime =
+  | 'application/pdf'
+  | 'image/jpeg'
+  | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  | 'text/html';
 type LibraryId = string | { toString(): string };
 type Librarian = NonNullable<CatalogItem['librarian']> & { identified?: string };
 
@@ -29,9 +33,19 @@ export interface LibraryOriginalBook {
 }
 
 const filename = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,239}$/;
+const downloadTitle: Record<OriginalMime, string> = {
+  'application/pdf': 'Download original PDF',
+  'image/jpeg': 'Download original image',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'Download original DOCX',
+  'text/html': 'Download original HTML',
+};
 const mimeOf = (name: string): OriginalMime | null => {
   const extension = name.split('.').pop()?.toLowerCase();
   if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'docx')
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (extension === 'html' || extension === 'htm') return 'text/html';
   return extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : null;
 };
 
@@ -101,10 +115,7 @@ export async function libraryOriginalLibrarian(
       sources: [
         ...(existing?.sources || []),
         {
-          title:
-            original.mime === 'application/pdf'
-              ? 'Download original PDF'
-              : 'Download original image',
+          title: downloadTitle[original.mime],
           url,
         },
       ],

@@ -271,3 +271,40 @@ test('the existing native source pane receives an image link as a completed note
   assert.equal(result?.state, 'done');
   assert.equal(result?.sources?.[0].title, 'Download original image');
 });
+
+const retainedFormats = [
+  ['docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'DOCX'],
+  ['html', 'text/html', 'HTML'],
+  ['htm', 'text/html', 'HTML'],
+] as const;
+
+for (const [extension, mime, title] of retainedFormats) {
+  test(`reviewed ${extension} sources retain their exact MIME and named download`, async () => {
+    const item = book(extension);
+    item.meta!.curatedOriginal!.mime = mime;
+    assert.equal(reviewedLibraryOriginal(item)?.mime, mime);
+    const calls: Array<[string, string, number, string]> = [];
+    const result = await libraryOriginalLibrarian(item, async (...args) => {
+      calls.push(args);
+      return 'https://storage.example/file';
+    });
+    assert.deepEqual(calls, [[item.fileKey, mime, 43200, item.originalName]]);
+    assert.equal(result?.sources?.[1].title, `Download original ${title}`);
+  });
+
+  test(`reviewed ${extension} sources refuse mismatched metadata before signing`, async () => {
+    for (const [, change] of invalid) {
+      const item = book(extension);
+      item.meta!.curatedOriginal!.mime = mime;
+      change(item);
+      let calls = 0;
+      const result = await libraryOriginalLibrarian(item, async () => {
+        calls++;
+        return 'https://storage.example/file';
+      });
+      assert.equal(reviewedLibraryOriginal(item), null);
+      assert.equal(calls, 0);
+      assert.equal(result, item.librarian);
+    }
+  });
+}
