@@ -22,7 +22,6 @@ const fixture =
   process.env.KADE_WORKER_SMOKE_FIXTURE ||
   resolve(__dirname, '../../../../../windows/tests/workspace_http_smoke.py');
 const available = process.platform === 'win32' && existsSync(fixture);
-const smokeTest = available ? test : test.skip;
 
 beforeAll(async () => {
   if (!available) return;
@@ -53,9 +52,8 @@ afterAll(async () => {
   await mongo?.stop();
 });
 
-smokeTest(
-  'Python Windows worker pairs, inspects real fixture files, uploads events and acknowledges them over HTTP',
-  async () => {
+if (available) {
+  test('Python Windows worker pairs, inspects real fixture files, uploads events and acknowledges them over HTTP', async () => {
     const result = await new Promise<string>((done, reject) => {
       const child = spawn(process.env.KADE_WORKER_TEST_PYTHON || 'python', [fixture, origin], {
         windowsHide: true,
@@ -108,6 +106,8 @@ smokeTest(
     expect(saved?.seenSequence).toBe(saved?.lastSequence);
     expect(saved?.workerInstanceId).toBeTruthy();
     expect(saved?.leaseId).toMatch(/^[a-f0-9]{48}$/);
-  },
-  60000,
-);
+  }, 60000);
+} else {
+  // eslint-disable-next-line jest/expect-expect -- The absent optional fixture is explicitly skipped.
+  test.skip('Python Windows worker smoke requires the sibling Windows fixture', () => {});
+}

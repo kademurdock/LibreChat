@@ -26,7 +26,7 @@ export class WorkspaceError extends Error {
   constructor(
     public status: number,
     message: string,
-    public run?: WorkspaceRun,
+    public run: WorkspaceRun | undefined = undefined,
   ) {
     super(message);
   }
@@ -105,10 +105,84 @@ const runView = (row: WorkspaceRunRecord): WorkspaceRun => ({
   updatedAt: row.updatedAt,
 });
 
+export interface WorkspaceEventBatch {
+  workerInstanceId: string;
+  leaseId: string;
+  events: WorkspaceEventInput[];
+}
+
+export interface WorkspaceService {
+  ready: Promise<string[]>;
+  createDevice(
+    owner: WorkspaceOwner,
+    input: DeviceInput,
+  ): Promise<{
+    device: WorkspaceDevice;
+    workerToken: string | null;
+  }>;
+  updateDevice(
+    owner: WorkspaceOwner,
+    id: string,
+    input: { capabilities: string[]; name?: string },
+  ): Promise<{ device: WorkspaceDevice }>;
+  rotate(
+    owner: WorkspaceOwner,
+    id: string,
+  ): Promise<{ device: WorkspaceDevice; workerToken: string }>;
+  revoke(owner: WorkspaceOwner, id: string): Promise<{ device: WorkspaceDevice }>;
+  createProject(owner: WorkspaceOwner, input: ProjectInput): Promise<{ project: WorkspaceProject }>;
+  createSession(owner: WorkspaceOwner, input: SessionInput): Promise<{ session: WorkspaceSession }>;
+  createRun(owner: WorkspaceOwner, input: RunInput): Promise<{ run: WorkspaceRun }>;
+  stop(owner: WorkspaceOwner, id: string): Promise<{ run: WorkspaceRun }>;
+  poll(
+    token: string,
+    workerInstanceId: string,
+  ): Promise<{ run: WorkspaceWorkerRun | null; stopRequested: boolean }>;
+  events(
+    token: string,
+    id: string,
+    input: WorkspaceEventBatch,
+  ): Promise<{ run: WorkspaceRun; accepted: string[]; nextCursor: number }>;
+  seen(
+    owner: WorkspaceOwner,
+    id: string,
+    throughSequence: number,
+  ): Promise<{ seen: { kind: 'run'; id: string; throughSequence: number } }>;
+  readState(owner: WorkspaceOwner): Promise<{ readState: WorkspaceReadState }>;
+  markRead(
+    owner: WorkspaceOwner,
+    kind: WorkspaceReadKind,
+    seenThrough: string,
+  ): Promise<{ readState: WorkspaceReadState }>;
+  listDevices(
+    owner: WorkspaceOwner,
+    before?: string,
+  ): Promise<{ devices: WorkspaceDevice[]; nextCursor: string | null }>;
+  listProjects(
+    owner: WorkspaceOwner,
+    before?: string,
+  ): Promise<{ projects: WorkspaceProject[]; nextCursor: string | null }>;
+  listSessions(
+    owner: WorkspaceOwner,
+    projectId?: string,
+    before?: string,
+  ): Promise<{ sessions: WorkspaceSession[]; nextCursor: string | null }>;
+  listRuns(
+    owner: WorkspaceOwner,
+    before?: string,
+  ): Promise<{ runs: WorkspaceRun[]; nextCursor: string | null }>;
+  getRun(owner: WorkspaceOwner, id: string): Promise<{ run: WorkspaceRun }>;
+  getEvents(
+    owner: WorkspaceOwner,
+    id: string,
+    after: number,
+  ): Promise<{ events: WorkspaceEvent[]; nextCursor: number }>;
+}
+
 export function createWorkspaceService(
   connection: Connection = mongoose.connection,
   options: { now?: () => Date; staleMs?: number; getProject?: ProjectReader } = {},
-) {
+): WorkspaceService {
   const db = workspaceCollections(connection);
   const now = () => (options.now?.() || new Date()).toISOString();
   const staleMs = options.staleMs || 90000;
@@ -540,15 +614,7 @@ export function createWorkspaceService(
     throw new WorkspaceError(409, 'Work changed. Poll again.');
   }
 
-  async function events(
-    token: string,
-    id: string,
-    input: {
-      workerInstanceId: string;
-      leaseId: string;
-      events: WorkspaceEventInput[];
-    },
-  ) {
+  async function events(token: string, id: string, input: WorkspaceEventBatch) {
     const current = await worker(token);
     const owner = { userId: current.userId, tenantId: current.tenantId };
     await reap(owner);
@@ -761,5 +827,3 @@ export function createWorkspaceService(
     },
   };
 }
-
-export type WorkspaceService = ReturnType<typeof createWorkspaceService>;

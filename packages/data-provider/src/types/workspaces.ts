@@ -1,7 +1,13 @@
 export type WorkspacePlatform = 'windows' | 'ios' | 'android';
 export type WorkspaceRuntime = 'inspect' | 'codex' | 'claude' | 'custom';
 export type WorkspaceRunState =
-  'queued' | 'running' | 'stopping' | 'done' | 'failed' | 'stopped' | 'interrupted';
+  | 'queued'
+  | 'running'
+  | 'stopping'
+  | 'done'
+  | 'failed'
+  | 'stopped'
+  | 'interrupted';
 export type WorkspaceReadKind = 'alerts' | 'announcements' | 'agentWork';
 
 export interface WorkspaceDevice {

@@ -1,4 +1,4 @@
-import type { Connection } from 'mongoose';
+import type { Collection, Connection } from 'mongoose';
 import type {
   WorkspaceDevice,
   WorkspaceProject,
@@ -37,7 +37,16 @@ export interface WorkspaceReadRecord extends WorkspaceOwner {
   readState: WorkspaceReadState;
 }
 
-export function workspaceCollections(connection: Connection) {
+export interface WorkspaceCollections {
+  devices: Collection<WorkspaceDeviceRecord>;
+  projects: Collection<WorkspaceProjectRecord>;
+  sessions: Collection<WorkspaceSessionRecord>;
+  runs: Collection<WorkspaceRunRecord>;
+  reads: Collection<WorkspaceReadRecord>;
+  ready: Promise<string[]>;
+}
+
+export function workspaceCollections(connection: Connection): WorkspaceCollections {
   const devices = connection.collection<WorkspaceDeviceRecord>('kadeworkspacedevices');
   const projects = connection.collection<WorkspaceProjectRecord>('kadeworkspaceprojects');
   const sessions = connection.collection<WorkspaceSessionRecord>('kadeworkspacesessions');
