@@ -118,6 +118,7 @@ export { getTaskReceipts, taskFingerprint, validTaskId, TaskConflict } from './t
 export { taskStatus } from './tasks/status';
 export { createTaskRouter } from './tasks/router';
 export { createHarnessRouter } from './tasks/harness';
+export { createWorkspaceRouter } from './workspaces/router';
 export { createMemoryControlsRouter } from './agents/memoryControls';
 export { createProjectContextRouter, loadProjectWork } from './projects/context';
 export { runtimeCapabilities } from './agents/capabilities';

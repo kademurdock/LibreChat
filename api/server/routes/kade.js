@@ -9,6 +9,7 @@ const {
   needsRefresh,
   getNewS3URL,
   createHarnessRouter,
+  createWorkspaceRouter,
   monthlyBooks,
   monthlyWindow,
   MonthlyWindowError,
@@ -48,6 +49,10 @@ router.get(
   },
 );
 router.use('/harness/jobs', requireJwtAuth, requireAdminAccess, createHarnessRouter());
+router.use('/workspaces', createWorkspaceRouter({
+  authenticate: requireJwtAuth,
+  getProject: (userId, projectId) => require('~/models').getChatProject(userId, projectId),
+}));
 /* KADE Sep 25 2026 (Part 291): the funding ledger (real cost vs what people paid Kade back). */
 router.use('/funding', require('./kadeFunding'));
 router.get('/monthly-books', requireJwtAuth, requireAdminAccess, async (req, res) => {

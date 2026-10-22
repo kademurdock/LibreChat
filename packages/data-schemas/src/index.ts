@@ -1,6 +1,7 @@
 export * from './app';
 export * from './admin';
 export * from './common';
+export * from './workspaces';
 export * from './crypto';
 export * from './schema';
 export * from './utils';
