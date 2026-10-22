@@ -1,4 +1,13 @@
+import type { RetainedNativeMime } from './retainedNative24';
 import type { CatalogItem } from './catalog';
+
+import {
+  retainedAccessDownloadTitle,
+  retainedNativeDownloadSources,
+  loadRetainedNativeDescriptors,
+} from './retainedNative24';
+
+export { retainedNativeDescriptorKey as libraryRetainedNativeDescriptorKey } from './retainedNative24';
 
 type OriginalMime =
   | 'application/pdf'
@@ -27,7 +36,7 @@ export interface LibraryOriginalBook {
   fileSha256?: string;
   originalName?: string;
   librarian?: Librarian | null;
-  meta?: {
+  meta?: Record<string, unknown> & {
     curatedOriginal?: Partial<LibraryOriginal> & { schemaVersion?: number; reviewed?: boolean };
   };
 }
@@ -95,15 +104,25 @@ export async function libraryOriginalLibrarian(
   book: LibraryOriginalBook,
   sign: (
     key: string,
-    mime: OriginalMime,
+    mime: OriginalMime | RetainedNativeMime,
     expiresIn: number,
     downloadName: string,
   ) => Promise<string>,
   onFailure?: () => void,
+  loadNativeDescriptor?: () => Promise<Uint8Array>,
 ): Promise<Librarian | null> {
   const existing = book.librarian?.state ? book.librarian : null;
   const original = reviewedLibraryOriginal(book);
   if (!original) return existing;
+  const provenance = book.meta?.retainedSourceAccess;
+  const nativeDescriptors = await loadRetainedNativeDescriptors(
+    provenance &&
+      typeof provenance === 'object' &&
+      !Array.isArray(provenance) &&
+      (provenance as Record<string, unknown>).representation === 'derived_access_representation'
+      ? loadNativeDescriptor
+      : undefined,
+  );
   try {
     const url = await sign(original.key, original.mime, 12 * 3600, original.originalName);
     const parsed = new URL(url);
@@ -115,9 +134,18 @@ export async function libraryOriginalLibrarian(
       sources: [
         ...(existing?.sources || []),
         {
-          title: downloadTitle[original.mime],
+          title:
+            retainedAccessDownloadTitle(book, original, nativeDescriptors) ||
+            downloadTitle[original.mime],
           url,
         },
+        ...(await retainedNativeDownloadSources(
+          book,
+          original,
+          sign,
+          onFailure,
+          nativeDescriptors,
+        )),
       ],
     };
   } catch {

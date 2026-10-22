@@ -48,7 +48,7 @@ const { logger } = require('@librechat/data-schemas');
 const { descriptionBatchRouter, bookImportRouter, saveBufferToS3, openAudioArchive, AUDIO_ZIP_LIMIT, TEXT_IMPORT_LIMIT, storeAudioStream, libraryPath, libraryCategory, libraryPathExpression, refineMediaFiling, correctedBookShelf, reviewedLibraryMoves } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { tubeVaultHints, validTubeVaultItems } = require('@librechat/api');
-const { reviewedLibraryOriginal, libraryOriginalLibrarian } = require('@librechat/api');
+const { reviewedLibraryOriginal, libraryOriginalLibrarian, libraryRetainedNativeDescriptorKey } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { speechProxyHeaders } = require('~/server/services/kadeSpeechAuth');
 const { userPriceFactor, extraChargeUSD } = require('~/server/services/kadeRealCost');
@@ -835,6 +835,7 @@ router.get('/book/:id', requireJwtAuth, async (req, res) => {
       tracks,
       librarian: await libraryOriginalLibrarian(book, signGet, () =>
         logger.warn('[library/original] Could not sign the reviewed original.'),
+        () => getBuffer(libraryRetainedNativeDescriptorKey),
       ),
       jacket: require('@librechat/api').readingJacket(book.jacket || ''),
       language: book.language || 'en',
@@ -1671,6 +1672,7 @@ router.post('/book/:id/librarian', requireJwtAuth, async (req, res) => {
     if (reviewedLibraryOriginal(book)) {
       return res.json({ ok: true, librarian: await libraryOriginalLibrarian(book, signGet, () =>
         logger.warn('[library/original] Could not sign the reviewed original.'),
+        () => getBuffer(libraryRetainedNativeDescriptorKey),
       ) });
     }
     if (cur.state === 'done' && req.query.again !== '1') return res.json({ ok: true, librarian: cur });
@@ -1701,6 +1703,7 @@ router.get('/book/:id/librarian', requireJwtAuth, async (req, res) => {
     const note = reviewedLibraryOriginal(book)
       ? await libraryOriginalLibrarian(book, signGet, () =>
         logger.warn('[library/original] Could not sign the reviewed original.'),
+        () => getBuffer(libraryRetainedNativeDescriptorKey),
       )
       : book.librarian;
     res.json({ ok: true, librarian: note || {} });

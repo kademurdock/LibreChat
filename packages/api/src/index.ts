@@ -136,7 +136,11 @@ export {
 } from './reverie/guide';
 export { parseDaisyAudio, readDaisyFile } from './library/daisy';
 export { libraryPath, libraryCategory, libraryPathExpression } from './library/shelves';
-export { reviewedLibraryOriginal, libraryOriginalLibrarian } from './library/original';
+export {
+  reviewedLibraryOriginal,
+  libraryOriginalLibrarian,
+  libraryRetainedNativeDescriptorKey,
+} from './library/original';
 export {
   commercialPath,
   commercialBrands,
@@ -389,8 +393,17 @@ export {
   FAMILY_HISTORY_PRIVATE,
 } from './family/history';
 export { familyArchiveDefinitions, familyHistoryArchivesRouter } from './family/archives';
-export { familyHistoryToolDescription, familyHistoryToolSchema, readFamilyHistoryTool, familyRouterCall } from './family/tool';
-export type { FamilyArchiveDefinition, FamilyArchiveMember, FamilyArchiveOptions } from './family/archives';
+export {
+  familyHistoryToolDescription,
+  familyHistoryToolSchema,
+  readFamilyHistoryTool,
+  familyRouterCall,
+} from './family/tool';
+export type {
+  FamilyArchiveDefinition,
+  FamilyArchiveMember,
+  FamilyArchiveOptions,
+} from './family/archives';
 export type {
   FamilyBundle,
   FamilyHistoryAccount,
@@ -412,8 +425,17 @@ export { createDescriptionWallet } from './description/wallet';
 export { createCommunityRouter } from './community/router';
 
 export { monthlyBooks, monthlyWindow, MonthlyWindowError } from './kade/monthly';
-export { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference } from './speech/edit';
-export { aukEditDescription, legacyAukEditCandidate, audioAssetDescription } from './audio/editDescription';
+export {
+  planAukEdit,
+  isAukStorageReference,
+  isAukOwnedReference,
+  isOwnedAudioReference,
+} from './speech/edit';
+export {
+  aukEditDescription,
+  legacyAukEditCandidate,
+  audioAssetDescription,
+} from './audio/editDescription';
 export { assertSeedScriptReply, seedWritingPrompt, ScriptWriterRefusal } from './audio/script';
 export type { ScriptWriterReply } from './audio/script';
 export type { MonthlyBooksDependencies, MonthlyBooksReport, MonthlyWindow } from './kade/monthly';
@@ -432,7 +454,11 @@ export {
 } from './memory/artifacts';
 export type { MemoryArtifactContext } from './memory/artifacts';
 export { createDesktopCallsRouter, webCallSessionId } from './calls/desktop';
-export { createAnnouncementRouter, announcementURL, announcementPayloadHash } from './announcements/router';
+export {
+  createAnnouncementRouter,
+  announcementURL,
+  announcementPayloadHash,
+} from './announcements/router';
 export type { AnnouncementDependencies } from './announcements/router';
 export {
   memoryEmbeddingLane,
