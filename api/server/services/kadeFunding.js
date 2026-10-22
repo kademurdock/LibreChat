@@ -74,7 +74,7 @@ function featureOf(service) {
   if (s === 'tts' || s === 'inworld_tts') return 'speech';
   if (/^(flux|fal_image|gemini_image|image|avatar)/.test(s)) return 'pictures';
   if (/^fal_video/.test(s)) return 'video';
-  if (/^(fal_audio|fal_song|fal_stable_audio|google_lyria|soundbooth|scenema|runpod|yue)/.test(s)) return 'audio';
+  if (/^(fal_audio|byteplus_audio|fal_song|fal_stable_audio|google_lyria|soundbooth|scenema|runpod|yue)/.test(s)) return 'audio';
   if (/^(describe|media|library)/.test(s)) return 'describe';
   if (/^(tavily|search)/.test(s)) return 'search';
   if (/^research/.test(s)) return 'research';

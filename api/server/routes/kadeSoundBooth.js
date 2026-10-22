@@ -10,6 +10,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const jevJudges = require('~/server/services/kadeJevJudges');
+/* Oct 22 2026: Seed Audio through one door (BytePlus directly, fal as the fallback). */
+const { generateSeed, seedProvider, seedUsdPerMin, seedWhere } = require('~/server/services/kadeSeedAudio');
 const {
   needsRefresh,
   getNewS3URL,
@@ -531,7 +533,7 @@ function draftTimeoutMs(timeoutMs, wantsWords) {
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
 const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
 const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
-const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2)
+const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2); the live price is seedUsdPerMin() (BytePlus $0.15, Oct 22 2026)
 const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a description
 /* Sep 25 2026: the words have their own cap, the same 8,000 YuE2 and a carry
  * already use. A 45-65 line song with section tags runs about 2,000-4,000
@@ -1595,7 +1597,7 @@ function estimateFor(engine, script, factor = 1) {
     };
   }
   if (engine === 'seed') {
-    const costUSD = priced(Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000, factor);
+    const costUSD = priced(Math.round((seconds / 60) * seedUsdPerMin() * 1000) / 1000, factor);
     return {
       engine,
       words,
@@ -1619,14 +1621,21 @@ function estimateFor(engine, script, factor = 1) {
 
 /** The guide's price lines at this person's factor; the shared GUIDE is never changed. */
 function guidePriced(guide, factor) {
-  if (!factor || factor === 1) return guide;
+  /* Oct 22 2026: the seed card names the provider in use (BytePlus or fal) and its own price. */
+  const seedFactor = factor || 1;
+  const seedCard = {
+    ...guide.engines.seed,
+    where: seedWhere(),
+    cost: `About ${Math.round(seedUsdPerMin() * seedFactor * 100)} cents a minute. Back in seconds. Up to two minutes a pass.`,
+  };
+  if (!factor || factor === 1) return { ...guide, engines: { ...guide.engines, seed: seedCard } };
   const cents = (usd) => `${Math.round(usd * factor * 100)} cents`;
   return {
     ...guide,
     engines: {
       ...guide.engines,
       lyria: { ...guide.engines.lyria, cost: `About ${cents(LYRIA_USD_PER_SONG)} a song, whatever its length. Usually back in under a minute.` },
-      seed: { ...guide.engines.seed, cost: `About ${cents(SEED_USD_PER_MIN)} a minute. Back in seconds. Up to two minutes a pass.` },
+      seed: seedCard,
     },
   };
 }
@@ -3260,8 +3269,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     /* ---- Seed Audio: synchronous, so the answer carries the audio itself --- */
-    const falKey = process.env.FAL_KEY;
-    if (!falKey) return res.status(503).json({ error: 'Seed Audio is not configured on this server.' });
+    if (!seedProvider()) return res.status(503).json({ error: 'Seed Audio is not configured on this server.' });
     project.state = 'running';
     await project.save();
 
@@ -3288,31 +3296,29 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
 
     const hq = opts.audio_quality !== 'low';
-    const body = {
-      prompt: script,
-      output_format: hq ? 'wav' : 'mp3',
-      sample_rate: 48000,
-    };
-    if (typeof opts.speed === 'number') body.speed = opts.speed;
-    if (typeof opts.volume === 'number') body.volume = opts.volume;
-    if (Number.isInteger(opts.pitch)) body.pitch = opts.pitch;
-    if (opts.multilingual) body.multilingual = true;
     /* Clips override a preset: the docs say a reference clip beats a preset
-     * name, and sending both is undefined. */
-    if (opts.audio_urls?.length) body.audio_urls = sentUrls || opts.audio_urls;
-    else if (opts.voice) body.voice = opts.voice;
+     * name, and sending both is undefined (kadeSeedAudio.js keeps that rule). */
+    const seedRequest = {
+      prompt: script,
+      format: hq ? 'wav' : 'mp3',
+      sampleRate: 48000,
+      speed: typeof opts.speed === 'number' ? opts.speed : undefined,
+      volume: typeof opts.volume === 'number' ? opts.volume : undefined,
+      pitch: Number.isInteger(opts.pitch) ? opts.pitch : undefined,
+      multilingual: !!opts.multilingual,
+      audioUrls: opts.audio_urls?.length ? sentUrls || opts.audio_urls : [],
+      voice: opts.audio_urls?.length ? null : opts.voice || null,
+    };
+    const body = { output_format: seedRequest.format, audio_urls: seedRequest.audioUrls };
 
-    let r;
+    let seed;
     try {
-      r = await axios.post('https://fal.run/bytedance/seed-audio-1.0', body, {
-        headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-        timeout: 180000,
-      });
+      seed = await generateSeed(seedRequest);
     } catch (e) {
       /* fal answers a bad request with a FastAPI `detail` ARRAY; String() of it
        * was the "[object Object]" she heard, and nothing was logged. */
       const said = providerError(e, { name: 'Seed Audio', max: 200 });
-      logger.warn(`[soundbooth/render] seed failed status=${said.status || '-'} clips=${(body.audio_urls || []).length} chars=${script.length} project=${project._id} user=${req.user.id}: ${said.detail}`);
+      logger.warn(`[soundbooth/render] seed failed provider=${seedProvider() || '-'} status=${said.status || '-'} clips=${(body.audio_urls || []).length} chars=${script.length} project=${project._id} user=${req.user.id}: ${said.detail}`);
       const error = `Seed Audio could not make that: ${said.message}`;
       project.state = 'failed';
       project.lastError = error.slice(0, 300);
@@ -3321,9 +3327,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         .status(502)
         .json({ error, projectId: String(project._id) });
     }
-    const audio = r.data?.audio;
-    if (!audio?.url) {
-      logger.warn(`[soundbooth/render] seed returned no clip project=${project._id} user=${req.user.id}: ${providerError({ response: { data: r.data } }, { name: 'Seed Audio' }).detail}`);
+    if (!seed) {
+      logger.warn(`[soundbooth/render] seed returned no clip provider=${seedProvider() || '-'} project=${project._id} user=${req.user.id}`);
       project.state = 'failed';
       project.lastError = 'Seed Audio returned no clip.';
       await project.save();
@@ -3331,27 +3336,50 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
         .status(502)
         .json({ error: 'Seed Audio returned no clip. Try rewording it.', projectId: String(project._id) });
     }
-    const seconds = Math.max(1, Math.round(Number(audio.duration) || 0));
-    const costUSD = Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000;
+    /* BytePlus hands back the audio itself (its link dies in two hours), so it
+     * is stored in her bucket first, the way Lyria's songs are. */
+    let seedUrl = seed.url;
+    if (!seedUrl && seed.buffer) {
+      const fileName = `soundbooth-seed-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${seed.ext}`;
+      try {
+        seedUrl = await saveBufferToS3({ userId: String(req.user.id), buffer: seed.buffer, fileName, basePath: 'audios' });
+      } catch (e) {
+        logger.error('[soundbooth/render] seed save failed: ' + e.message);
+      }
+    }
+    const seconds = seed.seconds;
+    const costUSD = seed.costUSD;
+    if (!seedUrl) {
+      logKadeUsage({ userId: req.user.id, service: seed.service, quantity: seconds, unit: 'seconds', costUSD, metadata: { model: seed.model, via: 'sound-booth', format: seed.format, unsaved: true } }).catch(() => {});
+      project.state = 'failed';
+      project.lastError = 'The scene was made but it did not save.';
+      await project.save();
+      /* Said plainly, because this one already cost money. */
+      return res.status(502).json({
+        error: 'The scene was made but it did not save, and that take is still billed. Try again before you rewrite the script.',
+        projectId: String(project._id),
+      });
+    }
+    const audio = { url: seedUrl };
     logKadeUsage({
       userId: req.user.id,
-      service: 'fal_audio',
+      service: seed.service,
       quantity: seconds,
       unit: 'seconds',
       costUSD,
-      metadata: { model: 'seed-audio-1.0', via: 'sound-booth', format: body.output_format },
+      metadata: { model: seed.model, via: 'sound-booth', format: seed.format, provider: seed.provider },
     }).catch(() => {});
     let assetId = null;
     try {
       const asset = await logKadeAsset({
         userId: req.user.id,
         kind: 'audio',
-        service: 'fal_audio',
+        service: seed.service,
         url: audio.url,
         prompt: script,
-        model: 'seed-audio-1.0',
+        model: seed.model,
         costUSD,
-        metadata: { seconds, via: 'sound-booth', projectId: String(project._id) },
+        metadata: { seconds, via: 'sound-booth', projectId: String(project._id), provider: seed.provider },
       });
       if (asset && asset._id) assetId = String(asset._id);
     } catch (e) {
@@ -4103,7 +4131,7 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
-      seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: priced(SEED_USD_PER_MIN, priceFactor(req.user)) },
+      seed: { configured: !!seedProvider(), provider: seedProvider(), queued: false, usdPerMin: priced(seedUsdPerMin(), priceFactor(req.user)) },
       stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice, models: effectsVariants },
       yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: priced(LYRIA_USD_PER_SONG, priceFactor(req.user)), model: LYRIA_MODEL },

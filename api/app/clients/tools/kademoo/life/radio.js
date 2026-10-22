@@ -57,7 +57,6 @@ const ENGINE = () => {
 const AUTO_WRITES = () => ENGINE() !== 'library';
 const DAILY_USD = () => Number(process.env.REVERIE_RADIO_DAILY_USD || 1.25);
 const DAILY_CAP = () => Number(process.env.REVERIE_RADIO_DAILY_CAP || 5);
-const SEED_USD_PER_MIN = 0.1875; // fal's listed price, same constant the Sound Booth carries
 const SEED_MAX_CHARS = 2048; // Seed Audio's hard cap per clip
 const INWORLD_USD_PER_CHAR = 5 / 1e6; // Inworld TTS list price, an estimate for the ledger
 const BUDGET_ID = 'reverie_radio_budget_180';
@@ -264,21 +263,20 @@ function sceneScript(script, slot) {
 }
 
 async function performSeed(script) {
-  const falKey = process.env.FAL_KEY;
-  if (!falKey) throw new Error('FAL_KEY not set');
+  /* Oct 22 2026: one door for Seed Audio (BytePlus directly, fal as the fallback). */
+  const { generateSeed, seedProvider } = require('~/server/services/kadeSeedAudio');
+  if (!seedProvider()) throw new Error('Seed Audio is not configured (no BytePlus or fal key)');
   const { text, linesUsed } = seedScript(script);
   /* Part 180.4: 48 kHz (the engine's best rate); MP3 because the block
    * streams to phones from the bucket and a two-minute WAV is eleven MB. */
-  const r = await axios.post('https://fal.run/bytedance/seed-audio-1.0', { prompt: text, output_format: 'mp3', sample_rate: 48000 }, {
-    headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-    timeout: 180000,
-  });
-  const audio = r.data?.audio;
-  if (!audio?.url) throw new Error('Seed Audio returned no clip');
-  const seconds = Math.max(1, Math.round(Number(audio.duration) || 0));
-  const costUSD = Math.round((seconds / 60) * SEED_USD_PER_MIN * 1000) / 1000;
-  const file = await axios.get(audio.url, { responseType: 'arraybuffer', timeout: 60000, headers: { 'User-Agent': UA } });
-  return { engine: 'seed', buffer: Buffer.from(file.data), mime: 'audio/mpeg', ext: 'mp3', seconds, costUSD, sourceUrl: audio.url, script: text, linesUsed };
+  const seed = await generateSeed({ prompt: text, format: 'mp3', sampleRate: 48000 });
+  if (!seed) throw new Error('Seed Audio returned no clip');
+  let buffer = seed.buffer;
+  if (!buffer && seed.url) {
+    const file = await axios.get(seed.url, { responseType: 'arraybuffer', timeout: 60000, headers: { 'User-Agent': UA } });
+    buffer = Buffer.from(file.data);
+  }
+  return { engine: 'seed', buffer, mime: 'audio/mpeg', ext: 'mp3', seconds: seed.seconds, costUSD: seed.costUSD, sourceUrl: seed.url || null, script: text, linesUsed, service: seed.service };
 }
 
 async function performInworld(script, slot) {
@@ -417,7 +415,7 @@ function makeBlock(slotName, reason = 'tick') {
       await MooDistrict.updateOne({ districtId: BUDGET_ID }, { $inc: { 'props.spentUSD': perf.costUSD, 'props.renders': 1 } });
       try {
         const { logKadeUsage } = require('~/models/kadeUsage');
-        logKadeUsage({ userId: null, service: perf.engine === 'seed' ? 'fal_audio' : 'inworld_tts', quantity: perf.seconds, unit: 'seconds', costUSD: perf.costUSD, metadata: { via: 'reverie-radio', slot: key, engine: perf.engine } }).catch(() => {});
+        logKadeUsage({ userId: null, service: perf.engine === 'seed' ? perf.service || 'fal_audio' : 'inworld_tts', quantity: perf.seconds, unit: 'seconds', costUSD: perf.costUSD, metadata: { via: 'reverie-radio', slot: key, engine: perf.engine } }).catch(() => {});
       } catch (_) { /* the ledger is never load-bearing */ }
       logger.info(`[radio] on the air: ${slot.program} "${script.title}" ${perf.seconds}s via ${perf.engine} $${perf.costUSD} (${key})`);
       await announce(key, slot, script, perf);

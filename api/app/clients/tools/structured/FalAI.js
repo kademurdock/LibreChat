@@ -6,6 +6,8 @@ const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, KadeUsage, priceFactorForUser, refundUsageOnce } = require('~/models/kadeUsage');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { userPriceFactor, payerFromReq } = require('~/server/services/kadeRealCost');
+/* Oct 22 2026: Seed Audio goes through one door (BytePlus directly, fal as the fallback). */
+const { generateSeed } = require('~/server/services/kadeSeedAudio');
 
 /**
  * FalAI ("fal_studio") — video + design-image generation via fal.ai.
@@ -165,7 +167,7 @@ class FalAI extends Tool {
         {
           $match: {
             user: oid,
-            service: { $in: ['fal_video', 'fal_image', 'fal_audio', 'fal_song'] },
+            service: { $in: ['fal_video', 'fal_image', 'fal_audio', 'fal_song', 'byteplus_audio'] },
             createdAt: { $gte: monthStart },
           },
         },
@@ -586,52 +588,57 @@ class FalAI extends Tool {
     const explicitFmt = ['mp3', 'wav', 'pcm', 'ogg_opus'].includes(data.output_format)
       ? data.output_format
       : null;
-    const body = {
+    const request = {
       prompt: promptText,
-      output_format: explicitFmt || (hq ? 'wav' : 'mp3'),
-      sample_rate: 48000,
+      format: explicitFmt || (hq ? 'wav' : 'mp3'),
+      sampleRate: 48000,
     };
     if (typeof data.volume === 'number' && data.volume >= 0.5 && data.volume <= 2) {
-      body.volume = data.volume;
+      request.volume = data.volume;
     }
     if (typeof data.speed === 'number' && data.speed >= 0.5 && data.speed <= 2) {
-      body.speed = data.speed;
+      request.speed = data.speed;
     }
     if (Number.isInteger(data.pitch) && data.pitch >= -12 && data.pitch <= 12) {
-      body.pitch = data.pitch;
+      request.pitch = data.pitch;
     }
     if (refUrls && refUrls.length > 0) {
-      body.audio_urls = refUrls;
+      request.audioUrls = refUrls;
     } else if (data.image_url) {
-      body.image_url = await this.absoluteResign(data.image_url);
+      request.imageUrl = await this.absoluteResign(data.image_url);
     } else if (data.voice && AUDIO_VOICES.includes(data.voice)) {
-      body.voice = data.voice;
+      request.voice = data.voice;
     }
-    const r = await axios.post(`https://fal.run/${FAL_MODELS.audio}`, body, {
-      headers: this.headers(),
-      timeout: 180000,
-    });
-    const audio = r.data?.audio;
-    if (!audio?.url) return null;
-    const seconds = Math.max(1, Math.round(Number(audio.duration) || 0));
-    const costUSD = this.audioCost(seconds);
-    this.logUsage('fal_audio', seconds, 'seconds', costUSD, {
-      model: 'seed-audio-1.0',
+    const seed = await generateSeed(request);
+    if (!seed) return null;
+    /* BytePlus hands back the audio itself (its own link dies in two hours): keep it in the bucket. */
+    let url = seed.url;
+    if (!url && seed.buffer) {
+      const { saveBufferToS3 } = require('@librechat/api');
+      const fileName = `seed-audio-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${seed.ext}`;
+      url = await saveBufferToS3({ userId: String(this.userId), buffer: seed.buffer, fileName, basePath: 'audios' });
+    }
+    if (!url) return null;
+    const seconds = seed.seconds;
+    const costUSD = seed.costUSD;
+    this.logUsage(seed.service, seconds, 'seconds', costUSD, {
+      model: seed.model,
+      provider: seed.provider,
       refs: (refUrls && refUrls.length) || 0,
-      format: body.output_format,
-      sampleRate: body.sample_rate,
+      format: seed.format,
+      sampleRate: request.sampleRate,
     });
     logKadeAsset({
       userId: this.userId,
       kind: 'audio',
-      service: 'fal_audio',
-      url: audio.url,
+      service: seed.service,
+      url,
       prompt: promptText,
-      model: 'seed-audio-1.0',
+      model: seed.model,
       costUSD,
-      metadata: { seconds, refs: (refUrls && refUrls.length) || 0 },
+      metadata: { seconds, refs: (refUrls && refUrls.length) || 0, provider: seed.provider },
     }).catch(() => {});
-    return { url: audio.url, seconds, costUSD };
+    return { url, seconds, costUSD };
   }
 
   /** Split a long audio script into <=maxLen chunks at paragraph/sentence breaks. */
