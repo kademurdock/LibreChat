@@ -160,6 +160,19 @@ test('no key at all: a plain sentence, marked unavailable', async () => {
   });
 });
 
+test('the "not granted" answer seen live on Oct 22 is said in plain words', async () => {
+  const live = Object.assign(new Error('Request failed with status code 403'), {
+    response: { status: 403, data: { code: 45000030, message: '[resource_id=volc.service_type.1000028] requested resource not granted' } },
+  });
+  const http = { post: async () => { throw live; } };
+  await assert.rejects(generateSeed({ prompt: 'x' }, { env: BP, http }), (e) => {
+    assert.equal(e.response.status, 403);
+    assert.match(e.message, /not turned Seed Audio on/);
+    assert.match(e.response.data.message, /Seed Speech console/);
+    return true;
+  });
+});
+
 test('transport errors pass through untouched for providerError', async () => {
   const boom = Object.assign(new Error('Request failed with status code 401'), { response: { status: 401, data: { code: 45000010, message: 'unauthorized' } } });
   const http = { post: async () => { throw boom; } };

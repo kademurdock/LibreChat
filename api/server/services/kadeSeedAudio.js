@@ -163,6 +163,12 @@ function costFor(seconds, provider) {
 
 const MIME = { wav: 'audio/wav', mp3: 'audio/mpeg', ogg_opus: 'audio/ogg', pcm: 'audio/L16' };
 
+/** BytePlus answer codes worth saying in plain words. */
+const PLAIN_CODES = {
+  45000030: 'BytePlus has not turned Seed Audio on for this account yet (code 45000030). Turn it on in the Seed Speech console.',
+  45000010: 'BytePlus did not accept the Seed Speech key (code 45000010). It needs a Seed Speech key, not a ModelArk one.',
+};
+
 /**
  * One Seed Audio generation.
  * Resolves to null when the engine answered without a clip (callers say "returned no clip");
@@ -180,16 +186,31 @@ async function generateSeed(r, { env = process.env, http = require('axios'), tim
   if (provider === 'byteplus') {
     const body = byteplusBody(r, env);
     const requestId = crypto.randomUUID();
-    const res = await http.post(BYTEPLUS_URL, body, {
-      headers: {
-        'X-Api-Key': env.BYTEPLUS_SEED_KEY,
-        'X-Api-Request-Id': requestId,
-        'Content-Type': 'application/json',
-      },
-      timeout: timeoutMs,
-      maxBodyLength: 64 * 1024 * 1024,
-      maxContentLength: 200 * 1024 * 1024,
-    });
+    let res;
+    try {
+      res = await http.post(BYTEPLUS_URL, body, {
+        headers: {
+          'X-Api-Key': env.BYTEPLUS_SEED_KEY,
+          'X-Api-Request-Id': requestId,
+          'Content-Type': 'application/json',
+        },
+        timeout: timeoutMs,
+        maxBodyLength: 64 * 1024 * 1024,
+        maxContentLength: 200 * 1024 * 1024,
+      });
+    } catch (e) {
+      /* Two answers seen live on Oct 22 2026 with her new key, said in plain words:
+       * 45000030 "requested resource not granted" = the key is good but Seed Audio
+       * is not turned on for the account; 45000010 = not a Seed Speech key. */
+      const data = e && e.response && e.response.data;
+      const code = data && Number(data.code);
+      const plain = PLAIN_CODES[code];
+      if (plain) {
+        e.response.data = { ...data, message: plain };
+        e.message = plain;
+      }
+      throw e;
+    }
     const d = (res && res.data) || {};
     let buffer = typeof d.audio === 'string' && d.audio ? Buffer.from(d.audio, 'base64') : null;
     if ((!buffer || buffer.length < 1000) && typeof d.url === 'string' && /^https:\/\//i.test(d.url)) {
