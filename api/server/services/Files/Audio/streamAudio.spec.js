@@ -118,6 +118,31 @@ describe('processChunks', () => {
     expect(result).toEqual([{ text: messageText, isFinished: true }]);
   });
 
+  it('reads a message longer than the speech cap only up to the cap, and finishes there', async () => {
+    const capped = createChunkProcessor('userId', 'message-id', 50);
+    const longText = 'This sentence keeps going. '.repeat(20);
+    mockMessageCache.get.mockResolvedValue(longText);
+
+    const result = await capped();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].isFinished).toBe(true);
+    expect(result[0].text.length).toBeLessThanOrEqual(50);
+    expect(longText.startsWith(result[0].text)).toBe(true);
+    expect(await capped()).toEqual([{ text: '', isFinished: true }]);
+  });
+
+  it('ends cleanly when the cap lands on text that was already spoken', async () => {
+    const capped = createChunkProcessor('userId', 'message-id', 50);
+    const spokenSoFar = 'word '.repeat(9) + 'words';
+    mockMessageCache.get
+      .mockResolvedValueOnce({ text: spokenSoFar, complete: false })
+      .mockResolvedValueOnce({ text: `${spokenSoFar} and the reply keeps going`, complete: false });
+
+    expect(await capped()).toEqual([{ text: spokenSoFar, isFinished: false }]);
+    expect(await capped()).toEqual([{ text: '', isFinished: true }]);
+  });
+
   it('should return an empty array for a complete message with no remaining text', async () => {
     const messageText = 'This is a finished message.';
     mockMessageCache.get.mockResolvedValueOnce({ text: messageText, complete: true });

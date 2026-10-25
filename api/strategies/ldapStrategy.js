@@ -1,6 +1,6 @@
 const fs = require('fs');
 const LdapStrategy = require('passport-ldapauth');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { SystemRoles, ErrorTypes } = require('librechat-data-provider');
 const {
   isEnabled,
@@ -150,7 +150,9 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     }
 
     if (!user) {
-      const isFirstRegisteredUser = (await countUsers()) === 0;
+      /* KADE Oct 25 2026: same rule as registerUser (upstream f829aca9f) — only the first user
+       * of the unscoped, single-tenant deployment bootstraps ADMIN, never a tenant-scoped one. */
+      const isFirstRegisteredUser = !getTenantId() && (await countUsers()) === 0;
       const role = isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER;
 
       user = {

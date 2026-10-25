@@ -1,4 +1,5 @@
 // --- Mocks ---
+const mockGetTenantId = jest.fn(() => undefined);
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     info: jest.fn(),
@@ -6,6 +7,7 @@ jest.mock('@librechat/data-schemas', () => ({
     debug: jest.fn(),
     error: jest.fn(),
   },
+  getTenantId: (...args) => mockGetTenantId(...args),
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -71,6 +73,7 @@ describe('ldapStrategy', () => {
     createUser.mockReset().mockResolvedValue('newUserId');
     updateUser.mockReset().mockImplementation(async (id, user) => ({ _id: id, ...user }));
     countUsers.mockReset().mockResolvedValue(0);
+    mockGetTenantId.mockReset().mockReturnValue(undefined);
     isEmailDomainAllowed.mockReset().mockReturnValue(true);
 
     // Ensure requiring the strategy sets up the verify callback
@@ -205,6 +208,30 @@ describe('ldapStrategy', () => {
     await callVerify(userinfo);
 
     expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, existing);
+  });
+
+  it('makes the first user of the unscoped deployment an ADMIN', async () => {
+    mockGetTenantId.mockReturnValue(undefined);
+
+    await callVerify({ uid: 'uid-first', mail: 'first@example.com', givenName: 'F', cn: 'F' });
+
+    expect(countUsers).toHaveBeenCalledTimes(1);
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'ADMIN' }),
+      expect.any(Object),
+    );
+  });
+
+  it('never makes a tenant-scoped first user an ADMIN', async () => {
+    mockGetTenantId.mockReturnValue('tenant-x');
+
+    await callVerify({ uid: 'uid-tenant', mail: 'first@example.com', givenName: 'T', cn: 'T' });
+
+    expect(countUsers).not.toHaveBeenCalled();
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'USER' }),
+      expect.any(Object),
+    );
   });
 
   it('uses baseConfig for new user without calling resolveAppConfigForUser', async () => {

@@ -54,8 +54,7 @@ const getCloseRange = (
   }
 
   const markerStart = lineStart + contentStart;
-  const markerText = text.slice(markerStart);
-  if (!markerText.startsWith(ARTIFACT_END) || markerText.startsWith(ARTIFACT_START)) {
+  if (!text.startsWith(ARTIFACT_END, markerStart) || text.startsWith(ARTIFACT_START, markerStart)) {
     return null;
   }
 
@@ -81,13 +80,35 @@ const isClosingCodeFence = (line: string, openingFence: CodeFence): boolean => {
   return closePattern.test(line.trim());
 };
 
-const findArtifactClose = (text: string, start: number): ArtifactCloseRange | null => {
+/**
+ * What earlier scans of the same text proved: for a fence marker, no line at or after `from`
+ * closes a fence of `minLength` or longer. KADE Oct 25 2026: without it, every artifact whose
+ * code fence never closes (e.g. "```x", which only a bare "```" line can close) rescanned to
+ * the end of the text, so a message of many such artifacts held the server for tens of
+ * seconds (168k characters: 41 s). Same results, each tail scanned once.
+ */
+type OpenFenceMemo = Map<string, { from: number; minLength: number }>;
+
+const findArtifactClose = (
+  text: string,
+  start: number,
+  memo?: OpenFenceMemo,
+): ArtifactCloseRange | null => {
   const openingLineEnd = getLineEnd(text, start);
   let currentIndex = getNextLineStart(text, openingLineEnd);
   let codeFence: CodeFence | null = null;
+  let fenceBodyStart = -1;
   let fallbackClose: ArtifactCloseRange | null = null;
 
   while (currentIndex < text.length) {
+    if (codeFence && fallbackClose && memo) {
+      const known = memo.get(codeFence.marker);
+      if (known && currentIndex >= known.from && codeFence.length >= known.minLength) {
+        // Nothing from here on can close this fence, so the scan would end on the fallback.
+        return fallbackClose;
+      }
+    }
+
     const lineEnd = getLineEnd(text, currentIndex);
     const line = text.slice(currentIndex, lineEnd);
     const closeRange = getCloseRange(text, currentIndex, lineEnd);
@@ -102,6 +123,7 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
     const fence = getCodeFence(line);
     if (fence && !codeFence) {
       codeFence = fence;
+      fenceBodyStart = getNextLineStart(text, lineEnd);
     } else if (codeFence && isClosingCodeFence(line, codeFence)) {
       codeFence = null;
       fallbackClose = null;
@@ -110,11 +132,18 @@ const findArtifactClose = (text: string, start: number): ArtifactCloseRange | nu
     currentIndex = getNextLineStart(text, lineEnd);
   }
 
+  if (codeFence && memo) {
+    const known = memo.get(codeFence.marker);
+    if (!known || codeFence.length < known.minLength) {
+      memo.set(codeFence.marker, { from: fenceBodyStart, minLength: codeFence.length });
+    }
+  }
+
   return codeFence ? fallbackClose : null;
 };
 
-const findArtifactEnd = (text: string, start: number): number => {
-  return findArtifactClose(text, start)?.end ?? text.length;
+const findArtifactEnd = (text: string, start: number, memo?: OpenFenceMemo): number => {
+  return findArtifactClose(text, start, memo)?.end ?? text.length;
 };
 
 const getOpeningCodeFence = (
@@ -202,6 +231,19 @@ const getSearchRange = (artifactContent: string): SearchRange | null => {
   return { searchStart: openingFence.contentStart, searchEnd };
 };
 
+const CLOSING_FENCE = '```\n:::';
+
+/**
+ * Collapses a run of newlines that sits right before a closing "```\n:::" into one newline.
+ * Same result as `text.replace(/\n+(?=```\n:::)/g, '\n')`, but linear: that lookahead
+ * backtracks through every long newline run that is not followed by the fence, so an
+ * oversized edit made of newlines could hold the server for seconds (upstream fe351ee17).
+ */
+const normalizeBeforeClosingFence = (text: string): string =>
+  text.replace(/\n{2,}/g, (newlines, offset: number) =>
+    text.startsWith(CLOSING_FENCE, offset + newlines.length) ? '\n' : newlines,
+  );
+
 const replaceRange = (
   originalText: string,
   start: number,
@@ -224,9 +266,10 @@ export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] =
 
       let currentIndex = 0;
       let start = part.text.indexOf(ARTIFACT_START, currentIndex);
+      const memo: OpenFenceMemo = new Map();
 
       while (start !== -1) {
-        const end = findArtifactEnd(part.text, start);
+        const end = findArtifactEnd(part.text, start, memo);
         artifacts.push({
           start,
           end,
@@ -244,9 +287,10 @@ export const findAllArtifacts = (message: ArtifactMessage): ArtifactBoundary[] =
   if (!artifacts.length && message.text) {
     let currentIndex = 0;
     let start = message.text.indexOf(ARTIFACT_START, currentIndex);
+    const memo: OpenFenceMemo = new Map();
 
     while (start !== -1) {
-      const end = findArtifactEnd(message.text, start);
+      const end = findArtifactEnd(message.text, start, memo);
       artifacts.push({
         start,
         end,
@@ -287,10 +331,7 @@ export const replaceArtifactContent = (
   }
 
   const absoluteIndex = artifact.start + searchStart + relativeIndex;
-  return replaceRange(
-    originalText,
-    absoluteIndex,
-    absoluteIndex + originalTrimmed.length,
-    updated,
-  ).replace(/\n+(?=```\n:::)/g, '\n');
+  return normalizeBeforeClosingFence(
+    replaceRange(originalText, absoluteIndex, absoluteIndex + originalTrimmed.length, updated),
+  );
 };

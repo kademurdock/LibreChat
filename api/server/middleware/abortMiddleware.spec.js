@@ -34,6 +34,7 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn().mockReturnValue(false),
   sendEvent: jest.fn(),
   GenerationJobManager: {
+    getJob: jest.fn(),
     abortJob: jest.fn(),
   },
   recordCollectedUsage: mockRecordCollectedUsage,
@@ -74,8 +75,10 @@ jest.mock('./abortRun', () => ({
 }));
 
 const { logger } = require('@librechat/data-schemas');
+const { GenerationJobManager } = require('@librechat/api');
+const db = require('~/models');
 const { sendError } = require('~/server/middleware/error');
-const { handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
+const { handleAbort, handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
 
 const buildAbortRequest = () => ({
   body: {
@@ -248,6 +251,59 @@ describe('abortMiddleware - spendCollectedUsage', () => {
       expect(resolved).toBe(true);
       expect(collectedUsage.length).toBe(0);
     });
+  });
+});
+
+describe('abortMiddleware - legacy abort ownership', () => {
+  const buildStopRequest = (user = { id: 'user-123' }) => ({
+    body: { abortKey: 'convo-123:user-123', endpoint: 'agents' },
+    user,
+  });
+  const buildStopResponse = () => {
+    const res = {
+      headersSent: false,
+      setHeader: jest.fn(),
+      send: jest.fn(),
+    };
+    res.status = jest.fn().mockReturnValue(res);
+    return res;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    GenerationJobManager.abortJob.mockResolvedValue({ success: false });
+  });
+
+  it.each([
+    ['another user', { createdAt: 1, metadata: { userId: 'user-456' } }, { id: 'user-123' }],
+    [
+      'another tenant',
+      { createdAt: 1, metadata: { userId: 'user-123', tenantId: 'tenant-b' } },
+      { id: 'user-123', tenantId: 'tenant-a' },
+    ],
+    ['a missing run', undefined, { id: 'user-123' }],
+  ])('does not stop or persist a run owned by %s', async (_case, job, user) => {
+    GenerationJobManager.getJob.mockResolvedValue(job);
+    const res = buildStopResponse();
+
+    await handleAbort()(buildStopRequest(user), res);
+
+    expect(GenerationJobManager.getJob).toHaveBeenCalledWith('convo-123');
+    expect(GenerationJobManager.abortJob).not.toHaveBeenCalled();
+    expect(db.saveMessage).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it("stops the caller's own run", async () => {
+    GenerationJobManager.getJob.mockResolvedValue({
+      createdAt: 1,
+      metadata: { userId: 'user-123' },
+    });
+    const res = buildStopResponse();
+
+    await handleAbort()(buildStopRequest(), res);
+
+    expect(GenerationJobManager.abortJob).toHaveBeenCalledWith('convo-123');
   });
 });
 

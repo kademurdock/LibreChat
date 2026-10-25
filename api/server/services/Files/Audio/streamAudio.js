@@ -9,6 +9,7 @@ const {
 const { getLogStores } = require('~/cache');
 const { getMessage } = require('~/models');
 const { scrubForSpeech } = require('./scrubForSpeech');
+const { capSpeechText, getTtsMaxInputChars } = require('./speechCap');
 
 /**
  * @param {string[]} voiceIds - Array of voice IDs
@@ -58,9 +59,10 @@ const MAX_NO_CHANGE_COUNT = 10;
 /**
  * @param {string} user
  * @param {string} messageId
+ * @param {number} [maxInputChars] - speech stops here; text past it never reaches the provider
  * @returns {() => Promise<{ text: string, isFinished: boolean }[]>}
  */
-function createChunkProcessor(user, messageId) {
+function createChunkProcessor(user, messageId, maxInputChars = getTtsMaxInputChars()) {
   let notFoundCount = 0;
   let noChangeCount = 0;
   let processedText = '';
@@ -112,8 +114,11 @@ function createChunkProcessor(user, messageId) {
       );
     }
 
-    const text = typeof message === 'string' ? message : message.text;
-    const complete = typeof message === 'string' ? false : (message.complete ?? true);
+    const fullText = typeof message === 'string' ? message : message.text;
+    /** A message longer than the cap is read up to the cap, as if it ended there. */
+    const capped = typeof fullText === 'string' && fullText.length > maxInputChars;
+    const text = capped ? capSpeechText(fullText, maxInputChars) : fullText;
+    const complete = capped || (typeof message === 'string' ? false : (message.complete ?? true));
 
     if (text === processedText) {
       noChangeCount++;
@@ -134,6 +139,11 @@ function createChunkProcessor(user, messageId) {
       }
     } else if (complete && remainingText.trim().length > 0) {
       chunks.push({ text: remainingText.trim(), isFinished: true });
+      processedText = text;
+    } else if (capped) {
+      /* The cap can land on text already spoken (it backs off to a word or tag edge), so
+       * nothing is left; still end the stream instead of polling until the client leaves. */
+      chunks.push({ text: '', isFinished: true });
       processedText = text;
     }
 

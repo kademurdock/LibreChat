@@ -113,8 +113,21 @@ async function abortMessage(req, res) {
   const conversationId = abortKey?.split(':')?.[0] ?? req.user.id;
   const userId = req.user.id;
 
-  // Use GenerationJobManager to abort the job (streamId === conversationId)
-  const abortResult = await GenerationJobManager.abortJob(conversationId);
+  /* KADE Oct 25 2026 (port of upstream 379a6ff24): streamId === conversationId, and only the
+   * job's owner may stop it. A run owned by another user or tenant reads as not found, so a
+   * caller cannot stop someone else's reply or read its prompt and partial answer. */
+  const job = await GenerationJobManager.getJob(conversationId);
+  const jobTenantId = job?.metadata?.tenantId;
+  const ownedByCaller =
+    job != null &&
+    job.metadata?.userId === userId &&
+    (jobTenantId == null || jobTenantId === req.user.tenantId);
+  if (!ownedByCaller && job != null) {
+    logger.warn(`[abortMessage] Refused to stop ${conversationId} for ${userId}: not the owner`);
+  }
+  const abortResult = ownedByCaller
+    ? await GenerationJobManager.abortJob(conversationId)
+    : { success: false };
 
   if (!abortResult.success) {
     if (!res.headersSent) {

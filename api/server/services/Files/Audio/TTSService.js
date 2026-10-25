@@ -8,6 +8,7 @@ const {
 } = require('@librechat/api');
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
+const { capSpeechText, getTtsMaxInputChars } = require('./speechCap');
 const { scrubForSpeech } = require('./scrubForSpeech');
 const { fetchLiveVoices, getCachedLiveVoices, getCachedLiveHidden, getCachedLiveAliases } = require('./voiceCatalog');
 
@@ -461,6 +462,13 @@ class TTSService {
     if (!rawInput) {
       return res.status(400).send('Missing text in request body');
     }
+    /* KADE Oct 25 2026: read up to the speech cap instead of fanning one oversized request
+     * out into hundreds of paid provider calls. The raw text is first bounded at four times
+     * the cap (so the scrub stays cheap but can still remove a reasoning block that crosses
+     * the cap), and the cap itself applies to the final, respelled text, so a long
+     * pronunciation dictionary cannot push it past the cap. */
+    const maxInputChars = getTtsMaxInputChars();
+    const boundedInput = capSpeechText(rawInput, maxInputChars * 4);
     /* PART 91.7 (Fable review) — THE MANUAL LANE NEVER SCRUBBED, AND THE
      * MANUAL LANE IS THE NATIVE APP'S ONLY VOICE PATH. scrubForSpeech has
      * existed since July 13 and was wired into streamAudio (the web UI's
@@ -476,11 +484,17 @@ class TTSService {
      * scrubbing empties the input (a pure-URL "reply"), saying nothing is
      * correct: the alternative was reading a URL aloud. */
     const dictionary = await safeGetDictionary(req.user && req.user.id);
-    const scrubbed = scrubForSpeech(rawInput) || '';
+    const scrubbed = scrubForSpeech(boundedInput) || '';
     if (!scrubbed.trim()) {
       return res.status(422).send('Nothing speakable after scrubbing');
     }
-    const input = applyPronunciationRespellings(scrubbed, dictionary);
+    const respelled = applyPronunciationRespellings(scrubbed, dictionary);
+    const input = capSpeechText(respelled, maxInputChars);
+    if (input.length < respelled.length) {
+      logger.warn(
+        `[TTS] user: ${req.user && req.user.id} | ${respelled.length} chars read up to the ${maxInputChars}-char cap`,
+      );
+    }
 
     // [KadeUsage] log TTS characters (best-effort, never throws)
     logKadeUsage({
@@ -601,7 +615,11 @@ class TTSService {
       shouldContinue = false;
     });
 
-    const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
+    const maxInputChars = getTtsMaxInputChars();
+    const processChunks = createChunkProcessor(req.user.id, req.body.messageId, maxInputChars);
+    /* KADE Oct 25 2026: the chunk processor caps the message text; this budget also counts
+     * what respelling adds, so a long pronunciation dictionary cannot push past the cap. */
+    let spokenChars = 0;
 
     let kadeTtsChars = 0; // [KadeUsage] accumulate streamed TTS characters
     try {
@@ -618,10 +636,30 @@ class TTSService {
         }
 
         for (const update of updates) {
+          // The cap landed on text that was already spoken: nothing left to read.
+          if (update.isFinished && !update.text) {
+            shouldContinue = false;
+            break;
+          }
+          const respelled = applyPronunciationRespellings(update.text, dictionary);
+          let input = respelled;
+          let finished = update.isFinished;
+          if (spokenChars + respelled.length > maxInputChars) {
+            input = capSpeechText(respelled, maxInputChars - spokenChars);
+            finished = true;
+            logger.warn(
+              `[streamAudio] user: ${req?.user?.id} | speech reached the ${maxInputChars}-char cap`,
+            );
+            if (!input.trim()) {
+              shouldContinue = false;
+              break;
+            }
+          }
+          spokenChars += input.length;
           try {
             const response = await this.ttsRequest(provider, ttsSchema, {
               voice,
-              input: applyPronunciationRespellings(update.text, dictionary),
+              input,
               stream: true,
               speed,
               delivery,
@@ -636,14 +674,9 @@ class TTSService {
             kadeTtsChars += (update && update.text ? update.text.length : 0); // [KadeUsage]
 
             logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
-            await pipeSpeechAudio(
-              response.data,
-              res,
-              response.headers?.['content-type'],
-              update.isFinished,
-            );
+            await pipeSpeechAudio(response.data, res, response.headers?.['content-type'], finished);
 
-            if (update.isFinished) {
+            if (finished) {
               shouldContinue = false;
               break;
             }

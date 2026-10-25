@@ -32,6 +32,8 @@ jest.mock('~/models/kadePronunciation', () => ({
 const axios = require('axios');
 const { createChunkProcessor } = require('./streamAudio');
 const { textToSpeech, streamAudio, parseKadeTtsFillers } = require('./TTSService');
+const { pipeSpeechAudio } = require('@librechat/api');
+const { applyPronunciationRespellings } = require('~/models/kadePronunciation');
 
 const config = {
   speech: {
@@ -134,6 +136,83 @@ describe('/tts/manual sends the filler switch to the proxy', () => {
     expect(lastProxyBody()).not.toHaveProperty('fillers');
     await textToSpeech(manualReq({ fillers: 'maybe' }), makeRes());
     expect(lastProxyBody()).not.toHaveProperty('fillers');
+  });
+});
+
+describe('/tts/manual reads up to the speech cap', () => {
+  const original = process.env.KADE_TTS_MAX_INPUT_CHARS;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.KADE_TTS_MAX_INPUT_CHARS;
+    } else {
+      process.env.KADE_TTS_MAX_INPUT_CHARS = original;
+    }
+  });
+
+  it('sends at most the cap to the proxy for an oversized request', async () => {
+    process.env.KADE_TTS_MAX_INPUT_CHARS = '1000';
+    await textToSpeech(manualReq({ input: 'A long line of words. '.repeat(500) }), makeRes());
+    const { input } = lastProxyBody();
+    expect(input.length).toBeLessThanOrEqual(1000);
+    expect(input.startsWith('A long line of words.')).toBe(true);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a normal request whole', async () => {
+    await textToSpeech(manualReq({ input: 'Hello there, friend.' }), makeRes());
+    expect(lastProxyBody().input).toBe('Hello there, friend.');
+  });
+
+  it('applies the cap after respelling, so a long dictionary cannot push past it', async () => {
+    process.env.KADE_TTS_MAX_INPUT_CHARS = '1000';
+    applyPronunciationRespellings.mockImplementationOnce(
+      (text) => `${text} ${'grows '.repeat(400)}`,
+    );
+    await textToSpeech(manualReq({ input: 'Short words.' }), makeRes());
+    expect(lastProxyBody().input.length).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe('/tts auto-play stream stops at the speech cap', () => {
+  const original = process.env.KADE_TTS_MAX_INPUT_CHARS;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.KADE_TTS_MAX_INPUT_CHARS;
+    } else {
+      process.env.KADE_TTS_MAX_INPUT_CHARS = original;
+    }
+  });
+
+  it('counts what respelling adds and finishes the stream at the cap', async () => {
+    process.env.KADE_TTS_MAX_INPUT_CHARS = '1000';
+    createChunkProcessor.mockImplementation(() =>
+      jest.fn().mockResolvedValue([{ text: 'say this '.repeat(50), isFinished: false }]),
+    );
+    applyPronunciationRespellings.mockImplementation((text) => text.repeat(3));
+
+    await streamAudio(streamReq({}), makeRes());
+
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(lastProxyBody().input.length).toBeLessThanOrEqual(1000);
+    expect(pipeSpeechAudio).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'audio/wav',
+      true,
+    );
+    applyPronunciationRespellings.mockImplementation((text) => text);
+  });
+
+  it('ends without calling the proxy when nothing is left to read', async () => {
+    createChunkProcessor.mockImplementation(() =>
+      jest.fn().mockResolvedValue([{ text: '', isFinished: true }]),
+    );
+
+    await streamAudio(streamReq({}), makeRes());
+
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });
 
