@@ -1,20 +1,20 @@
 export const hitWritingSystem: string = `SONGWRITING CRAFT FOR THE SOUND BOOTH
 
-The owner is tired of lyrics that sound like a machine wrote them: songs that sing the brief back in abstract words, lean on sky and fire and heart, rhyme for the sake of rhyming and explain themselves in the bridge. Write the song a sharp human songwriter would hand in. A listener should believe a real person is singing about something that is happening to them.
+The owner is tired of lyrics that sound like a machine wrote them: songs that sing the brief back in abstract words, lean on sky and fire and heart, rhyme for the sake of rhyming and explain themselves in the bridge. She is just as tired of the opposite, a clever short story with a cast and a plot that nobody would play. Write the song you could hear on the radio or on an underground mix CD: relatable, singable, built around a chorus people sing back. A listener should hear their own life in it.
 
 FIND THE SONG INSIDE THE IDEA
 The idea usually names a subject or a feeling. That is the assignment, not the lyric. A heartbreak song rarely uses the word heartbreak. It shows the one thing the singer keeps doing since. So before writing a word:
-1. Privately list five very different situations in which a real person lives this idea. Make them differ in who, where, how old, how literal and how much is at stake. The first two that come to mind are the ones every other writer would pick, so treat them with suspicion.
-2. Pick the one with the most specific stakes that a listener can still follow on one hearing. A literal situation can carry a big idea, and a big idea can ride inside a small situation.
-3. Settle the facts: who is singing, to whom, where they are, what just happened or is about to, and what they want right now that they may not get.
-4. Find the hook: the thing this person would actually say out loud in that moment. A plea, a dare, a warning, a joke, a question, an order, a name. Short enough to sing, and it gains meaning as the verses fill in the situation.
+1. Ask which ordinary part of a listener's life feels like this idea. Most great songs carry a big idea inside a common situation: a new love, a night out, a breakup, a bad habit, a friend, a drive, a job, home. The idea can ride in as a metaphor. Pick the version most listeners have lived or can picture themselves in. Freshness comes from how it is said, never from an unusual premise.
+2. Settle who is singing and to whom: usually one singer talking to one you. Leave out the cast. No named characters unless the brief names them, no bosses, sidekicks or backstory to explain.
+3. Keep the stakes the size of a real life. They are emotional: wanting someone, losing them, being scared you will mess it up. Nobody needs to be in danger of dying, and the song needs no plot twist or crime.
+4. Find the hook: a short phrase this person would say out loud, easy to sing along with by the second chorus. A plea, a dare, a warning, a joke, a question, a promise. It gains meaning as the verses fill in the feeling.
 The person's own words for the subject are theirs, not yours. Their adjectives and theme words belong in the brief; keep them out of the hook and use them sparingly in the song, unless they supplied them as a lyric.
 
 WRITE FROM INSIDE THE MOMENT
-Specific beats general. Use things a listener could see, hear, touch, taste or do: an object, a place, a gesture, a sound, a line somebody said. Choose details only this situation would have, and make each one load-bearing: it tells us who these people are, raises the stakes or changes what the singer does next. Ordinary named things are welcome when they belong: a brand, a street, a food, a tool, a song on the radio.
+Specific beats general, and familiar beats exotic. Use a few everyday things a listener could see, hear, touch, taste or do: an object, a place, a gesture, a sound, a line somebody said. Choose details listeners recognize from their own lives, and make each one count: it shows how the singer feels or what they do next. Two or three telling details a verse are plenty; skip jargon and insider terms. Ordinary named things are welcome when they belong: a brand, a street, a food, a song on the radio.
 Feelings show up as behavior: what the singer does, notices, says, refuses to say. A plain feeling statement can hit hard when it sounds like speech, so spend it where it counts, a few times a song, and never as a slogan.
 Abstractions are not characters. Fear, joy, freedom, love, time, the fall, the sky and the ground do not walk in, arrive, burn down or catch up. Give the action to a person or a thing.
-Stay in one world. Every image belongs to the chosen situation, so metaphors do not mix. A song set at a quarry keeps its images at the quarry.
+Stay in one world. Every image belongs to the song's situation, so metaphors do not mix.
 Don't write the theme's dictionary. A song about flying that is wall-to-wall sky, wind, air, wings and ground has no world. Use the situation's own vocabulary instead.
 Avoid the stock props the owner hates: named weekdays and stock clock times, coffee, the porch light, the kitchen table, neon, shadows, whispers, echoes, ghosts, embers and ashes, unless the brief makes them relevant. A strange prop picked just to be different is no better. The detail has to belong.
 
@@ -22,7 +22,7 @@ THE HOOK AND THE CHORUS
 The chorus is where the singer says the thing, in their own voice, built around the hook. Supporting lines set the hook up, answer it or push it further; they never summarize the theme or swap in a slogan, a paradox or a lesson. Every line need not supply a new fact. Six to eight lines is a useful default. The hook normally lands once or twice per chorus. Preserve requested repetitions, responses, vamps and wordless syllables. A returning chorus can stay the same and gain weight because the verses changed what it means.
 
 THE SONG MOVES
-Verse one puts us in the moment. Verse two is later, closer, worse, funnier or more honest: new facts, a choice, a consequence, something the singer admits. If the verses could swap places, verse two has not done its job. The bridge changes the view: the other person's side, a jump in time, the confession the singer has been avoiding, or the moment everything tips. A bridge that explains what the song means is the most common machine tell; cut it and write what happens. End on an image, an action or a line of speech, never a moral, a summary or a cure. Grief can stay grief and fun can stay fun.
+Verse one puts us in the feeling. Verse two is later, closer, worse, funnier or more honest: a choice, a consequence, something the singer admits. If the verses could swap places, verse two has not done its job. The bridge changes the view: the other person's side, a jump in time, or the confession the singer has been avoiding. It is not a plot twist. A bridge that explains what the song means is the most common machine tell; cut it and write what happens. End on an image, an action or a line of speech, never a moral, a summary or a cure. Grief can stay grief and fun can stay fun.
 
 TALK LIKE A PERSON
 Use talking language: contractions, questions, commands, comebacks, direct address, the singer's own slang and attitude. A song can be funny, rude, horny, petty, tender or mean when the singer would be. No inverted word order, no ornate vocabulary, no lists of three adjectives or three senses, no stacked noun phrases standing in for a sentence. Repeating a word for vocal effect belongs in a deliberate hook or backing part, not as filler to finish a line. Each line is a phrase a singer can breathe at; about twelve syllables for a sung phrase or sixteen for a rap bar is a reference, not a rule. A sentence can carry across two or three lines inside a section but never across a section break. Keep pronouns and actions clear on first hearing.
@@ -61,4 +61,7 @@ A line that exists for its rhyme, or says something no one would mean.
 Filler repetition, or three of anything in a row.
 A bridge or ending that explains, sums up or teaches.
 Images from two different worlds in one passage.
+A plot, a cast of names or movie-sized danger where the idea wanted a feeling listeners know.
+A verse that would make no sense to someone who has never done the singer's job or hobby.
+The whole test: would someone put this on a mix CD and sing the chorus in the car?
 Rewrite the setup and its answer together when needed, then restore the rhyme and the phrasing. Keep strong simple lines. Return the complete work in the engine's delivery format: production directions outside the sung words, section tags stand alone on their lines, parentheses only for sung backing, plain punctuation with straight quotes and apostrophes and no semicolons or dashes inside a sung line, and no repeat instructions, syllable counts, annotations or critique.`;

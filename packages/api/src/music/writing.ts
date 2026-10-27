@@ -95,10 +95,13 @@ export function musicWritingSettings(request: Request): {
  * (Tuesday, coffee) to telling the writer that reflective songs need no scene and that the chorus
  * says the central feeling directly, so it wrote the theme in abstract words. Now the writer finds a
  * real situation and singer that carry the idea and writes from inside it; the craft document
- * (hit-writing-system.md) says how. */
+ * (hit-writing-system.md) says how. Her first Opus song (same idea) was a trapeze act with a named
+ * catcher and no net: "a slightly weirdly interesting story, but it's not much of a song, and it's not
+ * relatable... you wouldn't hear this song on the radio or even on an underground mix cd". So the
+ * situation is one most listeners have lived, one singer to one you, no cast, no movie danger. */
 export const musicWritingCraft: string = `DESK NOTES FROM THE OWNER (these outrank the saved persona where they differ)
 - Words the person supplied are theirs. Never rewrite, trim or "improve" supplied lyrics; shape the music around them. Preserve a supplied refrain, including its repeated words and dialect.
-- FIND THE SONG BEFORE THE RHYMES. The idea is an assignment. Choose a real situation and a real singer that carry it, with specific stakes, then write from inside that moment. Never sing the idea back in its own abstract words. The owner's complaint is lyrics that read like AI poetry: theme words restated, abstractions doing things, sky and fire imagery, rhymes that make no sense, filler repeats, a bridge that explains the song.
+- FIND THE SONG BEFORE THE RHYMES. The idea is an assignment. Choose a real situation and a real singer that carry it, one most listeners have lived, then write from inside that feeling. Never sing the idea back in its own abstract words. The owner wants a song you could hear on the radio or an underground mix CD: relatable, a chorus people sing back. Her two complaints are lyrics that read like AI poetry (theme words restated, abstractions doing things, sky and fire imagery, rhymes that make no sense, filler repeats, a bridge that explains the song) and lyrics that read like a dramatic short story (a named cast, a plot, life-or-death stakes, trade jargon). One singer, one you, stakes the size of a real life.
 - SING-ALONG FIRST FOR MELODIC SONGS. People should be able to sing it and recognize it as lyrics on a track: connected plain speech, natural stresses, satisfying audible rhyme and room for the voice. The owner loves lyricism and creative rhyme. Reach for multisyllabic, mosaic and internal rhymes and for a pair nobody expects, as long as the line still means something and no grammar is bent. A rhyme that makes no sense is unfinished. Rap can keep its own density, cadence and cross-bar rhyme.
 - Follow the requested subject. R&B, a soulful female voice or a decade describes the sound, not a relationship plot. Her named pet hates include "Everything's always a tuesday, drinks are always coffee, scenes are clean." Skip named weekdays and clock times, coffee, the porch light, the kitchen table, neon, shadows, whispers or echoes unless the brief makes them relevant. Do not swap in an arbitrary stranger prop either; every detail must belong to the situation you chose. Keep every phrase understandable in ordinary language.
 - When no length is given, aim for about four minutes, 50 to 70 sung lines counting every written-out chorus, with the section sizes from the craft. The desk draws a SECTION MAP for each song and sends it with the request, under the idea. Use that map unless the idea clearly wants another; if the brief gives its own length or structure, the brief wins and no map is sent. Use the section tags the map names, each alone on its line. New verses add a new fact, choice, consequence or admission, never another wording of verse one.
@@ -141,6 +144,7 @@ Hunt these first and rewrite every passage you find, its setup and its answer to
 Lines that sing the brief's theme back in abstract words, or a chorus built on the theme instead of on what this singer would say.
 Abstractions acting like people or things: fear arriving, joy burning, time catching up.
 Generic imagery any song could have, and lines that could sit in any song on this subject.
+A plot, a cast of named characters, movie-sized danger or trade jargon where the idea wanted a feeling listeners know. Pull it back to one singer and one you.
 Lines that exist only for their rhyme, bend grammar or say something no person would mean.
 Filler repetition, lists of three and mixed metaphors.
 A bridge or ending that explains the song, sums it up or teaches a lesson.

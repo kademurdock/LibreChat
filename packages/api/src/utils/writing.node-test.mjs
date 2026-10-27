@@ -560,6 +560,8 @@ test('desk craft asks for a real situation and keeps broad songwriting choices w
   assert.doesNotMatch(prompt, /Reflective songs need no invented physical scene|Let the singer say the central feeling directly/);
   assert.match(prompt, /Choose a real situation and a real singer that carry it/);
   assert.match(prompt, /Never sing the idea back in its own abstract words/);
+  assert.match(prompt, /a song you could hear on the radio or an underground mix CD/, 'Oct 27 2026: her second complaint was a dramatic short story');
+  assert.match(prompt, /One singer, one you, stakes the size of a real life/);
   assert.match(prompt, /Hope can be determination while things stay hard/);
   assert.match(prompt, /Six to eight lines is a useful default/);
   assert.match(prompt, /A sung word repeated for emphasis is allowed/);
@@ -1143,6 +1145,9 @@ test('the craft source and markdown stay synchronized without fixed hook recipes
   assert.match(hitWritingSystem, /FIND THE SONG INSIDE THE IDEA/);
   assert.match(hitWritingSystem, /Abstractions are not characters/);
   assert.match(hitWritingSystem, /A strange prop picked just to be different is no better/);
+  assert.match(hitWritingSystem, /Leave out the cast/);
+  assert.match(hitWritingSystem, /Freshness comes from how it is said, never from an unusual premise/);
+  assert.doesNotMatch(hitWritingSystem, /most specific stakes|treat them with suspicion/, 'the short-story steer is gone');
   assert.match(hitWritingSystem, /Write every returning chorus in full/);
   assert.doesNotMatch(hitWritingSystem, /APPENDIX|WORKED EXAMPLES|THE SEVEN LAWS|THE FOURTEEN TELLS|click syllable|roughly four to eight times/);
   const chorus = chorusOf(['Fired on my birthday', 'Twenty minutes into the shift', 'They took the paper crown right off my head', 'Fired on my birthday']);
