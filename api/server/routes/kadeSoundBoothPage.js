@@ -155,7 +155,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
       </div>
       <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
-      <p class="hint" id="writingThinkHint">Auto thinks up to Medium's time. A song draft takes about 2 minutes on Low, 4 on Medium and 6 on High. Song length follows your idea.</p>
+      <p class="hint" id="writingThinkHint">Auto thinks as long as Medium. A song draft takes about a minute and a half on Low, two minutes on Medium and up to three on High. Song length follows your idea.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">

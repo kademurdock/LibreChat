@@ -143,7 +143,7 @@ test('the benign fictional kitten brief reaches the real Seed desk with original
   const desk = booth([`${KITTEN_SCENE}\nREADBACK: Two original hosts interview a mischievous fictional kitten, with audience reactions.`]);
   const out = await desk.write({ engine: 'seed', text: KITTEN_BRIEF });
   const wire = desk.writerCalls[0];
-  assert.equal(wire.model, 'xiaomi/mimo-v2.6-pro');
+  assert.equal(wire.model, 'anthropic/claude-opus-5.5');
   assert.match(wire.messages[1].content, new RegExp(KITTEN_BRIEF.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.ok(wire.messages[0].content.includes(scriptWriter.seedSceneContext));
   assert.match(wire.messages[0].content, /explicitly fictional animal with that voice is still that animal/);
@@ -236,13 +236,14 @@ test('Sol writes and formats speech with the chosen thought, without unsupported
       const desk = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
       const result = await desk.write({ mode, thinkMode, voice_description: GIRL });
       const sent = desk.writerCalls[0];
-      assert.equal(sent.model, 'xiaomi/mimo-v2.6-pro');
+      assert.equal(sent.model, 'anthropic/claude-opus-5.5');
       assert.equal(Object.hasOwn(sent, 'temperature'), false);
       assert.equal(Object.hasOwn(sent, 'top_p'), false);
       assert.equal(sent.max_tokens, thinkMode === 'high' ? 65536 : 16384);
       if (thinkMode === 'auto') {
-        assert.equal(sent.reasoning, undefined);
-        assert.equal(sent.kade_think_max_effort, 'medium');
+        /* Oct 27 2026: a Claude writer gets no effort from the gateway, so Auto sends Medium. */
+        assert.equal(sent.reasoning.effort, 'medium');
+        assert.equal(sent.kade_think_max_effort, undefined);
       } else {
         assert.equal(sent.reasoning.effort, thinkMode);
         assert.equal(sent.reasoning.exclude, true);
@@ -268,8 +269,8 @@ test('song length stays in the brief while all four thought modes use resumable 
     assert.equal(polled.status, 200);
     assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
     assert.match(desk.writerCalls[0].messages[1].content, /four-minute instrumental/);
-    assert.equal(desk.writerCalls[0].model, 'xiaomi/mimo-v2.6-pro');
-    assert.equal(desk.writerCalls[0].reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
+    assert.equal(desk.writerCalls[0].model, 'anthropic/claude-opus-5.5');
+    assert.equal(desk.writerCalls[0].reasoning?.effort, thinkMode === 'auto' ? 'medium' : thinkMode);
     assert.equal(desk.writerCalls[0].stream, true, 'all lyric thought levels use streaming transport');
     assert.equal(desk.writerCalls[0].stream_options.include_usage, true);
     assert.match(polled.result.result.script, /four-minute instrumental/);
@@ -315,7 +316,9 @@ test('legacy background and deepWrite retain medium; a new explicit choice overr
     assert.equal(writing.musicWritingSettings({ ...base, ...legacy }).reasoning.effort, 'medium');
     assert.equal(writing.musicWritingBackground({ ...base, ...legacy }), true);
     assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'low' }).reasoning.effort, 'low');
-    assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'auto' }).reasoning, undefined);
+    /* Oct 27 2026: the gateway picks no effort for a Claude writer, so Auto asks for Medium itself. */
+    assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'auto' }).reasoning.effort, 'medium');
+    assert.equal(writing.musicWritingSettings({ ...base, ...legacy, thinkMode: 'auto' }).kade_think_max_effort, undefined);
   }
   assert.equal(writing.musicWritingBackground({ engine: 'seed', mode: 'write', thinkMode: 'medium' }), false);
   assert.equal(writing.musicWritingBackground({ engine: 'lyria', mode: 'format', thinkMode: 'medium' }), false);
@@ -401,9 +404,11 @@ test('Oct 16: the producer audit rides with thinking off, and a background draft
   for (const thinkMode of ['auto', 'low', 'high']) {
     const desk = await run(thinkMode);
     const [draftCall, audit] = desk.writerCalls;
-    assert.equal(draftCall.reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode, 'the first draft keeps its chosen thought');
-    assert.equal(audit.reasoning.enabled, false);
-    assert.equal(audit.reasoning.effort, 'none');
+    assert.equal(draftCall.reasoning?.effort, thinkMode === 'auto' ? 'medium' : thinkMode, 'the first draft keeps its chosen thought (Auto is Medium for a Claude writer)');
+    /* Oct 27 2026: Claude cannot switch thinking off on its zero-retention hosts, so a Claude writer edits at low. */
+    assert.equal(audit.reasoning.enabled, true);
+    assert.equal(audit.reasoning.effort, 'low');
+    assert.equal(Object.hasOwn(audit, 'kade_think_deadline_ms'), false, 'an edit pass never carries a think deadline');
     assert.equal(Object.hasOwn(audit, 'kade_think_max_effort'), false, 'auto mode does not hand the audit back to the think router');
     assert.equal(audit.stream, true);
     assert.equal(desk.writerOptions[0].timeout, 630000, 'the 720 s background budget keeps 90 s back for the audit');
@@ -446,7 +451,7 @@ test('an empty draft at its limit gets one plain write with thinking off, and an
   for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
   assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
   assert.equal(desk.writerCalls.length, 2);
-  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: false, effort: 'none' });
+  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: true, effort: 'low', exclude: true }, 'a Claude writer cannot switch thinking off, so the plain write thinks low');
   assert.equal(Object.hasOwn(desk.writerCalls[1], 'kade_think_deadline_ms'), false);
   assert.match(polled.result.result.script, /four-minute instrumental/);
 
@@ -457,6 +462,15 @@ test('an empty draft at its limit gets one plain write with thinking off, and an
   assert.match(polled.result.error, /could not get the song written this time/);
   assert.doesNotMatch(polled.result.error, /lower Think/);
   assert.equal(twice.writerCalls.length, 2, 'one plain write, never a loop');
+});
+
+/* Oct 27 2026: Claude refuses thinking off on Amazon Bedrock (its zero-retention host), so its edit
+ * passes think low; every other writer keeps the Oct 16 thinking-off edit passes. */
+test('edit passes think low only for a writer that cannot switch thinking off', () => {
+  const { editPassReasoning } = booth().internals;
+  assert.equal(JSON.stringify(editPassReasoning('anthropic/claude-opus-5.5')), JSON.stringify({ enabled: true, effort: 'low', exclude: true }));
+  assert.equal(JSON.stringify(editPassReasoning('xiaomi/mimo-v2.6-pro')), JSON.stringify({ enabled: false, effort: 'none' }));
+  assert.equal(JSON.stringify(editPassReasoning('openai/gpt-6.1-sol')), JSON.stringify({ enabled: false, effort: 'none' }));
 });
 
 /* Oct 27 2026: two of eight real drafts kept thinking out loud inside the song (300 and 571 "sung"
@@ -474,7 +488,7 @@ test('a draft that shows its working gets one plain write, and real lyric lines 
   let polled;
   for (let i = 0; i < 20; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
   assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
-  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: false, effort: 'none' }, 'the second call is the plain write');
+  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: true, effort: 'low', exclude: true }, 'the second call is the plain write (low: a Claude writer cannot switch thinking off)');
   assert.doesNotMatch(polled.result.result.script + '\n' + (polled.result.result.lyrics || ''), /Let me fix|Hmm, I need/);
   assert.ok(desk.warnings.some((w) => /draft shows its working/.test(w)), desk.warnings.join('\n'));
 });
@@ -487,10 +501,10 @@ test('the song idea helper uses Sol and respects the same selected thought', asy
     assert.equal(result.status, 200, JSON.stringify({ result: result.result, warnings: desk.warnings }));
     assert.equal(result.result.idea, idea);
     const sent = desk.writerCalls[0];
-    assert.equal(sent.model, 'xiaomi/mimo-v2.6-pro');
+    assert.equal(sent.model, 'anthropic/claude-opus-5.5');
     assert.equal(Object.hasOwn(sent, 'temperature'), false);
     assert.equal(Object.hasOwn(sent, 'top_p'), false);
-    assert.equal(sent.reasoning?.effort, thinkMode === 'auto' ? undefined : thinkMode);
+    assert.equal(sent.reasoning?.effort, thinkMode === 'auto' ? 'medium' : thinkMode);
   }
 });
 
@@ -1093,7 +1107,7 @@ test('Seed overflow asks for concise directions before cutting dialogue and keep
   assert.match(rewrite, /requested sound constraints and its complete ending/);
   assert.match(rewrite, /wordless piece wordless; never invent speech/);
   assert.equal(desk.writerCalls[1].max_tokens, 16384);
-  assert.equal(desk.writerCalls[1].reasoning.enabled, false, 'cut-to-fit is an edit pass: thinking off');
+  assert.equal(desk.writerCalls[1].reasoning.effort, 'low', 'cut-to-fit is an edit pass: the least thinking a Claude writer allows');
   assert.equal(out.script, SEED_SCENE);
   assert.ok(out.repairs.some((note) => note.startsWith('cut to fit Seed\'s cap:')));
   assert.equal(out.problem, null);

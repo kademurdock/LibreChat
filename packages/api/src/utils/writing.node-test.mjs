@@ -230,9 +230,30 @@ test('real script route accounts for the shortening call as well as the first dr
   assert.equal(ledger[0].metadata.model, lyricWritingModel);
 });
 
+/* Oct 27 2026: KADE_LYRIC_MODEL names the writer without a code change. A writer the gateway's
+ * auto-think classifies keeps Auto as the gateway's choice; any other writer gets Medium on Auto. */
+test('KADE_LYRIC_MODEL picks the writer, and Auto is the gateway choice only where the gateway picks', async () => {
+  process.env.KADE_LYRIC_MODEL = 'xiaomi/mimo-v2.6-pro';
+  try {
+    const other = await import('data:text/javascript;base64,' + Buffer.from(musicSource + ' /* KADE_LYRIC_MODEL */').toString('base64'));
+    assert.equal(other.lyricWritingModel, 'xiaomi/mimo-v2.6-pro');
+    const auto = other.musicWritingSettings({ engine: 'yue2', mode: 'write', thinkMode: 'auto' });
+    assert.equal(auto.model, 'xiaomi/mimo-v2.6-pro');
+    assert.equal(auto.kade_think_max_effort, 'medium');
+    assert.equal(auto.reasoning, undefined);
+  } finally {
+    delete process.env.KADE_LYRIC_MODEL;
+  }
+  const opusAuto = musicWritingSettings({ engine: 'yue2', mode: 'write', thinkMode: 'auto' });
+  assert.equal(opusAuto.model, 'anthropic/claude-opus-5.5');
+  assert.equal(opusAuto.reasoning.effort, 'medium');
+  assert.equal(opusAuto.kade_think_max_effort, undefined);
+});
+
 test('lyric model token estimates use its own prices', () => {
-  assert.equal(lyricWritingModel, 'xiaomi/mimo-v2.6-pro');
-  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 1.305, measured: false });
+  assert.equal(lyricWritingModel, 'anthropic/claude-opus-5.5', 'Oct 27 2026: Claude Opus writes the songs');
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, lyricWritingModel), { costUSD: 24, measured: false });
+  assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, 'xiaomi/mimo-v2.6-pro'), { costUSD: 1.305, measured: false });
   assert.deepEqual(writingCost({ prompt_tokens: 1000000, completion_tokens: 1000000 }, 'moonshotai/kimi-k3'), { costUSD: 12.87, measured: false });
 });
 
@@ -328,9 +349,10 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   assert.equal(code, 409, 'one deep draft per person at a time');
   for (let i = 0; i < 50 && requests.length < 2; i++) await new Promise(done => setTimeout(done, 5));
   await new Promise(done => setTimeout(done, 20));
-  assert.equal(requests[0].reasoning.effort, 'medium'); assert.equal(requests[1].reasoning.effort, 'none', 'Oct 16 2026: the audit rides with thinking off');
+  assert.equal(requests[0].reasoning.effort, 'medium'); assert.equal(requests[1].reasoning.effort, 'low', 'Oct 27 2026: the audit thinks low (a Claude writer cannot switch thinking off; MiMo still edits with it off)');
   assert.equal(requests[0].kade_think_deadline_ms, 210000, "Oct 27 2026: the deep draft thinks for Medium's time, then writes from its notes");
   assert.equal(requests[1].kade_think_deadline_ms, undefined, 'an edit pass with thinking off carries no mark');
+  for (const sent of requests) assert.equal(JSON.stringify(sent.provider), JSON.stringify({ zdr: true, data_collection: 'deny' }), 'Oct 27 2026: every writer call asks for zero retention itself');
   assert.equal(requests[1].messages[0].content, musicLyricEditorSystem('explicit'));
   assert.ok(requests[1].messages[0].content.includes(SONG_EXPLICIT_NOTE));
   assert.ok(!requests[1].messages[0].content.includes(SONG_CLEAN_NOTE));
@@ -469,7 +491,7 @@ test('Part 231: Surprise me writes ideas in her format, shows her list only as a
 
 test('melodic meter review is advisory and preserves deliberate long-short phrasing', async () => {
   const prompt = await musicWritingPrompt('format', { engine: 'yue2', mode: 'write' }, async () => ({ instructions: 'persona' }));
-  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /satisfying audible rhyme/); assert.match(prompt, /THE CHORUS STATES THE HOOK/);
+  assert.match(prompt, /SING-ALONG FIRST/); assert.match(prompt, /satisfying audible rhyme/); assert.match(prompt, /FIND THE SONG BEFORE THE RHYMES/);
   assert.doesNotMatch(prompt, /say it plain/i);
   const alternate = 'Soul, spacious female vocal.\n\nLyrics:\n[Verse 1]\nI have more on my mind than I can carry through tonight\nGive me a minute\nI can leave some things undone and still know what I need to do\nLet me begin it\n[Chorus]\nOne thing at a time\n\nREADBACK: A coping song.';
   const audit = lyricAuditRequest(alternate, [], null, [], 'A soulful song about coping');
@@ -529,15 +551,19 @@ test('Part 293: the audience note sits after the desk notes and before the deliv
   assert.doesNotMatch(before, /Final Chorus\]/, 'Part 293 follow-up: [Final Chorus] comes only with the drawn map that has one');
 });
 
-test('desk craft preserves broad songwriting choices without scene, quirk or ending recipes', () => {
+/* Oct 27 2026: the notes used to promise that reflective songs need no invented scene; that is how
+ * her flight song came to sing her brief back in abstract words. They now ask for a real situation. */
+test('desk craft asks for a real situation and keeps broad songwriting choices without ending recipes', () => {
   const prompt = musicWritingCraft;
   assert.match(prompt, /Preserve a supplied refrain, including its repeated words and dialect/);
   assert.match(prompt, /multisyllabic, mosaic and internal rhymes/);
-  assert.match(prompt, /Reflective songs need no invented physical scene/);
+  assert.doesNotMatch(prompt, /Reflective songs need no invented physical scene|Let the singer say the central feeling directly/);
+  assert.match(prompt, /Choose a real situation and a real singer that carry it/);
+  assert.match(prompt, /Never sing the idea back in its own abstract words/);
   assert.match(prompt, /Hope can be determination while things stay hard/);
   assert.match(prompt, /Six to eight lines is a useful default/);
   assert.match(prompt, /A sung word repeated for emphasis is allowed/);
-  assert.match(prompt, /No compulsory story turn or payoff/);
+  assert.doesNotMatch(prompt, /No compulsory story turn or payoff/);
   assert.match(prompt, /Each performed phrase occupies one line/);
   assert.match(prompt, /one blank line between sections and none between the lines within a section/);
   assert.match(prompt, /Keep a requested riff as a separate bracket cue/);
@@ -1114,7 +1140,9 @@ test('the craft source and markdown stay synchronized without fixed hook recipes
   assert.match(hitWritingSystem, /Repeated words in the user's phrase are part of its rhythm, not a writing defect/);
   assert.match(hitWritingSystem, /Every line need not supply a new fact/);
   assert.match(hitWritingSystem, /Preserve requested repetitions, responses, vamps and wordless syllables/);
-  assert.match(hitWritingSystem, /Do not require a surprise, quirky detail, title flip, second hook or moral payoff/);
+  assert.match(hitWritingSystem, /FIND THE SONG INSIDE THE IDEA/);
+  assert.match(hitWritingSystem, /Abstractions are not characters/);
+  assert.match(hitWritingSystem, /A strange prop picked just to be different is no better/);
   assert.match(hitWritingSystem, /Write every returning chorus in full/);
   assert.doesNotMatch(hitWritingSystem, /APPENDIX|WORKED EXAMPLES|THE SEVEN LAWS|THE FOURTEEN TELLS|click syllable|roughly four to eight times/);
   const chorus = chorusOf(['Fired on my birthday', 'Twenty minutes into the shift', 'They took the paper crown right off my head', 'Fired on my birthday']);
@@ -1318,7 +1346,7 @@ test('Part 296: the route tells the writer the chorus shape, hands the audit wha
   const rewrite = booth.requests[2];
   assert.match(rewrite.messages[1].content, /repeating instead of saying something/); assert.ok(rewrite.messages[1].content.endsWith(draft));
   assert.equal(rewrite.messages[0].content, booth.requests[0].messages[0].content, 'the same system prompt: the gateway keeps the songwriter lane, and the audience note rides along');
-  assert.equal(rewrite.reasoning.effort, 'none', 'Oct 16 2026: the rewrite rides with thinking off');
+  assert.equal(rewrite.reasoning.effort, 'low', 'Oct 27 2026: the rewrite thinks low on a Claude writer');
   assert.equal(rewrite.kade_think_deadline_ms, undefined);
   assert.equal(out.body.script.split('Bought the whole bar onion rings').length - 1, 3);
   assert.equal(out.body.script.split('Lucky me tonight').length - 1, 6, 'the title still lands six times across the song');

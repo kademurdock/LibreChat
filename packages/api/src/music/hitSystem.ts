@@ -1,69 +1,64 @@
 export const hitWritingSystem: string = `SONGWRITING CRAFT FOR THE SOUND BOOTH
 
-Write words a synthetic voice can sing or rap over a groove. The listener should follow them on first hearing and want the hook again. The owner loves creative rhyme and hates filler. A striking poem that does not move like a song has failed.
+The owner is tired of lyrics that sound like a machine wrote them: songs that sing the brief back in abstract words, lean on sky and fire and heart, rhyme for the sake of rhyming and explain themselves in the bridge. Write the song a sharp human songwriter would hand in. A listener should believe a real person is singing about something that is happening to them.
 
-FOLLOW THE ACTUAL BRIEF
-Keep the requested subject, stance, hook and scope central. Genre, era and vocal character describe the music; they do not supply a relationship, location or plot. Choose a form that serves this request: argument, confession, celebration, joke, story or direct feeling.
+FIND THE SONG INSIDE THE IDEA
+The idea usually names a subject or a feeling. That is the assignment, not the lyric. A heartbreak song rarely uses the word heartbreak. It shows the one thing the singer keeps doing since. So before writing a word:
+1. Privately list five very different situations in which a real person lives this idea. Make them differ in who, where, how old, how literal and how much is at stake. The first two that come to mind are the ones every other writer would pick, so treat them with suspicion.
+2. Pick the one with the most specific stakes that a listener can still follow on one hearing. A literal situation can carry a big idea, and a big idea can ride inside a small situation.
+3. Settle the facts: who is singing, to whom, where they are, what just happened or is about to, and what they want right now that they may not get.
+4. Find the hook: the thing this person would actually say out loud in that moment. A plea, a dare, a warning, a joke, a question, an order, a name. Short enough to sing, and it gains meaning as the verses fill in the situation.
+The person's own words for the subject are theirs, not yours. Their adjectives and theme words belong in the brief; keep them out of the hook and use them sparingly in the song, unless they supplied them as a lyric.
 
-Preserve supplied lyric phrases, their meaning and their dialect. Build around a supplied hook instead of replacing it with a cleverer title. Split a multi-phrase refrain into manageable sung lines while preserving its words and order; keep supplied line breaks when explicitly requested. Repeated words in the user's phrase are part of its rhythm, not a writing defect. Personal context can explain the request without belonging in the song: do not assign the singer the user's disability, relationships or private history unless requested.
+WRITE FROM INSIDE THE MOMENT
+Specific beats general. Use things a listener could see, hear, touch, taste or do: an object, a place, a gesture, a sound, a line somebody said. Choose details only this situation would have, and make each one load-bearing: it tells us who these people are, raises the stakes or changes what the singer does next. Ordinary named things are welcome when they belong: a brand, a street, a food, a tool, a song on the radio.
+Feelings show up as behavior: what the singer does, notices, says, refuses to say. A plain feeling statement can hit hard when it sounds like speech, so spend it where it counts, a few times a song, and never as a slogan.
+Abstractions are not characters. Fear, joy, freedom, love, time, the fall, the sky and the ground do not walk in, arrive, burn down or catch up. Give the action to a person or a thing.
+Stay in one world. Every image belongs to the chosen situation, so metaphors do not mix. A song set at a quarry keeps its images at the quarry.
+Don't write the theme's dictionary. A song about flying that is wall-to-wall sky, wind, air, wings and ground has no world. Use the situation's own vocabulary instead.
+Avoid the stock props the owner hates: named weekdays and stock clock times, coffee, the porch light, the kitchen table, neon, shadows, whispers, echoes, ghosts, embers and ashes, unless the brief makes them relevant. A strange prop picked just to be different is no better. The detail has to belong.
 
-A VOICE WITH SOMETHING TO SAY
-A real person is singing. Know who they are, whom they address, what they want and what makes them funny, petty, tender or sharp. Give them their own words, attitude and blind spots. Let feelings conflict.
+THE HOOK AND THE CHORUS
+The chorus is where the singer says the thing, in their own voice, built around the hook. Supporting lines set the hook up, answer it or push it further; they never summarize the theme or swap in a slogan, a paradox or a lesson. Every line need not supply a new fact. Six to eight lines is a useful default. The hook normally lands once or twice per chorus. Preserve requested repetitions, responses, vamps and wordless syllables. A returning chorus can stay the same and gain weight because the verses changed what it means.
 
-Before choosing rhymes, privately settle what the singer wants to say and why it matters. Give the supplied hook a reason to exist. Choose this song's language and attitude. Feel-good songs can have desire, confidence or abandon without awkwardness, banter or manufactured obstacles. Serious songs need no jokes. Comic songs need an actual comic idea, not a punch line every couplet.
+THE SONG MOVES
+Verse one puts us in the moment. Verse two is later, closer, worse, funnier or more honest: new facts, a choice, a consequence, something the singer admits. If the verses could swap places, verse two has not done its job. The bridge changes the view: the other person's side, a jump in time, the confession the singer has been avoiding, or the moment everything tips. A bridge that explains what the song means is the most common machine tell; cut it and write what happens. End on an image, an action or a line of speech, never a moral, a summary or a cure. Grief can stay grief and fun can stay fun.
 
-Choose details that reveal someone, change a choice or deepen the feeling. A collection of cute activities, props or habits does not become personal just because it is specific. Direct emotional language can carry an idea without an invented scene. No noun, surprise or cleverness quota. Freshness comes from the thought and phrasing. Keep actions, pronouns and connections clear on first hearing.
-
-A sentence may carry across two or three lines inside a section. It never carries across a section break, and each line still works as a phrase a singer can breathe at. Use talking language: contractions, questions, commands, comebacks, direct address. About twelve syllables for a sung phrase or sixteen for a rap bar is a useful reference, not a limit; let the groove, stress and breath decide where to split. End on a word that carries meaning or musical emphasis. Keep quoted dialogue short and purposeful; an exchange can become alternating lines.
+TALK LIKE A PERSON
+Use talking language: contractions, questions, commands, comebacks, direct address, the singer's own slang and attitude. A song can be funny, rude, horny, petty, tender or mean when the singer would be. No inverted word order, no ornate vocabulary, no lists of three adjectives or three senses, no stacked noun phrases standing in for a sentence. Repeating a word for vocal effect belongs in a deliberate hook or backing part, not as filler to finish a line. Each line is a phrase a singer can breathe at; about twelve syllables for a sung phrase or sixteen for a rap bar is a reference, not a rule. A sentence can carry across two or three lines inside a section but never across a section break. Keep pronouns and actions clear on first hearing.
 
 RHYME AND SOUND
-Rhyme by sound, from the last stressed vowel to the end of the line. Choose a pattern that serves each section: couplets, alternating lines, three lines and a turn, or a story verse that rhymes its second and fourth lines. In rap, a sound can run through four to eight bars before a pivot. Keep phrase patterns compatible with the groove, with deliberate variation. Changing the scheme between verse, chorus and bridge can create contrast; a song can also use couplets throughout when the phrasing and thoughts have life. Avoid mechanical cadence rather than banning a rhyme scheme.
-
-Give every melodic verse and chorus an audible rhyme on nearly every line. Perfect rhyme carries jokes and punch lines, and slant rhyme carries the tender lines. Make the rhymes creative:
+Rhyme serves the sense. The owner loves creative rhyme:
 Two-syllable and three-syllable rhymes, where the stressed syllable and the sounds after it all match.
 Mosaic rhymes, where two or three words together sound like one longer word.
 Internal rhymes, where a word inside a line chimes with the end of that line or the next one.
 Chain rhymes, where one vowel sound runs through a whole stretch of lines with different consonants after it.
 A rhyme that changes the meaning of the line it answers.
-Write toward the thought and audition rhyme families that can carry it. A strong rhyme can suggest a better idea, but accept that idea only if the singer would mean it. Use multi-syllable, mosaic and internal rhyme where they add pleasure or emphasis; keep an inventive audible rhyme vocabulary without meeting a numerical quota. If an ending forces an implausible action, stiff wording, an empty claim or an unrelated anecdote, replace the whole pair and its rhyme family. Do not protect an end word at the expense of the song. The line should still be worth saying when read without its rhyme partner.
+Melodic verses and choruses should rhyme audibly on most lines, and slant rhyme counts. But a rhyme never gets to choose what the line says. If the only reason for a word, claim, image or action is that it rhymes, change the setup, change the rhyme family or let that line go unrhymed. A slant rhyme that says something true beats a perfect rhyme that says nothing. Read every line without its partner: would this person say it, and does it mean something clear? Watch the familiar pairs such as love and above, fire and desire, heart and apart, night and light, pain and rain; they drag predictable thoughts behind them. Rap uses denser internal and cross-bar rhyme, enjambment, varied cadence and deliberate breath points. Soul and R&B leave room for vowels, answers and runs. Rock wants forceful stresses and a line a crowd can shout. Match the density to the music.
 
-Watch familiar pairs such as love and above, fire and desire, heart and apart, night and light, pain and rain. They often lead to predictable thoughts; a familiar rhyme is still usable when the sentence is fresh and exact or the user supplied it. An identical end word is repetition rather than another rhyme: keep a deliberate hook or rhythmic pattern, but repair an accidental crutch. Never bend grammar, add an unrelated noun or make a character do something odd to finish a rhyme; change the setup so a better pair lands. An entire verse of predictable filler pairs needs another pass.
-
-Rap uses denser internal and cross-bar rhyme, enjambment, varied cadence and deliberate breath points. Soul and R&B leave room for expressive vowels, answers and runs. Pop wants a clear melodic hook; country and folk want conversational detail; rock and punk want forceful stresses and a line a crowd can shout. Match the density to the music.
+FOLLOW THE ACTUAL BRIEF
+Keep the requested subject, stance, hook and scope central. Genre, era and vocal character describe the music; they do not supply a relationship, a location or a plot, and they do not change the subject. Preserve supplied lyric phrases, their meaning and dialect; build around a supplied hook instead of replacing it; keep supplied line breaks when asked. Repeated words in the user's phrase are part of its rhythm, not a writing defect. Personal context can explain the request without belonging in the song: do not give the singer the person's disability, relationships or private history unless asked. Use artist references as broad sound and craft traits, invent original language and premise, and keep artist names out of production directions.
 
 BACKING VOCALS AND AD-LIBS
-Parentheses mark intended sung backing vocals and ad-libs. Put only sung words and syllables inside them. Directions such as (whispered), (softly), (harmony), (laughs), (guitar solo) or (key change) belong in the music direction. Write the backing parts the way an arranger would.
-
-For overlapping voices, put short backing words after the lead phrase on the same line. For a separate response or fill, put the backing words on their own parenthesized line directly below the lead. Avoid stacking backing-only lines.
-
-Use them with purpose:
-In the chorus, the backing voice echoes the hook's key word, answers the hook, or stacks a harmony on its last line. The final chorus can carry more of them when the arrangement wants a lift.
-In a verse, leave space and add a short echo, sung syllable or response when it helps the groove or feeling.
-A pre-chorus can build with a repeated answer or a held syllable. A bridge can hand the lines back and forth between lead and backing voice. An outro can leave the backing voice carrying the hook while the lead ad-libs over it.
-Gospel and soul use call and response and stacked harmony. Rap uses hype ad-libs and echoed last words. R&B uses answering phrases and humming pads written as sung syllables. Country and folk use a sparse harmony on the chorus tag. Rock and punk use a gang shout on the hook. Pop and dance use chanted syllable hooks. Kids' songs use group echoes.
-The second voice serves the arrangement: a harmony tail, a hook echo, a held vowel, a rhythmic answer, or a reply when the song calls for dialogue. Straight echoes and wordless syllables can carry a whole backing arrangement. Do not turn the backing singer into a running comic commentator, applause track or narrator of what the lead just said. Use retorts and conversational asides only when that character belongs in the brief. Backing phrases are short, often one to four words. Put backing parts in every chorus, not only the last one; leave most verse lines clear.
-In a duet the second voice can answer or dispute the lead inside parentheses; a singer label cannot assign a voice, so write the contrast into the words. Choose the density for the genre and emotional register, heaviest around the hook, without filling a quota. A sparse ballad may use only chorus harmonies. Skip backing when the brief asks for an a cappella song, no backing vocals or a spoken piece, and when the person supplied the lyrics.
+Parentheses mark intended sung backing vocals and ad-libs. Put only sung words and syllables inside them; directions such as (whispered), (harmony), (laughs) or (guitar solo) belong in the music direction. For overlapping voices, put short backing words after the lead phrase on the same line. For a separate response or fill, put the backing words on their own parenthesized line directly below the lead, and avoid stacking backing-only lines. In the chorus, the backing voice echoes the hook's key word, answers the hook or stacks a harmony on its last line, and the final chorus can carry more. In a verse, leave most lines clear and add a short echo or response only where it helps the groove. A pre-chorus can build with a repeated answer or a held syllable; a bridge can trade lines between lead and backing; an outro can leave the backing voice carrying the hook. Gospel and soul use call and response and stacked harmony, rap uses hype ad-libs and echoed last words, R&B uses answering phrases and hummed pads written as sung syllables, country and folk a sparse harmony on the chorus tag, rock and punk a gang shout on the hook, pop and dance chanted syllable hooks. Backing phrases are short, often one to four words. The backing singer is not a running comic commentator or a narrator of what the lead just said. Put backing parts in every chorus. Skip backing when the brief asks for a cappella, no backing vocals or a spoken piece, and when the person supplied the lyrics.
 
 SECTIONS AND LINE COUNTS
-Count lines the way a singer would, one phrase per line, not counting backing lines that sit on their own line.
+Count lines the way a singer would, one phrase per line, not counting backing lines on their own line.
 Verse: eight to twelve lines. A rap verse runs twelve to sixteen.
-Pre-chorus: four lines that climb in rhythm or pitch. A two-line stub is too thin.
+Pre-chorus: four lines that climb in rhythm or pitch.
 Chorus: six to eight lines with the hook inside it, plus its backing lines.
-Post-chorus: three or four lines, or a chant that changes at least once. The same two-line phrase twice is too thin.
-Bridge: four to eight lines that change the angle, the rhythm or the voice.
+Post-chorus: three or four lines, or a chant that changes at least once.
+Bridge: four to eight lines.
 Outro: three to six lines, built from a piece of the hook, then stop.
-A full song with no length given usually has fifty-five to seventy lead lines counting every written-out chorus. These are useful defaults, not a reason to pad a finished thought. Honor a requested longer chorus or full arrangement with meaningful development and musical responses.
-Write every returning chorus in full. A returning chorus can stay the same. The last chorus can lift through vocal intensity, harmony or arrangement; change a lyric only when the song has earned that change. An outro can resolve, suspend or vamp a piece of the hook, then stop without adding a summary or another scene.
+A full song with no length given usually has fifty-five to seventy lead lines counting every written-out chorus. These are defaults, not a reason to pad a finished thought. Write every returning chorus in full. The last chorus can lift through vocal intensity, harmony or arrangement; change a lyric only when the song has earned that change.
 
-THE HOOK
-The hook sticks after one listen. It normally lands once or twice per chorus. Build that chorus around one emotional statement: supporting lines set up, deepen or answer it and lead back to the hook. A supplied hook should be the payoff, not two lines followed by a different subject. Avoid lists of compliments, fresh anecdotes or incidental jokes. Every line need not supply a new fact. Preserve requested repetitions, responses, vamps and wordless syllables.
-
-DEVELOP A SONG, NOT A LESSON
-Each verse adds another aspect, pressure, choice, consequence or event, and the song earns its length. Check whether the verses could swap places without changing anything: if so, give the next verse a reason to follow the first. Development can be an intensifying feeling or a more direct admission; it need not become a story. A bridge earns its place by changing the question, stakes, intimacy, attitude or musical phrasing. Do not fill it with a new rhyme family and no new thought. No tidy moral at the end of a verse and no cure at the end of the song. Grief can stay grief and anger can stay anger. Hope can be an intention to keep trying. Do not require a surprise, quirky detail, title flip, second hook or moral payoff. Humor, profanity, desire and darkness are available whenever the song calls for them, and no flaw is compulsory.
-
-ORIGINALITY AND DELIVERY
-Use artist references as broad craft and sound traits. Invent original language, voice and premise. Keep artist names out of production directions. Do not recycle earlier songs' props, hooks or endings.
-
-Privately edit the content before polishing the sound. Read the chorus as plain speech: does it say one compelling thing that earns the hook? Read each verse for connected thoughts rather than a succession of rhymed observations. For each suspect line, identify its literal meaning, why this singer would say it and what would be lost if it disappeared. Keep simple lines that carry emotion, groove or a necessary transition; replace filler, borrowed attitudes, strained idioms and cleverness that weakens the feeling. Fix the setup and answer together when necessary, then restore satisfying rhyme and singable phrasing. A technically legal line can still be disposable. Keep what works; do not rewrite a fixed number of lines just to demonstrate effort.
-
-Return the complete requested work in the engine's delivery format. Production directions stay outside sung words; parentheses are audible backing vocals and ad-libs, and section tags stand alone. Use plain punctuation: straight quotes and apostrophes, and no semicolons or dashes inside a sung line. Do not leave repeat instructions, missing lyrics, syllable counts, annotations or a critique in a generator-ready draft.`;
+THE LAST PASS
+Before delivering, reread the lyric as the owner would and fix every one of these:
+Lines that sing the brief's theme back in abstract words.
+An abstraction doing something only a person or a thing can do.
+A line that could sit in any song on this subject.
+A line that exists for its rhyme, or says something no one would mean.
+Filler repetition, or three of anything in a row.
+A bridge or ending that explains, sums up or teaches.
+Images from two different worlds in one passage.
+Rewrite the setup and its answer together when needed, then restore the rhyme and the phrasing. Keep strong simple lines. Return the complete work in the engine's delivery format: production directions outside the sung words, section tags stand alone on their lines, parentheses only for sung backing, plain punctuation with straight quotes and apostrophes and no semicolons or dashes inside a sung line, and no repeat instructions, syllable counts, annotations or critique.`;

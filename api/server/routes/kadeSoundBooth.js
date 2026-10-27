@@ -524,6 +524,13 @@ const MODEL = process.env.KADE_SOUNDBOOTH_MODEL || lyricWritingModel;
  * first draft, so a slow draft can no longer starve the audit. KADE_LYRIC_AUDIT_RESERVE_MS=0
  * gives the draft the whole budget again. */
 const EDIT_PASS_REASONING = Object.freeze({ enabled: false, effort: 'none' });
+/* Oct 27 2026: Claude on its zero-retention hosts (Amazon Bedrock) refuses a call with thinking
+ * switched off ("Reasoning is mandatory for this endpoint and cannot be disabled"), so every edit
+ * pass came back 400 and the booth kept the unedited draft. A writer that must think edits at low. */
+const EDIT_PASS_LOW = Object.freeze({ enabled: true, effort: 'low', exclude: true });
+function editPassReasoning(model = MODEL) {
+  return /^anthropic\//i.test(String(model || '')) ? EDIT_PASS_LOW : EDIT_PASS_REASONING;
+}
 const AUDIT_RESERVE_MS = Math.max(0, Number(process.env.KADE_LYRIC_AUDIT_RESERVE_MS ?? 90000) || 0);
 function draftTimeoutMs(timeoutMs, wantsWords) {
   return wantsWords && timeoutMs >= 300000 ? timeoutMs - AUDIT_RESERVE_MS : timeoutMs;
@@ -918,7 +925,10 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
     e.status = 503;
     throw e;
   }
-  const streamed = model === lyricWritingModel;
+  /* Oct 27 2026: the booth's utility model (KADE_SOUNDBOOTH_MODEL, MiMo in production: carry
+   * rewrites, Seed's cut-to-fit) was the song writer until the writer moved to Claude, and it keeps
+   * the streamed lane it always had. */
+  const streamed = model === lyricWritingModel || model === MODEL;
   const signal = streamed ? AbortSignal.timeout(timeoutMs) : undefined;
   /* The gateway honours the mark on the streamed lane only, which is the lyric writer's. */
   const thinkDeadline = streamed ? thinkDeadlineMs({ thinkMs, reasoning, timeoutMs }) : undefined;
@@ -934,6 +944,10 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
         ...(reasoning ? { reasoning } : {}),
         ...(kade_think_max_effort ? { kade_think_max_effort } : {}),
         ...(thinkDeadline ? { kade_think_deadline_ms: thinkDeadline } : {}),
+        /* Oct 27 2026: a song idea is the person's own words, so the writer lane asks for zero
+         * retention itself instead of trusting a per-model gateway adapter to add it (MiMo's and
+         * Sol's do; a model with no adapter would otherwise go out without it). */
+        ...(streamed ? { provider: { zdr: true, data_collection: 'deny' } } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -2189,7 +2203,8 @@ async function scriptHandler(req, res) {
           system: writingSystem,
           user: lines.join('\n\n'),
           maxTokens: writingSettings.maxTokens || 2200,
-          reasoning: EDIT_PASS_REASONING,
+          reasoning: editPassReasoning(writingSettings.model),
+          thinkMs: 0,
           kade_think_max_effort: undefined,
           timeoutMs: plainLeftMs,
         });
@@ -2340,7 +2355,8 @@ async function scriptHandler(req, res) {
           ),
           maxTokens: writingSettings.maxTokens,
           /* Thinking off (see EDIT_PASS_REASONING): low effort on MiMo never finished inside the budget. */
-          reasoning: EDIT_PASS_REASONING,
+          reasoning: editPassReasoning(writingSettings.model),
+          thinkMs: 0,
           kade_think_max_effort: undefined,
           timeoutMs: Math.min(timeLeft, 225000),
         });
@@ -2406,7 +2422,8 @@ async function scriptHandler(req, res) {
           system: writingSystem,
           user: lyricRepeatRequest(raw, repeatsLeft, text),
           maxTokens: writingSettings.maxTokens,
-          reasoning: EDIT_PASS_REASONING,
+          reasoning: editPassReasoning(writingSettings.model),
+          thinkMs: 0,
           kade_think_max_effort: undefined,
           timeoutMs: Math.min(repeatTime, 150000),
         });
@@ -2529,7 +2546,7 @@ async function scriptHandler(req, res) {
           system: `You are the script desk in Kade-AI's Sound Booth. The Seed Audio script below is ${script.length} characters; the engine's cap is ${MAX_SEED_CHARS} and the target is under 2000. Cut it to fit by removing redundant setting descriptions, repeated voice traits and unnecessary delivery cues before cutting meaningful dialogue. Keep the distinct voices, the conversation's progression, the requested sound constraints and its complete ending. Keep a wordless piece wordless; never invent speech. Output the script and nothing else — no fence, no preamble, no READBACK.`,
           user: script,
           maxTokens: 16384,
-          reasoning: EDIT_PASS_REASONING,
+          reasoning: editPassReasoning(),
         });
         totalCost += shorter.costUSD;
         costMeasured = costMeasured && shorter.measured;
@@ -4182,5 +4199,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, aceStyleChoice, asksForStyle, SEED_USD_PER_MIN, draftWorkingLines, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, aceStyleChoice, asksForStyle, SEED_USD_PER_MIN, draftWorkingLines, editPassReasoning, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

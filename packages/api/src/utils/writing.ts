@@ -39,6 +39,10 @@ export function writingCost(
     'nousresearch/hermes-4-405b': [1, 3],
     'x-ai/grok-4.20': [1.25, 2.5],
     'moonshotai/kimi-k3': [1.95, 10.92],
+    /* Oct 27 2026: the song writers measured against MiMo for her lyric test (OpenRouter list prices). */
+    'anthropic/claude-opus-5.5': [4, 20],
+    'anthropic/claude-sonnet-5.5': [2, 10],
+    'moonshotai/kimi-k3.1-pro': [2, 10],
     'deepseek/deepseek-v4.1-flash': [0.3, 1.2],
     'z-ai/glm-5.3-flash': [0.075, 0.25],
   };
