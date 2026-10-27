@@ -852,7 +852,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var idea=document.getElementById('text').value.trim();
       var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='ace'&&idea?idea:original.trim()||idea;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
-      var engine=state.engine, revision=state.quoteRevision, originalLyrics=state.values.lyrics||'', originalInstrumental=!!state.values.instrumental, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
+      /* What the writer is given, apart from the words and title: compared when the draft lands, so only a real change is mentioned. */
+      var deskSettings=function(){var d=forDesk(collect());delete d.title;delete d.text;delete d.lyrics;return JSON.stringify(d);};
+      var engine=state.engine, pressSettings=deskSettings(), originalLyrics=state.values.lyrics||'', originalInstrumental=!!state.values.instrumental, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
       var song=(engine==='lyria'||engine==='yue2'||engine==='ace'), deep=song;
       if(deep)body.background=true;
       if(resume)deep=true;
@@ -875,7 +877,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
          * editor, her lyrics, or the singing choice. */
         if(state.engine!==engine || box.value!==original){say('Your editor changed while the draft was being written. Your current text is kept.',true);return;}
         if((state.values.lyrics||'')!==originalLyrics || !!state.values.instrumental!==originalInstrumental){say('Your lyrics or singing choice changed while the draft was being written, so your current text is kept. Choose Help write this for a new draft.',true);return;}
-        var settingsMoved=state.quoteRevision!==revision;
+        var settingsMoved=deskSettings()!==pressSettings;
         var result=deskScript(r.data);
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
         var sorted=sortDraft(engine,r.data,result);
