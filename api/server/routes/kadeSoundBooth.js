@@ -976,6 +976,17 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
  * (the old unbounded thought). */
 const THINK_WRITE_RESERVE_MS = Math.max(0, Number(process.env.KADE_THINK_WRITE_RESERVE_MS ?? 90000) || 0);
 const THINK_LONG_WRITE_RESERVE_MS = Math.max(0, Number(process.env.KADE_THINK_LONG_WRITE_RESERVE_MS ?? 300000) || 0);
+/* Lines a finished song never has: the writer thinking out loud. Seen in 2 of 8 real drafts before
+ * the gateway's plan step ("Wait, that's a weekday. Let me fix:", "Try:", "1: ...", check marks,
+ * 300 and 571 "sung" lines). Two such lines, or a [Verse 1] that comes twice, count as working.
+ * Lyric lines like "Wait, don't go" or "Let me go" alone never do. */
+const WORKING_LINE = /^(?:hmm\b|wait[,.]|let me (?:fix|redo|rework|rewrite|try|check|structure)\b|let's (?:try|use|fix|redo|structure)\b|try:|option \d|draft \d|attempt \d|\d+\s*:\s|check:|rhyme famil)|✓/i;
+function draftWorkingLines(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const hits = lines.filter((line) => WORKING_LINE.test(line)).length;
+  const firstVerses = lines.filter((line) => /^\[verse 1\]$/i.test(line)).length;
+  return hits >= 2 || firstVerses > 1 ? Math.max(hits, 1) : 0;
+}
 const THINK_DEADLINE_FLOOR_MS = 15000;
 function thinkDeadlineMs({ thinkMs, reasoning, timeoutMs }) {
   if (process.env.KADE_THINK_DEADLINE === '0' || !(Number(thinkMs) > 0)) return undefined;
@@ -2163,10 +2174,15 @@ async function scriptHandler(req, res) {
       timeoutMs: draftBudgetMs,
     });
     /* Oct 27 2026: a song draft that ends at its limit with no words means the thought ran out and
-     * the gateway's write-from-notes rescue did not land either. One plain write with thinking off,
-     * when the draft budget still allows it, before she is told nothing came. */
+     * the gateway's write-from-plan rescue did not land either; a draft that shows its working
+     * ("Wait, let me fix that", numbered tries, a second [Verse 1]) is the writer still thinking out
+     * loud. Either gets one plain write with thinking off, when the draft budget still allows it,
+     * before she is told nothing came or is handed the working. */
     const plainLeftMs = (draftBudgetMs || 0) - (Date.now() - started) - 4000;
-    if (mode === 'write' && songEngines.includes(engine) && first.finishReason === 'length' && !String(first.text || '').trim() && plainLeftMs >= 60000) {
+    const emptyAtLimit = first.finishReason === 'length' && !String(first.text || '').trim();
+    const working = wantsWords && !emptyAtLimit ? draftWorkingLines(first.text) : 0;
+    if (working) logger.warn(`[soundbooth/script] draft shows its working (${working} line${working === 1 ? '' : 's'} or a repeated verse); asking for a plain write`);
+    if (mode === 'write' && songEngines.includes(engine) && (emptyAtLimit || working) && plainLeftMs >= 60000) {
       try {
         const plain = await callModel({
           ...writingSettings,
@@ -2177,8 +2193,11 @@ async function scriptHandler(req, res) {
           kade_think_max_effort: undefined,
           timeoutMs: plainLeftMs,
         });
-        logger.info(`[soundbooth/script] empty draft at its limit; plain write ${String(plain.text || '').trim() ? 'landed ' + plain.text.length + 'ch' : 'empty'} ${Date.now() - started}ms`);
-        first = { ...plain, costUSD: first.costUSD + plain.costUSD, measured: first.measured && plain.measured };
+        const landed = !!String(plain.text || '').trim() && !(working && draftWorkingLines(plain.text));
+        logger.info(`[soundbooth/script] ${working ? 'draft with working' : 'empty draft at its limit'}; plain write ${landed ? 'landed ' + plain.text.length + 'ch' : 'not used'} ${Date.now() - started}ms`);
+        first = landed
+          ? { ...plain, costUSD: first.costUSD + plain.costUSD, measured: first.measured && plain.measured }
+          : { ...first, costUSD: first.costUSD + plain.costUSD, measured: first.measured && plain.measured };
       } catch (e) {
         logger.warn('[soundbooth/script] plain write after an empty draft failed: ' + e.message);
       }
@@ -4163,5 +4182,5 @@ router.get('/health', requireJwtAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.MOODS = MOODS;
-module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, aceStyleChoice, asksForStyle, SEED_USD_PER_MIN, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
+module.exports._internals = { ACE_READY, ACE_MOUNT, aceOn, aceStylesOn, shapeAukDraft, aukVoiceOff, aukVoiceWarning, editReadback, myVoiceOwner, myVoiceFollowUps, priceFactor, guidePriced, withYueCovers, withStyleAccess, styleAllowed, aceStyleChoice, asksForStyle, SEED_USD_PER_MIN, draftWorkingLines, googleKeyAlarm, lyriaKeyName, readbackIsSungWords, projectView, lyriaWirePrompt, MAX_LYRIA_LYRICS_CHARS, cleanLyrics, withLyricsBlock, withInstrumentalLine, LYRIA_INSTRUMENTAL_LINE, MUSIC_GRAMMAR, checkScenema, checkSeed, fitSeed, checkMusic, normalizeLyriaModel, LYRIA_KNOWN, LYRIA_MODEL, MAX_LYRIA_CHARS, LYRIA_USD_PER_SONG, estimateFor, splitScriptAndReadback, wrapSpeak, sayEstimate, sanitizeScenema, sanitizeSeed, suggestEngine, looksLikeDescription, MAX_SCENEMA_CHARS, MAX_SEED_CHARS, GUIDE, MUSIC_GRAMMAR_WRITE, systemPrompt, verseCount };
 

@@ -459,6 +459,26 @@ test('an empty draft at its limit gets one plain write with thinking off, and an
   assert.equal(twice.writerCalls.length, 2, 'one plain write, never a loop');
 });
 
+/* Oct 27 2026: two of eight real drafts kept thinking out loud inside the song (300 and 571 "sung"
+ * lines). The gateway now writes from a plan; the desk also refuses to hand her the working. */
+test('a draft that shows its working gets one plain write, and real lyric lines are never taken for working', async () => {
+  const { draftWorkingLines } = booth().internals;
+  assert.equal(draftWorkingLines('[Verse 1]\nWait, don\'t go\nLet me go\nHold on to me\n[Chorus]\nLet me in (let me in)\n(hmm)'), 0);
+  assert.equal(draftWorkingLines('[Verse 1]\nThe tap runs brown\nWait, that\'s a weekday. Let me fix: the tap runs brown by morning\nHmm, I need to fix that. Let me redo the verse cleanly.'), 2);
+  assert.equal(draftWorkingLines('[Verse 1]\nOne\n[Chorus]\nTwo\n[Verse 1]\nOne again'), 1, 'a second [Verse 1] is a second draft');
+  assert.equal(draftWorkingLines('1: We filed with the city\n2: He answered by evening ✓'), 2);
+  const working = 'TITLE: Rent\nPunk rock, fast.\nLyrics:\n[Verse 1]\nThe tap runs brown\nWait, that\'s a weekday. Let me fix: by morning\nHmm, I need to fix that. Let me redo the verse.\n[Verse 1]\nThe tap runs brown again\nREADBACK: A punk song.';
+  const clean = 'TITLE: Rent\nPunk rock, fast.\nLyrics:\n[Verse 1]\nThe tap runs brown all summer long\n[Chorus]\nNothing gets fixed but the rent\nREADBACK: A punk song.';
+  const desk = booth([working, ...Array(8).fill(clean)]);
+  const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A punk song about a landlord.', thinkMode: 'medium', notify: false });
+  let polled;
+  for (let i = 0; i < 20; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+  assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: false, effort: 'none' }, 'the second call is the plain write');
+  assert.doesNotMatch(polled.result.result.script + '\n' + (polled.result.result.lyrics || ''), /Let me fix|Hmm, I need/);
+  assert.ok(desk.warnings.some((w) => /draft shows its working/.test(w)), desk.warnings.join('\n'));
+});
+
 test('the song idea helper uses Sol and respects the same selected thought', async () => {
   for (const thinkMode of ['auto', 'low', 'medium', 'high']) {
     const idea = 'Meter Hearing: Deadpan western swing follows an apologetic driver addressing a broken meter as a judge; after its repaired coin slot accepts his payment, he treats the receipt as a full pardon.';
