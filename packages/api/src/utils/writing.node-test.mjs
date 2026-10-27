@@ -1146,6 +1146,9 @@ test('the craft source and markdown stay synchronized without fixed hook recipes
   assert.match(hitWritingSystem, /Abstractions are not characters/);
   assert.match(hitWritingSystem, /A strange prop picked just to be different is no better/);
   assert.match(hitWritingSystem, /Leave out the cast/);
+  assert.match(hitWritingSystem, /Never default to the story song/, 'Oct 27 2026: her own system picks a song type first');
+  assert.match(hitWritingSystem, /UNIVERSAL-SPECIFIC/);
+  assert.match(hitWritingSystem, /open vowels/);
   assert.match(hitWritingSystem, /Freshness comes from how it is said, never from an unusual premise/);
   assert.doesNotMatch(hitWritingSystem, /most specific stakes|treat them with suspicion/, 'the short-story steer is gone');
   assert.match(hitWritingSystem, /Write every returning chorus in full/);
