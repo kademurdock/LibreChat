@@ -908,7 +908,7 @@ function stripFence(s) {
   return t;
 }
 
-async function callModel({ system, user, maxTokens = 8192, model = MODEL, temperature = 0.7, top_p, reasoning, kade_think_max_effort, timeoutMs = 90000 }) {
+async function callModel({ system, user, maxTokens = 8192, model = MODEL, temperature = 0.7, top_p, reasoning, kade_think_max_effort, thinkMs, timeoutMs = 90000 }) {
   const gatewayUrl =
     process.env.KADE_LLM_GATEWAY_URL ||
     'https://reframe-proxy-production.up.railway.app/chat/completions';
@@ -920,6 +920,8 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
   }
   const streamed = model === lyricWritingModel;
   const signal = streamed ? AbortSignal.timeout(timeoutMs) : undefined;
+  /* The gateway honours the mark on the streamed lane only, which is the lyric writer's. */
+  const thinkDeadline = streamed ? thinkDeadlineMs({ thinkMs, reasoning, timeoutMs }) : undefined;
   let reply;
   try {
     const r = await axios.post(
@@ -931,6 +933,7 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
         ...(streamed ? {} : { temperature, ...(top_p !== undefined ? { top_p } : {}) }),
         ...(reasoning ? { reasoning } : {}),
         ...(kade_think_max_effort ? { kade_think_max_effort } : {}),
+        ...(thinkDeadline ? { kade_think_deadline_ms: thinkDeadline } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -963,6 +966,18 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
   const out = reply?.choices?.[0]?.message?.content;
   const usage = reply?.usage || {};
   return { text: String(out || ''), refusal: reply?.choices?.[0]?.message?.refusal, usage, finishReason: reply?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
+}
+/* Oct 27 2026: a call that may think is told when to stop (writing.ts BOOTH_THINK_SECONDS; the
+ * gateway's THE THINK DEADLINE does the cut and has the writer write from its notes). The mark
+ * leaves THINK_WRITE_RESERVE_MS of the call's own budget for writing the words with thinking off,
+ * about 30 s for a whole song on DeepInfra. Calls with thinking off carry no mark.
+ * KADE_THINK_DEADLINE=0 sends none (the old unbounded thought). */
+const THINK_WRITE_RESERVE_MS = Math.max(0, Number(process.env.KADE_THINK_WRITE_RESERVE_MS ?? 90000) || 0);
+const THINK_DEADLINE_FLOOR_MS = 15000;
+function thinkDeadlineMs({ thinkMs, reasoning, timeoutMs }) {
+  if (process.env.KADE_THINK_DEADLINE === '0' || !(Number(thinkMs) > 0)) return undefined;
+  if (reasoning && reasoning.enabled === false) return undefined;
+  return Math.round(Math.max(THINK_DEADLINE_FLOOR_MS, Math.min(Number(thinkMs), timeoutMs - THINK_WRITE_RESERVE_MS)));
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */
@@ -2136,13 +2151,34 @@ async function scriptHandler(req, res) {
     const requestedTitle = typeof b.title === 'string' ? b.title.trim().slice(0, 80) : '';
     const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode, title: requestedTitle }, getAgent, audience);
     const draftBudgetMs = draftTimeoutMs(writingSettings.timeoutMs, wantsWords);
-    const first = await callModel({
+    let first = await callModel({
       ...writingSettings,
       system: writingSystem,
       user: lines.join('\n\n'),
       maxTokens: writingSettings.maxTokens || (engine === 'seed' ? 1200 : 2200),
       timeoutMs: draftBudgetMs,
     });
+    /* Oct 27 2026: a song draft that ends at its limit with no words means the thought ran out and
+     * the gateway's write-from-notes rescue did not land either. One plain write with thinking off,
+     * when the draft budget still allows it, before she is told nothing came. */
+    const plainLeftMs = (draftBudgetMs || 0) - (Date.now() - started) - 4000;
+    if (mode === 'write' && songEngines.includes(engine) && first.finishReason === 'length' && !String(first.text || '').trim() && plainLeftMs >= 60000) {
+      try {
+        const plain = await callModel({
+          ...writingSettings,
+          system: writingSystem,
+          user: lines.join('\n\n'),
+          maxTokens: writingSettings.maxTokens || 2200,
+          reasoning: EDIT_PASS_REASONING,
+          kade_think_max_effort: undefined,
+          timeoutMs: plainLeftMs,
+        });
+        logger.info(`[soundbooth/script] empty draft at its limit; plain write ${String(plain.text || '').trim() ? 'landed ' + plain.text.length + 'ch' : 'empty'} ${Date.now() - started}ms`);
+        first = { ...plain, costUSD: first.costUSD + plain.costUSD, measured: first.measured && plain.measured };
+      } catch (e) {
+        logger.warn('[soundbooth/script] plain write after an empty draft failed: ' + e.message);
+      }
+    }
     if (engine === 'seed') {
       try {
         assertSeedScriptReply(first);
@@ -2158,7 +2194,9 @@ async function scriptHandler(req, res) {
       logKadeUsage({ userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: first.costUSD,
         metadata: { engine, mode, costMeasured: first.measured, model: writingSettings.model, refused: 'output limit', ms: Date.now() - started, inTok: first.usage.prompt_tokens, outTok: first.usage.completion_tokens },
       }).catch(() => {});
-      return res.status(502).json({ error: 'The writer reached its output limit before finishing the song. Your idea is kept; no audio was generated. Try a shorter brief or a lower Think setting.' });
+      return res.status(502).json({ error: String(first.text || '').trim()
+        ? 'The writer reached its output limit before finishing the song. Your idea is kept; no audio was generated. Try a shorter brief or a lower Think setting.'
+        : 'The writer could not get the song written this time. Your idea is kept; no audio was generated. Try again.' });
     }
     let raw = first.text;
     const usage = first.usage;

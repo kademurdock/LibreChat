@@ -277,6 +277,37 @@ test('song length stays in the brief while all four thought modes use resumable 
   }
 });
 
+/* Oct 27 2026, her report: "it works for like fifteen minutes and ends up with nothing at the end,
+ * no matter what setting it's on." Each Think setting is now a time to think; the gateway cuts the
+ * thought there and the writer writes from its own notes. */
+test('each Think setting sends its time to think as the gateway think deadline', async () => {
+  const seconds = { auto: 210, low: 90, medium: 210, high: 330 };
+  for (const [thinkMode, expected] of Object.entries(seconds)) {
+    assert.equal(writing.BOOTH_THINK_SECONDS[thinkMode], expected);
+    const desk = booth(['A four-minute instrumental with a quiet ending.\nREADBACK: A full instrumental.']);
+    const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A four-minute instrumental with a quiet ending.', instrumental: true, thinkMode, notify: false });
+    let polled;
+    for (let i = 0; i < 10; i++) {
+      await new Promise(setImmediate);
+      polled = await desk.request('get/script/job/:id', {}, { id: start.result.job });
+      if (polled.result.state !== 'working') break;
+    }
+    assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+    assert.equal(desk.writerCalls[0].kade_think_deadline_ms, expected * 1000, `${thinkMode} thinks ${expected} s, then writes`);
+  }
+  /* The phone's quick lane keeps 90 s of its 112 s for the words; a short call still thinks 15 s. */
+  const quick = booth([`${GIRL_XML}\n${GIRL_READBACK}`]);
+  await quick.write({ voice_description: GIRL });
+  const budget = quick.writerOptions[0].timeout;
+  assert.equal(quick.writerCalls[0].kade_think_deadline_ms, Math.max(15000, Math.min(90000, budget - 90000)));
+  /* The kill switch sends no mark at all: the thought runs as long as it did before. */
+  const off = booth(['A four-minute instrumental with a quiet ending.\nREADBACK: A full instrumental.'], { KADE_THINK_DEADLINE: '0' });
+  const job = await off.request('post/script', { engine: 'lyria', mode: 'write', text: 'A four-minute instrumental with a quiet ending.', instrumental: true, thinkMode: 'high', notify: false });
+  for (let i = 0; i < 10 && off.writerCalls.length === 0; i++) await new Promise(setImmediate);
+  assert.equal(job.status, 202);
+  assert.equal(Object.hasOwn(off.writerCalls[0], 'kade_think_deadline_ms'), false);
+});
+
 test('legacy background and deepWrite retain medium; a new explicit choice overrides delivery', () => {
   const base = { engine: 'lyria', mode: 'write' };
   assert.equal(writing.musicWritingSettings(base).reasoning.effort, 'low');
@@ -402,6 +433,30 @@ test('a song that reaches the output ceiling is reported rather than returned as
   assert.equal(polled.result.state, 'failed');
   assert.match(polled.result.error, /output limit.*no audio/);
   assert.equal(desk.writerCalls.length, 1);
+});
+
+/* Oct 27 2026: an empty draft at its limit (the thought ran out and the gateway's rescue did not
+ * land) gets one plain write with thinking off; she is never told to lower Think for a draft that
+ * came back with no words. */
+test('an empty draft at its limit gets one plain write with thinking off, and an honest message if that fails too', async () => {
+  const song = 'A four-minute instrumental with a quiet ending.\nREADBACK: A full instrumental.';
+  const desk = booth([{ text: '', finishReason: 'length' }, song]);
+  const start = await desk.request('post/script', { engine: 'lyria', mode: 'write', text: 'A four-minute instrumental with a quiet ending.', instrumental: true, thinkMode: 'high', notify: false });
+  let polled;
+  for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await desk.request('get/script/job/:id', {}, { id: start.result.job }); if (polled.result.state !== 'working') break; }
+  assert.equal(polled.result.state, 'done', JSON.stringify(polled.result));
+  assert.equal(desk.writerCalls.length, 2);
+  assert.deepEqual({ ...desk.writerCalls[1].reasoning }, { enabled: false, effort: 'none' });
+  assert.equal(Object.hasOwn(desk.writerCalls[1], 'kade_think_deadline_ms'), false);
+  assert.match(polled.result.result.script, /four-minute instrumental/);
+
+  const twice = booth([{ text: '', finishReason: 'length' }, { text: '', finishReason: 'length' }]);
+  const again = await twice.request('post/script', { engine: 'lyria', mode: 'write', text: 'A kite song.', instrumental: true, thinkMode: 'high', notify: false });
+  for (let i = 0; i < 10; i++) { await new Promise(setImmediate); polled = await twice.request('get/script/job/:id', {}, { id: again.result.job }); if (polled.result.state !== 'working') break; }
+  assert.equal(polled.result.state, 'failed');
+  assert.match(polled.result.error, /could not get the song written this time/);
+  assert.doesNotMatch(polled.result.error, /lower Think/);
+  assert.equal(twice.writerCalls.length, 2, 'one plain write, never a loop');
 });
 
 test('the song idea helper uses Sol and respects the same selected thought', async () => {

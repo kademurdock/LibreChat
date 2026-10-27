@@ -155,7 +155,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
       </div>
       <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
-      <p class="hint" id="writingThinkHint">Auto chooses up to Medium thought. Low is quicker; Medium develops the writing longer; High gives the lyric writer more room to reason and can take longer. Song length follows your idea.</p>
+      <p class="hint" id="writingThinkHint">Auto thinks up to Medium's time. A song draft takes about 2 minutes on Low, 4 on Medium and 6 on High. Song length follows your idea.</p>
       <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
       <p id="readback" class="hint"></p>
       <div id="renderActions">
@@ -852,7 +852,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var idea=document.getElementById('text').value.trim();
       var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='ace'&&idea?idea:original.trim()||idea;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
-      var engine=state.engine, revision=state.quoteRevision, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
+      var engine=state.engine, revision=state.quoteRevision, originalLyrics=state.values.lyrics||'', originalInstrumental=!!state.values.instrumental, body=forDesk(collect());body.text=text;body.mode='write';body.patient=true;
       var song=(engine==='lyria'||engine==='yue2'||engine==='ace'), deep=song;
       if(deep)body.background=true;
       if(resume)deep=true;
@@ -869,7 +869,13 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           if(r.data&&r.data.job&&(r.status===202||r.status===409)){draftJob(r.data.job+'|'+engine,titleRevision);r=await waitDraft(r.data.job);}
         }
         if(!r.ok)throw new Error(r.data.error||'The writing desk could not finish. Your text is kept.');
-        if(state.engine!==engine || box.value!==original || state.quoteRevision!==revision){say('Your editor or settings changed while the draft was being written. Your current text is kept.',true);return;}
+        /* Oct 27 2026: a finished draft is no longer thrown away because a setting moved while it was
+         * being written (arrowing through a list fires a change). It lands with Undo, as every draft does.
+         * Only what the draft would replace or contradict keeps her current text: another engine, the
+         * editor, her lyrics, or the singing choice. */
+        if(state.engine!==engine || box.value!==original){say('Your editor changed while the draft was being written. Your current text is kept.',true);return;}
+        if((state.values.lyrics||'')!==originalLyrics || !!state.values.instrumental!==originalInstrumental){say('Your lyrics or singing choice changed while the draft was being written, so your current text is kept. Choose Help write this for a new draft.',true);return;}
+        var settingsMoved=state.quoteRevision!==revision;
         var result=deskScript(r.data);
         if(!result)throw new Error('The writing desk returned no draft. Your text is kept.');
         var sorted=sortDraft(engine,r.data,result);
@@ -877,7 +883,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var titleLead=takeDeskTitle(r.data,originalTitle,titleRevision,titleEdited);
         var voiceLead=takeDeskVoice(r.data,true);
         var draftStatus=r.data.problem?'Draft saved for review':'Draft ready';
-        say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+draftStatus+' in the editor. You can change it or undo. No audio has been generated.',!!r.data.problem);
+        say(sorted.lead+titleLead+(voiceLead?voiceLead+' ':'')+draftStatus+' in the editor. '+(settingsMoved?'It was written with the settings from when you asked; your changes since are kept. ':'')+'You can change it or undo. No audio has been generated.',!!r.data.problem);
       } catch(e){say(e.message||'The writing desk could not finish. Your text is kept.',true);}
       finally {state.writing=false;box.readOnly=false;this.disabled=false;this.textContent=label;showWritingThink();document.getElementById('btnInspire').disabled=false;updateRenderControls();}
     };

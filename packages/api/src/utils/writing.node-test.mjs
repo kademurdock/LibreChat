@@ -14,10 +14,11 @@ const { splitLyricTitle, lyricTitleFromSong } = await import('data:text/javascri
 const { assertSeedScriptReply, seedWritingPrompt } = await import('data:text/javascript;base64,' + Buffer.from(seedSource).toString('base64'));
 const { musicWritingPrompt, musicLyricEditorSystem, musicWritingSettings, musicWritingBackground, lyricWritingModel, lyricAgentId, lyricTells, lyricRepairRequest, mergeRepairedLyrics, lyricShapeIssue, lyricStructureIssue, briefIsInstrumental, labelReadback, lyricAuditRequest, fixStageDirections, musicWritingCraft, SONG_EXPLICIT_NOTE, SONG_CLEAN_NOTE, lyricEndingTells, lyricEndingLines, songSectionMap, sectionMapNote, sectionMapPool, SECTION_MAPS, ENDING_TELL, chorusShapeFor, chorusShapeNote, CHORUS_SHAPES, lyricRepeatIssues, lyricRepeatWeight, lyricRepeatRequest, applyRepeatRewrite, lyricKissOffTells, KISS_OFF_TELL, lyricThinSections, lyricBackingIssue, lyricRhymeReport, lyricRhymeWeight, lyricLiftIssue, lyricPetWords, lyricLongLines, rhymeRelation, rhymeKeyOf, rhymeSyllables } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { writingCost } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const { readWritingCompletion } = await import('data:text/javascript;base64,' + Buffer.from(stripTypeScriptTypes(readFileSync(new URL('../music/completion.ts', import.meta.url), 'utf8'))).toString('base64'));
 /* What the Sound Booth route needs from @librechat/api to load at all (its GUIDE reads the YuE
  * styles when the file loads), and a stand-in for the Part 293 audience helper whose answer a
  * test can set. */
-const bootStubs = { musicLyricEditorSystem, lyricStructureIssue, briefIsInstrumental, yueStylesEnabled: () => false, yueStyles: {}, formatGeneratedLyricsDraft, splitLyricTitle, lyricTitleFromSong, assertSeedScriptReply };
+const bootStubs = { readWritingCompletion, musicLyricEditorSystem, lyricStructureIssue, briefIsInstrumental, yueStylesEnabled: () => false, yueStyles: {}, formatGeneratedLyricsDraft, splitLyricTitle, lyricTitleFromSong, assertSeedScriptReply };
 const audienceStub = { answer: 'explicit', calls: [] };
 /* The real word checks (Part 293 review: the route holds a clean song to clean with them); only
  * the account lookup is stood in for. */
@@ -84,7 +85,7 @@ test('the real music writing handler sends Lyric instructions and reasoning sett
   let instructions = 'Saved Lyric persona v1: connected thoughts and meaningful rhyme.';
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => handlers.set(method + path, values.at(-1))]));
   const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
-  const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, AbortSignal, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
@@ -181,7 +182,7 @@ test('real Sound Booth request honors its configured model and returns its actua
   const start = route.indexOf('async function callModel(');
   const end = route.indexOf('\n/* ---------- AuK XML', start);
   const requests = [];
-  const context = { writingCost, lyricWritingModel, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
+  const context = { writingCost, lyricWritingModel, readWritingCompletion, AbortSignal, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, UA: 'fixture', axios: { post: async (...args) => { requests.push(args); return { data: { choices: [{ message: { content: '<speak>At the end of the day.</speak>' } }], usage: { cost: 0.003 } } }; } } };
   vm.runInNewContext(declaration + '\n' + route.slice(start, end) + '\nthis.call=callModel;', context);
   const result = await context.call({ system: 'Format only.', user: 'At the end of the day.' });
   assert.equal(requests[0][1].model, 'nousresearch/hermes-4-405b');
@@ -191,6 +192,8 @@ test('real Sound Booth request honors its configured model and returns its actua
   const grok = await context.call({ system: 'Write lyrics.', user: 'Coming home.', ...musicWritingSettings({ engine: 'yue2', mode: 'write' }) });
   assert.equal(requests[1][1].model, lyricWritingModel);
   assert.equal(requests[1][2].timeout, 112000, 'must give up before iPhone build 302 does at 120 seconds');
+  assert.equal(requests[1][1].kade_think_deadline_ms, 22000, 'Oct 27 2026: the quick lane stops thinking with 90 s of its 112 s left for the words');
+  assert.equal(requests[0][1].kade_think_deadline_ms, undefined, 'only the streamed lyric writer carries a mark');
   assert.equal(requests[0][2].timeout, 90000);
   assert.equal(grok.costUSD, 0.003);
 });
@@ -203,7 +206,7 @@ test('real script route accounts for the shortening call as well as the first dr
   let calls = 0;
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...handlersForPath) => { handlers.set(method + path, handlersForPath.at(-1)); }]));
   const multer = Object.assign(() => ({ single() { return () => {}; } }), { memoryStorage() { return {}; } });
-  const context = { module: { exports: {} }, Buffer, URL, console, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, AbortSignal, process: { env: { KADE_SOUNDBOOTH_MODEL: 'nousresearch/hermes-4-405b', REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
@@ -280,7 +283,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
   const draft = 'Warm folk.\nLyrics:\n[Verse 1]\nI poured my coffee on a Tuesday\nThe dog ate half my sandwich\nREADBACK: A folk song.';
   const repaired = 'Warm folk.\nLyrics:\n[Verse 1]\nI poured my Tang the day the fair left town\nThe dog ate half my sandwich\nREADBACK: A folk song.';
-  const context = { module: { exports: {} }, Buffer, URL, console, Date, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, AbortSignal, Date, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
@@ -316,7 +319,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   requests.length = 0;
   await handlers.get('post/script')({ user: { id: 'scan-fixture-2' }, body: { engine: 'yue2', mode: 'write', text: 'arrange my supplied words', lyrics: 'I poured my coffee on a Tuesday' } }, response);
   assert.equal(requests.length, 1, 'supplied lyrics are never scanned or sent for repair');
-  /* Part 218: the deep lane answers at once with a job, thinks on medium, audits on low. */
+  /* Part 218: the deep lane answers at once with a job, thinks on medium, audits with thinking off (Oct 16). */
   requests.length = 0; let code = 0; result = null;
   const accepted = { status(value) { code = value; return this; }, json(value) { result = value; return this; } };
   handlers.get('post/script')({ user: { id: 'deep-fixture' }, body: { engine: 'yue2', mode: 'write', background: true, notify: false, text: 'a folk song about a bad morning' } }, accepted);
@@ -325,7 +328,9 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   assert.equal(code, 409, 'one deep draft per person at a time');
   for (let i = 0; i < 50 && requests.length < 2; i++) await new Promise(done => setTimeout(done, 5));
   await new Promise(done => setTimeout(done, 20));
-  assert.equal(requests[0].reasoning.effort, 'medium'); assert.equal(requests[1].reasoning.effort, 'low');
+  assert.equal(requests[0].reasoning.effort, 'medium'); assert.equal(requests[1].reasoning.effort, 'none', 'Oct 16 2026: the audit rides with thinking off');
+  assert.equal(requests[0].kade_think_deadline_ms, 210000, "Oct 27 2026: the deep draft thinks for Medium's time, then writes from its notes");
+  assert.equal(requests[1].kade_think_deadline_ms, undefined, 'an edit pass with thinking off carries no mark');
   assert.equal(requests[1].messages[0].content, musicLyricEditorSystem('explicit'));
   assert.ok(requests[1].messages[0].content.includes(SONG_EXPLICIT_NOTE));
   assert.ok(!requests[1].messages[0].content.includes(SONG_CLEAN_NOTE));
@@ -619,7 +624,7 @@ test('Part 293: Surprise me keeps every pitch clean for a clean audience and is 
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => handlers.set(method + path, values.at(-1))]));
   const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
   const pitch = 'Country comedy: A man keeps a running feud with the self-checkout at the only grocery in town, and by the third verse the whole store is taking sides over one bag of onions.';
-  const context = { module: { exports: {} }, Buffer, URL, console, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, AbortSignal, Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture' } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => () => {} };
     if (name === 'multer') return multer;
     if (name === 'axios') return { post: async (_url, body) => { requests.push(body); return { data: { choices: [{ message: { content: pitch } }], usage: { cost: 0.001 } } }; } };
@@ -689,7 +694,7 @@ function loadBooth({ reply, api = {}, middleware, jev, clock, env = {} } = {}) {
   const handlers = new Map(), requests = [], ledger = [], registered = [];
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map(method => [method, (path, ...values) => { registered.push([method, path, ...values]); handlers.set(method + path, values.at(-1)); }]));
   const multer = Object.assign(() => ({ single: () => () => {} }), { memoryStorage: () => ({}) });
-  const context = { module: { exports: {} }, Buffer, URL, console, Date: clock || Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture', ...env } }, require(name) {
+  const context = { module: { exports: {} }, Buffer, URL, console, AbortSignal, Date: clock || Date, Intl, process: { env: { REFRAME_PROXY_SECRET: 'fixture', ...env } }, require(name) {
     if (name === 'express') return { Router: () => router, json: () => (_req, _res, next) => next && next() };
     if (name === 'multer') return multer;
     if (name === 'crypto') return { randomBytes: () => ({ toString: () => 'job-fixture' }) };
@@ -1313,7 +1318,8 @@ test('Part 296: the route tells the writer the chorus shape, hands the audit wha
   const rewrite = booth.requests[2];
   assert.match(rewrite.messages[1].content, /repeating instead of saying something/); assert.ok(rewrite.messages[1].content.endsWith(draft));
   assert.equal(rewrite.messages[0].content, booth.requests[0].messages[0].content, 'the same system prompt: the gateway keeps the songwriter lane, and the audience note rides along');
-  assert.equal(rewrite.reasoning.effort, 'low');
+  assert.equal(rewrite.reasoning.effort, 'none', 'Oct 16 2026: the rewrite rides with thinking off');
+  assert.equal(rewrite.kade_think_deadline_ms, undefined);
   assert.equal(out.body.script.split('Bought the whole bar onion rings').length - 1, 3);
   assert.equal(out.body.script.split('Lucky me tonight').length - 1, 6, 'the title still lands six times across the song');
   assert.ok(out.body.repairs.includes('rewrote the chorus so it says more than its hook'));

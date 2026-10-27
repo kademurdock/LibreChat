@@ -34,10 +34,26 @@ export function musicWritingBackground(request: Request): boolean {
   );
 }
 
+/* Oct 27 2026. Kade: the booth "works for like fifteen minutes and ends up with nothing at the
+ * end, no matter what setting it's on." MiMo's thought has no length of its own (it ignores
+ * reasoning.max_tokens, and effort 'low' is not short), and on the song desk's 42k-character
+ * prompt every setting thought until something stopped it: Medium spent 16,384 tokens in 486 s
+ * and wrote no words; Auto, voted deep, thought for the whole 510 s draft budget. So each Think
+ * setting is a length of time to think. At its mark the gateway (reframe, THE THINK DEADLINE)
+ * cuts the thought and the writer writes the song from its own notes with thinking off. Auto
+ * gets Medium's time, as its hint says. callModel turns this into kade_think_deadline_ms. */
+export const BOOTH_THINK_SECONDS: Readonly<Record<BoothThinkMode, number>> = Object.freeze({
+  low: 90,
+  auto: 210,
+  medium: 210,
+  high: 330,
+});
+
 export function musicWritingSettings(request: Request): {
   model: string;
   maxTokens: number;
   timeoutMs: number;
+  thinkMs: number;
   kade_think_max_effort?: 'medium';
   reasoning?: { enabled: boolean; effort: 'low' | 'medium' | 'high'; exclude: boolean };
 } {
@@ -48,6 +64,7 @@ export function musicWritingSettings(request: Request): {
     model: lyricWritingModel,
     maxTokens: thinkMode === 'high' ? 65536 : 16384,
     timeoutMs,
+    thinkMs: BOOTH_THINK_SECONDS[thinkMode] * 1000,
     ...(thinkMode === 'auto'
       ? { kade_think_max_effort: 'medium' as const }
       : {
