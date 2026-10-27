@@ -59,7 +59,10 @@ export function musicWritingSettings(request: Request): {
 } {
   const thinkMode = boothThinkMode(request);
   const foregroundTimeoutMs = request.patient ? 225000 : 112000;
-  const timeoutMs = musicWritingBackground(request) ? 600000 : foregroundTimeoutMs;
+  /* Oct 27 2026: 12 minutes for a background song (was 10). The page and the iPhone wait about 13.5
+   * (100 polls 8 s apart), and a long draft keeps 5 minutes after its thought for the words, so a
+   * slow or stalled write on a busy night still lands; measured: one write took over 3 minutes. */
+  const timeoutMs = musicWritingBackground(request) ? 720000 : foregroundTimeoutMs;
   return {
     model: lyricWritingModel,
     maxTokens: thinkMode === 'high' ? 65536 : 16384,

@@ -340,7 +340,7 @@ test('Part 217: the real handler runs one producer\'s audit that also repairs fl
   handlers.get('get/script/job/:id')({ user: { id: 'someone-else' }, params: { id: 'job-fixture' } }, poll);
   assert.match(polled.error, /That draft is gone/, 'a job belongs to the person who asked');
   const deepSettings = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
-  assert.equal(deepSettings.reasoning.effort, 'medium'); assert.equal(deepSettings.timeoutMs, 600000);
+  assert.equal(deepSettings.reasoning.effort, 'medium'); assert.equal(deepSettings.timeoutMs, 720000);
   assert.equal(musicWritingBackground({ engine: 'scenema', mode: 'write', deep: true }), false, 'speech has no song background lane');
   assert.equal(musicWritingSettings({ engine: 'scenema', mode: 'write', deep: true }).model, lyricWritingModel);
 });
@@ -942,7 +942,7 @@ test('Part 293 follow-up: the audit gets an ENDING gate with the exact lines the
 test('Sol writing budgets leave room for thought without the old DeepSeek 48K allowance', () => {
   const deep = musicWritingSettings({ engine: 'yue2', mode: 'write', deep: true });
   assert.equal(deep.maxTokens, 16384); assert.ok(deep.maxTokens <= 131072, "inside the model's listed max output (OpenRouter, Sep 25 2026)");
-  assert.equal(deep.timeoutMs, 600000); assert.equal(deep.reasoning.effort, 'medium');
+  assert.equal(deep.timeoutMs, 720000); assert.equal(deep.reasoning.effort, 'medium');
   assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write' }).maxTokens, 16384, 'phone lane untouched');
   assert.equal(musicWritingSettings({ engine: 'yue2', mode: 'write', patient: true }).maxTokens, 16384, 'web lane untouched');
   assert.equal(musicWritingSettings({ engine: 'lyria', mode: 'write', deep: true }).maxTokens, 16384);

@@ -969,15 +969,19 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
 }
 /* Oct 27 2026: a call that may think is told when to stop (writing.ts BOOTH_THINK_SECONDS; the
  * gateway's THE THINK DEADLINE does the cut and has the writer write from its notes). The mark
- * leaves THINK_WRITE_RESERVE_MS of the call's own budget for writing the words with thinking off,
- * about 30 s for a whole song on DeepInfra. Calls with thinking off carry no mark.
- * KADE_THINK_DEADLINE=0 sends none (the old unbounded thought). */
+ * leaves part of the call's own budget for writing the words with thinking off: a whole song took
+ * 17-53 s on DeepInfra, and once over 3 minutes on a busy night, so a call of 5 minutes or more
+ * keeps THINK_LONG_WRITE_RESERVE_MS (the gateway's two 150 s tries) and a shorter one keeps
+ * THINK_WRITE_RESERVE_MS. Calls with thinking off carry no mark. KADE_THINK_DEADLINE=0 sends none
+ * (the old unbounded thought). */
 const THINK_WRITE_RESERVE_MS = Math.max(0, Number(process.env.KADE_THINK_WRITE_RESERVE_MS ?? 90000) || 0);
+const THINK_LONG_WRITE_RESERVE_MS = Math.max(0, Number(process.env.KADE_THINK_LONG_WRITE_RESERVE_MS ?? 300000) || 0);
 const THINK_DEADLINE_FLOOR_MS = 15000;
 function thinkDeadlineMs({ thinkMs, reasoning, timeoutMs }) {
   if (process.env.KADE_THINK_DEADLINE === '0' || !(Number(thinkMs) > 0)) return undefined;
   if (reasoning && reasoning.enabled === false) return undefined;
-  return Math.round(Math.max(THINK_DEADLINE_FLOOR_MS, Math.min(Number(thinkMs), timeoutMs - THINK_WRITE_RESERVE_MS)));
+  const reserve = timeoutMs >= 300000 ? THINK_LONG_WRITE_RESERVE_MS : THINK_WRITE_RESERVE_MS;
+  return Math.round(Math.max(THINK_DEADLINE_FLOOR_MS, Math.min(Number(thinkMs), timeoutMs - reserve)));
 }
 
 /* ---------- AuK XML: build one, and check one ------------------------- */

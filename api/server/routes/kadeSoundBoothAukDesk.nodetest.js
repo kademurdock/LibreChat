@@ -406,11 +406,11 @@ test('Oct 16: the producer audit rides with thinking off, and a background draft
     assert.equal(audit.reasoning.effort, 'none');
     assert.equal(Object.hasOwn(audit, 'kade_think_max_effort'), false, 'auto mode does not hand the audit back to the think router');
     assert.equal(audit.stream, true);
-    assert.equal(desk.writerOptions[0].timeout, 510000, 'the 600 s background budget keeps 90 s back for the audit');
+    assert.equal(desk.writerOptions[0].timeout, 630000, 'the 720 s background budget keeps 90 s back for the audit');
     assert.ok(desk.writerOptions[1].timeout >= 45000 && desk.writerOptions[1].timeout <= 225000);
   }
   const whole = await run('low', { KADE_LYRIC_AUDIT_RESERVE_MS: '0' });
-  assert.equal(whole.writerOptions[0].timeout, 600000, 'KADE_LYRIC_AUDIT_RESERVE_MS=0 gives the draft the whole budget');
+  assert.equal(whole.writerOptions[0].timeout, 720000, 'KADE_LYRIC_AUDIT_RESERVE_MS=0 gives the draft the whole budget');
 });
 
 test('Oct 16: a streamed writer cancelled by its time limit says the writer ran out of time', async () => {
