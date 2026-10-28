@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!-- KADE_SHARED_HEAD -->
+<title>Live face</title>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<style>
+  html, body { height: 100%; background: transparent; padding: 0; margin: 0; overflow: hidden; }
+  #stage { position: fixed; inset: 0; background: transparent; }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity 240ms ease-out; }
+  video.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="stage" aria-hidden="true">
+  <video id="v" autoplay playsinline muted></video>
+  <audio id="a" autoplay></audio>
+</div>
+<script>
+<!-- KADE_CLIENT_SCRIPT -->
+</script>
+</body>
+</html>

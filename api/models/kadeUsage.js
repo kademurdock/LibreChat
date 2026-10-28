@@ -58,6 +58,7 @@ const RATES = {
   // pricing), so they need no per-unit rate here.
   flux: 0.025, // $0.025 / image (flux-dev default; overridden per-endpoint below)
   tavily: 0.008, // ~$0.008 / search
+  live_face: 0.01, // Oct 28 2026: Simli live video face, $0.01 / minute of session
 };
 
 /** Flux per-endpoint pricing (USD/image). */

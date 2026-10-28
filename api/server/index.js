@@ -360,6 +360,7 @@ const startServer = async () => {
   app.use('/api/kade/approvals', require('./routes/kadeApprovals'));
   // Oct 18 2026: the Arcade: catalog, manifests and one-hour signed game packs (packages/api arcade/ARCADE.md).
   app.use('/api/kade/arcade', require('./routes/kadeArcade'));
+  app.use('/api/kade', routes.kadeLiveFace); // Oct 28 2026: sight flag + live video faces
   app.use('/api/kade', routes.kade);
 
   app.use('/metrics', metricsRouter);
@@ -419,6 +420,7 @@ const startServer = async () => {
   // in-app doorway points at it).
   app.get('/clubhouse', routes.kadeLounge.page);
   app.get('/clubhouse-engine', routes.kadeLounge.enginePage); // headless publisher for the native app
+  app.get('/live-face', routes.kadeLiveFace.page); // Oct 28 2026: the live video face the phone loads
   app.get('/debate-room', routes.kadeRoom.page);
   app.get('/conversation-hall', routes.kadeRoom.hallPage);
   app.get('/game-room', routes.kade.gameRoomPage);
