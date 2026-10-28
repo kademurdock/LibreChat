@@ -46,4 +46,9 @@ function decide({ configured, faces, agentId, sight, liveFaces }) {
   return { ok: true, faceId };
 }
 
-module.exports = { parseFaces, decide };
+/* The env map wins over the registry, so a hand-made face is never shadowed. */
+function mergeFaces(envFaces, registryFaces) {
+  return { ...(registryFaces || {}), ...(envFaces || {}) };
+}
+
+module.exports = { parseFaces, decide, mergeFaces };

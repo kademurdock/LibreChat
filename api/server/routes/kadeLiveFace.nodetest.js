@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseFaces, decide } = require('./LiveFace/policy');
+const { parseFaces, decide, mergeFaces } = require('./LiveFace/policy');
 
 const faces = { agent_kiana: 'face-k', agent_harley: 'face-h' };
 
@@ -45,4 +45,10 @@ test('the page carries its script inline and one LiveKit browser build', () => {
   assert.ok(script.includes("ws.send('SKIP')"));
   // The fragment is scrubbed before anything else runs: tokens never sit in the address.
   assert.ok(script.indexOf('history.replaceState') < script.indexOf('new WebSocket'));
+});
+
+test('hand-made faces win over the registry, and the registry adds the rest', () => {
+  assert.deepEqual(mergeFaces({ agent_kiana: 'hand' }, { agent_kiana: 'built', agent_new: 'built-new' }),
+    { agent_kiana: 'hand', agent_new: 'built-new' });
+  assert.deepEqual(mergeFaces({}, null), {});
 });
