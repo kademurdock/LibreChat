@@ -13,6 +13,7 @@
  *   POST /api/kade/live-face/usage    {seconds, agentId, lane} usage row
  *   POST /api/kade/live-face/faces/:agentId   bring a character to life from its portrait
  *   GET  /api/kade/live-face/faces/:agentId   where that stands (pending/processing/completed/failed)
+ *   POST /api/kade/live-face/admin/face {agentId, faceId}  machine: record a finished face
  *   GET  /live-face                   the page a client loads (LiveFace/page.*)
  *
  * Env: SIMLI_API_KEY; SIMLI_FACES = {"agent_id":"faceId",...} (Kiana and
@@ -399,6 +400,37 @@ router.get('/live-face/faces/:agentId', requireJwtAuth, canViewAgent, async (req
   } catch (e) {
     logger.error('[kade/live-face] face read failed:', e);
     res.status(500).json({ error: 'Could not read that face.' });
+  }
+});
+
+/* Machine route: record a face built outside the app (Kade's main cast,
+ * built through the face API by hand) as completed, so it opens live with no
+ * redeploy. Same trust as /usage-event: KADE_USAGE_EVENT_SECRET in the
+ * x-kade-secret header, compared in constant time. faceId null removes it. */
+router.post('/live-face/admin/face', express.json({ limit: '2kb' }), async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET || '';
+    const given = String(req.get('x-kade-secret') || '');
+    const crypto = require('node:crypto');
+    const a = Buffer.from(given);
+    const b = Buffer.from(expected);
+    if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const agentId = String((req.body || {}).agentId || '').slice(0, 64);
+    const faceId = (req.body || {}).faceId;
+    if (!agentId) return res.status(400).json({ error: 'agentId required' });
+    if (!faceId) {
+      await registry.KadeLiveFace.deleteOne({ agentId });
+      return res.json({ ok: true, agentId, removed: true });
+    }
+    await registry.recordRequest(agentId, { faceId: String(faceId).slice(0, 120), requestedBy: 'admin', portrait: 'by hand' });
+    const row = await registry.recordStatus(agentId, 'completed', { error: null });
+    logger.info(`[kade/live-face] admin set face for ${agentId}`);
+    res.json({ ok: true, ...row });
+  } catch (e) {
+    logger.error('[kade/live-face] admin face failed:', e);
+    res.status(500).json({ error: 'Could not record the face.' });
   }
 });
 
