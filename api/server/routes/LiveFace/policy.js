@@ -51,4 +51,14 @@ function mergeFaces(envFaces, registryFaces) {
   return { ...(registryFaces || {}), ...(envFaces || {}) };
 }
 
-module.exports = { parseFaces, decide, mergeFaces };
+/* The seconds a usage report may bill: never more than the person claimed,
+ * the time since the server minted the session, or its ceiling. */
+function billableSeconds({ claimed, mintedAt, ceiling, now }) {
+  const c = Number(claimed);
+  const wall = (new Date(now).getTime() - new Date(mintedAt).getTime()) / 1000;
+  const cap = Number(ceiling);
+  if (!Number.isFinite(c) || c <= 0 || !Number.isFinite(wall) || wall <= 0) return 0;
+  return Math.max(0, Math.floor(Math.min(c, wall, Number.isFinite(cap) ? cap : 0)));
+}
+
+module.exports = { parseFaces, decide, mergeFaces, billableSeconds };

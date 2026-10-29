@@ -17,7 +17,9 @@
 (() => {
   const params = new URLSearchParams(location.hash.replace(/^#/, ''));
   const token = params.get('st') || '';
-  const wsBase = params.get('ws') || 'wss://api.simli.ai';
+  // Only the face service's own hosts; a fragment cannot point the page elsewhere.
+  const wsWanted = params.get('ws') || 'wss://api.simli.ai';
+  const wsBase = /^wss:\/\/([a-z0-9-]+\.)*simli\.ai$/i.test(wsWanted) ? wsWanted : 'wss://api.simli.ai';
   const mute = params.get('mute') === '1';
   history.replaceState(null, '', location.pathname);
 
@@ -70,9 +72,10 @@
           };
           if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(shown);
           else video.addEventListener('playing', shown, { once: true });
-        } else if (track.kind === LK.Track.Kind.Audio) {
+        } else if (track.kind === LK.Track.Kind.Audio && !mute) {
+          // A call keeps its own engine's sound and echo cancellation: the page
+          // never plays audio there, so it never touches the audio route.
           track.attach(audio);
-          audio.muted = mute;
         }
       });
       await room.connect(info.livekit_url, info.livekit_token);
@@ -132,7 +135,7 @@
   window.face = {
     /* PCM16 mono 16 kHz, base64. Queued behind what was already sent. */
     audio(b64) {
-      if (!open || ended) return false;
+      if (!open || ended || !firstFrame) return false;
       try { ws.send(bytesOf(b64)); return true; } catch (_) { return false; }
     },
     /* Drop everything queued (the person interrupted). */

@@ -95,6 +95,11 @@ async function dueForCheck(olderThanMs) {
   }).lean();
 }
 
+/* Builds this person started since `since` (the per-day cap). */
+async function requestsSince(userId, since) {
+  return KadeLiveFace.countDocuments({ requestedBy: String(userId), createdAt: { $gte: since } });
+}
+
 const { mergeFaces } = require('~/server/routes/LiveFace/policy');
 
-module.exports = { KadeLiveFace, STATUSES, getFace, completedFaces, recordRequest, recordStatus, dueForCheck, mergeFaces, plain };
+module.exports = { KadeLiveFace, STATUSES, getFace, completedFaces, recordRequest, recordStatus, dueForCheck, requestsSince, mergeFaces, plain };

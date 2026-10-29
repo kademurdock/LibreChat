@@ -28,9 +28,14 @@ const { PermissionBits, FileSources } = require('librechat-data-provider');
 const { refreshS3Url } = require('@librechat/api');
 const { requireJwtAuth, canAccessAgentResource } = require('~/server/middleware');
 const { getAgent } = require('~/models');
-const { logKadeUsage } = require('~/models/kadeUsage');
+const fs = require('node:fs');
+const path = require('node:path');
+const { logKadeUsage, RATES } = require('~/models/kadeUsage');
 const { getSight, setSight } = require('~/models/kadeSight');
 const registry = require('~/models/kadeLiveFaceRegistry');
+const sessions = require('~/models/kadeLiveFaceSession');
+const { userPriceFactor, isAdminRole } = require('~/server/services/kadeRealCost');
+const paths = require('~/config/paths');
 const { parseFaces, decide } = require('./LiveFace/policy');
 const { liveFaceHtml } = require('./LiveFace/pages');
 
@@ -40,8 +45,20 @@ const SIMLI_API = process.env.SIMLI_API_URL || 'https://api.simli.ai';
 const SIMLI_WS = process.env.SIMLI_WS_URL || 'wss://api.simli.ai';
 const MAX_SESSION_SECONDS = Math.max(60, Number(process.env.SIMLI_MAX_SESSION_SECONDS) || 1800);
 const MAX_IDLE_SECONDS = Math.max(15, Number(process.env.SIMLI_MAX_IDLE_SECONDS) || 120);
-/* Simli self-serve, Oct 2026: $0.01 a minute of session (less at volume). */
-const USD_PER_MINUTE = Number(process.env.SIMLI_USD_PER_MINUTE) || 0.01;
+/* Simli self-serve, Oct 2026: $0.01 a minute of session (less at volume).
+ * One number: RATES.live_face, which an env value (0 allowed) may override. */
+const ENV_RATE = Number(process.env.SIMLI_USD_PER_MINUTE);
+const USD_PER_MINUTE = process.env.SIMLI_USD_PER_MINUTE !== undefined && Number.isFinite(ENV_RATE) && ENV_RATE >= 0
+  ? ENV_RATE
+  : (RATES && Number.isFinite(RATES.live_face) ? RATES.live_face : 0.01);
+/* Sessions a person may open in an hour: a page flipping between chats opens
+ * one each time; sixty is far above any real use and stops a loop billing. */
+const MINTS_PER_HOUR = Math.max(1, Number(process.env.SIMLI_MINTS_PER_HOUR) || 60);
+/* Face builds a non-admin may start in a day; the plan caps the account. */
+const BUILDS_PER_DAY = Math.max(0, Number(process.env.SIMLI_BUILDS_PER_DAY) || 2);
+const FETCH_TIMEOUT_MS = 20000;
+
+class PersonError extends Error {}
 
 function envFaces() {
   return parseFaces(process.env.SIMLI_FACES);
@@ -82,10 +99,19 @@ router.put('/sight', requireJwtAuth, express.json({ limit: '2kb' }), async (req,
   }
 });
 
-router.get('/live-face/config', requireJwtAuth, async (_req, res) => {
+/* usdPerMinute is what THIS person's balance pays (0 for the administrator,
+ * the platform factor x the real cost for everyone else); realUsdPerMinute
+ * is the service's own price. */
+router.get('/live-face/config', requireJwtAuth, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const all = await faces();
-  res.json({ enabled: configured() && Object.keys(all).length > 0, agents: Object.keys(all), usdPerMinute: USD_PER_MINUTE });
+  const charged = isAdminRole(req.user && req.user.role) ? 0 : USD_PER_MINUTE * userPriceFactor(req.user);
+  res.json({
+    enabled: configured() && Object.keys(all).length > 0,
+    agents: Object.keys(all),
+    usdPerMinute: Number(charged.toFixed(4)),
+    realUsdPerMinute: USD_PER_MINUTE,
+  });
 });
 
 router.post('/live-face/session', requireJwtAuth, express.json({ limit: '2kb' }), async (req, res) => {
@@ -106,8 +132,13 @@ router.post('/live-face/session', requireJwtAuth, express.json({ limit: '2kb' })
         .status(verdict.code === 'unconfigured' ? 503 : 403)
         .json({ error: verdict.reason, code: verdict.code });
     }
+    const recent = await sessions.mintedSince(req.user.id, new Date(Date.now() - 3600 * 1000));
+    if (recent >= MINTS_PER_HOUR) {
+      return res.status(429).json({ error: 'Live faces are resting for a little while. The painted face carries on.', code: 'rate' });
+    }
     const r = await fetch(SIMLI_API + '/compose/token', {
       method: 'POST',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json', 'x-simli-api-key': process.env.SIMLI_API_KEY },
       body: JSON.stringify({
         faceId: verdict.faceId,
@@ -128,8 +159,16 @@ router.post('/live-face/session', requireJwtAuth, express.json({ limit: '2kb' })
       logger.warn(`[kade/live-face] token refused ${r.status}: ${text.slice(0, 200)}`);
       return res.status(502).json({ error: 'The live face could not be started right now.' });
     }
-    logger.info(`[kade/live-face] session for ${req.user.id} ${agentId} (${lane})`);
+    const sessionId = await sessions.mint({
+      userId: req.user.id,
+      agentId,
+      lane,
+      faceId: verdict.faceId,
+      ceilingSeconds: MAX_SESSION_SECONDS,
+    });
+    logger.info(`[kade/live-face] session ${sessionId} for ${req.user.id} ${agentId} (${lane})`);
     res.json({
+      sessionId,
       sessionToken,
       ws: SIMLI_WS,
       maxSessionLength: MAX_SESSION_SECONDS,
@@ -142,13 +181,18 @@ router.post('/live-face/session', requireJwtAuth, express.json({ limit: '2kb' })
   }
 });
 
-/* The client says how long a session ran; the row lands with the rest of
- * the person's spend (admin sees real cost, others their price). Seconds
- * are capped at the session ceiling so a bad clock cannot invent an hour. */
+/* The client says how long a session ran. It must name a session this
+ * server minted for this person; the row is settled once, and the seconds
+ * are capped by the server's own clock (now - mintedAt) and the ceiling, so
+ * a client can neither invent minutes nor bill a session that never was.
+ * The row lands with the rest of the person's spend (admin sees real cost,
+ * others their price). */
 router.post('/live-face/usage', requireJwtAuth, express.json({ limit: '2kb' }), async (req, res) => {
   try {
     const b = req.body || {};
-    const seconds = Math.min(MAX_SESSION_SECONDS, Math.max(0, Number(b.seconds) || 0));
+    const settled = await sessions.settle({ sessionId: b.sessionId, userId: req.user.id, claimedSeconds: b.seconds });
+    if (!settled) return res.status(404).json({ error: 'No open session to settle.' });
+    const seconds = settled.seconds;
     if (seconds < 1) return res.json({ ok: true, minutes: 0 });
     const minutes = Math.round((seconds / 60) * 1000) / 1000;
     await logKadeUsage({
@@ -158,8 +202,9 @@ router.post('/live-face/usage', requireJwtAuth, express.json({ limit: '2kb' }), 
       unit: 'minute',
       costUSD: minutes * USD_PER_MINUTE,
       metadata: {
-        agentId: String(b.agentId || '').slice(0, 64),
-        lane: String(b.lane || '').slice(0, 16),
+        agentId: settled.row.agentId,
+        lane: settled.row.lane,
+        sessionId: String(settled.row._id),
         seconds,
       },
     });
@@ -182,40 +227,65 @@ const canEditAgent = canAccessAgentResource({ requiredPermission: PermissionBits
 const canViewAgent = canAccessAgentResource({ requiredPermission: PermissionBits.VIEW, resourceIdParam: 'agentId' });
 const FACE_CHECK_EVERY_MS = 5 * 60 * 1000;
 
-async function portraitURL(agent) {
+const MAX_PORTRAIT_BYTES = 5 * 1024 * 1024;
+
+/* The character's portrait as bytes. A local avatar (/images/...) is read
+ * from the image folder on disk (the /images route needs a cookie the
+ * server does not have); an S3 avatar is fetched through a fresh presigned
+ * URL. Nothing else is ever fetched, so an avatar path cannot point the
+ * server at an arbitrary address. */
+async function portraitBytes(agent) {
   if (!agent || !agent.avatar || !agent.avatar.filepath) return null;
-  let url = agent.avatar.filepath;
+  const filepath = String(agent.avatar.filepath);
   if (agent.avatar.source === FileSources.s3) {
+    let url;
     try {
       url = await refreshS3Url(agent.avatar);
     } catch (e) {
       logger.warn(`[kade/live-face] avatar refresh failed: ${e.message}`);
+      return null;
     }
+    if (!/^https:\/\//i.test(String(url || ''))) return null;
+    const r = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!r.ok) throw new PersonError('The portrait could not be fetched.');
+    const declared = Number(r.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > MAX_PORTRAIT_BYTES) throw new PersonError('The portrait is over 5 MB; a smaller picture is needed.');
+    const bytes = Buffer.from(await r.arrayBuffer());
+    return { bytes, type: r.headers.get('content-type') || 'image/png', ref: filepath.split('?')[0] };
   }
-  if (/^\/images\//.test(String(url))) url = (process.env.DOMAIN_SERVER || 'https://kademurdock.com') + url;
-  return /^https?:\/\//i.test(String(url)) ? String(url) : null;
+  if (!filepath.includes('/images/')) return null;
+  const base = filepath.split('/images/')[1].split('?')[0];
+  const dir = paths.imageOutput;
+  const full = path.join(dir, base);
+  const rel = path.relative(dir, full);
+  if (!base || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  const stat = await fs.promises.stat(full).catch(() => null);
+  if (!stat || !stat.isFile()) return null;
+  if (stat.size > MAX_PORTRAIT_BYTES) throw new PersonError('The portrait is over 5 MB; a smaller picture is needed.');
+  const ext = path.extname(full).toLowerCase();
+  const type = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png';
+  return { bytes: await fs.promises.readFile(full), type, ref: filepath };
 }
 
-/* Preprocess (reframe) then build. Returns {faceId, warnings, dispatchAfter} or throws a message for the person. */
-async function buildFace(portrait, name) {
+/* Preprocess (reframe) then build. Returns {faceId, warnings, dispatchAfter};
+ * throws PersonError with words for the person, anything else is logged. */
+async function buildFace(picture, name) {
   const key = process.env.SIMLI_API_KEY;
-  const picture = await fetch(portrait);
-  if (!picture.ok) throw new Error('The portrait could not be fetched.');
-  const bytes = Buffer.from(await picture.arrayBuffer());
-  if (bytes.length > 5 * 1024 * 1024) throw new Error('The portrait is over 5 MB; a smaller picture is needed.');
-  const type = picture.headers.get('content-type') || 'image/png';
+  const { bytes, type } = picture;
+  if (bytes.length > MAX_PORTRAIT_BYTES) throw new PersonError('The portrait is over 5 MB; a smaller picture is needed.');
   const form = new FormData();
   form.append('image', new Blob([bytes], { type }), 'portrait.png');
   const pre = await fetch(SIMLI_API + '/faces/trinity/preprocess?gsVersion=GSA_2.0', {
     method: 'POST',
+    signal: AbortSignal.timeout(60000),
     headers: { 'x-simli-api-key': key },
     body: form,
   });
-  if (pre.status === 403) throw new Error('No face builds are left on the plan this month.');
+  if (pre.status === 403) throw new PersonError('No face builds are left on the plan this month.');
   if (!pre.ok) {
     const text = (await pre.text()).slice(0, 300);
     logger.warn(`[kade/live-face] preprocess ${pre.status}: ${text}`);
-    throw new Error('The face service could not use this portrait (it needs one person facing the camera).');
+    throw new PersonError('The face service could not use this portrait (it needs one person facing the camera).');
   }
   const framed = Buffer.from(await pre.arrayBuffer());
   const ratio = pre.headers.get('target-ratio') || '0';
@@ -230,10 +300,11 @@ async function buildFace(portrait, name) {
   const safeName = String(name || 'character').replace(/[^\w\- ]+/g, '').trim().slice(0, 40) || 'character';
   const made = await fetch(SIMLI_API + '/faces/trinity?gsVersion=GSA_2.0&face_name=' + encodeURIComponent(safeName), {
     method: 'POST',
+    signal: AbortSignal.timeout(90000),
     headers: { 'x-simli-api-key': key, 'target-ratio': String(ratio) },
     body: form2,
   });
-  if (made.status === 403) throw new Error('No face builds are left on the plan this month.');
+  if (made.status === 403) throw new PersonError('No face builds are left on the plan this month.');
   const text = await made.text();
   let j = null;
   try {
@@ -243,7 +314,7 @@ async function buildFace(portrait, name) {
   }
   if (!made.ok || !j || !j.face_id) {
     logger.warn(`[kade/live-face] build ${made.status}: ${text.slice(0, 300)}`);
-    throw new Error('The face service did not accept the build.');
+    throw new PersonError('The face service did not accept the build.');
   }
   return { faceId: String(j.face_id), warnings: warnings.concat(j.warnings || []), dispatchAfter: j.dispatch_after };
 }
@@ -253,6 +324,7 @@ async function refreshFace(row) {
   if (!row || !['pending', 'processing'].includes(row.status)) return row;
   try {
     const r = await fetch(SIMLI_API + '/faces/trinity/generation_status?face_id=' + encodeURIComponent(row.faceId || ''), {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: { 'x-simli-api-key': process.env.SIMLI_API_KEY },
     });
     if (!r.ok) return row;
@@ -268,7 +340,7 @@ async function refreshFace(row) {
     if (status === 'not_found') {
       // Finished generations leave the list after a day: a face the account
       // owns by then is completed; otherwise the build is lost.
-      const list = await fetch(SIMLI_API + '/faces', { headers: { 'x-simli-api-key': process.env.SIMLI_API_KEY } });
+      const list = await fetch(SIMLI_API + '/faces', { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), headers: { 'x-simli-api-key': process.env.SIMLI_API_KEY } });
       const owned = list.ok ? await list.json() : [];
       const found = Array.isArray(owned) && owned.some((f) => f && f.id === row.faceId);
       return registry.recordStatus(row.agentId, found ? 'completed' : 'failed', {
@@ -290,19 +362,28 @@ router.post('/live-face/faces/:agentId', requireJwtAuth, canEditAgent, express.j
     if (existing && (existing.status === 'pending' || existing.status === 'processing')) {
       return res.json({ ok: true, ...existing, note: 'Already being built; it takes a few hours.' });
     }
-    if (existing && existing.status === 'completed' && !(req.body || {}).again) {
+    const admin = isAdminRole(req.user && req.user.role);
+    // A finished face is rebuilt only by the administrator; anyone may retry a failed one.
+    if (existing && existing.status === 'completed' && !(admin && (req.body || {}).again)) {
       return res.json({ ok: true, ...existing });
     }
+    if (!admin) {
+      const today = await registry.requestsSince(req.user.id, new Date(Date.now() - 24 * 3600 * 1000));
+      if (today >= BUILDS_PER_DAY) {
+        return res.status(429).json({ error: 'You can bring ' + BUILDS_PER_DAY + ' characters to life a day. Try again tomorrow.' });
+      }
+    }
     const agent = await getAgent({ id: agentId }).catch(() => null);
-    const portrait = await portraitURL(agent);
-    if (!portrait) return res.status(400).json({ error: 'This character has no portrait to work from.' });
-    const built = await buildFace(portrait, agent.name);
-    const row = await registry.recordRequest(agentId, { ...built, requestedBy: req.user.id, portrait });
+    const picture = await portraitBytes(agent);
+    if (!picture) return res.status(400).json({ error: 'This character has no portrait to work from.' });
+    const built = await buildFace(picture, agent.name);
+    const row = await registry.recordRequest(agentId, { ...built, requestedBy: req.user.id, portrait: picture.ref });
     logger.info(`[kade/live-face] face queued for ${agentId} by ${req.user.id}: ${built.faceId}`);
     res.json({ ok: true, ...row, note: 'Queued. A live face takes about four hours to build; the painted face carries on meanwhile.' });
   } catch (e) {
-    logger.warn('[kade/live-face] bring to life failed: ' + e.message);
-    res.status(400).json({ error: e.message || 'The face could not be started.' });
+    logger.warn('[kade/live-face] bring to life failed: ' + (e && e.message));
+    const words = e instanceof PersonError ? e.message : 'The face could not be started.';
+    res.status(e instanceof PersonError ? 400 : 500).json({ error: words });
   }
 });
 
@@ -322,7 +403,7 @@ router.get('/live-face/faces/:agentId', requireJwtAuth, canViewAgent, async (req
 });
 
 router.page = (_req, res) => res.set('Cache-Control', 'no-store').type('html').send(liveFaceHtml);
-router.faces = { buildFace, refreshFace, portraitURL };
+router.faces = { buildFace, refreshFace, portraitBytes };
 router.policy = { parseFaces, decide };
 
 module.exports = router;
