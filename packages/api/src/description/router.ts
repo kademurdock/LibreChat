@@ -50,6 +50,7 @@ import {
   billed,
   voices,
   voiceBase,
+  fishSpeedExact,
   synthesize,
   speechPerByte,
   providerDetail,
@@ -1113,6 +1114,9 @@ const maxRecent = 8;
 /** The prefs row that holds the platform's own lists rather than one person's. */
 const houseKey = '__describing__';
 const fishNote = 'Fish narration now follows the speed setting exactly.';
+/** What is true until the proxy's FISH_SPEED_EXACT is on. */
+const fishPaceNote =
+  'This Fish voice follows the reference sample’s natural pace. Audition it at your narration speed; lower the speed if the words sound rushed.';
 type Catalog = NarratorCatalog;
 /** The current label for a stored name: an exact label, or an old spelling ("Voice 541") renamed since. */
 function listed(catalog: Catalog, name?: string | null): string | undefined {
@@ -2065,6 +2069,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     expectedVersion?: number;
     /** A raised approval she chose for this run; otherwise the quote plus headroom. */
     approvedUSD?: number;
+    /** This run voices all of its narration, so `enqueue` may stamp it with exact speed. */
+    voicesAll?: boolean;
   };
   const storedSpans = (job: Job, range?: Interval) =>
     job.planKey === planKey(range) && (job.spans?.length ?? 0) > 1 ? job.spans : undefined;
@@ -2081,8 +2087,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const settings = settingsSchema.parse(body);
     if (!admin || !settings.tier) delete settings.tier;
     if (!admin || settings.credit !== false) delete settings.credit;
-    /* Every start voices all of its narration, so it takes exact speed whatever a client sent. */
-    settings.speedModel = fishSpeedModel;
+    /* Only `enqueue` stamps a run; whatever a client sent is thrown away. */
+    delete settings.speedModel;
     const preview =
       z.object({ preview: z.boolean().optional() }).parse(body ?? {}).preview === true;
     const seconds = job.seconds || 0;
@@ -2163,6 +2169,7 @@ export function createDescriptionRouter(hooks: Hooks): {
         settings,
       ),
       patch: { ...freshPatch(job, version, stopAfter), startedAt: new Date() },
+      voicesAll: true,
     };
   }
   function expected(job: Job, body: unknown, required: boolean): number | undefined {
@@ -2262,7 +2269,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
     const reuseUnchanged = edits.length > 0 && sameVoice(settings, job.settings);
     /* A whole new voicing may leave the old speed behind; reused sections keep the job's stamp. */
-    if (!reuseUnchanged) settings.speedModel = fishSpeedModel;
+    if (!reuseUnchanged) delete settings.speedModel;
     const manifest = manifestOf(job, base);
     const edited = new Set(edits.map((edit) => Number(edit.id.split(':')[0])));
     const whole = workingSeconds(job.seconds, base.range);
@@ -2302,6 +2309,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       settings,
       price,
       expectedVersion: expectedVersion ?? (job.version || 1),
+      voicesAll: !reuseUnchanged,
       patch: {
         ...freshPatch(job, version, stopAfter),
         firstLookVersion: job.firstLookVersion,
@@ -2429,7 +2437,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const manifest = (job.manifest ?? []).map((entry, i) => (retry.has(i) ? null : entry));
     const changed = !sameVoice(settings, job.settings) && doneCount(manifest) > 0;
     /* A changed voice re-voices every section (below), so it may leave the old speed behind. */
-    if (changed) settings.speedModel = fishSpeedModel;
+    if (changed) delete settings.speedModel;
     const redo = new Set(job.redo ?? []);
     let scope: number[] = [];
     if (spans) scope = kind === 'redo' ? [...redo] : inScope(spans, job.stopAfter);
@@ -2514,6 +2522,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       settings,
       price: priceFor(work, settings),
       patch,
+      voicesAll: changed,
     };
   }
   /** What continuing a stopped run would be quoted now; 0 when it could not be continued. */
@@ -2606,6 +2615,20 @@ export function createDescriptionRouter(hooks: Hooks): {
    */
   async function enqueue(req: Request, job: Job, launch: Launch): Promise<Job> {
     const { price, settings } = launch;
+    /*
+     * The stamp says the proxy is stretching this run, so it is only taken once the proxy says so.
+     * The deploy goes fork, proxy with the switch off, then the flip. A run made before the flip
+     * keeps the old pace for life, through a flip partway and every later run: it sends legacy,
+     * which the proxy honors with its switch on or off, so a film never jumps speed. A proxy that
+     * does not answer costs the same: one film at the old pace, never a jump.
+     */
+    if (launch.voicesAll) {
+      const exact = await fishSpeedExact().catch((error: Error) => {
+        warn(line('dv.speed', { id: job._id, error: scrub(error.message) }));
+        return false;
+      });
+      if (exact) settings.speedModel = fishSpeedModel;
+    }
     if (launch.from.includes(job.state)) await release(job.reservation, settledCost(job));
     if (price.estimateUSD > jobLimit())
       throw new Problem(
@@ -2714,6 +2737,7 @@ export function createDescriptionRouter(hooks: Hooks): {
           /* The tier its looks ask, and whether the administrator chose it for this job. */
           tier: tierOf(settings),
           ...(settings.tier ? { tierChosen: true } : {}),
+          ...(settings.speedModel ? { speedModel: settings.speedModel } : {}),
           estimateUSD: price.estimateUSD,
           setAsideUSD: reservation.cents / 100,
           approvedUSD,
@@ -2799,7 +2823,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       ...(await prefsView(hooks.actor(req).id, catalog)),
       suggested: await suggestedList(catalog),
       fish: catalog.fish ?? [],
-      fishNote,
+      /* The page waits 2 s at most: a slow proxy shows the note from before the switch. */
+      fishNote: (await fishSpeedExact(2000).catch(() => false)) ? fishNote : fishPaceNote,
       ...(hooks.actor(req).role === 'ADMIN' ? { curate: true } : {}),
       voicesAvailable: catalog.available,
       voices: catalog.voices,

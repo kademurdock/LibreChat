@@ -1647,6 +1647,23 @@ function visionCall(
 }
 
 /**
+ * Whether the voice proxy is giving exact Fish speed right now: its FISH_SPEED_EXACT, as /health
+ * reports it. A proxy from before that switch does not say, which is an answer of no. /health can
+ * answer 503 for a storage fault and still tells the truth about this, so any answer is read. It
+ * can take about 6.3 s when storage is slow, hence the wait.
+ */
+export async function fishSpeedExact(timeout: number = 8000): Promise<boolean> {
+  const response = await axios.get<{ fishStretch?: { exact?: unknown } }>(`${voiceBase()}/health`, {
+    timeout,
+    maxRedirects: 0,
+    maxContentLength: 1024 ** 2,
+    validateStatus: () => true,
+    headers: { 'User-Agent': userAgent },
+  });
+  return response.data?.fishStretch?.exact === true;
+}
+
+/**
  * Speaks one description through the platform voice proxy. `speed` is the speed asked of the voice
  * (1 to 1.5): an Inworld voice renders at it, and a Fish voice is rendered as its natural take and
  * stretched by Praat to exactly that number, which sounds more natural than ffmpeg's atempo (Kade,

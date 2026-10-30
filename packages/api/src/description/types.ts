@@ -37,8 +37,9 @@ export type Settings = {
   /**
    * How this run's Fish narration gets its speed. 2 (Oct 30 2026, `fishSpeedModel`): the voice
    * proxy renders the natural take and Praat stretches it by the exact number. Absent: a job
-   * started before that, whose every later run keeps the old named pace so a film never jumps
-   * speed partway. Only the router sets it; a request's own value is thrown away.
+   * started before that or before the proxy's switch was on, whose every later run keeps the old
+   * named pace so a film never jumps speed partway. Only the router sets it, and only when the
+   * proxy says exact speed is on; a request's own value is thrown away.
    */
   speedModel?: 2;
 };

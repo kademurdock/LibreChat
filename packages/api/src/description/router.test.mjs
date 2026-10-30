@@ -99,6 +99,9 @@ let longWav;
 /** When set, narration goes through the meter the way the real synthesize sends it (free today). */
 let meteredNarration = false;
 let beforeEngine = null;
+/** The fake proxy's /health: FISH_SPEED_EXACT on or off, or null for a proxy that does not say. */
+let proxyExact = true;
+let proxyHealthStatus = 200;
 let librarySaveFails = false;
 /** When set, each look is billed this many times its $0.05 reserve. */
 let overbill = 0;
@@ -343,6 +346,17 @@ before(async () => {
           renames: { 'Voice 541': 'clear high-ish young woman · dory', 'Voice 650': 'clear woman · flint', 'Voice 652': 'Kade Murdock' },
           fish: ['Kade Murdock'],
         }),
+      );
+      return;
+    }
+    if (req.url === '/health') {
+      res.writeHead(proxyHealthStatus, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify(
+          proxyExact === null
+            ? { status: 'ok' }
+            : { status: 'ok', fishStretch: { on: proxyExact, exact: proxyExact } },
+        ),
       );
       return;
     }
@@ -4446,6 +4460,168 @@ test('Fish speed: Describe the rest of an old preview keeps the old pace; Contin
   });
   expectExact('Continue with a new voice, which voices every section again');
   await call('delete', `/jobs/${other}`, owner).expect(200);
+});
+
+/**
+ * The deploy goes fork, proxy with the switch off, bridge, then the flip. A stamp promises Praat, so
+ * nothing made before the flip may carry one: its own run and every later run stay on the old pace.
+ */
+test('Fish speed: a job made before the flip stays on the old pace for life, even a run that crosses it', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-window-owner';
+  const id = await readyJob(owner, 'speed-window-upload-1', 150);
+  proxyExact = false;
+  try {
+    /* The switch flips while this run is going, and a client cannot stamp itself. */
+    beforeEngine = async () => {
+      proxyExact = true;
+    };
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/start`, owner).send({ ...settings, speedModel: 2 }).expect(202);
+      const done = await settle(id, ['done', 'failed'], owner);
+      assert.equal(done.state, 'done', done.error);
+    });
+    beforeEngine = null;
+    expectLegacy('a run that crosses the flip');
+    let stored = await Jobs.findById(id).lean();
+    assert.equal(stored.settings.speedModel, undefined);
+    assert.equal(stored.copies.at(-1).settings.speedModel, undefined);
+
+    /* The switch is on from here. Reused sections are the old pace, so the new ones must match. */
+    const script = (await call('get', `/jobs/${id}/script`, owner).expect(200)).body;
+    const edit = { ...script.cues[0], text: 'Pat holds a green folder.', shortText: 'Pat holds a folder.', omit: false };
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/revoice`, owner)
+        .send({ ...settings, expectedVersion: 1, edits: [edit] })
+        .expect(202);
+      assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectLegacy('a correction after the flip');
+    stored = await Jobs.findById(id).lean();
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/redo`, owner)
+        .send({ sections: [0], expectedVersion: stored.version })
+        .expect(202);
+      assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectLegacy('Describe this part again after the flip');
+    stored = await Jobs.findById(id).lean();
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/revoice`, owner).send({ ...settings, expectedVersion: stored.version }).expect(202);
+      assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectExact('a whole new voicing after the flip leaves the old speed');
+    await call('delete', `/jobs/${id}`, owner).expect(200);
+
+    proxyExact = false;
+    const preview = await readyJob(owner, 'speed-window-upload-2', 150);
+    await lastRun(async () => {
+      await call('post', `/jobs/${preview}/start`, owner).send({ ...settings, preview: true }).expect(202);
+      assert.equal((await settle(preview, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectLegacy('a preview before the flip');
+    proxyExact = true;
+    await lastRun(async () => {
+      await call('post', `/jobs/${preview}/finish`, owner).send({}).expect(202);
+      assert.equal((await settle(preview, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectLegacy('Describe the rest after the flip');
+    await call('delete', `/jobs/${preview}`, owner).expect(200);
+
+    proxyExact = false;
+    const stopped = await readyJob(owner, 'speed-window-upload-3', 150);
+    failLaterSections = true;
+    try {
+      await call('post', `/jobs/${stopped}/start`, owner).send(settings).expect(202);
+      assert.equal((await settle(stopped, ['failed', 'done'], owner)).state, 'failed');
+    } finally {
+      failLaterSections = false;
+    }
+    proxyExact = true;
+    await lastRun(async () => {
+      await call('post', `/jobs/${stopped}/resume`, owner).send({}).expect(202);
+      const finished = await settle(stopped, ['done', 'failed'], owner);
+      assert.equal(finished.state, 'done', finished.error);
+    });
+    expectLegacy('Continue after the flip');
+    await call('delete', `/jobs/${stopped}`, owner).expect(200);
+  } finally {
+    beforeEngine = null;
+    proxyExact = true;
+  }
+});
+
+test('Fish speed: a run takes the stamp only from a proxy that says exact is on', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-proxy-owner';
+  const started = async (id) => {
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+      const done = await settle(id, ['done', 'failed'], owner);
+      assert.equal(done.state, 'done', done.error);
+    });
+  };
+  const proxyUrl = process.env.KADE_TTS_PROXY_URL;
+  const logged = logLines.length;
+  try {
+    let id = await readyJob(owner, 'speed-proxy-upload-1', 150);
+    proxyExact = null;
+    await started(id);
+    expectLegacy('a proxy from before the switch');
+    await call('delete', `/jobs/${id}`, owner).expect(200);
+
+    id = await readyJob(owner, 'speed-proxy-upload-2', 150);
+    process.env.KADE_TTS_PROXY_URL = 'http://127.0.0.1:1';
+    proxyExact = true;
+    await started(id);
+    process.env.KADE_TTS_PROXY_URL = proxyUrl;
+    expectLegacy('a proxy that cannot be reached');
+    assert.ok(logLines.slice(logged).some((item) => item.includes('dv.speed')), 'and the log says why');
+    await call('delete', `/jobs/${id}`, owner).expect(200);
+
+    /* /health answers 503 for a storage fault, and what it says about speed is still true. */
+    id = await readyJob(owner, 'speed-proxy-upload-3', 150);
+    proxyHealthStatus = 503;
+    await started(id);
+    expectExact('a proxy with a storage fault');
+    proxyHealthStatus = 200;
+
+    /* Rolled back: a whole new voicing cannot keep a promise the proxy no longer makes. */
+    proxyExact = false;
+    const stored = await Jobs.findById(id).lean();
+    await lastRun(async () => {
+      await call('post', `/jobs/${id}/revoice`, owner).send({ ...settings, expectedVersion: stored.version }).expect(202);
+      assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+    });
+    expectLegacy('a whole new voicing with the switch off');
+    const after = await Jobs.findById(id).lean();
+    assert.equal(after.settings.speedModel, undefined);
+    assert.equal(after.copies.at(-1).settings.speedModel, undefined);
+    assert.equal(after.copies[0].settings.speedModel, 2, 'the older copy keeps its own');
+    await call('delete', `/jobs/${id}`, owner).expect(200);
+  } finally {
+    process.env.KADE_TTS_PROXY_URL = proxyUrl;
+    proxyExact = true;
+    proxyHealthStatus = 200;
+  }
+});
+
+test('Fish speed: the Fish note says exact only while the proxy does', async () => {
+  const note = async () => (await call('get', '/config', 'speed-note-owner').expect(200)).body.fishNote;
+  const proxyUrl = process.env.KADE_TTS_PROXY_URL;
+  try {
+    assert.equal(await note(), 'Fish narration now follows the speed setting exactly.');
+    for (const off of [false, null]) {
+      proxyExact = off;
+      assert.match(await note(), /natural pace/, `the proxy said ${off}`);
+    }
+    proxyExact = true;
+    process.env.KADE_TTS_PROXY_URL = 'http://127.0.0.1:1';
+    assert.match(await note(), /natural pace/, 'a proxy that cannot be reached');
+  } finally {
+    process.env.KADE_TTS_PROXY_URL = proxyUrl;
+    proxyExact = true;
+  }
 });
 
 test('Fish speed: a sample takes the number the proxy achieved, and a Fish sample is only cached once the proxy shows it stretched it', async () => {

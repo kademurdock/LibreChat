@@ -17,6 +17,7 @@ import {
   realCost,
   speechPerByte,
   speechReserve,
+  fishSpeedExact,
   synthesize,
   visionLimits,
   voices,
@@ -1681,4 +1682,26 @@ test('providers: narration sends fishSpeed only when asked and answers the speed
   assert.equal(old.answer, 1);
   for (const junk of [undefined, '', 'fast', '0', '-1'])
     assert.equal((await said(junk)).answer, undefined, `a header of ${junk} means the proxy did not say`);
+});
+
+test('providers: exact Fish speed is on only when the proxy says so on /health', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const asked = async (answer) => {
+    const urls = [];
+    const fake = fakeAxios(async ({ url }) => {
+      urls.push(url);
+      if (answer instanceof Error) throw answer;
+      return { data: answer };
+    });
+    return fishSpeedExact().finally(() => {
+      fake.restore();
+      assert.deepEqual(urls, ['http://voices.test/health']);
+    });
+  };
+  assert.equal(await asked({ fishStretch: { on: true, exact: true } }), true);
+  assert.equal(await asked({ fishStretch: { on: true, exact: false } }), false, 'the older chat stretch alone is not exact');
+  assert.equal(await asked({ fishStretch: { on: true, exact: 'true' } }), false);
+  assert.equal(await asked({ status: 'ok' }), false, 'a proxy from before the switch');
+  assert.equal(await asked('<html>Bad gateway</html>'), false);
+  await assert.rejects(asked(new Error('socket hang up')), /socket hang up/);
 });
