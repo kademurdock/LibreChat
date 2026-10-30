@@ -11,10 +11,26 @@ const page = fs.readFileSync(path.join(__dirname, 'kadeReadingRoomPage.js'), 'ut
 const select = page.match(/<select id="speedSel">(.*?)<\/select>/)[1];
 const options = [...select.matchAll(/<option value="([^"]+)" aria-label="([^"]+)"[^>]*>([^<]+)<\/option>/g)];
 
-test('the values did not move, so saved progress still matches', () => {
+test('the list is the same nine numbers as every other voice', () => {
+  const shared = fs.readFileSync(
+    path.join(__dirname, '../../../client/src/utils/voicePace.ts'),
+    'utf8',
+  );
+  const voiceSpeeds = shared.match(/voiceSpeeds = \[([^\]]+)\]/)[1].split(', ');
   assert.deepStrictEqual(
     options.map((o) => o[1]),
-    ['0.8', '0.9', '1', '1.15', '1.3', '1.5'],
+    voiceSpeeds,
+  );
+  assert.deepStrictEqual(
+    options.map((o) => o[1]),
+    ['0.75', '0.8', '0.9', '1', '1.1', '1.2', '1.3', '1.4', '1.5'],
+  );
+});
+
+test('1x is the one default', () => {
+  assert.deepStrictEqual(
+    options.filter((o) => o[0].includes(' selected')).map((o) => o[1]),
+    ['1'],
   );
 });
 
@@ -38,7 +54,7 @@ const source = page.match(/function showSpeed\(n\)\{[\s\S]*?\n {2}\}\n/)[0];
 const makeSelect = () => {
   const sel = {
     value: '',
-    options: ['0.8', '0.9', '1', '1.15', '1.3', '1.5'].map((value) => ({ value })),
+    options: options.map((o) => ({ value: o[1] })),
     insertBefore(o, before) {
       const at = before ? sel.options.indexOf(before) : sel.options.length;
       sel.options.splice(at, 0, o);
@@ -63,18 +79,18 @@ test('a saved number on the list just selects', () => {
   const sel = makeSelect();
   run(sel, 1.3);
   assert.strictEqual(sel.value, '1.3');
-  assert.strictEqual(sel.options.length, 6);
+  assert.strictEqual(sel.options.length, 9);
 });
 
-test('a saved number off the list shows as itself, in order, never blank', () => {
+test('a saved number off the list, like the old 1.15, shows as itself, in order, never blank', () => {
   const sel = makeSelect();
-  run(sel, 1.2);
-  assert.strictEqual(sel.value, '1.2');
+  run(sel, 1.15);
+  assert.strictEqual(sel.value, '1.15');
   assert.deepStrictEqual(
     sel.options.map((o) => o.value),
-    ['0.8', '0.9', '1', '1.15', '1.2', '1.3', '1.5'],
+    ['0.75', '0.8', '0.9', '1', '1.1', '1.15', '1.2', '1.3', '1.4', '1.5'],
   );
-  const added = sel.options[4];
-  assert.strictEqual(added.textContent, '1.2x');
-  assert.strictEqual(added.attrs['aria-label'], '1.2 times');
+  const added = sel.options[5];
+  assert.strictEqual(added.textContent, '1.15x');
+  assert.strictEqual(added.attrs['aria-label'], '1.15 times');
 });

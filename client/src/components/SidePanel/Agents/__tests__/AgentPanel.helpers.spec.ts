@@ -59,6 +59,15 @@ describe('composeAgentUpdatePayload', () => {
       });
     });
 
+    it('sends voiceId null, and it survives the trip to JSON, so a voice can be cleared', () => {
+      const form = createForm();
+      form.tts = { voiceId: null, speakingRate: 1.2 };
+      const { tts } = composeAgentUpdatePayload(form, 'agent_123').payload;
+      expect(JSON.parse(JSON.stringify(tts))).toEqual({ voiceId: null, speakingRate: 1.2 });
+      form.tts = { voiceId: null };
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload.tts).toEqual({ voiceId: null });
+    });
+
     it('sends a number with or without a voice', () => {
       const form = createForm();
       form.tts = { speakingRate: 1.2 };

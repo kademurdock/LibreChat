@@ -256,7 +256,9 @@ export type AgentSubagentsConfig = {
 
 /** Kade (D1/D2): per-agent TTS defaults — the voice an agent speaks with by default. */
 export type AgentTtsSettings = {
-  voiceId?: string;
+  /** Oct 30 2026: null on a save clears the voice, and leaving the key out keeps what is saved.
+   * The server never stores null, so a loaded agent has a string or nothing. */
+  voiceId?: string | null;
   /** Oct 30 2026: the character's default speed for its own builder voice. Unset plays at 1x; null
    * on a save clears it, and leaving the key out keeps what is saved. */
   speakingRate?: number | null;

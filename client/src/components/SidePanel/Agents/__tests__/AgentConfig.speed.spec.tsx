@@ -76,8 +76,19 @@ jest.mock('~/components/Audio/Voices', () => ({
 
 jest.mock('../AgentVoicePicker', () => ({
   __esModule: true,
-  default: ({ speakingRate }: { speakingRate?: number }) => (
-    <div data-testid="voice-picker" data-speaking-rate={String(speakingRate)} />
+  default: ({
+    speakingRate,
+    onChange,
+  }: {
+    speakingRate?: number;
+    onChange: (voice?: string) => void;
+  }) => (
+    <div data-testid="voice-picker" data-speaking-rate={String(speakingRate)}>
+      {/* What the real picker's "No character voice" option calls. */}
+      <button type="button" onClick={() => onChange(undefined)}>
+        No character voice
+      </button>
+    </div>
   ),
   extractAgentLines: () => [],
 }));
@@ -108,9 +119,11 @@ function Harness({ tts }: { tts?: AgentForm['tts'] }) {
     defaultValues: { tts, agent: '', id: 'agent_1' } as unknown as Partial<AgentForm>,
   });
   const saved = useWatch({ control: methods.control, name: 'tts.speakingRate' });
+  const savedVoice = useWatch({ control: methods.control, name: 'tts.voiceId' });
   return (
     <FormProvider {...methods}>
       <output data-testid="form-rate">{saved === undefined ? 'undefined' : String(saved)}</output>
+      <output data-testid="form-voice">{String(savedVoice)}</output>
       <AgentConfig />
     </FormProvider>
   );
@@ -124,6 +137,15 @@ const renderBuilder = (tts?: AgentForm['tts']) =>
   );
 
 describe('builder voice speed', () => {
+  it('"No character voice" holds null, which a save can carry, and keeps the speed', () => {
+    renderBuilder({ voiceId: 'Voice 1', speakingRate: 1.2 });
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'No character voice' }));
+    expect(screen.getByTestId('form-voice')).toHaveTextContent('null');
+    expect(screen.getByTestId('form-rate')).toHaveTextContent('1.2');
+    expect(screen.queryByRole('button', { name: 'Preview' })).not.toBeInTheDocument();
+  });
+
   it('a label that points at a real control, with the numbers and its help', () => {
     renderBuilder({ voiceId: 'Voice 1', speakingRate: 1.2 });
     const select = screen.getByLabelText('Voice speed') as HTMLSelectElement;

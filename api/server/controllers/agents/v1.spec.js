@@ -575,6 +575,23 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         expect(saved.tts).toEqual({ voiceId: 'Voice 1', deliveryMode: 'STABLE' });
       });
 
+      /* The builder's "No character voice". Before this, null was a 400, and leaving the key out
+       * keeps the voice, so no save could take a voice off a character. */
+      test('voiceId null clears the voice and keeps speed and delivery', async () => {
+        await setTts({ voiceId: 'Voice 1', speakingRate: 1.2, deliveryMode: 'STABLE' });
+        const saved = await patch({ tts: { voiceId: null, speakingRate: 1.2 } });
+        expect(mockRes.status).not.toHaveBeenCalledWith(400);
+        expect(saved.tts).toEqual({ speakingRate: 1.2, deliveryMode: 'STABLE' });
+      });
+
+      test('voiceId null on a character with no voice writes nothing and adds no version', async () => {
+        const before = await Agent.findOne({ id: existingAgentId }).lean();
+        const saved = await patch({ tts: { voiceId: null } });
+        expect(mockRes.status).not.toHaveBeenCalledWith(400);
+        expect(saved.tts).toBeUndefined();
+        expect(saved.versions.length).toBe(before.versions.length);
+      });
+
       test('clearing the only setting leaves an empty tts, not a stale speed', async () => {
         await setTts({ speakingRate: 1.2 });
         const saved = await patch({ tts: { speakingRate: null } });
@@ -621,6 +638,20 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         const created = mockRes.json.mock.calls[0][0];
         const saved = await Agent.findOne({ id: created.id }).lean();
         expect(saved.tts).toEqual({ voiceId: 'Voice 1' });
+      });
+
+      test('a new character saved with "No character voice" stores no null', async () => {
+        mockReq.body = {
+          name: 'New Character',
+          provider: 'openai',
+          model: 'gpt-4',
+          tts: { voiceId: null, speakingRate: 1.2 },
+        };
+        mockRes.json.mockClear();
+        await createAgentHandler(mockReq, mockRes);
+        const created = mockRes.json.mock.calls[0][0];
+        const saved = await Agent.findOne({ id: created.id }).lean();
+        expect(saved.tts).toEqual({ speakingRate: 1.2 });
       });
     });
 

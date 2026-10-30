@@ -19,6 +19,22 @@ describe('agent tts speed (Oct 30 2026)', () => {
     ).toBe(true);
   });
 
+  it('accepts voiceId null, which clears a saved voice, and still refuses an empty one', () => {
+    expect(agentUpdateSchema.parse({ tts: { voiceId: null, speakingRate: 1.2 } }).tts).toEqual({
+      voiceId: null,
+      speakingRate: 1.2,
+    });
+    expect(
+      agentCreateSchema.safeParse({
+        name: 'Character',
+        provider: 'openai',
+        model: 'gpt-4',
+        tts: { voiceId: null },
+      }).success,
+    ).toBe(true);
+    expect(agentUpdateSchema.safeParse({ tts: { voiceId: '' } }).success).toBe(false);
+  });
+
   it('keeps the 0.5 to 1.5 range and leaves an absent key absent', () => {
     expect(agentUpdateSchema.safeParse({ tts: { speakingRate: 1.6 } }).success).toBe(false);
     expect(agentUpdateSchema.safeParse({ tts: { speakingRate: 0.4 } }).success).toBe(false);

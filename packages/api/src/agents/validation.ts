@@ -370,7 +370,7 @@ export const agentSubagentsSchema: z.ZodOptional<
 export const agentTtsSchema: z.ZodOptional<
   z.ZodObject<
     {
-      voiceId: z.ZodOptional<z.ZodString>;
+      voiceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
       speakingRate: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
       deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
     },
@@ -378,9 +378,10 @@ export const agentTtsSchema: z.ZodOptional<
   >
 > = z
   .object({
-    voiceId: z.string().min(1).optional(),
-    // 0.5-1.5 for every voice. Oct 30 2026: null clears the character's speed; a save that leaves
-    // the key out now keeps it (mergeAgentTts in agents/v1.js).
+    // Oct 30 2026: null clears the voice, as it does the speed below. A save that leaves either
+    // key out now keeps it (mergeAgentTts in agents/v1.js), so null is the only way to clear one.
+    voiceId: z.string().min(1).nullable().optional(),
+    // 0.5-1.5 for every voice.
     speakingRate: z.number().min(0.5).max(1.5).nullable().optional(),
     deliveryMode: z.enum(['STABLE', 'BALANCED', 'CREATIVE']).optional(),
   })
@@ -706,7 +707,7 @@ export const agentBaseSchema: z.ZodObject<
     tts: z.ZodOptional<
       z.ZodObject<
         {
-          voiceId: z.ZodOptional<z.ZodString>;
+          voiceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
           speakingRate: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
           deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
         },
@@ -1060,7 +1061,7 @@ export const agentCreateSchema: z.ZodObject<
     tts: z.ZodOptional<
       z.ZodObject<
         {
-          voiceId: z.ZodOptional<z.ZodString>;
+          voiceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
           speakingRate: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
           deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
         },
@@ -1380,7 +1381,7 @@ export const agentUpdateSchema: z.ZodObject<
     tts: z.ZodOptional<
       z.ZodObject<
         {
-          voiceId: z.ZodOptional<z.ZodString>;
+          voiceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
           speakingRate: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
           deliveryMode: z.ZodOptional<z.ZodEnum<['STABLE', 'BALANCED', 'CREATIVE']>>;
         },

@@ -392,7 +392,9 @@ export default function AgentConfig() {
                   {/* D2b: voices audition as you browse; activating one selects it */}
                   <AgentVoicePicker
                     value={current}
-                    onChange={(v) => field.onChange(v ?? undefined)}
+                    /* Oct 30 2026: "No character voice" is null. JSON drops undefined and the
+                       server keeps what a save leaves out, so the old voice stayed, silently. */
+                    onChange={(v) => field.onChange(v ?? null)}
                     speakingRate={speakingRate}
                     agentId={agent_id}
                     agentLines={agentLines}

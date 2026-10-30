@@ -1391,10 +1391,15 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
   <button id="stopBtn" class="small" type="button" style="margin-left:.6rem;">Stop</button>
   <label style="margin-left:.9rem;">Speed
     <select id="speed" aria-label="Reading speed">
-      <option value="0.9">Slower</option>
-      <option value="1" selected>Normal</option>
-      <option value="1.2">Faster</option>
-      <option value="1.4">Fastest</option>
+      <option value="0.75" aria-label="0.75 times">0.75x</option>
+      <option value="0.8" aria-label="0.8 times">0.8x</option>
+      <option value="0.9" aria-label="0.9 times">0.9x</option>
+      <option value="1" aria-label="1 times" selected>1x</option>
+      <option value="1.1" aria-label="1.1 times">1.1x</option>
+      <option value="1.2" aria-label="1.2 times">1.2x</option>
+      <option value="1.3" aria-label="1.3 times">1.3x</option>
+      <option value="1.4" aria-label="1.4 times">1.4x</option>
+      <option value="1.5" aria-label="1.5 times">1.5x</option>
     </select>
   </label>
 </div>
