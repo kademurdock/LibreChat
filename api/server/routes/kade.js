@@ -2498,6 +2498,41 @@ router.post('/agent-promote', async (req, res) => {
   }
 });
 
+/* POST /api/kade/agent-attic — Oct 29 2026: tuck characters away or bring them back
+ * (services/kadeAgentAttic.js). Same trust model as /agent-promote. Body:
+ * { secret, agentIds: [...], attic: true|false } changes them;
+ * { secret, list: true } returns what is in the attic. */
+router.post('/agent-attic', async (req, res) => {
+  try {
+    const expected = process.env.KADE_USAGE_EVENT_SECRET;
+    const body = req.body || {};
+    if (!expected || body.secret !== expected) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const attic = require('~/server/services/kadeAgentAttic');
+    if (body.list === true) {
+      const rows = await attic.listAttic();
+      return res.json({
+        count: rows.length,
+        agents: rows.map((r) => ({ agentId: r._id, name: r.name || '', at: r.at, note: r.note || '' })),
+      });
+    }
+    const ids = Array.isArray(body.agentIds) ? body.agentIds.map(String).slice(0, 500) : [];
+    if (!ids.length) return res.status(400).json({ error: 'agentIds required' });
+    if (typeof body.attic !== 'boolean') {
+      return res.status(400).json({ error: 'attic must be true or false' });
+    }
+    const out = await attic.setAttic(ids, body.attic, {
+      by: 'agent-attic route',
+      note: typeof body.note === 'string' ? body.note : '',
+    });
+    return res.json({ ok: true, ...out });
+  } catch (e) {
+    logger.error('[kade/agent-attic] failed:', e);
+    return res.status(500).json({ error: 'Could not update' });
+  }
+});
+
 /* POST /api/kade/agent-default/assign — Kade's word sets somebody's main agent
  * ("make it Holly Murdock's default agent"). Machine-to-machine, same trust
  * model as /usage-event. Body: { secret, email, agentId } ; agentId null clears. */

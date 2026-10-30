@@ -731,6 +731,9 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
     const db = require('~/models');
     const agent = await db.getAgent({ id: agentId });
     if (!agent) return res.status(410).json({ error: 'That companion is not around anymore.' });
+    if (await require('~/server/services/kadeAgentAttic').isInAttic(agent.id)) {
+      return res.status(410).json({ error: 'That character is tucked away right now.' });
+    }
     // Same visibility rule as the roster: ACL-public agents or your own.
     try {
       const { ResourceType, PermissionBits } = require('librechat-data-provider');

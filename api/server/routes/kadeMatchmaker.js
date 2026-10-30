@@ -94,8 +94,9 @@ router.get('/', requireJwtAuth, async (req, res) => {
     });
     const publicSet = new Set(publicIds.map((oid) => String(oid)));
     const all = (await db.getAgents({})) || [];
+    const attic = await require('~/server/services/kadeAgentAttic').atticIds();
     const agents = all
-      .filter((a) => a._id && publicSet.has(String(a._id)))
+      .filter((a) => a._id && publicSet.has(String(a._id)) && !attic.has(String(a.id)))
       .map((a) => ({
         id: a.id,
         name: a.name || 'Unnamed',

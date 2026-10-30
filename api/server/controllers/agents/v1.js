@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const fs = require('fs').promises;
 const { nanoid } = require('nanoid');
+const { atticIds } = require('~/server/services/kadeAgentAttic');
 const { logger } = require('@librechat/data-schemas');
 const {
   refreshS3Url,
@@ -1000,6 +1001,14 @@ const getListAgentsHandler = async (req, res) => {
       filter.$or = [{ name: regex }, { description: regex }];
     }
 
+    /* Oct 29 2026: characters in the attic stay out of every list (services/kadeAgentAttic.js).
+     * `attic=include` brings them back, marked `attic: true`, for tidying tools. */
+    const includeAttic = req.query.attic === 'include';
+    const attic = await atticIds();
+    if (!includeAttic && attic.size) {
+      filter.id = { $nin: [...attic] };
+    }
+
     // Get agent IDs the user has VIEW access to via ACL
     const accessibleIds = await findAccessibleResources({
       userId,
@@ -1080,6 +1089,9 @@ const getListAgentsHandler = async (req, res) => {
       try {
         if (agent?._id && publicSet.has(agent._id.toString())) {
           agent.isPublic = true;
+        }
+        if (includeAttic && attic.has(String(agent?.id))) {
+          agent.attic = true;
         }
         if (
           urlCache &&
@@ -1293,6 +1305,32 @@ const revertAgentVersionHandler = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+const PROMOTED_KEY = '\u0000promoted';
+
+/** Attic characters per category value (and promoted), so the tab counts match what shows. */
+async function countAtticByCategory() {
+  const counts = new Map();
+  const attic = await atticIds();
+  if (!attic.size) return counts;
+  try {
+    const rows = await require('mongoose')
+      .connection.collection('agents')
+      .find({ id: { $in: [...attic] } }, { projection: { category: 1, is_promoted: 1 } })
+      .toArray();
+    for (const row of rows) {
+      const key = row.category || '';
+      counts.set(key, (counts.get(key) || 0) + 1);
+      if (row.is_promoted === true) {
+        counts.set(PROMOTED_KEY, (counts.get(PROMOTED_KEY) || 0) + 1);
+      }
+    }
+  } catch (error) {
+    logger.warn('[/Agents/Marketplace] attic counts unavailable: ' + error.message);
+  }
+  return counts;
+}
+
 /**
  * Get all agent categories with counts
  *
@@ -1302,11 +1340,13 @@ const revertAgentVersionHandler = async (req, res) => {
 const getAgentCategories = async (_req, res) => {
   try {
     const categories = await db.getCategoriesWithCounts();
-    const promotedCount = await db.countPromotedAgents();
+    let promotedCount = await db.countPromotedAgents();
+    const atticByCategory = await countAtticByCategory();
+    promotedCount = Math.max(0, promotedCount - (atticByCategory.get(PROMOTED_KEY) || 0));
     const formattedCategories = categories.map((category) => ({
       value: category.value,
       label: category.label,
-      count: category.agentCount,
+      count: Math.max(0, (category.agentCount || 0) - (atticByCategory.get(category.value) || 0)),
       description: category.description,
     }));
 

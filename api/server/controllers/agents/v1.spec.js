@@ -2230,4 +2230,94 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.name).toBe('Renamed Agent');
     });
   });
+
+  describe('attic (Oct 29 2026)', () => {
+    const attic = require('~/server/services/kadeAgentAttic');
+    const { getAgentCategories } = require('./v1');
+    const { getCategoriesWithCounts } = require('~/models');
+    let kept;
+    let tucked;
+
+    const makeAgent = (name, extra = {}) =>
+      Agent.create({
+        id: `agent_${nanoid(12)}`,
+        name,
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        ...extra,
+      });
+
+    beforeEach(async () => {
+      await mongoose.connection.collection(attic.COLL).deleteMany({});
+      attic._forget();
+      delete process.env.KADE_AGENT_ATTIC;
+      kept = await makeAgent('Kept Character', { category: 'friends' });
+      tucked = await makeAgent('Never Used Character', { category: 'friends', is_promoted: true });
+      findAccessibleResources.mockResolvedValue([kept._id, tucked._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([kept._id, tucked._id]);
+      mockCache.get.mockResolvedValue({ urlCache: {} });
+    });
+
+    afterEach(() => {
+      delete process.env.KADE_AGENT_ATTIC;
+      attic._forget();
+    });
+
+    const listedIds = async (query = {}) => {
+      mockReq.query = query;
+      mockRes.json.mockClear();
+      await getListAgentsHandler(mockReq, mockRes);
+      return mockRes.json.mock.calls[0][0].data.map((a) => a.id);
+    };
+
+    test('an attic character leaves the list for everyone and comes back when taken out', async () => {
+      expect(await listedIds()).toEqual(expect.arrayContaining([kept.id, tucked.id]));
+
+      const put = await attic.setAttic([tucked.id, 'not-an-agent'], true, { by: 'test' });
+      expect(put).toEqual({ changed: 1, skipped: ['not-an-agent'] });
+      expect(await listedIds()).toEqual([kept.id]);
+      expect(await listedIds({ category: 'friends' })).toEqual([kept.id]);
+      expect(await listedIds({ requiredPermission: String(PermissionBits.EDIT) })).toEqual([kept.id]);
+
+      mockReq.query = { attic: 'include' };
+      mockRes.json.mockClear();
+      await getListAgentsHandler(mockReq, mockRes);
+      const included = mockRes.json.mock.calls[0][0].data;
+      expect(included.find((a) => a.id === tucked.id).attic).toBe(true);
+      expect(included.find((a) => a.id === kept.id).attic).toBeUndefined();
+
+      const back = await attic.setAttic([tucked.id], false);
+      expect(back.changed).toBe(1);
+      expect(await listedIds()).toEqual(expect.arrayContaining([kept.id, tucked.id]));
+    });
+
+    test('an attic character still opens by id, so old chats keep working', async () => {
+      await attic.setAttic([tucked.id], true);
+      mockReq.params = { id: tucked.id };
+      mockReq.user.id = tucked.author.toString();
+      await getAgentHandler(mockReq, mockRes);
+      expect(mockRes.status).not.toHaveBeenCalledWith(404);
+      expect(mockRes.json.mock.calls[0][0].id).toBe(tucked.id);
+    });
+
+    test('KADE_AGENT_ATTIC=0 shows everything without touching the attic', async () => {
+      await attic.setAttic([tucked.id], true);
+      process.env.KADE_AGENT_ATTIC = '0';
+      attic._forget();
+      expect(await listedIds()).toEqual(expect.arrayContaining([kept.id, tucked.id]));
+      expect(await mongoose.connection.collection(attic.COLL).countDocuments()).toBe(1);
+    });
+
+    test('category and moving-face counts leave attic characters out', async () => {
+      getCategoriesWithCounts.mockResolvedValue([
+        { value: 'friends', label: 'Friends', agentCount: 2, description: '' },
+      ]);
+      await attic.setAttic([tucked.id], true);
+      await getAgentCategories(mockReq, mockRes);
+      const rows = mockRes.json.mock.calls[0][0];
+      expect(rows.find((r) => r.value === 'friends').count).toBe(1);
+      expect(rows.find((r) => r.value === 'promoted')).toBeUndefined();
+    });
+  });
 });
