@@ -237,7 +237,7 @@ export type VoiceCatalog = {
   categories?: { name: string; voices: string[] }[];
   /** Old spelling ("Voice 541") -> the current described label. */
   renames?: Record<string, string>;
-  /** Labels that speak through fish.audio (they sound less natural sped up). */
+  /** Labels that speak through fish.audio (kept out of "Good for describing"). */
   fish?: string[];
 };
 let catalog: { at: number; data: VoiceCatalog } | undefined;
@@ -1647,18 +1647,23 @@ function visionCall(
 }
 
 /**
- * Speaks one description through the platform voice proxy. `speed` is the voice engine's own
- * rate (1 to 1.5), which sounds more natural than stretching the audio afterwards. A failed call
- * is tried up to three times (after 5 s and 20 s, or when the proxy's Retry-After says) before
- * the description is given up, because the words were already paid for. Every byte sent is
- * booked. Names are sent in their spoken form (`spokenForm`), so a voice sample says them as a
- * description would; the engine has already added its ledger.
+ * Speaks one description through the platform voice proxy. `speed` is the speed asked of the voice
+ * (1 to 1.5): an Inworld voice renders at it, and a Fish voice is rendered as its natural take and
+ * stretched by Praat to exactly that number, which sounds more natural than ffmpeg's atempo (Kade,
+ * Oct 30 2026: "All the prat clips sounded completely natural."). A failed call is tried up to
+ * three times (after 5 s and 20 s, or when the proxy's Retry-After says) before the description is
+ * given up, because the words were already paid for. Every byte sent is booked. Names are sent in
+ * their spoken form (`spokenForm`), so a voice sample says them as a description would; the engine
+ * has already added its ledger.
+ *
+ * Answers the ratio the proxy says it really achieved (x-kade-tts-speed-applied), or nothing when
+ * it did not say; timing.ts `clipSpeed` reads it. `fishSpeed: 'legacy'` keeps one request on the
+ * old named pace, whatever the proxy's FISH_SPEED_EXACT switch says: the engine sends it for a job
+ * started before exact speed (`Settings.speedModel`), and no other caller ever does.
  *
  * Every voice gets the words alone. Fish voices used to get '[clear engaged audio description]'
- * in front (Sep 25 2026); the voice proxy already gives them its own pace direction for the speed
- * asked ("fast-talking, rapid delivery with almost no pauses" from 1.35 up), and on Kade's Fish
- * voice the words alone came out 7% faster with every word still heard (Oct 17 2026, 16 lines x 2
- * takes, Deepgram).
+ * in front (Sep 25 2026); on Kade's Fish voice the words alone came out 7% faster with every word
+ * still heard (Oct 17 2026, 16 lines x 2 takes, Deepgram).
  */
 export async function synthesize(
   text: string,
@@ -1668,10 +1673,12 @@ export async function synthesize(
   speed: number,
   signal: AbortSignal,
   meter: Meter,
-): Promise<void> {
+  fishSpeed?: 'legacy',
+): Promise<number | void> {
   const input = spokenForm(speakable(text));
   if (!input) throw new Plain('There was nothing to say for this description.');
   const cost = Buffer.byteLength(input, 'utf8') * speechPerByte;
+  let applied: number | undefined;
   await attempt(
     3,
     signal,
@@ -1686,6 +1693,7 @@ export async function synthesize(
             speed: Math.min(1.5, Math.max(1, Math.round(speed * 100) / 100)),
             delivery: 'STABLE',
             response_format: 'wav',
+            ...(fishSpeed ? { fishSpeed } : {}),
           },
           {
             headers: {
@@ -1705,9 +1713,12 @@ export async function synthesize(
         if (!String(response.headers['content-type']).startsWith('audio/') || body.length < 100)
           throw new Unplayable('The selected voice did not return playable audio.');
         await writeFile(file, body);
+        const said = Number(response.headers['x-kade-tts-speed-applied']);
+        applied = Number.isFinite(said) && said > 0 ? said : undefined;
         return { costUSD: cost };
       }),
     (error) => transient(error) || error instanceof Unplayable,
     steps([5000, 20000]),
   );
+  return applied;
 }

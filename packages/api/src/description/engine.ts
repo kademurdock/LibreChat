@@ -23,7 +23,7 @@ import type {
   Word,
 } from './types';
 import type { Freeze, Media, Rational } from './media';
-import type { Leftover, Variant } from './timing';
+import type { ClipSpeed, Leftover, Variant } from './timing';
 import type { Brief, Heard } from './prompt';
 import type { Duck, Pause } from './mix';
 import type { FailedCall, FlexOutcome, Look } from './providers';
@@ -78,6 +78,7 @@ import {
   outputTimeline,
   planSections,
   paceCheck,
+  clipSpeed,
   ranOn,
   repeatsWords,
   snapToCuts,
@@ -95,7 +96,7 @@ import {
   splitCardReadings,
 } from './ledger';
 import { listen } from './listen';
-import { Halt } from './types';
+import { fishSpeedModel, Halt } from './types';
 
 export { buildReport } from './transcript';
 
@@ -116,7 +117,8 @@ export type Providers = {
     speed: number,
     signal: AbortSignal,
     meter: Meter,
-  ) => Promise<void>;
+    fishSpeed?: 'legacy',
+  ) => Promise<number | void>;
   /**
    * What a look is expected to cost before it is asked (production: `expectedLook`). A second look
    * starts only while her approval has room for at least this much of it. Absent (test
@@ -497,7 +499,7 @@ function failedCharge(error: unknown, reserve: number, aborted: boolean): number
     : reserve;
 }
 
-type Voiced = { pcm: Float32Array; base: number };
+type Voiced = { pcm: Float32Array; base: number; native: number };
 /** One rendered end of the Kade-AI credit, and the held first frame under an opening one. */
 type CreditPart = { file: string; picture?: string; seconds: number; text: string; logo?: string };
 type Looked = {
@@ -649,6 +651,24 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   const levels = levelsFor(fixed, settings.volume);
   const preset = presets[settings.volume];
   const native = Math.min(1.5, settings.rate);
+  /**
+   * A job from before exact speed keeps the old named pace on every later run: finished sections
+   * are baked, so a film would otherwise jump speed partway (`Settings.speedModel`). Anything above
+   * `native` is atempo for both, the same structure as Inworld.
+   */
+  const legacySpeed = settings.speedModel !== fishSpeedModel;
+  const fishSpeed = legacySpeed ? 'legacy' : undefined;
+  /** This run has heard a clip the proxy really stretched (timing.ts `clipSpeed`). */
+  let provenStretch = false;
+  const speedOf = (applied: number | void): ClipSpeed => {
+    const speed = clipSpeed(native, applied, {
+      legacy: legacySpeed,
+      fish: !!request.fishVoice,
+      proven: provenStretch,
+    });
+    if (speed.stretched) provenStretch = true;
+    return speed;
+  };
   const surveyed = !!settings.firstLook && !saved.analyses && fixed.seconds > 120 && count > 1;
   const surveyShare = surveyed ? 6 : 0;
   const share = (i: number, part: number) =>
@@ -667,10 +687,25 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     stills.forEach((still, k) => {
       if (overlap(still, section) >= 2) set.add(k);
     });
-  const prior = fixed.secondsPerByte ?? seedSecondsPerByte;
+  /**
+   * A measured pace is only kept for the voice and speed method it was measured under. An old
+   * Fish plan's figure is inflated by the speed asked, so the first lines of a new run would
+   * over-estimate, voice extra variants and get smaller word budgets until 200 bytes are heard.
+   * An older plan does not say what it measured: an old-method run reads it as it always did.
+   */
+  const paceFrom: NonNullable<Plan['secondsPerByteFrom']> = {
+    voice: settings.voice,
+    ...(legacySpeed ? {} : { speedModel: fishSpeedModel }),
+  };
+  const paceCarries = fixed.secondsPerByteFrom
+    ? fixed.secondsPerByteFrom.voice === paceFrom.voice &&
+      fixed.secondsPerByteFrom.speedModel === paceFrom.speedModel
+    : legacySpeed;
+  const carriedPace = paceCarries ? fixed.secondsPerByte : undefined;
+  const prior = carriedPace ?? seedSecondsPerByte;
   const measured = { bytes: 0, seconds: 0 };
   let secondsPerByte = prior;
-  let keptSecondsPerByte = fixed.secondsPerByte;
+  let keptSecondsPerByte = carriedPace;
   let voiceFailures = 0;
   let stripMissing = false;
   const carried = new Map<number, Carried[]>();
@@ -1090,10 +1125,13 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     text: string,
     pcm: Float32Array,
     what: string,
+    clipNative: number,
   ): Promise<'clean' | 'repeated' | 'long'> {
     const said = pcmSeconds(pcm);
     const known = measured.bytes >= 200;
-    const pace = known ? measured.seconds / measured.bytes / native : secondsPerByte / native;
+    const pace = known
+      ? measured.seconds / measured.bytes / clipNative
+      : secondsPerByte / clipNative;
     const check = paceCheck(text, said, pace);
     if (!check.suspect) return 'clean';
     const heard = providers.listen ? await providers.listen(pcm, signal) : null;
@@ -1130,37 +1168,49 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     };
     for (let take = 0; take < voiceTakes; take++) {
       try {
-        await providers.synthesize(
-          text,
-          settings.voice,
-          take ? `${request.session}:again${take > 1 ? take : ''}` : request.session,
-          file,
-          native,
-          signal,
-          meter,
+        const speed = speedOf(
+          await providers.synthesize(
+            text,
+            settings.voice,
+            take ? `${request.session}:again${take > 1 ? take : ''}` : request.session,
+            file,
+            native,
+            signal,
+            meter,
+            fishSpeed,
+          ),
         );
         const pcm = trimSilence(await decodeVoice(file, signal));
         voiceFailures = 0;
         if (pcm.length <= sampleRate * 0.2) return fallback ?? null;
         const said = pcmSeconds(pcm);
         const last = take + 1 >= voiceTakes;
-        if (ranOn(text, said)) {
+        if (ranOn(text, said * speed.oneX)) {
           log(
-            `Voice ran on: ${seconds1(said)} for about ${seconds1(spokenSeconds(text))} of words ("${text.slice(0, 32)}")${last ? '.' : '; asked once more.'}`,
+            `Voice ran on: ${seconds1(said * speed.oneX)} for about ${seconds1(spokenSeconds(text))} of words ("${text.slice(0, 32)}")${last ? '.' : '; asked once more.'}`,
           );
           continue;
         }
-        const verdict = await heardBack(text, pcm, `Voice take ${take + 1} of ${voiceTakes}`);
+        const verdict = await heardBack(
+          text,
+          pcm,
+          `Voice take ${take + 1} of ${voiceTakes}`,
+          speed.native,
+        );
         if (verdict === 'repeated') continue;
-        const base = said * native;
+        const base = said * speed.native;
         if (verdict === 'long') {
-          if (!fallback || base < fallback.base) fallback = { pcm, base };
+          if (!fallback || base < fallback.base) fallback = { pcm, base, native: speed.native };
           continue;
         }
+        if (speed.native < native)
+          log(
+            `Voice came back at ${speed.native}x of ${native}x ("${text.slice(0, 32)}"); the difference is made up here.`,
+          );
         measured.bytes += bytes(text);
         measured.seconds += base;
         secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);
-        return { pcm, base };
+        return { pcm, base, native: speed.native };
       } catch (error) {
         if (signal.aborted || error instanceof Halt) throw error;
         if (++voiceFailures >= 6)
@@ -1605,7 +1655,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       (keptSecondsPerByte === undefined || Math.abs(secondsPerByte / keptSecondsPerByte - 1) > 0.05)
     ) {
       keptSecondsPerByte = secondsPerByte;
-      const update = { ...fixed, secondsPerByte };
+      const update = { ...fixed, secondsPerByte, secondsPerByteFrom: paceFrom };
       await safely(() => keeper.keepPlan(update, words), 'The measured narration speed');
     }
     return record;
@@ -1664,7 +1714,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const ducks: Duck[] = [];
     for (let j = 0; j < timeline.length; j++) {
       const placement = timeline[j];
-      const sped = await stretch(input.clips[j].pcm, placement.rate / native, signal);
+      const clip = input.clips[j];
+      const sped = await stretch(clip.pcm, placement.rate / clip.native, signal);
       const pcm = level(sped, levels.narration - 3.01);
       const duration = pcmSeconds(pcm);
       clips.push({ at: placement.outputAt, pcm });
@@ -1808,30 +1859,37 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       let longTake: Float32Array | undefined;
       for (let take = 0; take < creditTakes && !words; take++) {
         try {
-          await providers.synthesize(
-            sayLine,
-            settings.voice,
-            `${request.session}:credit${take ? `:again${take}` : ''}`,
-            spoken,
-            native,
-            signal,
-            booked,
+          const speed = speedOf(
+            await providers.synthesize(
+              sayLine,
+              settings.voice,
+              `${request.session}:credit${take ? `:again${take}` : ''}`,
+              spoken,
+              native,
+              signal,
+              booked,
+              fishSpeed,
+            ),
           );
           const said = trimSilence(await decodeVoice(spoken, signal));
           if (said.length <= sampleRate * 0.2) throw new Error('The voice returned no words.');
-          if (ranOn(sayLine, pcmSeconds(said), creditRunOn))
+          if (ranOn(sayLine, pcmSeconds(said) * speed.oneX, creditRunOn))
             log(
-              `The Kade-AI ${where} credit's voice ran on: ${seconds1(pcmSeconds(said))} for about ${seconds1(spokenSeconds(sayLine))} of words (take ${take + 1} of ${creditTakes}).`,
+              `The Kade-AI ${where} credit's voice ran on: ${seconds1(pcmSeconds(said) * speed.oneX)} for about ${seconds1(spokenSeconds(sayLine))} of words (take ${take + 1} of ${creditTakes}).`,
             );
           else {
             const verdict = await heardBack(
               sayLine,
               said,
               `The Kade-AI ${where} credit (take ${take + 1} of ${creditTakes})`,
+              speed.native,
             );
-            if (verdict === 'clean') words = said;
-            else if (verdict === 'long' && (!longTake || said.length < longTake.length))
-              longTake = said;
+            if (verdict !== 'repeated') {
+              /* The credit is never fit-sped, so a Praat hiccup is made up right here. */
+              const even = await stretch(said, native / speed.native, signal);
+              if (verdict === 'clean') words = even;
+              else if (!longTake || even.length < longTake.length) longTake = even;
+            }
           }
         } finally {
           await rm(spoken, { force: true });

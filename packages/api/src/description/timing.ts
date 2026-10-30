@@ -252,8 +252,7 @@ export function tempoFilters(rate: number): string {
  * Seconds a line of narration needs at 1x, the slowest any voice is asked for: the engine's
  * starting length per UTF-8 byte (engine.ts seedSecondsPerByte), with digits, short all-capital
  * words (often said letter by letter) and inner dots ("www.mgm.com", said "dot") counted as the
- * longer words they become. Fish voices come back near this length whatever speed is asked for,
- * because the voice proxy never stretches them.
+ * longer words they become.
  */
 export function spokenSeconds(words: string): number {
   const digits = (words.match(/\p{N}/gu) ?? []).length;
@@ -276,6 +275,7 @@ export const creditRunOn: RunOnLimit = { factor: 2, slack: 2.5 };
  * 2026: Kade's Fish voice said the five-word opening credit about fifteen times over 48 s, and in
  * later tests it went on into made-up chatter after the line, 2 takes in 6). Measured against
  * that job's 33 real descriptions, the slowest (the MGM card, 14.9 s) sat under half its limit.
+ * The limit is sized at 1x, so a sped-up clip is judged at its 1x length (`ClipSpeed.oneX`).
  * KADE_VOICE_RUNON=0 turns the check off.
  */
 export function ranOn(words: string, seconds: number, limit: RunOnLimit = lineRunOn): boolean {
@@ -303,6 +303,56 @@ export function paceCheck(words: string, seconds: number, pace: number): PaceChe
     suspect: seconds > 1.4 * expected + 0.3,
     strong: seconds > 1.8 * expected + 0.6,
   };
+}
+
+/** Within this share of the number asked, a clip counts as having hit it: no atempo pass for it. */
+const speedNear = 0.03;
+/** What one voiced clip really came back at, against the speed asked of the voice proxy. */
+export type ClipSpeed = {
+  /** The clip's own engine speed: its length times this is its 1x length; atempo makes up the rest. */
+  native: number;
+  /** What its length is multiplied by before `ranOn` judges it. */
+  oneX: number;
+  /** The proxy's own number shows it stretched this clip, so exact speed is on over there. */
+  stretched: boolean;
+};
+/**
+ * Reads the voice proxy's x-kade-tts-speed-applied (`applied`) for one clip of `sent` speed.
+ *
+ * Kade, Oct 30 2026: "All the prat clips sounded completely natural." A Fish clip now comes back
+ * stretched by the number, unless Praat had a hiccup: then a whole line would play at about 1x, so
+ * the clip keeps what it really got as its own native and atempo makes up the difference. A figure
+ * within 3% (a short clip's rounding, a long line's seams) counts as the number, since a second pass
+ * through atempo for that would cost more than it gives.
+ *
+ * - `legacy`, a run of a job from before exact speed: everything stays as it was. The proxy gives
+ *   it the old named pace, and "1" from the proxy there says nothing about the speed heard.
+ * - No header (an Inworld voice, or a proxy from before the header): trust the number. The run-on
+ *   check trusts it too for Inworld, which really renders at the number, but not for Fish, where
+ *   a proxy without exact speed still returns about 1x.
+ * - "1" at a higher number is the one that can't be read alone. It means a hiccup while the
+ *   proxy's FISH_SPEED_EXACT is on and plain old behavior while it is off, where atempo on top
+ *   would run the line far too fast. So it counts as a hiccup only once this run has seen a clip
+ *   that really was stretched (`proven`). Until then the clip is treated as before this change,
+ *   so the failure is the old sound, never a new one.
+ */
+export function clipSpeed(
+  sent: number,
+  applied: number | void,
+  {
+    legacy = false,
+    fish = false,
+    proven = false,
+  }: { legacy?: boolean; fish?: boolean; proven?: boolean },
+): ClipSpeed {
+  if (legacy) return { native: sent, oneX: 1, stretched: false };
+  if (typeof applied !== 'number' || !Number.isFinite(applied) || applied <= 0)
+    return { native: sent, oneX: fish ? 1 : sent, stretched: false };
+  const stretched = applied > 1 + speedNear;
+  if (applied >= sent * (1 - speedNear)) return { native: sent, oneX: sent, stretched };
+  if (!stretched && !proven) return { native: sent, oneX: 1, stretched: false };
+  const native = Math.max(1, applied);
+  return { native, oneX: native, stretched };
 }
 
 const heardWords = (text: string): string[] =>

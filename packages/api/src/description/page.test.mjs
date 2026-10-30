@@ -446,7 +446,7 @@ const config = {
   recent: [],
   suggested: ['clear woman · flint', 'warm man · oak'],
   fish: ['Kade Murdock'],
-  fishNote: 'This voice sounds less natural when it is sped up, and narration usually is. For speeds above 1×, a voice under Good for describing will sound smoother.',
+  fishNote: 'Fish narration now follows the speed setting exactly.',
   maxFavorites: 12,
   voicesAvailable: true,
   voices: ['clear woman · flint', 'warm man · oak', 'bright girl · wren', 'Kade Murdock'],
@@ -2364,7 +2364,7 @@ test('narrator default: the Fish note shows only while a Fish voice is chosen, a
   const server = makeServer();
   const env = await boot({ server, audio: webAudio() });
   const { $ } = env;
-  assert.doesNotMatch($('voice-note').textContent, /sped up/);
+  assert.doesNotMatch($('voice-note').textContent, /follows the speed/);
   await env.click('voice-open');
   await env.type('voice-filter', 'kade', 'input');
   await env.fire(optionFor($, 'Kade Murdock'), 'click');
@@ -2374,7 +2374,7 @@ test('narrator default: the Fish note shows only while a Fish voice is chosen, a
   assert.equal($('rate').value, '1.5', 'the usual speed is left as she set it');
   await env.click('voice-open');
   await env.choose('voice-kind', 'suggested');
-  assert.equal(optionsOf($).some((b) => /sped up/.test(b.textContent)), false, 'the note is not repeated on every option');
+  assert.equal(optionsOf($).some((b) => /follows the speed/.test(b.textContent)), false, 'the note is not repeated on every option');
   await env.fire(optionFor($, 'warm man · oak'), 'click');
   assert.equal(env.status(), 'Oak chosen.');
   assert.equal($('voice-note').textContent, '');

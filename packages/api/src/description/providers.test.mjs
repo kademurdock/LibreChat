@@ -1652,3 +1652,33 @@ test('youtube: the size watch skips a file renamed or removed while it counts', 
   assert.equal(await folderBytes(folder, listed), 1234);
   assert.equal(await folderBytes(folder), 1234);
 });
+
+/** Oct 30 2026: "we need Prat as the fish speed controler in all methods that use fish". */
+test('providers: narration sends fishSpeed only when asked and answers the speed the proxy achieved', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const { meter } = ledger();
+  const said = (applied, ...last) => {
+    const posts = [];
+    const fake = fakeAxios(async ({ url, body }) => {
+      if (url.endsWith('/voices.json')) return { data: { voices: ['Voice 1'] } };
+      posts.push(body);
+      return {
+        headers: { 'content-type': 'audio/wav', ...(applied === undefined ? {} : { 'x-kade-tts-speed-applied': applied }) },
+        data: Buffer.alloc(200),
+      };
+    });
+    return synthesize('A woman waves.', 'Voice 1', 'session', join(scratch, 'speed-line.wav'), 1.5, signal, meter, ...last)
+      .then((answer) => ({ answer, body: posts[0] }))
+      .finally(() => fake.restore());
+  };
+  const plain = await said('1.462');
+  assert.equal(plain.answer, 1.462, 'the real ratio comes back');
+  assert.equal('fishSpeed' in plain.body, false, 'a new job sends nothing: the proxy switch makes the number exact');
+  assert.equal(plain.body.speed, 1.5);
+  assert.equal(plain.body.delivery, 'STABLE');
+  const old = await said('1', 'legacy');
+  assert.equal(old.body.fishSpeed, 'legacy');
+  assert.equal(old.answer, 1);
+  for (const junk of [undefined, '', 'fast', '0', '-1'])
+    assert.equal((await said(junk)).answer, undefined, `a header of ${junk} means the proxy did not say`);
+});

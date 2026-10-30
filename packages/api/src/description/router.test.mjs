@@ -91,6 +91,10 @@ let simulateConcurrentCosts = false;
 let sampleCost = 0;
 /** Voice samples that come back as a 30 s run-on before a good take, and the long file. */
 let sampleRunsOn = 0;
+/** What the fake voice says the proxy achieved (x-kade-tts-speed-applied), when set. */
+let voiceApplied;
+/** The fishSpeed field of every narration request, in order. */
+const fishSpeeds = [];
 let longWav;
 /** When set, narration goes through the meter the way the real synthesize sends it (free today). */
 let meteredNarration = false;
@@ -514,8 +518,9 @@ before(async () => {
           ),
         };
       },
-      synthesize: async (text, _voice, _session, file, _speed, _signal, meter) => {
+      synthesize: async (text, _voice, _session, file, _speed, _signal, meter, fishSpeed) => {
         calls.synthesize++;
+        fishSpeeds.push(fishSpeed);
         if (sampleRunsOn && file.endsWith('sample.wav')) {
           sampleRunsOn--;
           await copyFile(longWav, file);
@@ -538,6 +543,7 @@ before(async () => {
           return;
         }
         await copyFile(voiceWav, file);
+        return voiceApplied;
       },
     },
     describe: async (input) => {
@@ -733,7 +739,7 @@ test('narrators: Kade’s professional voice reads until she chooses; her defaul
   assert.equal(fresh.myDefaultVoice, null);
   assert.deepEqual(fresh.suggested, [dory, flint], 'the seed list, in order, keeping only listed Inworld voices');
   assert.deepEqual(fresh.fish, ['Kade Murdock']);
-  assert.match(fresh.fishNote, /sped up/);
+  assert.equal(fresh.fishNote, 'Fish narration now follows the speed setting exactly.');
   assert.deepEqual(fresh.favorites, []);
   assert.deepEqual(fresh.recent, []);
   assert.equal(fresh.maxFavorites, 12);
@@ -4298,5 +4304,189 @@ test('Kade-AI credit: every copy begins with logo 3 and ends with logo 4 at no c
       await park(id);
       await call('delete', `/jobs/${id}`, who).expect(200);
     }
+  }
+});
+
+/** Puts a job back as it was before exact speed: the job and every copy lose their stamp. */
+const unstamp = (id) =>
+  Jobs.updateOne(
+    { _id: id },
+    { $unset: { 'settings.speedModel': 1, 'copies.$[].settings.speedModel': 1 } },
+  );
+const lastRun = async (start) => {
+  fishSpeeds.length = 0;
+  requests.length = 0;
+  await start();
+};
+const expectLegacy = (what) => {
+  assert.ok(fishSpeeds.length > 0, `${what} voiced something`);
+  assert.ok(fishSpeeds.every((item) => item === 'legacy'), `${what} stays on the old pace: ${fishSpeeds}`);
+  assert.equal(requests.at(-1).settings.speedModel, undefined, what);
+};
+const expectExact = (what) => {
+  assert.ok(fishSpeeds.length > 0, `${what} voiced something`);
+  assert.ok(fishSpeeds.every((item) => item === undefined), `${what} sends nothing: ${fishSpeeds}`);
+  assert.equal(requests.at(-1).settings.speedModel, 2, what);
+};
+
+test('Fish speed: every new run is stamped on the job and the copy, and a client can neither set nor drop it', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-new-owner';
+  const id = await readyJob(owner, 'speed-new-upload-001', 150);
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/start`, owner).send({ ...settings, speedModel: 1 }).expect(202);
+    const done = await settle(id, ['done', 'failed'], owner);
+    assert.equal(done.state, 'done', done.error);
+  });
+  expectExact('a new job');
+  const stored = await Jobs.findById(id).lean();
+  assert.equal(stored.settings.speedModel, 2);
+  assert.equal(stored.copies.at(-1).settings.speedModel, 2);
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/redo`, owner)
+      .send({ sections: [0], expectedVersion: stored.version })
+      .expect(202);
+    assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  });
+  expectExact('a part of a new job described again');
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+});
+
+test('Fish speed: an old job stays on the old pace through a correction and a redo, and a whole new voicing leaves it', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-old-owner';
+  const id = await readyJob(owner, 'speed-old-upload-001', 150);
+  await call('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+  const first = await settle(id, ['done', 'failed'], owner);
+  assert.equal(first.state, 'done', first.error);
+  await unstamp(id);
+
+  /* A correction reuses the unedited section, so it must match it. */
+  const script = (await call('get', `/jobs/${id}/script`, owner).expect(200)).body;
+  const edit = { ...script.cues[0], text: 'Pat holds a green folder.', shortText: 'Pat holds a folder.', omit: false };
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/revoice`, owner)
+      .send({ ...settings, expectedVersion: 1, edits: [edit] })
+      .expect(202);
+    assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  });
+  expectLegacy('a correction');
+  let stored = await Jobs.findById(id).lean();
+  assert.equal(stored.settings.speedModel, undefined);
+  assert.equal(stored.copies.at(-1).settings.speedModel, undefined, 'the copy keeps no stamp either');
+
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/redo`, owner)
+      .send({ sections: [0], expectedVersion: stored.version })
+      .expect(202);
+    assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  });
+  expectLegacy('Describe this part again');
+  stored = await Jobs.findById(id).lean();
+
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/revoice`, owner).send({ ...settings, expectedVersion: stored.version }).expect(202);
+    assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  });
+  expectExact('a whole new voicing');
+  stored = await Jobs.findById(id).lean();
+  assert.equal(stored.settings.speedModel, 2);
+  assert.equal(stored.copies.at(-1).settings.speedModel, 2);
+  assert.equal(stored.copies[0].settings.speedModel, undefined, 'the old copy is still marked old');
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+});
+
+test('Fish speed: Describe the rest of an old preview keeps the old pace; Continue with a new voice leaves it', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-preview-owner';
+  const id = await readyJob(owner, 'speed-preview-upload', 150);
+  await call('post', `/jobs/${id}/start`, owner).send({ ...settings, preview: true }).expect(202);
+  assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  await unstamp(id);
+  await lastRun(async () => {
+    await call('post', `/jobs/${id}/finish`, owner).send({}).expect(202);
+    assert.equal((await settle(id, ['done', 'failed'], owner)).state, 'done');
+  });
+  expectLegacy('Describe the rest');
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+
+  /* A stopped run, which is also how a worker restart finds it: the stored settings decide. */
+  const stopped = await readyJob(owner, 'speed-stopped-upload', 150);
+  failLaterSections = true;
+  try {
+    await call('post', `/jobs/${stopped}/start`, owner).send(settings).expect(202);
+    assert.equal((await settle(stopped, ['failed', 'done'], owner)).state, 'failed');
+  } finally {
+    failLaterSections = false;
+  }
+  await unstamp(stopped);
+  await lastRun(async () => {
+    await call('post', `/jobs/${stopped}/resume`, owner).send({}).expect(202);
+    const finished = await settle(stopped, ['done', 'failed'], owner);
+    assert.equal(finished.state, 'done', finished.error);
+    assert.equal(finished.version, 1, 'the same version carries on');
+  });
+  expectLegacy('Continue');
+  await call('delete', `/jobs/${stopped}`, owner).expect(200);
+
+  const other = await readyJob(owner, 'speed-voice-upload-1', 150);
+  failLaterSections = true;
+  try {
+    await call('post', `/jobs/${other}/start`, owner).send(settings).expect(202);
+    assert.equal((await settle(other, ['failed', 'done'], owner)).state, 'failed');
+  } finally {
+    failLaterSections = false;
+  }
+  await unstamp(other);
+  await lastRun(async () => {
+    await call('post', `/jobs/${other}/resume`, owner).send({ voice: 'clear woman \u00b7 flint' }).expect(202);
+    const finished = await settle(other, ['done', 'failed'], owner);
+    assert.equal(finished.state, 'done', finished.error);
+    assert.equal(finished.version, 2, 'a new voice makes a new version');
+  });
+  expectExact('Continue with a new voice, which voices every section again');
+  await call('delete', `/jobs/${other}`, owner).expect(200);
+});
+
+test('Fish speed: a sample takes the number the proxy achieved, and a Fish sample is only cached once the proxy shows it stretched it', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'speed-sample-owner';
+  const say = (body) => call('post', '/sample', owner).send(body).expect(200);
+  const seconds = (response) => (response.body.length - 44) / 2 / 24000;
+  const base = seconds(await say({ voice: 'Voice 1', rate: 1.5, text: 'Speed base' }));
+  try {
+    /* A switched-off proxy: no stretch shown, the sound stays as it was, and it is not kept. */
+    let voiced = calls.synthesize;
+    voiceApplied = 1;
+    const off = await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact one' });
+    await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact one' });
+    assert.equal(calls.synthesize - voiced, 2, 'not cached: the flip must reach it with no restart');
+    assert.ok(Math.abs(seconds(off) - base) < 0.1, 'no atempo on top of the old pace');
+    voiceApplied = undefined;
+    voiced = calls.synthesize;
+    await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact two' });
+    await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact two' });
+    assert.equal(calls.synthesize - voiced, 2, 'no header says nothing either');
+    /* Stretched: kept, and above 1.5 only the rest is atempo. */
+    voiceApplied = 1.5;
+    voiced = calls.synthesize;
+    const on = await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact three' });
+    await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact three' });
+    assert.equal(calls.synthesize - voiced, 1, 'cached once the stretch shows');
+    assert.ok(Math.abs(seconds(on) - base) < 0.1, 'nothing more to do at the number');
+    const faster = await say({ voice: 'Kade Murdock', rate: 3, text: 'Exact four' });
+    assert.ok(Math.abs(seconds(faster) - base / 2) < 0.1, 'Praat 1.5, atempo 2');
+    /* A partly stretched clip keeps its own number, so atempo makes up the rest. */
+    voiceApplied = 1.2;
+    const part = await say({ voice: 'Kade Murdock', rate: 1.5, text: 'Exact five' });
+    assert.ok(Math.abs(seconds(part) - base / 1.25) < 0.1, 'atempo 1.25 makes up for it');
+    /* At 1x there is nothing for the switch to change. */
+    voiceApplied = undefined;
+    voiced = calls.synthesize;
+    await say({ voice: 'Kade Murdock', rate: 1, text: 'Exact six' });
+    await say({ voice: 'Kade Murdock', rate: 1, text: 'Exact six' });
+    assert.equal(calls.synthesize - voiced, 1);
+  } finally {
+    voiceApplied = undefined;
   }
 });

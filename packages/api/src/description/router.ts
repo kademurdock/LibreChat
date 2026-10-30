@@ -79,9 +79,9 @@ import { creditWhere, logoChoice, logos } from './credit';
 import type { Credit, CreditLogo } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
-import { settingsSchema, Halt, tiers } from './types';
+import { fishSpeedModel, settingsSchema, Halt, tiers } from './types';
 import { pcmSeconds, sampleRate, trimSilence } from './mix';
-import { ranOn } from './timing';
+import { clipSpeed, ranOn } from './timing';
 
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
 /** How a rehearsal ended; every ending leaves the video ready to describe. */
@@ -1112,8 +1112,7 @@ const auditionsPerHour = () =>
 const maxRecent = 8;
 /** The prefs row that holds the platform's own lists rather than one person's. */
 const houseKey = '__describing__';
-const fishNote =
-  'This Fish voice follows the reference sample’s natural pace. Audition it at your narration speed; lower the speed if the words sound rushed.';
+const fishNote = 'Fish narration now follows the speed setting exactly.';
 type Catalog = NarratorCatalog;
 /** The current label for a stored name: an exact label, or an old spelling ("Voice 541") renamed since. */
 function listed(catalog: Catalog, name?: string | null): string | undefined {
@@ -2082,6 +2081,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const settings = settingsSchema.parse(body);
     if (!admin || !settings.tier) delete settings.tier;
     if (!admin || settings.credit !== false) delete settings.credit;
+    /* Every start voices all of its narration, so it takes exact speed whatever a client sent. */
+    settings.speedModel = fishSpeedModel;
     const preview =
       z.object({ preview: z.boolean().optional() }).parse(body ?? {}).preview === true;
     const seconds = job.seconds || 0;
@@ -2260,6 +2261,8 @@ export function createDescriptionRouter(hooks: Hooks): {
         throw new Problem('A description no longer exists. Reopen the script.');
     }
     const reuseUnchanged = edits.length > 0 && sameVoice(settings, job.settings);
+    /* A whole new voicing may leave the old speed behind; reused sections keep the job's stamp. */
+    if (!reuseUnchanged) settings.speedModel = fishSpeedModel;
     const manifest = manifestOf(job, base);
     const edited = new Set(edits.map((edit) => Number(edit.id.split(':')[0])));
     const whole = workingSeconds(job.seconds, base.range);
@@ -2425,6 +2428,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const retry = new Set(job.retry ?? []);
     const manifest = (job.manifest ?? []).map((entry, i) => (retry.has(i) ? null : entry));
     const changed = !sameVoice(settings, job.settings) && doneCount(manifest) > 0;
+    /* A changed voice re-voices every section (below), so it may leave the old speed behind. */
+    if (changed) settings.speedModel = fishSpeedModel;
     const redo = new Set(job.redo ?? []);
     let scope: number[] = [];
     if (spans) scope = kind === 'redo' ? [...redo] : inScope(spans, job.stopAfter);
@@ -3792,7 +3797,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const text = input.text === undefined ? sampleText : clip(cleanSpoken(input.text), 200);
     if (!text) throw new Problem('Type a word or name to try.', 400, 'text');
     const rate = Math.round(input.rate * 20) / 20;
-    const cacheKey = `${input.voice}|${rate}|${text}`;
+    const cacheKey = `${fishSpeedModel}|${input.voice}|${rate}|${text}`;
     let audio = samples.get(cacheKey);
     if (!audio) {
       const uses = audition ? auditionUse : sampleUse;
@@ -3817,30 +3822,38 @@ export function createDescriptionRouter(hooks: Hooks): {
         );
       uses.set(owner, [...recent, Date.now()]);
       let spent = 0;
+      let keep = false;
       const directory = await mkdtemp(join(tmpdir(), 'kade-voice-sample-'));
       try {
         const signal = AbortSignal.timeout(90 * second);
         const native = Math.min(1.5, rate);
         const file = join(directory, 'sample.wav');
+        const catalog = await voiceCatalog();
+        const fish = !!catalog.fish?.includes(listed(catalog, input.voice) ?? input.voice);
         /* A short word or name is where a voice most often runs on (engine.ts `voice`). */
         let heard: Float32Array | null = null;
+        let speed = clipSpeed(native, undefined, { fish });
         for (let take = 0; take < 2 && !heard; take++) {
-          await (hooks.providers?.synthesize ?? synthesize)(
-            text,
-            input.voice,
-            take ? `sample:${owner}:again` : `sample:${owner}`,
-            file,
+          speed = clipSpeed(
             native,
-            signal,
-            async (kind, _reserve, action) => {
-              const result = await action();
-              spent += result.costUSD;
-              /* Voice samples are free to everyone: booked for the operator, charged to no one. */
-              await hooks.usage(owner, 'voice-sample', kind, result.costUSD, 0).catch(() => {});
-            },
+            await (hooks.providers?.synthesize ?? synthesize)(
+              text,
+              input.voice,
+              take ? `sample:${owner}:again` : `sample:${owner}`,
+              file,
+              native,
+              signal,
+              async (kind, _reserve, action) => {
+                const result = await action();
+                spent += result.costUSD;
+                /* Voice samples are free to everyone: booked for the operator, charged to no one. */
+                await hooks.usage(owner, 'voice-sample', kind, result.costUSD, 0).catch(() => {});
+              },
+            ),
+            { fish },
           );
           const decoded = await decodeVoice(file, signal);
-          if (!ranOn(text, pcmSeconds(trimSilence(decoded)))) heard = decoded;
+          if (!ranOn(text, pcmSeconds(trimSilence(decoded)) * speed.oneX)) heard = decoded;
         }
         if (!heard)
           throw new Problem(
@@ -3848,14 +3861,20 @@ export function createDescriptionRouter(hooks: Hooks): {
             502,
             'ranOn',
           );
-        audio = wav(await stretch(heard, rate / native, signal));
+        audio = wav(await stretch(heard, rate / speed.native, signal));
+        /*
+         * This cache lives until a restart, and the proxy's FISH_SPEED_EXACT flips with no restart
+         * here. So a Fish sample above 1x is kept only when the proxy shows it really stretched
+         * it; one from before the flip would otherwise keep the old speed.
+         */
+        keep = !fish || native <= 1 || speed.stretched;
       } finally {
         await release(reservation, spent).catch((error: Error) =>
           hooks.log('description sample release: ' + error.message),
         );
         await rm(directory, { recursive: true, force: true }).catch(() => {});
       }
-      samples.set(cacheKey, audio);
+      if (keep) samples.set(cacheKey, audio);
       let cached = [...samples.values()].reduce((sum, item) => sum + item.length, 0);
       for (const key of samples.keys()) {
         if (cached <= 16 * 1024 ** 2) break;

@@ -34,7 +34,16 @@ export type Settings = {
    * administrator left it out of this job. The router drops it from anyone else's request.
    */
   credit?: boolean;
+  /**
+   * How this run's Fish narration gets its speed. 2 (Oct 30 2026, `fishSpeedModel`): the voice
+   * proxy renders the natural take and Praat stretches it by the exact number. Absent: a job
+   * started before that, whose every later run keeps the old named pace so a film never jumps
+   * speed partway. Only the router sets it; a request's own value is thrown away.
+   */
+  speedModel?: 2;
 };
+/** The stamp a run takes when all of its narration is voiced under exact speed (`Settings.speedModel`). */
+export const fishSpeedModel: 2 = 2;
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
     voice: z.string().min(1).max(120),
@@ -60,6 +69,7 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
     /** A tier this server does not know is dropped, never an error. */
     tier: z.enum(tiers).optional().catch(undefined),
     credit: z.boolean().optional().catch(undefined),
+    speedModel: z.literal(2).optional().catch(undefined),
   })
   .refine(
     (value) => value.maxRate >= value.rate,
@@ -298,6 +308,8 @@ export type Plan = {
   stills?: Interval[];
   /** Seconds of speech per UTF-8 byte at 1x for the job's voice, measured from voiced clips. */
   secondsPerByte?: number;
+  /** The voice and speed method `secondsPerByte` was measured under; absent on older plans. */
+  secondsPerByteFrom?: { voice: string; speedModel?: 2 };
   /** Dialogue language reported by speech recognition (BCP 47, such as "en" or "es"). */
   language?: string;
   /** A capture with sound on only one channel; that channel is copied to both. */
