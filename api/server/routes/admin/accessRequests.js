@@ -600,8 +600,10 @@ router.post('/:id/approve', async (req, res) => {
   }
 });
 
-/** The bridge's own limits, mirrored so a refusal comes before any reset. */
-const CALL_AGAIN_GAP_MS = 2 * 60 * 1000;
+/** The bridge's own limits, mirrored so a refusal comes before any reset. The gap also covers a
+ * call still in progress: ringing, the voicemail check and the 300-second call limit, so "Call
+ * again" can never replace the password while the last call is still reading it. */
+const CALL_AGAIN_GAP_MS = 7 * 60 * 1000;
 const CALLS_PER_DAY = 3;
 
 /**
@@ -619,7 +621,7 @@ function callAgainRefusal(doc, now = Date.now()) {
   const latest = recent.length ? Math.max(...recent) : 0;
   if (latest && now - latest < CALL_AGAIN_GAP_MS) {
     const secs = Math.max(1, Math.ceil((CALL_AGAIN_GAP_MS - (now - latest)) / 1000));
-    return `I called ${doc.name} less than 2 minutes ago. Wait about ${secs} seconds, then press "Call again".`;
+    return `I called ${doc.name} less than 7 minutes ago, and that call may still be reading their password. Wait about ${Math.ceil(secs / 60)} minutes, then press "Call again".`;
   }
   if (recent.length >= CALLS_PER_DAY) {
     return (

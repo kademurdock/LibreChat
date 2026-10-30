@@ -746,7 +746,7 @@ describe('calling again (David)', () => {
     expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
   });
 
-  test('a call placed under 2 minutes ago is refused before even asking the bridge', async () => {
+  test('a call placed under 7 minutes ago is refused before even asking the bridge', async () => {
     mockFindById.mockReturnValue(
       approvedPhoneOnly({
         welcomeCallStatus: 'placed',
@@ -756,7 +756,7 @@ describe('calling again (David)', () => {
     mockFindUser.mockResolvedValue(toker);
     const res = await callAgain();
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/less than 2 minutes ago/);
+    expect(res.body.error).toMatch(/less than 7 minutes ago/);
     expect(res.body.error).toMatch(/Call again/);
     expect(res.body.error).toMatch(/password still works/);
     expect(mockCheckWelcomeCall).not.toHaveBeenCalled();
