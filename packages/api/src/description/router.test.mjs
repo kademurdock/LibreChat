@@ -925,9 +925,9 @@ test('speeds: the fastest is lifted to the usual one; out-of-range and empty req
     assert.equal(answer.field, field, JSON.stringify(body));
     assert.match(answer.error, pattern);
   };
-  await refused({ rate: 0.9 }, 'rate', /narration speed from 1 to 3/);
-  await refused({ rate: 3.5 }, 'rate', /narration speed from 1 to 3/);
-  await refused({ maxRate: 0 }, 'maxRate', /fastest speed from 1 to 3/);
+  await refused({ rate: 0.7 }, 'rate', /narration speed from 0\.75 to 3/);
+  await refused({ rate: 3.5 }, 'rate', /narration speed from 0\.75 to 3/);
+  await refused({ maxRate: 0 }, 'maxRate', /fastest speed from 0\.75 to 3/);
   await refused({ maxRate: 4, rate: 2 }, 'maxRate', /fastest speed/);
   await refused({ playbackRate: 0.4 }, 'playbackRate', /playback speed from 0\.5 to 3/);
   await refused({ playbackRate: 3.25 }, 'playbackRate', /playback speed/);
@@ -4661,6 +4661,77 @@ test('Fish speed: a sample takes the number the proxy achieved, and a Fish sampl
     voiced = calls.synthesize;
     await say({ voice: 'Kade Murdock', rate: 1, text: 'Exact six' });
     await say({ voice: 'Kade Murdock', rate: 1, text: 'Exact six' });
+    assert.equal(calls.synthesize - voiced, 1);
+  } finally {
+    voiceApplied = undefined;
+  }
+});
+
+test('slower narration: 0.75 and up on her saved speeds, and the fastest is still lifted to the usual one', async () => {
+  const speeds = (body) => call('post', '/prefs/speeds', 'slow-speeds').send(body);
+  assert.deepEqual((await speeds({ rate: 0.75, maxRate: 0.75 }).expect(200)).body.speeds, { rate: 0.75, maxRate: 0.75, playbackRate: null });
+  assert.deepEqual((await speeds({ rate: 0.9 }).expect(200)).body.speeds, { rate: 0.9, maxRate: 0.9, playbackRate: null }, 'a faster usual lifts the fastest');
+  assert.deepEqual((await speeds({ maxRate: 0.8 }).expect(200)).body.speeds, { rate: 0.9, maxRate: 0.9, playbackRate: null }, 'a fastest below it is lifted back');
+  assert.deepEqual((await speeds({ rate: 0.8, maxRate: 0.75 }).expect(200)).body.speeds, { rate: 0.8, maxRate: 0.8, playbackRate: null }, 'both in one request');
+  await speeds({ rate: 0.74 }).expect(400);
+  await speeds({ maxRate: 0.74 }).expect(400);
+  assert.equal((await speeds({ playbackRate: 0.5 }).expect(200)).body.speeds.playbackRate, 0.5, 'playback keeps its own range');
+});
+
+test('slower narration: a job and a whole new voicing take 0.75; a fastest under the usual is still refused', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'slow-owner';
+  const id = await readyJob(owner, 'slow-upload-000001', 30);
+  const wrong = await call('post', `/jobs/${id}/start`, owner).send({ ...settings, rate: 0.9, maxRate: 0.8 }).expect(400);
+  assert.match(wrong.body.error, /fastest narration speed/);
+  const low = await call('post', `/jobs/${id}/start`, owner).send({ ...settings, rate: 0.7, maxRate: 0.9 }).expect(400);
+  assert.equal(low.body.field, 'rate');
+  await call('post', `/jobs/${id}/start`, owner).send({ ...settings, rate: 0.75, maxRate: 0.9 }).expect(202);
+  const done = await settle(id, ['done', 'failed'], owner);
+  assert.equal(done.state, 'done', done.error);
+  assert.equal(done.settings.rate, 0.75);
+  assert.equal(done.settings.maxRate, 0.9);
+  await call('post', `/jobs/${id}/revoice`, owner).send({ rate: 0.9, maxRate: 0.9 }).expect(202);
+  const again = await settle(id, ['done', 'failed'], owner);
+  assert.equal(again.state, 'done', again.error);
+  assert.equal(again.settings.rate, 0.9);
+  assert.equal(requests.at(-1).settings.maxRate, 0.9);
+  const under = await call('post', `/jobs/${id}/revoice`, owner).send({ rate: 0.9, maxRate: 0.75 }).expect(400);
+  assert.match(under.body.error, /fastest narration speed/);
+  await call('post', `/jobs/${id}/revoice`, owner).send({ rate: 0.7, maxRate: 0.9 }).expect(400);
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+});
+
+test('slower narration: a sample is never slowed by atempo, and a slow Fish sample is cached only once a stretch shows', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'slow-sample-owner';
+  const say = (body) => call('post', '/sample', owner).send(body);
+  const seconds = (response) => (response.body.length - 44) / 2 / 24000;
+  const base = seconds(await say({ voice: 'Voice 1', rate: 1, text: 'Slow base' }).expect(200));
+  await say({ voice: 'Voice 1', rate: 0.7, text: 'Slow base' }).expect(400);
+  try {
+    let voiced = calls.synthesize;
+    const inworld = await say({ voice: 'Voice 1', rate: 0.75, text: 'Slow one' }).expect(200);
+    await say({ voice: 'Voice 1', rate: 0.75, text: 'Slow one' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 1, 'Inworld renders at the number: cached');
+    assert.ok(Math.abs(seconds(inworld) - base) < 0.1, 'as it came back');
+    /* A switched-off proxy answers 1: the sound is the clip, and the flip must still reach it. */
+    voiced = calls.synthesize;
+    voiceApplied = 1;
+    const off = await say({ voice: 'Kade Murdock', rate: 0.75, text: 'Slow two' }).expect(200);
+    await say({ voice: 'Kade Murdock', rate: 0.75, text: 'Slow two' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 2, 'not cached');
+    assert.ok(Math.abs(seconds(off) - base) < 0.1, 'nothing under 1 reached atempo');
+    /* Stretched: kept. */
+    voiced = calls.synthesize;
+    voiceApplied = 0.75;
+    await say({ voice: 'Kade Murdock', rate: 0.75, text: 'Slow three' }).expect(200);
+    await say({ voice: 'Kade Murdock', rate: 0.75, text: 'Slow three' }).expect(200);
+    assert.equal(calls.synthesize - voiced, 1, 'cached once the stretch shows');
+    voiced = calls.synthesize;
+    voiceApplied = 0.9;
+    await say({ voice: 'Kade Murdock', rate: 0.9, text: 'Slow four' }).expect(200);
+    await say({ voice: 'Kade Murdock', rate: 0.9, text: 'Slow four' }).expect(200);
     assert.equal(calls.synthesize - voiced, 1);
   } finally {
     voiceApplied = undefined;

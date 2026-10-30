@@ -17,7 +17,7 @@ import type {
 import type { Brief } from './prompt';
 import { analysisFormat, analysisPrompt, readAnalysis, speakable, spokenForm } from './prompt';
 import { MediaError, probe } from './media';
-import { Halt } from './types';
+import { Halt, slowestRate } from './types';
 
 /**
  * The video model (KADE_DESCRIPTION_MODEL, default xiaomi/mimo-v2.6-pro). The tier is chosen
@@ -1665,7 +1665,7 @@ export async function fishSpeedExact(timeout: number = 8000): Promise<boolean> {
 
 /**
  * Speaks one description through the platform voice proxy. `speed` is the speed asked of the voice
- * (1 to 1.5): an Inworld voice renders at it, and a Fish voice is rendered as its natural take and
+ * (0.75 to 1.5): an Inworld voice renders at it, and a Fish voice is rendered as its natural take and
  * stretched by Praat to exactly that number, which sounds more natural than ffmpeg's atempo (Kade,
  * Oct 30 2026: "All the prat clips sounded completely natural."). A failed call is tried up to
  * three times (after 5 s and 20 s, or when the proxy's Retry-After says) before the description is
@@ -1707,7 +1707,7 @@ export async function synthesize(
             input,
             voice,
             model: 'tts-1',
-            speed: Math.min(1.5, Math.max(1, Math.round(speed * 100) / 100)),
+            speed: Math.min(1.5, Math.max(slowestRate, Math.round(speed * 100) / 100)),
             delivery: 'STABLE',
             response_format: 'wav',
             ...(fishSpeed ? { fishSpeed } : {}),

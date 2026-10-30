@@ -5069,3 +5069,281 @@ test('Fish speed: a measured pace is kept only for the voice and method it was m
   assert.equal((await seen('pace-method', exactSettings, { voice })).first, 0.0625);
   assert.equal((await seen('pace-back', settings, { voice, speedModel: 2 })).first, 0.0625);
 });
+
+/* Oct 30 2026, Kade: "I want the same situation with described videos". The list starts at 0.75. */
+const slowRates = [0.75, 0.8, 0.9];
+
+test('slower narration: settings take 0.75 and up, the defaults stay, and a fastest under the usual is still refused', () => {
+  const parsed = (extra) => settingsSchema.safeParse({ voice: 'V', ...extra });
+  for (const rate of slowRates) assert.equal(parsed({ rate, maxRate: rate }).success, true, String(rate));
+  assert.equal(parsed({ rate: 0.74, maxRate: 1 }).success, false);
+  assert.equal(parsed({ rate: 0.75, maxRate: 0.74 }).success, false);
+  assert.equal(parsed({ rate: 0.9, maxRate: 0.8 }).success, false);
+  assert.equal(parsed({ maxRate: 0.9 }).success, false, 'the usual speed defaults to 1.5, above it');
+  assert.equal(parsed({}).success, true);
+});
+
+test('slower narration: the defaults stay 1.5 and 2.25', () => {
+  const parsed = settingsSchema.parse({ voice: 'V' });
+  assert.equal(parsed.rate, 1.5);
+  assert.equal(parsed.maxRate, 2.25);
+});
+
+test('slower narration: atempo never takes a factor under 1, and reaches 3x from the slowest speed', () => {
+  for (const factor of [0.75, 0.8, 0.9, 0.99]) assert.throws(() => tempoFilters(factor), /Invalid/, String(factor));
+  assert.equal(tempoFilters(1), 'atempo=1.000000');
+  assert.equal(tempoFilters(2), 'atempo=2.000000');
+  assert.equal(tempoFilters(3 / 0.9), 'atempo=2,atempo=1.666667');
+  assert.equal(tempoFilters(3 / 0.75), 'atempo=2,atempo=2.000000', 'fitted at 3x from a 0.75x clip');
+  assert.throws(() => tempoFilters(4.01), /Invalid/);
+});
+
+test('clipSpeed below 1x: the clip always keeps the number sent, so atempo is never asked to slow it', () => {
+  const same = (actual, expected, why) => assert.deepEqual(actual, expected, why);
+  for (const sent of slowRates) {
+    same(clipSpeed(sent, 1, { legacy: true, fish: true }), { native: sent, oneX: 1, stretched: false }, 'a legacy job, as ever');
+    same(clipSpeed(sent, undefined, {}), { native: sent, oneX: sent, stretched: false }, 'Inworld rendered at it');
+    same(clipSpeed(sent, undefined, { fish: true }), { native: sent, oneX: 1, stretched: false }, 'Fish without the header');
+    same(clipSpeed(sent, sent, { fish: true }), { native: sent, oneX: sent, stretched: true }, 'Praat hit the number');
+    for (const proven of [false, true]) {
+      same(clipSpeed(sent, 1, { fish: true, proven }), { native: sent, oneX: 1, stretched: false }, 'a hiccup or a switched-off proxy');
+      same(clipSpeed(sent, sent - 0.1, { fish: true, proven }), { native: sent, oneX: sent - 0.1, stretched: true }, 'past the number');
+      same(clipSpeed(sent, 1.3, { fish: true, proven }), { native: sent, oneX: 1.3, stretched: false }, 'nonsense stays safe');
+    }
+  }
+  same(clipSpeed(0.75, 0.85, { fish: true }), { native: 0.75, oneX: 0.85, stretched: true }, 'part of a line');
+  /* The figures above 1x are untouched: an under-1 reading there is still floored at 1. */
+  same(clipSpeed(1.5, 0.75, { fish: true, proven: true }), { native: 1, oneX: 1, stretched: false });
+});
+
+test('slower narration: a run-on is still judged at its 1x length', () => {
+  const start = 'Audio description by Kade-AI.';
+  const mgm =
+    'The Metro Goldwyn Mayer logo appears: a roaring lion inside a gold film reel. Text reads Metro Goldwyn Mayer, Ars Gratia Artis, TRADE MARK, and www.mgm.com.';
+  for (const speed of slowRates) {
+    const at = (seconds) => (seconds / speed) * clipSpeed(speed, speed, { fish: true }).oneX;
+    assert.equal(ranOn(mgm, at(14.92)), false, `the slowest real line at ${speed}x`);
+    assert.equal(ranOn(start, at(2.5), creditRunOn), false, `a clean credit at ${speed}x`);
+    assert.equal(ranOn(start, at(9.96), creditRunOn), true, `the looping credit at ${speed}x`);
+    assert.equal(ranOn('A red balloon floats down.', at(8.4)), true, `the shortest logged run-on at ${speed}x`);
+  }
+  /* A line stretched to 0.75x is 1.33 times as long, and is not counted against it. */
+  const line = 'A red balloon floats slowly down over the quiet town square.';
+  const oneXLong = 2.5 * spokenSeconds(line) + 3 - 1;
+  assert.equal(ranOn(line, oneXLong / 0.75), true, 'judged at its stretched length, this clean line would run on');
+  assert.equal(ranOn(line, (oneXLong / 0.75) * clipSpeed(0.75, 0.75, { fish: true }).oneX), false);
+  /* A hiccup came back at 1x, so its own length is its 1x length. */
+  assert.equal(ranOn(line, oneXLong + 2), true);
+  assert.equal(ranOn(line, (oneXLong + 2) * clipSpeed(0.75, 1, { fish: true }).oneX), true);
+});
+
+test('slower narration: fitCue and pauseCue work from the slow number', () => {
+  const slow = (rate, maxRate = 2.25) => ({ ...settings, rate, maxRate });
+  const roomy = { ...cue, until: 8 };
+  const plenty = fitCue(roomy, cue.text, 3, slow(0.75), [], 8);
+  assert.equal(plenty.rate, 0.75);
+  assert.equal(plenty.duration, 4, '3 s at 1x takes 4 s at 0.75x');
+  const nine = fitCue(roomy, cue.text, 3, slow(0.9), [], 8);
+  assert.equal(nine.rate, 0.9);
+  assert.ok(Math.abs(nine.duration - 3 / 0.9) < 1e-9);
+  /* 2.5 s of room: 1.2x, above her usual speed and inside her fastest. */
+  const tight = fitCue(cue, cue.text, 3, slow(0.75), [{ start: 3.58, end: 8 }], 8);
+  assert.ok(Math.abs(tight.rate - 3 / 2.5) < 1e-6, String(tight.rate));
+  /* A fastest of 0.9 means it never goes past that to fit. */
+  assert.equal(fitCue(cue, cue.text, 3, slow(0.75, 0.9), [{ start: 3.58, end: 8 }], 8), null);
+
+  const extended = (rate) => ({ ...slow(rate), mode: 'extended' });
+  const partial = pauseCue(cue, cue.text, 3, extended(0.75), 2, [{ start: 3.5, end: 6 }]);
+  assert.equal(partial.rate, 0.75);
+  assert.equal(partial.duration, 4);
+  assert.ok(Math.abs(partial.pauseAt - 3.4) < 1e-9, 'it runs over the film up to the next sound');
+  assert.ok(Math.abs(partial.pause - (4 - 1.4 + 0.35)) < 1e-9, 'and freezes for what is left');
+  const full = pauseCue(cue, cue.text, 3, extended(0.9), 2, [{ start: 2.1, end: 6 }]);
+  assert.equal(full.rate, 0.9);
+  assert.ok(Math.abs(full.pause - (3 / 0.9 + 0.35)) < 1e-9);
+});
+
+test('slower narration: every fit and pause plan keeps its atempo factor between 1 and what tempoFilters takes', () => {
+  const cues = [
+    { at: 1, until: 5, text: 'One long line.', shortText: 'One.', importance: 3 },
+    { at: 3, until: 6, text: 'Two long line.', shortText: 'Two.', importance: 2 },
+    { at: 7, until: 9, text: 'Three long line.', shortText: 'Three.', importance: 3 },
+    { at: 11, until: 12, text: 'Four long line.', shortText: 'Four.', importance: 2, reading: true },
+    { at: 13, until: 19, text: 'Five long line.', shortText: 'Five.', importance: 1 },
+  ];
+  const blocked = [
+    { start: 2.2, end: 3.1 },
+    { start: 5, end: 7.5 },
+    { start: 8.3, end: 12.4 },
+    { start: 14, end: 18.5 },
+  ];
+  /** What each kind of clip comes back as: Fish stamped, its hiccups, legacy Fish, and Inworld. */
+  const kinds = (sent) => [
+    clipSpeed(sent, sent, { fish: true }),
+    clipSpeed(sent, 1, { fish: true, proven: true }),
+    clipSpeed(sent, sent * 0.9, { fish: true, proven: true }),
+    clipSpeed(sent, 1, { legacy: true, fish: true }),
+    clipSpeed(sent, undefined, {}),
+    clipSpeed(sent, undefined, { legacy: true }),
+  ];
+  let plans = 0;
+  let paused = 0;
+  let fast = 0;
+  for (const rate of [...slowRates, 1])
+    for (const maxRate of [rate, 1, 1.5, 2.25, 3].filter((value) => value >= rate))
+      for (const mode of ['standard', 'extended'])
+        for (const base of [0.4, 1, 2.5, 5]) {
+          const { placed } = arrange({
+            cues,
+            length: (_index, variant) => (variant === 'full' ? base : base / 2),
+            settings: { ...settings, rate, maxRate, mode },
+            blocked,
+            hard: [],
+            words: [],
+            seconds: 20,
+          });
+          for (const { placement } of placed) {
+            plans++;
+            if (placement.pause > 0) paused++;
+            assert.ok(placement.rate >= rate - 1e-12, 'never under her usual speed');
+            assert.ok(placement.rate <= maxRate + 1e-6, 'never over her fastest');
+            for (const clip of kinds(Math.min(1.5, rate))) {
+              const factor = placement.rate / clip.native;
+              assert.ok(factor >= 1, `${placement.rate} over ${clip.native}`);
+              if (factor > 3) fast++;
+              assert.match(tempoFilters(factor), /^atempo=/);
+            }
+          }
+        }
+  assert.ok(plans > 200 && paused > 0 && fast > 0, `${plans} placements, ${paused} paused, ${fast} past 3x of atempo`);
+});
+
+/** One whole run at a slow speed: what the voice was asked, and how long the line came out. */
+async function slowRun(name, { rate = 0.75, maxRate = 2.25, mode = 'standard', exact, fish, applied, words = [], credit } = {}) {
+  const f = await fixture(name);
+  const asked = [];
+  const quiet = providers(f.voice, words, [{ ...cue, shortText: cue.text }]);
+  const backend = credit ? withCreditVoice(quiet, f.voice) : quiet;
+  const inner = backend.synthesize;
+  backend.synthesize = async (text, voice, session, file, speed, sig, paid, fishSpeed) => {
+    asked.push({ speed, fishSpeed });
+    await inner(text, voice, session, file, speed, sig, paid);
+    return applied;
+  };
+  const log = [];
+  const result = await run(f, words, [], {
+    providers: backend,
+    fishVoice: fish,
+    settings: { ...settings, rate, maxRate, mode, ...(exact ? { speedModel: 2 } : {}) },
+    log,
+    ...(credit ? { credit: { where: 'both' } } : {}),
+  });
+  const line = result.report.descriptions.find((item) => item.text === cue.text);
+  return { asked, log, result, line };
+}
+const closeTo = (actual, wanted, why) =>
+  assert.ok(Math.abs(actual - wanted) < 0.06, `${why}: ${actual} against ${wanted}`);
+
+test('slower narration: whole runs at 0.75 and 0.9 on Fish and Inworld, stamped and legacy', async () => {
+  const cases = [
+    { name: 'fish-stamped', fish: true, exact: true, applied: (rate) => rate, fishSpeed: undefined },
+    { name: 'fish-legacy', fish: true, exact: false, applied: () => 1, fishSpeed: 'legacy' },
+    { name: 'inworld-stamped', fish: false, exact: true, applied: () => undefined, fishSpeed: undefined },
+    { name: 'inworld-legacy', fish: false, exact: false, applied: () => undefined, fishSpeed: 'legacy' },
+  ];
+  for (const rate of [0.75, 0.9])
+    for (const kind of cases) {
+      const label = `${kind.name} at ${rate}`;
+      const { asked, line, log } = await slowRun(`slow-${kind.name}-${rate}`, {
+        rate,
+        exact: kind.exact,
+        fish: kind.fish,
+        applied: kind.applied(rate),
+      });
+      assert.ok(asked.length > 0 && asked.every((item) => item.speed === rate), `${label}: the voice is asked for the number`);
+      assert.ok(asked.every((item) => item.fishSpeed === kind.fishSpeed), `${label}: fishSpeed`);
+      assert.ok(line, `${label}: the description is placed\n${log.join('\n')}`);
+      closeTo(line.duration, 3, `${label}: the clip is left as it came back`);
+    }
+});
+
+test('slower narration: a tight gap speeds the clip up by atempo, from a stamped or a legacy clip, on either kind of voice', async () => {
+  /* The first word at 3 s: the room runs from 1 to about 2.78, 1.7 s. The clip is 3 s at 0.75x. */
+  const words = [{ start: 3, end: 8.9, word: 'talking' }];
+  const cases = [
+    ['fish-stamped', { fish: true, exact: true, applied: 0.75 }],
+    ['fish-legacy', { fish: true, exact: false, applied: 1 }],
+    ['inworld-stamped', { fish: false, exact: true }],
+    ['inworld-legacy', { fish: false, exact: false }],
+  ];
+  for (const [name, options] of cases) {
+    const { line, log } = await slowRun(`slow-tight-${name}`, { words, ...options });
+    assert.ok(line, `${name}: placed\n${log.join('\n')}`);
+    closeTo(line.duration, 1.7, `${name}: fitted to the gap`);
+    assert.ok(line.rate > 1 && line.rate < 1.5, `${name}: rate ${line.rate}`);
+  }
+});
+
+test('slower narration: 0.75 with a fastest of 3 can reach it, a factor of nearly 4 through atempo', async () => {
+  /* The first word at 2.1 s: the room runs from 1 to about 1.88, 0.8 s, for 2.25 s at 1x. */
+  const { line, log } = await slowRun('slow-top', {
+    rate: 0.75,
+    maxRate: 3,
+    exact: true,
+    fish: true,
+    applied: 0.75,
+    words: [{ start: 2.1, end: 8.9, word: 'talking' }],
+  });
+  assert.ok(line, log.join('\n'));
+  assert.ok(line.rate > 2.5 && line.rate <= 3, `rate ${line.rate}`);
+  closeTo(line.duration, 0.8, 'fitted');
+});
+
+test('slower narration: pause mode freezes for it at 0.75 and 0.9, stamped and legacy', async () => {
+  const words = [{ start: 1.4, end: 8.9, word: 'talking' }];
+  for (const rate of [0.75, 0.9])
+    for (const [name, options] of [
+      ['fish-stamped', { fish: true, exact: true, applied: rate }],
+      ['fish-legacy', { fish: true, exact: false, applied: 1 }],
+      ['inworld-stamped', { fish: false, exact: true }],
+    ]) {
+      const { line, result, log } = await slowRun(`slow-freeze-${name}-${rate}`, {
+        rate,
+        maxRate: rate,
+        mode: 'extended',
+        words,
+        ...options,
+      });
+      assert.ok(line, `${name} at ${rate}: placed\n${log.join('\n')}`);
+      closeTo(line.duration, 3, `${name} at ${rate}: said at the number`);
+      assert.ok(line.pause > 2, `${name} at ${rate}: the picture froze for ${line.pause}`);
+      assert.ok(result.report.descriptions.length === 1);
+    }
+});
+
+test('slower narration: a Praat hiccup at 0.75 plays as it came back, says so, and fails nothing', async () => {
+  const f = { rate: 0.75, exact: true, fish: true };
+  const whole = await slowRun('slow-hiccup', { ...f, applied: 1 });
+  closeTo(whole.line.duration, 3, 'it cannot be slowed here');
+  assert.ok(whole.log.some((line) => /Voice came back at 1x of 0\.75x/.test(line)), whole.log.join('\n'));
+  /* In a tight gap it is still fitted by the same maths as a good clip. */
+  const tight = await slowRun('slow-hiccup-tight', { ...f, applied: 1, words: [{ start: 3, end: 8.9, word: 'talking' }] });
+  closeTo(tight.line.duration, 1.7, 'fitted');
+  /* A good clip and a legacy one do not trip the note. */
+  const good = await slowRun('slow-no-hiccup', { ...f, applied: 0.75 });
+  assert.equal(good.log.some((line) => /Voice came back at/.test(line)), false, good.log.join('\n'));
+  const old = await slowRun('slow-no-hiccup-old', { rate: 0.75, fish: true, applied: 1 });
+  assert.equal(old.log.some((line) => /Voice came back at/.test(line)), false, old.log.join('\n'));
+  const plain = await slowRun('slow-no-hiccup-inworld', { rate: 0.75, exact: true, fish: false });
+  assert.equal(plain.log.some((line) => /Voice came back at/.test(line)), false, plain.log.join('\n'));
+});
+
+test('slower narration: the credit at 0.75 is left as it came back, stamped, legacy or after a hiccup', async () => {
+  const lead = async (name, options) => (await slowRun(name, { rate: 0.75, credit: true, ...options })).result.report.credit?.lead;
+  const stamped = await lead('slow-credit', { exact: true, fish: true, applied: 0.75 });
+  const hiccup = await lead('slow-credit-hiccup', { exact: true, fish: true, applied: 1 });
+  const legacy = await lead('slow-credit-legacy', { fish: true, applied: 1 });
+  const inworld = await lead('slow-credit-inworld', { exact: true, fish: false });
+  assert.ok(stamped > 3, `lead ${stamped}`);
+  for (const other of [hiccup, legacy, inworld]) closeTo(other, stamped, 'the same clip, the same lead');
+});

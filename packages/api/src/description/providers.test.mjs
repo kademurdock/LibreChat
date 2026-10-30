@@ -1705,3 +1705,24 @@ test('providers: exact Fish speed is on only when the proxy says so on /health',
   assert.equal(await asked('<html>Bad gateway</html>'), false);
   await assert.rejects(asked(new Error('socket hang up')), /socket hang up/);
 });
+
+test('providers: the voice is asked for the number from 0.75 up to 1.5', async () => {
+  const { meter } = ledger();
+  const sent = async (speed, ...last) => {
+    const posts = [];
+    const fake = fakeAxios(async ({ url, body }) => {
+      if (url.endsWith('/voices.json')) return { data: { voices: ['Voice 1'] } };
+      posts.push(body);
+      return { headers: { 'content-type': 'audio/wav' }, data: Buffer.alloc(200) };
+    });
+    await synthesize('A woman waves.', 'Voice 1', 'session', join(scratch, 'slow-line.wav'), speed, signal, meter, ...last).finally(() => fake.restore());
+    return posts[0];
+  };
+  for (const speed of [0.75, 0.8, 0.9, 1, 1.1, 1.5]) assert.equal((await sent(speed)).speed, speed);
+  assert.equal((await sent(0.5)).speed, 0.75, 'nothing goes below the list');
+  assert.equal((await sent(2)).speed, 1.5);
+  /* A legacy job at 0.75 keeps asking for the number: the proxy gives it the named pace. */
+  const legacy = await sent(0.75, 'legacy');
+  assert.equal(legacy.speed, 0.75);
+  assert.equal(legacy.fishSpeed, 'legacy');
+});

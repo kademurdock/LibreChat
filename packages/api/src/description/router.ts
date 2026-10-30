@@ -80,7 +80,7 @@ import { creditWhere, logoChoice, logos } from './credit';
 import type { Credit, CreditLogo } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
 import { clock, spokenLength } from './transcript';
-import { fishSpeedModel, settingsSchema, Halt, tiers } from './types';
+import { fishSpeedModel, settingsSchema, slowestRate, Halt, tiers } from './types';
 import { pcmSeconds, sampleRate, trimSilence } from './mix';
 import { clipSpeed, ranOn } from './timing';
 
@@ -500,8 +500,8 @@ const voiceFields = ['voice', 'rate', 'maxRate', 'mode', 'volume'] as const;
 const voiceSchema = z
   .object({
     voice: z.string().min(1).max(120).optional(),
-    rate: z.number().min(1).max(3).optional(),
-    maxRate: z.number().min(1).max(3).optional(),
+    rate: z.number().min(slowestRate).max(3).optional(),
+    maxRate: z.number().min(slowestRate).max(3).optional(),
     mode: z.enum(['standard', 'extended']).optional(),
     volume: z.enum(['softer', 'balanced', 'louder']).optional(),
   })
@@ -1019,8 +1019,8 @@ function plainProblem(error: unknown, reason: unknown): string {
 }
 const fieldHelp: Record<string, string> = {
   voice: 'Choose one of the listed voices.',
-  rate: 'Choose a narration speed from 1 to 3 times.',
-  maxRate: 'Choose a fastest speed from 1 to 3 times, at least your usual speed.',
+  rate: 'Choose a narration speed from 0.75 to 3 times.',
+  maxRate: 'Choose a fastest speed from 0.75 to 3 times, at least your usual speed.',
   playbackRate: 'Choose a playback speed from 0.5 to 3 times.',
   mode: 'Choose one of the listed options.',
   detail: 'Choose one of the listed options.',
@@ -1165,8 +1165,8 @@ type NarrationPrefs = {
 /** Speeds she may keep: narration as a job allows, playback as the players allow; at least one. */
 const speedsSchema = z
   .object({
-    rate: z.number().min(1).max(3).optional(),
-    maxRate: z.number().min(1).max(3).optional(),
+    rate: z.number().min(slowestRate).max(3).optional(),
+    maxRate: z.number().min(slowestRate).max(3).optional(),
     playbackRate: z.number().min(0.5).max(3).optional(),
   })
   .refine(
@@ -3811,7 +3811,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const input = z
       .object({
         voice: z.string().min(1).max(120),
-        rate: z.number().min(1).max(3),
+        rate: z.number().min(slowestRate).max(3),
         text: z.string().max(400).optional(),
         /** The picker's listen-as-you-move: the usual line only, with its own hourly allowance. */
         audition: z.boolean().optional(),
@@ -3889,10 +3889,10 @@ export function createDescriptionRouter(hooks: Hooks): {
         audio = wav(await stretch(heard, rate / speed.native, signal));
         /*
          * This cache lives until a restart, and the proxy's FISH_SPEED_EXACT flips with no restart
-         * here. So a Fish sample above 1x is kept only when the proxy shows it really stretched
-         * it; one from before the flip would otherwise keep the old speed.
+         * here. So a Fish sample at any number but 1x is kept only when the proxy shows it really
+         * stretched it; one from before the flip would otherwise keep the old speed.
          */
-        keep = !fish || native <= 1 || speed.stretched;
+        keep = !fish || native === 1 || speed.stretched;
       } finally {
         await release(reservation, spent).catch((error: Error) =>
           hooks.log('description sample release: ' + error.message),

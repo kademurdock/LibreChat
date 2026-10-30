@@ -1207,6 +1207,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
           log(
             `Voice came back at ${speed.native}x of ${native}x ("${text.slice(0, 32)}"); the difference is made up here.`,
           );
+        else if (!legacySpeed && speed.oneX > native * 1.03)
+          log(
+            `Voice came back at ${speed.oneX}x of ${native}x ("${text.slice(0, 32)}"); it plays as it came back.`,
+          );
         measured.bytes += bytes(text);
         measured.seconds += base;
         secondsPerByte = (prior * 200 + measured.seconds) / (200 + measured.bytes);

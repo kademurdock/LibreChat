@@ -11,7 +11,7 @@ export const tiers = ['flex', 'standard'] as const;
 export type Tier = (typeof tiers)[number];
 export type Settings = {
   voice: string;
-  /** Usual narration speed, 1 to 3. */
+  /** Usual narration speed, `slowestRate` to 3. */
   rate: number;
   /** Fastest narration speed allowed to fit a gap. */
   maxRate: number;
@@ -43,13 +43,18 @@ export type Settings = {
    */
   speedModel?: 2;
 };
+/**
+ * The slowest narration on the list (Oct 30 2026, Kade: "I want the same situation with described
+ * videos"). Only the voice goes this slow: atempo here can only speed a clip up.
+ */
+export const slowestRate = 0.75;
 /** The stamp a run takes when all of its narration is voiced under exact speed (`Settings.speedModel`). */
 export const fishSpeedModel: 2 = 2;
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
     voice: z.string().min(1).max(120),
-    rate: z.number().min(1).max(3).default(1.5),
-    maxRate: z.number().min(1).max(3).default(2.25),
+    rate: z.number().min(slowestRate).max(3).default(1.5),
+    maxRate: z.number().min(slowestRate).max(3).default(2.25),
     mode: z.enum(['standard', 'extended']).default('extended'),
     detail: z.enum(detailLevels).default('standard'),
     volume: z.enum(volumeLevels).default('balanced'),

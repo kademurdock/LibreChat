@@ -3768,3 +3768,77 @@ test('carrying on a run where no section finished is spoken by the name on its b
   await env.timers.advance(700);
   assert.match(env.status(), /^First look on\. Try again from the beginning: about \$\d+\.\d\d\. Write fresh descriptions: about \$\d+\.\d\d\.$/);
 });
+
+const narrationList = ['0.75', '0.8', '0.9', '1', '1.1', '1.2', '1.25', '1.3', '1.4', '1.5', '1.75', '2', '2.25', '2.5', '3'];
+
+test('narration speeds: both lists read the agreed numbers, 1x is Normal, and the player list is untouched', async () => {
+  const env = await boot();
+  const { $ } = env;
+  for (const id of ['rate', 'max-rate']) assert.deepEqual($(id).options.map((option) => option.value), narrationList, id);
+  assert.equal($('rate').value, '1.5', 'the usual default');
+  assert.equal($('max-rate').value, '2.25', 'the fastest default');
+  assert.deepEqual($('playback-rate').options.map((option) => option.value), ['1', '1.25', '1.5', '1.75', '2']);
+  assert.equal($('playback-rate').options[0].textContent, '1×');
+  const words = $('rate').options.map((option) => option.textContent);
+  assert.equal(words[0], '0.75×, roughly 110 words a minute');
+  assert.equal(words[3], 'Normal, the voice’s own pace, roughly 150 words a minute');
+  assert.equal(words[4], '1.1×, roughly 160 words a minute');
+  assert.doesNotMatch(words.join('|'), /(^|\|)1×/, '1x is never read as "1 times" in the narration lists');
+  assert.doesNotMatch(env.document.getElementById('dv-customize').textContent, /Only the narrator speeds up/);
+});
+
+test('narration speeds: a slow speed is kept, saved, auditioned and carried over like any other', async () => {
+  const server = makeServer();
+  server.prefs.speeds = { rate: 0.75, maxRate: 0.9, playbackRate: null };
+  const env = await boot({ server });
+  const { $ } = env;
+  assert.equal($('rate').value, '0.75');
+  assert.equal($('max-rate').value, '0.9');
+  await env.choose('rate', '0.8');
+  await env.timers.advance(2000);
+  assert.deepEqual(server.last(/^\/prefs\/speeds$/).body, { rate: 0.8 });
+  /* Today's rule both ways: a lower fastest brings the usual down, a higher usual lifts the fastest. */
+  await env.choose('max-rate', '0.75');
+  await env.timers.advance(2000);
+  assert.deepEqual(server.last(/^\/prefs\/speeds$/).body, { maxRate: 0.75, rate: 0.75 });
+  await env.choose('rate', '1');
+  await env.timers.advance(2000);
+  assert.deepEqual(server.last(/^\/prefs\/speeds$/).body, { rate: 1, maxRate: 1 });
+
+  const first = await boot({ local: { 'kade-description-settings': JSON.stringify({ rate: 0.75, maxRate: 1.1, mode: 'standard' }) } });
+  assert.deepEqual(first.server.all(/^\/prefs\/speeds$/).map((r) => r.body), [{ rate: 0.75, maxRate: 1.1 }], 'this browser’s slow speeds are carried over');
+  const listening = makeServer();
+  listening.prefs.speeds = { rate: 0.75, maxRate: 0.9, playbackRate: null };
+  const heard = await boot({ server: listening, audio: webAudio() });
+  await heard.click('voice-open');
+  await heard.timers.advance(260);
+  assert.deepEqual(auditions(listening).at(-1).body, { voice: 'clear woman · flint', rate: 0.75, audition: true }, 'the picker plays at her slow speed');
+  const junk = await boot({ local: { 'kade-description-settings': JSON.stringify({ rate: 0.5, maxRate: 1.1 }) } });
+  assert.deepEqual(junk.server.all(/^\/prefs\/speeds$/).map((r) => r.body), [{ maxRate: 1.1 }], 'below the list is not');
+});
+
+test('narration speeds: every sentence that names 1x says Normal, and any other number stays a number', async () => {
+  const server = makeServer();
+  const failed = server.add(doneJob({ name: 'Home video', state: 'failed', copies: [], resumable: true, done: 3, sections: 12, error: 'Scene description (Gemini) is not responding.' }));
+  const env = await boot({ server, search: '?id=' + failed.id, confirmReply: () => false });
+  await env.timers.advance(700);
+  await env.choose('rate', '1');
+  await env.click('resume');
+  assert.match(env.dialogs.at(-1).text, /^Continue “Home video” with Oak at Normal\? /);
+  await env.choose('rate', '0.75');
+  await env.click('resume');
+  assert.match(env.dialogs.at(-1).text, /^Continue “Home video” with Oak at 0\.75×\? /);
+
+  const plain = makeServer();
+  const finished = plain.add(doneJob({ name: 'Plain', settings: { rate: 1, maxRate: 1 } }));
+  const view = await boot({ server: plain, search: '?id=' + finished.id });
+  await view.timers.advance(700);
+  assert.match(view.$('version').options[0].textContent, /^Version 1: Oak Normal, Standard detail/);
+  assert.doesNotMatch(view.$('version').options[0].textContent, /1×/);
+
+  const slow = makeServer();
+  const other = slow.add(doneJob({ name: 'Slow', settings: { rate: 0.9, maxRate: 0.9 } }));
+  const seen = await boot({ server: slow, search: '?id=' + other.id });
+  await seen.timers.advance(700);
+  assert.match(seen.$('version').options[0].textContent, /^Version 1: Oak 0\.9×, Standard detail/);
+});

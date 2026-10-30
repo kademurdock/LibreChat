@@ -243,13 +243,19 @@ export function toOutput(time: number, placements: Placement[]): number {
   );
 }
 
+/**
+ * atempo for a clip that must play `rate` times faster than it came back. Never under 1: a clip is
+ * only ever sped up here, so anything slower than 1x has to come from the voice itself. The top is
+ * a clip of the slowest narration (0.75x) fitted to the fastest (3x), 4 times over.
+ */
 export function tempoFilters(rate: number): string {
-  if (!Number.isFinite(rate) || rate < 1 || rate > 3) throw new Error('Invalid narration rate.');
+  if (!Number.isFinite(rate) || rate < 1 || rate > 4 + 1e-6)
+    throw new Error('Invalid narration rate.');
   return rate > 2 ? `atempo=2,atempo=${(rate / 2).toFixed(6)}` : `atempo=${rate.toFixed(6)}`;
 }
 
 /**
- * Seconds a line of narration needs at 1x, the slowest any voice is asked for: the engine's
+ * Seconds a line of narration needs at 1x: the engine's
  * starting length per UTF-8 byte (engine.ts seedSecondsPerByte), with digits, short all-capital
  * words (often said letter by letter) and inner dots ("www.mgm.com", said "dot") counted as the
  * longer words they become.
@@ -335,6 +341,11 @@ export type ClipSpeed = {
  *   would run the line far too fast. So it counts as a hiccup only once this run has seen a clip
  *   that really was stretched (`proven`). Until then the clip is treated as before this change,
  *   so the failure is the old sound, never a new one.
+ * - Below 1x atempo has nothing to give, since it never slows a clip (`tempoFilters`). So the clip
+ *   keeps the number sent as its native whatever came back: at the usual speed it plays as it came
+ *   back, fitted faster its length is still `said * native / rate`, and that factor is never under
+ *   1. The header only says how to judge a run-on: "1" was a hiccup or a proxy with its switch off,
+ *   and either way that clip's own length is its 1x length.
  */
 export function clipSpeed(
   sent: number,
@@ -348,6 +359,7 @@ export function clipSpeed(
   if (legacy) return { native: sent, oneX: 1, stretched: false };
   if (typeof applied !== 'number' || !Number.isFinite(applied) || applied <= 0)
     return { native: sent, oneX: fish ? 1 : sent, stretched: false };
+  if (sent < 1) return { native: sent, oneX: applied, stretched: applied < 1 - speedNear };
   const stretched = applied > 1 + speedNear;
   if (applied >= sent * (1 - speedNear)) return { native: sent, oneX: sent, stretched };
   if (!stretched && !proven) return { native: sent, oneX: 1, stretched: false };
