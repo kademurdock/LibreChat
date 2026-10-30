@@ -251,7 +251,7 @@ const SPOTTER_HTML = `<!doctype html>
   var form = document.getElementById('builder');
   var TOKEN = null;
   var VOICES = [];
-  var NAMES = ['Scout','Hawk','Birdie','Iris','Echo','Moxie','Ziggy','Blue','Ace','Lark','Sonny','Vega','Juniper','Frankie','Pepper','Dash','Ivory','Cricket','Reya','Marlow','Onyx','Sable','Fable','Wren','Koda','Ember','Sage','Arrow','Dovie','Jett','Opal','Rook','Tally','Bexley','Cato','Della','Flint','Gwen','Harlow','Indy','Jules','Kit','Lumen','Nyx','Piper','Quill','Remy','True'];
+  var NAMES = ['Scout','Hawk','Birdie','Iris','Echo','Moxie','Wink','Blue','Ace','Lark','Sonny','Vega','Juniper','Frankie','Pepper','Dash','Ivory','Cricket','Reya','Marlow','Onyx','Sable','Fable','Wren','Koda','Ember','Sage','Arrow','Dovie','Jett','Opal','Rook','Tally','Bexley','Cato','Della','Flint','Gwen','Harlow','Indy','Jules','Kit','Lumen','Nyx','Piper','Quill','Remy','True'];
 
   function setStatus(msg, cls) { statusEl.hidden = false; statusEl.className = 'status' + (cls ? ' ' + cls : ''); statusEl.textContent = msg; }
 

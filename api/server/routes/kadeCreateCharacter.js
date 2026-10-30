@@ -200,7 +200,7 @@ const NAME_POOLS = {
     elder: ['Opal', 'Walter', 'Hattie', 'Gus', 'Pearl'],
   },
   animal: {
-    young: ['Pip', 'Clover', 'Ziggy', 'Maple', 'Scout'],
+    young: ['Pip', 'Clover', 'Poppy', 'Maple', 'Scout'],
     grown: ['Bramble', 'Juniper', 'Otis', 'Hazel', 'Rufus'],
     elder: ['Mosey', 'Willow', 'Barnaby', 'Sage', 'Duchess'],
   },
