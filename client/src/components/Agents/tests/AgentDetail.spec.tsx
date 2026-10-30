@@ -193,6 +193,20 @@ describe('AgentDetail', () => {
       );
     });
 
+    it('names a moving-face character as a synthetic soul, and no one else', () => {
+      const { unmount } = renderWithProviders(
+        <AgentDetail {...defaultProps} agent={{ ...mockAgent, is_promoted: true }} />,
+      );
+      expect(mockLocalize).toHaveBeenCalledWith('com_agents_synthetic_soul', {
+        name: mockAgent.name,
+      });
+      expect(screen.getByText('com_agents_synthetic_soul')).toBeInTheDocument();
+      unmount();
+      mockLocalize.mockClear();
+      renderWithProviders(<AgentDetail {...defaultProps} />);
+      expect(screen.queryByText('com_agents_synthetic_soul')).not.toBeInTheDocument();
+    });
+
     it('should not render contact information when not available', () => {
       const agentWithoutContact = { ...mockAgent };
       delete (agentWithoutContact as any).support_contact;

@@ -323,7 +323,7 @@
           return '<li'+(talking?' class="talking"':'')+'>'+(p.name||p.identity)+(me?' (you)':'')+(talking?' — talking':'')+'</li>';
         }).join('');
         if(BOT){
-          html += '<li>'+esc(BOT.name)+' — companion guest, invited by '+esc(BOT.anchorName||'someone')+(botBusy? ' — thinking' : '')+
+          html += '<li>'+esc(BOT.name)+' — character guest, invited by '+esc(BOT.anchorName||'someone')+(botBusy? ' — thinking' : '')+
             ' <button type="button" class="rowbtn small" data-botact="cue">Your turn, '+esc(BOT.name)+'</button>'+
             ' <button type="button" class="rowbtn small gray" data-botact="kick">Ask them to leave</button></li>';
         }
@@ -902,11 +902,11 @@
         var opts = hits.map(function(a){
           return '<option value="'+esc(a.id)+'" data-name="'+esc(a.name)+'">'+esc(a.name)+'</option>';
         }).join('');
-        $('bot-pick').innerHTML = '<option value="">Pick a companion…</option>' + opts;
+        $('bot-pick').innerHTML = '<option value="">Pick a character…</option>' + opts;
         if(keep && hits.some(function(a){ return a.id === keep; })){ $('bot-pick').value = keep; }
         $('bot-count').textContent = q
-          ? ('Showing ' + hits.length + ' of ' + BOT_ROSTER.length + ' companions.')
-          : (BOT_ROSTER.length ? (BOT_ROSTER.length + ' companions — type above to shorten the list.') : '');
+          ? ('Showing ' + hits.length + ' of ' + BOT_ROSTER.length + ' characters.')
+          : (BOT_ROSTER.length ? (BOT_ROSTER.length + ' characters — type above to shorten the list.') : '');
       }
       $('bot-filter').addEventListener('input', renderBotOptions);
       async function loadBotRoster(){
@@ -916,14 +916,14 @@
           BOT_ROSTER = (j.agents||[]).map(function(a){ return { id: a.id, name: a.name }; });
           renderBotOptions();
         }catch(e){
-          $('bot-pick').innerHTML = '<option value="">Could not load companions</option>';
+          $('bot-pick').innerHTML = '<option value="">Could not load characters</option>';
         }
       }
       $('bot-invite').addEventListener('click', async function(){
         if(BOT){ say('One guest at a time — ask ' + BOT.name + ' to leave first.'); return; }
         var sel = $('bot-pick');
         var id = sel.value;
-        if(!id){ say('Pick a companion first.'); return; }
+        if(!id){ say('Pick a character first.'); return; }
         var nm = sel.options[sel.selectedIndex].getAttribute('data-name') || 'Guest';
         try{
           botCtx = new AC();

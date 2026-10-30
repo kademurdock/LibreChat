@@ -84,7 +84,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   if (req.query.taskId && req.query.taskId !== job.metadata.taskId) {
-    return res.status(409).json({ error: 'This chat has a different request. Check Agent work.' });
+    return res.status(409).json({ error: 'This chat has a different request. Check Saved replies.' });
   }
 
   const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });

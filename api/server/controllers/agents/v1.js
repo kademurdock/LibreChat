@@ -1353,16 +1353,16 @@ const getAgentCategories = async (_req, res) => {
     if (promotedCount > 0) {
       formattedCategories.unshift({
         value: 'promoted',
-        label: 'Promoted',
+        label: 'Moving faces',
         count: promotedCount,
-        description: 'Our recommended agents',
+        description: 'Characters with moving faces',
       });
     }
 
     formattedCategories.push({
       value: 'all',
       label: 'All',
-      description: 'All available agents',
+      description: 'Every character',
     });
 
     res.status(200).json(formattedCategories);

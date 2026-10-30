@@ -290,6 +290,10 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
+  /** Shown on the Moving faces shelf (the house cast). */
+  is_promoted?: boolean;
+  /** Set only when a list asked for `attic=include`: this character is tucked away. */
+  attic?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;

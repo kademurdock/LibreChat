@@ -149,6 +149,11 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
           <h2 className="text-2xl font-bold text-text-primary">
             {agent?.name || localize('com_agents_loading')}
           </h2>
+          {agent?.is_promoted === true && agent.name && (
+            <p className="mt-1 text-sm text-text-secondary">
+              {localize('com_agents_synthetic_soul', { name: agent.name })}
+            </p>
+          )}
         </div>
 
         {/* Contact info */}

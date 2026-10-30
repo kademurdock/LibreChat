@@ -949,7 +949,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         error:
           error instanceof TaskConflict
             ? error.message
-            : 'The request could not be started safely. Check Agent work before sending again.',
+            : 'The request could not be started safely. Check Saved replies before sending again.',
       });
     } else if (createdTaskJob) {
       // JSON already sent, emit error to stream so client can receive it

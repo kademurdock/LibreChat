@@ -1003,7 +1003,7 @@ const feedbackHtml = `<!doctype html><html lang="en"><head><title>Feedback & Bug
 <body>
   <a class="back" href="/c/new">&larr; Back to chat</a>
   <h1>Feedback &amp; Bug Reports</h1>
-  <p class="muted">Everything your users filed by telling any character. Newest first. Marking a report <strong>Solved</strong> notifies the reporter (push or their next chat, delivered by their companion) — and they can reopen it by just saying so.</p>
+  <p class="muted">Everything your users filed by telling any character. Newest first. Marking a report <strong>Solved</strong> notifies the reporter (push or their next chat, delivered by their character) — and they can reopen it by just saying so.</p>
   <div id="filters" hidden style="margin:.5rem 0">
     <button id="f-open" class="btn" type="button" aria-pressed="true">Open only</button>
     <button id="f-all" class="btn" type="button" aria-pressed="false" style="background:#555">Show all</button>
@@ -1121,7 +1121,7 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
 
   <div class="card">
     <h2>Family check-in calls</h2>
-    <p class="muted">Companion calls to a registered family member on a schedule you choose &mdash; the character calls them, chats warmly, and a written report of how they're doing comes back to you as a nudge. Each call costs about 5&ndash;10 cents (a daily schedule is a few dollars a month), billed to your Usage &amp; Balance tab. Calls run between 8am and 9pm Central. You can also just tell any character, "set up a daily check-in call for Dad at 10."</p>
+    <p class="muted">Character calls to a registered family member on a schedule you choose &mdash; the character calls them, chats warmly, and a written report of how they're doing comes back to you as a nudge. Each call costs about 5&ndash;10 cents (a daily schedule is a few dollars a month), billed to your Usage &amp; Balance tab. Calls run between 8am and 9pm Central. You can also just tell any character, "set up a daily check-in call for Dad at 10."</p>
     <div id="wellList" aria-live="polite"><p class="muted">Loading&hellip;</p></div>
     <form id="wellForm" style="margin-top:.8rem;">
       <h3 style="margin:.4rem 0;">New check-in schedule</h3>
@@ -1146,7 +1146,7 @@ const notificationsHtml = `<!doctype html><html lang="en"><head><title>Notificat
   </div>
 
   <div class="card">
-    <h2>Agent check-ins (Kade-AI iPhone app)</h2>
+    <h2>Character check-ins (Kade-AI iPhone app)</h2>
     <p class="muted">Beyond reminders you set yourself, any character can reach out and check on YOU the way they choose to &mdash; right now, or on a repeating schedule. Just ask one directly: <em>"text me every evening at 6"</em> sets up a recurring check-in; <em>"send me a note that says goodnight"</em> fires one immediately. Ask what schedules you have going, and pause or cancel any of them in chat &mdash; no form to fill out here. This rides your <strong>Kade-AI iPhone app's</strong> notifications (the permission prompt it shows the first time you open it) rather than the browser push above, so it needs that app specifically. Free, and it shares the same quiet hours and daily caps as everything else on this page.</p>
   </div>
 
@@ -1383,7 +1383,8 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
 <a class="back" href="/home">&larr; Back to Kade-AI</a>
 <h1>Describe</h1>
 <section class="card" aria-label="Create a described video"><h2>A video you can listen to</h2><p>Add timed spoken descriptions to an uploaded video or YouTube link, then download the described video or its audio. Narration is included. Metered video analysis uses your account balance after you confirm the price.</p><a class="btn" href="/described-video">Make a described video</a></section>
-<p class="muted">Share, pick, or paste a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
+<h2>Words about a photo, paper or clip</h2>
+<p class="muted">Described video, above, gives you a narrated track to listen to. Describe, here, gives you words: share, pick, or paste a photo, video, PDF, Word file, or text file — I will describe it or read it to you.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading&hellip;</div>
 <div id="controls" style="display:none; margin:1rem 0;">
   <button id="playBtn" class="playbtn" type="button">Play</button>
@@ -1697,8 +1698,8 @@ const toolsHtml = `<!doctype html><html lang="en"><head><title>Tools — Kade-AI
 <nav class="hublist" aria-label="Tools">
   <a class="hubitem" href="/transcribe"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Transcribe &amp; dictate</strong><small>Record or upload audio, get clean text, or organize it into notes</small></span></a>
   <a class="hubitem" href="/describe"><span class="hicon" aria-hidden="true">🖼️</span><span><strong>Describe</strong><small>Have any photo, video, PDF, or document described or read aloud</small></span></a>
-  <a class="hubitem" href="/spotter"><span class="hicon" aria-hidden="true">👁️</span><span><strong>Your Spotter</strong><small>Set up your personal live video companion</small></span></a>
-  <a class="hubitem" href="/lounge"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Kade's Clubhouse</strong><small>Live family voice rooms with a shared jukebox, private Hotel rooms, and companion guests</small></span></a>
+  <a class="hubitem" href="/spotter"><span class="hicon" aria-hidden="true">👁️</span><span><strong>Your Spotter</strong><small>Set up your Spotter, who sees through your camera</small></span></a>
+  <a class="hubitem" href="/lounge"><span class="hicon" aria-hidden="true">🎙️</span><span><strong>Kade's Clubhouse</strong><small>Live family voice rooms with a shared jukebox, private Hotel rooms, and character guests</small></span></a>
   <a class="hubitem" href="/debate-room"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Debate Room</strong><small>Put characters in a room with a topic and jump in</small></span></a>
   <a class="hubitem" href="/conversation-hall"><span class="hicon" aria-hidden="true">🏛️</span><span><strong>Conversation Hall</strong><small>The greatest hits people have shared from the Debate Room</small></span></a>
   <a class="hubitem" href="/parlor"><span class="hicon" aria-hidden="true">🎲</span><span><strong>The Parlor</strong><small>Every game on a menu, a lobby of open tables, party tables with friends, and the family standings</small></span></a>
@@ -1720,8 +1721,8 @@ const youHtml = `<!doctype html><html lang="en"><head><title>You — Kade-AI</ti
   <a class="hubitem" href="/feed-the-server"><span class="hicon" aria-hidden="true">💳</span><span><strong>Donate &mdash; Feed the Server</strong><small>See your usage and balance, and chip in to keep this running</small></span></a>
   <a class="hubitem" href="/notifications"><span class="hicon" aria-hidden="true">🔔</span><span><strong>Notifications &amp; Reminders</strong><small>Birthday nudges and reminders — in chat, push, or by phone</small></span></a>
   <a class="hubitem" href="/pronunciation-dictionary"><span class="hicon" aria-hidden="true">🗣️</span><span><strong>Pronunciation Dictionary</strong><small>Teach Kade-AI how to say names or words you use</small></span></a>
-  <a class="hubitem" href="/logbook"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Logbook</strong><small>The dated record your companions keep of your days &mdash; browse, add, or forget entries</small></span></a>
-  <a class="hubitem" href="/brief"><span class="hicon" aria-hidden="true">🌅</span><span><strong>Morning Brief</strong><small>One push a day from your companion &mdash; your weather, a headline, your day ahead. Turn it on, pick your time</small></span></a>
+  <a class="hubitem" href="/logbook"><span class="hicon" aria-hidden="true">📔</span><span><strong>Your Logbook</strong><small>The dated record your characters keep of your days &mdash; browse, add, or forget entries</small></span></a>
+  <a class="hubitem" href="/brief"><span class="hicon" aria-hidden="true">🌅</span><span><strong>Morning Brief</strong><small>One push a day from your character &mdash; your weather, a headline, your day ahead. Turn it on, pick your time</small></span></a>
   <a class="hubitem" href="#" id="exportLink"><span class="hicon" aria-hidden="true">📦</span><span><strong>Download Your Data</strong><small>Everything that's yours &mdash; memories, logbook, every conversation &mdash; as one zip you keep forever</small></span></a>
   <script>(function(){ var el=document.getElementById('exportLink'); el.addEventListener('click', async function(ev){ ev.preventDefault(); var small=el.querySelector('small'); var orig=small.textContent; small.textContent='Packing your zip — a few seconds…'; try{ var r=await fetch('/api/auth/refresh',{method:'POST',credentials:'include'}); var j=await r.json(); var t=j&&j.token; var resp=await fetch('/api/export/mine',{headers:{Authorization:'Bearer '+t}}); if(!resp.ok) throw new Error('export answered '+resp.status); var blob=await resp.blob(); var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='kade-ai-export.zip'; document.body.appendChild(a); a.click(); a.remove(); small.textContent='Done — check your downloads. '+orig; }catch(e){ small.textContent='Could not pack it just now — try again in a minute.'; } }); })();</script>
   <a class="hubitem" id="accessReqLink" href="/access-requests" style="display:none;"><span class="hicon" aria-hidden="true">🚪</span><span><strong>Access Requests</strong><small>People asking to join &mdash; approve or deny, the blessing text writes itself</small></span></a>
@@ -2199,7 +2200,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       </section>
       <section class="card" aria-labelledby="dailyword-h" id="dailyword-card" hidden>
         <h3 id="dailyword-h" style="margin-top:0">Daily Word streaks</h3>
-        <p class="muted" style="margin:.1rem 0 .4rem">One secret five-letter word a day, same word for everybody. Say &ldquo;play daily word&rdquo; to any companion.</p>
+        <p class="muted" style="margin:.1rem 0 .4rem">One secret five-letter word a day, same word for everybody. Say &ldquo;play daily word&rdquo; to any character.</p>
         <table id="dailyword">
           <thead><tr><th scope="col">Player</th><th scope="col" class="num">Streak</th><th scope="col" class="num">Best</th><th scope="col" class="num">Solved</th><th scope="col" class="num">Played</th><th scope="col">Today</th></tr></thead>
           <tbody></tbody>
@@ -2286,7 +2287,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
     </p>
   </section>
 
-  <footer class="muted">Same tables as chat and the phone line &mdash; deal here, say &ldquo;deal me in&rdquo; to any companion later, and it picks right up. &mdash; Kade-AI</footer>
+  <footer class="muted">Same tables as chat and the phone line &mdash; deal here, say &ldquo;deal me in&rdquo; to any character later, and it picks right up. &mdash; Kade-AI</footer>
 
   <script>
     (async function(){
@@ -2748,7 +2749,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
 <h1>Your Logbook</h1>
-<p class="muted">The dated record your companions quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the companion you told it to; entries you add here can be recalled by any of them. Edit fixes an entry's wording in place; Forget removes it for good.</p>
+<p class="muted">The dated record your characters quietly keep as you share your days — plus anything you write in yourself. Each entry stays with the character you told it to; entries you add here can be recalled by any of them. Edit fixes an entry's wording in place; Forget removes it for good.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading your logbook&hellip;</div>
 <section id="listSec" aria-label="Logbook entries" style="display:none;">
   <h2 id="listTop" tabindex="-1" style="position:absolute;left:-9999px;">Logbook entries</h2>
@@ -2756,7 +2757,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 </section>
 <section class="card" aria-label="Add an entry">
   <h2>Add an entry yourself</h2>
-  <p class="muted" style="margin-top:0;">Dated today, in your own words. Any of your companions can recall entries you add here.</p>
+  <p class="muted" style="margin-top:0;">Dated today, in your own words. Any of your characters can recall entries you add here.</p>
   <form class="addform" id="addForm">
     <label for="entryText">What happened, or how the day went</label>
     <textarea id="entryText" name="entryText" required maxlength="2000"></textarea>
@@ -2766,13 +2767,13 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
   </form>
 </section>
 <section class="card" aria-labelledby="shareHead">
-  <h2 id="shareHead">Memory sharing between your companions</h2>
-  <p class="muted" style="margin-top:0;">Each companion keeps its own memories of you. Turn sharing on and the <strong>facts</strong> you told one &mdash; memory cards and logbook lines &mdash; can surface for another, marked as secondhand, so you never say a thing twice. Their <strong>opinions</strong> and their own read of you stay their own. Off is truly off; nothing is copied.</p>
+  <h2 id="shareHead">Memory sharing between your characters</h2>
+  <p class="muted" style="margin-top:0;">Each character keeps its own memories of you. Turn sharing on and the <strong>facts</strong> you told one &mdash; memory cards and logbook lines &mdash; can surface for another, marked as secondhand, so you never say a thing twice. Their <strong>opinions</strong> and their own read of you stay their own. Off is truly off; nothing is copied.</p>
   <fieldset id="shareSet" style="border:0;padding:0;margin:0;">
     <legend style="font-weight:600;margin-bottom:.4rem;">Who shares</legend>
-    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="off"> Off &mdash; each companion knows only what you told it</label>
-    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="all"> All my companions</label>
-    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="list"> Only the companions I pick</label>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="off"> Off &mdash; each character knows only what you told it</label>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="all"> All my characters</label>
+    <label style="display:block;margin:.3rem 0;"><input type="radio" name="shareMode" value="list"> Only the characters I pick</label>
   </fieldset>
   <div id="shareList" style="display:none;margin:.6rem 0 0 1.2rem;"></div>
   <div style="margin-top:1rem;">
@@ -2792,7 +2793,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
     var box=document.getElementById('shareList'); box.innerHTML='';
     box.style.display = shareMode()==='list' ? '' : 'none';
     if(shareMode()!=='list') return;
-    if(shareCompanions.length<2){ var p=document.createElement('p'); p.className='muted'; p.textContent='Only one companion has memories of you so far, so there is nobody to share with yet.'; box.appendChild(p); return; }
+    if(shareCompanions.length<2){ var p=document.createElement('p'); p.className='muted'; p.textContent='Only one character has memories of you so far, so there is nobody to share with yet.'; box.appendChild(p); return; }
     shareCompanions.forEach(function(c){
       var l=document.createElement('label'); l.style.display='block'; l.style.margin='.3rem 0';
       var cb=document.createElement('input'); cb.type='checkbox'; cb.value=c.agentId; cb.checked=!!c.on; cb.setAttribute('data-share','1');
@@ -2814,7 +2815,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
   document.getElementById('shareSave').addEventListener('click', async function(){
     var st=document.getElementById('shareStatus'); var mode=shareMode();
     var agents=Array.prototype.map.call(document.querySelectorAll('#shareList input[data-share]:checked'), function(cb){ return cb.value; });
-    if(mode==='list' && agents.length<2){ st.textContent='Pick at least two companions first.'; st.className='status err'; return; }
+    if(mode==='list' && agents.length<2){ st.textContent='Pick at least two characters first.'; st.className='status err'; return; }
     st.textContent='Saving\u2026'; st.className='status';
     try{
       var r=await fetch('/api/kade/memory-share',{method:'PUT',headers:{Authorization:'Bearer '+TOKEN,'Content-Type':'application/json'},body:JSON.stringify({mode:mode,agents:agents})});
@@ -2840,8 +2841,8 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
   function metaLine(e){
     if(e.source==='manual'){ return 'Added by you'; }
     if(e.agentName){ return 'With '+e.agentName; }
-    if(e.agentId){ return 'With one of your companions'; }
-    return 'Shared — every companion may recall this';
+    if(e.agentId){ return 'With one of your characters'; }
+    return 'Shared — every character may recall this';
   }
 
   function renderList(){
@@ -2849,7 +2850,7 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
     list.innerHTML='';
     if(!entries.length){
       listSec.style.display='none';
-      setStatus('Nothing here yet. Your logbook fills up as you share your days with your companions — or add a line yourself below.');
+      setStatus('Nothing here yet. Your logbook fills up as you share your days with your characters — or add a line yourself below.');
       return;
     }
     listSec.style.display='';
@@ -3528,7 +3529,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
 <h1>Morning Brief</h1>
-<p class="muted">One short push a day, written fresh by your companion: your town's weather, one worthwhile headline, and a nod to your day ahead. It goes only to your own phone, and only if you turn it on.</p>
+<p class="muted">One short push a day, written fresh by your character: your town's weather, one worthwhile headline, and a nod to your day ahead. It goes only to your own phone, and only if you turn it on.</p>
 <div id="status" class="status" role="status" aria-live="polite">Loading your settings&hellip;</div>
 
 <section class="card" id="todaySec" style="display:none;" aria-label="Today's brief">
@@ -3549,7 +3550,7 @@ const briefHtml = `<!doctype html><html lang="en"><head><title>Morning Brief —
       <legend style="font-weight:600; margin-bottom:.2rem;">What goes in it</legend>
       <label class="row"><input type="checkbox" id="itemWeather" checked> <span>My weather</span></label>
       <label class="row"><input type="checkbox" id="itemNews" checked> <span>One good headline</span></label>
-      <label class="row"><input type="checkbox" id="itemDayAhead" checked> <span>My day ahead (from what my companion knows)</span></label>
+      <label class="row"><input type="checkbox" id="itemDayAhead" checked> <span>My day ahead (from what my character knows)</span></label>
     </fieldset>
     <label class="row" for="location" style="align-items:flex-start; flex-direction:column; gap:.3rem;"><span>My town (for the weather)</span> <input type="text" id="location" placeholder="Highlandville, Missouri" maxlength="80" style="width:100%;"></label>
     <div style="display:flex; gap:.8rem; margin-top:1rem; flex-wrap:wrap;">

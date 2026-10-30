@@ -42,52 +42,25 @@ function section(title, tiles, extraAttrs = '') {
   return `<h2 id="sec-${title.toLowerCase().replace(/[^a-z]+/g, '-')}"${extraAttrs}>${esc(title)}</h2>\n<nav class="hublist" aria-labelledby="sec-${title.toLowerCase().replace(/[^a-z]+/g, '-')}">\n${tiles.join('\n')}\n</nav>`;
 }
 
-/* ── THE MAP, verbatim from native ─────────────────────────────────────── */
+/* ── THE MAP, in the iPhone's five-tab order (Oct 29 2026) ─────────────────
+ * Kade's yes on the cleanup plan: the web Home had drifted from the phone (no
+ * Described video, Arcade or Search; Game Room and Conversation Hall still
+ * separate; other section names). The sections are now the phone's tabs, in
+ * the phone's order: Talk, Library, Create, Play, More. Wording follows the
+ * same plan: "character" on every button, never "agent" or "companion".
+ * Source of truth stays native KadeTabPages.swift; when a tab changes there,
+ * it changes here to match. */
 const TALK = [
   { id: 'spotter', href: '/spotter', title: 'Call your Spotter', spoken: 'Call your Spotter', icon: '👁️',
-    hint: 'Starts a live call with your visual companion straight away, without picking anyone first.' },
-  { id: 'chat', href: '/c/new', title: 'Talk to your companion', spoken: 'Talk to your companion', icon: '💬',
-    hint: 'A fresh chat with your main companion. Same as the Chats tab.' },
-  { id: 'convos', href: '/conversations', title: 'Your conversations', spoken: 'Your conversations', icon: '🗂️',
-    hint: 'Opens your conversation list.' },
-  { id: 'agentwork', href: '/agent-work', title: 'Agent work', spoken: 'Agent work', icon: '📋',
-    hint: 'Check recent requests and find saved replies after a connection drops.' },
-  { id: 'alerts', href: '/notifications', title: 'Alerts', spoken: 'Alerts', icon: '🔔',
-    hint: 'Your recent reminders and check-ins, and how they reach you.' },
-  { id: 'announce', href: '/announcements', title: 'Announcements', spoken: 'Announcements', icon: '📣',
-    hint: "What's New announcements from Kade-AI, full text, newest first." },
-];
-
-// Six rows of two on native; one flat list here reads in the identical order.
-const TOOLS = [
+    hint: 'Starts a live call with your Spotter, who sees through your camera, straight away. The same page sets up your Spotter.' },
+  { id: 'chat', href: '/c/new', title: 'Talk to your main character', spoken: 'Talk to your main character', icon: '💬',
+    hint: 'Opens a new conversation with your main character.' },
+  { id: 'describe', href: '/describe', title: 'Describe', spoken: 'Describe a photo, video, or document', icon: '🖼️',
+    hint: 'Words about a photo, a paper or a short clip. Its first button makes a described video: a narrated track you can listen to.' },
   { id: 'transcribe', href: '/transcribe', title: 'Transcribe', spoken: 'Transcribe a voice memo', icon: '🎙️',
     hint: 'Records what you say and turns it into text you can edit, tidy up and share.' },
-  { id: 'describe', href: '/describe', title: 'Describe', spoken: 'Describe a photo, video, or document', icon: '🖼️',
-    hint: 'Take or choose a photo or video, or pick a document, and get it described or read back to you.' },
-  { id: 'matchmaker', href: '/matchmaker', title: 'Matchmaker', spoken: 'Matchmaker', icon: '💘',
-    hint: 'Five quick questions, then three companions who might be a good fit.' },
-  { id: 'parlor', href: '/parlor', title: 'The Parlor', spoken: 'The Parlor', icon: '🎲',
-    hint: 'Every game on a menu — play your own cards with buttons, seat characters if you want company, and a house narrator calls the table.' },
-  { id: 'clubhouse', href: '/clubhouse', title: "Kade's Clubhouse", spoken: "Kade's Clubhouse", icon: '🔊',
-    hint: 'Live family voice rooms with a shared jukebox anyone can drive, private Hotel rooms with passcodes, and companion guests you can invite in.' },
-  { id: 'debate', href: '/debate-room', title: 'Debate Room', spoken: 'Debate Room', icon: '🗣️',
-    hint: 'Set a topic, cast 2 to 6 companions, and let them go back and forth. Also reaches the Conversation Hall.' },
-  { id: 'builder', href: '/agent-builder', title: 'Agent Builder', spoken: 'Agent Builder', icon: '🛠️',
-    hint: 'Create or edit your own companions.' },
-  { id: 'marketplace', href: '/agents', title: 'Marketplace', spoken: 'The Marketplace', icon: '🏪',
-    hint: "Browse every published character by category, hear who's who, start talking to anyone — and publish your own creations." },
-  { id: 'bookmarks', href: '/bookmarks', title: 'Bookmarks', spoken: 'Bookmarks', icon: '🔖',
-    hint: 'Your tagged conversations, gathered by bookmark — tag any conversation from the conversation list.' },
-  { id: 'prompts', href: '/prompts/new', title: 'Prompts', spoken: 'The Prompt Library', icon: '⭐',
-    hint: 'Saved prompts you can drop into a fresh chat pre-typed, plus a form to save new ones.' },
-  { id: 'library', href: '/library', title: 'The Library', spoken: 'The Library', icon: '📚',
-    hint: 'The family library: books read aloud by a voice you pick, the archive of television, commercials, tapes and radio, described videos, playlists, and a place to submit finds for the shelves.' },
-  { id: 'soundbooth', href: '/sound-booth', title: 'Sound Booth', spoken: 'The Sound Booth', icon: '🎙️',
-    hint: 'Write something and have it performed. One actor with real acting on Kade\u2019s own machine, or a whole scene with several voices, music and sound effects.' },
-  { id: 'creations', href: '/my-creations', title: 'My Creations', spoken: 'My Creations', icon: '🎨',
-    hint: "Every picture, video, and song you've made — play them, save them, or put them on the family Wall of Fame." },
-  { id: 'wall', href: '/wall-of-fame', title: 'Wall of Fame', spoken: 'Wall of Fame', icon: '🏆',
-    hint: 'Creations the whole family chose to share, newest first.' },
+  { id: 'convos', href: '/conversations', title: 'Your conversations', spoken: 'Your conversations', icon: '🗂️',
+    hint: 'Opens your conversation list.' },
 ];
 
 /* Sep 29 2026: the family history (docs/FAMILY_HISTORY.md). Hidden until
@@ -96,42 +69,89 @@ const TOOLS = [
 const FAMILY_HISTORY = { id: 'familyhistory', href: '/family-history', title: 'Family history', spoken: 'Family history', icon: '🌳', hidden: true,
   hint: 'The family tree, records, graves and stories, said from your own place in the family. Private to the family.' };
 
-const SETTINGS = [
+const LIBRARY = [
+  { id: 'library', href: '/library', title: 'The Library', spoken: 'The Library', icon: '📚',
+    hint: 'The family library: books read aloud by a voice you pick, the archive of television, commercials, tapes and radio, described videos, playlists, and a place to submit finds for the shelves.' },
+  { id: 'librarian', href: '/c/new?agent_id=agent_o7TKU3lK0Euo0MKgpNpvZ', title: 'Talk to the Librarian', spoken: 'Talk to the Librarian', icon: '🦉',
+    hint: 'Mrs. Witherspoon finds books, shows and tapes on the shelves for you.' },
+];
+
+/* Described video shows once /api/kade/described-video/config answers, the
+ * same rule as the phone's Create tab. */
+const CREATE = [
+  { id: 'soundbooth', href: '/sound-booth', title: 'Sound Booth', spoken: 'The Sound Booth', icon: '🎙️',
+    hint: 'Write something and have it performed. One actor with real acting on Kade’s own machine, or a whole scene with several voices, music and sound effects.' },
+  { id: 'creations', href: '/my-creations', title: 'My Creations', spoken: 'My Creations', icon: '🎨',
+    hint: "Every picture, video, and song you've made — play them, save them, or put them on the family Wall of Fame." },
+  { id: 'wall', href: '/wall-of-fame', title: 'Wall of Fame', spoken: 'Wall of Fame', icon: '🏆',
+    hint: 'Creations the whole family chose to share, newest first.' },
+  { id: 'builder', href: '/agent-builder', title: 'Character Builder', spoken: 'Character Builder', icon: '🛠️',
+    hint: 'Create or edit your own characters.' },
+  { id: 'prompts', href: '/prompts/new', title: 'Prompts', spoken: 'The Prompt Library', icon: '⭐',
+    hint: 'Saved prompts you can drop into a fresh chat pre-typed, plus a form to save new ones.' },
+  { id: 'describedvideo', href: '/described-video', title: 'Described video', spoken: 'Make a described video', icon: '🎬', hidden: true,
+    hint: 'A narrator describes what happens on screen in the pauses, keeping the actors, music and sound. The price is said before anything is spent.' },
+];
+
+const PLAY = [
+  { id: 'parlor', href: '/parlor', title: 'The Parlor', spoken: 'The Parlor', icon: '🎲',
+    hint: 'Every game on a menu — play your own cards with buttons, seat characters if you want company, and a house narrator calls the table. Reverie and the Game Room standings are inside.' },
+  { id: 'clubhouse', href: '/clubhouse', title: "Kade's Clubhouse", spoken: "Kade's Clubhouse", icon: '🔊',
+    hint: 'Live family voice rooms with a shared jukebox anyone can drive, private Hotel rooms with passcodes, and character guests you can invite in.' },
+  { id: 'debate', href: '/debate-room', title: 'Debate Room', spoken: 'Debate Room', icon: '🗣️',
+    hint: 'Set a topic, cast 2 to 6 characters, and let them go back and forth. Also reaches the Conversation Hall.' },
+  { id: 'matchmaker', href: '/matchmaker', title: 'Matchmaker', spoken: 'Matchmaker', icon: '💘',
+    hint: 'Five quick questions, then three characters who might be a good fit.' },
+  { id: 'arcade', href: '/help', title: 'Arcade', spoken: 'The Arcade, in the phone apps', icon: '🕹️',
+    hint: 'Old console games made to play by ear, by touch, keyboard or controller. The Arcade plays in the iPhone and Android apps; this opens Help.' },
+  { id: 'marketplace', href: '/agents', title: 'Marketplace', spoken: 'The Marketplace', icon: '🏪',
+    hint: "Meet every character by category, hear who's who, start talking to anyone — and publish your own." },
+];
+
+const MORE = [
+  { id: 'search', href: '/search', title: 'Search', spoken: 'Search your conversations', icon: '🔍',
+    hint: 'Finds words in your conversations. To search the shelves, use the Library.' },
+  { id: 'alerts', href: '/notifications', title: 'Alerts', spoken: 'Alerts', icon: '🔔',
+    hint: 'Your recent reminders and check-ins, and how they reach you.' },
+  { id: 'announce', href: '/announcements', title: 'Announcements', spoken: 'Announcements', icon: '📣',
+    hint: "What's New announcements from Kade-AI, full text, newest first." },
+  { id: 'agentwork', href: '/agent-work', title: 'Saved replies', spoken: 'Saved replies', icon: '📋',
+    hint: 'Replies saved after a dropped connection, and your recent requests.' },
+  { id: 'bookmarks', href: '/bookmarks', title: 'Bookmarks', spoken: 'Bookmarks', icon: '🔖',
+    hint: 'Your tagged conversations, gathered by bookmark — tag any conversation from the conversation list.' },
   { id: 'settings', href: '/settings', title: 'Settings', spoken: 'Settings', icon: '⚙️',
     hint: 'Speech, accessibility, and pronunciation dictionary settings.' },
   { id: 'help', href: '/help', title: 'Help', spoken: 'Help', icon: '❓',
-    hint: 'How everything in the app works, section by section.' },
+    hint: 'Where everything is and how it works, section by section.' },
   /* Sep 5 2026 (Part 132.2): Kade-AI 2.0 is on the App Store. The tile points
    * at the listing itself so nobody has to search; Android has its own page. */
   { id: 'app', href: 'https://apps.apple.com/app/id6791024001', title: 'Get the iPhone app', spoken: 'Get the iPhone app, on the App Store', icon: '📱',
     hint: 'Kade-AI is on the App Store. Same sign-in as here. Android phone? See Help, The Android App.' },
 ];
 
-/* Her call (Sep 2 2026): mirror native EXACTLY, and where the web has
- * something native lacks, put it on a "Web only" shelf at the bottom so the
- * gap is visible instead of hidden. Everything here is a candidate for a
- * native port; when one ships, its tile moves up into the native order. */
+/* Her call (Sep 2 2026): where the web has something native lacks, it sits on
+ * a "Web only" shelf at the bottom so the gap is visible instead of hidden. The
+ * Game Room (inside the Parlor), the Conversation Hall (inside the Debate Room)
+ * and the second Spotter tile left this shelf on Oct 29 2026. Skills and
+ * Projects (nobody has used either) moved into a closed Power tools group. */
 const WEB_ONLY = [
   { id: 'you', href: '/you', title: 'You', spoken: 'You: notifications, logbook, morning brief, your data', icon: '👤',
     hint: 'Notifications and reminders, your logbook, the morning brief, the pronunciation dictionary, and a download of everything that is yours.' },
   { id: 'memories', href: '/memories', title: 'Memories', spoken: 'Memories', icon: '🧠',
-    hint: 'The cards your companions keep about you. Read, edit, or delete any of them.' },
+    hint: 'The cards your characters keep about you. Read, edit, or delete any of them.' },
   { id: 'files', href: '/files', title: 'Files', spoken: 'Files', icon: '📎',
-    hint: 'Everything you have uploaded, and what each companion can read.' },
-  { id: 'hall', href: '/conversation-hall', title: 'Conversation Hall', spoken: 'Conversation Hall', icon: '🏛️',
-    hint: 'The greatest hits people have shared from the Debate Room.' },
-  { id: 'gameroom', href: '/game-room', title: 'Game Room', spoken: 'Game Room', icon: '🎮',
-    hint: 'The older game room, kept for the trivia nights that started here.' },
+    hint: 'Everything you have uploaded, and what each character can read.' },
   { id: 'calls', href: '/calls', title: 'Calls', spoken: 'Calls', icon: '📞',
-    hint: 'Your phone-call history with your companions, and the numbers registered to call in.' },
-  { id: 'spottersetup', href: '/spotter', title: 'Set up your Spotter', spoken: 'Set up your Spotter', icon: '👁️',
-    hint: 'Name your live visual companion, pick their voice, and give them a personality.' },
-  { id: 'skills', href: '/skills', title: 'Skills', spoken: 'Skills', icon: '📜',
-    hint: 'Reusable instructions your companions can be handed. Power-user feature.' },
-  { id: 'projects', href: '/projects', title: 'Projects', spoken: 'Projects', icon: '🗃️',
-    hint: 'Group conversations and files around one piece of work. Power-user feature.' },
+    hint: 'Your phone-call history with your characters, and the numbers registered to call in.' },
   { id: 'feed', href: '/feed-the-server', title: 'Feed the Server', spoken: 'Feed the Server', icon: '💳',
     hint: 'See your usage and balance, and chip in to keep this running.' },
+];
+
+const POWER_TOOLS = [
+  { id: 'skills', href: '/skills', title: 'Skills', spoken: 'Skills', icon: '📜',
+    hint: 'Reusable instructions your characters can be handed.' },
+  { id: 'projects', href: '/projects', title: 'Projects', spoken: 'Projects', icon: '🗃️',
+    hint: 'Group conversations and files around one piece of work.' },
 ];
 
 const ADMIN = [
@@ -159,8 +179,13 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
   main > h2 { color: #4e365f; padding-inline-start: .7rem; border-inline-start: 4px solid #9470b7; }
   main nav.hublist { --home-accent: #72518e; --home-tint: #efe6f7; }
   main nav[aria-labelledby="sec-talk"] { --home-accent: #74519a; --home-tint: #eee3fa; }
-  main nav[aria-labelledby="sec-tools"] { --home-accent: #246d69; --home-tint: #e2f2ee; }
-  main nav[aria-labelledby="sec-settings-and-help"] { --home-accent: #8a5934; --home-tint: #faf0df; }
+  main nav[aria-labelledby="sec-library"] { --home-accent: #2f5f8f; --home-tint: #e2ecf7; }
+  main nav[aria-labelledby="sec-create"] { --home-accent: #246d69; --home-tint: #e2f2ee; }
+  main nav[aria-labelledby="sec-play"] { --home-accent: #9a4a6a; --home-tint: #f8e4ec; }
+  main nav[aria-labelledby="sec-more"] { --home-accent: #8a5934; --home-tint: #faf0df; }
+  details.power { margin-top: 1rem; }
+  details.power summary { cursor: pointer; font-weight: 650; padding: .6rem 0; min-height: 44px; }
+  details.power summary:focus-visible { outline: 3px solid #5b2e85; outline-offset: 3px; }
   main a.hubitem { border-color: #dfd9e7; border-inline-start: 4px solid var(--home-accent); box-shadow: 0 2px 8px #33214608; }
   main a.hubitem > span:last-child { min-width: 0; overflow-wrap: anywhere; }
   main a.hubitem .hicon { display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: 12px; background: var(--home-tint); font-size: 1.4rem; }
@@ -180,8 +205,11 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
     main a.hubitem { background: #231e2b; border-color: #54445f; border-inline-start-color: var(--home-accent); }
     main nav.hublist { --home-accent: #b68bd6; --home-tint: #40304c; }
     main nav[aria-labelledby="sec-talk"] { --home-accent: #b68bd6; --home-tint: #40304c; }
-    main nav[aria-labelledby="sec-tools"] { --home-accent: #77bdb0; --home-tint: #203d39; }
-    main nav[aria-labelledby="sec-settings-and-help"] { --home-accent: #d7aa74; --home-tint: #443529; }
+    main nav[aria-labelledby="sec-library"] { --home-accent: #8cb4e0; --home-tint: #22344a; }
+    main nav[aria-labelledby="sec-create"] { --home-accent: #77bdb0; --home-tint: #203d39; }
+    main nav[aria-labelledby="sec-play"] { --home-accent: #e09ab8; --home-tint: #47283a; }
+    main nav[aria-labelledby="sec-more"] { --home-accent: #d7aa74; --home-tint: #443529; }
+    details.power summary:focus-visible { outline-color: #e5b9ff; }
     main a.hubitem:focus-visible { outline-color: #e5b9ff; }
   }
   @media (prefers-contrast: more) {
@@ -213,16 +241,23 @@ const homeHtml = `<!doctype html><html lang="en"><head><title>Home — Kade-AI</
 <h2 id="sec-account">Your account</h2>
 <p class="acct" id="acctEmail" aria-live="polite">Checking who you are…</p>
 
-${section('Watch, listen, and meet', [...TOOLS.filter(item => ['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile), tile(FAMILY_HISTORY)])}
-
-${section('Create and explore', TOOLS.filter(item => !['library', 'clubhouse', 'parlor'].includes(item.id)).map(tile))}
-
 ${section('Talk', TALK.map(tile))}
 
-${section('Settings and help', SETTINGS.map(tile))}
+${section('Library', [...LIBRARY.map(tile), tile(FAMILY_HISTORY)])}
+
+${section('Create', CREATE.map(tile))}
+
+${section('Play', PLAY.map(tile))}
+
+${section('More', MORE.map(tile))}
 
 ${section('Web only', WEB_ONLY.map(tile))}
 <p class="muted" style="margin-top:-.25rem;font-size:.9rem">These are on the website and not in the iPhone app yet. When one comes to the app, it moves up into the list above.</p>
+<details class="power"><summary>Power tools</summary>
+<nav class="hublist" aria-label="Power tools">
+${POWER_TOOLS.map(tile).join('\n')}
+</nav>
+</details>
 
 <h2 id="adminSec">Admin</h2>
 <nav class="hublist" id="adminNav" aria-labelledby="adminSec">
@@ -243,6 +278,9 @@ ${ADMIN.map(tile).join('\n')}
       if(u.role === 'ADMIN'){ document.getElementById('adminSec').style.display=''; document.getElementById('adminNav').style.display=''; }
     }
   }catch(e){}
+  apiGet('/api/kade/described-video/config', t).then(function(r){
+    if(r.ok){ document.getElementById('tile-describedvideo').style.display=''; }
+  }).catch(function(){});
   apiGet('/api/kade/family-history/me', t).then(function(fh){ return fh.ok ? fh.json() : null; }).then(function(fj){
     if(fj && fj.access){ document.getElementById('tile-familyhistory').style.display=''; }
     else return apiGet('/api/kade/family-history/archives', t).then(function(r){ return r.ok ? r.json() : null; }).then(function(catalog){

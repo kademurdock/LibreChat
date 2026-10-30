@@ -63,7 +63,7 @@
       if (response.status === 401) {
         token = null;
         login.hidden = false;
-        throw new Error('Please sign in again, then return to Agent work.');
+        throw new Error('Please sign in again, then return to Saved replies.');
       }
       if (response.status === 404 && (requestId || runId)) {
         throw new Error(
@@ -213,7 +213,7 @@
       if (!token) {
         const auth = await request('/api/auth/refresh', { method: 'POST', credentials: 'include' });
         token = auth.token;
-        if (!token) throw new Error('Please sign in again, then return to Agent work.');
+        if (!token) throw new Error('Please sign in again, then return to Saved replies.');
         const options = await request('/api/kade/work-options', {
           headers: { Authorization: 'Bearer ' + token },
         });

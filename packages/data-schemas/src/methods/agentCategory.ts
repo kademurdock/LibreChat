@@ -179,7 +179,8 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')):
   async function ensureDefaultCategories(): Promise<boolean> {
     const AgentCategory = mongoose.models.AgentCategory as Model<IAgentCategory>;
 
-    const defaultCategories = [
+    /** LibreChat's stock office categories. KADE_STOCK_CATEGORIES=1 brings them back. */
+    const stockCategories = [
       {
         value: 'general',
         label: 'com_agents_category_general',
@@ -224,6 +225,50 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')):
       },
     ];
 
+    /**
+     * Oct 29 2026, Kade's yes on the cleanup plan: five real categories instead of LibreChat's
+     * office ones (HR, IT, sales...). The sixth, Moving faces, is the promoted tab.
+     */
+    const kadeCategories = [
+      {
+        value: 'friends',
+        label: 'com_agents_category_friends',
+        description: 'com_agents_category_friends_description',
+        order: 0,
+      },
+      {
+        value: 'helpers',
+        label: 'com_agents_category_helpers',
+        description: 'com_agents_category_helpers_description',
+        order: 1,
+      },
+      {
+        value: 'creative',
+        label: 'com_agents_category_creative',
+        description: 'com_agents_category_creative_description',
+        order: 2,
+      },
+      {
+        value: 'games',
+        label: 'com_agents_category_games',
+        description: 'com_agents_category_games_description',
+        order: 3,
+      },
+      {
+        value: 'family',
+        label: 'com_agents_category_family',
+        description: 'com_agents_category_family_description',
+        order: 4,
+      },
+    ];
+
+    const useStock = process.env.KADE_STOCK_CATEGORIES === '1';
+    const defaultCategories = useStock ? stockCategories : kadeCategories;
+    const kadeValues = new Set(kadeCategories.map((category) => category.value));
+    const retiredValues = stockCategories
+      .map((category) => category.value)
+      .filter((value) => !kadeValues.has(value));
+
     const existingCategories = await getAllCategories();
     const existingCategoryMap = new Map(existingCategories.map((cat) => [cat.value, cat]));
 
@@ -254,6 +299,25 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')):
       }
     }
 
+    /* Stock rows nobody customised are switched off (or back on for the rollback); never deleted. */
+    const retireResult = await tenantSafeBulkWrite(
+      AgentCategory,
+      [
+        {
+          updateMany: {
+            filter: {
+              value: { $in: retiredValues },
+              custom: { $ne: true },
+              isActive: useStock ? false : true,
+            },
+            update: { $set: { isActive: useStock } },
+          },
+        },
+      ],
+      { ordered: false },
+    );
+    const retiredChanged = (retireResult.modifiedCount ?? 0) > 0;
+
     if (updates.length > 0) {
       const bulkOps = updates.map((update) => ({
         updateOne: {
@@ -270,7 +334,7 @@ export function createAgentCategoryMethods(mongoose: typeof import('mongoose')):
       await tenantSafeBulkWrite(AgentCategory, bulkOps, { ordered: false });
     }
 
-    return updates.length > 0 || created > 0;
+    return updates.length > 0 || created > 0 || retiredChanged;
   }
 
   return {
