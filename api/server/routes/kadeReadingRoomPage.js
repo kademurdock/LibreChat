@@ -345,7 +345,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <select id="deliverySel"><option value="STABLE">Steady</option><option value="BALANCED">Balanced</option><option value="CREATIVE">Lively</option></select>
       <label class="field"><input type="checkbox" id="followAlong"> Highlight the current passage</label>
       <label class="field" for="speedSel">Speed</label>
-      <select id="speedSel"><option value="0.75" aria-label="0.75 times">0.75x</option><option value="0.8" aria-label="0.8 times">0.8x</option><option value="0.9" aria-label="0.9 times">0.9x</option><option value="1" aria-label="1 times" selected>1x</option><option value="1.1" aria-label="1.1 times">1.1x</option><option value="1.2" aria-label="1.2 times">1.2x</option><option value="1.3" aria-label="1.3 times">1.3x</option><option value="1.4" aria-label="1.4 times">1.4x</option><option value="1.5" aria-label="1.5 times">1.5x</option></select>
+      <select id="speedSel"><option value="0.75" aria-label="0.75 times">0.75x</option><option value="0.8" aria-label="0.8 times">0.8x</option><option value="0.9" aria-label="0.9 times">0.9x</option><option value="1" aria-label="Normal" selected>1x</option><option value="1.1" aria-label="1.1 times">1.1x</option><option value="1.2" aria-label="1.2 times">1.2x</option><option value="1.3" aria-label="1.3 times">1.3x</option><option value="1.4" aria-label="1.4 times">1.4x</option><option value="1.5" aria-label="1.5 times">1.5x</option></select>
     </div>
 
     <details><summary>Bookmarks</summary>

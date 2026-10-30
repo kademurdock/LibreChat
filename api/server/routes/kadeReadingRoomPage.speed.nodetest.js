@@ -34,12 +34,13 @@ test('1x is the one default', () => {
   );
 });
 
-test('labels are numbers for the eye and for the ear', () => {
+test('labels are numbers for the eye and for the ear, and 1x is Normal', () => {
   for (const [, value, spoken, shown] of options) {
     assert.strictEqual(shown, `${value}x`);
-    assert.strictEqual(spoken, `${value} times`);
+    assert.strictEqual(spoken, value === '1' ? 'Normal' : `${value} times`);
   }
-  assert.ok(!/Slower|Faster|Fastest|Normal/.test(select));
+  assert.ok(!/Slower|Faster|Fastest/.test(select));
+  assert.ok(!page.includes('"1 times"'));
 });
 
 test('every generated clip URL carries the pacing mark, so older cached clips cannot replay', () => {

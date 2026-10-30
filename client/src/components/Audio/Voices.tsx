@@ -9,7 +9,7 @@ import { cn, logger } from '~/utils';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useVoiceAudition } from '~/components/Audio/useVoiceAudition';
 import { speechAudioBlob } from '~/hooks/Audio/speech';
-import { generationRate } from '~/utils/voicePace';
+import { characterSpeedFor, generationRate } from '~/utils/voicePace';
 import store from '~/store';
 import {
   saveAgentVoicePreference,
@@ -453,14 +453,29 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
   // July 23 2026: + loose category sections for the same list (her ask: "the
   // madness and chaos should have some form and shape").
   const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalog();
-  /* Oct 16 2026: audition at the pace chat uses for the active character (its rate, or the
-   * listener's own pace when one is chosen), so the sample sounds like its voice messages. */
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const pacePreference = useRecoilValue(store.voicePacePreference);
-  const auditionSpeed = generationRate(voiceSpeed, pacePreference);
+  const builderVoice = activeAgent?.tts?.voiceId ?? undefined;
+  const builderRate = activeAgent?.tts?.speakingRate;
+  /* Oct 30 2026: each sample plays at the speed that voice will really play: the listener's number,
+   * else the character's number on its own builder voice, else 1x. voiceSpeed can't answer this: it
+   * follows the voice in use, not the one being sampled. A builder voice saved under an old name
+   * still matches its new one in this list. */
+  const auditionSpeed = useCallback(
+    (sampled: string) =>
+      generationRate(
+        characterSpeedFor(
+          normalizeVoiceLabel(builderVoice, orderedVoices, renames) ?? builderVoice,
+          sampled,
+          builderRate,
+        ),
+        pacePreference,
+      ),
+    [builderVoice, builderRate, orderedVoices, renames, pacePreference],
+  );
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
     auditionTemplate,
-    speed: auditionSpeed,
+    speedFor: auditionSpeed,
   });
 
   const [open, setOpen] = useState(false);
@@ -543,7 +558,6 @@ export function ExternalVoiceDropdown({ disabled = false }: { disabled?: boolean
     setResetAnnouncement('');
   };
 
-  const builderVoice = activeAgent?.tts?.voiceId ?? undefined;
   const agentDisplayName = activeAgent?.name ?? '';
   /** Which chain link is actually sounding right now (mirrors useAgentVoiceSync). */
   const voiceSourceText = useMemo(() => {

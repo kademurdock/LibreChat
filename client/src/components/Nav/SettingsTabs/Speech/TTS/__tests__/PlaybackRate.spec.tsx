@@ -42,7 +42,8 @@ describe('Voice speed (one list for every voice)', () => {
   it('names each number for a screen reader', () => {
     const { getByRole } = renderControl();
     expect(getByRole('option', { name: '1.2 times' })).toHaveTextContent('1.2x');
-    expect(getByRole('option', { name: "Character's speed (1 times)" })).toHaveValue('');
+    expect(getByRole('option', { name: "Character's speed (Normal)" })).toHaveValue('');
+    expect(getByRole('option', { name: 'Normal' })).toHaveTextContent('1x');
   });
 
   it('says the number on the empty option', () => {

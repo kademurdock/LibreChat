@@ -1394,7 +1394,7 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
       <option value="0.75" aria-label="0.75 times">0.75x</option>
       <option value="0.8" aria-label="0.8 times">0.8x</option>
       <option value="0.9" aria-label="0.9 times">0.9x</option>
-      <option value="1" aria-label="1 times" selected>1x</option>
+      <option value="1" aria-label="Normal" selected>1x</option>
       <option value="1.1" aria-label="1.1 times">1.1x</option>
       <option value="1.2" aria-label="1.2 times">1.2x</option>
       <option value="1.3" aria-label="1.3 times">1.3x</option>
@@ -1449,16 +1449,19 @@ const describeHtml = `<!doctype html><html lang="en"><head><title>Describe — K
     return out.filter(function(x){return x.trim();});
   }
   function speed(){ return Number(document.getElementById('speed').value)||1; }
+  /* Oct 30 2026: a clip is kept under its speed too, so a clip fetched at the old number never
+   * plays after Speed changes, and going back to that number costs no second fetch. */
   async function fetchClip(i){
-    if(blobCache[i])return blobCache[i];
+    var s=speed(), key=i+'@'+s;
+    if(blobCache[key])return blobCache[key];
     var fd=new FormData();
     fd.append('input',chunks[i]);
-    fd.append('speed',String(speed()));
+    fd.append('speed',String(s));
     var r=await fetch('/api/files/speech/tts/manual',{method:'POST',headers:{Authorization:'Bearer '+TOKEN},body:fd});
     if(!r.ok)throw new Error('tts '+r.status);
     var b=await r.blob();
-    blobCache[i]=URL.createObjectURL(b);
-    return blobCache[i];
+    blobCache[key]=URL.createObjectURL(b);
+    return blobCache[key];
   }
   function stopAll(){
     playing=false; paused=false; qi=0;

@@ -165,6 +165,10 @@ describe('builder voice speed', () => {
     ]);
     expect(select).toHaveAccessibleDescription(expect.stringContaining('The default is 1x'));
     expect(screen.getByRole('option', { name: '1.2 times' })).toHaveTextContent('1.2x');
+    expect(screen.getByRole('option', { name: 'Normal' })).toHaveTextContent('1x');
+    expect(screen.getByRole('option', { name: 'Default (Normal)' })).toHaveTextContent(
+      'Default (1x)',
+    );
   });
 
   it('sits directly before Preview, so changing it and hearing it are neighbours', () => {

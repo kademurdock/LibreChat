@@ -15,9 +15,9 @@ export function speedLabel(rate: number): string {
   return `${rate}x`;
 }
 
-/** What a screen reader says: "1.2 times", not "one point two ex". */
+/** What a screen reader says: "1.2 times", not "one point two ex". 1x is "Normal", never "1 times". */
 export function speedSpoken(rate: number): string {
-  return `${rate} times`;
+  return rate === 1 ? 'Normal' : `${rate} times`;
 }
 
 /** The list to show. A saved number that is not on it (an old 0.6 or 1.25) shows as itself, in

@@ -29,6 +29,13 @@ describe('voice speed list', () => {
     expect(speedLabel(1)).toBe('1x');
     expect(speedSpoken(1.2)).toBe('1.2 times');
   });
+  it('says 1x as Normal, never "1 times"', () => {
+    expect(speedSpoken(1)).toBe('Normal');
+    expect(speedLabel(1)).toBe('1x');
+    for (const speed of voiceSpeeds.filter((rate) => rate !== 1)) {
+      expect(speedSpoken(speed)).toBe(`${speed} times`);
+    }
+  });
 });
 
 describe('provider generation pace', () => {

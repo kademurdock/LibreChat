@@ -2,8 +2,9 @@ import { speedLabel, speedOptions, speedSpoken } from '~/utils/voicePace';
 
 /** Oct 30 2026: the one voice speed control, shared by Settings, the chat header and the character
  * builder. A native select, so a screen reader gets a real list. Each option shows "1.2x" and is
- * named "1.2 times". The empty option is the caller's: it says what no choice plays at. A saved
- * number off the list shows as itself and stays what is sent until the person changes it. */
+ * named "1.2 times"; 1x is named "Normal". The empty option is the caller's: it says what no choice
+ * plays at. A saved number off the list shows as itself and stays what is sent until the person
+ * changes it. */
 export default function VoiceSpeedSelect({
   id,
   value,

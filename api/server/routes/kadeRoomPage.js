@@ -251,6 +251,15 @@ const roomHtml = `<!doctype html>
     var v = voicesList[h % voicesList.length];
     return typeof v === 'string' ? v : (v && (v.value || v.name)) || '';
   }
+  /* Oct 30 2026: the listener's own number first, the one saved by the chat's Voice speed list. A
+   * character's number belongs to its own builder voice, so a member with no builder voice, who
+   * gets a voice picked from their name, sends no speed at all. */
+  function speedFor(ag){
+    var mine = null;
+    try{ mine = JSON.parse(localStorage.getItem('voicePacePreference')); }catch(e){}
+    if(typeof mine === 'number' && isFinite(mine)) return mine;
+    return ag.voiceId && ag.rate ? ag.rate : null;
+  }
   function speakLine(m){
     if(!readAloud || !m || m.speaker === 'user') return;
     speakQ.push(m);
@@ -266,7 +275,8 @@ const roomHtml = `<!doctype html>
       fd.append('input', m.text);
       var v = await voiceFor(ag);
       if(v){ fd.append('voice', v); }
-      if(ag.rate){ fd.append('speed', ag.rate); }
+      var speed = speedFor(ag);
+      if(speed){ fd.append('speed', speed); }
       var r = await fetch('/api/files/speech/tts/manual', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
       if(!r.ok){ throw new Error('tts '+r.status); }
       var blob = await r.blob();

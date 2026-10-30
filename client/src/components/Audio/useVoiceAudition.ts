@@ -32,10 +32,16 @@ export function auditionLine(voice: string, template?: string) {
   return line.split('{voice}').join(voice);
 }
 
-/** Oct 16 2026: an audition sends what a real chat message from that character would send —
- * `speed` is the caller's generationRate(character rate, listener pace), and the listener's
- * filler switch rides along — so the sample sounds like that character's voice messages. */
-export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate?: string; speed?: number }) {
+/** Oct 16 2026: an audition sends what a real chat message from that character would send, and the
+ * listener's filler switch rides along, so the sample sounds like that character's voice messages.
+ * Oct 30 2026: `speedFor` answers per voice, because the speed depends on which voice is sampled. */
+export function useVoiceAudition({
+  auditionTemplate,
+  speedFor,
+}: {
+  auditionTemplate?: string;
+  speedFor?: (voice: string) => number;
+}) {
   const { token } = useAuthContext();
   const fillers = useRecoilValue(store.voiceFillers);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -92,6 +98,7 @@ export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate
       const seq = ++seqRef.current;
       setError(null);
       try {
+        const speed = speedFor?.(voice);
         const cacheKey = `${voice}|${auditionTemplate ? 's' : 'f'}|${speed ?? ''}|${fillers ? 'um' : 'plain'}`;
         let buffer = cacheRef.current.get(cacheKey);
         if (buffer == null) {
@@ -147,7 +154,7 @@ export function useVoiceAudition({ auditionTemplate, speed }: { auditionTemplate
         }
       }
     },
-    [token, auditionTemplate, speed, fillers, stopSource],
+    [token, auditionTemplate, speedFor, fillers, stopSource],
   );
 
   const audition = useCallback(
