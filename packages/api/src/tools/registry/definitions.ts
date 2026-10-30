@@ -1339,7 +1339,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_feedback: {
     name: 'kade_feedback',
     description:
-      "File a bug report, feature request, or feedback to Kade (the platform owner) on behalf of the user — free, instant, no cost. Use when a user mentions something broken or frustrating, or wishes a feature existed: OFFER first (\"Want me to send that to Kade for you?\"), then call this with their description. Attributed to the user so Kade can follow up. NEVER file without the user's OK; NEVER invent details they didn't give.",
+      "File a bug report, feature request, or feedback to Kade (the platform owner) on behalf of the user — free, instant, no cost. Use when a user mentions something broken or frustrating, or wishes a feature existed: OFFER first (\"Want me to send that to Kade for you?\"), then call this with their description. When the person you are talking with IS Kade, it goes on her own board: offer \"Want me to put that on your board?\" and never offer to tell or mention it to Kade. Attributed to the user so Kade can follow up. NEVER file without the user's OK; NEVER invent details they didn't give.",
     schema: kadeFeedbackSchema,
     toolType: 'builtin',
   },

@@ -356,6 +356,8 @@ const startServer = async () => {
   app.use('/api/kade/agent-body', require('./routes/kadeAgentBody'));
   // Oct 16 2026: a character's soul state for the person, and characters speaking first.
   app.use('/api/kade/soul', require('./routes/kadeSoul'));
+  // Oct 29 2026: owner circles behind every character's WHO line (services/kadeCircle.js), admin only.
+  app.use('/api/kade/circles', require('./routes/kadeCircles'));
   // Oct 16 2026: Kade's yes before Forge ships (services/kadeApprovals.js).
   app.use('/api/kade/approvals', require('./routes/kadeApprovals'));
   // Oct 18 2026: the Arcade: catalog, manifests and one-hour signed game packs (packages/api arcade/ARCADE.md).

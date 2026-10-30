@@ -65,6 +65,8 @@ class KadeFeedback extends Tool {
       'or REOPEN one of their closed reports. ' +
       'Use this when a user mentions something broken, frustrating, or asks for a feature — offer to log it first ' +
       '("Want me to send that to Kade for you?"), then call this tool with their description. ' +
+      'When the person you are talking with IS Kade, it goes on her own board: offer "Want me to put that on your board?" ' +
+      'and never offer to tell or mention it to Kade. ' +
       "If the user says an issue that was marked solved is STILL happening (\"it's still broken\", \"reopen it\"), " +
       "call with action:'reopen' — that flips their most recent closed report back to open on Kade's list. " +
       'The report is attributed to the user so Kade can follow up. Free, instant, no cost. ' +

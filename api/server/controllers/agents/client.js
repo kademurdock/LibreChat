@@ -889,6 +889,20 @@ class AgentClient extends BaseClient {
 
     const configServers = await resolveConfigServers(this.options.req);
 
+    /** KADE Oct 29 2026 — WHO YOU ARE TALKING WITH. Kade's report: Kiana kept asking her
+     * "want me to mention this to Kade?" during bug reports; nothing in any background said
+     * who the person was. One block per request: the person's name, "this is Kade, who made
+     * and runs Kade-AI" for the owner, and the surface facts of the owner circle they are a
+     * family-flag member of (services/kadeCircle.js). Byte-stable per person, so it rides the
+     * head after the shared parts. Kill: KADE_WHO_LINE=0. */
+    let kadeWhoBlock = '';
+    try {
+      const { getWhoBlock } = require('~/server/services/kadeCircle');
+      kadeWhoBlock = await getWhoBlock(this.options.req);
+    } catch (_e) {
+      /* a turn without the who line beats a broken turn */
+    }
+
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
@@ -1008,6 +1022,9 @@ class AgentClient extends BaseClient {
          * as userLocation). Line is byte-stable while the toggle is on. */
         if (this.options.req?.body?.kadeWhisper === true) {
           headParts.push(KADE_WHISPER_LINE);
+        }
+        if (kadeWhoBlock && !isBareProbe) {
+          headParts.push(kadeWhoBlock);
         }
         if (stableMemoryContext && memoryEligible && !isBareProbe) {
           /** KADE Aug 4 2026 (cache breaker fix, see the long note above):
