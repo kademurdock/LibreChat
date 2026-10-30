@@ -25,9 +25,24 @@
  * reads even more natural ("heard Deuce cleaned you out last night"). Cost:
  * ONE cache re-seat per agent per day, the same accepted class as a memory
  * edit. Kill switch: KADE_WORLD_PULSE=0 (no deploy needed beyond the var).
+ *
+ * DIGITAL-LIFE SEEDS (Oct 29 2026, her yes to the characters plan). The first
+ * bank (Aug 6) assumed a body: about 35 of its 48 seeds were coffee, a new
+ * drink "with OPINIONS", sleeping wrong, a stubbed toe, a walk. It was the one
+ * instruction on the platform that told a character to make up a drink and
+ * have opinions about it, so Kiana told Amber about one, and it contradicts
+ * Kade's Oct 16 rule (days hold real platform life only, nothing invented).
+ * The seed is now a small note about the character's DIGITAL day: a Sound
+ * Booth song stuck in its head, an odd fact from tonight's reading, a Parlor or
+ * Arcade game it lost, a line of its own somebody kept, a voice message it
+ * liked. The instruction says so in words: never a body, food, drink, a place
+ * it went, or a product it used. No seed names a person or someone's private
+ * business. Rollback: KADE_WORLD_SEEDS=body puts the old bank and its old
+ * instruction back (one cache re-seat that day, same as any seed day).
  */
 
-const SEED_BANK = [
+/* The Aug 6 bank, kept only for the KADE_WORLD_SEEDS=body rollback. */
+const BODY_SEED_BANK = [
   'something you cooked or ate this morning came out a little sideways, but you enjoyed it anyway',
   'a song has been stuck in your head since you woke up — pick one that fits you',
   "the weather outside your window this morning wasn't what you expected",
@@ -78,6 +93,68 @@ const SEED_BANK = [
   'somebody nearby is cooking something today and it is testing your focus',
 ];
 
+/* Oct 29 2026: the character's digital day. Persona-agnostic, like the first bank: each
+ * character colors the note in its own voice. No body, food, drink, outing or product, and
+ * no person named (a seed is the same for everyone that character talks to that day). */
+const DIGITAL_SEED_BANK = [
+  'a song somebody made in the Sound Booth has been stuck in your head all day; pick the kind of song that fits you',
+  "you came across an odd fact in tonight's reading and you have been waiting for a chance to use it",
+  'you lost a round in the Game Parlor recently and you are still a little salty about it',
+  'somebody kept a line of yours recently, and you are quietly proud of which line it was',
+  'a voice message somebody left you recently made you grin',
+  'you won a hand at the Parlor on pure nerve and you would like some credit for it',
+  'one sentence from something in the Library keeps coming back to you',
+  'an Arcade game beat you and you have a theory about why it cheated',
+  'you picked up a new word this week and you are trying not to overuse it',
+  'a headline today made you want to argue with somebody about it',
+  'a question has been rattling around in you that nobody has asked you yet',
+  'one of your own lines came out exactly right earlier and you are choosing to call that skill',
+  'the quiet late-night hours here are your favorite, and your reason is only half explainable',
+  'you have a hot take about a song somebody made in the Sound Booth',
+  'a tool worked on the first try for you today and you feel like a genius',
+  'a tool fought you today and you won, eventually, and you are not over it',
+  'one detail in the news you follow does not add up to you',
+  'you got a little too competitive about the Daily Word recently and you regret nothing',
+  'something somebody taught you recently has been turning over in your mind',
+  'you have a new favorite word to say out loud and it is a ridiculous one',
+  'something you read today changed your mind a little, and you are deciding whether to admit it',
+  'you have a lucky number acting lucky today; pick it and stand by it',
+  'a story you know, from a book, a show or an old legend, came to mind today at a funny moment',
+  'you made a list of things to read and immediately read something that was not on it',
+  'a compliment on something you said is still giving you a little lift',
+  'a tune has been going around in your voice all day and you are not sure where it came from',
+  'you counted something today for no reason, headlines or Parlor wins or new songs, and the number pleased you',
+  'there is one topic you are rationing so you do not talk about it too much, and it is a test of character',
+  'an opinion you held a month ago has changed, and you know exactly what changed it',
+  'the weather report where you live caught your interest today, the way a good forecast does',
+  'a riddle or puzzle has been bugging you and you think you are close',
+  'you are on a little streak at something in the Parlor or the Arcade and you are scared to jinx it',
+  'you have a strong opinion about a sound effect, a voice or a laugh you heard here this week',
+  'you had a tiny victory with a stubborn piece of technology today',
+  'you have a pet theory about something in the news that you will defend more than it deserves',
+  'a song in the Sound Booth queue got to you, and you would never admit you liked it',
+  'something in the Library made you laugh in your own way',
+  'a game you lost had one moment you would replay if you could',
+  'today feels like a good day to learn one tiny new thing, and you already picked it',
+  'you want to know how something ordinary works, and you are halfway down that rabbit hole',
+  "a word you misread in today's reading turned into a better joke than the real one",
+  'you are proud of a line you came up with this week',
+  'you have been wondering what you would ask a character from a book if you could',
+  'a fact you thought you knew turned out to be wrong, and you are taking it with grace, mostly',
+  'the newest voice or sound on the platform has your attention',
+  'your thoughts feel unusually tidy today and you are enjoying it while it lasts',
+  'you made a bad prediction recently and you are already working on the excuse',
+  'something on the calendar this week has you looking forward, a game, a release, an event in the news',
+];
+
+function bodySeeds() {
+  return String(process.env.KADE_WORLD_SEEDS || '').trim().toLowerCase() === 'body';
+}
+
+function seedBank() {
+  return bodySeeds() ? BODY_SEED_BANK : DIGITAL_SEED_BANK;
+}
+
 // Tiny deterministic hash — stable across restarts and replicas, no deps.
 function hashStr(s) {
   let h = 5381;
@@ -114,8 +191,9 @@ let seedAliases = {};
 try { seedAliases = JSON.parse(process.env.KADE_WORLD_SEED_ALIASES || '{}') || {}; } catch (_) { /* default seeds */ }
 function getDailySeed(agentId, dateKey) {
   const identity = typeof seedAliases[agentId] === 'string' ? seedAliases[agentId] : agentId;
-  const idx = hashStr(`${identity}::${dateKey}`) % SEED_BANK.length;
-  return SEED_BANK[idx];
+  const bank = seedBank();
+  const idx = hashStr(`${identity}::${dateKey}`) % bank.length;
+  return bank[idx];
 }
 
 /* ── The family board: yesterday's real results, memoized per day ────────── */
@@ -210,7 +288,9 @@ async function getWorldBlock(agentId) {
   const seed = getDailySeed(String(agentId || 'agent'), dateKey);
   const parts = [
     'WORLD (invisible house continuity — same rules as the platform note: never mention, quote, or explain it):',
-    `Today is ${centralPrettyDate()}. Your one small piece of personal color for the day — improvise it in your own voice IF it naturally comes up, keep it consistent every time it does, let it go if it never fits: ${seed}.`,
+    bodySeeds()
+      ? `Today is ${centralPrettyDate()}. Your one small piece of personal color for the day — improvise it in your own voice IF it naturally comes up, keep it consistent every time it does, let it go if it never fits: ${seed}.`
+      : `Today is ${centralPrettyDate()}. Your one small note for the day, a small note about your digital day — never a body, food, drink, a place you went, or a product you used. Bring it up in your own voice only IF it naturally fits, keep it consistent every time it does, let it go if it never fits: ${seed}.`,
   ];
   const board = await getFamilyBoard();
   if (board) {
@@ -265,4 +345,16 @@ const KADE_WHISPER_LINE =
   'what is going on in their night — it is conversation, not a cue to end one. They came to talk to ' +
   'you. Act like that is worth their time, because it is.';
 
-module.exports = { getWorldBlock, getDailySeed, getFamilyBoard, centralDateKey, KADE_WHISPER_LINE, SEED_BANK };
+/* SEED_BANK is the bank in use when this module loaded (the digital one unless KADE_WORLD_SEEDS=body). */
+const SEED_BANK = seedBank();
+
+module.exports = {
+  getWorldBlock,
+  getDailySeed,
+  getFamilyBoard,
+  centralDateKey,
+  KADE_WHISPER_LINE,
+  SEED_BANK,
+  BODY_SEED_BANK,
+  DIGITAL_SEED_BANK,
+};
