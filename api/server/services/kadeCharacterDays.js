@@ -21,6 +21,19 @@
  *
  * Cost: one small call per character per night on the keeper model, plus one
  * call ever to learn where each character lives. Kill switch: KADE_CHARACTER_DAYS=0.
+ *
+ * PRIVACY REPAIR (Oct 29 2026, the Ziggy leak). Every character someone talked
+ * to that week gets a day, private ones included, and each day's one-liner used
+ * to go to EVERY other character: into their own nightly input ("what the
+ * others here have been up to") and into their chat head ("the others here
+ * lately"). So Amber A's private Spotter, Ziggy, showed up in Kiana's days and
+ * in every chat with Kiana, for every user, and Kade (whose parrot was also
+ * named Ziggy, and who asked not to have Ziggy brought up) heard about it.
+ * Now only the SHARED HOUSE travels: agents with a public share that are not
+ * anyone's Spotter. Private characters and Spotters still get their own days,
+ * which only their own chats and their owner's About page show; they never
+ * appear in another character's days or head. If the house lookup fails, no
+ * one-liners travel at all (fail closed). Rollback: KADE_DAYS_HOUSE=all.
  */
 'use strict';
 
@@ -55,6 +68,77 @@ function centralDay(date = new Date()) {
 function spokenDay(day) {
   const d = new Date(`${day}T17:00:00Z`);
   return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'long', month: 'long', day: 'numeric' }).format(d);
+}
+
+/** Is the shared-house filter on? (Oct 29 2026 privacy repair; rollback KADE_DAYS_HOUSE=all.) */
+function houseOnly() {
+  return String(process.env.KADE_DAYS_HOUSE || '').trim().toLowerCase() !== 'all';
+}
+
+const HOUSE_TTL_MS = 10 * 60000;
+let houseMemo = { at: 0, ids: null };
+
+/**
+ * The shared house: ids of agents that have a public share and are not anyone's
+ * Spotter. Only their one-liners travel to other characters. Memoized for ten
+ * minutes (a share change shows up within that; the head stays byte-stable).
+ * Throws on a failed lookup; callers fail closed.
+ */
+async function sharedHouseIds() {
+  if (houseMemo.ids && Date.now() - houseMemo.at < HOUSE_TTL_MS) return houseMemo.ids;
+  const db = require('mongoose').connection;
+  const shares = await db
+    .collection('aclentries')
+    .find({ resourceType: 'agent', principalType: 'public' })
+    .project({ resourceId: 1 })
+    .toArray();
+  const agents = shares.length
+    ? await db
+        .collection('agents')
+        .find({ _id: { $in: shares.map((s) => s.resourceId) } })
+        .project({ id: 1 })
+        .toArray()
+    : [];
+  const spotters = await db.collection('kadespotters').find({ agentId: { $ne: null } }).project({ agentId: 1 }).toArray();
+  const spotterIds = new Set(spotters.map((s) => String(s.agentId)));
+  const ids = new Set(agents.map((a) => String(a.id)).filter((id) => id && !spotterIds.has(id)));
+  houseMemo = { at: Date.now(), ids };
+  return ids;
+}
+
+/** A filter for whose one-liners may travel: everyone (rollback), the house, or nobody (lookup failed). */
+async function travelFilter() {
+  if (!houseOnly()) return () => true;
+  try {
+    const ids = await sharedHouseIds();
+    return (agentId) => ids.has(String(agentId));
+  } catch (e) {
+    logger.warn('[kadeCharacterDays] shared-house lookup failed, no one-liners travel: ' + e.message);
+    return () => false;
+  }
+}
+
+/**
+ * May this person read this character's days (the About page)? House characters:
+ * anyone signed in. A private character or Spotter: its owner, and admins.
+ */
+async function daysVisibleTo(agentId, user) {
+  if (!user) return false;
+  if (!houseOnly()) return true;
+  if (String(user.role || '').toUpperCase() === 'ADMIN') return true;
+  try {
+    if ((await sharedHouseIds()).has(String(agentId))) return true;
+    const agent = await require('mongoose')
+      .connection.collection('agents')
+      .findOne({ id: String(agentId) }, { projection: { author: 1 } });
+    return Boolean(agent && agent.author && String(agent.author) === String(user.id || user._id));
+  } catch (e) {
+    return false;
+  }
+}
+
+function _resetHouseMemo() {
+  houseMemo = { at: 0, ids: null };
 }
 
 /** The cast for tonight: the main characters plus anyone who talked with somebody this week. */
@@ -187,6 +271,17 @@ function parseEntry(text) {
   return { text: body.slice(0, 1200), oneLine: one.trim().slice(0, 200), following: following.trim().slice(0, 80) };
 }
 
+/** The "what the others here have been up to" lines for one character's nightly input:
+ * the newest one-liner of up to six others whose lines may travel. */
+function othersInput(prior, id, travels) {
+  return prior
+    .filter((p) => p.agentId !== id && p.oneLine && travels(p.agentId))
+    .reduce((acc, p) => (acc.some((x) => x.agentId === p.agentId) ? acc : [...acc, p]), [])
+    .slice(0, 6)
+    .map((p) => `- ${p.name}: ${p.oneLine}`)
+    .join('\n');
+}
+
 /** Write tonight's day for each character. `day` is the Central date the entry is about. */
 async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)), agentIds, redo = false } = {}) {
   if (!on()) return { ok: false, disabled: true };
@@ -195,6 +290,8 @@ async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)),
   const ids = agentIds && agentIds.length ? agentIds : await castForTonight();
   const prior = await coll().find({ kind: 'day', day: { $lt: day } }).sort({ day: -1 }).limit(200).toArray();
   const lastFor = (id) => prior.find((p) => p.agentId === id);
+  /* Only the shared house's one-liners go into anyone's input (privacy repair, Oct 29 2026). */
+  const travels = await travelFilter();
   const results = [];
   for (const id of ids) {
     try {
@@ -208,12 +305,7 @@ async function writeDays({ day = centralDay(new Date(Date.now() - 6 * 3600000)),
       const kid = KID_CAST.has(id);
       const home = await homeOf(agent, llmConfig);
       const weather = await weatherFor(home);
-      const others = prior
-        .filter((p) => p.agentId !== id && p.oneLine)
-        .reduce((acc, p) => (acc.some((x) => x.agentId === p.agentId) ? acc : [...acc, p]), [])
-        .slice(0, 6)
-        .map((p) => `- ${p.name}: ${p.oneLine}`)
-        .join('\n');
+      const others = othersInput(prior, id, travels);
       const last = lastFor(id);
       const input =
         `THE DAY: ${spokenDay(day)}\n` +
@@ -261,10 +353,11 @@ async function getCharacterLifeBlock(agentId) {
       .sort({ day: -1 })
       .limit(30)
       .toArray();
+    const travels = await travelFilter();
     const seen = new Set();
     const lines = [];
     for (const o of others) {
-      if (seen.has(o.agentId) || !o.oneLine) continue;
+      if (seen.has(o.agentId) || !o.oneLine || !travels(o.agentId)) continue;
       seen.add(o.agentId);
       lines.push(`- ${o.name}: ${o.oneLine}`);
       if (lines.length >= 6) break;
@@ -291,4 +384,17 @@ async function latest(limit = 20) {
     .toArray();
 }
 
-module.exports = { latest, writeDays, getCharacterLifeBlock, castForTonight, parseEntry, centralDay, MAIN_CAST };
+module.exports = {
+  latest,
+  writeDays,
+  getCharacterLifeBlock,
+  castForTonight,
+  parseEntry,
+  centralDay,
+  sharedHouseIds,
+  travelFilter,
+  othersInput,
+  daysVisibleTo,
+  _resetHouseMemo,
+  MAIN_CAST,
+};

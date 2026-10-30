@@ -103,9 +103,12 @@ router.get('/:agentId', requireJwtAuth, async (req, res) => {
   if (!AGENT_ID.test(agentId)) return res.status(400).json({ error: 'not a character id' });
   try {
     const snap = await soul.soulSnapshot({ userId: String(req.user.id), agentId });
-    /* The character's own public days (the same for everyone it talks to). */
+    /* The character's own days (the same for everyone it talks to). A private character's or a
+     * Spotter's days show only to its owner (Oct 29 2026 privacy repair, services/kadeCharacterDays). */
     let days = [];
     try {
+      const { daysVisibleTo } = require('~/server/services/kadeCharacterDays');
+      if (!(await daysVisibleTo(agentId, req.user))) throw new Error('not yours to read');
       days = await require('mongoose')
         .connection.collection('kadecharacterdays')
         .find({ agentId, kind: 'day' })
