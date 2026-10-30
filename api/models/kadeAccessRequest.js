@@ -51,6 +51,11 @@ const kadeAccessRequestSchema = new mongoose.Schema(
     welcomeCallAt: { type: Date, default: null },
     welcomeCallCount: { type: Number, default: 0 },
     welcomeCallOutcome: { type: String, default: '' },
+    /** callResult() of the outcome: 'answered' | 'voicemail' | 'no-answer' ... */
+    welcomeCallResult: { type: String, default: '' },
+    /** When each call went out (newest 10), so "Call again" can refuse before
+     * it resets a password the phone line would not call about. */
+    welcomeCallTimes: { type: [Date], default: [] },
     welcomeCallNote: { type: String, default: '', maxlength: 300 },
     /** Light abuse forensics. */
     ip: { type: String, default: '' },

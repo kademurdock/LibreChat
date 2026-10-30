@@ -3274,6 +3274,17 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
       /* Sep 8 2026: an account is keyed by email, and the door takes any
          contact. Prefilled when they gave one, empty and waiting when they
          did not -- approving without it cannot make the account. */
+      /* Oct 29 2026 (review): a card whose account is already made gets no
+         Approve/Deny, no account box and no door-time screen question; it
+         shows the account's own screen setting, the welcome call, and
+         nothing that would act on the request again. */
+      var hasAcct = rq.status==='approved' && rq.hasAccount;
+      if(hasAcct){
+        d.appendChild(acctSightRow(rq));
+        if(rq.usesPhoneLogin){ d.appendChild(callRow(rq, d)); }
+        list.appendChild(d);
+        return;
+      }
       var er=document.createElement('div'); er.className='emailrow';
       var lb=document.createElement('label'); lb.setAttribute('for','em_'+rq.id);
       lb.textContent='Email address or phone number for their account';
@@ -3301,7 +3312,6 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         l.appendChild(r); l.appendChild(document.createTextNode(' '+o[1])); sf.appendChild(l);
       });
       d.appendChild(sf);
-      if(rq.status==='approved' && rq.hasAccount && rq.usesPhoneLogin){ d.appendChild(callRow(rq, d)); }
       var acts=document.createElement('div'); acts.className='actions';
       var ok=document.createElement('button'); ok.type='button'; ok.className='small approve'; ok.textContent='Approve (adult)';
       var okC=document.createElement('button'); okC.type='button'; okC.className='small approve'; okC.textContent='Approve (kid)';
@@ -3322,29 +3332,79 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
     var m=(rq.accountEmail||'').match(/^p(\\d{3})(\\d{3})(\\d{4})@/);
     return m ? (m[1]+'-'+m[2]+'-'+m[3]) : (rq.accountEmail||'');
   }
+  function sightWords(v){
+    return v==='sighted' ? 'looks at the screen'
+      : (v==='nonvisual' ? 'listens with a screen reader' : 'not set');
+  }
+  /* Oct 29 2026 (review): the account's CURRENT screen setting, changed here
+     with its own save, never by approving again. */
+  function acctSightRow(rq){
+    var sf=document.createElement('fieldset'); sf.className='sightrow';
+    var lg=document.createElement('legend'); lg.textContent='Screen setting on '+rq.name+"'s account"; sf.appendChild(lg);
+    var now=document.createElement('p'); now.className='meta'; now.id='sightnow_'+rq.id;
+    var known = rq.accountSight!==undefined;
+    now.textContent = known ? ('Right now: '+sightWords(rq.accountSight)+'.')
+      : 'I could not read the current setting. Picking one below and saving still works.';
+    sf.appendChild(now);
+    [['sighted','Looks at the screen'],['nonvisual','Listens, uses a screen reader'],['unsaid','Not set']].forEach(function(o){
+      var l=document.createElement('label'); l.className='choice';
+      var r=document.createElement('input'); r.type='radio'; r.name='acctsight_'+rq.id; r.value=o[0];
+      r.checked = known && (rq.accountSight||'unsaid')===o[0];
+      l.appendChild(r); l.appendChild(document.createTextNode(' '+o[1])); sf.appendChild(l);
+    });
+    var sb=document.createElement('button'); sb.type='button'; sb.className='small';
+    sb.textContent='Save the screen setting';
+    sb.setAttribute('aria-describedby', now.id);
+    sb.addEventListener('click', async function(){
+      var picked=sf.querySelector('input[name="acctsight_'+rq.id+'"]:checked');
+      if(!picked){ setStatus('Pick one of the three first.', true); return; }
+      sb.disabled=true;
+      try{
+        var d=await api('PUT','/api/admin/access-requests/'+rq.id+'/sight',{sight:picked.value});
+        rq.accountSight=d.accountSight===undefined?null:d.accountSight;
+        now.textContent='Right now: '+sightWords(rq.accountSight)+'.';
+        setStatus('Saved. '+rq.name+"'s account: "+sightWords(rq.accountSight)+'.');
+      }catch(e){ setStatus('That did not go through: '+e.message, true); }
+      sb.disabled=false;
+    });
+    var sa=document.createElement('div'); sa.className='actions'; sa.appendChild(sb); sf.appendChild(sa);
+    return sf;
+  }
   function callText(rq){
     var s=rq.welcomeCallStatus||'';
-    if(s==='placed') return 'Welcome call placed '+prettyWhen(rq.welcomeCallAt)+'. '+(rq.welcomeCallOutcome||'');
-    if(s==='failed') return 'The welcome call on '+prettyWhen(rq.welcomeCallAt)+' could not be placed'+(rq.welcomeCallNote?(': '+rq.welcomeCallNote):'')+'.';
-    if(s==='off') return 'Welcome calls were switched off when they were approved.';
+    if(s==='placed') return 'Welcome call placed '+prettyWhen(rq.welcomeCallAt)+'. '
+      +(rq.welcomeCallOutcome||'How it went is not known yet; open this page again in a few minutes.');
+    if(s==='failed') return 'The welcome call on '+prettyWhen(rq.welcomeCallAt)+' could not be placed'+(rq.welcomeCallNote?(': '+rq.welcomeCallNote):'')+'. Read them the password yourself, or press Call again.';
+    if(s==='off') return 'Welcome calls were switched off when they were approved, so nobody has read them their password.';
     if(s==='not-needed') return 'You said they are already signed in.';
     return 'This phone-number account was made before welcome calls, so nobody has read them their password. If they have not been able to sign in, call them.';
   }
+  /* "Call again" once a call has been tried; before that, say what it does. */
+  function callLabel(rq){
+    var s=rq.welcomeCallStatus||'';
+    return (s==='placed'||s==='failed') ? 'Call again' : ('Make a new password and call '+rq.name);
+  }
   function callRow(rq, card){
     var wc=document.createElement('div'); wc.className='callrow';
-    var wp=document.createElement('p'); wp.className='meta'; wp.textContent=callText(rq); wc.appendChild(wp);
+    var wp=document.createElement('p'); wp.id='calltext_'+rq.id; wp.textContent=callText(rq); wc.appendChild(wp);
+    var hint=document.createElement('p'); hint.className='meta'; hint.id='callhint_'+rq.id;
+    hint.textContent='Calling makes a new password first, so the old one stops working. A voicemail never hears the password.';
+    wc.appendChild(hint);
     var acts=document.createElement('div'); acts.className='actions';
     var cb=document.createElement('button'); cb.type='button'; cb.className='small approve';
-    cb.textContent='Make a new password and call '+rq.name;
-    cb.addEventListener('click', function(){ callAgain(rq, card, wp, cb); });
+    cb.textContent=callLabel(rq);
+    cb.setAttribute('aria-describedby', wp.id+' '+hint.id);
+    var nb=null;
+    cb.addEventListener('click', function(){ callAgain(rq, card, wp, cb, nb); });
     acts.appendChild(cb);
-    if(!rq.welcomeCallStatus){
-      var nb=document.createElement('button'); nb.type='button'; nb.className='small';
+    if(rq.welcomeCallStatus!=='not-needed'){
+      nb=document.createElement('button'); nb.type='button'; nb.className='small';
       nb.textContent=rq.name+' is already signed in';
       nb.addEventListener('click', async function(){
         try{ await api('POST','/api/admin/access-requests/'+rq.id+'/welcome-call',{skip:true});
-          rq.welcomeCallStatus='not-needed'; wp.textContent=callText(rq); nb.remove();
-          setStatus('Noted. '+rq.name+' will not be called.');
+          rq.welcomeCallStatus='not-needed'; rq.welcomeCallSettled=true; wp.textContent=callText(rq);
+          cb.textContent=callLabel(rq); nb.remove(); cb.focus();
+          setStatus('Noted. '+rq.name+' will not be called, and their card leaves your list next time.');
         }catch(e){ setStatus('That did not go through: '+e.message, true); }
       });
       acts.appendChild(nb);
@@ -3352,14 +3412,18 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
     wc.appendChild(acts);
     return wc;
   }
-  async function callAgain(rq, card, line, btn){
+  async function callAgain(rq, card, line, btn, signedInBtn){
     if(!window.confirm('This replaces '+rq.name+"'s password with a new one, then calls "+loginShown(rq)+' to read it to them. Go ahead?')) return;
     btn.disabled=true;
-    setStatus('Making a new password and calling '+rq.name+'…');
+    setStatus('Checking the phone line, then making a new password and calling '+rq.name+'…');
     try{
       var d=await api('POST','/api/admin/access-requests/'+rq.id+'/welcome-call',{});
-      rq.welcomeCallStatus=d.welcomeCallStatus; rq.welcomeCallAt=new Date().toISOString(); rq.welcomeCallOutcome='';
-      line.textContent=callText(rq);
+      rq.welcomeCallStatus=d.welcomeCallStatus; rq.welcomeCallAt=new Date().toISOString();
+      rq.welcomeCallOutcome=''; rq.welcomeCallResult=''; rq.welcomeCallSettled=false;
+      if(d.welcomeCallStatus!=='placed'){ rq.welcomeCallNote=''; }
+      line.textContent = d.welcomeCallStatus==='placed' ? callText(rq)
+        : ('The call on '+prettyWhen(rq.welcomeCallAt)+' did not go through after the new password was made. Read them the new password below.');
+      btn.textContent=callLabel(rq);
       var b=document.createElement('div'); b.className='blessing';
       var p=document.createElement('p'); p.textContent=d.readyMessage; b.appendChild(p);
       var cp=document.createElement('button'); cp.type='button'; cp.className='small'; cp.textContent='Copy the message';
@@ -3367,7 +3431,7 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
       b.appendChild(cp); card.appendChild(b);
       setStatus(d.welcomeCallStatus==='placed'
         ? ('New password made, and calling '+rq.name+' now to read it. The message is below their card.')
-        : ('New password made, but the call could not be placed. Read them the message below their card.'), d.welcomeCallStatus!=='placed');
+        : ('New password made, but the call did not go through, so the old password no longer works. Read them the new one: the message is below their card.'), d.welcomeCallStatus!=='placed');
     }catch(e){ setStatus('That did not go through: '+e.message, true); }
     btn.disabled=false;
   }
@@ -3405,7 +3469,7 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         b.appendChild(cp);
         card.appendChild(b);
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
-        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; r.usesPhoneLogin=Boolean(d.usesPhoneLogin); if(d.welcomeCallStatus){ r.welcomeCallStatus=d.welcomeCallStatus; r.welcomeCallAt=new Date().toISOString(); } if(d.sight!==undefined){ r.sight=d.sight; } } });
+        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; r.usesPhoneLogin=Boolean(d.usesPhoneLogin); if(d.welcomeCallStatus){ r.welcomeCallStatus=d.welcomeCallStatus; r.welcomeCallAt=new Date().toISOString(); r.welcomeCallSettled=false; } if(d.sight!==undefined){ r.sight=d.sight; } } });
         var callNote = d.welcomeCallStatus==='placed' ? ' Calling them now to read it to them.'
           : (d.welcomeCallStatus ? ' The welcome call could not be placed, so read it to them.' : '');
         setStatus((d.emailNotice ? d.emailNotice + ' ' : '') + callNote + ' ' + (d.accountCreated
@@ -3425,8 +3489,10 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
   var ALL=[];
   function needsMe(r){
     return r.status==='pending' || (r.status==='approved' && !r.hasAccount)
-      /* Oct 29 2026: phone-number accounts nobody has read a password to yet */
-      || (r.status==='approved' && r.hasAccount && r.usesPhoneLogin && (!r.welcomeCallStatus || r.welcomeCallStatus==='failed'));
+      /* Oct 29 2026: phone-number accounts until a person has heard the call
+         for 20 seconds, or Kade says they are already signed in. Voicemail,
+         no answer, a short call or a failed one keep the card here. */
+      || (r.status==='approved' && r.hasAccount && r.usesPhoneLogin && !r.welcomeCallSettled);
   }
   function draw(){
     var showAll=document.getElementById('showall').checked;

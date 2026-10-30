@@ -58,6 +58,23 @@ async function setSight(userId, patch, setBy = 'user') {
 }
 
 /**
+ * Oct 29 2026: several accounts at once, for Kade's access-requests page.
+ * Returns a Map userId -> 'sighted' | 'nonvisual' | null.
+ */
+async function getSights(userIds) {
+  const ids = [...new Set((userIds || []).map(String))];
+  const out = new Map(ids.map((id) => [id, null]));
+  if (!ids.length) {
+    return out;
+  }
+  const rows = await KadeSight.find({ userId: { $in: ids } }, 'userId sight').lean();
+  for (const row of rows) {
+    out.set(String(row.userId), plain(row).sight);
+  }
+  return out;
+}
+
+/**
  * Oct 29 2026: what someone picked when asking for an account. The sign-up
  * forms send 'sighted', 'nonvisual', or 'unsaid' ("I'd rather not say").
  * Returns the value to store ('sighted' | 'nonvisual' | null), or undefined
@@ -81,4 +98,12 @@ function parseSightChoice(value) {
   return undefined;
 }
 
-module.exports = { KadeSight, SIGHT_VALUES, getSight, setSight, plain, parseSightChoice };
+module.exports = {
+  KadeSight,
+  SIGHT_VALUES,
+  getSight,
+  getSights,
+  setSight,
+  plain,
+  parseSightChoice,
+};

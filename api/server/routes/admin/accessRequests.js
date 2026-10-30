@@ -17,10 +17,13 @@ const bcrypt = require('bcryptjs');
 const { findUser, updateUser, deleteAllUserSessions } = require('~/models');
 const { registerUser } = require('~/server/services/AuthService');
 const { KadeAccessRequest } = require('~/models/kadeAccessRequest');
-const { getSight, setSight, parseSightChoice } = require('~/models/kadeSight');
+const { getSight, getSights, setSight, parseSightChoice } = require('~/models/kadeSight');
 const {
   placeWelcomeCall,
+  checkWelcomeCall,
   welcomeCallOutcome,
+  callResult,
+  isSettled,
   describeOutcome,
   FINAL: FINAL_CALL_STATUSES,
 } = require('~/server/utils/kadeWelcomeCall');
@@ -52,10 +55,18 @@ async function refreshCallOutcomes(requests) {
       if (!outcome || !outcome.status) {
         return;
       }
-      r.welcomeCallOutcome = `${outcome.status}:${outcome.duration}:${outcome.answeredBy || ''}`;
+      r.welcomeCallOutcome = [
+        outcome.status,
+        outcome.duration,
+        outcome.answeredBy || '',
+        outcome.played || '',
+      ].join(':');
+      /* 'voicemail', 'no-answer', 'answered'... -- the card stays in her
+       * default view until it is 'answered' (isSettled). */
+      r.welcomeCallResult = callResult(outcome);
       try {
         await KadeAccessRequest.findByIdAndUpdate(r._id, {
-          $set: { welcomeCallOutcome: r.welcomeCallOutcome },
+          $set: { welcomeCallOutcome: r.welcomeCallOutcome, welcomeCallResult: r.welcomeCallResult },
         });
       } catch (e) {
         logger.warn('[admin-access] could not save a call outcome:', e.message);
@@ -64,13 +75,39 @@ async function refreshCallOutcomes(requests) {
   );
 }
 
-/** "completed:74:human" back into the sentence for her card. */
+/** "completed:74:human:full" back into the sentence for her card. */
 function outcomeSentence(stored) {
   if (!stored) {
     return '';
   }
-  const [status, duration, answeredBy] = String(stored).split(':');
-  return describeOutcome({ status, duration: Number(duration || 0), answeredBy: answeredBy || null });
+  const [status, duration, answeredBy, played] = String(stored).split(':');
+  return describeOutcome({
+    status,
+    duration: Number(duration || 0),
+    answeredBy: answeredBy || null,
+    played: played || null,
+  });
+}
+
+/**
+ * Oct 29 2026 (review): an approved card with an account shows the account's
+ * CURRENT screen setting, not what they said at the door, so Kade sees the
+ * truth and can change it there. One query for the whole list; fail-soft
+ * (the page then says it could not read the setting).
+ */
+async function accountSights(requests) {
+  const ids = requests
+    .filter((r) => r.status === 'approved' && r.createdUserId)
+    .map((r) => String(r.createdUserId));
+  if (!ids.length) {
+    return new Map();
+  }
+  try {
+    return await getSights(ids);
+  } catch (e) {
+    logger.warn('[admin-access] could not read screen settings:', e.message);
+    return null;
+  }
 }
 
 router.get('/', async (req, res) => {
@@ -83,6 +120,7 @@ router.get('/', async (req, res) => {
     } catch (e) {
       logger.warn('[admin-access] call outcome refresh skipped:', e.message);
     }
+    const sights = await accountSights(requests);
     res.json({
       requests: requests.map((r) => ({
         id: String(r._id),
@@ -107,6 +145,16 @@ router.get('/', async (req, res) => {
         welcomeCallCount: r.welcomeCallCount || 0,
         welcomeCallNote: r.welcomeCallNote || '',
         welcomeCallOutcome: outcomeSentence(r.welcomeCallOutcome),
+        welcomeCallResult: r.welcomeCallResult || '',
+        /* true once a person heard the call for 20 s, or she said they are
+         * already signed in; until then the card stays in her default view */
+        welcomeCallSettled: isSettled(r),
+        /* the account's own setting right now: 'sighted' | 'nonvisual' |
+         * null (never set) | undefined (no account, or it could not be read) */
+        accountSight:
+          r.status === 'approved' && r.createdUserId && sights
+            ? sights.get(String(r.createdUserId)) || null
+            : undefined,
       })),
     });
   } catch (error) {
@@ -201,16 +249,21 @@ function hashPassword(password) {
  */
 async function callAndRecord(requestId, { phone, name, password }) {
   const result = await placeWelcomeCall({ phone, name, password });
+  const at = new Date();
   try {
     await KadeAccessRequest.findByIdAndUpdate(requestId, {
       $set: {
         welcomeCallStatus: result.status,
         welcomeCallSid: result.sid || '',
-        welcomeCallAt: new Date(),
+        welcomeCallAt: at,
         welcomeCallOutcome: '',
+        welcomeCallResult: '',
         welcomeCallNote: String(result.reason || '').slice(0, 300),
       },
       $inc: { welcomeCallCount: 1 },
+      ...(result.status === 'placed'
+        ? { $push: { welcomeCallTimes: { $each: [at], $slice: -10 } } }
+        : {}),
     });
   } catch (e) {
     logger.warn('[admin-access] could not record the welcome call:', e.message);
@@ -227,7 +280,9 @@ function callLine(result, name, phone) {
   if (result.status === 'placed') {
     return (
       `I'm calling ${name} now at ${where} to read their sign-in and password to them, slowly ` +
-      `and twice. If they miss it, choose "Call again" on their card, or read them the message below.`
+      'and twice. A voicemail only hears that we will call back, never the password. If they ' +
+      'miss it, press "Call again" on their card on the Access Requests page, or read them the ' +
+      'message below.'
     );
   }
   if (result.status === 'off') {
@@ -235,7 +290,8 @@ function callLine(result, name, phone) {
   }
   return (
     `The call to ${name} at ${where} couldn't be placed (${result.reason}), so read them the ` +
-    `password in the message below yourself, or try "Call again" on their card in a few minutes.`
+    'password in the message below yourself, or press "Call again" on their card on the Access ' +
+    'Requests page in a few minutes.'
   );
 }
 
@@ -544,6 +600,36 @@ router.post('/:id/approve', async (req, res) => {
   }
 });
 
+/** The bridge's own limits, mirrored so a refusal comes before any reset. */
+const CALL_AGAIN_GAP_MS = 2 * 60 * 1000;
+const CALLS_PER_DAY = 3;
+
+/**
+ * Why "Call again" must wait, from this request's own record of placed
+ * calls, or null when it may go ahead.
+ */
+function callAgainRefusal(doc, now = Date.now()) {
+  const times = (Array.isArray(doc.welcomeCallTimes) ? doc.welcomeCallTimes : [])
+    .map((t) => new Date(t).getTime())
+    .filter((t) => Number.isFinite(t));
+  if (doc.welcomeCallStatus === 'placed' && doc.welcomeCallAt) {
+    times.push(new Date(doc.welcomeCallAt).getTime());
+  }
+  const recent = [...new Set(times)].filter((t) => now - t < 24 * 60 * 60 * 1000);
+  const latest = recent.length ? Math.max(...recent) : 0;
+  if (latest && now - latest < CALL_AGAIN_GAP_MS) {
+    const secs = Math.max(1, Math.ceil((CALL_AGAIN_GAP_MS - (now - latest)) / 1000));
+    return `I called ${doc.name} less than 2 minutes ago. Wait about ${secs} seconds, then press "Call again".`;
+  }
+  if (recent.length >= CALLS_PER_DAY) {
+    return (
+      `${doc.name} has already had ${CALLS_PER_DAY} calls in the last day, which is the most the ` +
+      'phone line allows. Try again tomorrow, or read them a password yourself.'
+    );
+  }
+  return null;
+}
+
 /* ── CALL AGAIN (Oct 29 2026) ────────────────────────────────────────────────
  * For a phone-only account that was approved but may never have got in --
  * David, approved Oct 21 before welcome calls existed, never signed in. The
@@ -586,7 +672,30 @@ router.post('/:id/welcome-call', async (req, res) => {
       });
     }
     const name = String(user.name || doc.name || '').trim();
+    const where = prettyPhone(user.kadePhone);
+    /* Review fix (Oct 29): nothing about the password changes until we know
+     * the call will go out. First our own record of recent calls (the bridge
+     * spaces calls to one number 90 s apart and allows 3 a day)... */
+    const wait = callAgainRefusal(doc);
+    if (wait) {
+      return res.status(409).json({
+        error: `${wait} Nothing was changed; ${name}'s password still works.`,
+        nothingChanged: true,
+      });
+    }
+    /* ...then the bridge itself, asked with dryRun so it checks its limits and
+     * its phone setup without calling. An old bridge, a down bridge, a full
+     * day: refused here, before the reset. */
     const password = tempPassword();
+    const ready = await checkWelcomeCall({ phone: user.kadePhone, name, password });
+    if (ready.status !== 'ready') {
+      return res.status(409).json({
+        error:
+          `The call to ${name} can't go out right now (${ready.reason}), so I did not change ` +
+          'their password. Nothing was changed; try again later, or help them another way.',
+        nothingChanged: true,
+      });
+    }
     await updateUser(user._id, { password: hashPassword(password) });
     try {
       await deleteAllUserSessions({ userId: String(user._id) });
@@ -596,20 +705,27 @@ router.post('/:id/welcome-call', async (req, res) => {
     logger.info(`[admin-access] new temporary password for request ${doc._id} by ${req.user.id}`);
     const result = await callAndRecord(doc._id, { phone: user.kadePhone, name, password });
     const domain = process.env.DOMAIN_CLIENT || 'https://kademurdock.com';
-    const loginId = prettyPhone(user.kadePhone);
+    const loginId = where;
+    const signIn =
+      `Hey ${name} -- go to ${domain} or the Kade AI app and sign in with ${loginId}, ` +
+      `password ${password}. Change that password once you're in: it's under your name, then ` +
+      'Settings, then Account.';
+    /* The check passed but the call itself still failed: the password HAS
+     * changed, so say that plainly and hand her the new one to read. */
+    const first =
+      result.status === 'placed'
+        ? `I made ${name} a new password; the old one no longer works. ` +
+          callLine(result, name, user.kadePhone)
+        : `I made ${name} a new password, so the old one no longer works, but the call to ` +
+          `${where} did NOT go through (${result.reason || 'no reason given'}). Read them the new ` +
+          'password in the message below yourself, or press "Call again" in a few minutes.';
     return res.json({
       ok: true,
       id: String(doc._id),
       loginId,
       tempPassword: password,
       welcomeCallStatus: result.status,
-      readyMessage:
-        `I made ${name} a new password; the old one no longer works. ` +
-        callLine(result, name, user.kadePhone) +
-        '\n\n' +
-        `Hey ${name} -- go to ${domain} or the Kade AI app and sign in with ${loginId}, ` +
-        `password ${password}. Change that password once you're in: it's under your name, then ` +
-        'Settings, then Account.',
+      readyMessage: first + '\n\n' + signIn,
     });
   } catch (error) {
     logger.error('[admin-access] welcome call failed', error);
@@ -617,8 +733,45 @@ router.post('/:id/welcome-call', async (req, res) => {
   }
 });
 
+/* ── THE ACCOUNT'S SCREEN SETTING (Oct 29 2026, review) ─────────────────────
+ * On an approved card with an account, Kade sees the account's current
+ * screen setting and can change it here, without approving again.
+ * Body {sight: 'sighted' | 'nonvisual' | 'unsaid' | null}. Marked setBy 'admin'.
+ */
+router.put('/:id/sight', async (req, res) => {
+  try {
+    const sight = parseSightChoice(req.body ? req.body.sight : undefined);
+    if (sight === undefined) {
+      return res.status(400).json({ error: "Pick 'sighted', 'nonvisual' or 'unsaid'." });
+    }
+    const doc = await KadeAccessRequest.findById(req.params.id).lean();
+    if (!doc) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    if (doc.status !== 'approved' || !doc.createdUserId) {
+      return res.status(400).json({
+        error: 'There is no account on this request yet. Pick it on the card, then approve.',
+      });
+    }
+    const saved = await setSight(doc.createdUserId, { sight }, 'admin');
+    logger.info(`[admin-access] screen setting changed for request ${doc._id} by ${req.user.id}`);
+    return res.json({ ok: true, id: String(doc._id), accountSight: saved.sight });
+  } catch (error) {
+    logger.error('[admin-access] screen setting failed', error);
+    res.status(500).json({ error: 'Saving the screen setting did not work. Try again in a minute.' });
+  }
+});
+
 router.post('/:id/deny', async (req, res) => {
   try {
+    /* Oct 29 2026 (review): denying an approved request that already made an
+     * account would leave the account working and only hide the card. */
+    const existing = await KadeAccessRequest.findById(req.params.id).lean();
+    if (existing && existing.status === 'approved' && existing.createdUserId) {
+      return res.status(409).json({
+        error: `${existing.name} already has an account, so denying the request now would not take it away.`,
+      });
+    }
     const doc = await KadeAccessRequest.findByIdAndUpdate(
       req.params.id,
       {

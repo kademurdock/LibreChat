@@ -23,6 +23,8 @@ const mockSetSight = jest.fn(async (userId, patch) => ({ sight: patch.sight, liv
 const mockGetSight = jest.fn().mockResolvedValue({ sight: null, liveFaces: true });
 const mockPlaceWelcomeCall = jest.fn().mockResolvedValue({ status: 'placed', sid: 'CA1' });
 const mockOutcome = jest.fn().mockResolvedValue(null);
+const mockCheckWelcomeCall = jest.fn().mockResolvedValue({ status: 'ready' });
+const mockGetSights = jest.fn(async (ids) => new Map(ids.map((id) => [id, null])));
 jest.mock(
   '~/server/utils/sendEmail',
   () =>
@@ -51,11 +53,13 @@ jest.mock('~/models', () => ({
 jest.mock('~/models/kadeSight', () => ({
   ...jest.requireActual('~/models/kadeSight'),
   getSight: (...a) => mockGetSight(...a),
+  getSights: (...a) => mockGetSights(...a),
   setSight: (...a) => mockSetSight(...a),
 }));
 jest.mock('~/server/utils/kadeWelcomeCall', () => ({
   ...jest.requireActual('~/server/utils/kadeWelcomeCall'),
   placeWelcomeCall: (...a) => mockPlaceWelcomeCall(...a),
+  checkWelcomeCall: (...a) => mockCheckWelcomeCall(...a),
   welcomeCallOutcome: (...a) => mockOutcome(...a),
 }));
 jest.mock('~/server/services/AuthService', () => ({
@@ -98,6 +102,8 @@ beforeEach(() => {
   mockGetSight.mockResolvedValue({ sight: null, liveFaces: true });
   mockPlaceWelcomeCall.mockResolvedValue({ status: 'placed', sid: 'CA1' });
   mockOutcome.mockResolvedValue(null);
+  mockCheckWelcomeCall.mockResolvedValue({ status: 'ready' });
+  mockGetSights.mockImplementation(async (ids) => new Map(ids.map((id) => [id, null])));
   process.env.RESEND_API_KEY = 'test-only-key';
   process.env.EMAIL_FROM = 'accounts@example.com';
   process.env.DOMAIN_CLIENT = 'https://kademurdock.com';
@@ -566,6 +572,8 @@ describe('the welcome call', () => {
     });
     expect(body.welcomeCallStatus).toBe('placed');
     expect(body.readyMessage).toMatch(/^I'm calling Destiny now at 417-555-0101/);
+    expect(body.readyMessage).toMatch(/press "Call again" on their card on the Access Requests page/);
+    expect(body.readyMessage).toMatch(/voicemail only hears that we will call back/);
     /* her copy of the sign-in is still there, in case they miss the call */
     expect(body.readyMessage).toContain(body.tempPassword);
     expect(body.welcomeCall).toBeUndefined();
@@ -677,18 +685,117 @@ describe('calling again (David)', () => {
     expect(JSON.stringify(mockFindByIdAndUpdate.mock.calls)).not.toContain(pw);
   });
 
-  test('a failed call still leaves her the working password to read', async () => {
+  test('a call that still fails after the check says so plainly, with the new password', async () => {
     mockFindById.mockReturnValue(approvedPhoneOnly());
     mockFindUser.mockResolvedValue(toker);
     mockPlaceWelcomeCall.mockResolvedValue({
       status: 'failed',
-      reason: 'that number was called very recently',
+      reason: 'the phone line could not be reached',
     });
     const res = await callAgain();
     expect(res.status).toBe(200);
     expect(res.body.welcomeCallStatus).toBe('failed');
-    expect(res.body.readyMessage).toMatch(/couldn't be placed/);
+    expect(res.body.readyMessage).toMatch(
+      /^I made David a new password, so the old one no longer works, but the call to 417-770-4722 did NOT go through \(the phone line could not be reached\)/,
+    );
+    expect(res.body.readyMessage).toMatch(/Read them the new password/);
     expect(res.body.readyMessage).toContain(res.body.tempPassword);
+    /* a failed call is not counted as a placed one */
+    const update = mockFindByIdAndUpdate.mock.calls.find((c) => c[1].$set && c[1].$set.welcomeCallStatus);
+    expect(update[1].$push).toBeUndefined();
+  });
+
+  test('the bridge is asked first (dry run), with the same number and password it will read', async () => {
+    mockFindById.mockReturnValue(approvedPhoneOnly());
+    mockFindUser.mockResolvedValue(toker);
+    const res = await callAgain();
+    expect(mockCheckWelcomeCall).toHaveBeenCalledWith({
+      phone: '4177704722',
+      name: 'David',
+      password: res.body.tempPassword,
+    });
+    expect(mockCheckWelcomeCall.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateUser.mock.invocationCallOrder[0],
+    );
+    /* a placed call is remembered for the spacing check */
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      REQUEST_ID,
+      expect.objectContaining({
+        $push: { welcomeCallTimes: { $each: [expect.any(Date)], $slice: -10 } },
+      }),
+    );
+  });
+
+  test.each([
+    ['too soon', 'that number was called in the last minute or two'],
+    ['3 today', 'that number has already had 3 calls today'],
+    ['old bridge', 'the phone line has not been updated for welcome calls yet'],
+    ['switched off', 'welcome calls are switched off'],
+  ])('when the bridge would refuse (%s), the password is NOT touched', async (_label, reason) => {
+    mockFindById.mockReturnValue(approvedPhoneOnly());
+    mockFindUser.mockResolvedValue(toker);
+    mockCheckWelcomeCall.mockResolvedValue({ status: 'failed', reason });
+    const res = await callAgain();
+    expect(res.status).toBe(409);
+    expect(res.body.nothingChanged).toBe(true);
+    expect(res.body.error).toContain(reason);
+    expect(res.body.error).toMatch(/did not change their password/);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockDeleteSessions).not.toHaveBeenCalled();
+    expect(mockPlaceWelcomeCall).not.toHaveBeenCalled();
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a call placed under 2 minutes ago is refused before even asking the bridge', async () => {
+    mockFindById.mockReturnValue(
+      approvedPhoneOnly({
+        welcomeCallStatus: 'placed',
+        welcomeCallAt: new Date(Date.now() - 30 * 1000),
+      }),
+    );
+    mockFindUser.mockResolvedValue(toker);
+    const res = await callAgain();
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/less than 2 minutes ago/);
+    expect(res.body.error).toMatch(/Call again/);
+    expect(res.body.error).toMatch(/password still works/);
+    expect(mockCheckWelcomeCall).not.toHaveBeenCalled();
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  test('three calls in the last day are refused; older ones do not count', async () => {
+    const hour = 60 * 60 * 1000;
+    mockFindUser.mockResolvedValue(toker);
+    mockFindById.mockReturnValue(
+      approvedPhoneOnly({
+        welcomeCallStatus: 'placed',
+        welcomeCallAt: new Date(Date.now() - 1 * hour),
+        welcomeCallTimes: [
+          new Date(Date.now() - 5 * hour),
+          new Date(Date.now() - 3 * hour),
+          new Date(Date.now() - 1 * hour),
+        ],
+      }),
+    );
+    const capped = await callAgain();
+    expect(capped.status).toBe(409);
+    expect(capped.body.error).toMatch(/already had 3 calls/);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+
+    mockFindById.mockReturnValue(
+      approvedPhoneOnly({
+        welcomeCallStatus: 'placed',
+        welcomeCallAt: new Date(Date.now() - 1 * hour),
+        welcomeCallTimes: [
+          new Date(Date.now() - 30 * hour),
+          new Date(Date.now() - 26 * hour),
+          new Date(Date.now() - 1 * hour),
+        ],
+      }),
+    );
+    const ok = await callAgain();
+    expect(ok.status).toBe(200);
+    expect(mockUpdateUser).toHaveBeenCalledTimes(1);
   });
 
   test('an email account is pointed at the email reset, and nothing is changed', async () => {
@@ -742,14 +849,152 @@ describe('the list says how a call went', () => {
         }),
       }),
     });
-    mockOutcome.mockResolvedValue({ status: 'no-answer', duration: 0, answeredBy: null });
+    mockOutcome.mockResolvedValue({ status: 'no-answer', duration: 0, answeredBy: null, played: null });
     const res = await request(app).get('/api/admin/access-requests?status=all');
     const row = res.body.requests[0];
     expect(row.sight).toBe('nonvisual');
     expect(row.usesPhoneLogin).toBe(true);
     expect(row.welcomeCallOutcome).toMatch(/Nobody answered/);
+    expect(row.welcomeCallOutcome).toMatch(/Call again/);
+    expect(row.welcomeCallSettled).toBe(false);
     expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(REQUEST_ID, {
-      $set: { welcomeCallOutcome: 'no-answer:0:' },
+      $set: { welcomeCallOutcome: 'no-answer:0::', welcomeCallResult: 'no-answer' },
     });
+  });
+
+  const listOf = (rows) =>
+    mockFind.mockReturnValue({
+      sort: () => ({ limit: () => ({ lean: () => Promise.resolve(rows) }) }),
+    });
+  const placedRow = (extra = {}) => ({
+    _id: REQUEST_ID,
+    name: 'Toker',
+    contact: '4177704722',
+    status: 'approved',
+    createdUserId: 'toker-1',
+    accountEmail: 'p4177704722@phone.kade-ai.invalid',
+    welcomeCallStatus: 'placed',
+    welcomeCallSid: 'CA' + 'a'.repeat(32),
+    welcomeCallAt: new Date(),
+    ...extra,
+  });
+
+  test('a voicemail keeps the card unsettled and offers a call-back', async () => {
+    listOf([placedRow()]);
+    mockOutcome.mockResolvedValue({
+      status: 'completed',
+      duration: 31,
+      answeredBy: 'machine_end_beep',
+      played: 'voicemail',
+    });
+    const row = (await request(app).get('/api/admin/access-requests?status=all')).body.requests[0];
+    expect(row.welcomeCallResult).toBe('voicemail');
+    expect(row.welcomeCallSettled).toBe(false);
+    expect(row.welcomeCallOutcome).toMatch(/voicemail/);
+    expect(row.welcomeCallOutcome).toMatch(/no password/);
+    expect(row.welcomeCallOutcome).toMatch(/Call again/);
+  });
+
+  test('a person on the line for 20 seconds or more settles it; a short call does not', async () => {
+    listOf([placedRow()]);
+    mockOutcome.mockResolvedValue({ status: 'completed', duration: 140, answeredBy: 'human', played: 'full' });
+    let row = (await request(app).get('/api/admin/access-requests?status=all')).body.requests[0];
+    expect(row.welcomeCallResult).toBe('answered');
+    expect(row.welcomeCallSettled).toBe(true);
+
+    listOf([placedRow()]);
+    mockOutcome.mockResolvedValue({ status: 'completed', duration: 9, answeredBy: 'human', played: 'full' });
+    row = (await request(app).get('/api/admin/access-requests?status=all')).body.requests[0];
+    expect(row.welcomeCallResult).toBe('short');
+    expect(row.welcomeCallSettled).toBe(false);
+  });
+
+  test('"already signed in" settles it; a stored outcome is not looked up again', async () => {
+    listOf([
+      placedRow({ welcomeCallStatus: 'not-needed' }),
+      placedRow({
+        _id: '64b7f0000000000000000002',
+        welcomeCallOutcome: 'completed:60:human:full',
+        welcomeCallResult: 'answered',
+      }),
+    ]);
+    const rows = (await request(app).get('/api/admin/access-requests?status=all')).body.requests;
+    expect(rows.map((r) => r.welcomeCallSettled)).toEqual([true, true]);
+    expect(mockOutcome).not.toHaveBeenCalled();
+  });
+
+  test("an account card carries the account's own screen setting, not the door answer", async () => {
+    listOf([placedRow({ sight: null, welcomeCallStatus: '' }), { ...placedRow(), _id: 'p1', status: 'pending', createdUserId: null }]);
+    mockGetSights.mockResolvedValue(new Map([['toker-1', 'nonvisual']]));
+    const rows = (await request(app).get('/api/admin/access-requests?status=all')).body.requests;
+    expect(mockGetSights).toHaveBeenCalledWith(['toker-1']);
+    expect(rows[0].sight).toBeNull();
+    expect(rows[0].accountSight).toBe('nonvisual');
+    expect(rows[1].accountSight).toBeUndefined();
+  });
+
+  test('a failed sight lookup leaves the list working', async () => {
+    listOf([placedRow({ welcomeCallStatus: '' })]);
+    mockGetSights.mockRejectedValue(new Error('database away'));
+    const res = await request(app).get('/api/admin/access-requests?status=all');
+    expect(res.status).toBe(200);
+    expect(res.body.requests[0].accountSight).toBeUndefined();
+  });
+});
+
+describe("changing an account's screen setting from its card", () => {
+  const putSight = (body) =>
+    request(app).put(`/api/admin/access-requests/${REQUEST_ID}/sight`).send(body);
+  const approvedWithAccount = () =>
+    leanReturning({ ...doorRequest('4177704722'), status: 'approved', createdUserId: 'toker-1' });
+
+  test('saves it on the account, marked as hers', async () => {
+    mockFindById.mockReturnValue(approvedWithAccount());
+    const res = await putSight({ sight: 'nonvisual' });
+    expect(res.status).toBe(200);
+    expect(res.body.accountSight).toBe('nonvisual');
+    expect(mockSetSight).toHaveBeenCalledWith('toker-1', { sight: 'nonvisual' }, 'admin');
+    /* never by approving again */
+    expect(mockRegisterUser).not.toHaveBeenCalled();
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('"not set" clears it', async () => {
+    mockFindById.mockReturnValue(approvedWithAccount());
+    await putSight({ sight: 'unsaid' });
+    expect(mockSetSight).toHaveBeenCalledWith('toker-1', { sight: null }, 'admin');
+  });
+
+  test('nonsense and requests without an account are refused', async () => {
+    mockFindById.mockReturnValue(approvedWithAccount());
+    expect((await putSight({ sight: 'purple' })).status).toBe(400);
+    expect((await putSight({})).status).toBe(400);
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177704722')));
+    expect((await putSight({ sight: 'sighted' })).status).toBe(400);
+    expect(mockSetSight).not.toHaveBeenCalled();
+  });
+});
+
+describe('deny', () => {
+  test('an approved request that made an account cannot be denied', async () => {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('4177704722'), status: 'approved', createdUserId: 'toker-1' }),
+    );
+    const res = await request(app).post(`/api/admin/access-requests/${REQUEST_ID}/deny`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already has an account/);
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test('a pending request is denied as before', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177704722')));
+    mockFindByIdAndUpdate.mockReturnValue(leanReturning({ _id: REQUEST_ID, name: 'Destiny' }));
+    const res = await request(app).post(`/api/admin/access-requests/${REQUEST_ID}/deny`).send({});
+    expect(res.status).toBe(200);
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      REQUEST_ID,
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'denied' }) }),
+      { new: true },
+    );
   });
 });
