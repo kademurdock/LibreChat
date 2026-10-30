@@ -11,7 +11,7 @@ export const tiers = ['flex', 'standard'] as const;
 export type Tier = (typeof tiers)[number];
 export type Settings = {
   voice: string;
-  /** Usual narration speed, 1 to 3. */
+  /** Usual narration speed, `slowestRate` to 3. */
   rate: number;
   /** Fastest narration speed allowed to fit a gap. */
   maxRate: number;
@@ -34,12 +34,27 @@ export type Settings = {
    * administrator left it out of this job. The router drops it from anyone else's request.
    */
   credit?: boolean;
+  /**
+   * How this run's Fish narration gets its speed. 2 (Oct 30 2026, `fishSpeedModel`): the voice
+   * proxy renders the natural take and Praat stretches it by the exact number. Absent: a job
+   * started before that or before the proxy's switch was on, whose every later run keeps the old
+   * named pace so a film never jumps speed partway. Only the router sets it, and only when the
+   * proxy says exact speed is on; a request's own value is thrown away.
+   */
+  speedModel?: 2;
 };
+/**
+ * The slowest narration on the list (Oct 30 2026, Kade: "I want the same situation with described
+ * videos"). Only the voice goes this slow: atempo here can only speed a clip up.
+ */
+export const slowestRate = 0.75;
+/** The stamp a run takes when all of its narration is voiced under exact speed (`Settings.speedModel`). */
+export const fishSpeedModel: 2 = 2;
 export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
   .object({
     voice: z.string().min(1).max(120),
-    rate: z.number().min(1).max(3).default(1.5),
-    maxRate: z.number().min(1).max(3).default(2.25),
+    rate: z.number().min(slowestRate).max(3).default(1.5),
+    maxRate: z.number().min(slowestRate).max(3).default(2.25),
     mode: z.enum(['standard', 'extended']).default('extended'),
     detail: z.enum(detailLevels).default('standard'),
     volume: z.enum(volumeLevels).default('balanced'),
@@ -60,6 +75,7 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
     /** A tier this server does not know is dropped, never an error. */
     tier: z.enum(tiers).optional().catch(undefined),
     credit: z.boolean().optional().catch(undefined),
+    speedModel: z.literal(2).optional().catch(undefined),
   })
   .refine(
     (value) => value.maxRate >= value.rate,
@@ -298,6 +314,8 @@ export type Plan = {
   stills?: Interval[];
   /** Seconds of speech per UTF-8 byte at 1x for the job's voice, measured from voiced clips. */
   secondsPerByte?: number;
+  /** The voice and speed method `secondsPerByte` was measured under; absent on older plans. */
+  secondsPerByteFrom?: { voice: string; speedModel?: 2 };
   /** Dialogue language reported by speech recognition (BCP 47, such as "en" or "es"). */
   language?: string;
   /** A capture with sound on only one channel; that channel is copied to both. */

@@ -17,6 +17,7 @@ import {
   realCost,
   speechPerByte,
   speechReserve,
+  fishSpeedExact,
   synthesize,
   visionLimits,
   voices,
@@ -1651,4 +1652,77 @@ test('youtube: the size watch skips a file renamed or removed while it counts', 
   const listed = async () => ['youtube.f137.mp4.part', 'youtube.mp4'];
   assert.equal(await folderBytes(folder, listed), 1234);
   assert.equal(await folderBytes(folder), 1234);
+});
+
+/** Oct 30 2026: "we need Prat as the fish speed controler in all methods that use fish". */
+test('providers: narration sends fishSpeed only when asked and answers the speed the proxy achieved', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const { meter } = ledger();
+  const said = (applied, ...last) => {
+    const posts = [];
+    const fake = fakeAxios(async ({ url, body }) => {
+      if (url.endsWith('/voices.json')) return { data: { voices: ['Voice 1'] } };
+      posts.push(body);
+      return {
+        headers: { 'content-type': 'audio/wav', ...(applied === undefined ? {} : { 'x-kade-tts-speed-applied': applied }) },
+        data: Buffer.alloc(200),
+      };
+    });
+    return synthesize('A woman waves.', 'Voice 1', 'session', join(scratch, 'speed-line.wav'), 1.5, signal, meter, ...last)
+      .then((answer) => ({ answer, body: posts[0] }))
+      .finally(() => fake.restore());
+  };
+  const plain = await said('1.462');
+  assert.equal(plain.answer, 1.462, 'the real ratio comes back');
+  assert.equal('fishSpeed' in plain.body, false, 'a new job sends nothing: the proxy switch makes the number exact');
+  assert.equal(plain.body.speed, 1.5);
+  assert.equal(plain.body.delivery, 'STABLE');
+  const old = await said('1', 'legacy');
+  assert.equal(old.body.fishSpeed, 'legacy');
+  assert.equal(old.answer, 1);
+  for (const junk of [undefined, '', 'fast', '0', '-1'])
+    assert.equal((await said(junk)).answer, undefined, `a header of ${junk} means the proxy did not say`);
+});
+
+test('providers: exact Fish speed is on only when the proxy says so on /health', async () => {
+  process.env.KADE_TTS_PROXY_URL = 'http://voices.test';
+  const asked = async (answer) => {
+    const urls = [];
+    const fake = fakeAxios(async ({ url }) => {
+      urls.push(url);
+      if (answer instanceof Error) throw answer;
+      return { data: answer };
+    });
+    return fishSpeedExact().finally(() => {
+      fake.restore();
+      assert.deepEqual(urls, ['http://voices.test/health']);
+    });
+  };
+  assert.equal(await asked({ fishStretch: { on: true, exact: true } }), true);
+  assert.equal(await asked({ fishStretch: { on: true, exact: false } }), false, 'the older chat stretch alone is not exact');
+  assert.equal(await asked({ fishStretch: { on: true, exact: 'true' } }), false);
+  assert.equal(await asked({ status: 'ok' }), false, 'a proxy from before the switch');
+  assert.equal(await asked('<html>Bad gateway</html>'), false);
+  await assert.rejects(asked(new Error('socket hang up')), /socket hang up/);
+});
+
+test('providers: the voice is asked for the number from 0.75 up to 1.5', async () => {
+  const { meter } = ledger();
+  const sent = async (speed, ...last) => {
+    const posts = [];
+    const fake = fakeAxios(async ({ url, body }) => {
+      if (url.endsWith('/voices.json')) return { data: { voices: ['Voice 1'] } };
+      posts.push(body);
+      return { headers: { 'content-type': 'audio/wav' }, data: Buffer.alloc(200) };
+    });
+    await synthesize('A woman waves.', 'Voice 1', 'session', join(scratch, 'slow-line.wav'), speed, signal, meter, ...last).finally(() => fake.restore());
+    return posts[0];
+  };
+  for (const speed of [0.75, 0.8, 0.9, 1, 1.1, 1.5]) assert.equal((await sent(speed)).speed, speed);
+  assert.equal((await sent(0.5)).speed, 0.75, 'nothing goes below the list');
+  assert.equal((await sent(2)).speed, 1.5);
+  /* A legacy job at 0.75 keeps asking for the number: the proxy gives it the named pace. */
+  const legacy = await sent(0.75, 'legacy');
+  assert.equal(legacy.speed, 0.75);
+  assert.equal(legacy.fishSpeed, 'legacy');
 });

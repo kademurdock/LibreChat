@@ -1,4 +1,4 @@
-const speeds = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3];
+const speeds = [0.75, 0.8, 0.9, 1, 1.1, 1.2, 1.25, 1.3, 1.4, 1.5, 1.75, 2, 2.25, 2.5, 3];
 /** Words a minute at 1×, measured on the platform voices (126–185, median about 150). */
 const wordsPerMinute = 145;
 const pace = (value: number): string =>
@@ -7,7 +7,7 @@ const speedOptions = (selected: number): string =>
   speeds
     .map(
       (value) =>
-        `<option value="${value}"${value === selected ? ' selected' : ''}>${value}×${value === 1 ? ', the voice’s own pace' : ''}, ${pace(value)}</option>`,
+        `<option value="${value}"${value === selected ? ' selected' : ''}>${value === 1 ? 'Normal, the voice’s own pace' : `${value}×`}, ${pace(value)}</option>`,
     )
     .join('');
 const uploadTypes =
@@ -208,7 +208,7 @@ export function describedVideoPage(sharedHead: string): string {
 <div><label for="dv-rate">Usual narration speed</label><select id="dv-rate">${speedOptions(1.5)}</select></div>
 <div><label for="dv-max-rate">Fastest it may go to fit a gap</label><select id="dv-max-rate">${speedOptions(2.25)}</select></div>
 </div>
-<p class="hint">Only the narrator speeds up; dialogue keeps its own pace, and the voice keeps its pitch. Word rates differ a little from voice to voice. Your speeds are remembered for your account on every device.</p>
+<p class="hint">Only the narrator’s speed changes; dialogue keeps its own pace, and the voice keeps its pitch. Word rates differ a little from voice to voice. Your speeds are remembered for your account on every device.</p>
 <label for="dv-detail">How much to describe</label><select id="dv-detail" aria-describedby="dv-detail-help">
 <option value="essential">Essentials only: key actions, scene changes and on-screen text</option>
 <option value="standard" selected>Standard: essentials plus people, places and expressions</option>
@@ -386,7 +386,7 @@ export const descriptionBrowserScript: string = String.raw`
   function viewedCopy(){return copies().filter(function(copy){return copy.version===viewVersion;})[0];}
   function versionLabel(copy){
     var s=copy.settings||{},parts=[];
-    if(s.voice)parts.push(voiceName(s.voice)+' '+s.rate+'×');
+    if(s.voice)parts.push(voiceName(s.voice)+' '+speedName(s.rate));
     if(s.detail)parts.push(DETAIL_NAMES[s.detail]||s.detail);
     parts.push(plural(copy.count||0,'description','descriptions'));
     if(copy.range)parts.push('part '+clock(copy.range.start)+' to '+clock(copy.range.end));
@@ -438,6 +438,8 @@ export const descriptionBrowserScript: string = String.raw`
     var pending=pendingSwitch&&pendingSwitch!==viewVersion;$('new-version').hidden=!pending;
     if(pending){$('new-version-note').textContent='Version '+pendingSwitch+' is ready. You are still on version '+viewVersion+'.';$('switch-version').textContent='Switch to version '+pendingSwitch;}
   }
+  /** A narration speed as it is said: 1x is Normal, never "1 times". */
+  function speedName(rate){return Number(rate)===1?'Normal':rate+'×';}
   /** A speed she keeps on the server (web and iPhone share it), or null when she never chose one. */
   function serverSpeed(key){var s=config&&config.speeds,value=s&&s[key];return typeof value==='number'&&isFinite(value)?value:null;}
   /** Her speeds on the server win, then what this browser remembered, then the usual defaults. */
@@ -560,7 +562,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function stopSource(){if(asrc){try{asrc.onended=null;asrc.stop();}catch(e){}asrc=null;}if(aEl&&!aEl.paused)aEl.pause();}
   function stopAudition(){clearTimeout(atimer);atimer=null;aseq++;stopSource();}
-  function auditionRate(){var rate=Number($('rate').value)||1.5;return Math.min(3,Math.max(1,rate));}
+  function auditionRate(){var rate=Number($('rate').value)||1.5;return Math.min(3,Math.max(0.75,rate));}
   function audition(v){clearTimeout(atimer);atimer=null;var seq=++aseq;stopSource();if(voicesOff||!listed(v)||auditionsOff&&!acache[v+'|'+auditionRate()])return;atimer=setTimeout(function(){atimer=null;playAudition(v,seq);},AUDITION_MS);}
   async function playAudition(v,seq){
     var rate=auditionRate(),key=v+'|'+rate,got=acache[key];
@@ -630,7 +632,7 @@ export const descriptionBrowserScript: string = String.raw`
   async function migrateSpeeds(){
     var s=config&&config.speeds,old=stored(SETTINGS_KEY,{})||{},body={};
     if(!s||serverSpeed('rate')!==null||serverSpeed('maxRate')!==null||stored(SPEEDS_MOVED_KEY,false))return;
-    [['rate',Number(old.rate)],['maxRate',Number(old.maxRate)]].forEach(function(pair){if(pair[1]>=1&&pair[1]<=3)body[pair[0]]=pair[1];});
+    [['rate',Number(old.rate)],['maxRate',Number(old.maxRate)]].forEach(function(pair){if(pair[1]>=0.75&&pair[1]<=3)body[pair[0]]=pair[1];});
     if((body.rate===undefined||body.rate===FORM_DEFAULTS.rate)&&(body.maxRate===undefined||body.maxRate===FORM_DEFAULTS.maxRate))return;
     try{applyPrefs(await call('/prefs/speeds','POST',body));store(SPEEDS_MOVED_KEY,true);}catch(e){}
   }
@@ -1147,7 +1149,7 @@ export const descriptionBrowserScript: string = String.raw`
     clearError();if(voicesOff)return;var audio=$('sample'),voice=$('voice').value;
     try{var unlock=audio.play();if(unlock&&unlock.catch)unlock.catch(function(){});}catch(e){}
     $('video').pause();$('audio').pause();button.disabled=true;
-    say('Making a sample of '+voiceName(voice)+' at '+rate+'×'+(text?' saying your words':'')+'.',true);
+    say('Making a sample of '+voiceName(voice)+' at '+speedName(rate)+(text?' saying your words':'')+'.',true);
     try{
       var body={voice:voice,rate:rate};if(text)body.text=text;
       var blob=await call('/sample','POST',body,false,'blob');
@@ -1290,7 +1292,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   $('stop-upload').onclick=function(){stopUpload=true;if(xhr)xhr.abort();};
   window.addEventListener('beforeunload',function(event){if(!uploading)return;event.preventDefault();event.returnValue='';});
-  function describeRun(s){return voiceName(s.voice)+' at '+s.rate+'×, '+(DETAIL_NAMES[s.detail]||s.detail)+', '+(s.mode==='extended'?'pausing the picture when needed':'keeping the original length')+', closer look '+(s.closeLook?'on':'off')+', first look '+(s.firstLook?'on':'off')+(s.tier?', Google '+s.tier+' tier':'')+(s.credit===false?', no Kade-AI credit':'')+', notes: '+(s.notes||'none');}
+  function describeRun(s){return voiceName(s.voice)+' at '+speedName(s.rate)+', '+(DETAIL_NAMES[s.detail]||s.detail)+', '+(s.mode==='extended'?'pausing the picture when needed':'keeping the original length')+', closer look '+(s.closeLook?'on':'off')+', first look '+(s.firstLook?'on':'off')+(s.tier?', Google '+s.tier+' tier':'')+(s.credit===false?', no Kade-AI credit':'')+', notes: '+(s.notes||'none');}
   function begin(preview){
     var id=preview?'preview':'start';if(!job||blocked(id))return;
     act(async function(){
@@ -1334,7 +1336,7 @@ export const descriptionBrowserScript: string = String.raw`
       var e=await freshEstimate('revoice',{settings:s,edits:body.edits});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var next=(job.version||1)+1;
-      if(!confirm('Make version '+next+' of “'+job.name+'”'+(list.length?' with '+plural(list.length,'correction','corrections'):' with '+voiceName(s.voice)+' at '+s.rate+'×')+'? About '+money(e.estimateUSD)+'. '+allowance(e)+(stale?' '+plural(stale,'corrected description still has','corrected descriptions still have')+' the old short version, which is used when the gap is tight.':'')+' Earlier versions stay available.'))return;
+      if(!confirm('Make version '+next+' of “'+job.name+'”'+(list.length?' with '+plural(list.length,'correction','corrections'):' with '+voiceName(s.voice)+' at '+speedName(s.rate))+'? About '+money(e.estimateUSD)+'. '+allowance(e)+(stale?' '+plural(stale,'corrected description still has','corrected descriptions still have')+' the old short version, which is used when the gap is tight.':'')+' Earlier versions stay available.'))return;
       remember();noteRecent(s.voice);
       var updated=await call('/jobs/'+id+'/revoice','POST',body);
       if(list.length){forget(draftKey(id,expected));if(shownId===id){edits={};script=null;$('edit-fields').hidden=true;$('edit-status').textContent='';renderDraftNote();}}
@@ -1514,7 +1516,7 @@ export const descriptionBrowserScript: string = String.raw`
       clearError();var id=job.id,body=voiceFields(),e=await freshEstimate('resume',{settings:body});
       if(shownId!==id)return;if(!e.allowed){say(refusal(e),true);return;}
       var again=!Number(job.done);
-      if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+body.rate+'×? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. '+allowance(e)))return;
+      if(!confirm((again?'Try “'+job.name+'” again from the beginning':'Continue “'+job.name+'”')+' with '+voiceName(body.voice)+' at '+speedName(body.rate)+'? '+keptText(job)+' About '+money(e.estimateUSD)+'; '+money(e.setAsideUSD)+' is set aside until it finishes, and anything unused comes back. '+allowance(e)))return;
       remember();noteRecent(body.voice);
       var updated=await call('/jobs/'+id+'/resume','POST',body);
       await showIf(id,updated,false);say(again?'Starting again from the beginning.':'Carrying on from where it stopped.',true);land('job-title',$('resume'));await list();

@@ -2627,3 +2627,16 @@ test('prompt: a known name stands only for a visibly fictional character, never 
     'a real person the model thinks it recognizes still waits for the dialogue or the screen',
   );
 });
+
+test('prompt: at 0.75 the word budgets shrink with the speed, and the prompt says what she chose', () => {
+  const lines = [
+    { start: 4.3, end: 8.5, text: 'Hello there.', speaker: 0 },
+    { start: 14.1, end: 20, text: 'Goodbye.', speaker: 1 },
+  ];
+  const slow = brief({ rate: 0.75, maxRate: 0.9 });
+  const budget = (text) => Number(text.match(/20\.2 to 30\.0: about (\d+) words/)[1]);
+  assert.equal(budget(roomText(30, brief({ rate: 1, maxRate: 1.5 }), lines)), 24);
+  assert.equal(budget(roomText(30, slow, lines)), 18, 'three quarters of the words in the same room');
+  assert.ok(budget(roomText(30, brief({ rate: 0.9, maxRate: 0.9 }), lines)) < 24);
+  assert.match(analysisPrompt(60, slow, null, [], []), /prefers narration at 0\.75x speed and accepts up to 0\.9x/);
+});
