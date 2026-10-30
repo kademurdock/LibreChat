@@ -956,6 +956,9 @@ router.get('/book/:id/audio/:s/:c', requireJwtAuth, async (req, res) => {
     }
     res.status(200);
     res.setHeader('Content-Type', upstream.headers['content-type'] || 'audio/wav');
+    // Oct 30 2026: this hour is keyed by the URL, voice and speed included, and the same number now
+    // sounds different. The web page adds pacing=4 so older clips cannot replay. The iPhone keeps
+    // its old URL, so what it already holds ages out within this hour.
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('X-Kade-Reading-Position', `${s}/${c}`);
     if (upstream.headers['x-kade-tts-streamed']) res.setHeader('x-kade-tts-streamed', '1');

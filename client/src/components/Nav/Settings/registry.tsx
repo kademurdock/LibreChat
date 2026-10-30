@@ -500,7 +500,8 @@ export const registry: SettingEntry[] = [
     id: 'playbackRate',
     tab: SPEECH,
     section: 'tts',
-    labelKey: 'com_ui_settings_label_playback_rate',
+    labelKey: 'com_voice_speed',
+    keywords: ['speed', 'pace', 'rate', 'fast', 'slow', 'faster', 'slower'],
     Component: PlaybackRate,
   },
   // Oct 16 2026: spoken um / I mean, breaths and little laughs in what you hear

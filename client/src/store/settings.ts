@@ -7,9 +7,10 @@ import type { TOptionSettings } from '~/common';
 const staticAtoms = {
   abortScroll: atom<boolean>({ key: 'abortScroll', default: false }),
   /** Kade D2d: the ACTIVE AGENT's speaking rate (tts.speakingRate), set by
-   * useAgentVoiceSync on agent switch. Deliberately NOT persisted — it is
-   * derived from the agent record; undefined = server default rate. Distinct
-   * from `voicePacePreference` (the listener's own pace choice, which wins). */
+   * useAgentVoiceSync. Deliberately NOT persisted — it is derived from the agent
+   * record. Oct 30 2026: set only while the character's own builder voice is the
+   * one in use; undefined = 1x. Distinct from `voicePacePreference` (the
+   * listener's own speed, which wins). */
   voiceSpeed: atom<number | undefined>({ key: 'voiceSpeed', default: undefined }),
   optionSettings: atom<TOptionSettings>({ key: 'optionSettings', default: {} }),
   currentSettingsView: atom<SettingsViews>({
@@ -84,8 +85,9 @@ const localStorageAtoms = {
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
   languageTTS: atomWithLocalStorage('languageTTS', ''),
   automaticPlayback: atomWithLocalStorage('automaticPlayback', false),
-  /** Oct 16 2026: the listener's generation pace (Fish: a prompted pace, Inworld Classic: the
-   * API rate; playback always stays 1x). null = use the character's own setting. Its own key:
+  /** Oct 16 2026: the listener's voice speed, one number for every character on this device
+   * (Oct 30 2026: the proxy stretches Fish to the exact number, Inworld takes it as its API rate;
+   * playback always stays 1x). null = use the character's own speed. Its own key:
    * the old 'playbackRate' slider stored audio-stretch numbers (often a leftover 1 or 2) that
    * would otherwise override every character's pace. useSpeechSettingsInit drops that key. */
   voicePacePreference: atomWithLocalStorage<number | null>('voicePacePreference', null),

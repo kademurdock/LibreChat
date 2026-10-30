@@ -111,8 +111,10 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       skills_enabled,
       /* KADE July 12 2026: only send tts when it actually carries something —
        * an empty/default tts object in form state must never wipe a saved
-       * voice on the server (see AgentSelect hydration note). */
-      ...(tts && typeof tts === 'object' && (tts.voiceId || tts.speakingRate != null)
+       * voice on the server (see AgentSelect hydration note).
+       * Oct 30 2026: speakingRate null counts. It is how the builder clears a saved speed, now
+       * that the server keeps whatever a save leaves out. */
+      ...(tts && typeof tts === 'object' && (tts.voiceId || tts.speakingRate !== undefined)
         ? { tts }
         : {}),
       ...(shouldResetAvatar ? { avatar: null } : {}),

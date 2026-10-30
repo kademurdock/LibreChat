@@ -1,5 +1,4 @@
-import { useVoiceCatalog } from '~/hooks/Audio/useVoiceCatalog';
-import { fishPaces, fishPaceValue, inworldRates, isFishVoice } from '~/utils/voicePace';
+import { speedLabel, speedSpoken } from '~/utils/voicePace';
 import React, { useState, useMemo, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
@@ -33,6 +32,7 @@ import Action from '~/components/SidePanel/Builder/Action';
 import { Panel, isEphemeralAgent } from '~/common';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { VoicePreviewButton, VoiceFlagButton } from '~/components/Audio/Voices';
+import VoiceSpeedSelect from '~/components/Audio/VoiceSpeedSelect';
 import AgentVoicePicker, { extractAgentLines } from './AgentVoicePicker';
 import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
@@ -88,8 +88,6 @@ export default function AgentConfig() {
   /** D2d: the agent's configured speaking rate — auditions and previews use it live. */
   const watchedSpeakingRate = useWatch({ control, name: 'tts.speakingRate' });
   const watchedVoice = useWatch({ control, name: 'tts.voiceId' });
-  const { providers: voiceProviders } = useVoiceCatalog();
-  const fishVoice = isFishVoice(watchedVoice, voiceProviders);
   /* Part 116 — the voice picker auditions with the character's OWN lines,
    * read live off the form so a persona pasted a second ago already speaks. */
   const watchedInstructions = useWatch({ control, name: 'instructions' });
@@ -402,68 +400,56 @@ export default function AgentConfig() {
                   <p className="text-xs text-text-secondary">
                     {localize('com_agents_default_voice_help')}
                   </p>
-                  {current !== '' && (
-                    <div className="flex items-start justify-start gap-2">
-                      <VoicePreviewButton
-                        voiceId={current}
-                        disabled={false}
-                        speakingRate={speakingRate}
-                      />
-                      <VoiceFlagButton voiceId={current} />
-                    </div>
-                  )}
                 </div>
               );
             }}
           />
         </div>
-        {/* ♿ KADE D2d: per-agent speaking rate (real synthesis rate via the
-            Inworld API, range 0.5–1.5; unset follows the server default).
-            A dropdown of preset steps — simplest control for VoiceOver. */}
+        {/* ♿ KADE D2d: the character's default speed for its own voice. Oct 30 2026: one list
+            for every voice, and it sits directly before Preview, so a screen reader user can
+            change the number and hear it on the next stop instead of moving back up. A native
+            select: the label now has a real control to point at. Unset plays at 1x and says so.
+            Choosing the default sends null, which is what clears a saved speed. */}
         <div className="mb-4">
           <label className={labelClass} id="agent-rate-label" htmlFor="agent-rate-dropdown">
-            {localize(fishVoice ? 'com_voice_pace_fish' : 'com_voice_speed_inworld')}
+            {localize('com_voice_speed')}
           </label>
           <Controller
             name="tts.speakingRate"
             control={control}
-            render={({ field }) => {
-              const rateOptions = [
-                { label: localize('com_agents_speaking_rate_default'), value: '' },
-                ...(fishVoice
-                  ? fishPaces.map((pace) => ({
-                      label: localize(pace.key),
-                      value: String(pace.value),
-                    }))
-                  : inworldRates.map((rate) => ({ label: `${rate}×`, value: String(rate) }))),
-              ];
-              const normalizedRate = fishVoice
-                ? fishPaceValue(field.value ?? 1)
-                : Math.min(1.5, Math.max(0.5, field.value ?? 1));
-              return (
-                <div className="flex flex-col gap-2">
-                  <Dropdown
-                    value={field.value != null ? String(normalizedRate) : ''}
-                    options={rateOptions}
-                    onChange={(newValue?: string | Option) => {
-                      const v = typeof newValue === 'string' ? newValue : newValue?.value;
-                      field.onChange(v === '' || v == null ? undefined : Number(v));
-                    }}
-                    sizeClasses="w-full"
-                    testId="AgentRateDropdown"
-                    className="z-50"
-                    aria-labelledby="agent-rate-label"
-                  />
-                  <p className="text-xs text-text-secondary">
-                    {localize(
-                      fishVoice ? 'com_voice_pace_fish_help' : 'com_voice_speed_inworld_help',
-                    )}
-                  </p>
-                </div>
-              );
-            }}
+            render={({ field }) => (
+              <div className="flex flex-col gap-2">
+                <VoiceSpeedSelect
+                  id="agent-rate-dropdown"
+                  value={field.value}
+                  onChange={field.onChange}
+                  describedBy="agent-rate-help"
+                  emptyText={localize('com_agents_speaking_rate_default', {
+                    speed: speedLabel(1),
+                  })}
+                  emptySpoken={localize('com_agents_speaking_rate_default', {
+                    speed: speedSpoken(1),
+                  })}
+                />
+                <p id="agent-rate-help" className="text-xs text-text-secondary">
+                  {localize('com_agents_speaking_rate_help')}
+                </p>
+              </div>
+            )}
           />
         </div>
+        {typeof watchedVoice === 'string' && watchedVoice !== '' && (
+          <div className="mb-4 flex items-start justify-start gap-2">
+            {/* Oct 30 2026: the character's number, never the listener's own. */}
+            <VoicePreviewButton
+              voiceId={watchedVoice}
+              disabled={false}
+              speakingRate={speakingRate}
+              characterSpeedOnly
+            />
+            <VoiceFlagButton voiceId={watchedVoice} />
+          </div>
+        )}
         {/* ♿ KADE (July 2 2026): reasoning on/off at the agent level, in plain
             language. Writes model_parameters.reasoning_effort — the same field
             the model-params panel and the marketplace Instant/Reasoning badges

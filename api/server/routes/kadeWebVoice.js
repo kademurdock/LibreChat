@@ -65,9 +65,9 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
         });
         if (resolved && resolved.voice) {
           voiceId = resolved.voice;
-          if (resolved.rate != null) {
-            rate = resolved.rate;
-          }
+          /* Oct 30 2026: null is an answer now. It means this voice is not the character's own,
+           * so the ticket must not keep the character's speed read above. */
+          rate = resolved.rate ?? null;
           resolvedBySharedChain = true;
           logger.info(
             `[kadeWebVoice] resolver: voice="${resolved.voice}" source=${resolved.source} agent=${agentId}`,
@@ -83,6 +83,9 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
         try {
           const personal = await getUserVoicePref(String(req.user.id || req.user._id), agentId);
           if (personal) {
+            if (personal !== voiceId) {
+              rate = null; // same rule as the resolver: the speed belongs to the builder's voice
+            }
             voiceId = personal;
           }
         } catch (err) {

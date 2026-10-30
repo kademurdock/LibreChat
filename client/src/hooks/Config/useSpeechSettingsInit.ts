@@ -3,6 +3,7 @@ import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import { STTEndpoints, TTSEndpoints } from '~/common';
 import { logger } from '~/utils';
+import { purgeOldVoiceCache } from '~/utils/voicePace';
 import store from '~/store';
 
 const VALID_TTS_ENGINES: string[] = [TTSEndpoints.browser, TTSEndpoints.external];
@@ -52,6 +53,9 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
     } catch {
       /* storage blocked */
     }
+    /* Oct 30 2026: the same speed number now sounds different, so audio saved under the old keys
+     * must go. Nothing else ever evicts it. */
+    void purgeOldVoiceCache();
   }, []);
 
   useEffect(() => {

@@ -44,6 +44,46 @@ test('a numbered label must be served or hidden', () => {
   assert.ok(isValidLabel('Voice 999', null, aliases, hidden), 'no catalog reachable -> passes');
 });
 
+test('Oct 30: a character speed comes back only with its own builder voice', async () => {
+  const catalog = { voices: ['Builder', 'Mine', 'Named'], hidden: [], aliases: ['Named'] };
+  globalThis.__resolverCatalog = catalog;
+  const agent = { name: 'Della', tts: { voiceId: 'Builder', speakingRate: 1.2 } };
+  try {
+    globalThis.__resolverAgent = agent;
+    globalThis.__resolverPick = null;
+    let got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.deepStrictEqual([got.voice, got.source, got.rate], ['Builder', 'builder', 1.2]);
+
+    globalThis.__resolverPick = 'Mine';
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.deepStrictEqual([got.voice, got.source, got.rate], ['Mine', 'personal', null]);
+
+    // a listener who picked the builder's voice by hand is still hearing the builder's voice
+    globalThis.__resolverPick = 'Builder';
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.deepStrictEqual([got.voice, got.source, got.rate], ['Builder', 'personal', 1.2]);
+
+    // no builder voice: a name match or the platform default is nobody's choice of speed
+    globalThis.__resolverPick = null;
+    globalThis.__resolverAgent = { name: 'Named', tts: { speakingRate: 1.2 } };
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_named' });
+    assert.deepStrictEqual([got.voice, got.source, got.rate], ['Named', 'name-match', null]);
+
+    globalThis.__resolverAgent = { name: 'Nobody', tts: { speakingRate: 1.2 } };
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_nobody' });
+    assert.deepStrictEqual([got.source, got.rate], ['default', null]);
+
+    // a cleared or absent speed is null everywhere
+    globalThis.__resolverAgent = { name: 'Della', tts: { voiceId: 'Builder' } };
+    got = await resolveVoice({ userId: 'u', agentId: 'agent_della' });
+    assert.deepStrictEqual([got.source, got.rate], ['builder', null]);
+  } finally {
+    delete globalThis.__resolverAgent;
+    delete globalThis.__resolverCatalog;
+    delete globalThis.__resolverPick;
+  }
+});
+
 test('Oct 16: a pick saved under a renamed voice stays valid, read from the one shared catalog', async () => {
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => {

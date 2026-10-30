@@ -100,6 +100,10 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
   }
   const agentName = (a && a.name) || null;
   const r = a && a.tts && Number(a.tts.speakingRate);
+  /* Oct 30 2026: the character's speed belongs to its own builder voice. Her words: "a default
+   * voice speed for the default agent voice we choose when we build an agent". So `rate` comes back
+   * only with that voice; a listener's own pick, a name match or the platform default play at the
+   * listener's number or 1x. A personal pick that IS the builder's voice is still that voice. */
   const rate = Number.isFinite(r) && r > 0 ? r : null;
 
   let liveVoices = null;
@@ -117,7 +121,8 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
     try {
       const personal = await getUserVoicePref(String(userId), String(agentId));
       if (personal && isValidLabel(personal, liveVoices, aliases, hidden)) {
-        return { voice: personal, source: 'personal', rate, agentName };
+        const sameAsBuilder = Boolean(a && a.tts && a.tts.voiceId === personal);
+        return { voice: personal, source: 'personal', rate: sameAsBuilder ? rate : null, agentName };
       }
       if (personal) {
         logger.warn(
@@ -148,12 +153,12 @@ async function resolveVoice({ userId, agentId, agent, surface }) {
       aliases.find((al) => al.toLowerCase().includes(n)) ||
       null;
     if (hit) {
-      return { voice: hit, source: 'name-match', rate, agentName };
+      return { voice: hit, source: 'name-match', rate: null, agentName };
     }
   }
 
   /* 4. platform default */
-  return { voice: DEFAULT_VOICE, source: 'default', rate, agentName };
+  return { voice: DEFAULT_VOICE, source: 'default', rate: null, agentName };
 }
 
 module.exports = { resolveVoice, isValidLabel };

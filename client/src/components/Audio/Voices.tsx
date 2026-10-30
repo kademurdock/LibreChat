@@ -265,6 +265,7 @@ export function VoicePreviewButton({
   voiceId,
   disabled,
   speakingRate,
+  characterSpeedOnly = false,
 }: {
   voiceId: string;
   disabled: boolean;
@@ -272,10 +273,13 @@ export function VoicePreviewButton({
    * the pace chat would use for that character — generationRate(rate, listener pace), where
    * the listener's pace choice wins — instead of the bare rate. */
   speakingRate?: number;
+  /** Oct 30 2026: the builder sets this. Its Preview plays the character's number or 1x, because
+   * the author is choosing how everyone else will hear it, whatever they listen at themselves. */
+  characterSpeedOnly?: boolean;
 }) {
   const localize = useLocalize();
   const pacePreference = useRecoilValue(store.voicePacePreference);
-  const speed = generationRate(speakingRate, pacePreference);
+  const speed = generationRate(speakingRate, characterSpeedOnly ? null : pacePreference);
   const { isPlaying, togglePreview, error } = useVoicePreview();
   // The same expressive monologue the /voices library page performs.
   const { sample: sampleText } = useVoiceCatalog();

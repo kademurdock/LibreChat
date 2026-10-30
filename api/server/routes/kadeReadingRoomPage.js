@@ -345,7 +345,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <select id="deliverySel"><option value="STABLE">Steady</option><option value="BALANCED">Balanced</option><option value="CREATIVE">Lively</option></select>
       <label class="field"><input type="checkbox" id="followAlong"> Highlight the current passage</label>
       <label class="field" for="speedSel">Speed</label>
-      <select id="speedSel"><option value="0.8">Slower</option><option value="0.9">A little slower</option><option value="1" selected>Normal</option><option value="1.15">A little faster</option><option value="1.3">Faster</option><option value="1.5">Fastest</option></select>
+      <select id="speedSel"><option value="0.8" aria-label="0.8 times">0.8x</option><option value="0.9" aria-label="0.9 times">0.9x</option><option value="1" aria-label="1 times" selected>1x</option><option value="1.15" aria-label="1.15 times">1.15x</option><option value="1.3" aria-label="1.3 times">1.3x</option><option value="1.5" aria-label="1.5 times">1.5x</option></select>
     </div>
 
     <details><summary>Bookmarks</summary>
@@ -866,6 +866,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   /* ── player ────────────────────────────────────────────────────────── */
   var book = null, pos = { s: 0, c: 0 }, playing = false, voice = '', speed = 1;
+  /* Oct 30 2026: the audio route lets the browser keep a clip for an hour, keyed by its URL, and
+   * the same speed number now sounds different. This makes old clips unreachable. */
+  var AUDIO_PACING = '&pacing=4';
   var ctx = null, gainNode = null, scheduled = [], nextStart = 0, cache = {}, fetching = {}, ended = false, playToken = 0;
   var delivery = localStorage.getItem('kade.library.delivery') || 'STABLE';
   var fileAudio = $('fileMedia');
@@ -961,7 +964,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
   async function streamChunk(p, token){
     streamAbort = new AbortController();
-    var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
+    var r = await fetch(API + '/book/' + book.id + '/audio/' + p.s + '/' + p.c + '?voice=' + encodeURIComponent(voice) + '&speed=' + speed + AUDIO_PACING + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
     if (token !== playToken) return { cancelled: true };
     if (r.status === 204) return { skip: true };
     if (!r.ok) throw new Error('The voice did not answer (' + r.status + ').');
@@ -1127,7 +1130,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (playing) pause();
     say('A taste of ' + name + '. One moment.');
     try {
-      var r = await fetch(API + '/book/' + book.id + '/audio/' + pos.s + '/' + pos.c + '?voice=' + encodeURIComponent(v) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
+      var r = await fetch(API + '/book/' + book.id + '/audio/' + pos.s + '/' + pos.c + '?voice=' + encodeURIComponent(v) + '&speed=' + speed + AUDIO_PACING + '&delivery=' + encodeURIComponent(delivery), { signal: streamAbort.signal, headers: { 'Authorization': 'Bearer ' + token_() } });
       if (!r.ok) throw new Error('voice answered ' + r.status);
       var blob = await r.blob(); var url = URL.createObjectURL(blob);
       previewAudio = new Audio(url);
@@ -1142,6 +1145,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function followStyle(){ $('nowText').style.fontSize = $('followAlong').checked ? '1.5rem' : ''; $('nowText').style.lineHeight = $('followAlong').checked ? '1.9' : ''; $('nowText').style.border = $('followAlong').checked ? '3px solid #bb8800' : ''; }
   $('followAlong').onchange = function(){ localStorage.setItem('kade.library.followAlong', this.checked ? '1' : '0'); followStyle(); };
   followStyle();
+  /* Oct 30 2026: a saved number off this list (another device's 1.2) shows as itself, never blank,
+   * and keeps playing at that number until the reader changes it. */
+  function showSpeed(n){
+    var sel = $('speedSel'), opts = Array.prototype.slice.call(sel.options);
+    if (!opts.some(function(o){ return parseFloat(o.value) === n; })) {
+      var o = document.createElement('option');
+      o.value = String(n); o.textContent = n + 'x'; o.setAttribute('aria-label', n + ' times');
+      sel.insertBefore(o, opts.filter(function(x){ return parseFloat(x.value) > n; })[0] || null);
+    }
+    sel.value = String(n);
+  }
   $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };
   document.addEventListener('keydown', function(ev){
     if (libraryReader.isOpen()) return;
@@ -1186,7 +1200,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         pause(); ensureCtx();
         say('Reading the skipped part: ' + sk.title);
         for (var c = 0; c < sk.chunks; c++) {
-          var r = await fetch(API + '/book/' + book.id + '/audio/' + sk.k + '/' + c + '?skipped=1&voice=' + encodeURIComponent(voice) + '&speed=' + speed + '&delivery=' + encodeURIComponent(delivery), { headers: { 'Authorization': 'Bearer ' + token } });
+          var r = await fetch(API + '/book/' + book.id + '/audio/' + sk.k + '/' + c + '?skipped=1&voice=' + encodeURIComponent(voice) + '&speed=' + speed + AUDIO_PACING + '&delivery=' + encodeURIComponent(delivery), { headers: { 'Authorization': 'Bearer ' + token } });
           if (!r.ok) break;
           var buf = await new Promise(function(res, rej){ r.arrayBuffer().then(function(ab){ ctx.decodeAudioData(ab, res, rej); }).catch(rej); }).catch(function(){ return null; });
           if (!buf) continue;
@@ -1426,7 +1440,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });
     var p = book.progress || {};
     voice = p.voice || book.defaultVoice; speed = p.speed || 1;
-    $('speedSel').value = String(speed);
+    showSpeed(speed);
     var wantTrack = parseInt(new URLSearchParams(location.search).get('track'), 10);
     if (isAudio()) { $('voiceWrap').classList.add('hidden'); pos = { s: Number.isInteger(wantTrack) ? wantTrack : (p.s || 0), c: 0 }; loadTrack(pos.s, Number.isInteger(wantTrack) ? 0 : (p.pos || 0), autoplayNext); autoplayNext = false; }
     else { $('voiceWrap').classList.remove('hidden'); await loadVoices(); pos = { s: p.s || 0, c: p.c || 0 }; showText(pos); }

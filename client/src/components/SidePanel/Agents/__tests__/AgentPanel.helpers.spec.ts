@@ -45,6 +45,37 @@ const createForm = (): AgentForm => ({
 });
 
 describe('composeAgentUpdatePayload', () => {
+  describe('tts (Oct 30 2026)', () => {
+    it('sends speakingRate null, which is how the builder clears a saved speed', () => {
+      const form = createForm();
+      form.tts = { voiceId: 'Voice 1', speakingRate: null };
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload.tts).toEqual({
+        voiceId: 'Voice 1',
+        speakingRate: null,
+      });
+      form.tts = { speakingRate: null };
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload.tts).toEqual({
+        speakingRate: null,
+      });
+    });
+
+    it('sends a number with or without a voice', () => {
+      const form = createForm();
+      form.tts = { speakingRate: 1.2 };
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload.tts).toEqual({
+        speakingRate: 1.2,
+      });
+    });
+
+    it('still leaves an empty tts out', () => {
+      const form = createForm();
+      form.tts = {};
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload).not.toHaveProperty('tts');
+      form.tts = undefined;
+      expect(composeAgentUpdatePayload(form, 'agent_123').payload).not.toHaveProperty('tts');
+    });
+  });
+
   it('includes avatar: null when resetting a persistent agent', () => {
     const form = createForm();
     form.avatar_action = 'reset';

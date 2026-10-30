@@ -344,9 +344,9 @@ export default function AgentVoicePicker({
 }: {
   value?: string | null;
   onChange: (voice?: string) => void;
-  /** D2d: the agent's configured speaking rate. Oct 16 2026: auditions are sent at the pace
-   * chat would use for this character — generationRate(rate, listener pace), the listener's
-   * pace choice winning — not the bare rate. */
+  /** D2d: the agent's configured speaking rate. Oct 30 2026: this picker is the builder's, so
+   * auditions play the character's number or 1x, never the listener's own speed: the author is
+   * choosing how everyone else will hear it. */
   speakingRate?: number;
   /** ♿ July 17 2026 (proposal B): lets the picker warn the EDITOR when their
    * own personal pick is shadowing the builder voice they're setting here. */
@@ -389,10 +389,9 @@ export default function AgentVoicePicker({
   const { audition: auditionTemplate, categories, renames, describe } = useVoiceCatalogTexts();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
-  const pacePreference = useRecoilValue(store.voicePacePreference);
   const { unlock, audition, stop, playingVoice, error } = useVoiceAudition({
     auditionTemplate,
-    speed: generationRate(speakingRate, pacePreference),
+    speed: generationRate(speakingRate, null),
     agentLines,
   });
   const rootRef = useRef<HTMLDivElement>(null);

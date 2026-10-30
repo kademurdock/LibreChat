@@ -1,6 +1,33 @@
 import { MAX_SUBAGENTS } from 'librechat-data-provider';
 import { agentCreateSchema, agentUpdateSchema, agentSubagentsSchema } from './validation';
 
+describe('agent tts speed (Oct 30 2026)', () => {
+  it('accepts a number in range, and null, which clears a saved speed', () => {
+    expect(agentUpdateSchema.parse({ tts: { speakingRate: 1.2 } }).tts).toEqual({
+      speakingRate: 1.2,
+    });
+    expect(agentUpdateSchema.parse({ tts: { speakingRate: null } }).tts).toEqual({
+      speakingRate: null,
+    });
+    expect(
+      agentCreateSchema.safeParse({
+        name: 'Character',
+        provider: 'openai',
+        model: 'gpt-4',
+        tts: { speakingRate: null },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('keeps the 0.5 to 1.5 range and leaves an absent key absent', () => {
+    expect(agentUpdateSchema.safeParse({ tts: { speakingRate: 1.6 } }).success).toBe(false);
+    expect(agentUpdateSchema.safeParse({ tts: { speakingRate: 0.4 } }).success).toBe(false);
+    expect(agentUpdateSchema.parse({ tts: { voiceId: 'Voice 1' } }).tts).toEqual({
+      voiceId: 'Voice 1',
+    });
+  });
+});
+
 describe('agentSubagentsSchema', () => {
   it('accepts enabled:true with a list within the cap', () => {
     const result = agentSubagentsSchema.safeParse({

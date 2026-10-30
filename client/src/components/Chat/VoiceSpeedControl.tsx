@@ -18,8 +18,9 @@ import store from '~/store';
  *   accessible ExternalVoiceDropdown), which saves the per-agent voice. That
  *   save now ALSO syncs to the server pref (see useAgentVoiceSync), so the
  *   choice follows this character onto phone + web calls.
- * - Speed reuses the Settings PlaybackRate slider — read-aloud only (Kade's
- *   call: rate stays an in-app listening setting, not carried to calls).
+ * - Speed reuses the Settings PlaybackRate list. Oct 30 2026: the words here now match what it
+ *   does: one number for every character on this device, sent to read-aloud and to web calls
+ *   placed here, not to the phone.
  *
  * Screen-reader-first + built on the SAME Ariakit popover pattern as the
  * TokenUsage indicator (store + portal + finalFocus). PORTALED so the header's
@@ -57,7 +58,7 @@ function VoiceSpeedControlInner() {
   return (
     <>
       <TooltipAnchor
-        description="Voice & speed for this character"
+        description="Voice and speed"
         side="bottom"
         render={
           <Ariakit.PopoverDisclosure
@@ -65,7 +66,7 @@ function VoiceSpeedControlInner() {
             store={popover}
             type="button"
             aria-haspopup="dialog"
-            aria-label="Voice and speed for this character"
+            aria-label="Voice and speed"
             className="inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Volume2 className="icon-md" aria-hidden={true} />
@@ -78,13 +79,14 @@ function VoiceSpeedControlInner() {
         portal
         unmountOnHide
         finalFocus={disclosureRef}
-        aria-label="Voice and speed for this character"
+        aria-label="Voice and speed"
         className="z-[200] w-80 max-w-[92vw] rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-lg focus:outline-none"
       >
-        <div className="mb-1 text-sm font-semibold">Voice &amp; speed for this character</div>
+        <div className="mb-1 text-sm font-semibold">Voice &amp; speed</div>
         <p className="mb-3 text-xs text-text-secondary">
-          Your voice pick follows this character everywhere — read-aloud here and on phone/web
-          calls. Speed applies to read-aloud here.
+          Your voice pick is for this character and follows you everywhere: read-aloud here and
+          phone and web calls. Your speed is for every character on this device: read-aloud and web
+          calls here.
         </p>
         <div className="mb-3 max-h-[50vh] overflow-y-auto">
           <VoiceDropdown />

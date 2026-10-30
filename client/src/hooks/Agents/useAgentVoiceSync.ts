@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { useGetAgentByIdQuery } from '~/data-provider/Agents';
 import { request } from 'librechat-data-provider';
+import { characterSpeedFor } from '~/utils/voicePace';
 import store from '~/store';
 
 /** localStorage key for per-agent voice preferences (JSON map: agent_id → voice). */
@@ -148,6 +149,8 @@ export function useAgentVoiceSync(index: number = 0): void {
   const agentId = useRecoilValue(store.conversationAgentIdByIndex(index));
   const setVoice = useSetRecoilState(store.voice);
   const setVoiceSpeed = useSetRecoilState(store.voiceSpeed);
+  /** Read so a pick made in the header re-runs the speed rule below. */
+  const voice = useRecoilValue(store.voice);
   /** D1/D2: the agent record (cached, VIEW-level) carries its default voice. */
   const { data: agent } = useGetAgentByIdQuery(agentId);
 
@@ -159,9 +162,22 @@ export function useAgentVoiceSync(index: number = 0): void {
     if (resolved) {
       setVoice(resolved); // 3) neither -> untouched global default
     }
-    // D2d: the agent's speaking rate — unlike voice this RESETS when the
-    // incoming agent has none, so one agent's pace never bleeds into the next.
-    const rate = agent?.tts?.speakingRate;
-    setVoiceSpeed(typeof rate === 'number' ? rate : undefined);
-  }, [agentId, agent?.tts?.voiceId, agent?.tts?.speakingRate, setVoice, setVoiceSpeed]);
+  }, [agentId, agent?.tts?.voiceId, setVoice]);
+
+  /* D2d: the agent's speaking rate. Oct 30 2026: it belongs to the character's own builder voice,
+   * so a listener's own voice plays at their number or 1x. It resets when there is no agent too,
+   * or a plain conversation kept the last character's speed. Its own effect because it must
+   * follow `voice`, and the effect above must not: it writes `voice`, and the speech hooks snap a
+   * stale voice back, so following it there could loop. */
+  useEffect(() => {
+    setVoiceSpeed(
+      agentId
+        ? characterSpeedFor(
+            agent?.tts?.voiceId,
+            readAgentVoiceMap()[agentId],
+            agent?.tts?.speakingRate,
+          )
+        : undefined,
+    );
+  }, [agentId, agent?.tts?.voiceId, agent?.tts?.speakingRate, voice, setVoiceSpeed]);
 }

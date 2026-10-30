@@ -335,6 +335,25 @@ const pruneToolResourceFileIdsForOwner = async ({ tool_resources, ownerId, logPr
 };
 
 /**
+ * Oct 30 2026: a save only changes the voice settings it mentions. tts is a Mixed field and
+ * findOneAndUpdate replaced it whole, so every installed iPhone build (it sends tts: { voiceId }
+ * on any edit of a voiced character) wiped the speed and delivery set on the website, and she
+ * wants "a default voice speed for the default agent voice ... so people can hear it how you
+ * intended". Leaving a key out now keeps it; null clears it.
+ * Versions: a real speed change adds one version, like any other edit (so a revert restores the
+ * old speed too). A save whose merged tts equals the saved one is a duplicate and adds none.
+ */
+const mergeAgentTts = (existing, incoming) => {
+  const merged = { ...existing, ...incoming };
+  for (const key of Object.keys(merged)) {
+    if (merged[key] == null) {
+      delete merged[key];
+    }
+  }
+  return merged;
+};
+
+/**
  * Creates an Agent.
  * @route POST /Agents
  * @param {ServerRequest} req - The request object.
@@ -346,6 +365,9 @@ const createAgentHandler = async (req, res) => {
   try {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
+    if (agentData.tts) {
+      agentData.tts = mergeAgentTts(undefined, agentData.tts);
+    }
     if (agentData.conversation_starters == null) {
       agentData.conversation_starters = generateConversationStarters(agentData);
     }
@@ -648,6 +670,15 @@ const updateAgentHandler = async (req, res) => {
         ownerId: existingAgent.author,
         logPrefix: `[/Agents/:id] Agent ${id}`,
       });
+    }
+
+    if (updateData.tts) {
+      const mergedTts = mergeAgentTts(existingAgent.tts, updateData.tts);
+      if (existingAgent.tts || Object.keys(mergedTts).length > 0) {
+        updateData.tts = mergedTts;
+      } else {
+        delete updateData.tts;
+      }
     }
 
     const isMCPTool = (t) =>

@@ -540,6 +540,90 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       existingAgentId = agent.id;
     });
 
+    /* Oct 30 2026: tts is a Mixed field and findOneAndUpdate replaced it whole, so an installed
+     * iPhone build (it sends tts: { voiceId } on every edit of a voiced character) wiped the
+     * speed and delivery set on the website. */
+    describe('tts merge', () => {
+      const setTts = (tts) => Agent.updateOne({ id: existingAgentId }, { $set: { tts } });
+      const patch = async (body) => {
+        mockReq.user.id = existingAgentAuthorId.toString();
+        mockReq.params.id = existingAgentId;
+        mockReq.body = body;
+        mockRes.json.mockClear();
+        mockRes.status.mockClear();
+        await updateAgentHandler(mockReq, mockRes);
+        return Agent.findOne({ id: existingAgentId }).lean();
+      };
+
+      test('an iPhone save of the voice alone keeps speed and delivery', async () => {
+        await setTts({ voiceId: 'Voice 1', speakingRate: 1.2, deliveryMode: 'STABLE' });
+        const saved = await patch({ tts: { voiceId: 'Voice 2' } });
+        expect(mockRes.status).not.toHaveBeenCalledWith(400);
+        expect(saved.tts).toEqual({ voiceId: 'Voice 2', speakingRate: 1.2, deliveryMode: 'STABLE' });
+      });
+
+      test('a speed-only save keeps the voice', async () => {
+        await setTts({ voiceId: 'Voice 1', deliveryMode: 'CREATIVE' });
+        const saved = await patch({ tts: { speakingRate: 1.3 } });
+        expect(saved.tts).toEqual({ voiceId: 'Voice 1', deliveryMode: 'CREATIVE', speakingRate: 1.3 });
+      });
+
+      test('speakingRate null clears the speed and nothing else', async () => {
+        await setTts({ voiceId: 'Voice 1', speakingRate: 1.2, deliveryMode: 'STABLE' });
+        const saved = await patch({ tts: { speakingRate: null } });
+        expect(mockRes.status).not.toHaveBeenCalledWith(400);
+        expect(saved.tts).toEqual({ voiceId: 'Voice 1', deliveryMode: 'STABLE' });
+      });
+
+      test('clearing the only setting leaves an empty tts, not a stale speed', async () => {
+        await setTts({ speakingRate: 1.2 });
+        const saved = await patch({ tts: { speakingRate: null } });
+        expect(saved.tts ?? {}).toEqual({});
+      });
+
+      test('a speed past the range is still refused', async () => {
+        await setTts({ voiceId: 'Voice 1', speakingRate: 1.2 });
+        const saved = await patch({ tts: { speakingRate: 1.6 } });
+        expect(mockRes.status).toHaveBeenCalledWith(400);
+        expect(saved.tts.speakingRate).toBe(1.2);
+      });
+
+      test('a save that changes nothing about the voice adds no version; a speed change adds one', async () => {
+        await patch({ tts: { voiceId: 'Voice 1', speakingRate: 1.2, deliveryMode: 'STABLE' } });
+        const before = (await Agent.findOne({ id: existingAgentId }).lean()).versions.length;
+        const same = await patch({ tts: { voiceId: 'Voice 1' } });
+        expect(same.versions.length).toBe(before);
+        const faster = await patch({ tts: { speakingRate: 1.3 } });
+        expect(faster.versions.length).toBe(before + 1);
+      });
+
+      test('an agent with no tts yet gets exactly what was sent', async () => {
+        const saved = await patch({ tts: { speakingRate: 1.1 } });
+        expect(saved.tts).toEqual({ speakingRate: 1.1 });
+      });
+
+      test('clearing a speed on an agent with no tts writes nothing and adds no version', async () => {
+        const before = (await Agent.findOne({ id: existingAgentId }).lean()).versions.length;
+        const saved = await patch({ tts: { speakingRate: null } });
+        expect(saved.tts).toBeUndefined();
+        expect(saved.versions.length).toBe(before);
+      });
+
+      test('a new character saved with a cleared speed stores no null', async () => {
+        mockReq.body = {
+          name: 'New Character',
+          provider: 'openai',
+          model: 'gpt-4',
+          tts: { voiceId: 'Voice 1', speakingRate: null },
+        };
+        mockRes.json.mockClear();
+        await createAgentHandler(mockReq, mockRes);
+        const created = mockRes.json.mock.calls[0][0];
+        const saved = await Agent.findOne({ id: created.id }).lean();
+        expect(saved.tts).toEqual({ voiceId: 'Voice 1' });
+      });
+    });
+
     test('should update agent with allowed fields only', async () => {
       mockReq.user.id = existingAgentAuthorId.toString(); // Set as author
       mockReq.params.id = existingAgentId;
