@@ -78,6 +78,21 @@ const registrationController = async (req, res) => {
     }
     const response = await registerUser(req.body, extras);
     const { status, message } = response;
+    /* Oct 29 2026: "Will you be looking at the screen, or listening?" Only a
+     * brand-new account takes the answer (registerUser names it only when it
+     * made one), so an existing account's setting is never touched here, and
+     * "I'd rather not say" leaves it unset. Never fails the signup. */
+    if (response.createdUserId && req.body?.sight !== undefined) {
+      try {
+        const { parseSightChoice, setSight } = require('~/models/kadeSight');
+        const sight = parseSightChoice(req.body.sight);
+        if (sight) {
+          await setSight(response.createdUserId, { sight }, 'signup');
+        }
+      } catch (sightErr) {
+        logger.warn('[registrationController] could not save the screen answer:', sightErr.message);
+      }
+    }
     res.status(status).send({ message });
     // Fire-and-forget: register phone with the bridge if the user provided one
     if ((status === 200 || status === 201) && req.body.phoneNumber && req.body.name) {

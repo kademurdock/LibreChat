@@ -153,12 +153,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         </div>
         <a
           href="/forgot-password"
-          className="inline-flex min-h-11 items-center p-1 text-sm font-medium text-green-600 underline decoration-transparent transition-all duration-200 hover:text-green-700 hover:decoration-green-700 focus:text-green-700 focus:decoration-green-700 dark:text-green-500 dark:hover:text-green-400 dark:hover:decoration-green-400 dark:focus:text-green-400 dark:focus:decoration-green-400"
+          className="inline-flex min-h-11 items-center p-1 text-base font-medium text-green-600 underline transition-all duration-200 hover:text-green-700 hover:decoration-green-700 focus:text-green-700 focus:decoration-green-700 dark:text-green-500 dark:hover:text-green-400 dark:hover:decoration-green-400 dark:focus:text-green-400 dark:focus:decoration-green-400"
         >
+          {/* Oct 29 2026: say both ways in, so a phone-number account knows
+           * there is a way back that does not need an inbox. */}
           {localize(
-            startupConfig.passwordResetEnabled
-              ? 'com_auth_password_forgot'
-              : 'com_auth_sign_in_help',
+            startupConfig.passwordResetEnabled && startupConfig.emailEnabled !== false
+              ? 'com_auth_password_forgot_phone_or_email'
+              : 'com_auth_password_forgot_phone',
           )}
         </a>
 

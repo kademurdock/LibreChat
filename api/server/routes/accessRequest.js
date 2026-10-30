@@ -2,6 +2,7 @@ const axios = require('axios');
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { KadeAccessRequest } = require('~/models/kadeAccessRequest');
+const { parseSightChoice } = require('~/models/kadeSight');
 
 const router = express.Router();
 
@@ -38,7 +39,10 @@ router.post('/', async (req, res) => {
     if (!name || !contact || !whoYouAre) {
       return res.status(400).json({ error: 'Name, a way to reach you, and who you are — those three are the whole ask.' });
     }
-    const doc = await KadeAccessRequest.create({ name, contact, whoYouAre, whyHere, ip });
+    /* Oct 29 2026: "Will you be looking at the screen, or listening?" Optional:
+     * left blank or "I'd rather not say" both store null. */
+    const sight = parseSightChoice(b.sight) ?? null;
+    const doc = await KadeAccessRequest.create({ name, contact, whoYouAre, whyHere, sight, ip });
     /* Ring her phone — REBUILT Aug 13 2026 night, after her own test knock at
      * 9:22 PM was silently eaten. Three faults in the original, each the
      * blocked-means-lost disease:

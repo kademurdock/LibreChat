@@ -21,7 +21,17 @@ const Registration: React.FC = () => {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<TRegisterUser & { phoneNumber?: string; passcode?: string }>({ mode: 'onChange' });
+  } = useForm<TRegisterUser & { phoneNumber?: string; passcode?: string; sight?: string }>({
+    mode: 'onChange',
+  });
+
+  /* Oct 29 2026: "Will you be looking at the screen, or listening?" One
+   * question, three plain answers, and leaving it alone is fine. */
+  const sightChoices: Array<{ value: string; label: TranslationKeys }> = [
+    { value: 'sighted', label: 'com_auth_sight_sighted' },
+    { value: 'nonvisual', label: 'com_auth_sight_nonvisual' },
+    { value: 'unsaid', label: 'com_auth_sight_unsaid' },
+  ];
   const password = watch('password');
 
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -239,6 +249,32 @@ const Registration: React.FC = () => {
                 </label>
               </div>
             </div>
+
+            <fieldset
+              className="mb-4 rounded-2xl border border-border-light px-3.5 pb-2 pt-1"
+              aria-describedby="sight-help"
+            >
+              <legend className="px-2 text-sm font-medium text-text-primary">
+                {localize('com_auth_sight_question')}
+              </legend>
+              <p id="sight-help" className="mb-1 text-sm text-text-secondary-alt">
+                {localize('com_auth_sight_help')}
+              </p>
+              {sightChoices.map((choice) => (
+                <label
+                  key={choice.value}
+                  className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-text-primary"
+                >
+                  <input
+                    type="radio"
+                    value={choice.value}
+                    {...register('sight')}
+                    className="size-5 shrink-0 accent-green-600"
+                  />
+                  {localize(choice.label)}
+                </label>
+              ))}
+            </fieldset>
             {renderInput('password', 'com_auth_password', 'password', {
               required: localize('com_auth_password_required'),
               minLength: {

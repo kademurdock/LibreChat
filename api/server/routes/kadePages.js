@@ -2974,6 +2974,12 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
   .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; margin-top:1rem; }
   .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
   .hp { position:absolute; left:-9999px; height:1px; overflow:hidden; }
+  fieldset.sightq { border:1px solid #b9bfc9; border-radius:10px; margin:1.1rem 0 .3rem; padding:.4rem .9rem .7rem; }
+  @media (prefers-color-scheme: dark){ fieldset.sightq{ border-color:#3a3f49; } }
+  fieldset.sightq legend { font-weight:600; padding:0 .3rem; }
+  fieldset.sightq p { margin:.2rem 0 .5rem; }
+  form label.choice { font-weight:400; display:flex; align-items:center; gap:.6rem; margin:.35rem 0; min-height:44px; cursor:pointer; }
+  form label.choice input { width:1.3rem; height:1.3rem; flex:none; }
 </style>
 </head><body>
 <a class="back" href="/login">&larr; Back to sign in</a>
@@ -2985,7 +2991,15 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
   <label for="name">What do people call you?</label>
   <input type="text" id="name" required maxlength="80" autocomplete="name">
   <label for="contact">How can Kade reach you? (phone or email)</label>
-  <input type="text" id="contact" required maxlength="160" autocomplete="tel">
+  <input type="text" id="contact" required maxlength="160" autocomplete="tel" aria-describedby="contactHelp">
+  <p id="contactHelp" class="muted">A phone number, an email address, or both. With only a phone number, Kade-AI calls you once you&rsquo;re approved and reads you how to sign in.</p>
+  <fieldset class="sightq" aria-describedby="sightHelp">
+    <legend>Will you be looking at the screen, or listening?</legend>
+    <p id="sightHelp" class="muted">This only decides whether moving pictures and video faces are turned on for you. Nothing else changes, and it can be changed later.</p>
+    <label class="choice"><input type="radio" name="sight" value="sighted"> I&rsquo;ll look at the screen</label>
+    <label class="choice"><input type="radio" name="sight" value="nonvisual"> I&rsquo;ll listen, I use a screen reader</label>
+    <label class="choice"><input type="radio" name="sight" value="unsaid"> I&rsquo;d rather not say</label>
+  </fieldset>
   <label for="who">Tell Kade a little about yourself.</label>
   <textarea id="who" required maxlength="1200"></textarea>
   <label for="why">What would you like to watch or use? (optional)</label>
@@ -3008,6 +3022,7 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
         contact:document.getElementById('contact').value,
         whoYouAre:document.getElementById('who').value,
         whyHere:document.getElementById('why').value,
+        sight:(function(){ var c=document.querySelector('input[name=sight]:checked'); return c?c.value:'unsaid'; })(),
         website:document.getElementById('website').value
       })});
       var d=await r.json();
@@ -3214,6 +3229,13 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
   .emailrow label { display:block; font-size:.95rem; margin-bottom:.25rem; }
   .emailrow input { font-size:1rem; padding:.5rem .6rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; width:min(26rem,100%); }
   @media (prefers-color-scheme: dark){ .emailrow input{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  .blessing p { white-space:pre-line; }
+  fieldset.sightrow { border:1px solid #d5d9df; border-radius:10px; margin:.7rem 0 0; padding:.3rem .8rem .5rem; }
+  @media (prefers-color-scheme: dark){ fieldset.sightrow{ border-color:#3a3f49; } }
+  fieldset.sightrow legend { font-size:.95rem; font-weight:600; padding:0 .3rem; }
+  label.choice { display:flex; align-items:center; gap:.5rem; min-height:40px; cursor:pointer; }
+  label.choice input { width:1.2rem; height:1.2rem; }
+  .callrow { margin-top:.6rem; }
 </style>
 </head><body>
 <a class="back" href="/you">&larr; Back</a>
@@ -3243,7 +3265,7 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
       if(rq.status!=='pending'){
         var st=document.createElement('div'); st.className='meta';
         st.textContent = rq.status==='denied' ? 'Denied.'
-          : (rq.hasAccount ? ('Approved — account made under '+rq.accountEmail+'.')
+          : (rq.hasAccount ? ('Approved — account made; they sign in with '+loginShown(rq)+'.')
                            : 'Approved, but no account was ever made. Approving again makes it.');
         d.appendChild(st);
       }
@@ -3260,9 +3282,26 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
       var found=(rq.contact||'').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}/);
       var digits=(rq.contact||'').replace(/\\D/g,'');
       if(digits.length===11 && digits.charAt(0)==='1'){ digits=digits.slice(1); }
-      inp.value = rq.accountEmail || (found ? found[0] : (digits.length===10 ? digits : ''));
+      inp.value = (rq.accountEmail && !rq.usesPhoneLogin) ? rq.accountEmail
+        : (found ? found[0] : (digits.length===10 ? digits : (rq.usesPhoneLogin ? loginShown(rq).split('-').join('') : '')));
       inp.placeholder = 'an email address or a 10-digit phone number';
       er.appendChild(lb); er.appendChild(inp); d.appendChild(er);
+      /* Oct 29 2026: what they said about the screen. Prefilled with their
+         answer; whatever is picked here when approving goes on the account. */
+      var sf=document.createElement('fieldset'); sf.className='sightrow';
+      var lg=document.createElement('legend'); lg.textContent='Will '+rq.name+' look at the screen, or listen?'; sf.appendChild(lg);
+      var said=document.createElement('p'); said.className='meta';
+      said.textContent = rq.sight==='sighted' ? 'They said they will look at the screen.'
+        : (rq.sight==='nonvisual' ? 'They said they will listen with a screen reader.' : 'They did not say.');
+      sf.appendChild(said);
+      [['sighted','Looks at the screen'],['nonvisual','Listens, uses a screen reader'],['unsaid','Not said']].forEach(function(o){
+        var l=document.createElement('label'); l.className='choice';
+        var r=document.createElement('input'); r.type='radio'; r.name='sight_'+rq.id; r.value=o[0];
+        r.checked = (rq.sight||'unsaid')===o[0];
+        l.appendChild(r); l.appendChild(document.createTextNode(' '+o[1])); sf.appendChild(l);
+      });
+      d.appendChild(sf);
+      if(rq.status==='approved' && rq.hasAccount && rq.usesPhoneLogin){ d.appendChild(callRow(rq, d)); }
       var acts=document.createElement('div'); acts.className='actions';
       var ok=document.createElement('button'); ok.type='button'; ok.className='small approve'; ok.textContent='Approve (adult)';
       var okC=document.createElement('button'); okC.type='button'; okC.className='small approve'; okC.textContent='Approve (kid)';
@@ -3275,9 +3314,69 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
     });
   }
 
+  /* Oct 29 2026: phone-only accounts have no inbox, so the platform calls them
+     and reads the sign-in aloud. This row says how that went, and can call
+     again with a fresh password (the old one was never kept). */
+  /* A phone-number account's placeholder address, said as the number they type. */
+  function loginShown(rq){
+    var m=(rq.accountEmail||'').match(/^p(\\d{3})(\\d{3})(\\d{4})@/);
+    return m ? (m[1]+'-'+m[2]+'-'+m[3]) : (rq.accountEmail||'');
+  }
+  function callText(rq){
+    var s=rq.welcomeCallStatus||'';
+    if(s==='placed') return 'Welcome call placed '+prettyWhen(rq.welcomeCallAt)+'. '+(rq.welcomeCallOutcome||'');
+    if(s==='failed') return 'The welcome call on '+prettyWhen(rq.welcomeCallAt)+' could not be placed'+(rq.welcomeCallNote?(': '+rq.welcomeCallNote):'')+'.';
+    if(s==='off') return 'Welcome calls were switched off when they were approved.';
+    if(s==='not-needed') return 'You said they are already signed in.';
+    return 'This phone-number account was made before welcome calls, so nobody has read them their password. If they have not been able to sign in, call them.';
+  }
+  function callRow(rq, card){
+    var wc=document.createElement('div'); wc.className='callrow';
+    var wp=document.createElement('p'); wp.className='meta'; wp.textContent=callText(rq); wc.appendChild(wp);
+    var acts=document.createElement('div'); acts.className='actions';
+    var cb=document.createElement('button'); cb.type='button'; cb.className='small approve';
+    cb.textContent='Make a new password and call '+rq.name;
+    cb.addEventListener('click', function(){ callAgain(rq, card, wp, cb); });
+    acts.appendChild(cb);
+    if(!rq.welcomeCallStatus){
+      var nb=document.createElement('button'); nb.type='button'; nb.className='small';
+      nb.textContent=rq.name+' is already signed in';
+      nb.addEventListener('click', async function(){
+        try{ await api('POST','/api/admin/access-requests/'+rq.id+'/welcome-call',{skip:true});
+          rq.welcomeCallStatus='not-needed'; wp.textContent=callText(rq); nb.remove();
+          setStatus('Noted. '+rq.name+' will not be called.');
+        }catch(e){ setStatus('That did not go through: '+e.message, true); }
+      });
+      acts.appendChild(nb);
+    }
+    wc.appendChild(acts);
+    return wc;
+  }
+  async function callAgain(rq, card, line, btn){
+    if(!window.confirm('This replaces '+rq.name+"'s password with a new one, then calls "+loginShown(rq)+' to read it to them. Go ahead?')) return;
+    btn.disabled=true;
+    setStatus('Making a new password and calling '+rq.name+'…');
+    try{
+      var d=await api('POST','/api/admin/access-requests/'+rq.id+'/welcome-call',{});
+      rq.welcomeCallStatus=d.welcomeCallStatus; rq.welcomeCallAt=new Date().toISOString(); rq.welcomeCallOutcome='';
+      line.textContent=callText(rq);
+      var b=document.createElement('div'); b.className='blessing';
+      var p=document.createElement('p'); p.textContent=d.readyMessage; b.appendChild(p);
+      var cp=document.createElement('button'); cp.type='button'; cp.className='small'; cp.textContent='Copy the message';
+      cp.addEventListener('click', async function(){ try{ await navigator.clipboard.writeText(d.readyMessage); setStatus('Copied.'); }catch(e){ setStatus('Select and copy the text above.', true); } });
+      b.appendChild(cp); card.appendChild(b);
+      setStatus(d.welcomeCallStatus==='placed'
+        ? ('New password made, and calling '+rq.name+' now to read it. The message is below their card.')
+        : ('New password made, but the call could not be placed. Read them the message below their card.'), d.welcomeCallStatus!=='placed');
+    }catch(e){ setStatus('That did not go through: '+e.message, true); }
+    btn.disabled=false;
+  }
+
   async function decide(rq, action, audience, card, emailInput){
     try{
       var body = audience?{audience:audience}:{};
+      var picked=card.querySelector('input[name="sight_'+rq.id+'"]:checked');
+      if(audience && picked && picked.value!==(rq.sight||'unsaid')){ body.sight = picked.value==='unsaid' ? null : picked.value; }
       if(audience && emailInput){
         var em=(emailInput.value||'').trim();
         if(!em){
@@ -3306,8 +3405,10 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
         b.appendChild(cp);
         card.appendChild(b);
         card.querySelectorAll('.actions button').forEach(function(x){ x.disabled=true; });
-        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; } });
-        setStatus((d.emailNotice ? d.emailNotice + ' ' : '') + (d.accountCreated
+        ALL.forEach(function(r){ if(r.id===rq.id){ r.status='approved'; r.hasAccount=Boolean(d.accountCreated||d.alreadyHadAccount); r.accountEmail=d.email||r.accountEmail; r.usesPhoneLogin=Boolean(d.usesPhoneLogin); if(d.welcomeCallStatus){ r.welcomeCallStatus=d.welcomeCallStatus; r.welcomeCallAt=new Date().toISOString(); } if(d.sight!==undefined){ r.sight=d.sight; } } });
+        var callNote = d.welcomeCallStatus==='placed' ? ' Calling them now to read it to them.'
+          : (d.welcomeCallStatus ? ' The welcome call could not be placed, so read it to them.' : '');
+        setStatus((d.emailNotice ? d.emailNotice + ' ' : '') + callNote + ' ' + (d.accountCreated
           ? ('Account made for '+rq.name+' — they sign in with '+(d.loginId||d.email)+'. The message is below their card.')
           : (d.alreadyHadAccount
               ? (rq.name+' already had an account under '+d.email+' — the message below says so.')
@@ -3322,7 +3423,11 @@ const accessRequestsHtml = `<!doctype html><html lang="en"><head><title>Access R
   }
 
   var ALL=[];
-  function needsMe(r){ return r.status==='pending' || (r.status==='approved' && !r.hasAccount); }
+  function needsMe(r){
+    return r.status==='pending' || (r.status==='approved' && !r.hasAccount)
+      /* Oct 29 2026: phone-number accounts nobody has read a password to yet */
+      || (r.status==='approved' && r.hasAccount && r.usesPhoneLogin && (!r.welcomeCallStatus || r.welcomeCallStatus==='failed'));
+  }
   function draw(){
     var showAll=document.getElementById('showall').checked;
     render(ALL.filter(function(r){ return showAll || needsMe(r); }));

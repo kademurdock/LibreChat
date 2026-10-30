@@ -57,4 +57,28 @@ async function setSight(userId, patch, setBy = 'user') {
   return plain(row);
 }
 
-module.exports = { KadeSight, SIGHT_VALUES, getSight, setSight, plain };
+/**
+ * Oct 29 2026: what someone picked when asking for an account. The sign-up
+ * forms send 'sighted', 'nonvisual', or 'unsaid' ("I'd rather not say").
+ * Returns the value to store ('sighted' | 'nonvisual' | null), or undefined
+ * when nothing usable was sent at all, so callers can tell "they said rather
+ * not" from "the form never asked".
+ */
+function parseSightChoice(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  const v = String(value).trim().toLowerCase();
+  if (SIGHT_VALUES.includes(v)) {
+    return v;
+  }
+  if (v === '' || v === 'unsaid' || v === 'none' || v === 'null') {
+    return null;
+  }
+  return undefined;
+}
+
+module.exports = { KadeSight, SIGHT_VALUES, getSight, setSight, plain, parseSightChoice };

@@ -74,6 +74,10 @@ function RequestPasswordReset() {
     return (
       <BodyTextWrapper>
         <p>{localize('com_auth_recovery_unavailable')}</p>
+        {/* Oct 29 2026: the phone-call reset needs no email, so it stays open here. */}
+        <a className="mt-4 block font-medium underline" href="/reset-by-phone">
+          {localize('com_auth_reset_by_phone_link')}
+        </a>
         <a className="mt-4 block underline" href={loginPage()}>
           {localize('com_auth_back_to_login')}
         </a>
@@ -91,6 +95,14 @@ function RequestPasswordReset() {
       <p id="recovery-help" className="text-sm text-text-secondary-alt">
         {localize('com_auth_recovery_options')}
       </p>
+      {/* Sep 22 2026: phone-number accounts have no real inbox, so they reset by a
+       * phone call. Oct 29 2026: moved above the email box so it is found first. */}
+      <a
+        href="/reset-by-phone"
+        className="block min-h-11 text-base font-medium text-green-600 underline transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+      >
+        {localize('com_auth_reset_by_phone_link')}
+      </a>
       {requestFailed && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {localize('com_auth_recovery_request_failed')}
@@ -151,13 +163,6 @@ function RequestPasswordReset() {
         >
           {isLoading ? <Spinner /> : localize('com_auth_continue')}
         </Button>
-        {/* Sep 22 2026: phone-number accounts have no real inbox, so they reset by a phone call. */}
-        <a
-          href="/reset-by-phone"
-          className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-        >
-          Sign in with a phone number? Get a reset code by phone call
-        </a>
         <a
           href={loginPage()}
           className="block text-center text-sm font-medium text-green-600 transition-colors hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"

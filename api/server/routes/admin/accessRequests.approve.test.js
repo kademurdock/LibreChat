@@ -18,6 +18,11 @@ const mockFindByIdAndUpdate = jest.fn().mockResolvedValue({});
 const mockFind = jest.fn();
 const mockSendEmail = jest.fn().mockResolvedValue({ id: 'mail-1' });
 const mockClaim = jest.fn().mockResolvedValue({});
+const mockDeleteSessions = jest.fn().mockResolvedValue({});
+const mockSetSight = jest.fn(async (userId, patch) => ({ sight: patch.sight, liveFaces: true }));
+const mockGetSight = jest.fn().mockResolvedValue({ sight: null, liveFaces: true });
+const mockPlaceWelcomeCall = jest.fn().mockResolvedValue({ status: 'placed', sid: 'CA1' });
+const mockOutcome = jest.fn().mockResolvedValue(null);
 jest.mock(
   '~/server/utils/sendEmail',
   () =>
@@ -41,6 +46,17 @@ jest.mock('~/server/middleware', () => ({
 jest.mock('~/models', () => ({
   findUser: (...a) => mockFindUser(...a),
   updateUser: (...a) => mockUpdateUser(...a),
+  deleteAllUserSessions: (...a) => mockDeleteSessions(...a),
+}));
+jest.mock('~/models/kadeSight', () => ({
+  ...jest.requireActual('~/models/kadeSight'),
+  getSight: (...a) => mockGetSight(...a),
+  setSight: (...a) => mockSetSight(...a),
+}));
+jest.mock('~/server/utils/kadeWelcomeCall', () => ({
+  ...jest.requireActual('~/server/utils/kadeWelcomeCall'),
+  placeWelcomeCall: (...a) => mockPlaceWelcomeCall(...a),
+  welcomeCallOutcome: (...a) => mockOutcome(...a),
 }));
 jest.mock('~/server/services/AuthService', () => ({
   registerUser: (...a) => mockRegisterUser(...a),
@@ -79,6 +95,9 @@ beforeEach(() => {
   mockFindByIdAndUpdate.mockResolvedValue({});
   mockClaim.mockResolvedValue({});
   mockSendEmail.mockResolvedValue({ id: 'mail-1' });
+  mockGetSight.mockResolvedValue({ sight: null, liveFaces: true });
+  mockPlaceWelcomeCall.mockResolvedValue({ status: 'placed', sid: 'CA1' });
+  mockOutcome.mockResolvedValue(null);
   process.env.RESEND_API_KEY = 'test-only-key';
   process.env.EMAIL_FROM = 'accounts@example.com';
   process.env.DOMAIN_CLIENT = 'https://kademurdock.com';
@@ -447,5 +466,290 @@ describe('approval email', () => {
     const { body } = await approve();
     expect(body.emailStatus).toBe('phone-only');
     expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Oct 29 2026 (Kade: "put a sighted switch on the registration ... when we
+ * ask people for phone and email and stuff"). Their answer at the door goes
+ * onto the account; Kade can change it before approving; an existing
+ * account's setting is only replaced when she picks one herself.
+ */
+describe('the screen question', () => {
+  function newAccount(extra = {}) {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('destiny@example.com'), ...extra }),
+    );
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: 'new-user-s' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'new-user-s' });
+  }
+
+  test('what they said at the door goes on the new account', async () => {
+    newAccount({ sight: 'nonvisual' });
+    const { body } = await approve({ audience: 'adult' });
+    expect(mockSetSight).toHaveBeenCalledWith('new-user-s', { sight: 'nonvisual' }, 'signup');
+    expect(body.sight).toBe('nonvisual');
+  });
+
+  test('her pick on the page wins, and is kept on the request', async () => {
+    newAccount({ sight: 'nonvisual' });
+    const { body } = await approve({ audience: 'adult', sight: 'sighted' });
+    expect(mockSetSight).toHaveBeenCalledWith('new-user-s', { sight: 'sighted' }, 'admin');
+    expect(body.sight).toBe('sighted');
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      REQUEST_ID,
+      expect.objectContaining({ $set: expect.objectContaining({ sight: 'sighted' }) }),
+    );
+  });
+
+  test('nobody said anything: nothing is written', async () => {
+    newAccount();
+    const { body } = await approve({ audience: 'adult' });
+    expect(mockSetSight).not.toHaveBeenCalled();
+    expect(body.sight).toBeNull();
+  });
+
+  test('an existing account keeps its own setting unless she picks one', async () => {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('destiny@example.com'), sight: 'sighted' }),
+    );
+    mockFindUser.mockResolvedValue({ _id: 'existing-s', email: 'destiny@example.com' });
+    mockGetSight.mockResolvedValue({ sight: 'nonvisual', liveFaces: true });
+    await approve({ audience: 'adult' });
+    expect(mockSetSight).not.toHaveBeenCalled();
+
+    await approve({ audience: 'adult', sight: 'sighted' });
+    expect(mockSetSight).toHaveBeenCalledWith('existing-s', { sight: 'sighted' }, 'admin');
+  });
+
+  test('an existing account that never said takes their door answer', async () => {
+    mockFindById.mockReturnValue(
+      leanReturning({ ...doorRequest('destiny@example.com'), sight: 'nonvisual' }),
+    );
+    mockFindUser.mockResolvedValue({ _id: 'existing-s', email: 'destiny@example.com' });
+    await approve({ audience: 'adult' });
+    expect(mockSetSight).toHaveBeenCalledWith('existing-s', { sight: 'nonvisual' }, 'signup');
+  });
+
+  test('a failure saving it never loses the account', async () => {
+    newAccount({ sight: 'nonvisual' });
+    mockSetSight.mockRejectedValueOnce(new Error('database away'));
+    const res = await approve({ audience: 'adult' });
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+  });
+});
+
+/**
+ * Oct 29 2026 (Kade: "my friend David registered with just his phone ... his
+ * phone can't get a temp password from resend email so he prob hasn't ever
+ * been able to log in"). A phone-only account is called and read its sign-in.
+ */
+describe('the welcome call', () => {
+  function phoneOnly() {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('417-555-0101')));
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'phone-user' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'phone-user' });
+  }
+
+  test('a phone-only approval calls them with the password it just made', async () => {
+    phoneOnly();
+    const { body } = await approve({ audience: 'adult' });
+    expect(mockPlaceWelcomeCall).toHaveBeenCalledTimes(1);
+    expect(mockPlaceWelcomeCall).toHaveBeenCalledWith({
+      phone: '4175550101',
+      name: 'Destiny',
+      password: body.tempPassword,
+    });
+    expect(body.welcomeCallStatus).toBe('placed');
+    expect(body.readyMessage).toMatch(/^I'm calling Destiny now at 417-555-0101/);
+    /* her copy of the sign-in is still there, in case they miss the call */
+    expect(body.readyMessage).toContain(body.tempPassword);
+    expect(body.welcomeCall).toBeUndefined();
+  });
+
+  test('the call is placed after the approval is saved, and the record never holds the password', async () => {
+    phoneOnly();
+    const { body } = await approve({ audience: 'adult' });
+    expect(mockFindByIdAndUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlaceWelcomeCall.mock.invocationCallOrder[0],
+    );
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      REQUEST_ID,
+      expect.objectContaining({
+        $set: expect.objectContaining({ welcomeCallStatus: 'placed', welcomeCallSid: 'CA1' }),
+        $inc: { welcomeCallCount: 1 },
+      }),
+    );
+    expect(JSON.stringify(mockFindByIdAndUpdate.mock.calls)).not.toContain(body.tempPassword);
+  });
+
+  test("a call that can't be placed tells her to read it to them", async () => {
+    phoneOnly();
+    mockPlaceWelcomeCall.mockResolvedValue({
+      status: 'failed',
+      reason: 'the phone line could not be reached',
+    });
+    const res = await approve({ audience: 'adult' });
+    expect(res.status).toBe(200);
+    expect(res.body.accountCreated).toBe(true);
+    expect(res.body.welcomeCallStatus).toBe('failed');
+    expect(res.body.readyMessage).toMatch(
+      /couldn't be placed \(the phone line could not be reached\)/,
+    );
+    expect(res.body.readyMessage).toMatch(/read them the password/);
+    expect(res.body.readyMessage).toContain(res.body.tempPassword);
+  });
+
+  test('an account with a real email is emailed, not called', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('destiny@example.com / 417-771-9958')));
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'both-user' });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: 'both-user' });
+    const { body } = await approve({ audience: 'adult' });
+    expect(mockPlaceWelcomeCall).not.toHaveBeenCalled();
+    expect(body.welcomeCallStatus).toBeUndefined();
+  });
+
+  test('somebody who already had an account is not called (there is no password to read)', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4175550101')));
+    mockFindUser.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      _id: 'existing-p',
+      email: 'p4175550101@phone.kade-ai.invalid',
+      kadePhone: '4175550101',
+    });
+    await approve({ audience: 'adult' });
+    expect(mockPlaceWelcomeCall).not.toHaveBeenCalled();
+  });
+});
+
+describe('calling again (David)', () => {
+  const bcrypt = require('bcryptjs');
+  const callAgain = (body = {}) =>
+    request(app).post(`/api/admin/access-requests/${REQUEST_ID}/welcome-call`).send(body);
+  const approvedPhoneOnly = (extra = {}) =>
+    leanReturning({
+      ...doorRequest('4177704722'),
+      name: 'Toker',
+      status: 'approved',
+      createdUserId: 'toker-1',
+      accountEmail: 'p4177704722@phone.kade-ai.invalid',
+      ...extra,
+    });
+  const toker = {
+    _id: 'toker-1',
+    name: 'David',
+    email: 'p4177704722@phone.kade-ai.invalid',
+    kadePhone: '4177704722',
+  };
+
+  test('makes a NEW password, stores it the way approval does, then calls with it', async () => {
+    mockFindById.mockReturnValue(approvedPhoneOnly());
+    mockFindUser.mockResolvedValue(toker);
+    const res = await callAgain();
+    expect(res.status).toBe(200);
+    const pw = res.body.tempPassword;
+    expect(pw).toMatch(/^[a-z]+-[a-z]+-[a-z]+-\d{3}$/);
+    /* the account's password really changed to the one being read */
+    expect(mockUpdateUser).toHaveBeenCalledTimes(1);
+    const [userId, update] = mockUpdateUser.mock.calls[0];
+    expect(userId).toBe('toker-1');
+    expect(bcrypt.compareSync(pw, update.password)).toBe(true);
+    /* old sessions end, and the reset happens before the call */
+    expect(mockDeleteSessions).toHaveBeenCalledWith({ userId: 'toker-1' });
+    expect(mockUpdateUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPlaceWelcomeCall.mock.invocationCallOrder[0],
+    );
+    expect(mockPlaceWelcomeCall).toHaveBeenCalledWith({
+      phone: '4177704722',
+      name: 'David',
+      password: pw,
+    });
+    expect(res.body.loginId).toBe('417-770-4722');
+    expect(res.body.readyMessage).toMatch(/new password; the old one no longer works/);
+    expect(res.body.readyMessage).toMatch(/I'm calling David now at 417-770-4722/);
+    expect(res.body.readyMessage).toContain(pw);
+    expect(JSON.stringify(mockFindByIdAndUpdate.mock.calls)).not.toContain(pw);
+  });
+
+  test('a failed call still leaves her the working password to read', async () => {
+    mockFindById.mockReturnValue(approvedPhoneOnly());
+    mockFindUser.mockResolvedValue(toker);
+    mockPlaceWelcomeCall.mockResolvedValue({
+      status: 'failed',
+      reason: 'that number was called very recently',
+    });
+    const res = await callAgain();
+    expect(res.status).toBe(200);
+    expect(res.body.welcomeCallStatus).toBe('failed');
+    expect(res.body.readyMessage).toMatch(/couldn't be placed/);
+    expect(res.body.readyMessage).toContain(res.body.tempPassword);
+  });
+
+  test('an email account is pointed at the email reset, and nothing is changed', async () => {
+    mockFindById.mockReturnValue(approvedPhoneOnly({ accountEmail: 'd@example.com' }));
+    mockFindUser.mockResolvedValue({ ...toker, email: 'd@example.com' });
+    const res = await callAgain();
+    expect(res.status).toBe(400);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockPlaceWelcomeCall).not.toHaveBeenCalled();
+  });
+
+  test('a request without an account yet is refused', async () => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4177704722')));
+    const res = await callAgain();
+    expect(res.status).toBe(400);
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+  });
+
+  test('"already signed in" resets nothing and calls nobody', async () => {
+    mockFindById.mockReturnValue(approvedPhoneOnly());
+    const res = await callAgain({ skip: true });
+    expect(res.body.welcomeCallStatus).toBe('not-needed');
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockPlaceWelcomeCall).not.toHaveBeenCalled();
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(REQUEST_ID, {
+      $set: { welcomeCallStatus: 'not-needed' },
+    });
+  });
+});
+
+describe('the list says how a call went', () => {
+  test('a recent placed call is looked up and said plainly', async () => {
+    mockFind.mockReturnValue({
+      sort: () => ({
+        limit: () => ({
+          lean: () =>
+            Promise.resolve([
+              {
+                _id: REQUEST_ID,
+                name: 'Toker',
+                contact: '4177704722',
+                status: 'approved',
+                createdUserId: 'toker-1',
+                accountEmail: 'p4177704722@phone.kade-ai.invalid',
+                sight: 'nonvisual',
+                welcomeCallStatus: 'placed',
+                welcomeCallSid: 'CA' + 'a'.repeat(32),
+                welcomeCallAt: new Date(),
+              },
+            ]),
+        }),
+      }),
+    });
+    mockOutcome.mockResolvedValue({ status: 'no-answer', duration: 0, answeredBy: null });
+    const res = await request(app).get('/api/admin/access-requests?status=all');
+    const row = res.body.requests[0];
+    expect(row.sight).toBe('nonvisual');
+    expect(row.usesPhoneLogin).toBe(true);
+    expect(row.welcomeCallOutcome).toMatch(/Nobody answered/);
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(REQUEST_ID, {
+      $set: { welcomeCallOutcome: 'no-answer:0:' },
+    });
   });
 });

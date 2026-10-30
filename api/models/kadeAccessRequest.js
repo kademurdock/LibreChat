@@ -33,6 +33,25 @@ const kadeAccessRequestSchema = new mongoose.Schema(
     emailStatus: { type: String, default: '' },
     emailRecipient: { type: String, default: '' },
     emailAttemptedAt: { type: Date, default: null },
+    /**
+     * Oct 29 2026: what they said when asked "Will you be looking at the
+     * screen, or listening?" -- 'sighted' | 'nonvisual' | null (rather not
+     * say, or asked before the question existed). Applied to the account
+     * (kadeSight) when it is made; Kade can change it before approving.
+     */
+    sight: { type: String, enum: ['sighted', 'nonvisual', null], default: null },
+    /**
+     * Oct 29 2026: phone-only accounts get a call that reads their sign-in
+     * and temporary password aloud (kadeWelcomeCall.js). 'placed' | 'failed'
+     * | 'off' | '' (never tried). The outcome is Twilio's final word on it,
+     * looked up when Kade opens her page. The password itself is never kept.
+     */
+    welcomeCallStatus: { type: String, default: '' },
+    welcomeCallSid: { type: String, default: '' },
+    welcomeCallAt: { type: Date, default: null },
+    welcomeCallCount: { type: Number, default: 0 },
+    welcomeCallOutcome: { type: String, default: '' },
+    welcomeCallNote: { type: String, default: '', maxlength: 300 },
     /** Light abuse forensics. */
     ip: { type: String, default: '' },
   },
