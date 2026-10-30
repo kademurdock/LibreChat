@@ -168,7 +168,7 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-import useResumableSSE from '~/hooks/SSE/useResumableSSE';
+import useResumableSSE, { findBufferedFinalEvent } from '~/hooks/SSE/useResumableSSE';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -1803,5 +1803,128 @@ describe('useResumableSSE - 404 error path', () => {
       }),
     );
     unmount();
+  });
+
+  describe('Firefox double send (Oct 29 2026)', () => {
+    const finalPayload = {
+      final: true,
+      conversation: { conversationId: 'stream-123' },
+      responseMessage: { messageId: 'resp-real', text: 'hi' },
+    };
+    const finishedBuffer =
+      'event: message\ndata: {"created":true,"message":{"messageId":"msg-1"}}\n\n' +
+      `event: message\ndata: ${JSON.stringify(finalPayload)}\n\n`;
+
+    it('reads a final event that only reached the failed transfer buffer', () => {
+      expect(findBufferedFinalEvent(finishedBuffer)).toBe(JSON.stringify(finalPayload));
+      expect(findBufferedFinalEvent('event: message\ndata: {"final":tr')).toBeNull();
+      expect(findBufferedFinalEvent('event: error\ndata: {"final":true}\n\n')).toBeNull();
+      expect(findBufferedFinalEvent(undefined)).toBeNull();
+    });
+
+    it('finishes from the buffer instead of reconnecting when the stream errors after its final event', async () => {
+      jest.useFakeTimers();
+      const submission = { ...buildSubmission(), requestId: 'ffx-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('error', { responseCode: 200, data: finishedBuffer });
+      });
+      await advanceRetryTimer(60000);
+      expect(mockFinalHandler).toHaveBeenCalledTimes(1);
+      expect(mockFinalHandler.mock.calls[0][0]).toEqual(finalPayload);
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      expect(dataService.getAgentTask).not.toHaveBeenCalled();
+      expect(mockSSEInstances).toHaveLength(1);
+      unmount();
+    });
+
+    it('still reconnects when the broken transfer holds no final event', async () => {
+      jest.useFakeTimers();
+      const submission = { ...buildSubmission(), requestId: 'ffx-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', {
+          responseCode: 200,
+          data: 'event: message\ndata: {"created":true,"message":{}}\n\n',
+        });
+      });
+      await advanceRetryTimer(1000);
+      expect(mockFinalHandler).not.toHaveBeenCalled();
+      expect(mockSSEInstances).toHaveLength(2);
+      unmount();
+    });
+
+    it('loads a reply saved in this same chat in place, with no error and no link', async () => {
+      (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+        taskId: 'same-chat-request',
+        conversationId: 'stream-123',
+        streamAvailable: false,
+        status: 'completed',
+        canOpenConversation: true,
+      });
+      const submission = { ...buildSubmission(), requestId: 'same-chat-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await flushMicrotasks();
+      expect(request.post).toHaveBeenCalledTimes(1);
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['messages', 'stream-123'] });
+      expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+      unmount();
+    });
+
+    it('follows the server task id for an existing request and loads its saved reply in place', async () => {
+      (request.post as jest.Mock).mockResolvedValueOnce({
+        status: 'existing',
+        streamId: CONV_ID,
+        taskId: 'first-request',
+      });
+      (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+        taskId: 'first-request',
+        conversationId: CONV_ID,
+        streamAvailable: false,
+        status: 'completed',
+        canOpenConversation: true,
+      });
+      const submission = { ...buildSubmission(), requestId: 'second-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      expect(dataService.getAgentTask).toHaveBeenCalledWith('first-request');
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      expect(mockSSEInstances).toHaveLength(0);
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['messages', CONV_ID] });
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+      unmount();
+    });
+
+    it('resumes the first request stream when a duplicate arrives while it is still running', async () => {
+      (request.post as jest.Mock).mockResolvedValueOnce({
+        status: 'existing',
+        streamId: CONV_ID,
+        taskId: 'first-request',
+      });
+      (dataService.getAgentTask as jest.Mock).mockResolvedValueOnce({
+        taskId: 'first-request',
+        conversationId: CONV_ID,
+        streamAvailable: true,
+        status: 'running',
+      });
+      const submission = { ...buildSubmission(), requestId: 'second-request' };
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const { SSE } = jest.requireMock('sse.js');
+      expect(SSE).toHaveBeenLastCalledWith(
+        `/api/agents/chat/stream/${CONV_ID}?resume=true&taskId=first-request`,
+        expect.any(Object),
+      );
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      unmount();
+    });
   });
 });

@@ -72,6 +72,47 @@ type GenerationStart = { streamId: string; resume?: boolean; taskId?: string };
 const savedReplyConversationId = (receipt: Agents.TaskReceipt): string | null =>
   receipt.status === 'completed' && receipt.canOpenConversation ? receipt.conversationId : null;
 const START_GENERATION_NETWORK_RETRIES = 3;
+
+/**
+ * Firefox can end a finished stream with an XHR `error` instead of `load`. The
+ * last progress event (the one carrying `final`) is then never dispatched, the
+ * hook reconnects, the job is already gone, and the person got a "reply was
+ * saved" notice in place of the reply. sse.js hands the whole response text to
+ * the error event, so a complete final event can still be read from it.
+ */
+export const findBufferedFinalEvent = (raw: unknown): string | null => {
+  if (typeof raw !== 'string' || !raw.includes('"final"')) {
+    return null;
+  }
+  const chunks = raw.split(/\r\n\r\n|\r\r|\n\n/);
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    const lines = chunks[i].split(/\r\n|\r|\n/);
+    const eventLine = lines.find((line) => line.startsWith('event:'));
+    if (eventLine && eventLine.slice(6).trim() !== 'message') {
+      continue;
+    }
+    const data = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+      .join('\n');
+    if (!data) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(data) as { final?: unknown };
+      if (parsed?.final != null) {
+        return data;
+      }
+    } catch {
+      // An incomplete last chunk is not a final event.
+    }
+  }
+  return null;
+};
+
+const isTransportFailure = (responseCode: unknown): boolean =>
+  typeof responseCode === 'number' &&
+  (responseCode === 0 || (responseCode >= 200 && responseCode < 300));
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 
@@ -468,6 +509,21 @@ export default function useResumableSSE(
   const optimisticStreamIdsRef = useRef(new Set<string>());
   const createdStreamIdsRef = useRef(new Set<string>());
 
+  /**
+   * The reply for this request is already saved in the chat on screen, so load
+   * it there instead of showing an error with a link back to the same chat.
+   */
+  const showSavedReplyInPlace = useCallback(
+    (conversationId: string) => {
+      clearAllDrafts(conversationId);
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, conversationId] });
+      queryClient.removeQueries({ queryKey: streamStatusQueryKey(conversationId) });
+      optimisticStreamIdsRef.current.delete(conversationId);
+      createdStreamIdsRef.current.delete(conversationId);
+    },
+    [queryClient],
+  );
+
   const {
     stepHandler,
     finalHandler,
@@ -550,11 +606,13 @@ export default function useResumableSSE(
         reconnectAttemptRef.current = 0;
       });
 
-      sse.addEventListener('message', (e: MessageEvent) => {
+      let finalSeen = false;
+      const onMessage = (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);
 
           if (data.final != null) {
+            finalSeen = true;
             console.log('[ResumableSSE] Received FINAL event', {
               aborted: data.aborted,
               conversationId: data.conversation?.conversationId,
@@ -852,7 +910,8 @@ export default function useResumableSSE(
         } catch (error) {
           console.error('[ResumableSSE] Error processing message:', error);
         }
-      });
+      };
+      sse.addEventListener('message', onMessage);
 
       /**
        * Error event handler - handles BOTH:
@@ -864,6 +923,14 @@ export default function useResumableSSE(
       sse.addEventListener('error', async (e: MessageEvent) => {
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
+
+        const bufferedFinal =
+          !finalSeen && isTransportFailure(responseCode) ? findBufferedFinalEvent(e.data) : null;
+        if (bufferedFinal) {
+          console.log('[ResumableSSE] Stream ended with a transport error after its final event');
+          onMessage({ data: bufferedFinal } as MessageEvent);
+          return;
+        }
 
         if (
           responseCode === 403 ||
@@ -889,6 +956,10 @@ export default function useResumableSSE(
             }
           }
           if (sseRef.current !== sse) return;
+          if (savedConversationId && savedConversationId === currentStreamId) {
+            showSavedReplyInPlace(savedConversationId);
+            return;
+          }
           errorHandler({
             data: {
               text: localize(
@@ -1165,6 +1236,7 @@ export default function useResumableSSE(
       resetLive,
       seedLive,
       localize,
+      showSavedReplyInPlace,
     ],
   );
 
@@ -1213,10 +1285,12 @@ export default function useResumableSSE(
           console.log('[ResumableSSE] Generation started:', { streamId: data.streamId });
           if (data.status === 'existing') {
             needsRecovery = true;
-            const receipt = await dataService.getAgentTask(requestId);
+            const existingTaskId =
+              typeof data.taskId === 'string' && data.taskId ? data.taskId : requestId;
+            const receipt = await dataService.getAgentTask(existingTaskId);
             if (signal?.aborted) return null;
             if (receipt.streamAvailable) {
-              return { streamId: receipt.conversationId, resume: true, taskId: requestId };
+              return { streamId: receipt.conversationId, resume: true, taskId: existingTaskId };
             }
             savedConversationId = savedReplyConversationId(receipt);
             break;
@@ -1286,6 +1360,19 @@ export default function useResumableSSE(
         return null;
       }
 
+      const shownConversationId = currentSubmission.conversation?.conversationId;
+      if (
+        savedConversationId &&
+        savedConversationId === shownConversationId &&
+        savedConversationId !== Constants.NEW_CONVO
+      ) {
+        showSavedReplyInPlace(savedConversationId);
+        setShowStopButton(false);
+        setIsSubmitting(false);
+        setSubmission(null);
+        return null;
+      }
+
       console.error('[ResumableSSE] Error starting generation:', lastError);
 
       const axiosError = lastError as { response?: { data?: Record<string, unknown> } };
@@ -1311,7 +1398,15 @@ export default function useResumableSSE(
       setSubmission(null);
       return null;
     },
-    [clearStepMaps, errorHandler, setIsSubmitting, setShowStopButton, setSubmission, localize],
+    [
+      clearStepMaps,
+      errorHandler,
+      setIsSubmitting,
+      setShowStopButton,
+      setSubmission,
+      localize,
+      showSavedReplyInPlace,
+    ],
   );
 
   useEffect(() => {

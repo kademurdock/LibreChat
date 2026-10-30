@@ -46,6 +46,15 @@ function logAgentReplyTells(message, req) {
  * this only fixes what a blocked turn SAYS. Fail-soft: any parse problem
  * falls back to the original message untouched.
  */
+/** Oct 29 2026: a second web send of the exact same message within this window
+ *  reuses the first request. KADE_SEND_DEDUPE_SECONDS=0 turns it off. */
+const sendDedupeWindowMs = () => {
+  const raw = process.env.KADE_SEND_DEDUPE_SECONDS;
+  const seconds = raw == null || raw === '' ? 20 : Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.min(seconds, 120) * 1000;
+};
+
 const friendlyTurnError = (message) => {
   try {
     if (typeof message === 'string' && message.includes('token_balance')) {
@@ -294,6 +303,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         taskId: requestId,
         conversationId: reqConversationId,
         temporary: !!req.body.isTemporary,
+        dedupeWindowMs:
+          req.body.requestId && !isRegenerate && !isContinued && !editedContent
+            ? sendDedupeWindowMs()
+            : 0,
         fingerprint: taskFingerprint([
           text || '',
           reqConversationId || 'new',

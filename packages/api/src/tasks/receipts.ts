@@ -13,6 +13,12 @@ export interface TaskClaim extends TaskOwner {
   fingerprint: string;
   conversationId?: string;
   temporary?: boolean;
+  /**
+   * A fresh send whose exact fingerprint (same text, chat, parent, character and
+   * files) already ran within this many milliseconds answers with that earlier
+   * request instead of starting a second reply. 0 or unset turns it off.
+   */
+  dedupeWindowMs?: number;
 }
 
 export class TaskConflict extends Error {}
@@ -63,6 +69,21 @@ export function createTaskReceipts(db: mongoose.Mongoose = mongoose): TaskReceip
   async function claim(input: TaskClaim): Promise<{ task: IAgentTask; created: boolean }> {
     if (!validTaskId(input.taskId)) {
       throw new TaskConflict('The request identifier is invalid.');
+    }
+    if (input.dedupeWindowMs && input.dedupeWindowMs > 0) {
+      const recent = await model
+        .findOne({
+          ...scope(input),
+          fingerprint: input.fingerprint,
+          taskId: { $ne: input.taskId },
+          status: { $in: ['running', 'completed'] },
+          createdAt: { $gte: new Date(Date.now() - input.dedupeWindowMs) },
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (recent) {
+        return { task: recent, created: false };
+      }
     }
     const conversationId =
       input.conversationId && input.conversationId !== 'new' ? input.conversationId : randomUUID();
