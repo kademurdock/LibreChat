@@ -194,6 +194,13 @@ router.post('/files', async (req, res) => {
 
 router.post('/restart', async (req, res) => {
   if (!authed(req, res)) return;
+  if (process.env.KADE_NIGHTLY_RESTART === '0') {
+    return res.json({
+      ok: true,
+      restarted: false,
+      reason: 'disabled by KADE_NIGHTLY_RESTART=0',
+    });
+  }
   /* Same guard the in-process timer had: never restart within 2h of boot —
    * covers deploy bounces and guarantees no restart loop. */
   if (process.uptime() < 2 * 60 * 60) {

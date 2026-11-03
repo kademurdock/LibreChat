@@ -33,21 +33,45 @@ app.use('/api/kade/clock', router);
 describe('POST /api/kade/clock/restart', () => {
   let exitSpy;
   let uptimeSpy;
+  const originalNightlyRestart = process.env.KADE_NIGHTLY_RESTART;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     process.env.BRIDGE_SECRET = SECRET;
+    delete process.env.KADE_NIGHTLY_RESTART;
     exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined);
     uptimeSpy = jest.spyOn(process, 'uptime').mockReturnValue(3 * 3600);
     tasks.runningHere.mockReturnValue(0);
   });
 
   afterEach(() => {
+    if (originalNightlyRestart === undefined) {
+      delete process.env.KADE_NIGHTLY_RESTART;
+    } else {
+      process.env.KADE_NIGHTLY_RESTART = originalNightlyRestart;
+    }
     exitSpy.mockRestore();
     uptimeSpy.mockRestore();
     jest.useRealTimers();
   });
 
   const poke = () => request(app).post('/api/kade/clock/restart').set('x-kade-secret', SECRET);
+
+  test('the disable switch blocks external restarts without holding tasks or exiting', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    process.env.KADE_NIGHTLY_RESTART = '0';
+    const res = await poke();
+    expect(res.body).toEqual({
+      ok: true,
+      restarted: false,
+      reason: 'disabled by KADE_NIGHTLY_RESTART=0',
+    });
+    jest.advanceTimersByTime(5000);
+    expect(tasks.busy).not.toHaveBeenCalled();
+    expect(tasks.holdStarts).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect((await request(app).post('/api/kade/clock/restart')).status).toBe(403);
+  });
 
   test('declines while a background task is running, and never exits', async () => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
