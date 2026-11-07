@@ -233,6 +233,32 @@ function oldBoundaries(reply, lengths) {
 const spansOf = (reply) => [...reply.matchAll(/%%%[^%]+%%%/g)].map((m) => [m.index, m.index + m[0].length]);
 const cuts = (boundaries, spans) => boundaries.filter((b) => spans.some(([start, end]) => b > start && b < end)).length;
 
+test('even with stray percent signs scattered through the reply: nothing lost, nothing sent twice, the stream always finishes', async () => {
+  const rnd = rng(20261108);
+  const marks = ['%%%', '%%%', '%%', '%', '%%%%', '%%%%%%', ' %%% ', '\n%%%\n', '%%%\n%%%'];
+  let longestHold = 0;
+  for (let i = 0; i < 2000; i++) {
+    let reply = makeReply(rnd);
+    for (let k = 1 + Math.floor(rnd() * 3); k > 0; k--) {
+      const at = Math.floor(rnd() * (reply.length + 1));
+      reply = reply.slice(0, at) + marks[Math.floor(rnd() * marks.length)] + reply.slice(at);
+    }
+    const lengths = schedule(rnd, reply.length);
+    const states = lengths.map((length) => ({ text: reply.slice(0, length), complete: length >= reply.length }));
+    const results = await polls(states);
+    const pieces = results.flat();
+    assert.ok(pieces.length > 0 && pieces[pieces.length - 1].isFinished, `no finished piece for ${JSON.stringify(reply)}`);
+    assert.equal(pieces.map((p) => p.text).join('').replace(/\s+/g, ''), reply.replace(/\s+/g, ''), JSON.stringify(reply));
+    // how many polls in a row sent nothing although the message was growing (a stray must not hold the reply for long)
+    let hold = 0;
+    for (const result of results.slice(0, -1)) {
+      hold = result.length === 0 ? hold + 1 : 0;
+      longestHold = Math.max(longestHold, hold);
+    }
+  }
+  assert.ok(longestHold <= 12, `a reply was held back for ${longestHold} polls in a row`);
+});
+
 test('random tagged replies, random polling: no piece ever cuts a tag, nothing is lost or sent twice', async () => {
   const rnd = rng(20261107);
   let trials = 0;

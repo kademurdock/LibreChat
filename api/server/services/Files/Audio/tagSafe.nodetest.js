@@ -182,6 +182,23 @@ test('nothing here is slow: 300,000 characters of runs and near-runs scan in wel
   assert.ok(elapsed < 1500, `took ${elapsed} ms`);
 });
 
+test('planChunk always sends a prefix of what it was given and never more than the text (30,000 delimiter-heavy strings)', () => {
+  let seed = 424242;
+  const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const parts = ['%', '%%', '%%%', '%%%%', '%%%%%%', ' ', ' ', '\n', '\n\n', '.', '?', 'warm', 'and a little', 'Hello there', ', ', '5', "it's"];
+  for (let i = 0; i < 30000; i++) {
+    let text = '';
+    for (let k = Math.floor(rnd() * 14); k > 0; k--) text += parts[Math.floor(rnd() * parts.length)];
+    for (const release of [false, true]) {
+      const plan = planChunk(text, { release });
+      assert.ok(typeof plan.send === 'string' && text.startsWith(plan.send), JSON.stringify(text));
+      assert.ok(plan.send.length <= text.length);
+      if (release) assert.equal(plan.held, false);
+      if (text.length >= 20 && !plan.held) assert.ok(plan.send.length > 0 || text.trim() === '', `nothing sent and nothing held: ${JSON.stringify(text)}`);
+    }
+  }
+});
+
 test('nothing here throws on odd input', () => {
   for (const text of ['', ' ', '%', '%%', '%%%', '%%%%', '%%%%%%%', '\u0000%%%\u0000', 'é%%%é']) {
     assert.doesNotThrow(() => {
