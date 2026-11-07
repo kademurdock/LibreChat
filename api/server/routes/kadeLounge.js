@@ -6,6 +6,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { KadeClubRoom } = require('~/models/kadeClubRoom');
 const { loungeHtml, engineHtml } = require('./Clubhouse/pages');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 
 /**
  * KADE'S CLUBHOUSE (born THE LOUNGE, July 24 2026 — renamed the same night
@@ -793,7 +794,7 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
           timeout: 45000,
         },
       );
-      const text = stripAiTells(String(rr.data?.choices?.[0]?.message?.content || '')).replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 480);
+      const text = stripSteeringTags(stripAiTells(String(rr.data?.choices?.[0]?.message?.content || ''))).replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 480);
       return { text, usage: rr.data?.usage };
     }
     const FALLBACK_MODEL = 'xiaomi/mimo-v2.6-flash';

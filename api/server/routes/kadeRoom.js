@@ -14,6 +14,7 @@ const { SystemCapabilities } = require('@librechat/data-schemas');
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const { KadeRoom } = require('~/models/kadeRoom');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
 const db = require('~/models');
@@ -436,7 +437,9 @@ async function callOpenRouter(model, system, msgs, key, deepThink = false, opts 
 
 function cleanReply(text, agentName) {
   let t = stripAiTells(String(text || '').trim());
-  t = t.replace(/%%%[^%]*%%%/g, ' ')
+  /* Nov 7 2026: tags come out by STRUCTURE (a stray %%% line used to pair with the real opener and leave
+   * "warm and curious%%%" on the screen and in the voice), see steeringStrip.js. */
+  t = stripSteeringTags(t)
     /* July 13 2026 scrub audit: Hermes models sometimes type literal escape
      * text ("\u00a0") or citation-shaped anchors in prose — debate turns are
      * rendered AND synthesized, so clean them here at the source. */

@@ -4,6 +4,7 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { KadeGameState } = require('~/models/kadeGameState');
 const { getGame, catalog } = require('~/app/clients/tools/kadegames');
 const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 const {
   resolveSeatAgents,
   playSeatTurns,
@@ -586,7 +587,7 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
         timeout: 45000,
       },
     );
-    let line = stripAiTells(String(r.data?.choices?.[0]?.message?.content || '')).replace(/%%%[^%]*%%%/g, ' ').replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
+    let line = stripSteeringTags(stripAiTells(String(r.data?.choices?.[0]?.message?.content || ''))).replace(/["“”*_#]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
     if (!line) return res.status(502).json({ error: `${pick.name} just smiled and said nothing.` });
     pushHistory(doc.state, [`You say: ${text}`, `${pick.name} says: ${line}`]);
     doc.markModified('state');
