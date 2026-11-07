@@ -1,15 +1,12 @@
 const { scopedCacheKey } = require('@librechat/data-schemas');
-const {
-  Time,
-  CacheKeys,
-  SEPARATORS,
-  parseTextParts,
-  findLastSeparatorIndex,
-} = require('librechat-data-provider');
+const { Time, CacheKeys, SEPARATORS, parseTextParts } = require('librechat-data-provider');
 const { getLogStores } = require('~/cache');
 const { getMessage } = require('~/models');
 const { scrubForSpeech } = require('./scrubForSpeech');
 const { capSpeechText, getTtsMaxInputChars } = require('./speechCap');
+/* KADE Nov 7 2026: a %%%steering tag%%% is never cut in half. findLastSeparatorIndex is the same
+ * function as librechat-data-provider's, minus the places a tag lives; see tagSafe.js. */
+const { planChunk, findLastSeparatorIndex } = require('./tagSafe');
 
 /**
  * @param {string[]} voiceIds - Array of voice IDs
@@ -55,6 +52,8 @@ function getRandomVoiceId(voiceIds) {
 
 const MAX_NOT_FOUND_COUNT = 6;
 const MAX_NO_CHANGE_COUNT = 10;
+/** Polls (1.25 s apart) a tag may stay held back on text that is not growing before it is sent as it is. */
+const MAX_HELD_STALLED_POLLS = 4;
 
 /**
  * @param {string} user
@@ -66,6 +65,9 @@ function createChunkProcessor(user, messageId, maxInputChars = getTtsMaxInputCha
   let notFoundCount = 0;
   let noChangeCount = 0;
   let processedText = '';
+  /** Length of the message at the last poll that held a tag back, and how many polls in a row did not grow it. */
+  let heldLength = -1;
+  let heldStalledPolls = 0;
   if (!messageId) {
     throw new Error('Message ID is required');
   }
@@ -128,14 +130,25 @@ function createChunkProcessor(user, messageId, maxInputChars = getTtsMaxInputCha
     const chunks = [];
 
     if (!complete && remainingText.length >= 20) {
-      const separatorIndex = findLastSeparatorIndex(remainingText);
-      if (separatorIndex !== -1) {
-        const chunkText = remainingText.slice(0, separatorIndex + 1);
-        chunks.push({ text: chunkText, isFinished: false });
-        processedText += chunkText;
+      /* KADE Nov 7 2026 — NEVER SEND HALF OF A %%%TAG%%%. The piece ends at the last separator that is
+       * not inside a tag, text from a tag whose closer has not arrived yet waits for it (a message
+       * that stops growing releases it after a few polls), and a piece never starts on a bare closer.
+       * Text with no tag in it is cut exactly as before. See tagSafe.js. */
+      const stalledPolls = text.length === heldLength ? heldStalledPolls + 1 : 0;
+      const plan = planChunk(remainingText, {
+        separators: SEPARATORS,
+        release: stalledPolls >= MAX_HELD_STALLED_POLLS,
+      });
+      if (plan.held) {
+        heldStalledPolls = stalledPolls;
+        heldLength = text.length;
       } else {
-        chunks.push({ text: remainingText, isFinished: false });
-        processedText = text;
+        heldStalledPolls = 0;
+        heldLength = -1;
+      }
+      if (plan.send) {
+        chunks.push({ text: plan.send, isFinished: false });
+        processedText += plan.send;
       }
     } else if (complete && remainingText.trim().length > 0) {
       chunks.push({ text: remainingText.trim(), isFinished: true });
