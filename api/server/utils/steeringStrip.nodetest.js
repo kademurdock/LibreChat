@@ -12,12 +12,12 @@ const { stripSteeringTags } = require('./steeringStrip');
 const oldStrip = (text) => text.replace(/%%%[^%]*%%%/g, ' ');
 const norm = (text) => text.replace(/\s+/g, ' ').trim();
 
-test('steeringBalance.js is still the proxy file, byte for byte (inworld-tts-proxy f4bf9c3)', () => {
+test('steeringBalance.js is still the proxy file, byte for byte (inworld-tts-proxy 7e474ac, Nov 7 2026)', () => {
   const source = fs.readFileSync(path.join(__dirname, 'steeringBalance.js'), 'utf8').replace(/\r\n/g, '\n');
   const hash = crypto.createHash('sha256').update(source).digest('hex');
   assert.equal(
     hash,
-    'c74ee007d376f7f0f72d84c0d888246309bb06f01e2923d15f064c6232fffd2e',
+    '9f27b876a530ef9d0531e82aaa2cb1f60760deed0eefe9d5f1902af9364bd8c4',
     'steeringBalance.js was edited here. It is a copy: change inworld-tts-proxy/steering-balance.js (run its tests and ' +
       'its mutation sweep), then copy the file over and update this hash.',
   );

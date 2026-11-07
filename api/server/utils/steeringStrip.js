@@ -17,10 +17,12 @@
  * is left is only well-formed `%%%direction%%%` tags, which the plain pattern then removes, so the room shows
  * exactly the words the voice would speak.
  *
- * steeringBalance.js is a BYTE-FOR-BYTE copy of that proxy file (proxy commit f4bf9c3, sha256 pinned in
- * steeringStrip.nodetest.js). Do not edit it here: change the proxy's, run its test suite and mutation sweep,
- * and copy it over. KADE_STEERING_BALANCE=0 on the website service switches the structure pass off here too
- * (exactly the old pairing); any failure inside it falls back to the old pairing as well.
+ * steeringBalance.js is a BYTE-FOR-BYTE copy of that proxy file (proxy commit 7e474ac of Nov 7 2026; the code
+ * is f4bf9c3's plus e936b4d, a stray alone on its line takes its line; sha256 pinned in steeringStrip.nodetest.js).
+ * Do not edit it here: change the proxy's, run its test suite and mutation sweep, copy it over and update the
+ * pin. A comment-only change in the proxy does not need a re-copy; a change in what it DOES to a text does.
+ * KADE_STEERING_BALANCE=0 on the website service switches the structure pass off here too (exactly the old
+ * pairing); any failure inside it falls back to the old pairing as well.
  *
  * Text with no run of two or more percent signs is returned as it came (the old pattern could not match it). */
 
