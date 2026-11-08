@@ -1,7 +1,7 @@
 {
-  "versionCode": 123,
-  "versionName": "2.16.3",
-  "notes": "Public beta 2.16.3: smoother character expressions and on-demand portrait descriptions; conversation search and return to a running call; call transcripts, Answer and Not now notices, clearer Spotter reconnecting, and headphone/hearing-aid routing. Sign-in details and web cookies stay out of backups.",
+  "versionCode": 124,
+  "versionName": "2.17.0",
+  "notes": "Public beta 2.17.0: rebuilt to match the iPhone app. Talk, Library, Create, Play and More are native, each message is one TalkBack stop with the iPhone's actions, and there is a new call screen, voice picker, character faces and bodies, the Character Builder, the Sound Booth, Family history and full Settings, Search and Help. Checked by 2,735 automated tests and on an Android emulator, not yet on a real phone with TalkBack. The download is larger, about 78 MB.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "35960415085ec7a65f15583116763504374a0cae36df2a3a876370b3a4557a21"
+  "sha256": "cf6c018b0d8da2fa79270eba528a88c73b766818e38821c01584957461064f65"
 }
