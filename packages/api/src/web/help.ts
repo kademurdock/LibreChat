@@ -3,8 +3,13 @@ import type { RequestHandler } from 'express';
 const helpOrigin = 'https://inworld-tts-proxy-production.up.railway.app';
 const browserAgent =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+/**
+ * The Android app is the site's own static /Kade-AI.apk (client/public, the same signed file as the
+ * voice server's copy). Android 2.17.0 is 78 MB, past the 32 MB this proxy will buffer, so Help's
+ * download button sends the browser straight there instead of copying the file through memory.
+ */
+const androidApk = '/Kade-AI.apk';
 const downloads = new Map([
-  ['/help/android-download', { path: '/Kade-AI.apk', type: 'application/vnd.android.package-archive', name: 'Kade-AI.apk' }],
   ['/help/library-uploader-download', { path: '/Kade-Library-Uploader.exe', type: 'application/octet-stream', name: 'Kade-Library-Uploader.exe' }],
   ['/help/library-uploader-zip', { path: '/Kade-Library-Uploader.zip', type: 'application/zip', name: 'Kade-Library-Uploader.zip' }],
 ]);
@@ -14,6 +19,11 @@ export const publicHelp: RequestHandler = async (req, res) => {
   const path = req.path.replace(/\/$/, '');
   if (!/^\/help(?:\/[a-z0-9-]+)?$/.test(path)) {
     res.status(404).type('text/plain').send('Help page not found. Visit /help.');
+    return;
+  }
+  if (path === '/help/android-download') {
+    res.set('Cache-Control', 'no-store');
+    res.redirect(302, androidApk);
     return;
   }
   try {

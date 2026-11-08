@@ -90,19 +90,21 @@ test('unknown articles return 404 and upstream failure gives usable branded reco
   assert.equal(res.code, 503);
   assert.match(res.body, /Return to Kade Home/);
 });
-test('Android download uses only the fixed APK route and expected media type', async (t) => {
-  let url;
-  t.mock.method(globalThis, 'fetch', async (target) => {
-    url = target;
-    return new Response('apk', {
-      headers: { 'Content-Type': 'application/vnd.android.package-archive', 'Content-Length': '3' },
-    });
-  });
-  const res = response();
-  await publicHelp({ path: '/help/android-download' }, res);
-  assert.match(url, /\/Kade-AI\.apk$/);
-  assert.equal(res.body.toString(), 'apk');
-  assert.match(res.headers['Content-Disposition'], /attachment/);
+test('Android download goes straight to the site APK, with no upstream copy', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', () => assert.fail('the APK is never proxied'));
+  for (const path of ['/help/android-download', '/help/android-download/']) {
+    const res = response();
+    res.redirect = function (code, target) {
+      this.code = code;
+      this.location = target;
+      return this;
+    };
+    await publicHelp({ path, headers: { authorization: 'private', cookie: 'private' } }, res);
+    assert.equal(res.code, 302);
+    assert.equal(res.location, '/Kade-AI.apk');
+    assert.equal(res.headers['Cache-Control'], 'no-store');
+  }
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
 test('Windows downloads use fixed public routes and preserve exact bytes', async (t) => {
