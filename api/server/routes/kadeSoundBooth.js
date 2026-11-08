@@ -3784,6 +3784,11 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
           system: systemPrompt({ engine: to, mode: 'format' }),
           user: `This was written for ${carry.ENGINES[source.engine].label} and is moving to ${carry.ENGINES[to].label}. Keep what it asks for and put it in the format below.\n\n${draft.script.slice(0, 6000)}`,
           maxTokens: 2000,
+          /* Nov 8 2026: thinking off, like cut-to-fit. With no reasoning choice the
+           * gateway's auto-think voted on this call, and since the chat think limit
+           * went on a quick vote thought under a 20 s chat limit instead of riding
+           * instant. A format move needs no thought. */
+          reasoning: editPassReasoning(),
         });
         const split = splitScriptAndReadback(reply.text);
         /* The words already carried across exactly; a Lyrics block the desk
