@@ -232,20 +232,38 @@ const embedHealth = {
  * of the turns (33 first-try timeouts and 61 failures in 56 turns, Nov 8 to 10) while the tool query,
  * sent to the same host a moment earlier, almost never did. That pattern fits this server's own event
  * loop being held (the timer fires before the answer that already arrived is read) at least as well
- * as it fits a slow host. So a failed embed now says how long the loop was held since the last
- * reading: a big number convicts this server, a small one the host. Costs one histogram. */
-let loopDelay = null;
-try {
-  loopDelay = require('node:perf_hooks').monitorEventLoopDelay({ resolution: 20 });
-  loopDelay.enable();
-} catch (_) {
-  loopDelay = null;
-}
-function loopHeldMs() {
-  if (!loopDelay) return null;
-  const held = Math.round(loopDelay.max / 1e6);
-  loopDelay.reset();
-  return Number.isFinite(held) ? held : null;
+ * as it fits a slow host. So a failed embed now says how long the loop was held: a big number
+ * convicts this server, a small one the host.
+ *
+ * Nov 10 review: the first version read one shared histogram and cleared it only when an embed
+ * failed, so a reading covered everything since the previous failure (or since the server
+ * started), and one unrelated stall hours earlier could convict the server. Each call now keeps
+ * its own watch: a 20 ms ticker that lives only while that call is waiting and remembers the
+ * latest tick. The number is the longest hold DURING THIS CALL and nothing else. */
+const LOOP_TICK_MS = 20;
+function watchLoop() {
+  let last = Date.now();
+  let worst = 0;
+  let ticker = null;
+  const tick = () => {
+    const now = Date.now();
+    worst = Math.max(worst, now - last - LOOP_TICK_MS);
+    last = now;
+  };
+  try {
+    ticker = setInterval(tick, LOOP_TICK_MS);
+    if (ticker && typeof ticker.unref === 'function') ticker.unref();
+  } catch (_) {
+    ticker = null;
+  }
+  /** Stops the watch; returns the longest hold in ms (null when the watch could not run). */
+  return () => {
+    if (!ticker) return null;
+    tick(); /* a hold that ended just now has not reached the ticker yet */
+    clearInterval(ticker);
+    ticker = null;
+    return Math.max(0, Math.round(worst));
+  };
 }
 function noteEmbed(purpose, ok) {
   const row = embedHealth.byPurpose[purpose] || embedHealth.byPurpose.document;
@@ -319,6 +337,7 @@ function requestQueryEmbedding(lane, text) {
     let open = 0;
     let secondStarted = false;
     let timer = null;
+    let refusal = null;
     const win = (vec, second) => {
       if (settled) return;
       settled = true;
@@ -329,17 +348,27 @@ function requestQueryEmbedding(lane, text) {
     const lose = (e) => {
       open -= 1;
       if (settled) return;
-      /* A refusal fails the query at once. A timeout of the first request, when the second
-       * has not started yet, starts it now (the Oct 16 behaviour). */
+      /* A refusal (not a timeout) fails the query at once only when no other request is still
+       * on its way: a first request refused before the second has started ends the query with
+       * no second try, as before. But a refused or broken request must never throw away the
+       * other one while it is still open (Nov 10 review: a 429 on the second request was
+       * discarding a healthy first request, which the old one-after-the-other rule never did).
+       * It is remembered, and reported if the other request fails too. */
       if (!embedTimedOut(e)) {
+        if (open > 0) {
+          refusal = refusal || e;
+          return;
+        }
         settled = true;
         clearTimeout(timer);
-        return reject(e);
+        return reject(refusal || e);
       }
+      /* A timeout of the first request, when the second has not started yet, starts it now
+       * (the Oct 16 behaviour). */
       if (!secondStarted) return second();
       if (open === 0) {
         settled = true;
-        reject(e);
+        reject(refusal || e);
       }
     };
     const ask = (isSecond) => {
@@ -371,11 +400,13 @@ async function embedText(text, { purpose = 'document' } = {}) {
   if (!lane || !text) {
     return null;
   }
+  const stopLoopWatch = watchLoop();
   try {
     const vec =
       purpose === 'query'
         ? await requestQueryEmbedding(lane, String(text))
         : await requestMemoryEmbedding(lane, String(text), purpose);
+    stopLoopWatch();
     embedHealth.ok += 1;
     noteEmbed(purpose, true);
     embedHealth.lastOkAt = new Date().toISOString();
@@ -386,11 +417,11 @@ async function embedText(text, { purpose = 'document' } = {}) {
     noteEmbed(purpose, false);
     embedHealth.lastError = detail;
     embedHealth.lastErrorAt = new Date().toISOString();
-    const held = loopHeldMs();
+    const held = stopLoopWatch();
     embedHealth.lastLoopHeldMs = held;
     logger.warn(
       `[kadeDiary] embedding call FAILED -- semantic recall is blind for this turn (${lane.provider}/${lane.model}): ${detail}` +
-        ` [purpose ${purpose}${held == null ? '' : `, event loop held up to ${held} ms since the last reading`}]`,
+        ` [purpose ${purpose}${held == null ? '' : `, event loop held up to ${held} ms during this call`}]`,
     );
     /* Part 295: an empty prepaid balance (the Aug 28 cause) or a refused key tells Kade, at most
      * once every few hours, instead of only filling the log. Fire-and-forget. */

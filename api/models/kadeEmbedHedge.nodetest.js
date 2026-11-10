@@ -111,7 +111,7 @@ test('never more than two requests and never longer than the window; both timing
   assert.ok(calls[1].timeoutMs <= 1200 - 140, `the second request only gets what is left of the window (${calls[1].timeoutMs})`);
   assert.deepEqual(diary.readEmbedHealth().byPurpose.query, { ok: 0, failed: 1 });
   const line = warnings.find((w) => w.includes('semantic recall is blind for this turn'));
-  assert.match(line, /\[purpose query, event loop held up to \d+ ms since the last reading\]$/, 'the failure says who failed and how long this server itself was stuck');
+  assert.match(line, /\[purpose query, event loop held up to \d+ ms during this call\]$/, 'the failure says who failed and how long this server itself was stuck');
 });
 
 test('a refusal is not a timeout: one request, failed at once, no second try', async () => {
@@ -122,6 +122,94 @@ test('a refusal is not a timeout: one request, failed at once, no second try', a
   assert.ok(Date.now() - t0 < 100);
   await after(250);
   assert.equal(calls.length, 1);
+});
+
+/* Nov 10 review: a refused or broken request must not throw away the other one while it is still
+ * on its way. The first version rejected the whole query on any non-timeout error from either. */
+const refused = (status) => Object.assign(new Error(`Request failed with status code ${status}`), { response: { status } });
+const failsAt = (ms, error) => new Promise((_, reject) => setTimeout(() => reject(error), ms));
+
+test('REVIEW BUG: the second request is refused (429) while the first is still on its way; the first answer is used', async () => {
+  env();
+  // The first answers at 400 ms, inside one old 600 ms try. The second, started at 150 ms, is refused at once.
+  const provider = (n) => (n === 1 ? after(400, VECTOR) : Promise.reject(refused(429)));
+  const { diary, calls } = diaryWith(provider);
+  assert.deepEqual(await diary.embedText('what concert did I see', { purpose: 'query' }), VECTOR, 'a refused second request must not throw away the first');
+  assert.equal(calls.length, 2);
+  const health = diary.readEmbedHealth();
+  assert.equal(health.failed, 0);
+  assert.equal(health.secondTryWon, 0, 'the first request answered, not the second');
+
+  // The old one-after-the-other rule never lost this turn: one request, answered.
+  env({ KADE_EMBED_HEDGE_MS: '0' });
+  const old = diaryWith(provider);
+  assert.deepEqual(await old.diary.embedText('what concert did I see', { purpose: 'query' }), VECTOR);
+  assert.equal(old.calls.length, 1);
+});
+
+test('the mirror: the first request breaks after the second has started; the second answer is used', async () => {
+  env();
+  const reset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+  const { diary, calls } = diaryWith((n) => (n === 1 ? failsAt(300, reset) : after(350, VECTOR)));
+  assert.deepEqual(await diary.embedText('what concert did I see', { purpose: 'query' }), VECTOR);
+  assert.equal(calls.length, 2);
+  const health = diary.readEmbedHealth();
+  assert.equal(health.failed, 0);
+  assert.equal(health.secondTryWon, 1);
+});
+
+test('a refused second request and a first that then times out: one failed query, still two requests, and the refusal is what is reported', async () => {
+  env();
+  const { diary, calls } = diaryWith((n, timeoutMs) => (n === 1 ? answersAt(60000, VECTOR, timeoutMs) : Promise.reject(refused(429))));
+  const t0 = Date.now();
+  assert.equal(await diary.embedText('what concert did I see', { purpose: 'query' }), null);
+  const took = Date.now() - t0;
+  assert.ok(took >= 1100 && took < 1700, `the first request kept its whole window (${took} ms)`);
+  await after(100);
+  assert.equal(calls.length, 2, 'never a third request');
+  const health = diary.readEmbedHealth();
+  assert.deepEqual(health.byPurpose.query, { ok: 0, failed: 1 });
+  assert.match(health.lastError, /429/, 'the provider\'s refusal says more than "timeout"');
+});
+
+test('both requests refused: one failed query as soon as the second is refused', async () => {
+  env();
+  const { diary, calls } = diaryWith((n) => (n === 1 ? failsAt(400, refused(503)) : failsAt(100, refused(429))));
+  const t0 = Date.now();
+  assert.equal(await diary.embedText('what concert did I see', { purpose: 'query' }), null);
+  assert.ok(Date.now() - t0 < 700, 'no waiting for the window once nothing is on its way');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(diary.readEmbedHealth().byPurpose.query, { ok: 0, failed: 1 });
+});
+
+/* Nov 10 review: the event-loop number in the failure line must cover this call's own wait and
+ * nothing else. The first version read a shared histogram that was only cleared by a failure. */
+const holdLoop = (ms) => { const until = Date.now() + ms; while (Date.now() < until) { /* busy on purpose */ } };
+
+test('REVIEW BUG: a hold that ended before the call started is not blamed on the call', async () => {
+  env();
+  const { diary, warnings } = diaryWith(() => failsAt(60, refused(503)));
+  await after(50); // let the module settle, as a running server has
+  holdLoop(400); // an unrelated stall, long before this embed
+  await after(60);
+  assert.equal(await diary.embedText('what is the weather', { purpose: 'tools' }), null);
+  const held = diary.readEmbedHealth().lastLoopHeldMs;
+  assert.ok(held < 200, `the failed call waited about 60 ms on an idle loop, but ${held} ms was reported`);
+  const line = warnings.find((w) => w.includes('semantic recall is blind for this turn'));
+  assert.match(line, /\[purpose tools, event loop held up to \d+ ms during this call\]$/);
+});
+
+test('a hold while the call is waiting is reported, and a later call on an idle loop reads small again', async () => {
+  env();
+  const { diary } = diaryWith((n) => (n === 1
+    ? new Promise((_, reject) => setTimeout(() => { holdLoop(400); reject(refused(503)); }, 30))
+    : failsAt(60, refused(503))));
+  assert.equal(await diary.embedText('what is the weather', { purpose: 'tools' }), null);
+  const first = diary.readEmbedHealth().lastLoopHeldMs;
+  assert.ok(first >= 300, `a 400 ms hold during the call was reported as ${first} ms`);
+  assert.equal(await diary.embedText('what is the weather', { purpose: 'tools' }), null);
+  const second = diary.readEmbedHealth().lastLoopHeldMs;
+  assert.ok(second < 200, `the next call met no hold, but ${second} ms was reported`);
 });
 
 test('a first request that times out at once starts the second straight away (the Oct 16 rule)', async () => {
