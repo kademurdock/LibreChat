@@ -759,6 +759,9 @@ export function yueCoverSettings<T extends { key: string; hint: string }>(
     default: yueKeepChordsDefault(env) ? yueKeepChords.yes : yueKeepChords.no,
   };
   return settings.flatMap((setting): Array<T | YueGuideSetting> => {
+    if (setting.key === 'weirdness' && yueSamplingMap(env) === 'v2') return [{ ...setting, hint: yueVariationHint }];
+    if (setting.key === 'guidance' && env.YUE_STYLES_ENABLED === '1')
+      return [{ ...setting, hint: `${setting.hint}${yueGuidanceStyleSentence}` }];
     if (setting.key === 'lyrics') return [singing, setting];
     if (setting.key === 'reference_voice_url') return [setting, chords];
     if (setting.key === 'cot') return [];
@@ -766,12 +769,191 @@ export function yueCoverSettings<T extends { key: string; hint: string }>(
   });
 }
 
+/* ---- Nov 10 2026: clearer words with trained styles, covers that hold their tune, a dial that varies the right thing ----
+ * Read from her last 160 YuE2 songs and from YuE2's own code, with nothing rendered:
+ *  - 100 of the 160 were a trained style on a cover. The styles were taught score-free, and no listening test ever put one on
+ *    a score.
+ *  - YuE2's sound stage reads the singing tokens through the composer's attention. A trained style is folded into the composer
+ *    for the whole take, so the sound stage was reading through weights it was never trained against.
+ *  - Creative variation above 50 raised the temperature of the SINGING tokens (1.12 at 70, 1.3 at 100; YuE2's default is 1.0).
+ *    A styled new song has no score and a cover's score is fixed, so for those two the dial did nothing else: it only slurred.
+ *  - Her sheets say [Verse 1], [Final Chorus], [Post-Chorus], [Prechorus]. YuE2's own examples know [Verse] and [Chorus]; every
+ *    trained style was taught on sheets that say [verse], [prechorus], [chorus] and nothing else.
+ * Each fix below is made when the request is SENT (yueWorkerInput), so what the job, the project and the library keep is still
+ * exactly what she typed and chose, and each has its own switch back:
+ *   YUE_PREFORMAT=0             section tags and a doubled "English" go to YuE2 as typed
+ *   YUE_SAMPLING_V2=0           Creative variation drives the singing temperature as before
+ *   YUE_STYLE_SOUND_STAGE=styled  a trained style stays folded in while the sound stage runs, as before
+ *                               (=both: also saves the styled-stage copy of the same take beside it, for an A/B by ear)
+ *   YUE_COVER_TEMPO_ALWAYS=0    a cover with a new accompaniment does not name its score's tempo in the style
+ * And three that do nothing until they are set, because only her ear can choose the numbers:
+ *   YUE_STYLE_GUIDANCE=1.3      Prompt guidance for a styled new song she left on 1 (costs no extra GPU time: a score-free
+ *                               take already runs YuE2's guidance pass)
+ *   YUE_STYLE_COVER_GUIDANCE=1.2  the same for a styled cover or score (about a third more composing time per take)
+ *   YUE_STYLE_MODULES=mlp, YUE_STYLE_LAYERS=8-27 (and YUE_STYLE_COVER_MODULES / _LAYERS for covers only): fold the style into
+ *                               part of the composer only
+ * A worker older than these fields ignores every one of them and renders as it always did. */
+function switchedOff(value: string | undefined): boolean {
+  return ['0', 'false', 'no', 'off'].includes(String(value ?? '').trim().toLowerCase());
+}
+export function yuePreformatEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !switchedOff(env.YUE_PREFORMAT);
+}
+export function yueSamplingMap(env: NodeJS.ProcessEnv = process.env): 'v1' | 'v2' {
+  return switchedOff(env.YUE_SAMPLING_V2) ? 'v1' : 'v2';
+}
+export function yueStyleSoundStage(env: NodeJS.ProcessEnv = process.env): 'styled' | 'plain' | 'both' {
+  const said = String(env.YUE_STYLE_SOUND_STAGE ?? '').trim().toLowerCase();
+  return said === 'styled' || said === 'both' ? said : 'plain';
+}
+export function yueCoverTempoAlways(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !switchedOff(env.YUE_COVER_TEMPO_ALWAYS);
+}
+/** A guidance number from the environment: 1 to 3, as the dial allows; anything else is "not set". */
+function guidanceFrom(value: string | undefined): number | undefined {
+  const said = String(value ?? '').trim();
+  if (!/^\d(?:\.\d{1,2})?$/.test(said)) return undefined;
+  const number = Number(said);
+  return number > 1 && number <= 3 ? number : undefined;
+}
+/** Part of the composer for a trained style: modules "attn" or "mlp", layers "first-last" counted from 0. */
+function scopeFrom(
+  modules: string | undefined,
+  layers: string | undefined,
+): { lora_modules?: 'attn' | 'mlp'; lora_layers?: [number, number] } {
+  const scope: { lora_modules?: 'attn' | 'mlp'; lora_layers?: [number, number] } = {};
+  const part = String(modules ?? '').trim().toLowerCase();
+  if (part === 'attn' || part === 'mlp') scope.lora_modules = part;
+  const range = /^(\d{1,3})\s*-\s*(\d{1,3})$/.exec(String(layers ?? '').trim());
+  if (range && Number(range[1]) <= Number(range[2]) && Number(range[2]) <= 255)
+    scope.lora_layers = [Number(range[1]), Number(range[2])];
+  return scope;
+}
+
+/* The seven section names YuE2 sheets use, and the other spellings that mean one of them. A tag that is none of these (a
+ * direction such as [spoken] or [drums drop out]) is never touched. */
+const NATIVE_SECTIONS: Record<string, string> = {
+  intro: 'intro', introduction: 'intro',
+  verse: 'verse',
+  prechorus: 'prechorus',
+  chorus: 'chorus', hook: 'chorus', refrain: 'chorus', postchorus: 'chorus', finalchorus: 'chorus', lastchorus: 'chorus',
+  bridge: 'bridge', middle8: 'bridge', middleeight: 'bridge',
+  outro: 'outro', ending: 'outro', coda: 'outro',
+  interlude: 'interlude', instrumental: 'interlude', instrumentalbreak: 'interlude', solo: 'interlude', break: 'interlude',
+};
+const SECTION_TITLES: Record<string, string> = {
+  intro: 'Intro', verse: 'Verse', prechorus: 'Pre-Chorus', chorus: 'Chorus', bridge: 'Bridge', outro: 'Outro',
+  interlude: 'Interlude',
+};
+const SECTION_LINE = /^(\s*)\[([^\]\n]{1,60})\](\s*)$/;
+/** The YuE2 section a tag names ("Verse 2", "Final Chorus: bigger", "Guitar Solo"), or undefined for anything else. */
+function nativeSection(tag: string): string | undefined {
+  const head = tag
+    .toLowerCase()
+    .replace(/[\s_]+/g, ' ')
+    .trim()
+    .split(/\s*[|:(,]\s*|\s+-\s+/)[0]
+    .replace(/\s*(?:x\s*\d+|\d+\s*x)$/, '')
+    .trim();
+  /* "Middle 8" is a name with its number; "Verse 2" is a name and a count. */
+  for (const name of [head, head.replace(/\s*\d+$/, '').trim()]) {
+    const key = name.replace(/[-\s]/g, '');
+    if (Object.prototype.hasOwnProperty.call(NATIVE_SECTIONS, key)) return NATIVE_SECTIONS[key];
+    if (/^[a-z ]{1,24} solo$/.test(name)) return 'interlude';
+  }
+  return undefined;
+}
+/**
+ * The lyric sheet with its section tags in the spelling YuE2 was taught: "[Verse 2]" is "[Verse]", "[Final Chorus]" and
+ * "[Post-Chorus]" are "[Chorus]", "[Prechorus]" is "[Pre-Chorus]". For a trained style the tags are the lower-case ones every
+ * style's training sheets used ("[verse]", "[prechorus]", "[chorus]"). Only a line that is a section tag and nothing else
+ * changes; every sung word, every blank line and every other bracket stays exactly as written.
+ */
+export function yueNativeLyrics(lyrics: string, trained = false): string {
+  return lyrics
+    .split('\n')
+    .map((line) => {
+      const tag = SECTION_LINE.exec(line.replace(/\r$/, ''));
+      const section = tag && nativeSection(tag[2]);
+      if (!tag || !section) return line;
+      return `${tag[1]}[${trained ? section : SECTION_TITLES[section]}]${tag[3]}${line.endsWith('\r') ? '\r' : ''}`;
+    })
+    .join('\n');
+}
+/** A style whose lead already ends "English," followed by a direction that opens with the language again ("English slow jam",
+ * "American-English, contemporary R&B") says it once. Anything else is returned as it is. */
+export function yueTidyStyle(style: string, band?: string): string {
+  const lead = band && Object.prototype.hasOwnProperty.call(yueStyles, band) ? yueStyles[band].lead : '';
+  if (!lead || !/English,$/.test(lead) || !style.startsWith(`${lead} `)) return style;
+  const rest = style.slice(lead.length + 1);
+  const again = /^(?:American[- ])?English(?:,\s*|\s+)(?=\S)/i.exec(rest);
+  return again ? `${lead} ${rest.slice(again[0].length)}` : style;
+}
+
+/** Creative variation's hint while the v2 sampling map is on (YUE_SAMPLING_V2): what the dial now changes, and where it
+ * has nothing to change. */
+export const yueVariationHint: string =
+  '50 is normal. Lower is more predictable. Higher makes a new song’s melody and chords bolder, while the singing stays clear. Above 50 a cover keeps its tune as it is, and a trained Style changes only a little.';
+/** Added to Prompt guidance's hint while trained styles are on. Nov 10 2026: the same styled new song, same seed, kept 88 of
+ * its 94 words at guidance 1 and 42 at 1.3, where it fell into repeating single words until the six-minute limit. */
+export const yueGuidanceStyleSentence: string =
+  ' With a trained Style on a new song, leave it at 1: higher can make the song lose its words.';
+
+export type YueWorkerInput = Omit<Input, 'my_voice'> & {
+  sampling_map?: 'v2';
+  lora_sound_stage?: 'plain' | 'both';
+  lora_modules?: 'attn' | 'mlp';
+  lora_layers?: [number, number];
+};
+/**
+ * The request as the music worker gets it: the saved job input (`yueInput`) with the Nov 10 2026 fixes applied. Pure: the job
+ * itself is not changed, so the project, the library and Open in the booth keep her own words, tags and numbers.
+ */
+export function yueWorkerInput(
+  { my_voice: _myVoice, ...input }: Input,
+  env: NodeJS.ProcessEnv = process.env,
+): YueWorkerInput {
+  const sent: YueWorkerInput = { ...input };
+  const styled = !!input.lora_key;
+  const fixedScore = !!(input.reference_voice_url || input.abc);
+  if (yuePreformatEnabled(env)) {
+    if (typeof input.lyrics === 'string') sent.lyrics = yueNativeLyrics(input.lyrics, styled);
+    if (styled) sent.style = yueTidyStyle(input.style, input.band);
+  }
+  if (yueSamplingMap(env) === 'v2') sent.sampling_map = 'v2';
+  if (styled) {
+    const stage = yueStyleSoundStage(env);
+    if (stage !== 'styled') sent.lora_sound_stage = stage;
+    /* Only a guidance she left on the dial's default is replaced; a number she chose is hers. */
+    const guidance = guidanceFrom(fixedScore ? env.YUE_STYLE_COVER_GUIDANCE : env.YUE_STYLE_GUIDANCE);
+    if (guidance !== undefined && (input.guidance ?? 1) === 1) sent.guidance = guidance;
+    Object.assign(
+      sent,
+      scopeFrom(env.YUE_STYLE_MODULES, env.YUE_STYLE_LAYERS),
+      fixedScore ? scopeFrom(env.YUE_STYLE_COVER_MODULES, env.YUE_STYLE_COVER_LAYERS) : {},
+    );
+  }
+  /* Upstream: describe the tempo in the style consistently with the score. A cover that keeps its chords already does
+   * (coverFields); one with a new accompaniment still sings a score with a tempo of its own, and every trained style's
+   * training captions ended with the song's BPM. Her own BPM always wins. */
+  if (
+    yueCoverTempoAlways(env) &&
+    input.reference_voice_url &&
+    input.keep_harmony === false &&
+    !input.instrumental &&
+    input.match_score_tempo === undefined &&
+    !NAMES_BPM.test(input.style)
+  )
+    sent.match_score_tempo = true;
+  return sent;
+}
+
 export function yueConfigured(): boolean {
   return !!(process.env.YUE_ENDPOINT_ID && process.env.RUNPOD_API_KEY);
 }
 async function provider(
   path: string,
-  data?: { input: Input; policy: { executionTimeout: number; ttl: number } },
+  data?: { input: YueWorkerInput; policy: { executionTimeout: number; ttl: number } },
 ): Promise<Provider> {
   const base = `https://api.runpod.ai/v2/${process.env.YUE_ENDPOINT_ID}`;
   const response = await axios.request<Provider>({
@@ -797,8 +979,9 @@ export function createYueRouter(hooks: Hooks): Router {
     estimate: (input) => ({
       spoken: `${input.count} take${input.count === 1 ? '' : 's'}. ${yueCost}`,
     }),
-    submit: ({ my_voice: _myVoice, ...input }) =>
-      provider('run', { input, policy: { executionTimeout: 1200000, ttl: YUE_PROVIDER_TTL_MS } }),
+    /* yueWorkerInput leaves my_voice out (it never reaches the music worker) and applies the Nov 10 2026 fixes. */
+    submit: (input) =>
+      provider('run', { input: yueWorkerInput(input), policy: { executionTimeout: 1200000, ttl: YUE_PROVIDER_TTL_MS } }),
     status: async (take) => {
       const result = await provider(`status/${encodeURIComponent(take.providerId || '')}`);
       /* RunPod reports how long the job waited for a GPU (delayTime) and how long
