@@ -89,17 +89,36 @@ class KadeFeedback extends Tool {
        * button with no name on the checkout page" (an invented question; the platform has no
        * checkout page). The character rightly files it, so the family feedback board collected
        * open bug rows for a bug nobody has, each one alerting Kade (two were open: Oct 17, Oct 23).
-       * A report from a test seat is still kept, marked, but it is not an open row and does not
-       * alert her. KADE_TEST_SEAT_FEEDBACK=open puts the old behaviour back. */
+       * Such a report is still kept, marked, but it is not an open row and does not alert her.
+       * KADE_TEST_SEAT_FEEDBACK=open puts the old behaviour back.
+       *
+       * Nov 10 review: the first version parked EVERY report from every review/demo seat (three
+       * seats, one of them the App Review seat). A real person on one of those seats who reported
+       * a real bug was told Kade would see it, while the row was missing from the dashboard's
+       * default Open view and no alert went out; the app's own Report a problem screen still
+       * filed the same seat's reports open. Now a report is parked only when it comes from a
+       * test seat AND is the battery's own question (it names a button and a checkout page), or
+       * when Kade has named the seat as battery-only in KADE_FEEDBACK_SILENT_SEATS (comma list of
+       * user ids, empty by default). Anything else from a review or demo seat is an open row
+       * with an alert, as it always was. */
+      const text = String(detail).trim();
       let fromTestSeat = false;
       try {
-        fromTestSeat =
-          process.env.KADE_TEST_SEAT_FEEDBACK !== 'open' &&
-          require('~/server/services/kadeNudges').isTestUser(String(this.userId || ''));
+        const seat = String(this.userId || '');
+        if (process.env.KADE_TEST_SEAT_FEEDBACK !== 'open' && seat) {
+          const silentSeats = String(process.env.KADE_FEEDBACK_SILENT_SEATS || '')
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean);
+          const said = `${String(subject || '')} ${text}`;
+          const batteryQuestion = /\bcheck-?out\b/i.test(said) && /\bbuttons?\b/i.test(said);
+          fromTestSeat =
+            silentSeats.includes(seat) ||
+            (batteryQuestion && require('~/server/services/kadeNudges').isTestUser(seat));
+        }
       } catch (_) {
         fromTestSeat = false;
       }
-      const text = String(detail).trim();
       const report = await KadeFeedback.create({
         user: this.userId,
         category: validCat,
@@ -111,7 +130,8 @@ class KadeFeedback extends Tool {
       });
       logger.info(`[KadeFeedback] report ${report._id} filed by user ${this.userId} via ${this.agentName}${fromTestSeat ? ' (test seat: not open, no alert)' : ''}: ${report.subject}`);
       if (fromTestSeat) {
-        return `Report filed. Category: ${validCat}. Kade will see it in the feedback dashboard. Thank you for taking the time to share this.`;
+        /* No promise that Kade will see it: a parked row is not in her default Open view. */
+        return `Report filed. Category: ${validCat}. Thank you for taking the time to share this.`;
       }
       /* Session 23: owner alert — in-chat nudge + app push to Kade the
        * moment a report lands. Fire-and-forget; a hiccup never breaks
