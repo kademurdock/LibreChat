@@ -1,6 +1,10 @@
 (function () {
   'use strict';
-  window.setupLibraryBrowse = function (api, say, bookLi, scopeChanged) {
+  /* Nov 10 2026: `loaded` (optional) runs after each fresh list is drawn, so the page can put
+   * focus back on the item a person just came back from. A "start here" button moves focus to the
+   * Results heading, because its list is drawn somewhere else on the page; filters and the search
+   * box leave focus where it is and speak the count through the page's one status line. */
+  window.setupLibraryBrowse = function (api, say, bookLi, scopeChanged, loaded) {
     var get = function (id) {
       return document.getElementById(id);
     };
@@ -60,7 +64,7 @@
         sessionStorage.setItem('library-browse', state().toString());
       } catch (error) {}
     }
-    async function load(append) {
+    async function load(append, toResults) {
       var parameters = state(),
         signature = parameters.toString();
       if (append && !next) return;
@@ -126,6 +130,17 @@
             (result.total === 1 ? ' item matches.' : ' items match.') +
             (next ? ' More items are available.' : ''),
         );
+        if (toResults && get('h-results')) {
+          var where = get('browseLocationName').textContent || get('searchBox').value.trim();
+          get('h-results').textContent = where ? 'Results: ' + where : 'Results';
+          get('h-results').focus();
+        } else if (!append && get('h-results')) {
+          var words = get('browsePath').value
+            ? get('browseLocationName').textContent
+            : get('searchBox').value.trim();
+          get('h-results').textContent = words ? 'Results: ' + words : 'Results';
+        }
+        if (!append && loaded) loaded();
       } catch (error) {
         if (request !== run || error.name === 'AbortError') return;
         get('browseCount').textContent = 'The library could not be loaded.';
@@ -167,7 +182,7 @@
       get('browsePath').value = button.dataset.folder || '';
       get('browseLocation').hidden = !get('browsePath').value;
       get('browseLocationName').textContent = get('browsePath').value.split('/').join(' · ');
-      load(false);
+      load(false, true);
     };
     try {
       var saved = new URLSearchParams(sessionStorage.getItem('library-browse') || '');

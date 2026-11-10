@@ -54,7 +54,7 @@ const SHARED_HEAD = `
   dl.kv dt { opacity: .8; }
   dl.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   footer { margin-top: 2rem; font-size: .85rem; }
-  a.back { display:inline-block; margin:0 0 .25rem; font-weight:600; text-decoration:none; color:#1d55d0; }
+  a.back { display:inline-block; margin:0 0 .25rem; padding:.65rem .75rem .65rem 0; font-weight:600; text-decoration:none; color:#1d55d0; }
   @media (prefers-color-scheme: dark) { a.back { color: #93c5fd; } }
   a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
