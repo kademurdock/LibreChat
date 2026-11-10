@@ -64,14 +64,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   button.act, a.act { font:inherit; font-weight:700; padding:.8rem 1.1rem; border-radius:12px; border:1px solid #1d55d0; background:#fff; color:#1d55d0; cursor:pointer; min-height:48px; }
   a.act { display:inline-block; text-decoration:none; }
   button.act.primary, a.act.primary { background:#1f7a49; border-color:#1f7a49; color:#fff; }
-  button.act.quiet, a.act.quiet { border-color:#8a919c; color:inherit; font-weight:600; }
+  button.act.quiet, a.act.quiet { border-color:#7d8490; color:inherit; font-weight:600; }
   button.act.big { font-size:1.25rem; padding:1rem 1.4rem; min-width:9rem; }
   button.act[disabled] { opacity:.55; cursor:default; }
   button.act:focus-visible, a.act:focus-visible, select:focus-visible, input:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .controls { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem; margin:.8rem 0; }
   .controls .wide { grid-column:1 / -1; }
   label.field { display:block; font-weight:600; margin:.7rem 0 .25rem; }
-  select, input[type=text], input[type=file], textarea { width:100%; font:inherit; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:inherit; }
+  select, input[type=text], input[type=file], textarea { width:100%; font:inherit; padding:.6rem .7rem; border-radius:10px; border:1px solid #6b7280; background:#fff; color:inherit; }
   .hint { font-size:.9rem; opacity:.82; margin:.15rem 0 .35rem; }
   .book { display:flex; flex-direction:column; gap:.25rem; }
   .book strong { font-size:1.08rem; }
@@ -82,17 +82,42 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   ul.plain li { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
   ul.plain li span.t { flex:1 1 12rem; }
   details { margin:.8rem 0; }
-  summary { cursor:pointer; font-weight:600; padding:.3rem 0; }
+  summary { cursor:pointer; font-weight:600; padding:.65rem 0; min-height:44px; }
+  /* The ring on borderless things (box rows, crumbs, focused headings) is dark on the light page and yellow on the dark one, so it shows on both. */
+  summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
+  /* Nov 10 2026. The skip link is off screen until it has focus, then it is a real button-sized link. */
+  a.skip { position:absolute; left:-999rem; top:0; }
+  a.skip:focus { position:static; display:inline-block; padding:.7rem 1rem; margin:0 0 .5rem; border-radius:12px; background:#1d55d0; color:#fff; font-weight:700; }
+  /* The one status line. It keeps its place in the page (so nothing jumps and a screen reader
+     finds it where it always was), shows no empty yellow strip, and for a few seconds after it
+     changes it stays in view at the top of the window, so a sighted person far down the page
+     sees the same words a screen reader says. */
+  #live { min-height:3rem; margin:.6rem 0; }
+  #live:empty { background:transparent; }
+  #live.fresh { position:sticky; top:calc(.5rem + env(safe-area-inset-top, 0px)); z-index:55; box-shadow:0 4px 14px rgba(0,0,0,.28); pointer-events:none; }
+  /* While it is held at the top of a scrolled window it shows two lines at most, so it never grows past
+     the room the page leaves for it (scroll-padding-top) and never covers the thing focus just moved to.
+     All of its words stay in the page for a screen reader. With very large text it does not stick at all. */
+  #live.fresh.held { max-height:4.5rem; overflow:hidden; }
+  html.kade-art-off #live.fresh { position:static; box-shadow:none; max-height:none; }
+  html { scroll-padding-top:5rem; }
+  input[type=checkbox] { width:1.25rem; height:1.25rem; vertical-align:-.2rem; margin-right:.35rem; }
+  #timeLine { font-variant-numeric:tabular-nums; font-weight:600; margin:.4rem 0; }
+  h3.results { font-size:1.05rem; margin:1rem 0 .2rem; }
   @media (prefers-color-scheme: dark) {
     button.act, a.act { background:#1e2127; color:#9ec2ff; border-color:#4a78d8; }
     button.act.primary, a.act.primary { background:#1f7a49; color:#fff; border-color:#1f7a49; }
     select, input[type=text], input[type=file], textarea, .now { background:#1e2127; color:inherit; border-color:#2c2f37; }
+    select, input[type=text], input[type=file], textarea { border-color:#8a919c; }
+    #live { background:#3a3206; color:#ffe9a8; }
+    #live:empty { background:transparent; }
+    summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline-color:#ffbf47; }
   }
   @media (max-width: 480px) { .controls { grid-template-columns:1fr 1fr; } }
   video.player { width:100%; max-height:60vh; background:#000; border-radius:14px; margin:.6rem 0; }
   video.player.audioonly { height:2px; min-height:0; opacity:0; margin:0; }
   nav.crumbs { display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; margin:.4rem 0; }
-  nav.crumbs button { font:inherit; background:none; border:none; color:#1d55d0; text-decoration:underline; cursor:pointer; padding:.2rem .1rem; }
+  nav.crumbs button { font:inherit; background:none; border:none; color:#1d55d0; text-decoration:underline; cursor:pointer; padding:.6rem .35rem; min-height:44px; }
   @media (prefers-color-scheme: dark) { nav.crumbs button { color:#93c5fd; } }
   ul.plain li.folder span.t { font-weight:600; }
   ol.scenes { padding-left:1.2rem; } ol.scenes li { margin:.3rem 0; }
@@ -121,11 +146,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 </style>
 <script>${ART_OFF_SCRIPT}</script></head>
 <body>
+  <a class="skip" href="#searchBox" id="skipLink">Skip to search the Library</a>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
+  <main id="main">
   <h1 id="pageTitle">The Library</h1>
   <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is part of the Family feature pack, which Kade turns on for family members. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
-  <section aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
+  <section id="continueBox" hidden>
+    <h2 id="h-continue">Pick up where you left off</h2>
+    <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
+  </section>
+  <section id="librarianCard" aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
     <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
     <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
     <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
@@ -139,7 +170,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
     <h2 id="h-browse">Browse the library</h2>
     <p class="hint">One shelf for books, newspapers, recordings and videos. Choose a type or decade, or search across the collection.</p>
-    <form id="browseForm">
+    <form id="browseForm" role="search" aria-label="Search and filter the library">
       <label class="field" for="searchBox">Search the library</label>
       <div class="row"><input type="text" id="searchBox" style="flex:1 1 14rem" placeholder="A title, a place, a brand, a year…"><button class="act" id="searchBtn" type="submit">Search</button></div>
       <div class="controls">
@@ -152,12 +183,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       </div>
       <input id="browsePath" type="hidden" value="">
     </form>
-    <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
-    <p id="browseCount" class="hint">Loading…</p>
-    <ul class="plain" id="browseList" aria-labelledby="h-browse"></ul>
-    <button class="act quiet" id="browseMore" type="button" hidden>Load more items</button>
-    <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
-    <section aria-labelledby="h-local" style="padding:1rem;border:1px solid var(--border);border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
+    <section aria-labelledby="h-local" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
       <h3 id="h-local">Springfield, the Ozarks &amp; Missouri</h3>
       <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
       <div class="row" id="discoveryLinks">
@@ -168,23 +194,29 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
       </div>
     </section>
-    <details id="folderBrowse"><summary>Browse folders and manage filing</summary>
-    <h2 id="h-archive">Folders</h2>
+    <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
+    <h3 id="h-results" class="results" tabindex="-1">Results</h3>
+    <p id="browseCount" class="hint">Loading…</p>
+    <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
+    <button class="act quiet" id="browseMore" type="button" hidden>Load more items</button>
+    <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
+    <h2 id="h-archive" tabindex="-1">Folders</h2>
+    <details id="folderBrowse"><summary>Open the folders</summary>
     <div class="kade-art shelf-art" id="shelfArtBox" hidden><img id="shelfArt" alt="" width="1152" height="648" loading="lazy" fetchpriority="low" decoding="async" draggable="false"></div>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
     <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
 
     </details>
-    <details><summary>Your playlists</summary>
-    <h2 id="h-collections">Collections</h2>
-    <p class="hint">Playlists you put together from anything in the library — yours until you share them.</p>
+    <h2 id="h-collections">Your playlists</h2>
+    <details><summary>Open your playlists</summary>
+    <p class="hint">Playlists (collections) you put together from anything in the library — yours until you share them.</p>
     <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
     <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
 
     </details>
-    <details><summary>Your saved shelf and uploads</summary>
-    <h2 id="h-mine">Your shelf</h2>
+    <h2 id="h-mine" tabindex="-1">Your shelf</h2>
+    <details id="mineBox"><summary>Open your shelf and uploads</summary>
     <p class="hint">Everything you have donated and everything you have opened, together. Removing something from your shelf never removes it from the library.</p>
     <div id="mineList" aria-labelledby="h-mine"><p class="muted">Loading…</p></div>
     <ul class="plain hidden" id="borrowedList"></ul>
@@ -264,7 +296,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   <section id="collection" class="hidden">
     <p><button class="act quiet" id="collBack" type="button">&larr; Back to the shelf</button></p>
-    <h2 id="collTitle"></h2>
+    <h2 id="collTitle" tabindex="-1"></h2>
     <p class="meta" id="collMeta"></p>
     <div class="row"><button class="act primary" id="collPlayAll" type="button">Play all, in order</button><button class="act quiet" id="collShareBtn" type="button" hidden></button><button class="act quiet" id="collDeleteBtn" type="button" hidden>Delete this collection</button></div>
     <ol class="plain" id="collItems"></ol>
@@ -272,7 +304,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   <section id="player" class="hidden">
     <p><button class="act quiet" id="backToShelf" type="button">&larr; Back to the shelf</button></p>
-    <h2 id="bookTitle"></h2>
+    <h2 id="bookTitle" tabindex="-1"></h2>
     <p><a class="act quiet" id="askLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Ask Mrs. Witherspoon about this item</a></p>
     <p class="meta" id="bookMeta"></p>
     <p class="hint" id="jacketLine"></p>
@@ -285,7 +317,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button class="act quiet" id="nextSecBtn" type="button">Next chapter</button>
       <button class="act quiet" id="startBtn" type="button">From the beginning</button>
     </div>
-    <p class="hint">Keys: Space play or pause, Left and Right back or forward, Shift with Left or Right for chapters, B for a bookmark.</p>
+    <p id="timeLine" hidden></p>
+    <p class="hint" id="keysHint">Keys: Space play or pause, Left and Right back or forward, Shift with Left or Right for chapters, B for a bookmark.</p>
     <video id="fileMedia" class="player audioonly" controls playsinline preload="metadata" x-webkit-airplay="allow" aria-label="The recording"></video>
     <div class="row" id="castRow" hidden>
       <button class="act quiet" id="airplayBtn" type="button" hidden>AirPlay</button>
@@ -332,9 +365,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <ul class="plain" id="libSources"></ul>
     </details>
 
-    <label class="field" for="chapterSel">Chapter</label>
+    <div id="chapterWrap">
+    <label class="field" for="chapterSel" id="chapterLabel">Chapter</label>
     <select id="chapterSel"></select>
     <button class="act" id="goChapterBtn" type="button">Go to this chapter</button>
+    </div>
 
     <div id="voiceWrap">
       <label class="field" for="voiceSel">Voice</label>
@@ -348,7 +383,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <select id="speedSel"><option value="0.75" aria-label="0.75 times">0.75x</option><option value="0.8" aria-label="0.8 times">0.8x</option><option value="0.9" aria-label="0.9 times">0.9x</option><option value="1" aria-label="Normal" selected>1x</option><option value="1.1" aria-label="1.1 times">1.1x</option><option value="1.2" aria-label="1.2 times">1.2x</option><option value="1.3" aria-label="1.3 times">1.3x</option><option value="1.4" aria-label="1.4 times">1.4x</option><option value="1.5" aria-label="1.5 times">1.5x</option></select>
     </div>
 
-    <details><summary>Bookmarks</summary>
+    <details><summary id="bookmarkSummary">Bookmarks</summary>
       <ul class="plain" id="bookmarkList"><li class="muted">None yet.</li></ul>
     </details>
     <details id="skippedWrap"><summary id="skippedSummary">Skipped parts</summary>
@@ -378,8 +413,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     </details>
 
   </section>
+  </main>
 
-<script src="/assets/library/browse.js?v=20261007"></script>
+<script src="/assets/library/browse.js?v=20261110"></script>
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
 <script src="/assets/library/access.js?v=20260928"></script>
@@ -392,7 +428,66 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var $ = function(id){ return document.getElementById(id); };
   var live = $('live');
   // While the reading view (a modal dialog) is open, #live is inert; the reader says it instead.
-  function say(t){ if (libraryReader && libraryReader.say(t)) return; live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30); }
+  var freshTimer = null;
+  function say(t){
+    if (libraryReader && libraryReader.say(t)) return;
+    live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30);
+    // Nov 10 2026: sighted people far down the page see the same words for eight seconds; the text itself stays.
+    var held = false; try { held = live.classList.contains('fresh') ? live.classList.contains('held') : live.getBoundingClientRect().top < 0; } catch(e) {}
+    live.classList.toggle('held', held);
+    live.classList.add('fresh'); clearTimeout(freshTimer); freshTimer = setTimeout(function(){ live.classList.remove('fresh'); live.classList.remove('held'); }, 8000);
+  }
+  /* Nov 10 2026: focus never falls off the page. After a list is redrawn the button that was
+     pressed is gone, so focus goes to a named place beside the new list. */
+  function focusOn(el){ if (!el) return; try { el.focus(); } catch(e) {} }
+  /* Every move inside the Library goes to the bare path plus a query, never carrying a #fragment
+     along, so a fragment from an alert link does not follow the person from page to page. */
+  function visit(query){ location.href = location.pathname + (query || ''); }
+  /* Coming back from an item: the place it was opened from gets focus again. The note is made
+     when an Open or Continue button is pressed and is good for one try: the first time the list
+     it names is drawn, the row gets focus if it is there, and the note is thrown away either way
+     (a row beyond the first 60 is not there). It is also dropped as soon as the person presses a
+     key, touches, clicks or scrolls the page, so it never pulls focus away from them later.
+     lists: the ids of the lists just drawn. A note for a list not drawn yet is left for that list.
+     missOnly: use the note up without moving focus (the person moved the list themselves). */
+  var RETURN_KEY = 'library-return';
+  function noteReturn(li, id){ try { var host = li.parentNode && li.parentNode.closest ? li.parentNode.closest('[id]') : null; sessionStorage.setItem(RETURN_KEY, JSON.stringify({ id: id, host: host ? host.id : '', at: Date.now() })); } catch(e) {} }
+  function dropReturn(){ try { sessionStorage.removeItem(RETURN_KEY); } catch(e) {} }
+  var RETURN_LISTS = ['browseList', 'archiveList', 'mineList', 'continueList'];
+  function returnNote(){ try { return JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch(e) { return null; } }
+  function restoreReturn(lists, missOnly){
+    var note = returnNote();
+    if (!note) return false;
+    if (!note.id || !note.host || RETURN_LISTS.indexOf(note.host) === -1) { dropReturn(); return false; }
+    if (!(Date.now() - note.at < 7200000) || location.hash === '#libraryRequests' || /[?&]request=/.test(location.search)) { dropReturn(); return false; }
+    if (!lists || lists.indexOf(note.host) === -1) return false;
+    dropReturn();
+    var host = $(note.host); if (!host || missOnly) return false;
+    var rows = host.querySelectorAll('li[data-book]'), button = null;
+    for (var i = 0; i < rows.length; i++) { if (rows[i].getAttribute('data-book') === note.id) { button = rows[i].querySelector('button'); break; } }
+    if (!button) return false;
+    var box = button.closest('details'); if (box && !box.open) box.open = true;
+    focusOn(button);
+    try { button.scrollIntoView({ block: 'center' }); } catch(e) {}
+    return true;
+  }
+  /* click is here because a screen reader's own "activate" sends a click with no key or pointer
+     event before it; it runs before the button's own handler, so an Open button still writes its
+     new note afterwards. wheel and touchmove are here for a sighted person already scrolling. */
+  ['keydown', 'pointerdown', 'click', 'wheel', 'touchmove'].forEach(function(kind){ document.addEventListener(kind, function(ev){ if (ev.isTrusted && !$('shelf').classList.contains('hidden')) dropReturn(); }, { capture: true, passive: true }); });
+  /* Leaving an item or a playlist by a link (Home, Ask Mrs. Witherspoon, the tab bar) is not
+     coming back to the shelf, so the note is not kept for a later visit. */
+  document.addEventListener('click', function(ev){ var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null; if (a && $('shelf').classList.contains('hidden') && (a.getAttribute('href') || '').charAt(0) !== '#') dropReturn(); }, true);
+  /* The skip link moves focus itself and writes no #fragment into the address. Its href stays a
+     real fragment, so it still reads as a link and still says where it goes. */
+  $('skipLink').addEventListener('click', function(ev){
+    var target = $((this.getAttribute('href') || '').slice(1));
+    ev.preventDefault();
+    if (!target) return;
+    for (var node = target; node && node.nodeType === 1; node = node.parentNode) { if (node.hidden || node.classList.contains('hidden')) return; }
+    focusOn(target);
+    try { target.scrollIntoView({ block: 'start' }); } catch(e) {}
+  });
   function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function catName(c){ return {book:'Book', audiobook:'Audiobook', movie:'Movie', cassette:'Cassette', radio:'Radio', commercials:'Commercials', music:'Music', tv:'TV', vhs:'VHS', psa:'Public service announcement', other:'Other'}[c] || c; }
   /* Part 296, her Sep 27 word: a described MP3 said "Movie" because the word came from the shelf's
@@ -414,6 +509,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function canManage(b){ return b && (librarian || (me && b.owner === me)); }
   function bookLi(b, where){
     var li = document.createElement('li');
+    li.setAttribute('data-book', b.id);
     var kind = typeWord(b);
     var by = b.author ? ' by ' + b.author : '';
     var prog = b.progress && b.progress.where ? (b.kind !== 'text' ? ' · Part ' : ' · Chapter ') + b.progress.where : '';
@@ -425,7 +521,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var open = document.createElement('button'); open.className = 'act'; open.type = 'button';
     open.textContent = where === 'library' ? 'Check out' : (b.progress && !b.progress.finished && (b.progress.s || b.progress.c || b.progress.pos) ? 'Continue' : 'Open');
     open.setAttribute('aria-label', open.textContent + ' ' + b.title);
-    open.onclick = function(){ location.search = '?book=' + b.id; };
+    open.onclick = function(){ noteReturn(li, b.id); visit('?book=' + b.id); };
     li.appendChild(open);
     if (where === 'mine' && b.kind !== 'text') {
       var add = document.createElement('button'); add.className = 'act quiet'; add.type = 'button'; add.textContent = 'Add parts';
@@ -449,22 +545,49 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var b = entry.book, li = bookLi(b, entry.where);
       if (entry.where === 'borrowed') {
         var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove from my shelf'; rm.setAttribute('aria-label', 'Remove ' + b.title + ' from my shelf');
-        rm.onclick = async function(){ try { await api('/book/' + b.id + '/return', { method: 'POST' }); say('Removed from your shelf. It stays in the library.'); loadShelf(); } catch(e) { say(e.message); } };
+        rm.onclick = async function(){ try { await api('/book/' + b.id + '/return', { method: 'POST' }); say('Removed from your shelf. It stays in the library.'); await loadShelf(); focusOn($('h-mine')); } catch(e) { say(e.message); } };
         li.appendChild(rm);
       }
       ul.appendChild(li);
     });
     box.appendChild(ul);
   }
+  /* Nov 10 2026: the three things most recently left unfinished, right under the page title.
+     They are the same rows the shelf holds (Continue plus the title), so nothing new to learn;
+     the section is absent when there is nothing to continue. */
+  function unfinished(mine, borrowed){
+    var all = mine.map(function(b){ return {book:b, where:'mine'}; }).concat(borrowed.map(function(b){ return {book:b, where:'borrowed'}; }));
+    all = all.filter(function(entry){ var p = entry.book.progress; return entry.book.state !== 'pending' && p && !p.finished && (p.s || p.c || p.pos); });
+    var when = function(entry){ var t = Date.parse(entry.book.progress.updatedAt || ''); return isNaN(t) ? 0 : t; };
+    all.sort(function(a, b){ return when(b) - when(a); });
+    return all.slice(0, 3);
+  }
+  function renderContinue(mine, borrowed){
+    var rows = unfinished(mine, borrowed), ul = $('continueList');
+    ul.innerHTML = '';
+    // An own upload keeps its Add parts button under Your shelf; here every row is one stop, Continue.
+    rows.forEach(function(entry){ ul.appendChild(bookLi(entry.book, entry.where === 'mine' ? 'continue' : entry.where)); });
+    /* The box arrives after the page is already drawn and sits above almost everything. Where the
+       browser does not hold the view steady by itself (Safari), a scrolled page is moved by the
+       same amount, so what the person was looking at, or the row they came back to, stays put. */
+    var box = $('continueBox'), hide = !rows.length || !$('player').classList.contains('hidden') || !$('collection').classList.contains('hidden');
+    var anchored = false; try { anchored = !!(window.CSS && CSS.supports && CSS.supports('overflow-anchor', 'auto')); } catch(e) {}
+    var mark = document.activeElement && document.activeElement !== document.body && !box.contains(document.activeElement) ? document.activeElement : $('librarianCard');
+    var before = 0; try { before = mark.getBoundingClientRect().top; } catch(e) {}
+    box.hidden = hide;
+    try { var moved = mark.getBoundingClientRect().top - before; if (moved && !anchored && (window.pageYOffset || 0) > 0) window.scrollBy(0, moved); } catch(e) {}
+  }
   async function loadShelf(){
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
+      renderContinue(shelfData.mine, shelfData.borrowed);
+      restoreReturn(['mineList', 'continueList']);
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
       $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
       if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       $('familyHistoryLink').hidden = shelfData.familyLibrary !== true;
-    } catch(e) { say('Could not load the shelf: ' + e.message); }
+    } catch(e) { restoreReturn(['mineList', 'continueList'], true); say('Could not load the shelf: ' + e.message); }
   }
   /* the archive */
   var archivePath = '', archivePage = 0, archiveRun = 0;
@@ -534,8 +657,24 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('alcoveArt').setAttribute('data-src', ${JSON.stringify(ALCOVE_ART.src)});
   fillArt($('alcoveArt'));
   if (artHiddenWhen) { if (artHiddenWhen.addEventListener) artHiddenWhen.addEventListener('change', refillArt); else if (artHiddenWhen.addListener) artHiddenWhen.addListener(refillArt); }
-  $('folderBrowse').ontoggle = function(){ if (this.open) loadArchive(undefined, 0); };
-  async function loadArchive(path, page){
+  var FOLDER_KEY = 'library-folders';
+  function folderNote(){ try { return JSON.parse(sessionStorage.getItem(FOLDER_KEY) || 'null') || {}; } catch(e) { return {}; } }
+  function noteFolder(){ try { sessionStorage.setItem(FOLDER_KEY, JSON.stringify({ open: $('folderBrowse').open, path: archivePath, page: archivePage })); } catch(e) {} }
+  $('folderBrowse').ontoggle = function(){
+    if (!this.open) { noteFolder(); return; }
+    var was = folderNote();
+    if (was.path) loadArchive(was.path, was.page || 0, false, true); else loadArchive(undefined, 0);
+  };
+  /* focus: true after the person moved (opened a folder, a crumb, moved or deleted an item): the
+     button they pressed is destroyed by the redraw, so focus lands on the crumb for where they
+     now are, just above the new list. For a page turn, focus is the Previous or Next page button
+     that was pressed: those two sit outside the list and survive, so focus stays on it and the
+     page number is spoken; only when that button has just gone dead (first or last page) does
+     focus move, to the other one, or to the crumb.
+     quiet: true when the page itself reopens a remembered folder, so nothing is spoken.
+     If the folder cannot be loaded the reason is spoken, and focus that fell off the page with
+     the old list goes to the Folders heading. */
+  async function loadArchive(path, page, focus, quiet){
     var run = ++archiveRun, scope = $('libraryScope').value;
     archivePath = path || ''; archivePage = page || 0;
     var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
@@ -543,15 +682,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + scope);
       if (run !== archiveRun || scope !== $('libraryScope').value) return;
       var crumbs = $('crumbs'); crumbs.innerHTML = '';
-      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0); }; crumbs.appendChild(home);
+      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0, true); }; crumbs.appendChild(home);
+      var here = home;
       var parts = archivePath ? archivePath.split('/') : [];
       // Part 296: each shelf reads under its display name ("Described audio TV"); it still opens its real path
       var named = j.crumbs && j.crumbs.length === parts.length ? j.crumbs : null;
       parts.forEach(function(seg, i){
         var sep = document.createElement('span'); sep.textContent = ' › '; sep.setAttribute('aria-hidden', 'true'); crumbs.appendChild(sep);
         var b = document.createElement('button'); b.type = 'button'; b.textContent = named ? named[i].name : seg; var target = parts.slice(0, i + 1).join('/');
-        if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); }
-        b.onclick = function(){ loadArchive(target, 0); }; crumbs.appendChild(b);
+        if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); here = b; }
+        b.onclick = function(){ loadArchive(target, 0, true); }; crumbs.appendChild(b);
       });
       showShelfArt(archivePath);
       ul.innerHTML = '';
@@ -561,16 +701,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         li.innerHTML = '<span class="t">📁 ' + esc(f.name) + ' <span class="muted">(' + f.count + ')</span></span>';
         var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open folder';
         open.setAttribute('aria-label', 'Open folder ' + f.name + ', ' + f.count + ' item' + (f.count === 1 ? '' : 's'));
-        open.onclick = function(){ loadArchive(f.path, 0); };
+        open.onclick = function(){ loadArchive(f.path, 0, true); };
         li.appendChild(open); ul.appendChild(li);
       });
       j.items.forEach(function(b){
         var li = bookLi(b, 'archive');
         if (canManage(b)) {
           var mv = document.createElement('button'); mv.className = 'act quiet'; mv.type = 'button'; mv.textContent = 'Move'; mv.setAttribute('aria-label', 'Move ' + b.title + ' to another folder');
-          mv.onclick = async function(){ var to = prompt('Move "' + b.title + '" to which folder?', b.path || archivePath); if (to === null) return; try { await api('/archive/batch', { json: { ids: [b.id], action: 'move', to: to } }); say('Moved.'); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); } };
+          mv.onclick = async function(){ var to = prompt('Move "' + b.title + '" to which folder?', b.path || archivePath); if (to === null) return; try { await api('/archive/batch', { json: { ids: [b.id], action: 'move', to: to } }); say('Moved.'); loadArchive(archivePath, archivePage, true); } catch(e) { say(e.message); } };
           var del = document.createElement('button'); del.className = 'act quiet'; del.type = 'button'; del.textContent = 'Delete'; del.setAttribute('aria-label', 'Delete ' + b.title + ' from the library');
-          del.onclick = async function(){ if (!confirm('Delete "' + b.title + '" from the library for everyone?')) return; try { await api('/book/' + b.id, { method: 'DELETE' }); say('Deleted.'); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); } };
+          del.onclick = async function(){ if (!confirm('Delete "' + b.title + '" from the library for everyone?')) return; try { await api('/book/' + b.id, { method: 'DELETE' }); say('Deleted.'); loadArchive(archivePath, archivePage, true); } catch(e) { say(e.message); } };
           li.appendChild(mv); li.appendChild(del);
         }
         ul.appendChild(li);
@@ -578,7 +718,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       if (archivePath && (librarian || j.items.some(canManage))) {
         var tools = document.createElement('li'); tools.className = 'folder';
         var mvf = document.createElement('button'); mvf.className = 'act quiet'; mvf.type = 'button'; mvf.textContent = 'Move or rename this folder';
-        mvf.onclick = async function(){ var to = prompt('New name or place for the folder "' + archivePath + '"', archivePath); if (to === null || to === archivePath) return; try { var r = await api('/archive/move-folder', { json: { from: archivePath, to: to } }); say('Moved ' + r.moved + ' item' + (r.moved === 1 ? '' : 's') + ' to ' + r.to + '.'); loadArchive(r.to, 0); } catch(e) { say(e.message); } };
+        mvf.onclick = async function(){ var to = prompt('New name or place for the folder "' + archivePath + '"', archivePath); if (to === null || to === archivePath) return; try { var r = await api('/archive/move-folder', { json: { from: archivePath, to: to } }); say('Moved ' + r.moved + ' item' + (r.moved === 1 ? '' : 's') + ' to ' + r.to + '.'); loadArchive(r.to, 0, true); } catch(e) { say(e.message); } };
         tools.appendChild(mvf); ul.appendChild(tools);
       }
       var pages = Math.ceil(j.total / j.limit);
@@ -586,11 +726,24 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' items here)';
       $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
       // Part 296: the shelf is said by its display names ("Audio, Described audio movies and TV, Described audio movies")
+      noteFolder();
+      var turned = focus && focus !== true;
+      if (focus === true) focusOn(here);
+      else if (turned && (focus.disabled || $('archivePager').hidden)) { var other = focus === $('pageNext') ? $('pagePrev') : $('pageNext'); focusOn($('archivePager').hidden || other.disabled ? here : other); }
+      restoreReturn(['archiveList'], !quiet);
+      if (quiet) return;
+      if (turned && pages > 1) { say($('pageInfo').textContent + '.'); return; }
       if (path !== undefined) say((named && named.length ? named.map(function(c){ return c.name; }).join(', ') : (archivePath || 'The archive')) + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
-    } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+    } catch(e) {
+      if (run !== archiveRun) return;
+      ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>';
+      restoreReturn(['archiveList'], true);
+      if (!quiet) say(e.message);
+      if (focus && (!document.activeElement || document.activeElement === document.body)) focusOn($('h-archive'));
+    }
   }
-  $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1); };
-  $('pageNext').onclick = function(){ loadArchive(archivePath, archivePage + 1); };
+  $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1, this); };
+  $('pageNext').onclick = function(){ loadArchive(archivePath, archivePage + 1, this); };
 
   /* collections */
   var collections = { mine: [], shared: [] };
@@ -604,7 +757,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         var li = document.createElement('li');
         li.innerHTML = '<span class="t book"><strong>' + esc(c.title) + '</strong><span class="meta">' + c.count + ' item' + (c.count === 1 ? '' : 's') + (c._mine ? (c.shared ? ' · shared' : ' · private') : ' · by ' + esc(c.ownerName)) + '</span></span>';
         var open = document.createElement('button'); open.className = 'act'; open.type = 'button'; open.textContent = 'Open'; open.setAttribute('aria-label', 'Open collection ' + c.title);
-        open.onclick = function(){ location.search = '?collection=' + c.id; };
+        open.onclick = function(){ visit('?collection=' + c.id); };
         li.appendChild(open); ul.appendChild(li);
       });
     } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
@@ -628,7 +781,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       rm.onclick = async function(){ try { await api('/submissions/' + sb.id, { method: 'DELETE' }); say('Withdrawn.'); loadSubmissions(); } catch(e) { say(e.message); } };
       li.appendChild(rm);
     }
-    if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ location.search = '?book=' + sb.book; }; li.appendChild(open); }
+    if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ visit('?book=' + sb.book); }; li.appendChild(open); }
     return li;
   }
   async function loadSubmissions(){
@@ -664,31 +817,33 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var t = $('newCollTitle').value.trim(); if (!t) { say('Give the collection a name first.'); return; }
     try { await api('/collections', { json: { title: t } }); $('newCollTitle').value = ''; say('Made ' + t + '.'); loadCollections(); } catch(e) { say(e.message); }
   };
-  async function openCollection(id){
+  async function openCollection(id, focus){
     try {
       var c = await api('/collections/' + id);
       $('shelf').classList.add('hidden'); $('collection').classList.remove('hidden');
+      $('librarianCard').hidden = true; $('continueBox').hidden = true;
       $('collTitle').textContent = c.title;
+      document.title = c.title + ' — playlist — The Library — Kade-AI';
       $('collMeta').textContent = c.items.length + ' item' + (c.items.length === 1 ? '' : 's') + (c.mine ? (c.shared ? ' · shared with the family' : ' · private') : ' · by ' + c.ownerName) + (c.description ? ' · ' + c.description : '');
       var ol = $('collItems'); ol.innerHTML = '';
       c.items.forEach(function(it, i){
         var li = document.createElement('li');
         li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + typeWord(it.book) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
         var play = document.createElement('button'); play.className = 'act'; play.type = 'button'; play.textContent = 'Play'; play.setAttribute('aria-label', 'Play ' + it.title);
-        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); location.search = '?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(',')); };
+        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); visit('?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(','))); };
         li.appendChild(play);
-        if (c.mine) { var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove ' + it.title + ' from this collection'); rm.onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { remove: it.n } }); say('Removed.'); openCollection(id); } catch(e) { say(e.message); } }; li.appendChild(rm); }
+        if (c.mine) { var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove ' + it.title + ' from this collection'); rm.onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { remove: it.n } }); say('Removed.'); openCollection(id, true); } catch(e) { say(e.message); } }; li.appendChild(rm); }
         ol.appendChild(li);
       });
       $('collPlayAll').onclick = function(){ if (!c.items.length) { say('It is empty.'); return; } $('collItems').querySelector('button').click(); };
       $('collShareBtn').hidden = !c.mine; $('collDeleteBtn').hidden = !c.mine;
       $('collShareBtn').textContent = c.shared ? 'Make it private' : 'Share it with the family';
-      $('collShareBtn').onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { shared: !c.shared } }); openCollection(id); say(c.shared ? 'Private now.' : 'Shared with the family.'); } catch(e) { say(e.message); } };
-      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
-      say('Collection ' + c.title + ', ' + c.items.length + ' items.');
-    } catch(e) { say(e.message); location.search = ''; }
+      $('collShareBtn').onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { shared: !c.shared } }); openCollection(id, true); say(c.shared ? 'Private now.' : 'Shared with the family.'); } catch(e) { say(e.message); } };
+      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
+      if (focus) focusOn($('collTitle')); else say('Collection ' + c.title + ', ' + c.items.length + ' items.');
+    } catch(e) { say(e.message); visit(''); }
   }
-  $('collBack').onclick = function(){ location.search = ''; };
+  $('collBack').onclick = function(){ visit(''); };
   $('reportBtn').onclick = async function(){
     if (!book) return;
     var to = prompt('Where does "' + book.title + '" belong? A folder like Books/Fiction — Romance or Video/Commercials/Coffee & Tea (leave blank to just leave a note).', book.path || '');
@@ -1084,8 +1239,19 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   function back(){ if (isAudio()) { fileAudio.currentTime = Math.max(book.tracks[pos.s].clipBegin || 0, fileAudio.currentTime - 15); say('Back 15 seconds.'); return; } var p = prevPos(pos); if (p) seekTo(p, false); else say('This is the beginning.'); }
   function forward(){ if (isAudio()) { fileAudio.currentTime = Math.min(book.tracks[pos.s].clipEnd || fileAudio.duration || 1e9, fileAudio.currentTime + 15); say('Forward 15 seconds.'); return; } var p = nextPos(pos); if (p) seekTo(p, false); else say('This is the end.'); }
-  function prevSection(){ var target = pos.s; if (isAudio() ? trackPosition() < 5 : pos.c === 0) target = pos.s - 1; if (target < 0) { say('This is the first chapter.'); return; } seekTo({ s: target, c: 0, pos: 0 }, true); }
-  function nextSection(){ var n = pos.s + 1; var count = isAudio() ? book.tracks.length : book.chapters.length; if (n >= count) { say('This is the last chapter.'); return; } seekTo({ s: n, c: 0, pos: 0 }, true); }
+  function partWord(){ return isAudio() ? 'part' : 'chapter'; }
+  function prevSection(){ var target = pos.s; if (isAudio() ? trackPosition() < 5 : pos.c === 0) target = pos.s - 1; if (target < 0) { say('This is the first ' + partWord() + '.'); return; } seekTo({ s: target, c: 0, pos: 0 }, true); }
+  function nextSection(){ var n = pos.s + 1; var count = isAudio() ? book.tracks.length : book.chapters.length; if (n >= count) { say('This is the last ' + partWord() + '.'); return; } seekTo({ s: n, c: 0, pos: 0 }, true); }
+  /* Nov 10 2026: a recording shows where it is ("0:40 of 2:05"). Plain text, not a live region:
+     it is there to be looked at or read on purpose, and is never spoken by itself. */
+  var timeShown = '';
+  function showTime(){
+    var t = book && book.tracks && book.tracks[pos.s]; if (!t || !isAudio()) return;
+    var total = t.seconds || (t.clipEnd != null ? t.clipEnd - (t.clipBegin || 0) : fileAudio.duration) || 0;
+    var text = clock(trackPosition()) + (isFinite(total) && total > 0 ? ' of ' + clock(total) : '');
+    if (text !== timeShown) { timeShown = text; $('timeLine').textContent = text; }
+  }
+  fileAudio.addEventListener('timeupdate', showTime); fileAudio.addEventListener('seeked', showTime); fileAudio.addEventListener('loadedmetadata', showTime);
 
   function updateSession(){
     if (!('mediaSession' in navigator) || !book) return;
@@ -1180,7 +1346,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var go = document.createElement('button'); go.className = 'act'; go.type = 'button'; go.textContent = 'Go'; go.setAttribute('aria-label', 'Go to bookmark: ' + label);
       go.onclick = function(){ seekTo({ s: b.s, c: b.c, pos: b.pos }, true); };
       var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove bookmark: ' + label);
-      rm.onclick = async function(){ try { await api('/book/' + book.id + '/bookmarks/' + b.id, { method: 'DELETE' }); book.bookmarks = book.bookmarks.filter(function(x){ return x.id !== b.id; }); renderBookmarks(); say('Bookmark removed.'); } catch(e) { say(e.message); } };
+      rm.onclick = async function(){ try { await api('/book/' + book.id + '/bookmarks/' + b.id, { method: 'DELETE' }); book.bookmarks = book.bookmarks.filter(function(x){ return x.id !== b.id; }); renderBookmarks(); focusOn($('bookmarkSummary')); say('Bookmark removed.'); } catch(e) { say(e.message); } };
       li.appendChild(go); li.appendChild(rm); ul.appendChild(li);
     });
   }
@@ -1413,19 +1579,21 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   };
   $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(j.pending ? 'Submitted for the library. The librarian will look at it and you will be told.' : (book.shared ? 'It is in the family library now. Family library members will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.')); } catch(e) { say(e.message); } };
   $('grownBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { grownUpsOnly: !book.grownUpsOnly } }); book.grownUpsOnly = j.book.grownUpsOnly; renderOwner(); say(book.grownUpsOnly ? 'Hidden from the kids.' : 'The kids can see it.'); } catch(e) { say(e.message); } };
-  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
-  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); location.search = ''; } catch(e) { say(e.message); } };
-  $('backToShelf').onclick = function(){ pause(); location.search = ''; };
+  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
+  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); visit(''); } catch(e) { say(e.message); } };
+  $('backToShelf').onclick = function(){ pause(); visit(''); };
   window.addEventListener('pagehide', function(){ if (book) saveProgress(true); });
 
   async function openBook(id){
     try {
       book = await api('/book/' + id);
       if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; describedVideo = !!sh.describedVideo; } catch(e2) {} }
-    } catch(e) { say('Could not open that: ' + e.message); location.search = ''; return; }
+    } catch(e) { say('Could not open that: ' + e.message); visit(''); return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
+    $('librarianCard').hidden = true; $('continueBox').hidden = true;
     $('pageTitle').textContent = 'The Library';
     $('bookTitle').textContent = book.title;
+    document.title = book.title + ' — The Library — Kade-AI';
     $('askLibrarian').href = librarianChatUrl + '&prompt=' + encodeURIComponent('Tell me about the Library item with catalog ID ' + book.id + '.');
     var bits = [];
     if (book.author) bits.push('by ' + book.author);
@@ -1438,6 +1606,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var sel = $('chapterSel'); sel.innerHTML = '';
     var list = isAudio() ? book.tracks : book.chapters;
     list.forEach(function(ch, i){ var o = document.createElement('option'); o.value = i; o.textContent = (i + 1) + '. ' + ch.title + (isAudio() && ch.seconds ? ' (' + clock(ch.seconds) + ')' : ''); sel.appendChild(o); });
+    /* Nov 10 2026: a recording has parts, a book has chapters, and a one-part clip (most of the
+       archive) does not offer four controls that can only answer "this is the last one". */
+    var many = list.length > 1, word = partWord();
+    $('prevSecBtn').hidden = !many; $('nextSecBtn').hidden = !many; $('chapterWrap').hidden = !many;
+    $('prevSecBtn').textContent = 'Previous ' + word; $('nextSecBtn').textContent = 'Next ' + word;
+    $('chapterLabel').textContent = isAudio() ? 'Part' : 'Chapter'; $('goChapterBtn').textContent = 'Go to this ' + word;
+    $('keysHint').textContent = 'Keys: Space play or pause, Left and Right back or forward' + (many ? ', Shift with Left or Right for ' + word + 's' : '') + ', B for a bookmark.';
+    $('timeLine').hidden = !isAudio(); $('timeLine').textContent = ''; timeShown = '';
     var p = book.progress || {};
     voice = p.voice || book.defaultVoice; speed = p.speed || 1;
     showSpeed(speed);
@@ -1452,13 +1628,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('playBtn').focus();
   }
 
+  /* Nov 10 2026: a link to an item or a playlist does not draw the whole shelf first and then
+     swap it away; the shelf and the librarian's card step aside before the first paint. */
+  (function(){ var first = new URLSearchParams(location.search); if (first.get('book') || first.get('collection')) { $('shelf').classList.add('hidden'); $('librarianCard').hidden = true; $('skipLink').href = first.get('book') ? '#bookTitle' : '#collTitle'; $('skipLink').textContent = first.get('book') ? 'Skip to the item' : 'Skip to the playlist'; } })();
   (async function(){
     token = await getToken();
-    if (!token) { say('Please sign in first.'); location.href = '/login?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
+    if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search + location.hash); return; }
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, function(){ restoreReturn(['browseList']); }); if (folderNote().open) $('folderBrowse').open = true; else restoreReturn(['archiveList'], true); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
   })();
 })();
 </script>

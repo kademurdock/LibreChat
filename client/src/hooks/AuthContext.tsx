@@ -101,9 +101,19 @@ const AuthContextProvider = ({
 
         const destinationPath = finalRedirect.split(/[?#]/)[0];
         if (
-          ['/home', '/publish', '/watch', '/support', '/request-access'].includes(
-            destinationPath,
-          ) ||
+          /* Nov 10 2026: the Library, family history and agent-work pages are server pages too;
+           * a client-side navigate to them after sign-in lands on the route error page. */
+          [
+            '/home',
+            '/publish',
+            '/watch',
+            '/support',
+            '/request-access',
+            '/library',
+            '/reading-room',
+            '/family-history',
+            '/agent-work',
+          ].includes(destinationPath) ||
           destinationPath.startsWith('/watch/')
         ) {
           window.location.replace(finalRedirect);
