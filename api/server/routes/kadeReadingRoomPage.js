@@ -1573,7 +1573,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   (function(){ var first = new URLSearchParams(location.search); if (first.get('book') || first.get('collection')) { $('shelf').classList.add('hidden'); $('librarianCard').hidden = true; $('skipLink').href = '#main'; $('skipLink').textContent = 'Skip to the Library item'; } })();
   (async function(){
     token = await getToken();
-    if (!token) { say('Please sign in first.'); location.href = '/login?redirect=' + encodeURIComponent(location.pathname + location.search); return; }
+    if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search); return; }
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);

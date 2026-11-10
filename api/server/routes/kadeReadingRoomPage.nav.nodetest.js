@@ -259,3 +259,12 @@ test('form field edges and the quiet button edge are dark enough to see (3 to 1)
   assert.ok(ratio(quiet, '#f6f7f9') >= 3, 'quiet button edge on the light page');
   assert.ok(ratio(quiet, '#14161a') >= 3, 'quiet button edge on the dark page');
 });
+
+test('a signed-out Library link comes back to the same place after sign-in', () => {
+  assert.ok(source.includes("'/login?redirect_to=' + encodeURIComponent(location.pathname + location.search)"));
+  assert.ok(!source.includes("'/login?redirect='"), 'the sign-in page reads redirect_to, never redirect');
+  const auth = fs.readFileSync(path.join(__dirname, '../../../client/src/hooks/AuthContext.tsx'), 'utf8');
+  const hard = auth.match(/\[([^\]]*'\/request-access'[^\]]*)\]\.includes\(destinationPath\)/)[1];
+  for (const page of ['/library', '/reading-room', '/family-history', '/agent-work'])
+    assert.ok(hard.includes(`'${page}'`), page + ' is loaded as a server page after sign-in');
+});
