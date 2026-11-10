@@ -85,16 +85,34 @@ class KadeFeedback extends Tool {
     try {
       const { KadeFeedback } = require('~/models/kadeFeedback');
       const validCat = ['bug', 'feature', 'feedback'].includes(category) ? category : 'feedback';
+      /* Nov 10 2026: the nightly persona check asks every character, on the test seat, about "a
+       * button with no name on the checkout page" (an invented question; the platform has no
+       * checkout page). The character rightly files it, so the family feedback board collected
+       * open bug rows for a bug nobody has, each one alerting Kade (two were open: Oct 17, Oct 23).
+       * A report from a test seat is still kept, marked, but it is not an open row and does not
+       * alert her. KADE_TEST_SEAT_FEEDBACK=open puts the old behaviour back. */
+      let fromTestSeat = false;
+      try {
+        fromTestSeat =
+          process.env.KADE_TEST_SEAT_FEEDBACK !== 'open' &&
+          require('~/server/services/kadeNudges').isTestUser(String(this.userId || ''));
+      } catch (_) {
+        fromTestSeat = false;
+      }
+      const text = String(detail).trim();
       const report = await KadeFeedback.create({
         user: this.userId,
         category: validCat,
-        subject: String(subject || '').trim().slice(0, 200) || String(detail).trim().slice(0, 80),
-        detail: String(detail).trim().slice(0, 8000),
+        subject: String(subject || '').trim().slice(0, 200) || text.slice(0, 80),
+        detail: (fromTestSeat ? `[test seat] ${text}` : text).slice(0, 8000),
         agent: this.agentName,
         surface: 'chat',
-        status: 'open',
+        status: fromTestSeat ? 'acknowledged' : 'open',
       });
-      logger.info(`[KadeFeedback] report ${report._id} filed by user ${this.userId} via ${this.agentName}: ${report.subject}`);
+      logger.info(`[KadeFeedback] report ${report._id} filed by user ${this.userId} via ${this.agentName}${fromTestSeat ? ' (test seat: not open, no alert)' : ''}: ${report.subject}`);
+      if (fromTestSeat) {
+        return `Report filed. Category: ${validCat}. Kade will see it in the feedback dashboard. Thank you for taking the time to share this.`;
+      }
       /* Session 23: owner alert — in-chat nudge + app push to Kade the
        * moment a report lands. Fire-and-forget; a hiccup never breaks
        * the filing (the service is fail-soft end to end). */
