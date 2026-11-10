@@ -146,6 +146,10 @@ router.post(
 // July 18 2026: the "organize your thoughts" mode. Runs the current transcript
 // through OpenRouter (KADE_ORGANIZE_MODEL, default openai/gpt-4o-mini) and
 // returns either structured notes or cleaned-up prose. Reads OPENROUTER_KEY.
+function organizeTimeoutMs() {
+  const set = Number(process.env.KADE_ORGANIZE_TIMEOUT_MS);
+  return Number.isFinite(set) && set >= 1000 && set <= 600000 ? set : 90000;
+}
 async function organizeText(text, style) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) {
@@ -159,24 +163,37 @@ async function organizeText(text, style) {
   const NOTES = "You reorganize a person's dictated speech into tidy, well-structured notes. Output ONLY the notes and nothing else. Begin with a short title line in bold, then group the content into clear bullet points, adding brief bold sub-headers only if the material naturally splits into sections. Fix grammar, remove filler words and false starts, and tighten rambling. Never add facts, opinions, or details the speaker did not say, and keep their meaning intact.";
   const PROSE = "You clean up a person's dictated speech into smooth, readable prose. Keep everything they said and their full meaning: do not summarize, do not drop content, and do not convert it into bullet points. Only fix grammar and punctuation, remove filler words and false starts, improve the flow, and break it into sensible paragraphs. Output ONLY the cleaned text and nothing else.";
   const sys = style === "prose" ? PROSE : NOTES;
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: sys },
-        { role: "user", content: clean },
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-    }),
-  });
-  if (!resp.ok) {
-    const t = await resp.text().catch(() => "");
-    throw new Error("Organizer " + resp.status + ": " + t.slice(0, 200));
+  /* Nov 10 2026: this call had no time limit. A model host that accepted the request and then
+   * said nothing left the page waiting for ever, with no spoken error. It is now cut after
+   * KADE_ORGANIZE_TIMEOUT_MS (90 s, headers and body together) with a plain message. */
+  const waitMs = organizeTimeoutMs();
+  let j;
+  try {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: clean },
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+      }),
+      signal: AbortSignal.timeout(waitMs),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => "");
+      throw new Error("Organizer " + resp.status + ": " + t.slice(0, 200));
+    }
+    j = await resp.json();
+  } catch (e) {
+    if (e && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new Error("The organizer took too long to answer. Your transcript is unchanged. Please try again.");
+    }
+    throw e;
   }
-  const j = await resp.json();
   const out = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
   const result = String(out || "").trim();
   if (!result) {

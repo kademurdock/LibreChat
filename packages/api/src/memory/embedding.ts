@@ -171,10 +171,13 @@ type EmbeddingResponse = {
   data?: { index: number; embedding?: number[] }[];
 };
 
+/* Nov 10 2026: `timeoutMs` lets the caller give one request a different wait than the purpose's
+ * default (the memory query's two overlapping tries, kadeDiary.embedText). */
 export async function requestMemoryEmbedding(
   lane: EmbeddingLane,
   text: string,
   purpose: MemoryEmbeddingPurpose = 'document',
+  timeoutMs?: number,
 ): Promise<number[]> {
   const plain = text.slice(0, 4000);
   const input =
@@ -203,7 +206,10 @@ export async function requestMemoryEmbedding(
       headers: compatible
         ? { Authorization: `Bearer ${lane.key}`, 'Content-Type': 'application/json' }
         : { 'x-goog-api-key': lane.key, 'Content-Type': 'application/json' },
-      timeout: memoryEmbeddingTimeoutMs(purpose),
+      timeout:
+        typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs >= 100
+          ? timeoutMs
+          : memoryEmbeddingTimeoutMs(purpose),
       maxRedirects: 0,
       maxContentLength: 256 * 1024,
     },

@@ -61,8 +61,16 @@ function mongoStore() {
           .sort({ createdAt: -1 })
           .lean(),
       ),
-    addAttempt: async (id) =>
-      (await Model.findByIdAndUpdate(id, { $inc: { attempts: 1 } }, { new: true }).lean()).attempts,
+    // One atomic step: a try is counted only while the row is unused and has tries left.
+    // Returns the new count, or null when there was no try left to take.
+    claimAttempt: async (id, max) => {
+      const row = await Model.findOneAndUpdate(
+        { _id: id, used: false, attempts: { $lt: max } },
+        { $inc: { attempts: 1 } },
+        { new: true },
+      ).lean();
+      return row ? row.attempts : null;
+    },
     useAll: (phone) => Model.updateMany({ phone, used: false }, { $set: { used: true } }),
   };
 }
