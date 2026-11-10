@@ -45,6 +45,7 @@ const {
   diaryWriteOrigin,
   memoryEmbeddingLane,
   memoryEmbeddingPurpose,
+  memoryEmbeddingTimeoutMs,
   requestMemoryEmbedding,
   indexedEmbedding,
   embeddingTextHash,
@@ -211,11 +212,31 @@ function currentEmbedModel() {
  * TWO CHANGES: say the actual status and provider message, and COUNT, so
  * memory-health can state the verdict instead of leaving it in a log nobody
  * greps. Fail-soft stays — a dead embed lane must never take a turn down. */
-const embedHealth = { ok: 0, failed: 0, lastError: null, lastErrorAt: null, lastOkAt: null };
+const embedHealth = {
+  ok: 0,
+  failed: 0,
+  lastError: null,
+  lastErrorAt: null,
+  lastOkAt: null,
+  /* Nov 10 2026: who failed. One total could not tell a blind memory query from a tool query
+   * nobody was waiting for any more, or from a background write. */
+  byPurpose: {
+    query: { ok: 0, failed: 0 },
+    tools: { ok: 0, failed: 0 },
+    document: { ok: 0, failed: 0 },
+  },
+  secondTries: 0 /* memory queries that needed their second request */,
+  secondTryWon: 0 /* ...and were answered by it */,
+};
+function noteEmbed(purpose, ok) {
+  const row = embedHealth.byPurpose[purpose] || embedHealth.byPurpose.document;
+  row[ok ? 'ok' : 'failed'] += 1;
+}
 function readEmbedHealth() {
   const lane = embedLane();
   return {
     ...embedHealth,
+    byPurpose: JSON.parse(JSON.stringify(embedHealth.byPurpose)),
     provider: lane ? lane.provider : null,
     model: lane ? lane.identity : null,
     configured: Boolean(lane),
@@ -239,31 +260,111 @@ const embedTimedOut = (e) =>
   e?.code === 'ETIMEDOUT' ||
   /\btimeout\b/i.test(String(e?.message || ''));
 
+/* Nov 10 2026 -- THE MEMORY QUERY'S TWO TRIES OVERLAP.
+ *
+ * Memory health read AMBER: 61 of 175 embedding calls failed, last error "timeout of 3000ms
+ * exceeded". The Oct 16 rule was: wait 3 s, and on a timeout ask once more for another 3 s. A
+ * request that would have answered at second 4 was thrown away at second 3 and a fresh one
+ * started from nothing, so a slow spell failed both tries and the turn's recall went blind.
+ *
+ * Same budget, used better: the first request now keeps the whole window (twice the query
+ * timeout, 6 s by default: what the two tries took together), and if it has not answered after
+ * KADE_EMBED_HEDGE_MS (1200) a second request starts beside it. The first answer wins. A turn
+ * never waits longer than before; a slow answer inside the window is no longer lost. An
+ * embedding call costs about a thousandth of a cent, and at most two are ever made, as before.
+ * A refusal that is not a timeout (402, 429, a bad key) still fails at once with no second try.
+ * KADE_EMBED_HEDGE_MS=0 puts back the old one-after-the-other tries. */
+function embedHedgeMs() {
+  const set = Number(process.env.KADE_EMBED_HEDGE_MS);
+  return Number.isFinite(set) && set >= 0 && set <= 30000 ? set : 1200;
+}
+function requestQueryEmbedding(lane, text) {
+  const windowMs = memoryEmbeddingTimeoutMs('query') * 2;
+  const hedgeMs = Math.min(embedHedgeMs(), windowMs - 500);
+  if (!(hedgeMs > 0)) {
+    return requestMemoryEmbedding(lane, text, 'query').catch((e) => {
+      if (!embedTimedOut(e)) throw e;
+      embedHealth.secondTries += 1;
+      logger.warn(
+        `[kadeDiary] query embedding timed out (${lane.provider}/${lane.model}); asking once more`,
+      );
+      return requestMemoryEmbedding(lane, text, 'query').then((vec) => {
+        embedHealth.secondTryWon += 1;
+        return vec;
+      });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    let settled = false;
+    let open = 0;
+    let secondStarted = false;
+    let timer = null;
+    const win = (vec, second) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (second) embedHealth.secondTryWon += 1;
+      resolve(vec);
+    };
+    const lose = (e) => {
+      open -= 1;
+      if (settled) return;
+      /* A refusal fails the query at once. A timeout of the first request, when the second
+       * has not started yet, starts it now (the Oct 16 behaviour). */
+      if (!embedTimedOut(e)) {
+        settled = true;
+        clearTimeout(timer);
+        return reject(e);
+      }
+      if (!secondStarted) return second();
+      if (open === 0) {
+        settled = true;
+        reject(e);
+      }
+    };
+    const ask = (isSecond) => {
+      open += 1;
+      const left = Math.max(500, windowMs - (Date.now() - started));
+      Promise.resolve()
+        .then(() => requestMemoryEmbedding(lane, text, 'query', left))
+        .then((vec) => win(vec, isSecond), lose);
+    };
+    function second() {
+      if (settled || secondStarted) return;
+      secondStarted = true;
+      clearTimeout(timer);
+      embedHealth.secondTries += 1;
+      ask(true);
+    }
+    timer = setTimeout(second, hedgeMs);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    ask(false);
+  });
+}
+
 /** Embed one string. Returns float array or null (never throws).
  * Oct 16 2026: a memory query that times out is asked once more (the lane's
- * timeouts come and go); documents, backfills and tool queries fail soft at once. */
+ * timeouts come and go); documents, backfills and tool queries fail soft at once.
+ * Nov 10 2026: the query's two tries overlap (requestQueryEmbedding above). */
 async function embedText(text, { purpose = 'document' } = {}) {
   const lane = embedLane();
   if (!lane || !text) {
     return null;
   }
   try {
-    let vec;
-    try {
-      vec = await requestMemoryEmbedding(lane, String(text), purpose);
-    } catch (e) {
-      if (purpose !== 'query' || !embedTimedOut(e)) throw e;
-      logger.warn(
-        `[kadeDiary] query embedding timed out (${lane.provider}/${lane.model}); asking once more`,
-      );
-      vec = await requestMemoryEmbedding(lane, String(text), purpose);
-    }
+    const vec =
+      purpose === 'query'
+        ? await requestQueryEmbedding(lane, String(text))
+        : await requestMemoryEmbedding(lane, String(text), purpose);
     embedHealth.ok += 1;
+    noteEmbed(purpose, true);
     embedHealth.lastOkAt = new Date().toISOString();
     return vec;
   } catch (e) {
     const detail = embedErrorText(e);
     embedHealth.failed += 1;
+    noteEmbed(purpose, false);
     embedHealth.lastError = detail;
     embedHealth.lastErrorAt = new Date().toISOString();
     logger.warn(
