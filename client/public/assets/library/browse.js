@@ -3,7 +3,11 @@
   /* Nov 10 2026: `loaded` (optional) runs after each fresh list is drawn, so the page can put
    * focus back on the item a person just came back from. A "start here" button moves focus to the
    * Results heading, because its list is drawn somewhere else on the page; filters and the search
-   * box leave focus where it is and speak the count through the page's one status line. */
+   * box leave focus where it is and speak the count through the page's one status line.
+   * The local section sits between the form and the results, so on a phone a search or a filter
+   * would redraw a list that is below the bottom of the screen. After one of those (`show`), the
+   * count line and the first row are scrolled just into view when they are off screen. Focus
+   * does not move. */
   window.setupLibraryBrowse = function (api, say, bookLi, scopeChanged, loaded) {
     var get = function (id) {
       return document.getElementById(id);
@@ -64,7 +68,7 @@
         sessionStorage.setItem('library-browse', state().toString());
       } catch (error) {}
     }
-    async function load(append, toResults) {
+    async function load(append, toResults, show) {
       var parameters = state(),
         signature = parameters.toString();
       if (append && !next) return;
@@ -140,6 +144,16 @@
             : get('searchBox').value.trim();
           get('h-results').textContent = words ? 'Results: ' + words : 'Results';
         }
+        if (show && !toResults) {
+          try {
+            var count = get('browseCount'),
+              row = list.firstElementChild || count;
+            if (row.getBoundingClientRect().bottom > window.innerHeight)
+              row.scrollIntoView({ block: 'nearest' });
+            else if (count.getBoundingClientRect().top < 0)
+              count.scrollIntoView({ block: 'nearest' });
+          } catch (error) {}
+        }
         if (!append && loaded) loaded();
       } catch (error) {
         if (request !== run || error.name === 'AbortError') return;
@@ -151,12 +165,12 @@
     }
     form.onsubmit = function (event) {
       event.preventDefault();
-      load(false);
+      load(false, false, true);
     };
     ['libraryScope', 'browseKind', 'browseType', 'browseDecade', 'browseSort'].forEach(
       function (id) {
         get(id).onchange = function () {
-          load(false);
+          load(false, false, true);
           if (id === 'libraryScope' && scopeChanged) scopeChanged();
         };
       },
@@ -168,12 +182,12 @@
       form.reset();
       get('browsePath').value = '';
       get('browseLocation').hidden = true;
-      load(false);
+      load(false, false, true);
     };
     get('browsePathClear').onclick = function () {
       get('browsePath').value = '';
       get('browseLocation').hidden = true;
-      load(false);
+      load(false, false, true);
     };
     get('discoveryLinks').onclick = function (event) {
       var button = event.target.closest('button');

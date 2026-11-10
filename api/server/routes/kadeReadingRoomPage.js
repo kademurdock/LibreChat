@@ -83,7 +83,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   ul.plain li span.t { flex:1 1 12rem; }
   details { margin:.8rem 0; }
   summary { cursor:pointer; font-weight:600; padding:.65rem 0; min-height:44px; }
-  summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  /* The ring on borderless things (box rows, crumbs, focused headings) is dark on the light page and yellow on the dark one, so it shows on both. */
+  summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
   /* Nov 10 2026. The skip link is off screen until it has focus, then it is a real button-sized link. */
   a.skip { position:absolute; left:-999rem; top:0; }
   a.skip:focus { position:static; display:inline-block; padding:.7rem 1rem; margin:0 0 .5rem; border-radius:12px; background:#1d55d0; color:#fff; font-weight:700; }
@@ -93,7 +94,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
      sees the same words a screen reader says. */
   #live { min-height:3rem; margin:.6rem 0; }
   #live:empty { background:transparent; }
-  #live.fresh { position:sticky; top:calc(.5rem + env(safe-area-inset-top, 0px)); z-index:55; box-shadow:0 4px 14px rgba(0,0,0,.28); }
+  #live.fresh { position:sticky; top:calc(.5rem + env(safe-area-inset-top, 0px)); z-index:55; box-shadow:0 4px 14px rgba(0,0,0,.28); pointer-events:none; }
+  /* While it is held at the top of a scrolled window it shows two lines at most, so it never grows past
+     the room the page leaves for it (scroll-padding-top) and never covers the thing focus just moved to.
+     All of its words stay in the page for a screen reader. With very large text it does not stick at all. */
+  #live.fresh.held { max-height:4.5rem; overflow:hidden; }
+  html.kade-art-off #live.fresh { position:static; box-shadow:none; max-height:none; }
   html { scroll-padding-top:5rem; }
   input[type=checkbox] { width:1.25rem; height:1.25rem; vertical-align:-.2rem; margin-right:.35rem; }
   #timeLine { font-variant-numeric:tabular-nums; font-weight:600; margin:.4rem 0; }
@@ -105,6 +111,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     select, input[type=text], input[type=file], textarea { border-color:#8a919c; }
     #live { background:#3a3206; color:#ffe9a8; }
     #live:empty { background:transparent; }
+    summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline-color:#ffbf47; }
   }
   @media (max-width: 480px) { .controls { grid-template-columns:1fr 1fr; } }
   video.player { width:100%; max-height:60vh; background:#000; border-radius:14px; margin:.6rem 0; }
@@ -141,11 +148,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 <body>
   <a class="skip" href="#searchBox" id="skipLink">Skip to search the Library</a>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
-  <main id="main" tabindex="-1">
+  <main id="main">
   <h1 id="pageTitle">The Library</h1>
   <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is part of the Family feature pack, which Kade turns on for family members. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
-  <section id="continueBox" aria-labelledby="h-continue" hidden>
+  <section id="continueBox" hidden>
     <h2 id="h-continue">Pick up where you left off</h2>
     <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
   </section>
@@ -426,33 +433,61 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (libraryReader && libraryReader.say(t)) return;
     live.textContent = ''; setTimeout(function(){ live.textContent = t; }, 30);
     // Nov 10 2026: sighted people far down the page see the same words for eight seconds; the text itself stays.
-    live.classList.add('fresh'); clearTimeout(freshTimer); freshTimer = setTimeout(function(){ live.classList.remove('fresh'); }, 8000);
+    var held = false; try { held = live.classList.contains('fresh') ? live.classList.contains('held') : live.getBoundingClientRect().top < 0; } catch(e) {}
+    live.classList.toggle('held', held);
+    live.classList.add('fresh'); clearTimeout(freshTimer); freshTimer = setTimeout(function(){ live.classList.remove('fresh'); live.classList.remove('held'); }, 8000);
   }
   /* Nov 10 2026: focus never falls off the page. After a list is redrawn the button that was
      pressed is gone, so focus goes to a named place beside the new list. */
   function focusOn(el){ if (!el) return; try { el.focus(); } catch(e) {} }
+  /* Every move inside the Library goes to the bare path plus a query, never carrying a #fragment
+     along, so a fragment from an alert link does not follow the person from page to page. */
+  function visit(query){ location.href = location.pathname + (query || ''); }
   /* Coming back from an item: the place it was opened from gets focus again. The note is made
-     when an Open or Continue button is pressed, used once, and dropped as soon as the person
-     presses a key or touches the page, so it never pulls focus away from them. */
+     when an Open or Continue button is pressed and is good for one try: the first time the list
+     it names is drawn, the row gets focus if it is there, and the note is thrown away either way
+     (a row beyond the first 60 is not there). It is also dropped as soon as the person presses a
+     key, touches, clicks or scrolls the page, so it never pulls focus away from them later.
+     lists: the ids of the lists just drawn. A note for a list not drawn yet is left for that list.
+     missOnly: use the note up without moving focus (the person moved the list themselves). */
   var RETURN_KEY = 'library-return';
   function noteReturn(li, id){ try { var host = li.parentNode && li.parentNode.closest ? li.parentNode.closest('[id]') : null; sessionStorage.setItem(RETURN_KEY, JSON.stringify({ id: id, host: host ? host.id : '', at: Date.now() })); } catch(e) {} }
   function dropReturn(){ try { sessionStorage.removeItem(RETURN_KEY); } catch(e) {} }
-  function restoreReturn(){
-    var note = null;
-    try { note = JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch(e) {}
-    if (!note || !note.id || !note.host) return false;
-    if (!(Date.now() - note.at < 7200000) || location.hash || /[?&]request=/.test(location.search)) { dropReturn(); return false; }
-    var host = $(note.host); if (!host) return false;
+  var RETURN_LISTS = ['browseList', 'archiveList', 'mineList', 'continueList'];
+  function returnNote(){ try { return JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch(e) { return null; } }
+  function restoreReturn(lists, missOnly){
+    var note = returnNote();
+    if (!note) return false;
+    if (!note.id || !note.host || RETURN_LISTS.indexOf(note.host) === -1) { dropReturn(); return false; }
+    if (!(Date.now() - note.at < 7200000) || location.hash === '#libraryRequests' || /[?&]request=/.test(location.search)) { dropReturn(); return false; }
+    if (!lists || lists.indexOf(note.host) === -1) return false;
+    dropReturn();
+    var host = $(note.host); if (!host || missOnly) return false;
     var rows = host.querySelectorAll('li[data-book]'), button = null;
     for (var i = 0; i < rows.length; i++) { if (rows[i].getAttribute('data-book') === note.id) { button = rows[i].querySelector('button'); break; } }
     if (!button) return false;
     var box = button.closest('details'); if (box && !box.open) box.open = true;
-    dropReturn();
     focusOn(button);
     try { button.scrollIntoView({ block: 'center' }); } catch(e) {}
     return true;
   }
-  ['keydown', 'pointerdown'].forEach(function(kind){ document.addEventListener(kind, function(ev){ if (ev.isTrusted && !$('shelf').classList.contains('hidden')) dropReturn(); }, true); });
+  /* click is here because a screen reader's own "activate" sends a click with no key or pointer
+     event before it; it runs before the button's own handler, so an Open button still writes its
+     new note afterwards. wheel and touchmove are here for a sighted person already scrolling. */
+  ['keydown', 'pointerdown', 'click', 'wheel', 'touchmove'].forEach(function(kind){ document.addEventListener(kind, function(ev){ if (ev.isTrusted && !$('shelf').classList.contains('hidden')) dropReturn(); }, { capture: true, passive: true }); });
+  /* Leaving an item or a playlist by a link (Home, Ask Mrs. Witherspoon, the tab bar) is not
+     coming back to the shelf, so the note is not kept for a later visit. */
+  document.addEventListener('click', function(ev){ var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null; if (a && $('shelf').classList.contains('hidden') && (a.getAttribute('href') || '').charAt(0) !== '#') dropReturn(); }, true);
+  /* The skip link moves focus itself and writes no #fragment into the address. Its href stays a
+     real fragment, so it still reads as a link and still says where it goes. */
+  $('skipLink').addEventListener('click', function(ev){
+    var target = $((this.getAttribute('href') || '').slice(1));
+    ev.preventDefault();
+    if (!target) return;
+    for (var node = target; node && node.nodeType === 1; node = node.parentNode) { if (node.hidden || node.classList.contains('hidden')) return; }
+    focusOn(target);
+    try { target.scrollIntoView({ block: 'start' }); } catch(e) {}
+  });
   function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function catName(c){ return {book:'Book', audiobook:'Audiobook', movie:'Movie', cassette:'Cassette', radio:'Radio', commercials:'Commercials', music:'Music', tv:'TV', vhs:'VHS', psa:'Public service announcement', other:'Other'}[c] || c; }
   /* Part 296, her Sep 27 word: a described MP3 said "Movie" because the word came from the shelf's
@@ -486,7 +521,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var open = document.createElement('button'); open.className = 'act'; open.type = 'button';
     open.textContent = where === 'library' ? 'Check out' : (b.progress && !b.progress.finished && (b.progress.s || b.progress.c || b.progress.pos) ? 'Continue' : 'Open');
     open.setAttribute('aria-label', open.textContent + ' ' + b.title);
-    open.onclick = function(){ noteReturn(li, b.id); location.search = '?book=' + b.id; };
+    open.onclick = function(){ noteReturn(li, b.id); visit('?book=' + b.id); };
     li.appendChild(open);
     if (where === 'mine' && b.kind !== 'text') {
       var add = document.createElement('button'); add.className = 'act quiet'; add.type = 'button'; add.textContent = 'Add parts';
@@ -530,20 +565,29 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function renderContinue(mine, borrowed){
     var rows = unfinished(mine, borrowed), ul = $('continueList');
     ul.innerHTML = '';
-    rows.forEach(function(entry){ ul.appendChild(bookLi(entry.book, entry.where)); });
-    $('continueBox').hidden = !rows.length || !$('player').classList.contains('hidden') || !$('collection').classList.contains('hidden');
+    // An own upload keeps its Add parts button under Your shelf; here every row is one stop, Continue.
+    rows.forEach(function(entry){ ul.appendChild(bookLi(entry.book, entry.where === 'mine' ? 'continue' : entry.where)); });
+    /* The box arrives after the page is already drawn and sits above almost everything. Where the
+       browser does not hold the view steady by itself (Safari), a scrolled page is moved by the
+       same amount, so what the person was looking at, or the row they came back to, stays put. */
+    var box = $('continueBox'), hide = !rows.length || !$('player').classList.contains('hidden') || !$('collection').classList.contains('hidden');
+    var anchored = false; try { anchored = !!(window.CSS && CSS.supports && CSS.supports('overflow-anchor', 'auto')); } catch(e) {}
+    var mark = document.activeElement && document.activeElement !== document.body && !box.contains(document.activeElement) ? document.activeElement : $('librarianCard');
+    var before = 0; try { before = mark.getBoundingClientRect().top; } catch(e) {}
+    box.hidden = hide;
+    try { var moved = mark.getBoundingClientRect().top - before; if (moved && !anchored && (window.pageYOffset || 0) > 0) window.scrollBy(0, moved); } catch(e) {}
   }
   async function loadShelf(){
     try {
       shelfData = await api('/shelf');
       renderShelf(shelfData.mine, shelfData.borrowed);
       renderContinue(shelfData.mine, shelfData.borrowed);
-      restoreReturn();
+      restoreReturn(['mineList', 'continueList']);
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
       $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
       if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       $('familyHistoryLink').hidden = shelfData.familyLibrary !== true;
-    } catch(e) { say('Could not load the shelf: ' + e.message); }
+    } catch(e) { restoreReturn(['mineList', 'continueList'], true); say('Could not load the shelf: ' + e.message); }
   }
   /* the archive */
   var archivePath = '', archivePage = 0, archiveRun = 0;
@@ -621,9 +665,15 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var was = folderNote();
     if (was.path) loadArchive(was.path, was.page || 0, false, true); else loadArchive(undefined, 0);
   };
-  /* focus: true after the person moved (opened a folder, a crumb, a page, moved or deleted an
-     item), so focus lands on the crumb for where they now are, just above the new list.
-     quiet: true when the page itself reopens a remembered folder, so nothing is spoken. */
+  /* focus: true after the person moved (opened a folder, a crumb, moved or deleted an item): the
+     button they pressed is destroyed by the redraw, so focus lands on the crumb for where they
+     now are, just above the new list. For a page turn, focus is the Previous or Next page button
+     that was pressed: those two sit outside the list and survive, so focus stays on it and the
+     page number is spoken; only when that button has just gone dead (first or last page) does
+     focus move, to the other one, or to the crumb.
+     quiet: true when the page itself reopens a remembered folder, so nothing is spoken.
+     If the folder cannot be loaded the reason is spoken, and focus that fell off the page with
+     the old list goes to the Folders heading. */
   async function loadArchive(path, page, focus, quiet){
     var run = ++archiveRun, scope = $('libraryScope').value;
     archivePath = path || ''; archivePage = page || 0;
@@ -677,13 +727,23 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
       // Part 296: the shelf is said by its display names ("Audio, Described audio movies and TV, Described audio movies")
       noteFolder();
-      if (focus) focusOn(here);
-      if (quiet) { restoreReturn(); return; }
+      var turned = focus && focus !== true;
+      if (focus === true) focusOn(here);
+      else if (turned && (focus.disabled || $('archivePager').hidden)) { var other = focus === $('pageNext') ? $('pagePrev') : $('pageNext'); focusOn($('archivePager').hidden || other.disabled ? here : other); }
+      restoreReturn(['archiveList'], !quiet);
+      if (quiet) return;
+      if (turned && pages > 1) { say($('pageInfo').textContent + '.'); return; }
       if (path !== undefined) say((named && named.length ? named.map(function(c){ return c.name; }).join(', ') : (archivePath || 'The archive')) + ': ' + j.folders.length + ' folder' + (j.folders.length === 1 ? '' : 's') + ', ' + j.total + ' clip' + (j.total === 1 ? '' : 's') + '.');
-    } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+    } catch(e) {
+      if (run !== archiveRun) return;
+      ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>';
+      restoreReturn(['archiveList'], true);
+      if (!quiet) say(e.message);
+      if (focus && (!document.activeElement || document.activeElement === document.body)) focusOn($('h-archive'));
+    }
   }
-  $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1, true); };
-  $('pageNext').onclick = function(){ loadArchive(archivePath, archivePage + 1, true); };
+  $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1, this); };
+  $('pageNext').onclick = function(){ loadArchive(archivePath, archivePage + 1, this); };
 
   /* collections */
   var collections = { mine: [], shared: [] };
@@ -697,7 +757,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         var li = document.createElement('li');
         li.innerHTML = '<span class="t book"><strong>' + esc(c.title) + '</strong><span class="meta">' + c.count + ' item' + (c.count === 1 ? '' : 's') + (c._mine ? (c.shared ? ' · shared' : ' · private') : ' · by ' + esc(c.ownerName)) + '</span></span>';
         var open = document.createElement('button'); open.className = 'act'; open.type = 'button'; open.textContent = 'Open'; open.setAttribute('aria-label', 'Open collection ' + c.title);
-        open.onclick = function(){ location.search = '?collection=' + c.id; };
+        open.onclick = function(){ visit('?collection=' + c.id); };
         li.appendChild(open); ul.appendChild(li);
       });
     } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
@@ -721,7 +781,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       rm.onclick = async function(){ try { await api('/submissions/' + sb.id, { method: 'DELETE' }); say('Withdrawn.'); loadSubmissions(); } catch(e) { say(e.message); } };
       li.appendChild(rm);
     }
-    if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ location.search = '?book=' + sb.book; }; li.appendChild(open); }
+    if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ visit('?book=' + sb.book); }; li.appendChild(open); }
     return li;
   }
   async function loadSubmissions(){
@@ -770,7 +830,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         var li = document.createElement('li');
         li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + typeWord(it.book) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
         var play = document.createElement('button'); play.className = 'act'; play.type = 'button'; play.textContent = 'Play'; play.setAttribute('aria-label', 'Play ' + it.title);
-        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); location.search = '?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(',')); };
+        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); visit('?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(','))); };
         li.appendChild(play);
         if (c.mine) { var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove ' + it.title + ' from this collection'); rm.onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { remove: it.n } }); say('Removed.'); openCollection(id, true); } catch(e) { say(e.message); } }; li.appendChild(rm); }
         ol.appendChild(li);
@@ -779,11 +839,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('collShareBtn').hidden = !c.mine; $('collDeleteBtn').hidden = !c.mine;
       $('collShareBtn').textContent = c.shared ? 'Make it private' : 'Share it with the family';
       $('collShareBtn').onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { shared: !c.shared } }); openCollection(id, true); say(c.shared ? 'Private now.' : 'Shared with the family.'); } catch(e) { say(e.message); } };
-      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
+      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
       if (focus) focusOn($('collTitle')); else say('Collection ' + c.title + ', ' + c.items.length + ' items.');
-    } catch(e) { say(e.message); location.search = ''; }
+    } catch(e) { say(e.message); visit(''); }
   }
-  $('collBack').onclick = function(){ location.search = ''; };
+  $('collBack').onclick = function(){ visit(''); };
   $('reportBtn').onclick = async function(){
     if (!book) return;
     var to = prompt('Where does "' + book.title + '" belong? A folder like Books/Fiction — Romance or Video/Commercials/Coffee & Tea (leave blank to just leave a note).', book.path || '');
@@ -1519,16 +1579,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   };
   $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(j.pending ? 'Submitted for the library. The librarian will look at it and you will be told.' : (book.shared ? 'It is in the family library now. Family library members will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.')); } catch(e) { say(e.message); } };
   $('grownBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { grownUpsOnly: !book.grownUpsOnly } }); book.grownUpsOnly = j.book.grownUpsOnly; renderOwner(); say(book.grownUpsOnly ? 'Hidden from the kids.' : 'The kids can see it.'); } catch(e) { say(e.message); } };
-  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); location.search = ''; } catch(e) { say(e.message); } };
-  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); location.search = ''; } catch(e) { say(e.message); } };
-  $('backToShelf').onclick = function(){ pause(); location.search = ''; };
+  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
+  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); visit(''); } catch(e) { say(e.message); } };
+  $('backToShelf').onclick = function(){ pause(); visit(''); };
   window.addEventListener('pagehide', function(){ if (book) saveProgress(true); });
 
   async function openBook(id){
     try {
       book = await api('/book/' + id);
       if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; describedVideo = !!sh.describedVideo; } catch(e2) {} }
-    } catch(e) { say('Could not open that: ' + e.message); location.search = ''; return; }
+    } catch(e) { say('Could not open that: ' + e.message); visit(''); return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
     $('librarianCard').hidden = true; $('continueBox').hidden = true;
     $('pageTitle').textContent = 'The Library';
@@ -1570,15 +1630,15 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 
   /* Nov 10 2026: a link to an item or a playlist does not draw the whole shelf first and then
      swap it away; the shelf and the librarian's card step aside before the first paint. */
-  (function(){ var first = new URLSearchParams(location.search); if (first.get('book') || first.get('collection')) { $('shelf').classList.add('hidden'); $('librarianCard').hidden = true; $('skipLink').href = '#main'; $('skipLink').textContent = 'Skip to the Library item'; } })();
+  (function(){ var first = new URLSearchParams(location.search); if (first.get('book') || first.get('collection')) { $('shelf').classList.add('hidden'); $('librarianCard').hidden = true; $('skipLink').href = first.get('book') ? '#bookTitle' : '#collTitle'; $('skipLink').textContent = first.get('book') ? 'Skip to the item' : 'Skip to the playlist'; } })();
   (async function(){
     token = await getToken();
-    if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search); return; }
+    if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search + location.hash); return; }
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
     if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
 
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, restoreReturn); if (folderNote().open) $('folderBrowse').open = true; loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, function(){ restoreReturn(['browseList']); }); if (folderNote().open) $('folderBrowse').open = true; else restoreReturn(['archiveList'], true); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
   })();
 })();
 </script>
