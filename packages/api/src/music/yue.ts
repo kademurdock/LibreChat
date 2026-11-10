@@ -458,6 +458,19 @@ export function yueProjectWhy(options?: YueCoverOptions & { reference_voice_url?
   );
 }
 
+type FitRow = { lyrics_section?: string | null; score_section?: string | null };
+/** 'The second verse words': a lyric_fit row's section, with an ordinal when that name repeats among the rows. Since Nov 10
+ * 2026 the tags reach YuE2 without their numbers, so "[Verse 1]" and "[Verse 2]" both come back named "verse"; without the
+ * ordinal two notes would say "the verse words" and she could not tell which verse to mend. */
+function fitRowWords(all: FitRow[], row: FitRow): string {
+  if (!row.lyrics_section) return sectionWords(row.score_section);
+  const name = sectionName(row.lyrics_section);
+  const same = all.filter((other) => other.lyrics_section && sectionName(other.lyrics_section) === name);
+  const nth = same.indexOf(row);
+  return same.length > 1 && nth >= 0 && nth < ORDINALS.length
+    ? `The ${ORDINALS[nth]} ${name} words`
+    : sectionWords(row.lyrics_section);
+}
 function sectionWords(name: string | null | undefined): string {
   const said = String(name || '')
     .replace(/[[\]]/g, '')
@@ -657,7 +670,7 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
     );
     for (const row of rows.slice(0, 2))
       notes.push(
-        `${sectionWords(row.lyrics_section || row.score_section)} look ${row.fit} for its tune: ${row.syllables} syllables for ${row.sung_notes} notes.`,
+        `${fitRowWords(output.lyric_fit.sections || [], row)} look ${row.fit} for its tune: ${row.syllables} syllables for ${row.sung_notes} notes.`,
       );
     if (rows.length > 2)
       notes.push(`Words in ${rows.length - 2} more section${rows.length === 3 ? '' : 's'} may not fit their tune either.`);
@@ -669,7 +682,7 @@ export function yueTakeNote(output: Output | undefined, input: Input): string {
       );
       for (const row of tuneless.slice(0, 1))
         notes.push(
-          `${sectionWords(row.lyrics_section)} have no sung tune in the recording, so YuE2 may skip them or sing them somewhere else.`,
+          `${fitRowWords(output.lyric_fit.sections || [], row)} have no sung tune in the recording, so YuE2 may skip them or sing them somewhere else.`,
         );
     }
   }
@@ -783,10 +796,14 @@ export function yueCoverSettings<T extends { key: string; hint: string }>(
  * exactly what she typed and chose, and each has its own switch back:
  *   YUE_PREFORMAT=0             section tags and a doubled "English" go to YuE2 as typed
  *   YUE_SAMPLING_V2=0           Creative variation drives the singing temperature as before
- *   YUE_STYLE_SOUND_STAGE=styled  a trained style stays folded in while the sound stage runs, as before
- *                               (=both: also saves the styled-stage copy of the same take beside it, for an A/B by ear)
  *   YUE_COVER_TEMPO_ALWAYS=0    a cover with a new accompaniment does not name its score's tempo in the style
- * And three that do nothing until they are set, because only her ear can choose the numbers:
+ * And four that do nothing until they are set, because only her ear can choose:
+ *   YUE_STYLE_SOUND_STAGE=plain a trained style writes the singing tokens, then the plain weights go back before the sound
+ *                               stage reads them. Review, Nov 10: OFF until it has been heard, because it has never run on a
+ *                               GPU and that this is what garbles words is a reading of the code, not a heard result. It also
+ *                               folds the style in again on every styled take (a few GPU seconds). The worker can also save
+ *                               both masters of one take (lora_sound_stage "both"), but the booth has nowhere to show the
+ *                               second one, so that is asked for straight from the endpoint in a listening test, never here.
  *   YUE_STYLE_GUIDANCE=1.3      Prompt guidance for a styled new song she left on 1 (costs no extra GPU time: a score-free
  *                               take already runs YuE2's guidance pass)
  *   YUE_STYLE_COVER_GUIDANCE=1.2  the same for a styled cover or score (about a third more composing time per take)
@@ -802,9 +819,8 @@ export function yuePreformatEnabled(env: NodeJS.ProcessEnv = process.env): boole
 export function yueSamplingMap(env: NodeJS.ProcessEnv = process.env): 'v1' | 'v2' {
   return switchedOff(env.YUE_SAMPLING_V2) ? 'v1' : 'v2';
 }
-export function yueStyleSoundStage(env: NodeJS.ProcessEnv = process.env): 'styled' | 'plain' | 'both' {
-  const said = String(env.YUE_STYLE_SOUND_STAGE ?? '').trim().toLowerCase();
-  return said === 'styled' || said === 'both' ? said : 'plain';
+export function yueStyleSoundStage(env: NodeJS.ProcessEnv = process.env): 'styled' | 'plain' {
+  return String(env.YUE_STYLE_SOUND_STAGE ?? '').trim().toLowerCase() === 'plain' ? 'plain' : 'styled';
 }
 export function yueCoverTempoAlways(env: NodeJS.ProcessEnv = process.env): boolean {
   return !switchedOff(env.YUE_COVER_TEMPO_ALWAYS);
@@ -830,8 +846,11 @@ function scopeFrom(
   return scope;
 }
 
-/* The seven section names YuE2 sheets use, and the other spellings that mean one of them. A tag that is none of these (a
- * direction such as [spoken] or [drums drop out]) is never touched. */
+/* The section names YuE2 sheets use, and the other spellings that mean one of them. A tag that is none of these (a
+ * direction such as [spoken] or [drums drop out]) is never touched, and neither is a tag that says more than a section name
+ * and its number ("[Final Chorus - belting]", "[Verse 2: spoken]", "[Chorus x2]"): renaming it would drop her direction.
+ * [Instrumental] is one of upstream's own section names (compile_score.py), so plain YuE2 gets it as typed; the trained styles'
+ * sheets had seven tags and no instrumental, so a styled song gets [interlude]. */
 const NATIVE_SECTIONS: Record<string, string> = {
   intro: 'intro', introduction: 'intro',
   verse: 'verse',
@@ -839,21 +858,19 @@ const NATIVE_SECTIONS: Record<string, string> = {
   chorus: 'chorus', hook: 'chorus', refrain: 'chorus', postchorus: 'chorus', finalchorus: 'chorus', lastchorus: 'chorus',
   bridge: 'bridge', middle8: 'bridge', middleeight: 'bridge',
   outro: 'outro', ending: 'outro', coda: 'outro',
-  interlude: 'interlude', instrumental: 'interlude', instrumentalbreak: 'interlude', solo: 'interlude', break: 'interlude',
+  interlude: 'interlude', instrumental: 'instrumental', instrumentalbreak: 'interlude', solo: 'interlude', break: 'interlude',
 };
 const SECTION_TITLES: Record<string, string> = {
   intro: 'Intro', verse: 'Verse', prechorus: 'Pre-Chorus', chorus: 'Chorus', bridge: 'Bridge', outro: 'Outro',
   interlude: 'Interlude',
 };
 const SECTION_LINE = /^(\s*)\[([^\]\n]{1,60})\](\s*)$/;
-/** The YuE2 section a tag names ("Verse 2", "Final Chorus: bigger", "Guitar Solo"), or undefined for anything else. */
+/** The YuE2 section a tag names ("Verse 2", "Final Chorus", "Guitar Solo"), or undefined for anything else, including a
+ * section name followed by a direction or a repeat. */
 function nativeSection(tag: string): string | undefined {
   const head = tag
     .toLowerCase()
     .replace(/[\s_]+/g, ' ')
-    .trim()
-    .split(/\s*[|:(,]\s*|\s+-\s+/)[0]
-    .replace(/\s*(?:x\s*\d+|\d+\s*x)$/, '')
     .trim();
   /* "Middle 8" is a name with its number; "Verse 2" is a name and a count. */
   for (const name of [head, head.replace(/\s*\d+$/, '').trim()]) {
@@ -866,8 +883,9 @@ function nativeSection(tag: string): string | undefined {
 /**
  * The lyric sheet with its section tags in the spelling YuE2 was taught: "[Verse 2]" is "[Verse]", "[Final Chorus]" and
  * "[Post-Chorus]" are "[Chorus]", "[Prechorus]" is "[Pre-Chorus]". For a trained style the tags are the lower-case ones every
- * style's training sheets used ("[verse]", "[prechorus]", "[chorus]"). Only a line that is a section tag and nothing else
- * changes; every sung word, every blank line and every other bracket stays exactly as written.
+ * style's training sheets used ("[verse]", "[prechorus]", "[chorus]"). Only a line that is a section name (with or without
+ * its number) and nothing else changes; every sung word, every blank line and every other bracket, a section tag with a
+ * direction in it included, stays exactly as written.
  */
 export function yueNativeLyrics(lyrics: string, trained = false): string {
   return lyrics
@@ -875,8 +893,9 @@ export function yueNativeLyrics(lyrics: string, trained = false): string {
     .map((line) => {
       const tag = SECTION_LINE.exec(line.replace(/\r$/, ''));
       const section = tag && nativeSection(tag[2]);
-      if (!tag || !section) return line;
-      return `${tag[1]}[${trained ? section : SECTION_TITLES[section]}]${tag[3]}${line.endsWith('\r') ? '\r' : ''}`;
+      if (!tag || !section || (section === 'instrumental' && !trained)) return line;
+      const taught = section === 'instrumental' ? 'interlude' : section;
+      return `${tag[1]}[${trained ? taught : SECTION_TITLES[section]}]${tag[3]}${line.endsWith('\r') ? '\r' : ''}`;
     })
     .join('\n');
 }
@@ -894,14 +913,16 @@ export function yueTidyStyle(style: string, band?: string): string {
  * has nothing to change. */
 export const yueVariationHint: string =
   '50 is normal. Lower is more predictable. Higher makes a new song’s melody and chords bolder, while the singing stays clear. Above 50 a cover keeps its tune as it is, and a trained Style changes only a little.';
-/** Added to Prompt guidance's hint while trained styles are on. Nov 10 2026: the same styled new song, same seed, kept 88 of
- * its 94 words at guidance 1 and 42 at 1.3, where it fell into repeating single words until the six-minute limit. */
+/** Added to Prompt guidance's hint while trained styles are on. Nov 10 2026: ONE pair of takes of the same styled new song
+ * kept 88 of its 94 words at guidance 1 and 42 at 1.3, where it fell into repeating single words until the six-minute limit.
+ * The two takes ran on different GPU models, so the same seed did not mean the same sampling: this suggests guidance was
+ * the cause, it does not prove it. Hence a cautious hint and no change to what is sent. */
 export const yueGuidanceStyleSentence: string =
   ' With a trained Style on a new song, leave it at 1: higher can make the song lose its words.';
 
 export type YueWorkerInput = Omit<Input, 'my_voice'> & {
   sampling_map?: 'v2';
-  lora_sound_stage?: 'plain' | 'both';
+  lora_sound_stage?: 'plain';
   lora_modules?: 'attn' | 'mlp';
   lora_layers?: [number, number];
 };

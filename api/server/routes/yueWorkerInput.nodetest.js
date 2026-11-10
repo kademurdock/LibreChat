@@ -20,9 +20,10 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(ts.transpileModule(f
 const yue = require(path.resolve(__dirname, '../../../packages/api/src/music/yue.ts'));
 
 const COVER = 'https://assets.test/cover.mp3';
-const SHEET = '[Verse 1]\nPaper boats along the drain\n(along the drain)\n\n[Pre-Chorus]\nHold the line\n\n[Final Chorus: bigger]\nSing it clear\n[spoken]\nA made-up aside';
+const SHEET = '[Verse 1]\nPaper boats along the drain\n(along the drain)\n\n[Pre-Chorus]\nHold the line\n\n[Final Chorus]\nSing it clear\n[spoken]\nA made-up aside';
 const ON = { YUE_COVERS_V2: '1' };
-const BACK = { ...ON, YUE_PREFORMAT: '0', YUE_SAMPLING_V2: '0', YUE_STYLE_SOUND_STAGE: 'styled', YUE_COVER_TEMPO_ALWAYS: '0' };
+/* Review, Nov 10: the plain sound stage is off until it is asked for, so three switches put the old request back. */
+const BACK = { ...ON, YUE_PREFORMAT: '0', YUE_SAMPLING_V2: '0', YUE_COVER_TEMPO_ALWAYS: '0' };
 const saved = (body, env = ON) => yue.yueInput({ script: 'Warm soul, female lead vocal', lyrics: SHEET, seed: 11, ...body }, env);
 /** What the previous commit sent: the saved input without my_voice, nothing else. */
 const before = (input) => { const { my_voice: _myVoice, ...rest } = input; return rest; };
@@ -68,18 +69,22 @@ test('a plain new song: the tags take YuE2\'s own spelling, the v2 sampling map 
   assert.equal(sent.style, 'Warm soul, female lead vocal');
 });
 
-test('a styled song: the tags are the lower-case ones the styles were taught on, and the sound stage reads the plain model', () => {
+test('a styled song: the tags are the lower-case ones the styles were taught on; the plain sound stage waits to be asked for', () => {
   const sent = yue.yueWorkerInput(saved({ band: 'soul', style_strength: 0.7 }), ON);
   assert.equal(sent.lyrics, '[verse]\nPaper boats along the drain\n(along the drain)\n\n[prechorus]\nHold the line\n\n[chorus]\nSing it clear\n[spoken]\nA made-up aside');
-  assert.equal(sent.lora_sound_stage, 'plain');
+  assert.equal(sent.lora_sound_stage, undefined, 'unheard and never run on a GPU: off until it is switched on');
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: ' Plain ' }).lora_sound_stage, 'plain');
   assert.equal(sent.lora_key, yue.yueStyles.soul.key);
   assert.equal(sent.lora_scale, 0.7);
   assert.equal(sent.cot, 'off');
   assert.equal(sent.guidance, 1, 'guidance is not raised unless a number is set for it');
-  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: 'both' }).lora_sound_stage, 'both');
+  /* "both" makes a second master the booth has nowhere to show (nothing reads styled_stage_url), so the booth never asks for it. */
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: 'both' }).lora_sound_stage, undefined);
   assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: 'STYLED' }).lora_sound_stage, undefined);
-  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: 'nonsense' }).lora_sound_stage, 'plain');
-  assert.equal(yue.yueWorkerInput(saved({ band: 'soul', style_strength: 0 }), ON).lora_sound_stage, undefined, 'strength 0 is plain YuE2');
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: 'nonsense' }).lora_sound_stage, undefined);
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul', style_strength: 0 }), { ...ON, YUE_STYLE_SOUND_STAGE: 'plain' }).lora_sound_stage, undefined, 'strength 0 is plain YuE2');
+  assert.equal(yue.yueWorkerInput(saved({}), { ...ON, YUE_STYLE_SOUND_STAGE: 'plain' }).lora_sound_stage, undefined, 'no style, nothing to ask');
+  assert.doesNotMatch(fs.readFileSync(path.resolve(__dirname, '../../../packages/api/src/music/yue.ts'), 'utf8'), /lora_sound_stage\?: '[^;]*both/);
 });
 
 test('section tags: every spelling her sheets use lands on one of YuE2\'s seven, and nothing else on the sheet moves', () => {
@@ -87,8 +92,8 @@ test('section tags: every spelling her sheets use lands on one of YuE2\'s seven,
     '[Chorus]': 'Chorus', '[Verse]': 'Verse', '[Bridge]': 'Bridge', '[Pre-Chorus]': 'Pre-Chorus', '[Outro]': 'Outro',
     '[Post-Chorus]': 'Chorus', '[Intro]': 'Intro', '[Verse 1]': 'Verse', '[Verse 3]': 'Verse', '[Final Chorus]': 'Chorus',
     '[Prechorus]': 'Pre-Chorus', '[bridge]': 'Bridge', '[postchorus]': 'Chorus', '[pre chorus]': 'Pre-Chorus',
-    '[Verse 2: softer]': 'Verse', '[Chorus x2]': 'Chorus', '[Hook]': 'Chorus', '[Refrain]': 'Chorus', '[Interlude]': 'Interlude',
-    '[Wah Guitar Solo]': 'Interlude', '[Instrumental Break]': 'Interlude', '[Verse 1 - quiet]': 'Verse', '[CHORUS]': 'Chorus',
+    '[Hook]': 'Chorus', '[Refrain]': 'Chorus', '[Interlude]': 'Interlude', '[Solo]': 'Interlude', '[Break]': 'Interlude',
+    '[Wah Guitar Solo]': 'Interlude', '[Instrumental Break]': 'Interlude', '[CHORUS]': 'Chorus',
     '[Middle 8]': 'Bridge', '[Ending]': 'Outro',
   };
   const lower = { 'Pre-Chorus': 'prechorus' };
@@ -99,8 +104,16 @@ test('section tags: every spelling her sheets use lands on one of YuE2\'s seven,
   /* Directions and anything else in brackets are hers: never renamed, never dropped. */
   for (const kept of ['[spoken]', '[belting]', '[drums drop out, atmospheric pads]', '[Boom Bap Drums Enter]', '[Hard Stop]', '[End]',
     '[Half-Time Breakdown]', '[unclear]', '[Pause]', '[Band Drops Out]', '[Chorus] and then some', 'Verse 1', '(Chorus)', '[]',
-    '[Verse one]', '[Rap]'])
+    '[Verse one]', '[Rap]',
+    /* Review, Nov 10: a section tag that also carries a direction or a repeat keeps it, so it is sent as she wrote it. */
+    '[Final Chorus - belting]', '[Verse 2: spoken]', '[Verse 2: softer]', '[Bridge (whispered, half-time)]', '[Chorus x2]', '[2x Chorus]',
+    '[Verse 1 - quiet]', '[Verse 3 - rap]', '[Outro: fade out slowly]', '[Verse | female voice]', '[Chorus, key change up]'])
     for (const trained of [false, true]) assert.equal(yue.yueNativeLyrics(kept, trained), kept, kept);
+  /* [Instrumental] is one of YuE2's own section names: plain YuE2 gets it as typed; a trained style gets its nearest taught tag. */
+  for (const typed of ['[Instrumental]', '[instrumental]', '  [Instrumental]  ']) {
+    assert.equal(yue.yueNativeLyrics(typed), typed, typed);
+    assert.equal(yue.yueNativeLyrics(typed, true), typed.replace(/\[[^\]]*\]/, '[interlude]'), typed);
+  }
 });
 
 test('section tags: sung words, blank lines, spacing and Windows line ends come through untouched', () => {
@@ -196,6 +209,30 @@ test('the guide says what the dials do now, and goes back with the switch', () =
     assert.doesNotMatch(text, /temperature|token|sampling|LoRA|top_p/i, 'plain words only');
     assert.ok(text.length < 240);
   }
+});
+
+test('a cover\'s spoken note says which verse, now that the tags reach YuE2 without their numbers', () => {
+  const input = saved({ reference_voice_url: COVER, band: 'soul', lyrics: '[Verse 1]\none\n[Chorus]\ntwo\n[Verse 2]\nthree\n[Final Chorus]\nfour' });
+  const rows = (names) => ({ features: ['lyric-fit', 'lyric-fit-v2'], lyric_fit: { sections: names.map((name, index) => (
+    { score_section: 'verse', lyrics_section: name, sung_notes: 20, syllables: index % 2 ? 5 : 40, fit: index % 2 ? 'short' : 'long' })) } });
+  /* As the worker now names them: two rows called "verse". */
+  assert.equal(yue.yueTakeNote(rows(['verse', 'verse']), input),
+    'The first verse words look long for its tune: 40 syllables for 20 notes. The second verse words look short for its tune: 5 syllables for 20 notes.');
+  /* A name that comes once is said as before; rows that fit are counted but not spoken. */
+  const mixed = rows(['verse', 'chorus', 'verse', 'chorus']);
+  mixed.lyric_fit.sections[0].fit = 'close';
+  mixed.lyric_fit.sections[1].fit = 'close';
+  assert.equal(yue.yueTakeNote(mixed, input),
+    'The second verse words look long for its tune: 40 syllables for 20 notes. The second chorus words look short for its tune: 5 syllables for 20 notes.');
+  assert.equal(yue.yueTakeNote(rows(['bridge']), input), 'The bridge words look long for its tune: 40 syllables for 20 notes.');
+  /* With the tags sent as typed (YUE_PREFORMAT=0, or an older take), the note reads exactly as it always did. */
+  assert.equal(yue.yueTakeNote(rows(['Verse 1', 'Verse 2']), input),
+    'The verse 1 words look long for its tune: 40 syllables for 20 notes. The verse 2 words look short for its tune: 5 syllables for 20 notes.');
+  const tuneless = rows(['intro', 'verse', 'intro']);
+  tuneless.lyric_fit.sections.forEach((row) => { row.fit = 'close'; });
+  tuneless.lyric_fit.sections[2] = { score_section: null, lyrics_section: 'intro', sung_notes: null, syllables: 9, fit: 'no tune' };
+  assert.equal(yue.yueTakeNote(tuneless, { ...input, measure_fit: true }),
+    'The second intro words have no sung tune in the recording, so YuE2 may skip them or sing them somewhere else.');
 });
 
 test('the route sends through yueWorkerInput and nothing else builds the worker request', () => {
