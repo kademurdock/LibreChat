@@ -155,6 +155,25 @@ describe('AuthContextProvider — community home sign-in', () => {
     });
     expect(replaceSpy).toHaveBeenCalledWith('/watch/sample-release');
   });
+
+  /* Nov 10 2026: the Library, family history and agent-work pages are server pages; a client-side
+   * navigate to them after sign-in lands on the route error page, so they need a full page load. */
+  it.each([
+    '/library?book=abc#part-2',
+    '/reading-room',
+    '/family-history',
+    '/agent-work?task=1',
+  ])('does a full page load back to the server page %s after signing in', async (target) => {
+    window.history.replaceState({}, '', `/login?redirect_to=${encodeURIComponent(target)}`);
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+    renderProvider();
+    await act(async () => {
+      mockCapturedLoginOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'test-token' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    expect(replaceSpy).toHaveBeenCalledWith(target);
+    expect(mockNavigate).not.toHaveBeenCalledWith(target, expect.anything());
+  });
 });
 
 describe('AuthContextProvider — login onError redirect handling', () => {

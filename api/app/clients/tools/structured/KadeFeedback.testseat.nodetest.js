@@ -109,6 +109,25 @@ test('"check out the send button" is not the battery question', async () => {
   } finally { h.restore(); }
 });
 
+test('SHIP REVIEW: a real report about the Library\'s Check out button from a review seat stays open with an alert', async () => {
+  const real = [
+    'The Checkout button in the Library does not respond with VoiceOver.',
+    'the check-out button on a book does nothing',
+    'Checkout buttons are too small to tap.',
+  ];
+  for (const detail of real) {
+    const h = load();
+    try {
+      const said = await h.make(TEST_SEAT)._call({ category: 'bug', detail });
+      assert.match(said, /Kade will see it in the feedback dashboard/, detail);
+      assert.equal(h.created[0].status, 'open', detail);
+      assert.equal(h.created[0].detail, detail);
+      await settle();
+      assert.deepEqual(h.alerts, ['row-1'], detail);
+    } finally { h.restore(); }
+  }
+});
+
 test('a family member: an open row and an alert, exactly as before, even with the battery\'s words', async () => {
   const h = load();
   try {

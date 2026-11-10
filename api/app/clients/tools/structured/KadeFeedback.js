@@ -111,7 +111,15 @@ class KadeFeedback extends Tool {
             .map((id) => id.trim())
             .filter(Boolean);
           const said = `${String(subject || '')} ${text}`;
-          const batteryQuestion = /\bcheck-?out\b/i.test(said) && /\bbuttons?\b/i.test(said);
+          /* Nov 10 ship review: "checkout" and "button" alone also matched a real report such as
+           * "the Checkout button in the Library does not respond" (the Library has a Check out
+           * button). The battery's question is about a button with NO NAME on a checkout PAGE, so
+           * one of those two ideas must be there as well; anything else stays an open row. */
+          const batteryQuestion =
+            /\bcheck-?out\b/i.test(said) &&
+            /\bbuttons?\b/i.test(said) &&
+            (/\bpages?\b/i.test(said) ||
+              /\b(?:unnamed|unlabell?ed|no (?:accessible )?(?:name|label)s?)\b/i.test(said));
           fromTestSeat =
             silentSeats.includes(seat) ||
             (batteryQuestion && require('~/server/services/kadeNudges').isTestUser(seat));
