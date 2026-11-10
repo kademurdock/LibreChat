@@ -27,8 +27,13 @@ const AGENT_ID = /^agent_[A-Za-z0-9_-]{6,64}$/;
 function machine(req) {
   const expected = String(process.env.BRIDGE_SECRET || '');
   const given = String(req.get('x-kade-secret') || '');
-  if (!expected || given.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+  /* Nov 10 2026: compared by BYTES. The old check compared string lengths, so a header as long as
+   * the secret but holding an accented or other two-byte character passed it and then made
+   * timingSafeEqual throw (a 500 instead of the refusal, which also told a prober the length). */
+  const a = Buffer.from(given, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (!expected || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 /* At most a few composed turns at once across the whole site. */
