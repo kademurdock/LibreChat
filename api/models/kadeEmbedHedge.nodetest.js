@@ -33,10 +33,13 @@ function diaryWith(provider) {
   const filename = path.resolve(__dirname, 'kadeDiary.js');
   const loaded = new Module(filename, module);
   loaded.paths = module.paths;
-  loaded.require = (id) => id === '@librechat/api' ? api : id === '@librechat/data-schemas'
-    ? { logger: { warn: (m) => warnings.push(String(m)), error() {}, info() {} }, excludedMemoryConversations: async () => [],
-      memorySourceStorage: { getStore: () => null }, memorySourceAllowed: async () => true }
-    : Module.prototype.require.call(loaded, id);
+  const schemas = { logger: { warn: (m) => warnings.push(String(m)), error() {}, info() {} }, excludedMemoryConversations: async () => [],
+    memorySourceStorage: { getStore: () => null }, memorySourceAllowed: async () => true };
+  loaded.require = (id) => {
+    if (id === '@librechat/api') return api;
+    if (id === '@librechat/data-schemas') return schemas;
+    return Module.prototype.require.call(loaded, id);
+  };
   loaded._compile(fs.readFileSync(filename, 'utf8'), filename);
   return { diary: loaded.exports, calls, warnings };
 }
