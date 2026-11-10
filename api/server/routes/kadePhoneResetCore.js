@@ -11,6 +11,7 @@ const PER_NUMBER_GAP_MS = 2 * 60 * 1000;
 const PER_NUMBER_DAILY = 3;
 const PLATFORM_DAILY = 40;
 const PER_IP_HOURLY = 10;
+const IP_TABLE_SWEEP_AT = 2000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const START_MESSAGE =
@@ -38,6 +39,13 @@ function createPhoneReset({
 
   function ipAllowed(ip) {
     const cutoff = now() - 60 * 60 * 1000;
+    /* Nov 10 2026: this map kept one entry per address for ever, on a route anyone can call.
+     * Addresses with nothing in the last hour are dropped once it grows. */
+    if (ipHits.size > IP_TABLE_SWEEP_AT) {
+      for (const [key, times] of ipHits) {
+        if (!times.some((t) => t > cutoff)) ipHits.delete(key);
+      }
+    }
     const hits = (ipHits.get(ip) || []).filter((t) => t > cutoff);
     const allowed = hits.length < PER_IP_HOURLY;
     if (allowed) {
@@ -112,8 +120,14 @@ function createPhoneReset({
     if (!entry || entry.attempts >= MAX_TRIES) {
       return { status: 400, body: { message: EXPIRED_MESSAGE } };
     }
+    /* Nov 10 2026: the try is counted BEFORE the code is compared, in one database step that
+     * only succeeds while tries are left. Counting after the compare let a burst of guesses
+     * sent together each read "no tries used yet" and each get a guess (201 of 201 compared). */
+    const attempts = await store.claimAttempt(entry._id, MAX_TRIES);
+    if (attempts == null) {
+      return { status: 400, body: { message: EXPIRED_MESSAGE } };
+    }
     if (!compare(typed, entry.codeHash)) {
-      const attempts = await store.addAttempt(entry._id);
       const left = MAX_TRIES - attempts;
       if (left <= 0) {
         await store.useAll(digits);
@@ -136,7 +150,7 @@ function createPhoneReset({
     return { status: 200, body: { ok: true, message: DONE_MESSAGE } };
   }
 
-  return { start, finish };
+  return { start, finish, ipTableSize: () => ipHits.size };
 }
 
 module.exports = {
@@ -147,5 +161,6 @@ module.exports = {
   PER_NUMBER_DAILY,
   PLATFORM_DAILY,
   PER_IP_HOURLY,
+  IP_TABLE_SWEEP_AT,
   START_MESSAGE,
 };

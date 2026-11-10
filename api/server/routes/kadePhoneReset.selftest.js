@@ -23,13 +23,21 @@ function harness({ users = [USER], callFails = false } = {}) {
   const updates = [];
   const signedOut = [];
   const logs = [];
+  const compares = [];
   const store = {
     create: async (doc) => rows.push({ _id: `row-${rows.length}`, ...doc }),
     recent: async (phone, since) => rows.filter((r) => r.phone === phone && r.createdAt > since),
     countAll: async (since) => rows.filter((r) => r.createdAt > since).length,
-    latestActive: async (phone, at) =>
-      rows.filter((r) => r.phone === phone && !r.used && r.expiresAt > at).sort((a, b) => b.createdAt - a.createdAt)[0] || null,
-    addAttempt: async (id) => ++rows.find((r) => r._id === id).attempts,
+    // A copy, as a database read is: what a request holds does not change when another request writes.
+    latestActive: async (phone, at) => {
+      const row = rows.filter((r) => r.phone === phone && !r.used && r.expiresAt > at).sort((a, b) => b.createdAt - a.createdAt)[0];
+      return row ? { ...row } : null;
+    },
+    // One step, as the database does it: only a row with tries left is counted up.
+    claimAttempt: async (id, max) => {
+      const row = rows.find((r) => r._id === id && !r.used && r.attempts < max);
+      return row ? ++row.attempts : null;
+    },
     useAll: async (phone) => rows.filter((r) => r.phone === phone).forEach((r) => (r.used = true)),
   };
   const log = (level) => (...args) => logs.push([level, args.map(String).join(' ')]);
@@ -43,7 +51,10 @@ function harness({ users = [USER], callFails = false } = {}) {
       if (callFails) throw new Error('bridge answered 502');
     },
     hash: (value) => `hashed:${value}`,
-    compare: (value, digest) => digest === `hashed:${value}`,
+    compare: (value, digest) => {
+      compares.push(value);
+      return digest === `hashed:${value}`;
+    },
     logger: { info: log('info'), warn: log('warn'), error: log('error') },
     now: () => clock,
     randomCode: () => String(123456 + nextCode++).padStart(6, '0'),
@@ -59,7 +70,7 @@ function harness({ users = [USER], callFails = false } = {}) {
     },
     finish: rules.finish,
   };
-  return { svc, rows, calls, updates, signedOut, logs, advance: (ms) => (clock += ms) };
+  return { svc, rules, rows, calls, updates, signedOut, logs, compares, advance: (ms) => (clock += ms) };
 }
 
 test('the right code sets a hashed password and signs every session out', async () => {
@@ -104,6 +115,41 @@ test('five wrong codes cancel the code, even for the right one after', async () 
   const right = await h.svc.finish({ phone: PHONE, code: h.calls[0].code, password: 'new-password-1' });
   assert.strictEqual(right.status, 400);
   assert.strictEqual(h.updates.length, 0);
+});
+
+test('Nov 10 2026: a burst of guesses sent at once gets five tries, not one try each', async () => {
+  const h = harness();
+  await h.svc.start({ phone: PHONE, ip: '1.2.3.4' });
+  const right = h.calls[0].code;
+  // 200 wrong codes and then the right one, all in flight together: before the fix every one of
+  // them read "0 tries used" before any was counted, so all 201 were compared and the right one won.
+  const guesses = Array.from({ length: 200 }, (_, i) => String(900000 + i));
+  const answers = await Promise.all(
+    [...guesses, right].map((code) => h.svc.finish({ phone: PHONE, code, password: 'new-password-1' })),
+  );
+  assert.strictEqual(h.compares.length, core.MAX_TRIES, 'only five codes were ever compared');
+  assert.ok(answers.every((a) => a.status === 400), 'the burst never reached the right code');
+  assert.deepStrictEqual(h.updates, [], 'no password was changed');
+  assert.strictEqual(h.rows[0].attempts, core.MAX_TRIES);
+  assert.strictEqual(h.rows[0].used, true, 'and the code is cancelled');
+});
+
+test('Nov 10 2026: the per-address table forgets addresses with nothing in the last hour', async () => {
+  const h = harness();
+  for (let i = 0; i <= core.IP_TABLE_SWEEP_AT; i++) {
+    await h.rules.start({ phone: PHONE, ip: `10.0.${Math.floor(i / 250)}.${i % 250}` });
+  }
+  assert.strictEqual(h.rules.ipTableSize(), core.IP_TABLE_SWEEP_AT + 1, 'all remembered inside the hour');
+  h.advance(61 * 60 * 1000);
+  await h.rules.start({ phone: PHONE, ip: '192.0.2.1' });
+  await h.rules.start({ phone: PHONE, ip: '192.0.2.2' });
+  assert.strictEqual(h.rules.ipTableSize(), 2, 'the 2,001 stale addresses are gone (they were kept for ever)');
+  // Ten an hour still holds for a fresh address after the sweep.
+  let refused = 0;
+  for (let i = 0; i < 12; i++) {
+    if ((await h.rules.start({ phone: PHONE, ip: '192.0.2.9' })).status === 429) refused += 1;
+  }
+  assert.strictEqual(refused, 2);
 });
 
 test('the wrong-code message counts down the tries left', async () => {
