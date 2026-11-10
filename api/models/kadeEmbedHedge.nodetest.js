@@ -110,7 +110,8 @@ test('never more than two requests and never longer than the window; both timing
   assert.ok(took >= 1100 && took < 1700, `gave up at the window (${took} ms), as the two old tries did together`);
   assert.ok(calls[1].timeoutMs <= 1200 - 140, `the second request only gets what is left of the window (${calls[1].timeoutMs})`);
   assert.deepEqual(diary.readEmbedHealth().byPurpose.query, { ok: 0, failed: 1 });
-  assert.ok(warnings.some((w) => w.includes('semantic recall is blind for this turn')));
+  const line = warnings.find((w) => w.includes('semantic recall is blind for this turn'));
+  assert.match(line, /\[purpose query, event loop held up to \d+ ms since the last reading\]$/, 'the failure says who failed and how long this server itself was stuck');
 });
 
 test('a refusal is not a timeout: one request, failed at once, no second try', async () => {

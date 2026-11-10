@@ -228,6 +228,25 @@ const embedHealth = {
   secondTries: 0 /* memory queries that needed their second request */,
   secondTryWon: 0 /* ...and were answered by it */,
 };
+/* Nov 10 2026: the live log showed the memory query timing out at exactly 3000 ms on more than half
+ * of the turns (33 first-try timeouts and 61 failures in 56 turns, Nov 8 to 10) while the tool query,
+ * sent to the same host a moment earlier, almost never did. That pattern fits this server's own event
+ * loop being held (the timer fires before the answer that already arrived is read) at least as well
+ * as it fits a slow host. So a failed embed now says how long the loop was held since the last
+ * reading: a big number convicts this server, a small one the host. Costs one histogram. */
+let loopDelay = null;
+try {
+  loopDelay = require('node:perf_hooks').monitorEventLoopDelay({ resolution: 20 });
+  loopDelay.enable();
+} catch (_) {
+  loopDelay = null;
+}
+function loopHeldMs() {
+  if (!loopDelay) return null;
+  const held = Math.round(loopDelay.max / 1e6);
+  loopDelay.reset();
+  return Number.isFinite(held) ? held : null;
+}
 function noteEmbed(purpose, ok) {
   const row = embedHealth.byPurpose[purpose] || embedHealth.byPurpose.document;
   row[ok ? 'ok' : 'failed'] += 1;
@@ -367,8 +386,11 @@ async function embedText(text, { purpose = 'document' } = {}) {
     noteEmbed(purpose, false);
     embedHealth.lastError = detail;
     embedHealth.lastErrorAt = new Date().toISOString();
+    const held = loopHeldMs();
+    embedHealth.lastLoopHeldMs = held;
     logger.warn(
-      `[kadeDiary] embedding call FAILED -- semantic recall is blind for this turn (${lane.provider}/${lane.model}): ${detail}`,
+      `[kadeDiary] embedding call FAILED -- semantic recall is blind for this turn (${lane.provider}/${lane.model}): ${detail}` +
+        ` [purpose ${purpose}${held == null ? '' : `, event loop held up to ${held} ms since the last reading`}]`,
     );
     /* Part 295: an empty prepaid balance (the Aug 28 cause) or a refused key tells Kade, at most
      * once every few hours, instead of only filling the log. Fire-and-forget. */
