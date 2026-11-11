@@ -563,7 +563,7 @@ const defaultData = {
     return {
       id: String(u._id),
       exists: true,
-      child: u.kadeAccountType === 'child',
+      child: require('./kadeAccountType').isChildLike(u),
       reviewSeat,
       memoryOff: Boolean(u.personalization && u.personalization.memories === false),
     };

@@ -186,13 +186,20 @@ test('the checks that came before still answer first (a missing style never reac
   assert.equal(colls.kadesongquotes, undefined);
 });
 
-test('KADE_SONG_YES_GATE=0: the old behaviour, still one song per reply', async () => {
+test('card 1: KADE_SONG_YES_GATE=0 no longer skips the yes; nothing is spent on the first ask', async () => {
   process.env.KADE_SONG_YES_GATE = '0';
-  const req = turn('make me a song about rain');
-  assert.match(await song(req), /^\[Play the song\]/);
-  assert.match(await song(req), /One paid song per reply/);
-  assert.equal(posts.length, 1);
   process.env.KADE_SONG_ONCE_PER_TURN = '0';
-  assert.match(await song(req), /^\[Play the song\]/);
-  assert.equal(posts.length, 2);
+  const req = turn('make me a song about rain');
+  assert.match(await song(req), /^NOT MADE YET, and nothing was charged\./);
+  assert.match(await song(req), /^NOT MADE YET/);
+  assert.equal(posts.length, 0);
+  assert.equal(usage.length, 0);
+});
+
+test('card 1: a replayed yes cannot buy a song, even with KADE_SPEND_NO_REPLAY=0', async () => {
+  process.env.KADE_SPEND_NO_REPLAY = '0';
+  await priced(turn('make me a song about rain'));
+  const out = await song(turn('yes', { isRegenerate: true }));
+  assert.match(out, /retry of an earlier one/);
+  assert.equal(posts.length, 0);
 });

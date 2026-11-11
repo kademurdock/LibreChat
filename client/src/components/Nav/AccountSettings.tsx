@@ -222,7 +222,9 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <DropdownMenuSeparator />
         <ExploreSubmenu
           isAdmin={user?.role === SystemRoles.ADMIN}
-          isChild={(user as { kadeAccountType?: string } | undefined)?.kadeAccountType === 'child'}
+          isChild={['child', 'teen'].includes(
+            (user as { kadeAccountType?: string } | undefined)?.kadeAccountType ?? '',
+          )}
         />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">

@@ -125,7 +125,7 @@ class KadeErrand extends Tool {
       try {
         const { getUserById } = require('~/models');
         const u = await getUserById(actingId || authedId, 'kadeAccountType');
-        if (u && u.kadeAccountType === 'child') {
+        if (require('../../../../server/services/kadeAccountType').isChildLike(u)) {
           logger.info('[KadeErrand] child seat — soft refusal, per the standing rule');
           return "Errands aren't something you can send off from this account — but offer to dig into the question together right now, which is honestly just as good.";
         }

@@ -233,21 +233,54 @@ test('a quote row from before this change (no turn, no conversation) still needs
   assert.equal((await startIn(turn('adult', 'yes'), 'qold')).ok, true);
 });
 
-test('KADE_TASK_YES_GATE=0 puts the old rule back (a quote row is enough); the claim stays one step', async () => {
+/* Card 1, Nov 11 2026: the old off switches do nothing now. The yes check is a safety gate. */
+test('card 1: KADE_TASK_YES_GATE=0 no longer opens the gate: quote and start in one turn is still refused', async () => {
   process.env.KADE_TASK_YES_GATE = '0';
-  const req = turn('adult', 'can you find me a cheap chest freezer');
+  const req = turn('adult', 'yes do it');
   const q = await quoteIn(req);
   const out = await Promise.all([startIn(req, q.quoteId), startIn(req, q.quoteId)]);
-  assert.equal(out.filter((o) => o.ok).length, 1);
+  assert.equal(out.filter((o) => o.ok).length, 0);
+  assert.match(out[0].error, /same reply/);
+  assert.match((await startIn(turn('adult', 'ok, read this page for me'), q.quoteId)).error, /not a plain yes/);
+  assert.equal(running(), 0);
+  /* a plain yes in the next message passes */
+  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
 });
 
-test('KADE_TASK_ATOMIC_START=0 puts the old read-then-mark back; the yes rules stay', async () => {
+test('card 1: KADE_TASK_ATOMIC_START=0 no longer brings back read-then-mark: the lock and one-step claim stay', async () => {
   process.env.KADE_TASK_ATOMIC_START = '0';
   const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
-  assert.match((await startIn(turn('adult', 'ok, read this page for me'), q.quoteId)).error, /not a plain yes/);
-  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
-  assert.equal(colls.kadetaskstarts, undefined, 'no lock row is written');
+  const same = await Promise.all([startIn(turn('adult', 'yes'), q.quoteId), startIn(turn('adult', 'yes'), q.quoteId)]);
+  assert.equal(same.filter((o) => o.ok).length, 1);
+  assert.ok(colls.kadetaskstarts, 'the start lock was used');
+  assert.ok(colls.kadetaskquotes.rows[0].usedTaskId, 'the quote was claimed in one step');
   assert.match((await startIn(turn('adult', 'yes'), q.quoteId)).error, /already started/);
+});
+
+test('card 1: a replayed yes is refused, even with KADE_SPEND_NO_REPLAY=0', async () => {
+  process.env.KADE_SPEND_NO_REPLAY = '0';
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  for (const flag of [{ isRegenerate: true }, { isContinued: true }, { editedContent: { index: 0, text: 'x' } }, { isEdited: true }]) {
+    const s = await startIn(turn('adult', 'yes', flag), q.quoteId);
+    assert.equal(s.ok, false, JSON.stringify(flag));
+    assert.match(s.error, /retry of an earlier one/);
+  }
+  assert.equal(running(), 0);
+  /* the yes turn that really started a job, sent again as a regenerate, starts nothing */
+  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
+  const again = await startIn(turn('adult', 'yes', { isRegenerate: true }), q.quoteId);
+  assert.equal(again.ok, false);
+  await settle();
+  assert.equal(runs.length, 1);
+});
+
+test('card 5: a teen account is turned away softly, like a child', async () => {
+  users.teen = { _id: 'teen', role: 'USER', kadeAccountType: 'teen' };
+  const tq = await tasks.quote({ req: turn('teen', 'find me a cool bike'), agentId: AGENT, goal: GOAL });
+  assert.deepEqual({ ok: tq.ok, soft: tq.soft }, { ok: false, soft: true });
+  /* an untyped account keeps what it has today (Kade sets types later) */
+  users.untyped = { _id: 'untyped', role: 'USER' };
+  assert.equal((await tasks.quote({ req: turn('untyped', 'find me a cool bike'), agentId: AGENT, goal: GOAL })).ok, true);
 });
 
 test('the tool passes every refusal on plainly, and a start says started only when it did', async () => {
@@ -350,7 +383,7 @@ test('review: a regenerated, continued or edited reply cannot approve a price', 
   }
 });
 
-test('review: the two new off switches put the first cut back', async () => {
+test('review: KADE_SPEND_PRICE_HEARD=0 still puts the first cut back; KADE_SPEND_NO_REPLAY=0 no longer does (card 1)', async () => {
   process.env.KADE_SPEND_PRICE_HEARD = '0';
   const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'), { say: false });
   await replied(turn('adult', 'no thanks'), 'Okay.');
@@ -360,7 +393,7 @@ test('review: the two new off switches put the first cut back', async () => {
   colls = {};
   process.env.KADE_SPEND_NO_REPLAY = '0';
   const q2 = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
-  assert.equal((await startIn(turn('adult', 'yes', { isRegenerate: true }), q2.quoteId)).ok, true);
+  assert.match((await startIn(turn('adult', 'yes', { isRegenerate: true }), q2.quoteId)).error, /retry of an earlier one/);
 });
 
 test('review: a background run ending stamps and closes nothing', async () => {

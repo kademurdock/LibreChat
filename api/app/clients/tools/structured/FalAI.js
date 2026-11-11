@@ -721,7 +721,8 @@ class FalAI extends Tool {
    * The yes rule for a paid song (Nov 10 2026, services/kadeSpendGate.js). The first ask in a
    * conversation only records the price and tells the character to say it and ask; a later reply
    * whose own message from the person is a plain yes makes the song, once. Every refusal says
-   * plainly that nothing was made. Off switches: KADE_SONG_YES_GATE=0, KADE_SONG_ONCE_PER_TURN=0.
+   * plainly that nothing was made. The yes rule has no off switch (Nov 11 2026, card 1);
+   * KADE_SONG_ONCE_PER_TURN=0 still lifts the one-song-per-reply limit.
    * @returns {Promise<{ refusal: string | null, release: () => Promise<void> }>}
    */
   async songYesGate(engine, estUSD, engLabel) {

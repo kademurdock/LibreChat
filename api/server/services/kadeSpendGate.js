@@ -34,14 +34,15 @@
  * No model call and no wait: string checks and, for a song, one or two small database calls
  * inside a tool call that was about to spend money anyway.
  *
- * Off switches (default on, "=0" turns one off):
- *   KADE_TASK_YES_GATE=0        kade_task start goes back to "a quote row is enough"
- *   KADE_TASK_ATOMIC_START=0    kade_task start goes back to read, check, then mark
- *   KADE_SONG_YES_GATE=0        fal generate_song goes back to the budget check only
+ * Nov 11 2026 (home agent plan, card 1): the yes check is a safety gate and has NO off switch.
+ * KADE_TASK_YES_GATE, KADE_TASK_ATOMIC_START, KADE_SONG_YES_GATE and KADE_SPEND_NO_REPLAY are
+ * read as on whatever they are set to (see PINNED below). If the gate misbehaves, roll back the
+ * build; a variable cannot open it.
+ *
+ * Off switches still read (default on, "=0" turns one off):
  *   KADE_SONG_ONCE_PER_TURN=0   no limit on songs per reply
  *   KADE_SPEND_PRICE_HEARD=0    a price row is enough again: it need not have been said in a
  *                               reply, and it stays open for its hour whatever is said next
- *   KADE_SPEND_NO_REPLAY=0      a regenerated or continued reply may approve a price again
  *
  * No '~' requires at load time, so node --test loads it.
  */
@@ -51,7 +52,12 @@ const crypto = require('crypto');
 const SONG_QUOTES = 'kadesongquotes';
 const SONG_QUOTE_MINUTES = 60;
 
+/* Money gates that cannot be switched off by a variable (card 1, Nov 11 2026). Every caller that
+ * still asks on('KADE_SPEND_NO_REPLAY') and the like (kadeStudio.js among them) gets "on". */
+const PINNED = new Set(['KADE_TASK_YES_GATE', 'KADE_TASK_ATOMIC_START', 'KADE_SONG_YES_GATE', 'KADE_SPEND_NO_REPLAY']);
+
 function on(name, env = process.env) {
+  if (PINNED.has(name)) return true;
   return String((env && env[name]) ?? '') !== '0';
 }
 
@@ -316,14 +322,9 @@ function unwrap(found) {
  * @returns {Promise<{ ok: true, release: () => Promise<void> } | { ok: false, reason: 'quoted' | 'not-approved' | 'replay' | 'turn-limit' | 'voice' | 'hidden' | 'unavailable' }>}
  */
 async function songGate({ req, userId, engine, estUSD, agentName, env = process.env, coll } = {}) {
-  const gateOn = on('KADE_SONG_YES_GATE', env);
+  /* No off switch for the yes rule itself (card 1, Nov 11 2026). */
   const onceOn = on('KADE_SONG_ONCE_PER_TURN', env);
   const KEY = 'fal_song';
-  if (!gateOn) {
-    /* Without a request there is no turn to count; the old behaviour stands. */
-    if (onceOn && req && !claimOnce(req, KEY)) return { ok: false, reason: 'turn-limit' };
-    return { ok: true, release: async () => releaseOnce(req, KEY) };
-  }
   const uid = userId == null ? '' : String(userId);
   if (!req || !uid) return { ok: false, reason: 'unavailable' };
   if (req.kadeHiddenRun === true) return { ok: false, reason: 'hidden' };
@@ -374,7 +375,7 @@ async function songGate({ req, userId, engine, estUSD, agentName, env = process.
   }
 
   if (!said.ok) return { ok: false, reason: 'voice' };
-  if (on('KADE_SPEND_NO_REPLAY', env) && isReplay(req)) return { ok: false, reason: 'replay' };
+  if (isReplay(req)) return { ok: false, reason: 'replay' };
   if (!approvesPrice(said.words, { names: [agentName], topic: SONG_TOPIC })) return { ok: false, reason: 'not-approved' };
   if (onceOn && !claimOnce(req, KEY)) return { ok: false, reason: 'turn-limit' };
 
@@ -412,6 +413,7 @@ async function songGate({ req, userId, engine, estUSD, agentName, env = process.
 
 module.exports = {
   on,
+  PINNED,
   turnId,
   claimOnce,
   releaseOnce,

@@ -153,7 +153,8 @@ const applyKadeAudience = (req) => (agent) => {
     agent.instructions = agent.instructions + KADE_CONFIDENTIAL_NOTE;
   }
   // Child accounts additionally get the clean-content audience note.
-  if (req?.user?.kadeAccountType === 'child') {
+  /* Nov 11 2026 (card 5): a teen account gets the child note too (services/kadeAccountType.js). */
+  if (require('../../kadeAccountType').isChildLike(req?.user)) {
     agent.instructions = agent.instructions + KADE_CHILD_NOTE;
   } else if (isKadeAdult(req?.user) && process.env.KADE_ADULT_NOTE !== '0') {
     // The reverse flag (Part 214). Kill switch: KADE_ADULT_NOTE=0.

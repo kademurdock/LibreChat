@@ -225,17 +225,19 @@ test('song: a background run, a missing request and a missing person are refused
   assert.equal((await ask(coll, turn('yes'), { userId: undefined })).reason, 'unavailable');
 });
 
-test('song: the off switches put the old behaviour back', async () => {
+test('card 1: the yes rule has no off switch; KADE_SONG_YES_GATE=0 changes nothing', async () => {
   const coll = new FakeCollection();
   const req = turn('make me a song about rain');
-  const off = { KADE_SONG_YES_GATE: '0' };
-  assert.equal((await ask(coll, req, { env: off })).ok, true);
-  assert.equal((await ask(coll, req, { env: off })).reason, 'turn-limit');
-  assert.equal(coll.rows.length, 0);
-  const both = { KADE_SONG_YES_GATE: '0', KADE_SONG_ONCE_PER_TURN: '0' };
-  const free = turn('make me a song about rain');
-  assert.equal((await ask(coll, free, { env: both })).ok, true);
-  assert.equal((await ask(coll, free, { env: both })).ok, true);
+  const off = { KADE_SONG_YES_GATE: '0', KADE_SONG_ONCE_PER_TURN: '0' };
+  assert.deepEqual(await ask(coll, req, { env: off }), { ok: false, reason: 'quoted' });
+  assert.deepEqual(await ask(coll, req, { env: off }), { ok: false, reason: 'quoted' });
+  assert.equal(coll.rows.length, 1, 'one price row, nothing bought');
+  for (const name of ['KADE_TASK_YES_GATE', 'KADE_TASK_ATOMIC_START', 'KADE_SONG_YES_GATE', 'KADE_SPEND_NO_REPLAY']) {
+    assert.equal(gate.on(name, { [name]: '0' }), true, name);
+  }
+  /* the switches that are measurements or limits still read */
+  assert.equal(gate.on('KADE_SONG_ONCE_PER_TURN', { KADE_SONG_ONCE_PER_TURN: '0' }), false);
+  assert.equal(gate.on('KADE_SPEND_PRICE_HEARD', { KADE_SPEND_PRICE_HEARD: '0' }), false);
 });
 
 /* ------------------------------------------------------------------------------------------
@@ -307,7 +309,11 @@ test('review song: a regenerated yes turn never buys; a fresh yes does', async (
   await replied(coll, regen1);
   assert.deepEqual(await ask(coll, turn('yes', { isRegenerate: true })), { ok: false, reason: 'replay' }, 'the second retry buys nothing');
   assert.equal(coll.rows.filter((r) => r.usedAt instanceof Date && !r.lapsed).length, 1);
-  assert.equal((await ask(coll, turn('yes', { isRegenerate: true }), { env: { KADE_SPEND_NO_REPLAY: '0' } })).ok, true, 'switch off: as before');
+  assert.deepEqual(
+    await ask(coll, turn('yes', { isRegenerate: true }), { env: { KADE_SPEND_NO_REPLAY: '0' } }),
+    { ok: false, reason: 'replay' },
+    'card 1: the old switch no longer lets a retry buy',
+  );
 });
 
 test('review song: the voice lane is refused up front, before any price row, even on the first sentence of a call', async () => {

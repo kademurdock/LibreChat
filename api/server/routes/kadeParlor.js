@@ -209,7 +209,7 @@ router.post('/new', requireJwtAuth, async (req, res) => {
       try {
         const { getUserById } = require('~/models');
         const u = await getUserById(userId, 'kadeAccountType');
-        if (u && u.kadeAccountType === 'child') cleanDeck = true;
+        if (require('../services/kadeAccountType').isChildLike(u)) cleanDeck = true;
       } catch (_) {
         cleanDeck = true;
       }

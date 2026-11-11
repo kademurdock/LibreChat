@@ -93,7 +93,7 @@ function linkImportAvailable(user, features, env = process.env) {
 
 /** A child's account, the way the describer tells (kadeDescribedVideo.js actor). */
 function isChildAccount(user) {
-  return !!user && user.kadeAccountType === 'child';
+  return require('../services/kadeAccountType').isChildLike(user);
 }
 
 /** "3 minutes 12 seconds", the way musicReferenceError says a length. */

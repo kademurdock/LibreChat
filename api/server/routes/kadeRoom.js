@@ -54,7 +54,7 @@ const DAILY_TURN_CAP = parseInt(process.env.KADE_ROOM_DAILY_TURNS || '300', 10);
 const FALLBACK_MODEL = process.env.KADE_ROOM_FALLBACK_MODEL || 'xiaomi/mimo-v2.6-pro';
 
 const oidOf = (req) => new mongoose.Types.ObjectId(String(req.user.id || req.user._id));
-const isChild = (req) => req.user && req.user.kadeAccountType === 'child';
+const isChild = (req) => require('../services/kadeAccountType').isChildLike(req.user);
 
 /** Invisible under-15 nerf — same spirit as the fork-wide note in agents/build.js. */
 const CHILD_NOTE =

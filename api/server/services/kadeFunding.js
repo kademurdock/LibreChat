@@ -183,7 +183,7 @@ function compose({
     userId: String(user._id),
     name: user.name || user.username || 'this person',
     admin,
-    child: !admin && user.kadeAccountType === 'child',
+    child: !admin && require('./kadeAccountType').isChildLike(user),
     window: {
       from: window.from ? new Date(window.from).toISOString() : null,
       to: window.to ? new Date(window.to).toISOString() : null,
@@ -436,7 +436,7 @@ async function account(id, deps = defaultDeps()) {
     id: String(u._id),
     name: u.name || u.username || '',
     admin,
-    child: !admin && u.kadeAccountType === 'child',
+    child: !admin && require('./kadeAccountType').isChildLike(u),
     reviewSeat: isReviewSeat({ id: String(u._id), email: u.email }, deps.env || process.env),
   };
 }

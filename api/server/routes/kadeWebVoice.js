@@ -129,7 +129,7 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
       email: u.email || null,
       uid: String(u.id || u._id || ''),
       name: u.name || u.username || null,
-      accountType: u.kadeAccountType === 'child' ? 'child' : null,
+      accountType: require('../services/kadeAccountType').isChildLike(u) ? 'child' : null,
       agentId,
       agentName,
       voiceId,
