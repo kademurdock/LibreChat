@@ -29,7 +29,6 @@ const SHARED_HEAD = `
   @media (prefers-contrast: more) {
     .muted { opacity: 1; }
     .card { border-width: 2px; }
-    nav.kadetabs a { color: #3a4150; }
   }
   h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
   h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
@@ -57,12 +56,28 @@ const SHARED_HEAD = `
   a.back { display:inline-block; margin:0 0 .25rem; padding:.65rem .75rem .65rem 0; font-weight:600; text-decoration:none; color:#1d55d0; }
   @media (prefers-color-scheme: dark) { a.back { color: #93c5fd; } }
   a.back:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  /*KADE-TABS-CSS*/
+  /* ONE TAB BAR, THE PHONE'S (Nov 10 2026): Talk, Library, Create, Play, More.
+     The tab you are in is marked three ways that do not depend on colour: a thick bar along its
+     top, heavier letters and an underlined name (plus the colour). Screen readers get
+     aria-current. This block is also what /kade-tabbar.js hands to pages without this head. */
   body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
   nav.kadetabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #ffffff; border-top: 1px solid #d9dde3; padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 -2px 10px rgba(0,0,0,.06); }
-  nav.kadetabs a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 8px 4px 10px; min-height: 56px; text-decoration: none; color: #5b6270; font-size: .78rem; font-weight: 600; }
+  nav.kadetabs a { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 6px 2px 10px; min-height: 56px; text-decoration: none; color: #4d5462; font-size: .8rem; font-weight: 600; border-top: 4px solid transparent; }
   nav.kadetabs a .ic { font-size: 1.45rem; line-height: 1; }
-  nav.kadetabs a[aria-current="page"] { color: #1d55d0; }
-  nav.kadetabs a:focus-visible { outline: 3px solid #ffbf47; outline-offset: -3px; }
+  nav.kadetabs a[aria-current] { color: #1d55d0; border-top-color: #1d55d0; font-weight: 800; }
+  nav.kadetabs a[aria-current] .tx { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  nav.kadetabs a:focus-visible { outline: 3px solid #1d55d0; outline-offset: -3px; }
+  @media (prefers-color-scheme: dark) {
+    nav.kadetabs { background: #1a1d23; border-top-color: #2c2f37; }
+    nav.kadetabs a { color: #aab2c2; }
+    nav.kadetabs a[aria-current] { color: #8fbcff; border-top-color: #8fbcff; }
+    nav.kadetabs a:focus-visible { outline-color: #ffbf47; }
+  }
+  @media (prefers-contrast: more) { nav.kadetabs a { color: #2a303b; } }
+  @media (prefers-contrast: more) and (prefers-color-scheme: dark) { nav.kadetabs a { color: #e7e9ee; } }
+  @media (forced-colors: active) { nav.kadetabs a[aria-current] { border-top-color: Highlight; } }
+  /*KADE-TABS-CSS-END*/
   nav.hublist { display: grid; gap: .6rem; margin-top: 1rem; }
   a.hubitem { display: flex; align-items: center; gap: .9rem; background: #fff; border: 1px solid #e3e6ea; border-radius: 14px; padding: 1rem 1.1rem; text-decoration: none; color: inherit; }
   a.hubitem:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
@@ -70,9 +85,6 @@ const SHARED_HEAD = `
   a.hubitem strong { display: block; font-size: 1.08rem; }
   a.hubitem small { display: block; opacity: .7; font-size: .88rem; margin-top: .1rem; }
   @media (prefers-color-scheme: dark) {
-    nav.kadetabs { background: #1a1d23; border-top-color: #2c2f37; }
-    nav.kadetabs a { color: #9aa3b5; }
-    nav.kadetabs a[aria-current="page"] { color: #6ea8ff; }
     a.hubitem { background:#1e2127; border-color:#2c2f37; }
   }
   /* KADE session 22 polish (July 21 2026): micro-interactions + gentle
@@ -81,12 +93,9 @@ const SHARED_HEAD = `
      exact static page that shipped before this block existed. The AA
      palette from the July 21 contrast pass is untouched; hover cues that
      are pure color/shadow (not motion) apply everywhere. */
-  nav.kadetabs a { border-top: 3px solid transparent; }
-  nav.kadetabs a[aria-current="page"] { border-top-color: #1d55d0; }
   a.btn:hover { box-shadow: 0 3px 10px rgba(0,0,0,.22); }
   a.hubitem:hover { border-color: #1d55d0; box-shadow: 0 2px 8px rgba(0,0,0,.10); }
   @media (prefers-color-scheme: dark) {
-    nav.kadetabs a[aria-current="page"] { border-top-color: #6ea8ff; }
     a.hubitem:hover { border-color: #6ea8ff; }
   }
   @media (prefers-contrast: more) {
@@ -196,42 +205,80 @@ const SHARED_HEAD = `
     const r = await fetch(path, {method:'POST', headers:{'Authorization':'Bearer '+token, 'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
     return r;
   }
+  /*KADE-TABS-JS*/
   (function(){
+    /* ONE TAB BAR, THE PHONE'S (Nov 10 2026, her yes on the Library and design review): Talk,
+       Library, Create, Play, More, in the phone's order and words. Library opens the Library's
+       front desk; the other four open their section of Home, which carries the phone's map
+       (Alerts and You are under More, as on the phone).
+       The tab whose section holds this page is marked aria-current="true"; a tab that IS this
+       exact page (the Library's front desk, or Home at that section) is aria-current="page".
+       Arriving at a section of Home puts focus on that section's heading, so a screen reader
+       starts reading there instead of at the top of Home. */
+    var TABS = [['talk','/home#sec-talk','Talk','💬'],['library','/library','Library','📚'],['create','/home#sec-create','Create','🎨'],['play','/home#sec-play','Play','🎲'],['more','/home#sec-more','More','☰']];
+    var HOMES = {
+      talk: ['/c','/conversations','/spotter','/describe','/transcribe'],
+      library: ['/library','/reading-room','/family-history'],
+      create: ['/sound-booth','/my-creations','/wall-of-fame','/agent-builder','/prompts','/described-video'],
+      play: ['/parlor','/clubhouse','/lounge','/debate-room','/conversation-hall','/game-room','/matchmaker','/agents','/world']
+    };
+    function kadeTabNow(){
+      var path = location.pathname;
+      if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0, -1);
+      if (!path || path === '/') return { tab: 'talk', exact: false };
+      if (path === '/home') {
+        if (location.hash.indexOf('#sec-') !== 0) return { tab: 'talk', exact: false };
+        var sec = location.hash.slice(5);
+        if (sec === 'library') return { tab: 'library', exact: false };
+        if (sec === 'talk' || sec === 'create' || sec === 'play' || sec === 'more') return { tab: sec, exact: true };
+        return { tab: 'more', exact: false };
+      }
+      for (var name in HOMES) {
+        for (var i = 0; i < HOMES[name].length; i++) {
+          var root = HOMES[name][i];
+          if (path === root || path.indexOf(root + '/') === 0) return { tab: name, exact: path === '/library' && !location.search };
+        }
+      }
+      return { tab: 'more', exact: false };
+    }
+    function kadeMarkTabs(nav){
+      var now = kadeTabNow(), links = nav.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        if (links[i].getAttribute('data-tab') === now.tab) links[i].setAttribute('aria-current', now.exact ? 'page' : 'true');
+        else links[i].removeAttribute('aria-current');
+      }
+    }
+    function kadeLandOnSection(){
+      if (location.pathname.indexOf('/home') !== 0 || location.hash.indexOf('#sec-') !== 0) return;
+      var heading = document.getElementById(location.hash.slice(1));
+      if (!heading) return;
+      if (!heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+      try { heading.focus(); } catch(e) {}
+    }
     function kadeBuildTabs(){
       if (document.querySelector('nav.kadetabs')) return;
       if (!document.body) return;
-      var path = location.pathname;
-      if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0, -1);
-      if (!path) path = '/';
-      var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls','/reading-room','/library'];
-      var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard','/pronunciation-dictionary'];
-      var active = 'chats';
-      if (path === '/notifications') active = 'alerts';
-      else if (youPages.indexOf(path) !== -1) active = 'you';
-      else if (toolPages.indexOf(path) !== -1) active = 'tools';
-      else if (path === '/') active = 'chats';
-      else active = 'tools';
-      /* Part 116.3: Home first -- it carries the whole map in the iPhone app's order; Tools lives inside it. */
-      if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
-      else if (active === 'tools') active = 'home';
-      var items = [['home','/home','Home','🏠'],['chats','/c/new','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
       var nav = document.createElement('nav');
       nav.className = 'kadetabs';
       nav.setAttribute('aria-label','Main navigation');
-      for (var i=0;i<items.length;i++){
-        var it = items[i];
+      for (var i=0;i<TABS.length;i++){
+        var it = TABS[i];
         var a = document.createElement('a');
         a.href = it[1];
+        a.setAttribute('data-tab', it[0]);
         var ic = document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent = it[3];
-        var tx = document.createElement('span'); tx.textContent = it[2];
+        var tx = document.createElement('span'); tx.className='tx'; tx.textContent = it[2];
         a.appendChild(ic); a.appendChild(tx);
-        if (it[0] === active) { a.setAttribute('aria-current','page'); }
         nav.appendChild(a);
       }
+      kadeMarkTabs(nav);
       document.body.appendChild(nav);
+      window.addEventListener('hashchange', function(){ kadeMarkTabs(nav); kadeLandOnSection(); });
+      kadeLandOnSection();
     }
     if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', kadeBuildTabs); } else { kadeBuildTabs(); }
   })();
+  /*KADE-TABS-END*/
 </script>`;
 
 const feedHtml = `<!doctype html><html lang="en"><head><title>Usage & Balance</title>${SHARED_HEAD}</head>
@@ -1903,30 +1950,20 @@ const pronunciationDictionaryHtml = `<!doctype html><html lang="en"><head><title
 </script>
 </body></html>`;
 
+/* /kade-tabbar.js, for the pages that do not carry SHARED_HEAD (Spotter, Transcribe, the rooms,
+ * Matchmaker). It is the shared head's own tab-bar CSS and builder, cut out by their markers, so
+ * there is one tab bar and it cannot drift. */
+const tabsBetween = (start, end) => {
+  const from = SHARED_HEAD.indexOf(start);
+  const to = SHARED_HEAD.indexOf(end);
+  if (from === -1 || to <= from) throw new Error('kadePages: tab bar marker missing: ' + start);
+  return SHARED_HEAD.slice(from + start.length, to);
+};
 const tabBarAsset = `(function(){
   if (window.__kadeTabsLoaded) return; window.__kadeTabsLoaded = true;
-  var css = "body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px)) !important;} nav.kadetabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;background:#ffffff;border-top:1px solid #d9dde3;padding-bottom:env(safe-area-inset-bottom,0px);box-shadow:0 -2px 10px rgba(0,0,0,.06);} nav.kadetabs a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 4px 10px;min-height:56px;text-decoration:none;color:#5b6270;font-size:.78rem;font-weight:600;} nav.kadetabs a .ic{font-size:1.45rem;line-height:1;} nav.kadetabs a[aria-current=page]{color:#1d55d0;} nav.kadetabs a:focus-visible{outline:3px solid #ffbf47;outline-offset:-3px;} @media (prefers-color-scheme:dark){nav.kadetabs{background:#1a1d23;border-top-color:#2c2f37;} nav.kadetabs a{color:#9aa3b5;} nav.kadetabs a[aria-current=page]{color:#6ea8ff;}}";
-  function build(){
-    if (!document.body || document.querySelector('nav.kadetabs')) return;
-    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
-    var path = location.pathname; if (path.length > 1 && path.charAt(path.length-1) === '/') path = path.slice(0,-1); if (!path) path = '/';
-    var toolPages = ['/tools','/describe','/transcribe','/spotter','/debate-room','/conversation-hall','/game-room','/matchmaker','/wall-of-fame','/my-creations','/calls'];
-    var youPages = ['/you','/feed-the-server','/usage-dashboard','/feedback-dashboard','/pronunciation-dictionary'];
-    var active = 'chats';
-    if (path === '/notifications') active = 'alerts';
-    else if (youPages.indexOf(path) !== -1) active = 'you';
-    else if (toolPages.indexOf(path) !== -1) active = 'tools';
-    else if (path === '/') active = 'chats';
-    else active = 'tools';
-    if (path === '/home' || path === '/conversations' || path === '/announcements') active = 'home';
-    else if (active === 'tools') active = 'home';
-    var items = [['home','/home','Home','🏠'],['chats','/c/new','Chats','💬'],['alerts','/notifications','Alerts','🔔'],['you','/you','You','👤']];
-    var nav = document.createElement('nav'); nav.className = 'kadetabs'; nav.setAttribute('aria-label','Main navigation');
-    for (var i=0;i<items.length;i++){ var it=items[i]; var a=document.createElement('a'); a.href=it[1]; var ic=document.createElement('span'); ic.className='ic'; ic.setAttribute('aria-hidden','true'); ic.textContent=it[3]; var tx=document.createElement('span'); tx.textContent=it[2]; a.appendChild(ic); a.appendChild(tx); if(it[0]===active) a.setAttribute('aria-current','page'); nav.appendChild(a); }
-    document.body.appendChild(nav);
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+  var st = document.createElement('style'); st.textContent = ${JSON.stringify(tabsBetween('/*KADE-TABS-CSS*/', '/*KADE-TABS-CSS-END*/'))}; (document.head || document.documentElement).appendChild(st);
 })();
+${tabsBetween('/*KADE-TABS-JS*/', '/*KADE-TABS-END*/')}
 `;
 
 /* ADMIN LOGS VIEWER (session 21h). Drill-down: users -> their conversations ->
