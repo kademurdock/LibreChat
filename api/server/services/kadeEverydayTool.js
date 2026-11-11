@@ -62,13 +62,13 @@ function everydayOn(env = process.env) {
 }
 
 const DESCRIPTION_REMIND =
-  'Reminders for the person you are talking with. A reminder comes back to them later as a message from you in this chat, plus a phone notification that says only that you have a reminder for them. ' +
+  'Reminders for the person you are talking with. A reminder comes back to them later as a message from you in this chat, plus a phone notification if their phone has notifications on. ' +
   'Call the tool FIRST. Say a reminder is set only after the tool answers with Reminder set. If it answers FAILED, tell them plainly that it is not set. ' +
-  'Only set what they asked for. Times are in their own time zone. ' +
+  'Only set what they asked for. Times are in their own time zone. For remind me to do something, use set_reminder, never the check-in actions. ' +
   'Other actions: send pings their phone right now. The check-in actions set a repeating message from you. platform_status is a real health check. spontaneous_on and spontaneous_off switch whether you may text them first.';
 
 const DESCRIPTION_EVERYDAY =
-  ' Everyday helpers too: timers, alarms, the date and time where they live, daily medicine times, running lists such as to-do and shopping, and phone numbers they ask you to keep.';
+  ' Everyday helpers too: timers, alarms, the date and time where they live, daily medicine times, running lists such as to-do and shopping, and phone numbers they ask you to keep. A pill or medicine every day: medicine_add.';
 
 const ACTION_NOTE_BASE =
   'What to do. set_reminder: one reminder (body, plus in_minutes or fire_date and fire_time; label for paperwork deadlines, ride booking and the like). ' +

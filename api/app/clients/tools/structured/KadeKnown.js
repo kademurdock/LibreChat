@@ -9,7 +9,7 @@ const kadeKnownSchema = {
       type: 'string',
       enum: ['count', 'read', 'correct', 'forget', 'forget_source', 'forget_all'],
       description:
-        'count = how many things you know about them, by group (always first). read = the facts in one group. correct = fix one fact. forget = forget one fact. forget_source = forget everything from mail or from errands. forget_all = forget everything (asks first).',
+        'count = how many things you know about them, by group (always first). read = the facts in one group. correct = fix one fact. forget = forget one fact (reads it back and asks first; call again after their yes). forget_source = forget everything from mail or from errands. forget_all = forget everything (asks first).',
     },
     group: { type: 'string', enum: ['told', 'errand', 'mail', 'others', 'all'], description: 'read. Which group. others = facts about other people.' },
     ref: { type: 'string', description: 'correct or forget. The ref of the fact, from read.' },
@@ -31,8 +31,8 @@ class KadeKnown extends Tool {
     this.name = 'kade_known';
     this.description =
       'What you know about them, and fixing or forgetting it. Use when they ask what you know or remember about them, say you remember something wrong, or ask you to forget something. ' +
-      'Call count first and say the counts; then read the group they pick. To forget or correct, read first and use the ref. If you are not sure which fact they mean, read it back and ask before forgetting. ' +
-      'Never say a fact is forgotten unless forget answered ok.';
+      'Call count first and say the counts; then read the group they pick. To forget or correct, read first and use the ref. Forget always reads the fact back and asks first; call it again only after their own yes. ' +
+      'Never say a fact is forgotten unless forget answered OK with forgotten.';
     this.schema = kadeKnownSchema;
     this.req = fields.req;
     this.agentId = fields.agentId;
@@ -52,7 +52,8 @@ class KadeKnown extends Tool {
       else if (action === 'forget_all') out = await known.forgetAll(base);
       else return 'FAILED: unknown action. Use count, read, correct, forget, forget_source or forget_all.';
       const { ok, why: _why, ...rest } = out;
-      return `${ok ? 'OK' : 'FAILED'}: ${JSON.stringify(rest)}`;
+      /* A first step that waits for their yes has done nothing yet (kadeLedger reads NOT YET). */
+      return `${ok ? (rest.needsYes ? 'NOT YET' : 'OK') : 'FAILED'}: ${JSON.stringify(rest)}`;
     } catch (e) {
       logger.warn('[KadeKnown] ' + (e && e.message));
       return 'FAILED: memory could not be reached just now. Tell them plainly; do not say anything was forgotten or changed.';

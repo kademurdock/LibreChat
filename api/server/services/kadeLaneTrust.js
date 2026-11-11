@@ -23,13 +23,14 @@
  *                    is about to run (kadeLedger.wrapKadeTool awaits it), so no reply waits on it.
  *                    KADE_PHONE_PAIRING=0 turns pairing off (isPairedPhone then says null).
  *     'phone'        everything else on the voice lane: a caller named by number, an unmatched
- *                    caller, a folded call turn. When unsure, this.
+ *                    caller, a folded call turn, and any turn the bridge signed as a phone call
+ *                    even when it names nobody. When unsure, this.
  *
  *   What each lane may do (by the kind of action, see KINDS):
  *     signed-in     everything it could do before.
- *     paired-phone  general things, hearing their own reminders and lists, and ordinary writes
- *                   such as setting a reminder. Never mail or messages sent as them, memory,
- *                   deletes, spending or a standing yes.
+ *     paired-phone  general things, hearing their own reminders and lists, ordinary writes
+ *                   such as setting a reminder, a family message, and memory search. Never
+ *                   forget, deletes, privacy settings, the owner's tools, spending or a standing yes.
  *     phone         general things only: weather, news, a joke, a game, a chat.
  *
  * Until the bridge sends its lane pass (kade-ai-bridge lane-pass.js, card 2), signed-in app voice
@@ -130,7 +131,9 @@ function laneTrust(req, env = process.env) {
   const behalf = req.kadeOnBehalfOf && req.kadeOnBehalfOf.id ? req.kadeOnBehalfOf : null;
   const named = Boolean(behalf || req.kadeOnBehalfOfUnresolved === true || body.kadeOnBehalfOf);
   const folded = latestWords(body.text).folded;
-  if (!named && !folded) return SIGNED_IN;
+  /* Nov 11 2026 review: a turn the bridge signed as a phone call is a call even when it names
+   * nobody (an unknown number); it must never act as the service seat's own signed-in owner. */
+  if (!named && !folded) return voiceLane.isPhonePass(req) ? PHONE : SIGNED_IN;
   if (req.kadeOnBehalfOfUnresolved === true || !behalf) return PHONE;
   /* Only the service seat (the voice proxy) may vouch for a caller. */
   const serviceSeat = String(req.user.role || '').toUpperCase() === 'ADMIN';
@@ -146,15 +149,18 @@ function laneTrust(req, env = process.env) {
  * general   nothing of the person's: weather, news, a joke, a game, a public page
  * list      hearing their own reminders, lists, job status
  * write     an ordinary change to their account: set a reminder, file feedback, save a game
- * send      something sent as them to someone else (a family message)
- * private   their memory, files, balance, the owner's own tools
+ * send      something sent as them to someone else inside the platform (a family message)
+ * memory    hearing what their characters remember (search only; never forget or change)
+ * private   their files, balance, privacy settings, the owner's own tools, anything unknown
  * delete    removing or cancelling something of theirs
  * spend     anything that costs money or starts paid work, quotes included
  * standing  approvals and platform-wide actions
  */
 const ALLOWED = {
   [SIGNED_IN]: null, // everything
-  [PAIRED]: new Set(['general', 'list', 'write']),
+  /* Nov 11 2026 review: a paired phone may also send a family message and hear memory search,
+   * as the plan allows (it forbids only mail read-back, forget and paid actions there). */
+  [PAIRED]: new Set(['general', 'list', 'write', 'send', 'memory']),
   [PHONE]: new Set(['general']),
 };
 
@@ -194,7 +200,8 @@ const KINDS = {
     timer: 'write',
     alarm: 'write',
     set_timezone: 'write',
-    reminder_wording: 'write',
+    /* Full wording shows reminder words on a lock screen: a privacy loosening, so app only. */
+    reminder_wording: 'private',
     reminders_on: 'write',
     medicine_add: 'write',
     medicine_list: 'list',
@@ -243,7 +250,7 @@ const KINDS = {
   kade_feedback: { file: 'general', reopen: 'write', '*': 'write' },
   kade_make_file: { '*': 'write' },
   kade_message: { '*': 'send' },
-  kade_memory_search: { '*': 'private' },
+  kade_memory_search: { '*': 'memory' },
   kade_living_memory: { '*': 'private' },
   kade_transcribe: { '*': 'private' },
   kade_funding_balance: { '*': 'private' },
@@ -252,6 +259,16 @@ const KINDS = {
   kade_council: { '*': 'private' },
   kade_approvals: { list: 'private', '*': 'standing' },
   fal_studio: { '*': 'spend' },
+  /* Nov 11 2026 review: tools that are not kade_* are gated too (kadeLedger.laneGate, wired for
+   * every loaded tool in handleTools.js). Only these public lookups are general; any other tool
+   * (files, code, image making, MCP servers, actions) is 'private' and refused on a call. */
+  calculator: { '*': 'general' },
+  web_search: { '*': 'general' },
+  google: { '*': 'general' },
+  tavily_search_results_json: { '*': 'general' },
+  traversaal_search: { '*': 'general' },
+  wolfram: { '*': 'general' },
+  open_weather: { '*': 'general' },
 };
 
 /* Left to their own access rules on purpose (the Library and family history are not changed by
@@ -266,7 +283,8 @@ function kindOf(tool, input) {
   return map[action] || map['*'] || 'private';
 }
 
-const LINE_PHONE = 'I can do that in the app, or once this phone is paired.';
+const LINE_PHONE =
+  'I can do that in the app. Or pair this phone: in the app, ask me to pair your phone, and I will give you a code to say on a call.';
 const LINE_PAIRED = 'I can do that in the app.';
 
 /**
@@ -288,7 +306,7 @@ function laneRefusal(tool, input, req, env = process.env) {
   const line = lane === PAIRED ? LINE_PAIRED : LINE_PHONE;
   const why =
     lane === PAIRED
-      ? 'This phone is paired, but mail, messages, memory, deletes and anything that costs money still need the app.'
+      ? 'This phone is paired, but forgetting, deletes, privacy settings, the owner tools and anything that costs money still need the app.'
       : 'This is a phone call, and the platform cannot be sure who is calling, so nothing that belongs to them can be read back, changed, deleted or paid for here.';
   return {
     lane,

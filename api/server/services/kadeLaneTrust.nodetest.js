@@ -36,6 +36,26 @@ test('laneTrust: text chat and background runs are signed in; every voice shape 
   assert.equal(lane.laneTrust({ body: {} }), 'phone', 'no signed-in user');
 });
 
+test('laneTrust: a turn the bridge signed as a phone call is a call even when it names nobody (review fix)', () => {
+  const seat = (extra = {}) => ({ user: { id: 'seat', role: 'ADMIN' }, body: { conversationId: 'c', text: 'what is on my list' }, ...extra });
+  assert.equal(lane.laneTrust(seat()), 'signed-in', 'the owner typing');
+  assert.equal(lane.laneTrust(seat({ kadeVoicePass: 'phone' })), 'phone', 'unknown caller, no number');
+  assert.equal(lane.laneTrust(seat({ kadeCallerNumber: '+15550100123' })), 'phone', 'unknown caller with a number');
+  const r = lane.laneRefusal('kade_notify', { action: 'list_read' }, seat({ kadeVoicePass: 'phone' }));
+  assert.ok(r && r.lane === 'phone');
+  assert.ok(lane.laneRefusal('kade_known', { action: 'forget' }, seat({ kadeVoicePass: 'phone' })));
+  assert.equal(lane.laneRefusal('kade_weather', {}, seat({ kadeVoicePass: 'phone' })), null);
+});
+
+test('tools that are not kade_* are gated too: public lookups pass on a call, anything else is refused (review fix)', () => {
+  for (const t of ['web_search', 'calculator', 'google', 'open_weather']) assert.equal(lane.laneRefusal(t, {}, call()), null, t);
+  for (const t of ['file_search', 'execute_code', 'flux', 'dalle', 'search_mcp_files', 'getThing_action_example---com']) {
+    const r = lane.laneRefusal(t, {}, call());
+    assert.ok(r && r.text.startsWith('FAILED'), t);
+    assert.equal(lane.laneRefusal(t, {}, text()), null, `${t} in signed-in chat`);
+  }
+});
+
 /* What kadeVoiceLane.markVoiceLane sets from the bridge's signed pass (card 2). */
 const appVoice = (t = 'hi') => call(t, {}, { kadeAppVoice: { userId: 'u1' } });
 const numbered = (t = 'hi', num = '+15550100123') => call(t, {}, { kadeCallerNumber: num });
@@ -139,7 +159,7 @@ test('unpaired phone: general things still work', () => {
   }
 });
 
-test('paired phone: hears reminders and lists and may set one; never memory, mail, messages, deletes or spending', async () => {
+test('paired phone: hears reminders, lists and memory search, may set one and send a family message; never forget, deletes or spending', async () => {
   const env = {};
   const req = numbered();
   await lane.resolvePairing(req, pairedTo('u1'));
@@ -153,13 +173,17 @@ test('paired phone: hears reminders and lists and may set one; never memory, mai
     ['kade_notify', { action: 'check_back' }],
     ['kade_call_me', { action: 'list_calls' }],
     ['kade_task', { action: 'status' }],
+    ['kade_memory_search', {}],
+    ['kade_message', {}],
   ]) {
     assert.equal(lane.laneRefusal(tool, input, req, env), null, `${tool} ${input.action}`);
   }
   for (const [tool, input] of [
-    ['kade_memory_search', {}],
     ['kade_notify', { action: 'cancel_reminder' }],
-    ['kade_message', {}],
+    ['kade_notify', { action: 'reminder_wording' }],
+    ['kade_drive_pc', {}],
+    ['flux', {}],
+    ['file_search', {}],
     ['kade_task', { action: 'start' }],
     ['kade_task', { action: 'quote' }],
     ['kade_funding_balance', {}],
@@ -195,7 +219,8 @@ test('refused in code BEFORE the tool runs: the tool body is never called, and t
   const out = await tool._call({ action: 'list_reminders' });
   assert.equal(ran, 0);
   assert.match(out, /^FAILED: not done/);
-  assert.ok(out.includes('I can do that in the app, or once this phone is paired.'));
+  assert.ok(out.includes(lane.LINE_PHONE));
+  assert.match(lane.LINE_PHONE, /ask me to pair your phone/, 'review fix: the line says how to pair');
   assert.match(out, /kade_notify list_reminders: FAILED \(refused-phone\)/);
   /* a general thing in the same call goes through */
   const weather = { _call: async () => 'Sunny, 70.' };

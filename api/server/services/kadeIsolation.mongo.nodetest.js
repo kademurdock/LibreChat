@@ -139,7 +139,12 @@ test('a marker fact in account A never reaches account B', { skip: deps ? false 
   /* ── 8. card 8 on real storage: A forgets the shared fact; what carried it goes, and it does not come back ── */
   const shared = (await known.read({ req: req(A), agentId: AGENT, group: 'all' })).items.find((i) => i.fact === FACT);
   assert.ok(shared, 'A hears the shared card');
-  const gone = await known.forget({ req: req(A), agentId: AGENT, ref: shared.ref });
+  /* Review fix: forget reads the fact back and asks first; the yes comes in the next message. */
+  const asked = await known.forget({ req: req(A), agentId: AGENT, ref: shared.ref });
+  assert.equal(asked.needsYes, true, JSON.stringify(asked));
+  const yes = req(A);
+  yes.body.text = 'yes, forget it';
+  const gone = await known.forget({ req: yes, agentId: AGENT, ref: shared.ref });
   assert.equal(gone.ok, true, JSON.stringify(gone));
   assert.equal(gone.forgotten, FACT);
   const left = await methods.getAllUserMemories(A);

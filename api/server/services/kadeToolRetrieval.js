@@ -181,16 +181,19 @@ const ALIASES = {
   ],
   /* Nov 11 2026: phone pairing (kade_phone_pairing), keyword only (KEYWORD_ONLY below). "Pair my
    * phone", "unpair my number", "my pairing code is ...", "which phones are paired". */
+  /* Review fix: "pair of shoes for my phone" no longer attaches it. */
   kade_phone_pairing: [
-    /\b(?:un)?pair(?:ing|ed)?\b[^.!?\n]{0,40}\b(?:phones?|numbers?|cells?|codes?|mobile)\b/i,
-    /\b(?:phones?|numbers?|cells?)\b[^.!?\n]{0,30}\b(?:un)?paired\b|\bpairing code\b|\bunpair\b/i,
+    /\b(?:un)?pair (?:my|this|a|the|her|his|our|that) (?:new )?(?:phone|number|cell|mobile)\b/i,
+    /\b(?:phones?|numbers?|cells?) (?:is |are |was |were )?(?:un)?paired\b|\bpairing code\b|\bunpair\b|\bhow (?:do|can) (?:i|we) pair\b/i,
   ],
   /* Nov 11 2026 (card 8): what a character knows about the person, fixing it, forgetting it. In
    * KEYWORD_ONLY below. */
   kade_known: [
     /\bwhat (?:do|else do|all do) you (?:know|remember) about me\b|\bwhat have you (?:got|saved|kept|learned) (?:on|about) me\b|\bwhat do you have (?:on|about) me\b/i,
-    /\b(?:forget|erase|delete|unlearn) (?:that|this|it|everything|all (?:of )?(?:that|it|this)|what i (?:said|told you)|about (?:that|my|me)|my\b)/i,
-    /\b(?:please )?don'?t remember (?:that|this|it)\b|\bstop remembering\b/i,
+    /* Review fix: "forget it, never mind" and "I always forget my keys" no longer attach it. */
+    /\b(?:forget|erase|delete|unlearn) (?:everything|all) (?:you know )?about me\b|\bforget what i (?:said|told you)\b|\b(?:please|can you|could you|i want you to|i'd like you to|go ahead and) (?:forget|erase|unlearn)\b|\bforget (?:that|this) (?:fact|about me|i (?:said|told you))\b/i,
+    /^\s*(?:please\s+)?(?:forget|erase|delete) (?:that|this)(?: one| fact)?(?:,? please)?\s*[.!]*\s*$/i,
+    /\b(?:please )?don'?t remember (?:that|this)\b|\bstop remembering\b/i,
     /\byou(?:'ve| have)? (?:got|remember(?:ed)?|have) (?:that|it|this|me) wrong\b|\bremember(?:ed)? (?:that |it |this )?wrong\b|\bthat'?s not right,? (?:i|my)\b/i,
     /\b(?:what (?:do|did) you (?:know|learn) from my (?:mail|email|errands?))|\bforget (?:everything )?from my (?:mail|email|errands?)\b/i,
   ],
@@ -219,10 +222,14 @@ const ALIASES = {
     /* Nov 11 2026 (home agent cards 6 and 7): every character now has it, keyword only where the
      * record does not list it, so these are the ways people ask for reminders, check-backs and the
      * everyday helpers. */
-    /\b(?:remind(?:s|ed|ing|ers)|timers?|alarms|medicines?|meds|medications?|pills?|prescriptions?|refills?|appointments?|deadlines?|paperwork|recertif\w*|benefits (?:forms?|renewal|review|deadline|letter|office)|paratransit|book (?:a|my|the) ride|ride to|check back|ask me (?:later|tomorrow|tonight|again)|follow up with me|to-?do|todo|shopping list|grocery list|groceries|(?:my|the|a|our|that) lists?|time zone)\b/i,
-    /\b(?:add|put)\b[^.!?\n]{1,40}\b(?:to|on) (?:my|the|our) \w+(?: list)?\b|\b(?:take|cross|scratch)\b[^.!?\n]{1,40}\boff (?:my|the|our) \w+/i,
-    /\bwhat time is it\b|\bwhat(?:'?s| is) (?:the )?(?:time|date)\b|\bwhat day is (?:it|today)\b|\btoday'?s date\b/i,
-    /\b(?:phone )?number (?:for|of)\b|'s (?:phone |cell )?number\b|\b(?:save|keep|remember) (?:a|this|that|the|my \w+'?s?) (?:phone )?number\b/i,
+    /* Review fix: plain mentions ("I hate taking my meds", "a list of horror movies", "a number of
+     * reasons", "my sister bought groceries", "an appointment with my therapist") no longer attach
+     * it; the words have to be about setting, hearing or keeping something. */
+    /\b(?:remind(?:s|ed|ing|ers)|timers?|alarms|recertif\w*|benefits (?:forms?|renewal|review|deadline|paperwork)|(?:medicaid|snap|ssi|ssdi|disability) (?:paperwork|forms?|renewal)|paperwork (?:is |are )?due|paratransit|book (?:a|my|the) ride|check back|ask me (?:later|tomorrow|tonight|again)|follow up with me|to-?do list|todo|shopping list|grocery list|(?:my|our) (?:\w+ )?list|time zone)\b/i,
+    /\b(?:meds|medicines?|medications?|pills?|prescriptions?|refills?)\b[^.!?\n]{0,30}\b(?:at \d|every (?:morning|night|day|evening)|each (?:morning|night|day)|times?|schedule|list|reminders?)\b|\b(?:list|schedule|times?) (?:of|for) (?:my )?(?:meds|medicines?|medications?|pills)\b/i,
+    /\b(?:add|put)\b[^.!?\n]{1,40}\b(?:to|on) (?:my|the|our) (?:\w+ )?list\b|\b(?:take|cross|scratch)\b[^.!?\n]{1,40}\boff (?:my|the|our) (?:\w+ )?list\b/i,
+    /\bwhat time is it(?! in\b)|\bwhat(?:'?s| is) (?:the )?(?:time|date)(?: (?:now|today|here))?\s*[?.!]*$|\bwhat day is (?:it|today)\b|\btoday'?s date\b/i,
+    /\b(?:phone|cell) number (?:for|of)\b|\bnumber for (?:my|our)\b|'s (?:phone |cell )?number\b|\b(?:save|keep|remember) (?:a|this|that|the|my \w+'?s?) (?:phone )?number\b/i,
   ],
   kade_help: [
     /\b(how do i|how to|where is the (setting|button|page)|help me (with|use|find)|what can you do|settings|turn (on|off))\b/i,

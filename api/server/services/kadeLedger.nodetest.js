@@ -142,3 +142,38 @@ test('the claim count: off with KADE_CLAIM_COUNT=0; a backed claim is not counte
   assert.equal(m.unbacked.failure, 1);
   assert.equal(m.unbacked.start, 1);
 });
+
+test('review fix: older failure wording later in the first sentence is FAILED; a first step that waits for a yes is NOT YET', async () => {
+  for (const said of [
+    'Notifications are not configured on this server, so nothing went out.',
+    'Notification result unclear: the bridge did not say.',
+    'Generated "hello" but it was not delivered to any device.',
+    'No devices are registered for them, so nobody received it.',
+    'Reminder not set: the time was in the past.',
+  ]) {
+    assert.equal(ledger.judge(said, { kind: 'write' }).ok, false, said);
+  }
+  assert.equal(ledger.judge('Not cleared yet. Ask them first.').code, 'needs-yes');
+  assert.equal(ledger.judge('NOT YET: {"needsYes":true}').code, 'needs-yes');
+  assert.equal(ledger.judge('Sorry, I could not resist this one: why did the chicken...', { kind: 'general' }).ok, true, 'a joke is content');
+  assert.equal(ledger.judge('The not set piece of the play was great.', { kind: 'general' }).ok, true);
+  const req = turn('clear my list');
+  const t = ledger.wrapKadeTool('kade_notify', fake(async () => 'Not cleared yet. Ask them: clear all 3 items?'), req);
+  const out = await t._call({ action: 'list_clear' });
+  assert.match(out, /^NOT YET: Not cleared yet/);
+  assert.match(out, /kade_notify list_clear: NOT DONE YET/);
+});
+
+test('review fix: the lane gate stops a non-kade tool on a phone call and leaves its output alone in chat', async () => {
+  const call = { user: { id: 'seat', role: 'ADMIN' }, body: { conversationId: 'x', text: 'look in my files', kadeOnBehalfOf: 'a@example.com' }, kadeOnBehalfOf: { id: 'u1' } };
+  let ran = 0;
+  const files = ledger.laneGate({ name: 'file_search', _call: async () => (ran++, 'raw file text') }, call);
+  assert.match(await files._call({ query: 'x' }), /^FAILED: not done/);
+  assert.equal(ran, 0);
+  const search = ledger.laneGate({ name: 'web_search', _call: async () => 'results' }, call);
+  assert.equal(await search._call({ query: 'x' }), 'results', 'public lookups pass, output untouched');
+  const chat = ledger.laneGate({ name: 'file_search', _call: async () => 'raw file text' }, turn('look in my files'));
+  assert.equal(await chat._call({ query: 'x' }), 'raw file text', 'signed-in chat untouched');
+  const kade = ledger.laneGate({ name: 'kade_weather', _call: async () => 'Sunny.' }, turn('weather'));
+  assert.match(await kade._call({}), /^OK: Sunny\./, 'a kade tool gets the full ledger');
+});

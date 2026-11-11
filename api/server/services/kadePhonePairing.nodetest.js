@@ -31,6 +31,7 @@ function world({ env = {}, codes = [] } = {}) {
     phones: new FakeCollection(),
     now: () => t,
     random: () => (queue.length ? queue.shift() : 123456),
+    wrongs: new Map(),
   };
   return { deps, advance: (ms) => (t += ms) };
 }
@@ -75,6 +76,24 @@ test('pair my phone in the app, then the code said on a call pairs that number; 
   assert.equal((await pairing.redeem({ req: call(OTHER_NUMBER), code: '417209' }, w.deps)).ok, false);
 });
 
+test('review fix: one redeem per turn; the phone line is named; account delete clears pairings', async () => {
+  const w = world({ codes: [616161] });
+  await pairing.makeCode({ req: typed('grown') }, w.deps);
+  const req = call(NUMBER);
+  const [a, b] = await Promise.all([
+    pairing.redeem({ req, code: '000001' }, w.deps),
+    pairing.redeem({ req, code: '616161' }, w.deps),
+  ]);
+  assert.equal([a, b].filter((r) => /one pairing code per message/.test(r.error || '')).length, 1);
+  const named = await pairing.makeCode({ req: typed('grown') }, { ...w.deps, env: { ...w.deps.env, KADE_PHONE_LINE: '1 800 555 0100' } });
+  assert.match(named.tellThem, /1 800 555 0100/);
+  assert.match((await pairing.makeCode({ req: typed('grown') }, w.deps)).tellThem, /the Kade-AI phone line/);
+  await pairing.redeem({ req: call(NUMBER), code: '123456' }, w.deps);
+  await pairing.clearFor('grown', w.deps);
+  assert.equal(w.deps.phones.rows.length, 0);
+  assert.equal(w.deps.codes.rows.filter((r) => r.userId === 'grown').length, 0);
+});
+
 test('signed-in app voice may ask for a code; a phone call may not, and a code cannot be redeemed in the app', async () => {
   const w = world({ codes: [222333] });
   assert.equal((await pairing.makeCode({ req: appVoice('grown') }, w.deps)).ok, true);
@@ -94,7 +113,7 @@ test('signed-in app voice may ask for a code; a phone call may not, and a code c
   assert.equal((await pairing.makeCode({ req: { ...typed('grown'), kadeHiddenRun: true } }, w.deps)).ok, false);
 });
 
-test('five wrong tries lock a code; an hour ends it; a new code ends the old one', async () => {
+test('five wrong tries lock that phone out; many numbers guessing lock the codes; an hour ends a code; a new code ends the old one', async () => {
   const w = world({ codes: [111111, 555555, 777777] });
   await pairing.makeCode({ req: typed('grown') }, w.deps);
   for (let i = 0; i < 5; i++) {
@@ -102,7 +121,12 @@ test('five wrong tries lock a code; an hour ends it; a new code ends the old one
     assert.equal(r.ok, false);
   }
   assert.equal(w.deps.codes.rows[0].wrong, 5);
-  assert.ok(w.deps.codes.rows[0].lockedAt, 'locked');
+  assert.equal(w.deps.codes.rows[0].lockedAt, undefined, 'one prank caller does not lock the code (review fix)');
+  assert.match((await pairing.redeem({ req: call(OTHER_NUMBER), code: '111111' }, w.deps)).error, /too many wrong codes/, 'that phone is out, even with the right code');
+  for (let i = 0; i < 15; i++) {
+    await pairing.redeem({ req: call(`+1555020${String(1000 + i)}`), code: String(800000 + i) }, w.deps);
+  }
+  assert.ok(w.deps.codes.rows[0].lockedAt, 'twenty wrong tries across numbers lock the live codes');
   assert.equal((await pairing.redeem({ req: call(NUMBER), code: '111111' }, w.deps)).ok, false, 'even the right code, once locked');
 
   await pairing.makeCode({ req: typed('grown') }, w.deps);

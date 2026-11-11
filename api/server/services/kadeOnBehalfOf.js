@@ -51,7 +51,9 @@ async function resolveKadeOnBehalfOf(req, _res, next) {
       /* Oct 20 2026: kadeLibraryAccess (and username) too, so a voice turn billed to a Family pack
        * caller is priced at cost (kadeRealCost.PAYER_FIELDS; without the field the pack rule would
        * fall back to the account's age). */
-      { _id: 1, name: 1, username: 1, email: 1, role: 1, kadeLibraryAccess: 1 },
+      /* Nov 11 2026 (card 5): kadeAccountType too, so the audience note and child rules on a voice
+       * turn follow the person on the line, not the service seat (kadeAccountType.audienceOf). */
+      { _id: 1, name: 1, username: 1, email: 1, role: 1, kadeAccountType: 1, kadeLibraryAccess: 1 },
     ).lean();
     if (u) {
       req.kadeOnBehalfOf = {
@@ -61,6 +63,7 @@ async function resolveKadeOnBehalfOf(req, _res, next) {
         email: u.email,
         role: u.role || SystemRoles.USER,
         kadeLibraryAccess: u.kadeLibraryAccess,
+        kadeAccountType: u.kadeAccountType,
       };
       /* KADE Sep 25 2026 (Part 291), her words: "Yes, I do want double on voice." With the fork
        * switch KADE_VOICE_BILL_REAL=1 the real transaction for this turn is billed to the real

@@ -252,9 +252,19 @@ async function sweepDueReminders() {
     try {
       const excluded = await require('@librechat/data-schemas').excludedMemoryConversations(String(entry.userId));
       if (entry.sourceConversationIds?.some((id) => excluded.includes(id))) continue;
+      /* Nov 11 2026 review fix: "remind me at 8" can set a site reminder (kade_notify) AND the
+       * keeper's own reminder card. When a site reminder sits within 30 minutes of this one, the
+       * card's time is skipped so the person hears it once. KADE_REMIND_ALL=0 turns this off. */
+      const twin = await require('./kadeEveryday')
+        .hasSiteReminderNear(String(entry.userId), entry.dueAt)
+        .catch(() => false);
       const staleDays = (now - new Date(entry.dueAt)) / 86400000;
       const suffix = staleDays > 1 ? ' (this one was scheduled a while back — the server may have been asleep)' : '';
-      await deliverNudge(entry.userId, `Reminder: ${entry.value}${suffix}`, { type: 'reminder' });
+      if (twin) {
+        logger.info(`[kadeNudges] keeper reminder card skipped: a site reminder is set for the same time (user ${String(entry.userId).slice(0, 8)})`);
+      } else {
+        await deliverNudge(entry.userId, `Reminder: ${entry.value}${suffix}`, { type: 'reminder' });
+      }
       const rec = String(entry.recurrence || '').toLowerCase();
       if (['daily', 'weekly', 'monthly', 'yearly'].includes(rec)) {
         const next = new Date(entry.dueAt);

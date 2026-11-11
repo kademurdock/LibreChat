@@ -77,14 +77,16 @@ function hashes(userId, text) {
   return words(text).map((w) => hashOf(userId, w));
 }
 
+/* Review fix (Nov 11 2026): 60 percent of the forgotten fact's words, and at least two, so a
+ * reworded fact ("Has a sister nearby in Branson, Missouri" after "sister lives in Branson") is
+ * still caught. It leans toward keeping a fact forgotten over learning a near one. */
 function covers(tomb, candidate) {
   const t = Array.isArray(tomb) ? tomb : [];
   if (t.length < 2) return false;
   const have = new Set(candidate || []);
   let hit = 0;
   for (const h of t) if (have.has(h)) hit += 1;
-  if (t.length === 2) return hit === 2;
-  return hit / t.length >= 0.8;
+  return hit >= Math.max(2, Math.ceil(t.length * 0.6));
 }
 
 /** Split into sentences, keeping each sentence's own trailing space or line break. */
@@ -170,7 +172,7 @@ async function list(userId, now = new Date()) {
   if (!userId) return [];
   const rows = await coll()
     .find({ userId: String(userId), $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }] })
-    .limit(500)
+    .limit(2000)
     .toArray();
   return Array.isArray(rows) ? rows : [];
 }
@@ -204,13 +206,17 @@ async function lift({ userId, text }) {
   return (r && r.deletedCount) || ids.length;
 }
 
-/** True when the text carries a fact this person asked to forget. Fails open. */
+/**
+ * True when the text carries a fact this person asked to forget. Review fix: fails CLOSED when the
+ * tombstones cannot be read (the write is skipped this time; a forgotten fact never comes back
+ * because of a database hiccup).
+ */
 async function blocks(userId, text, env = process.env) {
   try {
     if (!on(env) || !userId || !String(text || '').trim()) return false;
     return blockedWith(userId, text, await list(userId));
   } catch (_) {
-    return false;
+    return true;
   }
 }
 

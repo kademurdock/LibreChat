@@ -327,11 +327,90 @@ test('"stop reminders" by text: everything waiting stops, medicine pauses, nothi
   assert.ok(w.db.table('kademedicines')[0].nextAt > w.clock);
 });
 
+test('review fix: a stop is undone by reminders back on, for reminders whose time is still ahead', async () => {
+  const w = world();
+  await act(chat(A), 'set_reminder', { body: 'Soon thing', in_minutes: 30 });
+  await act(chat(A), 'set_reminder', { body: 'Later thing', in_minutes: 600 });
+  await E.setStopped(A, true);
+  const rows = w.db.table('kadereminders');
+  assert.ok(rows.every((r) => r.status === 'stopped'));
+  w.later(60);
+  await E.setStopped(A, false);
+  assert.equal(rows.find((r) => r.text === 'Soon thing').status, 'stopped', 'its time passed while stopped');
+  assert.equal(rows.find((r) => r.text === 'Later thing').status, 'pending', 'still ahead: back');
+});
+
+test('review fix: a reminder already posted in the chat is never posted again after a crash; a stuck one is tried at most three times', async () => {
+  const w = world({ start: '2026-11-11T12:00:00Z' });
+  await act(chat(A), 'set_reminder', { body: 'once only', in_minutes: 5 });
+  const row = w.db.table('kadereminders')[0];
+  row.status = 'sending';
+  row.claimedAt = new Date('2026-11-11T11:00:00Z');
+  row.postedAt = new Date('2026-11-11T11:00:01Z');
+  w.later(10);
+  await E.sweepDue();
+  assert.equal(row.status, 'missed');
+  assert.equal(w.posts.length, 0, 'not posted twice');
+  await act(chat(A), 'set_reminder', { body: 'stuck', in_minutes: 500 });
+  const stuck = w.db.table('kadereminders')[1];
+  stuck.status = 'sending';
+  stuck.claimedAt = new Date('2026-11-11T11:00:00Z');
+  stuck.attempts = 3;
+  await E.sweepDue();
+  assert.equal(stuck.status, 'failed');
+});
+
+test('review fix: a deleted account gets nothing more; the keeper card beside a site reminder is skipped', async () => {
+  const w = world();
+  await act(chat(A), 'set_reminder', { body: 'gone', in_minutes: 5 });
+  E._seam.userExists = () => false;
+  w.later(10);
+  await E.sweepDue();
+  assert.equal(w.db.table('kadereminders')[0].status, 'orphaned');
+  assert.equal(w.posts.length, 0);
+  E._seam.userExists = null;
+  await act(chat(A), 'set_reminder', { body: 'kept', in_minutes: 120 });
+  const at = new Date(w.db.table('kadereminders')[1].fireAt);
+  assert.equal(await E.hasSiteReminderNear(A, new Date(at.getTime() + 10 * 60000)), true);
+  assert.equal(await E.hasSiteReminderNear(A, new Date(at.getTime() + 90 * 60000)), false);
+  assert.equal(await E.hasSiteReminderNear(B, at), false, 'never another person');
+  assert.equal(await E.hasSiteReminderNear(A, at, { KADE_REMIND_ALL: '0' }), false, 'off switch');
+});
+
+test('review fix: list names people use for one list land on it; a missing list is not called empty', async () => {
+  assert.equal(E.listKey('grocery'), 'shopping');
+  assert.equal(E.listKey('my grocery list'), 'shopping');
+  assert.equal(E.listKey('Shopping'), 'shopping');
+  assert.equal(E.listKey('my list'), 'to-do');
+  world();
+  await act(chat(A), 'list_add', { list: 'grocery', item: 'milk' });
+  assert.match(await act(chat(A), 'list_read', { list: 'shopping list' }), /milk/);
+  const missing = await act(chat(A), 'list_read', { list: 'hardware' });
+  assert.match(missing, /no hardware list/);
+  assert.match(missing, /shopping \(1\)/);
+});
+
 test('stop words: the person’s own order, not a story or a question; a plain phone call changes nothing', () => {
-  for (const s of ['stop reminders', 'Stop all my reminders please', 'please stop reminding me.', 'no more reminders', 'turn off my reminders', 'turn the reminders off', "don't remind me anymore", 'cancel all my reminders']) {
+  for (const s of ['stop reminders', 'Stop all my reminders please', 'Harley, stop reminders.', 'no more reminders', 'turn off my reminders', 'turn the reminders off', "don't remind me anymore", 'cancel all my reminders', 'stop reminding me anymore']) {
     assert.equal(E.stopWords(s), 'off', s);
   }
-  for (const s of ['stop reminding me about the dentist', 'my phone keeps reminding me', 'she said stop reminders', 'how do I stop reminders?', 'I will not stop reminding him', 'remind me to stop at the store']) {
+  /* Review fix: requests about ONE reminder, and answers to a check-back, are not the global stop. */
+  for (const s of [
+    'stop reminding me about the dentist',
+    'please stop reminding me.',
+    'Yes, you can stop reminding me now.',
+    'yes, stop reminders',
+    'Cancel my reminders for tomorrow',
+    'Please cancel the reminders about the party, it got moved',
+    'stop the reminder about trash day',
+    'turn off the reminder for my 3pm',
+    'no more reminders about the dentist please',
+    'my phone keeps reminding me',
+    'she said stop reminders',
+    'how do I stop reminders?',
+    'I will not stop reminding him',
+    'remind me to stop at the store',
+  ]) {
     assert.equal(E.stopWords(s), null, s);
   }
   assert.equal(E.stopWords('turn my reminders back on'), 'on');
@@ -406,15 +485,15 @@ test('lists: add, remove, read with counts first, and clear only after their own
   assert.match(await act(chat(A), 'list_add', { list: 'todo', item: 'call the landlord' }), /nothing new .*1 already on it/);
   assert.match(await act(chat(A), 'list_remove', { list: 'to-do', item: 'landlord' }), /^OK\. Took off call the landlord/);
   for (let i = 0; i < 12; i += 1) await act(chat(A), 'list_add', { list: 'groceries', item: `thing ${i}` });
-  assert.match(await act(chat(A), 'list_read', { list: 'groceries' }), /^OK\. The groceries list has 12 items\. The first ten:/);
+  assert.match(await act(chat(A), 'list_read', { list: 'groceries' }), /^OK\. The shopping list has 12 items\. The first ten:/);
 
   const ask = chat(A, 'clear my groceries list');
   assert.match(await act(ask, 'list_clear', { list: 'groceries' }), /^Not cleared yet\. Ask them: clear all 12 items/);
   assert.match(await act(ask, 'list_clear', { list: 'groceries' }), /^Not cleared yet/, 'never in the same turn as the ask');
   assert.match(await act(chat(A, 'no wait, not yet'), 'list_clear', { list: 'groceries' }), /^Not cleared yet/);
   await act(chat(A, 'clear my groceries list'), 'list_clear', { list: 'groceries' });
-  assert.match(await act(chat(A, 'yes, clear it'), 'list_clear', { list: 'groceries' }), /^OK\. The groceries list is cleared \(12 items/);
-  assert.equal(await act(chat(A), 'list_read', { list: 'groceries' }), 'OK. The groceries list is empty.');
+  assert.match(await act(chat(A, 'yes, clear it'), 'list_clear', { list: 'groceries' }), /^OK\. The shopping list is cleared \(12 items/);
+  assert.equal(await act(chat(A), 'list_read', { list: 'groceries' }), 'OK. The shopping list is empty.');
 });
 
 test('medicine: times per day and days of the week, skip today, pause; doses follow the wall clock across DST', async () => {
@@ -500,6 +579,15 @@ test('the soonest thing waiting wakes the site; a row stuck mid-send goes back t
   row.claimedAt = new Date('2026-11-11T11:00:00Z');
   await E.sweepDue();
   assert.equal(row.status, 'pending');
+});
+
+test('review fix: an unknown caller the bridge signed as a phone call is never the service seat itself', async () => {
+  world();
+  const seat = { user: { id: 'seat0seat0seat0seat0seat', role: 'ADMIN' }, body: { conversationId: 'c', text: 'what is on my list' }, kadeVoicePass: 'phone' };
+  assert.deepEqual(E.laneOf(seat), { ok: false, why: 'unknown-caller' });
+  const out = await E.handle({ action: 'list_read', data: {}, req: seat, agentId: 'a', agentName: 'Harley' });
+  assert.match(out, /^FAILED: the person on the line could not be matched/);
+  assert.equal(E.noteFromWords({ ...seat, body: { ...seat.body, text: 'stop reminders' } }), '');
 });
 
 test('the old sweep runs the new one, and the due reporter counts it', () => {

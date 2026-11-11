@@ -54,6 +54,10 @@ const UNTRUSTED_TOOL_NAMES = new Set([
 /* MCP tools are named "<tool>_mcp_<server>"; Forge's actions "<op>_action_<domain>". */
 const OUTSIDE_PATTERNS = [/_mcp_/, /_action_/];
 
+/* Review fix (Nov 11 2026): tools whose output holds a one-time secret (a phone pairing code). Not
+ * outside text, but never for memory either, so the keeper gets the same one-line stand-in. */
+const SECRET_OUTPUT_TOOLS = new Set(['kade_phone_pairing']);
+
 function stripOn(env = process.env) {
   return String((env && env.KADE_KEEPER_UNTRUSTED_STRIP) ?? '') !== '0';
 }
@@ -92,18 +96,20 @@ function forKeeper(messages, env = process.env) {
       const type = messageType(m);
       if (type !== 'tool') return m;
       const name = m.name || (m.lc_kwargs && m.lc_kwargs.name) || '';
-      if (!isUntrustedToolName(name)) return m;
+      const secret = SECRET_OUTPUT_TOOLS.has(name);
+      if (!secret && !isUntrustedToolName(name)) return m;
       stripped += 1;
+      const stand = secret ? `[${name} result left out: it holds a one-time code, never kept in memory]` : placeholder(name);
       const Klass = m.constructor;
       if (Klass && Klass !== Object && typeof m._getType === 'function') {
         return new Klass({
-          content: placeholder(name),
+          content: stand,
           name,
           tool_call_id: m.tool_call_id,
           additional_kwargs: m.additional_kwargs,
         });
       }
-      return { ...m, content: placeholder(name) };
+      return { ...m, content: stand };
     } catch (_) {
       return m;
     }
@@ -111,4 +117,4 @@ function forKeeper(messages, env = process.env) {
   return { messages: out, stripped };
 }
 
-module.exports = { UNTRUSTED_TOOL_NAMES, isUntrustedToolName, forKeeper, stripOn, placeholder };
+module.exports = { UNTRUSTED_TOOL_NAMES, SECRET_OUTPUT_TOOLS, isUntrustedToolName, forKeeper, stripOn, placeholder };

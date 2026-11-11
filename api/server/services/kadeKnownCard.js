@@ -22,7 +22,7 @@
  * and an about-someone-else tag (aboutOther; on older cards it is read from the card's key or
  * subject naming a relative or friend).
  *
- * THE SIZE: about 2,000 characters a person is a SOFT target, reported in every count ("over":
+ * THE SIZE: about 5,000 characters a person (her answer, 11 Nov) is a SOFT target, reported in every count ("over":
  * true). Kade has not decided the cap, so nothing is ever deleted to meet it.
  *
  * WHO MAY ASK: the signed-in app or website only. A phone call, a paired phone, a hidden
@@ -39,7 +39,11 @@ const crypto = require('crypto');
 const lanes = require('./kadeLaneTrustAdapter');
 const tomb = require('./kadeKnownTombstones');
 
-const SOFT_CAP_CHARS = 2000;
+/* Kade's answer, 11 Nov 2026 (plan section 8b, binding): about 5,000 characters, not 2,000. */
+const SOFT_CAP_CHARS = 5000;
+/* A voice turn has no settled conversation id (every voice turn is a fresh temporary chat), so an
+ * open "forget" question is kept for the person and this character alone, for PENDING_MINUTES. */
+const NO_CONVERSATION = 'no-conversation';
 const PENDING = 'kadeknownpending';
 const PENDING_MINUTES = 10;
 const READ_MAX = 10;
@@ -300,12 +304,49 @@ function findRef(facts, ref) {
 const OLD_CHAT =
   'It may still be in your old chats from that day; you can delete those chats in the app.';
 
+const FORGET_TOPIC = ['forget', 'forgot', 'it', 'that', 'this', 'one', 'them', 'delete', 'erase', 'remove', 'do', 'go', 'ahead'];
+
+/**
+ * Forget one fact. Two steps, in two different messages (review fix, plan section 4: "forget that"
+ * is confirmed aloud): the first call reads the fact back and asks; a call after their NEXT message
+ * forgets it only when that message is a plain yes. On that second call the ref may be left out:
+ * the fact that was asked about is the one forgotten. Anything else closes the ask.
+ */
 async function forget({ req, agentId, ref, env = process.env }) {
   const w = who(req, env);
   if (!w.ok) return { ok: false, why: w.why, tellThem: REFUSED[w.why] };
   const d = deps();
-  const f = findRef(await factsFor(w.userId, agentId), ref);
+  const spend = require('./kadeSpendGate');
+  const coll = d.pending();
+  const now = d.now();
+  const convo = spend.conversationOf(req) || NO_CONVERSATION;
+  const turn = spend.turnId(req);
+  const scope = { userId: w.userId, agentId: bucketOf(agentId), conversationId: convo, kind: 'forget' };
+  const open = await coll.findOne({ ...scope, createdAt: { $gte: new Date(now.getTime() - PENDING_MINUTES * 60000) } });
+  const wanted = String(ref || '').trim() || (open && open.ref) || '';
+  const f = findRef(await factsFor(w.userId, agentId), wanted);
   if (!f) return { ok: false, why: 'no-such-fact', tellThem: 'That fact was not found. Read the group again and use the ref from that read.' };
+  if (!open || open.ref !== f.ref) {
+    await coll.deleteMany(scope);
+    await coll.insertOne({ ...scope, ref: f.ref, turnId: turn, createdAt: now });
+    return {
+      ok: true,
+      needsYes: true,
+      fact: f.text,
+      tellThem:
+        `Nothing is forgotten yet. Read this back to them in plain words: "${f.text}". Ask whether they want you to forget it. ` +
+        'Call forget again only after their own next message says yes. Never say the ref.',
+    };
+  }
+  if (open.turnId === turn) {
+    return { ok: false, why: 'same-turn', tellThem: 'You already asked in this reply. Wait for their next message.' };
+  }
+  await coll.deleteMany(scope);
+  const words = spend.latestWords(req.body && req.body.text);
+  const yes = words.ok && !spend.isReplay(req) && spend.approvesPrice(words.words, { topic: FORGET_TOPIC });
+  if (!yes) {
+    return { ok: false, why: 'no-yes', tellThem: 'Their message was not a plain yes, so nothing was forgotten. Say so, and that they can ask again.' };
+  }
   const res = await d.deleteCard({ userId: w.userId, agentId: f.agentId, key: f.key });
   if (!res || res.ok !== true) return { ok: false, why: 'not-deleted', tellThem: 'It could not be forgotten just now. Tell them plainly and do not say it is gone.' };
   /* The rest never undoes the delete; each part fails on its own. */
@@ -392,12 +433,11 @@ async function forgetAll({ req, agentId, env = process.env }) {
   const d = deps();
   const coll = d.pending();
   const now = d.now();
-  const convo = spend.conversationOf(req);
+  /* Review fix: a voice turn (or a brand-new chat) has no conversation id; the ask is then held for
+   * the person and this character alone, so "yes" in the next voice turn can answer it. */
+  const convo = spend.conversationOf(req) || NO_CONVERSATION;
   const turn = spend.turnId(req);
-  const scope = { userId: w.userId, agentId: bucketOf(agentId) };
-  if (!convo) {
-    return { ok: false, why: 'new-conversation', tellThem: 'This conversation is too new to hold the question. Ask them to say it again in a moment.' };
-  }
+  const scope = { userId: w.userId, agentId: bucketOf(agentId), kind: 'all' };
   const open = await coll.findOne({ ...scope, conversationId: convo, createdAt: { $gte: new Date(now.getTime() - PENDING_MINUTES * 60000) } });
   if (open && open.turnId !== turn) {
     /* The ask is answered: one chance, then it closes either way. */
@@ -435,7 +475,7 @@ async function forgetAll({ req, agentId, env = process.env }) {
     ok: true,
     needsYes: true,
     count: c.total + reminders,
-    tellThem: `That is ${plural(c.total, 'thing', 'things')}${also}. Tell them the number, that it cannot be undone, and ask them to say yes in their next message to forget it all. Do not call forget_all again until they answer.`,
+    tellThem: `Nothing is forgotten yet. That is ${plural(c.total, 'thing', 'things')}${also}. Tell them the number, that it cannot be undone, and ask them to say yes in their next message to forget it all. Do not call forget_all again until they answer.`,
   };
 }
 

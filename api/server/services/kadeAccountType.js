@@ -43,4 +43,28 @@ function isExplicitAdult(user) {
   return accountTypeOf(user) === 'adult';
 }
 
-module.exports = { ACCOUNT_TYPES, accountTypeOf, isChild, isTeen, isChildLike, isExplicitAdult };
+/**
+ * Nov 11 2026 review: whose rules a turn follows. A voice turn arrives as the service seat (an
+ * admin) naming the person on the line (req.kadeOnBehalfOf, which carries their kadeAccountType).
+ *   named person         -> that person
+ *   a voice turn naming nobody known (unmatched caller, or a call the bridge signed with no
+ *   person)             -> null: no adult note, no admin powers
+ *   anything else        -> the signed-in user
+ * @returns {{ user: object|null, voice: boolean }}
+ */
+function audienceOf(req) {
+  if (!req || typeof req !== 'object') return { user: null, voice: false };
+  const behalf = req.kadeOnBehalfOf;
+  if (behalf && behalf.id && req.kadeOnBehalfOfUnresolved !== true) return { user: behalf, voice: true };
+  const seat = req.user || null;
+  const admin = Boolean(seat && String(seat.role || '').toUpperCase() === 'ADMIN');
+  const voiceUnknown =
+    req.kadeOnBehalfOfUnresolved === true ||
+    Boolean(req.body && req.body.kadeOnBehalfOf) ||
+    req.kadeVoicePass === 'phone' ||
+    Boolean(req.kadeCallerNumber);
+  if (admin && voiceUnknown) return { user: null, voice: true };
+  return { user: seat, voice: false };
+}
+
+module.exports = { ACCOUNT_TYPES, accountTypeOf, isChild, isTeen, isChildLike, isExplicitAdult, audienceOf };

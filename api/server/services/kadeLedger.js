@@ -27,8 +27,10 @@
  * safety gate. Nothing here waits on anything: string checks only.
  *
  * Honest limit: a tool that returns a sentence (not a throw, not "ok": false JSON) is judged
- * FAILED only when its first words say so ("Not started:", "Could not", "NOT MADE", ...). A
- * refusal worded like a success is recorded OK.
+ * FAILED when its first words say so ("Not started:", "Could not", "NOT MADE", ...) or, for a
+ * tool that acts, when its first sentence says "not set", "not sent", "not delivered", "not
+ * configured", "unclear" and the like. A first step that waits for a yes ("Not cleared yet",
+ * "NOT YET") is marked NOT YET. A refusal worded like a plain success is still recorded OK.
  *
  * No '~' requires at load time, so node --test loads it.
  */
@@ -40,7 +42,7 @@ const STARTS = new Set(['spend', 'write', 'send']);
 
 const ledgers = new WeakMap();
 const NOTE_ROWS = 6;
-const CODES = new Set(['done', 'returned-failure', 'empty', 'threw', 'aborted', 'refused-phone', 'refused-paired-phone']);
+const CODES = new Set(['done', 'returned-failure', 'needs-yes', 'empty', 'threw', 'aborted', 'refused-phone', 'refused-paired-phone']);
 
 function log() {
   try {
@@ -58,6 +60,7 @@ function cleanAction(input) {
 
 function summaryOf(row) {
   const what = row.action ? `${row.tool} ${row.action}` : row.tool;
+  if (!row.ok && row.code === 'needs-yes') return `${what}: NOT DONE YET (waits for their yes)`;
   return `${what}: ${row.ok ? 'OK' : 'FAILED'}${!row.ok && row.code ? ` (${row.code})` : ''}`;
 }
 
@@ -103,6 +106,7 @@ function truthNote(req) {
   return (
     `[Platform record of this turn's tool calls, kept by code${more}: ${lines}. ` +
     'Tell them only what this record shows. A FAILED call did not happen; never say it worked. ' +
+    'NOT DONE YET means nothing has happened until they say yes. ' +
     'Never say a tool failed unless this record says FAILED.]'
   );
 }
@@ -117,12 +121,31 @@ function textOf(out) {
   return null;
 }
 
-/** Was this result a success? Code only. */
-function judge(out) {
+/* Nov 11 2026 review: older tools say a failure later in their first sentence ("Notifications are
+ * not configured...", "Reminder not set: ...", "Generated ... but it was not delivered"). For tools
+ * that act (not the general lookups, whose prose may say anything), these words anywhere in the
+ * first sentence mean it did not happen. */
+const FAIL_ANYWHERE =
+  /\b(?:not (?:set|sent|delivered|configured|scheduled|saved|made|started|created|added|cancell?ed|canceled|changed|paired|cleared|found|done)\b|unclear\b|nobody (?:received|got)\b|no one (?:received|got)\b|did not (?:work|go|happen|send|reach|save)\b|could ?n[o'’]?t\b|failed\b)/i;
+/* A first step that waits for the person's yes: nothing has happened yet. */
+const NEEDS_YES = /^\s*(?:NOT YET\b|not (?:\w+ ){0,2}yet\b)/i;
+
+function firstSentence(t) {
+  return String(t).split(/(?<=[.!?])\s+|\n/)[0].slice(0, 240);
+}
+
+/**
+ * Was this result a success? Code only.
+ * @param {unknown} out the tool's result
+ * @param {{ kind?: string }} [opts] the call's kind (kadeLaneTrust KINDS); 'general' lookups skip the
+ *   phrase check and the "sorry" start, because their prose is content, not a status.
+ */
+function judge(out, opts = {}) {
   const text = textOf(out);
   if (text === null) return { ok: out !== undefined && out !== null, code: out == null ? 'empty' : 'done' };
   const t = text.trim();
   if (!t) return { ok: false, code: 'empty' };
+  if (NEEDS_YES.test(t)) return { ok: false, code: 'needs-yes' };
   if (/^OK\b/.test(t)) return { ok: true, code: 'done' };
   if (t.startsWith('{')) {
     try {
@@ -133,15 +156,24 @@ function judge(out) {
       /* not JSON: read it as a sentence */
     }
   }
-  if (FAIL_START.test(t)) return { ok: false, code: 'returned-failure' };
+  const general = opts && opts.kind === 'general';
+  if (FAIL_START.test(t) && !(general && /^\s*sorry\b/i.test(t))) return { ok: false, code: 'returned-failure' };
+  if (!general && FAIL_ANYWHERE.test(firstSentence(t))) return { ok: false, code: 'returned-failure' };
   return { ok: true, code: 'done' };
 }
 
-/** "OK: ..." or "FAILED: ...", then the turn's note. Leaves a result that already says it. */
-function stamp(out, ok, req) {
+/**
+ * "OK: ...", "FAILED: ..." or "NOT YET: ...", then the turn's note. A result that already begins
+ * with its mark keeps it, except an "OK" the ledger judged otherwise.
+ */
+function stamp(out, ok, req, code) {
   const note = truthNote(req);
+  const word = ok ? 'OK' : code === 'needs-yes' ? 'NOT YET' : 'FAILED';
   const mark = (s) => {
-    const head = /^\s*(?:OK|FAILED)\b/.test(s) ? s : `${ok ? 'OK' : 'FAILED'}: ${s}`;
+    let head;
+    if (/^\s*(?:FAILED|NOT YET)\b/.test(s)) head = s;
+    else if (/^\s*OK\b/.test(s)) head = word === 'OK' ? s : s.replace(/^\s*OK\b:?\s*/, `${word}: `);
+    else head = `${word}: ${s}`;
     return note ? `${head}\n\n${note}` : head;
   };
   if (typeof out === 'string') return mark(out);
@@ -198,11 +230,44 @@ function wrapKadeTool(name, tool, req, env = process.env) {
         (note ? `\n\n${note}` : '')
       );
     }
-    const verdict = judge(out);
+    const verdict = judge(out, { kind: kindOf(name, input) });
     record(req, { tool: name, action, ok: verdict.ok, code: verdict.code });
-    return stamp(out, verdict.ok, req);
+    return stamp(out, verdict.ok, req, verdict.code);
   };
   Object.defineProperty(tool, '__kadeLedger', { value: true, enumerable: false });
+  return tool;
+}
+
+/**
+ * Nov 11 2026 review: the lane check for EVERY other tool a turn loads (files, code, image making,
+ * MCP servers, web search). The tool's output is left exactly as it was; only a call refused on a
+ * phone lane is stopped (kadeLaneTrust KINDS: public lookups are general, anything else private)
+ * and recorded. kade_* tools and fal_studio get the full ledger instead. On signed-in chat it
+ * changes nothing. Safe to call twice.
+ * @param {object} tool a loaded tool instance (it carries its own .name)
+ * @param {object} req the turn's request
+ */
+function laneGate(tool, req, env = process.env) {
+  if (!tool || typeof tool !== 'object' || typeof tool._call !== 'function') return tool;
+  const name = typeof tool.name === 'string' ? tool.name : '';
+  if (!name || tool.__kadeLedger === true || tool.__kadeLaneGate === true) return tool;
+  if (covers(name)) return wrapKadeTool(name, tool, req, env);
+  const inner = tool._call.bind(tool);
+  tool._call = async function kadeLaneGateCall(input, ...rest) {
+    await resolvePairing(req);
+    const refusal = laneRefusal(name, input, req, env);
+    if (refusal) {
+      record(req, { tool: name, action: cleanAction(input), ok: false, code: `refused-${refusal.lane}` });
+      log()?.info?.(`[kade/ledger] refused on the ${refusal.lane} lane: tool=${name} kind=${refusal.kind}`);
+      return refusal.text;
+    }
+    return inner(input, ...rest);
+  };
+  try {
+    Object.defineProperty(tool, '__kadeLaneGate', { value: true, enumerable: false });
+  } catch (_) {
+    /* a frozen tool keeps its wrapper anyway */
+  }
   return tool;
 }
 
@@ -329,6 +394,7 @@ module.exports = {
   stamp,
   covers,
   wrapKadeTool,
+  laneGate,
   ledgered,
   countLedgerClaims,
   summaryOf,

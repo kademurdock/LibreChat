@@ -71,3 +71,22 @@ test('the admin route takes teen, still behind the admin check', () => {
   const schema = fs.readFileSync(path.join(__dirname, '../../../packages/data-schemas/src/schema/user.ts'), 'utf8');
   assert.match(schema, /enum: \['adult', 'teen', 'child'\]/);
 });
+
+test('review fix: the audience is the person on the line, not the service seat; nobody known gets no adult rules', () => {
+  const { audienceOf, isChildLike } = require('./kadeAccountType');
+  const seat = { id: 'seat', role: 'ADMIN' };
+  const teen = { id: 't1', role: 'USER', kadeAccountType: 'teen' };
+  assert.equal(audienceOf({ user: seat, kadeOnBehalfOf: teen, body: { kadeOnBehalfOf: 't@example.invalid' } }).user, teen);
+  assert.equal(isChildLike(audienceOf({ user: seat, kadeOnBehalfOf: teen }).user), true);
+  assert.equal(audienceOf({ user: seat, kadeOnBehalfOfUnresolved: true, body: { kadeOnBehalfOf: 'x@example.invalid' } }).user, null);
+  assert.equal(audienceOf({ user: seat, kadeVoicePass: 'phone', body: {} }).user, null, 'a call naming nobody');
+  assert.equal(audienceOf({ user: seat, body: { text: 'hi' } }).user, seat, 'the owner typing');
+  const grown = { id: 'g', role: 'USER', kadeAccountType: 'teen' };
+  assert.equal(audienceOf({ user: grown, body: {} }).user, grown, 'a person typing is themselves');
+  const build = fs.readFileSync(path.join(__dirname, 'Endpoints/agents/build.js'), 'utf8');
+  assert.match(build, /const audience = require\('\.\.\/\.\.\/kadeAccountType'\)\.audienceOf\(req\)\.user;/);
+  assert.match(build, /isKadeAdult\(audience\)/);
+  const schema = fs.readFileSync(path.join(__dirname, '../../../packages/data-schemas/src/schema/user.ts'), 'utf8');
+  const field = schema.slice(schema.indexOf('kadeAccountType: {'), schema.indexOf('kadeAccountType: {') + 200);
+  assert.doesNotMatch(field, /default:/, 'no stored default: untyped is never an adult');
+});

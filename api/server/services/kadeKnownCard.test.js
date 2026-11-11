@@ -119,6 +119,13 @@ const textReq = (userId, text = 'what do you know about me', convo = 'conv1') =>
 /** A plain phone call for `userId`, sent by the bridge's service seat. */
 const phoneReq = (userId) => ({ user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: userId }, body: { text: 'what do you know about me', kadeOnBehalfOf: userId } });
 
+/** Forget one fact the way a person does it: ask, then a plain yes in the next message. */
+async function forgetYes(ref, userId = A) {
+  const ask = await K.forget({ req: textReq(userId, 'forget that'), agentId: AGENT, ref });
+  if (!ask.needsYes) return ask;
+  return K.forget({ req: textReq(userId, 'yes, forget it'), agentId: AGENT, ref });
+}
+
 function sampleCards() {
   return [
     card(A, null, 'eye_clinic_visit', 'Her clinic visit is Thursday the 19th at the eye doctor.', { knownSource: 'errand' }),
@@ -144,7 +151,7 @@ test('scenario 8: counts first, by group, with the someone-else count; reminders
       { told: 3, errand: 1, mail: 1, others: 1, total: 5 },
     );
     assert.equal(r.tellThem, '3 things you told me, 1 from an errand and 1 from your mail. One of them is about someone else. Which would you like to hear?');
-    assert.equal(r.counts.softCapChars, 2000);
+    assert.equal(r.counts.softCapChars, 5000);
     assert.equal(r.counts.over, false);
   });
 });
@@ -171,7 +178,7 @@ test('scenario 8: forget deletes in code, reads back what was forgotten, tombsto
   const w = world(sampleCards());
   await inWorld(w, async () => {
     const { items } = await K.read({ req: textReq(A), agentId: AGENT, group: 'errand' });
-    const r = await K.forget({ req: textReq(A, 'forget that'), agentId: AGENT, ref: items[0].ref });
+    const r = await forgetYes(items[0].ref);
     assert.equal(r.ok, true);
     assert.equal(r.forgotten, 'Her clinic visit is Thursday the 19th at the eye doctor.');
     assert.match(r.tellThem, /^Forgotten: "Her clinic visit is Thursday the 19th at the eye doctor\."/);
@@ -200,7 +207,7 @@ test('a failed delete is never reported as forgotten', async () => {
   w.deps.deleteCard = async () => ({ ok: false });
   await inWorld(w, async () => {
     const { items } = await K.read({ req: textReq(A), agentId: AGENT, group: 'told' });
-    const r = await K.forget({ req: textReq(A), agentId: AGENT, ref: items[0].ref });
+    const r = await forgetYes(items[0].ref);
     assert.equal(r.ok, false);
     assert.match(r.tellThem, /do not say it is gone/);
     assert.equal(w.tombs.rows.length, 0);
@@ -219,7 +226,7 @@ test('remember wrong: the correction is saved as theirs, the old wording is tomb
     /* telling a forgotten fact again on purpose lifts it */
     const { items: told } = await K.read({ req: textReq(A), agentId: AGENT, group: 'told' });
     const garden = told.find((i) => /garden/.test(i.fact));
-    await K.forget({ req: textReq(A), agentId: AGENT, ref: garden.ref });
+    await forgetYes(garden.ref);
     assert.equal(await T.blocks(A, 'Is planning raised garden beds along the south fence.'), true);
     const sd = told.find((i) => /Dana/.test(i.fact));
     await K.correct({ req: textReq(A), agentId: AGENT, ref: sd.ref, value: 'Planning raised garden beds along the south fence, and her sister Dana lives in Tulsa.' });
@@ -247,7 +254,7 @@ test('forget everything asks first, then needs a plain yes in the NEXT message; 
     const first = await K.forgetAll({ req: ask, agentId: AGENT });
     assert.equal(first.needsYes, true);
     assert.equal(first.count, 6);
-    assert.match(first.tellThem, /^That is 5 things, and 1 saved reminder kept with them\./);
+    assert.match(first.tellThem, /^Nothing is forgotten yet. That is 5 things, and 1 saved reminder kept with them\./);
     assert.equal(w.cleared.length, 0);
     /* the same reply cannot answer its own question */
     const same = await K.forgetAll({ req: ask, agentId: AGENT });
@@ -267,6 +274,40 @@ test('forget everything asks first, then needs a plain yes in the NEXT message; 
     assert.deepEqual(w.cleared, [{ userId: A, agentId: AGENT }]);
     assert.ok(w.cards.some((c) => c.userId === B), 'B is untouched');
     assert.ok(w.cards.some((c) => c.agentId === OTHER_AGENT), 'another character\'s own bucket is untouched');
+  });
+});
+
+test('review fix: forget reads the fact back and asks first; only a plain yes in the next message forgets it', async () => {
+  const w = world(sampleCards());
+  await inWorld(w, async () => {
+    const { items } = await K.read({ req: textReq(A), agentId: AGENT, group: 'errand' });
+    const ask = textReq(A, 'oh forget it');
+    const first = await K.forget({ req: ask, agentId: AGENT, ref: items[0].ref });
+    assert.equal(first.needsYes, true);
+    assert.match(first.tellThem, /^Nothing is forgotten yet\. Read this back/);
+    assert.equal(w.deleted.length, 0, 'nothing deleted on the ask');
+    assert.equal((await K.forget({ req: ask, agentId: AGENT, ref: items[0].ref })).why, 'same-turn');
+    const no = await K.forget({ req: textReq(A, 'no, I will look it up myself'), agentId: AGENT, ref: items[0].ref });
+    assert.equal(no.why, 'no-yes');
+    assert.equal(w.deleted.length, 0);
+  });
+});
+
+test('review fix: by voice (no conversation id) forget and forget everything still finish after a yes', async () => {
+  const w = world(sampleCards());
+  await inWorld(w, async () => {
+    const { items } = await K.read({ req: textReq(A), agentId: AGENT, group: 'errand' });
+    const first = await K.forget({ req: textReq(A, 'forget that', null), agentId: AGENT, ref: items[0].ref });
+    assert.equal(first.needsYes, true);
+    /* the next voice turn: a fresh temporary chat, and the model has lost the ref */
+    const done = await K.forget({ req: textReq(A, 'yes', null), agentId: AGENT });
+    assert.equal(done.ok, true);
+    assert.equal(w.deleted.length, 1);
+    const all = await K.forgetAll({ req: textReq(A, 'forget everything', null), agentId: AGENT });
+    assert.equal(all.needsYes, true);
+    const yes = await K.forgetAll({ req: textReq(A, 'yes, forget it all', 'new'), agentId: AGENT });
+    assert.equal(yes.ok, true);
+    assert.equal(w.cleared.length, 1);
   });
 });
 
@@ -341,17 +382,17 @@ test('off switch: KADE_KNOWN_CARD=0 refuses before anything is read', async () =
 
 test('the size target is reported, never enforced: a long card is not deleted', async () => {
   const many = [];
-  for (let i = 0; i < 30; i++) many.push(card(A, null, `fact_${'abcdefghijklmnopqrstuvwxyz'[i % 26]}${i}`.replace(/[0-9]/g, 'x') + i, `Fact number ${i} about the garden, the cat, the porch and the weekly market trip.`));
+  for (let i = 0; i < 70; i++) many.push(card(A, null, `fact_${'abcdefghijklmnopqrstuvwxyz'[i % 26]}${i}`.replace(/[0-9]/g, 'x') + i, `Fact number ${i} about the garden, the cat, the porch and the weekly market trip.`));
   const w = world(many.map((c, i) => ({ ...c, key: `fact_${String.fromCharCode(97 + (i % 26))}_${String.fromCharCode(97 + Math.floor(i / 26))}` })));
   await inWorld(w, async () => {
     const r = await K.count({ req: textReq(A), agentId: AGENT });
-    assert.equal(r.counts.total, 30);
-    assert.ok(r.counts.chars > 2000);
+    assert.equal(r.counts.total, 70);
+    assert.ok(r.counts.chars > 5000);
     assert.equal(r.counts.over, true);
     assert.equal(w.deleted.length, 0);
     const page = await K.read({ req: textReq(A), agentId: AGENT, group: 'all' });
     assert.equal(page.items.length, 10);
-    assert.equal(page.more, 20);
+    assert.equal(page.more, 60);
   });
 });
 
@@ -381,7 +422,7 @@ test('same-day memory does not bring a forgotten fact back', async () => {
   }
   await inWorld(w, async () => {
     const { items } = await K.read({ req: textReq(A), agentId: AGENT, group: 'errand' });
-    await K.forget({ req: textReq(A), agentId: AGENT, ref: items[0].ref });
+    await forgetYes(items[0].ref);
     const before = M.__seam.deps;
     M.__seam.deps = {
       log: () => {},

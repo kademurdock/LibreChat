@@ -112,6 +112,13 @@ class FakeCollection {
     return { deletedCount: i >= 0 ? 1 : 0 };
   }
 
+  async deleteMany(filter) {
+    await tick();
+    const before = this.rows.length;
+    this.rows = this.rows.filter((r) => !matches(r, filter));
+    return { deletedCount: before - this.rows.length };
+  }
+
   /* Nov 11 2026: enough of find() for `await c.find(filter).toArray()`. */
   find(filter, opts = {}) {
     return {

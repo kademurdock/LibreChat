@@ -78,6 +78,7 @@ const MAX_DOSES_A_DAY = 8;
 const LATE_NOTE_MS = 10 * MIN;
 const MED_STALE_MS = 2 * 60 * MIN;
 const STALE_SENDING_MS = 10 * MIN;
+const MAX_ATTEMPTS = 3;
 const CLEAR_ASK_MS = 10 * MIN;
 const SHORT_TIMER_MS = 30 * MIN;
 
@@ -93,6 +94,7 @@ const seam = {
   bridge: null,
   pairing: null,
   setStopped: null,
+  userExists: null,
   noTimers: false,
 };
 
@@ -284,6 +286,14 @@ function signedInAppVoice(req) {
   }
 }
 
+function isPhonePass(req) {
+  try {
+    return require('./kadeVoiceLane').isPhonePass(req) === true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * Card 2: a phone paired to this account by a spoken code. The lookup is made once per turn by
  * services/kadeLaneTrust.js resolvePairing (the ledger wrapper awaits it before any kade tool
@@ -317,6 +327,9 @@ function laneOf(req, env = process.env) {
     return { ok: true, userId: String(behalf.id), lane: 'phone' };
   }
   if (body.kadeOnBehalfOf) return { ok: false, why: 'unknown-caller' };
+  /* Nov 11 2026 review: a call the bridge signed that names nobody is an unknown caller, never the
+   * service seat's own owner. */
+  if (isPhonePass(req)) return { ok: false, why: 'unknown-caller' };
   if (spend.latestWords(body.text).folded) return { ok: true, userId: String(req.user.id), lane: 'phone' };
   return { ok: true, userId: String(req.user.id), lane: 'text' };
 }
@@ -491,7 +504,7 @@ function messageFor(row, tz, at) {
  * Deliver one message: post it in the chat, push the lock-screen line, fall back to a note for
  * the character, write the ledger. Returns what happened.
  */
-async function deliver({ userId, agentId, agentName, kind, message, conversationId, fullWording, ref, dueAt, tz }) {
+async function deliver({ userId, agentId, agentName, kind, message, conversationId, fullWording, ref, dueAt, tz, onPosted }) {
   const out = { posted: false, conversationId: conversationId || null, push: 0, web: 0, noted: false, why: '' };
   try {
     const placed = await postInChat({ userId, agentId, text: message, conversationId });
@@ -499,6 +512,14 @@ async function deliver({ userId, agentId, agentName, kind, message, conversation
     if (placed && placed.conversationId) out.conversationId = placed.conversationId;
   } catch (e) {
     out.why = `post: ${e.message}`;
+  }
+  /* Review fix: mark the chat post at once, so a crash before the row settles is never posted twice. */
+  if (out.posted && typeof onPosted === 'function') {
+    try {
+      await onPosted();
+    } catch (_) {
+      /* the settle below writes it again */
+    }
   }
   const line = lockLine({ agentName, kind, message, fullWording });
   try {
@@ -636,7 +657,7 @@ async function deliverReminderById(id) {
   const claimed = unwrap(
     await coll(C.reminders).findOneAndUpdate(
       { _id: String(id), status: 'pending' },
-      { $set: { status: 'sending', claimedAt: now() } },
+      { $set: { status: 'sending', claimedAt: now() }, $inc: { attempts: 1 } },
       { returnDocument: 'after' },
     ),
   );
@@ -644,9 +665,26 @@ async function deliverReminderById(id) {
   return deliverClaimed(claimed);
 }
 
+/** Review fix: an account that was deleted gets nothing more (the rows go with the account too). */
+async function userExists(userId) {
+  if (seam.userExists) return seam.userExists(userId) !== false;
+  try {
+    const mongoose = require('mongoose');
+    const User = mongoose.models.User;
+    if (!User || !mongoose.Types.ObjectId.isValid(String(userId))) return true;
+    return Boolean(await User.exists({ _id: String(userId) }));
+  } catch (_) {
+    return true; /* a lookup hiccup never drops a medicine reminder */
+  }
+}
+
 async function deliverClaimed(row) {
   const at = now();
   const settle = (set) => coll(C.reminders).updateOne({ _id: row._id }, { $set: set });
+  if (!(await userExists(row.userId))) {
+    await settle({ status: 'orphaned', settledAt: at });
+    return { status: 'orphaned' };
+  }
   const p = await prefs(row.userId);
   if (p.remindersOff === true) {
     await settle({ status: 'stopped', settledAt: at });
@@ -677,6 +715,7 @@ async function deliverClaimed(row) {
     ref: row._id,
     dueAt: row.fireAt,
     tz,
+    onPosted: () => settle({ postedAt: now() }),
   });
   const status = out.delivered ? 'sent' : out.posted || out.noted ? 'missed' : 'failed';
   await settle({
@@ -760,6 +799,10 @@ async function deliverDose(med, doseAt, at) {
     ledgerWrite({ event: 'delivery', kind: 'medicine', ref: med._id, userId: med.userId, agentId: med.agentId, outcome: 'not delivered', channel: 'skipped-today' });
     return { status: 'skipped' };
   }
+  if (!(await userExists(med.userId))) {
+    await coll(C.meds).updateOne({ _id: med._id }, { $set: { paused: true, pausedBy: 'account-gone' } });
+    return { status: 'orphaned' };
+  }
   const p = await prefs(med.userId);
   if (p.remindersOff === true) return { status: 'stopped' };
   const when = clockWords(doseAt, tz);
@@ -802,13 +845,19 @@ async function sweepDue({ limit = 50 } = {}) {
   if (String(process.env.KADE_REMIND_SWEEP ?? '') === '0') return 0;
   const at = now();
   let fired = 0;
-  /* A row stuck in "sending" (a crash mid-delivery): back to pending if nothing was posted. */
+  /* A row stuck in "sending" (a crash mid-delivery). Posted already (postedAt is written the moment
+   * the chat post lands): never again, it counts as missed. Not posted: back to waiting, at most
+   * MAX_ATTEMPTS tries in all, then failed. */
   const stale = await coll(C.reminders)
     .find({ status: 'sending', claimedAt: { $lte: new Date(at.getTime() - STALE_SENDING_MS) } })
     .limit(limit)
     .toArray();
   for (const row of stale) {
-    await coll(C.reminders).updateOne({ _id: row._id, status: 'sending' }, { $set: { status: row.postedAt ? 'missed' : 'pending' } });
+    const next = row.postedAt ? 'missed' : (Number(row.attempts) || 0) >= MAX_ATTEMPTS ? 'failed' : 'pending';
+    await coll(C.reminders).updateOne({ _id: row._id, status: 'sending' }, { $set: { status: next } });
+    if (next !== 'pending') {
+      ledgerWrite({ event: 'delivery', kind: row.kind, ref: row._id, userId: row.userId, agentId: row.agentId, outcome: 'not delivered', channel: next === 'missed' ? 'chat' : 'none' });
+    }
   }
   const due = await coll(C.reminders).find({ status: 'pending', fireAt: { $lte: at } }).sort({ fireAt: 1 }).limit(limit).toArray();
   for (const row of due) {
@@ -841,6 +890,40 @@ async function sweepDue({ limit = 50 } = {}) {
   return fired;
 }
 
+/**
+ * Review fix: is there a site reminder for this person within 30 minutes of `at`? The keeper's
+ * own reminder card (kadeNudges.sweepDueReminders) is skipped when one is, so a "remind me at 8"
+ * that set both is heard once. False when KADE_REMIND_ALL=0 or on any error.
+ */
+async function hasSiteReminderNear(userId, at, env = process.env) {
+  try {
+    if (!tool.remindOn(env) || !userId || !at) return false;
+    const t = new Date(at).getTime();
+    if (!Number.isFinite(t)) return false;
+    const rows = await coll(C.reminders)
+      .find({
+        userId: String(userId),
+        status: { $in: ['pending', 'sending', 'sent', 'missed'] },
+        fireAt: { $gte: new Date(t - 30 * MIN), $lte: new Date(t + 30 * MIN) },
+      })
+      .limit(1)
+      .toArray();
+    return rows.length > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Account delete (review fix): every row this file keeps for the person goes with the account. */
+async function clearFor(userId) {
+  if (!userId) return;
+  const id = String(userId);
+  for (const name of [C.reminders, C.meds, C.lists, C.contacts]) {
+    await coll(name).deleteMany({ userId: id });
+  }
+  await coll(C.prefs).deleteMany({ _id: id });
+}
+
 /** The soonest thing waiting, so the bridge clock can wake a sleeping site in time. */
 async function nextDueAt() {
   const [r] = await coll(C.reminders).find({ status: 'pending' }).sort({ fireAt: 1 }).limit(1).toArray();
@@ -851,14 +934,29 @@ async function nextDueAt() {
 
 /* ------------------------------------------------------------------ lists */
 
+/* Review fix: the names people use for the same list land on one list. */
+const LIST_SAME = {
+  grocery: 'shopping',
+  groceries: 'shopping',
+  'grocery shopping': 'shopping',
+  store: 'shopping',
+  'shopping list': 'shopping',
+  food: 'shopping',
+  'to-do': 'to-do',
+  'things to do': 'to-do',
+  tasks: 'to-do',
+  list: 'to-do',
+};
+
 function listKey(name) {
-  const k = clean(name, 60)
+  let k = clean(name, 60)
     .toLowerCase()
     .replace(/^(?:my|the|our)\s+/, '')
     .replace(/\s+list$/, '')
     .replace(/[^a-z0-9 -]/g, '')
     .replace(/\btodo\b|\bto do\b/, 'to-do')
     .trim();
+  if (LIST_SAME[k]) k = LIST_SAME[k];
   return k || 'to-do';
 }
 
@@ -901,14 +999,28 @@ function cleanNumber(s) {
 
 /* -------------------------------------------------------- stop by words */
 
+/*
+ * Review fix (Nov 11 2026): the whole message must be the order, and it must be about reminders
+ * in general. "Stop reminding me" alone, "cancel my reminders for tomorrow" and "yes, you can stop
+ * reminding me now" are about one thing, so the character handles them with its tool instead.
+ * A stop is undone by "turn my reminders back on": the reminders it stopped come back when their
+ * time has not passed.
+ */
+const STOP_ORDER =
+  '(?:stop\\s+(?:all\\s+)?(?:of\\s+)?(?:my\\s+|the\\s+|your\\s+)?reminders' +
+  '|no\\s+more\\s+reminders' +
+  '|turn\\s+off\\s+(?:all\\s+)?(?:of\\s+)?(?:my\\s+|the\\s+|your\\s+)?reminders' +
+  '|turn\\s+(?:all\\s+)?(?:my\\s+|the\\s+|your\\s+)?reminders\\s+off' +
+  "|(?:don'?t|do\\s+not|never)\\s+remind\\s+me\\s+(?:anymore|any\\s+more|of\\s+anything|about\\s+anything)" +
+  '|stop\\s+reminding\\s+me\\s+(?:about\\s+anything|of\\s+anything|at\\s+all|anymore|any\\s+more)' +
+  '|cancel\\s+(?:all\\s+)?(?:of\\s+)?(?:my\\s+|the\\s+)?reminders)';
 const STOP_WORDS = [
-  /\bstop\s+(?:all\s+)?(?:the\s+|my\s+|those\s+|these\s+|your\s+|of\s+the\s+|of\s+my\s+)?reminders?\b/,
-  /\bstop\s+reminding\s+me\s*(?:[.!,]|please\b|ok(?:ay)?\b|now\b|$)/,
-  /\bno\s+more\s+reminders?\b/,
-  /\bturn\s+off\s+(?:all\s+)?(?:my\s+|the\s+|your\s+|those\s+)?reminders?\b/,
-  /\bturn\s+(?:all\s+)?(?:my\s+|the\s+|your\s+|those\s+)?reminders?\s+off\b/,
-  /\b(?:don'?t|do not|never)\s+remind\s+me\s+(?:anymore|any\s+more|again|of\s+anything|about\s+anything)\b/,
-  /\bcancel\s+(?:all\s+)?(?:of\s+)?(?:my\s+|the\s+)?reminders\b/,
+  new RegExp(
+    "^(?:(?!yes\\b|yeah\\b|yep\\b|no\\b|you\\b)[a-z]+,\\s*)?(?:(?:ok(?:ay)?|please|hey)[,!]?\\s+)?(?:please\\s+)?" +
+      STOP_ORDER +
+      '(?:\\s+(?:please|now|for\\s+now|for\\s+a\\s+while|completely|altogether|entirely|at\\s+all|from\\s+everyone|anymore|any\\s+more))*' +
+      '(?:\\s*,?\\s*(?:please|thanks|thank\\s+you))?\\s*[.!]*$',
+  ),
 ];
 const ON_WORDS = [
   /\bturn\s+(?:my\s+|the\s+)?reminders?\s+(?:back\s+)?on\b/,
@@ -928,7 +1040,7 @@ function stopWords(text) {
   /* A question about how is not an order: "how do I stop reminders?" */
   if (/^\s*(?:how|can|could|should|would|what|why|when|where|is|are|do|does)\b[^.!]*\?\s*$/.test(low)) return null;
   if (/\b(?:phone|app|alarm|calendar|doctor|pharmacy|he|she|they|mom|dad|sister|brother)\s+(?:keeps?|won'?t)\b/.test(low)) return null;
-  if (STOP_WORDS.some((re) => re.test(low))) return 'off';
+  if (STOP_WORDS.some((re) => re.test(low.trim()))) return 'off';
   if (/\b(?:don'?t|do not|never|stop|quit|not)\b/.test(low)) return null;
   if (ON_WORDS.some((re) => re.test(low))) return 'on';
   return null;
@@ -936,10 +1048,11 @@ function stopWords(text) {
 
 const NOTE_OFF =
   '[PLATFORM NOTE, not something they typed: they just asked to stop reminders. Every reminder and check-back waiting for them, from every character, ' +
-  'is now cancelled, daily medicine reminders are paused, and nothing new is sent until they ask for reminders back. Tell them so in one plain sentence.]';
+  'is now paused, daily medicine reminders are paused, and nothing is sent until they say turn my reminders back on. Reminders set before November 11 are cancelled for good. ' +
+  'Tell them so in one plain sentence, and that saying turn my reminders back on brings the paused ones back.]';
 const NOTE_ON =
-  '[PLATFORM NOTE, not something they typed: they just asked for reminders back. Reminders work again and paused medicine times are back on. ' +
-  'Reminders that were cancelled stay cancelled; offer to set any again. Tell them so in one plain sentence.]';
+  '[PLATFORM NOTE, not something they typed: they just asked for reminders back. Reminders work again, paused medicine times are back on, and paused reminders whose time has not passed are back. ' +
+  'Tell them so in one plain sentence.]';
 const NOTE_PHONE =
   '[PLATFORM NOTE, not something they typed: they asked to stop reminders, but this is a plain phone call and a phone number alone does not prove who is calling, ' +
   'so nothing was changed. Tell them kindly that they can say it in the app or in text chat, or turn reminders off on the Notifications page.]';
@@ -948,7 +1061,7 @@ async function setStopped(userId, off) {
   const at = now();
   await setPrefs(userId, { remindersOff: off === true, remindersOffAt: at });
   if (off === true) {
-    await coll(C.reminders).updateMany({ userId: String(userId), status: 'pending' }, { $set: { status: 'stopped', settledAt: at } });
+    await coll(C.reminders).updateMany({ userId: String(userId), status: 'pending' }, { $set: { status: 'stopped', stoppedBy: 'words', settledAt: at } });
     await coll(C.meds).updateMany({ userId: String(userId), paused: false }, { $set: { paused: true, pausedBy: 'stop' } });
     /* The older bridge reminders too, so "stop" means stop. */
     try {
@@ -962,6 +1075,11 @@ async function setStopped(userId, off) {
     for (const med of paused) {
       await coll(C.meds).updateOne({ _id: med._id }, { $set: { paused: false, pausedBy: null, nextAt: nextDose(med, at) } });
     }
+    /* Review fix: the reminders the stop paused come back when their time is still ahead. */
+    await coll(C.reminders).updateMany(
+      { userId: String(userId), status: 'stopped', stoppedBy: 'words', fireAt: { $gte: at } },
+      { $set: { status: 'pending', stoppedBy: null, settledAt: null } },
+    );
   }
   ledgerWrite({ event: off ? 'reminders-off' : 'reminders-on', userId: String(userId), outcome: 'done' });
   logger.info(`[kadeEveryday] reminders turned ${off ? 'OFF' : 'ON'} by the person user=${short(userId)}`);
@@ -1009,9 +1127,10 @@ function setLine(row, tz) {
           : row.label
             ? `a ${row.label} reminder`
             : 'a reminder';
+  /* Review fix: no promise of a buzz. Whether their phone has notifications on is not known here. */
   return (
-    `OK. Reminder set (id ${row._id}, ${what}) for ${when}, their time. It will come as a message from you in this chat and a phone notification ` +
-    'that says only that you have a reminder for them. Tell them the time back in one short sentence.'
+    `OK. Reminder set (id ${row._id}, ${what}) for ${when}, their time. It will come as a message from you in this chat, and as a phone notification ` +
+    'if their phone has notifications on for this app. Tell them the time back in one short sentence. Never say the id.'
   );
 }
 
@@ -1064,7 +1183,7 @@ async function actReminders(action, data, ctx) {
     if (!rows.length && !older.length) return 'OK. No reminders are waiting.';
     const lines = rows.map((r) => `id ${r._id}: ${r.kind === 'checkback' ? 'check-back' : r.kind}${r.label ? ` (${r.label})` : ''} ${spoken(new Date(r.fireAt), tz)}: ${clean(r.text) || '(no words)'}`);
     for (const r of older) lines.push(`id ${r.id}: reminder ${r.fireAtCentral || r.fireAt}: ${clean(r.text)}`);
-    return `OK. ${lines.length} waiting:\n${lines.join('\n')}`;
+    return `OK. ${lines.length} waiting. Read them the time and words of each; never say an id (ids are for cancel_reminder only):\n${lines.join('\n')}`;
   }
   if (action === 'cancel_reminder') {
     const id = String(data.schedule_id || '').trim();
@@ -1087,7 +1206,7 @@ async function actReminders(action, data, ctx) {
   }
   if (action === 'reminders_on') {
     await setStopped(userId, false);
-    return 'OK. Reminders are back on. Ones cancelled earlier stay cancelled.';
+    return 'OK. Reminders are back on. Paused ones whose time has not passed are back too; ones cancelled earlier stay cancelled.';
   }
   return 'FAILED: unknown reminder action.';
 }
@@ -1165,6 +1284,12 @@ async function actLists(action, data, ctx) {
   const id = `${userId}:${key}`;
   const list = await getList(userId, key);
   const items = (list && list.items) || [];
+  if (action === 'list_read' && !list) {
+    /* Review fix: a list that does not exist is not "empty"; name the ones they have. */
+    const rows = await coll(C.lists).find({ userId }).limit(MAX_LISTS).toArray();
+    if (!rows.length) return `OK. They have no ${key} list, and no lists at all yet.`;
+    return `OK. They have no ${key} list. Their lists: ${rows.map((r) => `${r.name} (${(r.items || []).length})`).join('; ')}. Ask which one they meant.`;
+  }
   if (action === 'list_read') return readOut(key, items);
   if (action === 'list_add') {
     const add = splitItems(data.item);
@@ -1307,6 +1432,8 @@ module.exports = {
   noteFromWords,
   stopWords,
   setStopped,
+  hasSiteReminderNear,
+  clearFor,
   laneOf,
   lockLine,
   messageFor,

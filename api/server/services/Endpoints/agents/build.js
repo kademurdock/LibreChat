@@ -148,15 +148,18 @@ const applyKadeAudience = (req) => (agent) => {
   agent.instructions = (agent.instructions || '') + KADE_STYLE_NOTE;
   // Platform-wide search-when-stale rule, same coverage (July 27 2026).
   agent.instructions = agent.instructions + KADE_FRESHNESS_NOTE;
+  /* Nov 11 2026 review (card 5): the audience is the person on the line, not the service seat a
+   * voice turn arrives as (an admin). A voice turn that names nobody known gets no adult note. */
+  const audience = require('../../kadeAccountType').audienceOf(req).user;
   // Personas are private (Part 215): everyone but the admin.
-  if (req?.user?.role !== 'ADMIN' && process.env.KADE_CONFIDENTIAL_NOTE !== '0') {
+  if (audience?.role !== 'ADMIN' && process.env.KADE_CONFIDENTIAL_NOTE !== '0') {
     agent.instructions = agent.instructions + KADE_CONFIDENTIAL_NOTE;
   }
   // Child accounts additionally get the clean-content audience note.
   /* Nov 11 2026 (card 5): a teen account gets the child note too (services/kadeAccountType.js). */
-  if (require('../../kadeAccountType').isChildLike(req?.user)) {
+  if (require('../../kadeAccountType').isChildLike(audience)) {
     agent.instructions = agent.instructions + KADE_CHILD_NOTE;
-  } else if (isKadeAdult(req?.user) && process.env.KADE_ADULT_NOTE !== '0') {
+  } else if (isKadeAdult(audience) && process.env.KADE_ADULT_NOTE !== '0') {
     // The reverse flag (Part 214). Kill switch: KADE_ADULT_NOTE=0.
     agent.instructions = agent.instructions + KADE_ADULT_NOTE;
   }

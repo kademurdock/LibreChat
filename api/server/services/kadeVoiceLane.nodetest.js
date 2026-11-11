@@ -119,6 +119,15 @@ test('a phone pass gives the caller number, never a sign-in, and plain caller-ID
   lane.readLane(anon, ENV, NOW);
   assert.equal(lane.laneOf(anon), 'phone');
   assert.equal(lane.callerNumberOf(anon), '+15550100123');
+  /* Review fix: a phone pass with no number still marks the turn as a call, for nobody named too. */
+  const t = NOW;
+  const bare = { user: { id: 'seat', role: 'ADMIN' }, body: { agentId: 'agent_x', text: 'hi', messages: [{ role: 'kade-lane', kadeLanePass: mint({ v: 1, lane: 'phone', agentId: 'agent_x', iat: t, exp: t + 60000 }) }] } };
+  assert.deepEqual(lane.readLane(bare, ENV, NOW), { lane: 'phone', why: 'phone' });
+  assert.equal(bare.kadeVoicePass, 'phone');
+  assert.equal(lane.isPhonePass(bare), true);
+  assert.equal(lane.callerNumberOf(bare), null);
+  assert.equal(require('./kadeLaneTrust').laneTrust(bare), 'phone');
+  assert.equal(lane.isPhonePass({ user: { id: 'u', role: 'USER' }, body: {} }), false);
 });
 
 test('typing in the app is text; the middleware never throws and always calls next', () => {

@@ -71,6 +71,10 @@ test('the match: most of the forgotten words again is the fact again; a passing 
   assert.equal(T.covers(tomb, T.hashes('u1', 'Clinic visit Thursday 19th, eye doctor, bring glasses.')), true);
   assert.equal(T.covers(tomb, T.hashes('u1', 'She went to the eye doctor last spring.')), false);
   assert.equal(T.covers(tomb, T.hashes('u1', 'Her clinic visit moved to Friday the 20th.')), false, 'a new fact is not blocked');
+  /* review fix: a reworded fact is still the forgotten one */
+  const sister = T.hashes('u1', 'Her sister lives in Branson.');
+  assert.equal(T.covers(sister, T.hashes('u1', 'Has a sister nearby in Branson, Missouri.')), true);
+  assert.equal(T.covers(sister, T.hashes('u1', 'Her sister likes cats.')), false);
   /* a two-word fact needs both words; a one-word fact blocks nothing */
   assert.equal(T.covers(T.hashes('u1', 'Kasper cat'), T.hashes('u1', 'my cat Kasper')), true);
   assert.equal(T.covers(T.hashes('u1', 'Kasper cat'), T.hashes('u1', 'my cat')), false);
@@ -114,7 +118,7 @@ test('storage: add keeps no words, only hashes; blocks, scrub and lift read this
   });
 });
 
-test('off switch and failures: KADE_KNOWN_TOMBSTONE=0 checks nothing; a broken store blocks nothing', async () => {
+test('off switch and failures: KADE_KNOWN_TOMBSTONE=0 checks nothing; a broken store blocks the write (review fix: fails closed) and leaves text as it was', async () => {
   const coll = fakeColl();
   await withColl(coll, async () => {
     await T.add({ userId: 'u1', text: FACT });
@@ -123,7 +127,7 @@ test('off switch and failures: KADE_KNOWN_TOMBSTONE=0 checks nothing; a broken s
   });
   const broken = { find: () => { throw new Error('down'); } };
   await withColl(broken, async () => {
-    assert.equal(await T.blocks('u1', FACT), false);
+    assert.equal(await T.blocks('u1', FACT), true);
     assert.deepEqual(await T.scrub('u1', FACT), { text: FACT, removed: 0 });
   });
 });

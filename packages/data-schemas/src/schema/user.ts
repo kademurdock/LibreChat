@@ -153,11 +153,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       of: Boolean,
       default: () => new Map(),
     },
-    /** Kade-AI: which signup code registered this account (adult vs child); 'teen' (Nov 11 2026) is set by Kade only */
+    /** Kade-AI: which signup code registered this account (adult vs child); 'teen' (Nov 11 2026) is set by Kade only.
+     * Nov 11 2026 (card 5): no default. An account no code or Kade typed stays untyped, and untyped is never an adult. */
     kadeAccountType: {
       type: String,
       enum: ['adult', 'teen', 'child'],
-      default: 'adult',
     },
     /** Kade-AI (Sep 24 2026): the shared family library. Unset = the rule in packages/api library/access.ts; 'family' or 'none' is Kade's own choice. */
     kadeLibraryAccess: { type: String, enum: ['family', 'none'] },

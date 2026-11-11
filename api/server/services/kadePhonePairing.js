@@ -14,9 +14,12 @@
  *   2. On a phone call, from the phone to pair, the caller says "my pairing code is ...". redeem
  *      takes the number the bridge got from Twilio (signed pass, kadeVoiceLane callerNumberOf),
  *      never a number from anyone's words, and pairs it to the account that made the code.
- *   3. Every wrong code said on any call counts against every live code, because a wrong guess
- *      could be aimed at any of them; at 5 wrong tries a code locks. A guesser gets 5 tries at
- *      one in a million each, then the person makes a new code.
+ *   3. Wrong codes (review fix, Nov 11 2026): a calling number that says 5 wrong codes in an hour
+ *      is locked out of pairing for that hour, so one guesser gets 5 tries at one in a million
+ *      each. Every wrong code also counts against every live code (a guess could be aimed at any
+ *      of them), and at 20 wrong tries platform-wide the live codes lock, so many numbers cannot
+ *      share the guessing either. One prank caller can no longer lock everyone's codes. One
+ *      redeem per turn, so a list of codes in one breath counts as one try.
  *   4. From the app, "unpair my phone" removes a number; list says which numbers are paired, by
  *      their last four digits.
  *
@@ -41,6 +44,9 @@ const CODES = 'kadephonepaircodes';
 const PHONES = 'kadepairedphones';
 const CODE_MINUTES = 60;
 const MAX_WRONG = 5;
+const LOCK_ALL_AFTER = 20;
+/* Wrong tries by calling number (keyed hash), in this process: { n, since }. */
+const WRONG_BY_NUMBER = new Map();
 const MAX_PHONES = 5;
 /* The example CREDS_KEY published with LibreChat (packages/api/src/app/checks.ts). Not a secret. */
 const PUBLIC_EXAMPLE_KEY = 'f34be427ebb29de8d88c107a71546019685ed8b241d8f2ed00c3df97ad2566f0';
@@ -112,6 +118,12 @@ function envOf(deps) {
 }
 function nowOf(deps) {
   return deps && typeof deps.now === 'function' ? deps.now() : Date.now();
+}
+/* Review fix: the number to call, said plainly. KADE_PHONE_LINE is a setting (the call-in number as
+ * it should be spoken); without it the character names the line without a number. */
+function lineOf(env) {
+  const n = String((env && env.KADE_PHONE_LINE) || '').trim().slice(0, 40);
+  return n ? `the Kade-AI phone line, ${n},` : 'the Kade-AI phone line (the number they call to talk with characters)';
 }
 function liveFilter(now) {
   return { usedAt: { $exists: false }, lockedAt: { $exists: false }, expiresAt: { $gt: new Date(now) } };
@@ -192,9 +204,9 @@ async function makeCode({ req }, deps) {
     minutes: CODE_MINUTES,
     paired: endings,
     tellThem:
-      `Their pairing code is ${spoken(code)}. Say it once now, digit by digit, slowly. ` +
-      `It works once, for one hour. Tell them: call the platform's phone number from the phone they want to pair, and say "my pairing code is" and the six digits. ` +
-      'It cannot be looked up again: if they lose it, they ask for a new one. Do not repeat it later in this conversation. ' +
+      `Their pairing code is ${spoken(code)}. Say it now, digit by digit, slowly, and again if they ask. ` +
+      `It works once, for one hour. Tell them: call ${lineOf(env)} from the phone they want to pair, and say "my pairing code is" and the six digits. ` +
+      'It cannot be looked up later: if they lose it, they ask for a new one. Do not bring it up again on your own. ' +
       sayEndings(endings),
   };
 }
@@ -223,13 +235,27 @@ async function redeem({ req, code }, deps) {
   if (!key) return NO_KEY;
   const digits = digitsOf(code);
   if (digits.length !== 6) return { ok: false, error: 'a pairing code has six digits. Ask them to say all six, one at a time' };
+  /* One try per turn: several codes said in one breath are not several tries. */
+  if (!(deps && deps.skipTurnCheck) && !require('./kadeSpendGate').claimOnce(req, 'kade-phone-pairing-redeem')) {
+    return { ok: false, error: 'one pairing code per message. Ask them to say just the one code from the app' };
+  }
   const { codes, phones } = cols(deps);
   const now = nowOf(deps);
+  const wrongs = (deps && deps.wrongs) || WRONG_BY_NUMBER;
+  const numberKey = hashOf(key, 'num', number);
+  const mine = wrongs.get(numberKey);
+  if (mine && now - mine.since > CODE_MINUTES * 60000) wrongs.delete(numberKey);
+  const tries = wrongs.get(numberKey);
+  if (tries && tries.n >= MAX_WRONG) {
+    return { ok: false, error: 'too many wrong codes from this phone. Ask them to wait an hour, then ask for a new code in the app' };
+  }
   const row = await codes.findOne({ codeHash: hashOf(key, 'code', digits), ...liveFilter(now) });
   if (!row) {
+    wrongs.set(numberKey, { n: ((tries && tries.n) || 0) + 1, since: (tries && tries.since) || now });
+    if (wrongs.size > 5000) wrongs.delete(wrongs.keys().next().value);
     /* A wrong guess could be aimed at any live code, so it counts against all of them. */
     await codes.updateMany(liveFilter(now), { $inc: { wrong: 1 } });
-    await codes.updateMany({ ...liveFilter(now), wrong: { $gte: MAX_WRONG } }, { $set: { lockedAt: new Date(now), lockedWhy: 'wrong' } });
+    await codes.updateMany({ ...liveFilter(now), wrong: { $gte: LOCK_ALL_AFTER } }, { $set: { lockedAt: new Date(now), lockedWhy: 'wrong' } });
     return {
       ok: false,
       error:
@@ -336,10 +362,20 @@ async function isPairedPhone(callerNumber, deps) {
   }
 }
 
+/** Account delete (review fix): paired numbers and codes go with the account. */
+async function clearFor(userId, deps) {
+  if (!userId) return;
+  const { codes, phones } = cols(deps);
+  await phones.deleteMany({ userId: String(userId) });
+  await codes.deleteMany({ userId: String(userId) });
+}
+
 module.exports = {
   CODES,
   PHONES,
   MAX_WRONG,
+  LOCK_ALL_AFTER,
+  clearFor,
   MAX_PHONES,
   CODE_MINUTES,
   on,

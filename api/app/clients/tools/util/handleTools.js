@@ -343,7 +343,7 @@ const loadTools = async ({
    * (services/kadeLaneTrust.js), each call gets a ledger row for the turn, and each result
    * begins OK or FAILED with a code-built note of what really happened. No off switch. */
   const kadeTurnReq = options.req;
-  const { ledgered: kadeLedgered } = require('../../../../server/services/kadeLedger');
+  const { ledgered: kadeLedgered, laneGate: kadeLaneGate } = require('../../../../server/services/kadeLedger');
   const kadeActingUserName =
     options.req?.kadeOnBehalfOf?.name ||
     options.req?.user?.name ||
@@ -490,8 +490,15 @@ const loadTools = async ({
     kade_world: {
       userId: kadeActingUserId,
       userName: kadeActingUserName,
-      isWizard: options.req?.user?.role === 'ADMIN',
-      isChild: require('../../../../server/services/kadeAccountType').isChildLike(options.req?.user),
+      /* Nov 11 2026 review (card 5): on a voice turn the request is the service seat (an admin), so
+       * the powers and the child rules follow the person on the line, and nobody known gets neither. */
+      isWizard: (() => {
+        const who = require('../../../../server/services/kadeAccountType').audienceOf(options.req);
+        return Boolean(who.user && String(who.user.role || '').toUpperCase() === 'ADMIN');
+      })(),
+      isChild: require('../../../../server/services/kadeAccountType').isChildLike(
+        require('../../../../server/services/kadeAccountType').audienceOf(options.req).user,
+      ),
     },
     kade_adventure: {
       agentName: agent?.name,
@@ -805,6 +812,17 @@ const loadTools = async ({
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
+  /* KADE Nov 11 2026 (home agent card 3, review fix): every other tool this turn loaded (files,
+   * code, image making, MCP servers, web search) gets the same phone-lane check before it acts.
+   * Public lookups pass; anything else is refused on a call. Output is untouched; signed-in chat
+   * is untouched. A safety gate, no off switch. */
+  for (const t of loadedTools) {
+    try {
+      kadeLaneGate(t, kadeTurnReq);
+    } catch (e) {
+      logger.warn(`[kade/ledger] lane gate not added to ${t && t.name}: ${e.message}`);
+    }
+  }
   return { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles };
 };
 

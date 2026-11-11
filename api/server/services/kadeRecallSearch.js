@@ -71,6 +71,11 @@ function maskNumbers(text) {
   });
   /* a code word, then a short run */
   s = s.replace(/(\b(?:code|pin|passcode|password|otp|verification|security)\b[^\d\n]{0,20})(\d{4,8})\b/gi, (m, lead) => `${lead}[code hidden]`);
+  /* review fix: a code said digit by digit ("4 1 7 2 0 9"), 6 to 8 single digits apart */
+  s = s.replace(/(^|[^\w])((?:\d[ ,-]\s?){5,7}\d)(?!\w)/g, (m, pre, run) => {
+    const digits = run.replace(/\D/g, '');
+    return digits.length >= 6 && digits.length <= 8 ? `${pre}[code hidden]` : m;
+  });
   /* a 6 to 8 digit run standing alone, not money, not a decimal, not part of a phone or date */
   s = s.replace(/(^|[\s(])(\d{6,8})(?=$|[\s).,!?;])/g, (m, pre, run, offset, all) => {
     const before = all.slice(Math.max(0, offset - 1), offset + pre.length);
@@ -203,7 +208,9 @@ async function search({ req, agentId, query, everywhere = false, limit = 5, env 
     return { ok: false, why: 'search-down', tellThem: 'The chat search is not answering right now. Say so plainly; do not guess what they said.' };
   }
   const ids = [...new Set(hits.map((h) => String(h.messageId)))];
-  if (!ids.length) return { ok: true, results: [], tellThem: 'Nothing in their past chats matched. Say so plainly; do not guess.' };
+  if (!ids.length) {
+    return { ok: true, results: [], tellThem: 'Nothing in their past chats matched. Say so plainly; do not guess. Talks by voice are not searched, only typed chats; say that too.' };
+  }
 
   /* Read every hit again from the database, as this person. */
   const rows = ((await d.messages(userId, ids)) || []).filter((m) => m && String(m.user) === userId);
@@ -233,8 +240,8 @@ async function search({ req, agentId, query, everywhere = false, limit = 5, env 
     tellThem: results.length
       ? 'These are bits of their own past chats. Answer from them in plain words; say the day if it helps. Numbers shown as hidden stay hidden.'
       : everywhere || !agentId
-        ? 'Nothing in their past chats matched. Say so plainly; do not guess.'
-        : 'Nothing in your chats with them matched. They can ask you to look in all their chats.',
+        ? 'Nothing in their past chats matched. Say so plainly; do not guess. Talks by voice are not searched, only typed chats; say that too.'
+        : 'Nothing in your chats with them matched. Talks by voice are not searched, only typed chats; say that too. They can ask you to look in all their chats.',
   };
 }
 

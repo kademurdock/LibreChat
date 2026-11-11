@@ -52,8 +52,9 @@ export function tombstoneHashes(userId: string, text: string): string[] {
 }
 
 /**
- * True when the candidate carries the forgotten fact again: at least 80 percent of a
- * tombstone's words (all of them when it has only two). A tombstone of one word blocks nothing.
+ * True when the candidate carries the forgotten fact again: at least 60 percent of a
+ * tombstone's words and never fewer than two (so both of a two-word one). A tombstone of one
+ * word blocks nothing. Review fix, Nov 11 2026: was 80 percent, which let a reworded fact back.
  */
 export function tombstoneCovers(tomb: string[], candidate: string[]): boolean {
   const t = Array.isArray(tomb) ? tomb : [];
@@ -61,6 +62,5 @@ export function tombstoneCovers(tomb: string[], candidate: string[]): boolean {
   const have = new Set(candidate || []);
   let hit = 0;
   for (const h of t) if (have.has(h)) hit += 1;
-  if (t.length === 2) return hit === 2;
-  return hit / t.length >= 0.8;
+  return hit >= Math.max(2, Math.ceil(t.length * 0.6));
 }

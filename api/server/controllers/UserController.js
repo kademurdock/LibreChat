@@ -375,6 +375,11 @@ const deleteUserController = async (req, res) => {
     await require('~/server/services/kadeCardCheck').clearChecks(user.id).catch(() => {});
     /* Nov 11 2026 (card 8): forget markers and an open "forget everything" ask go too. */
     await require('~/server/services/kadeKnownCard').clearFor(user.id).catch(() => {});
+    /* Nov 11 2026 review fix (cards 2, 6, 7): reminders, medicine times, lists, saved numbers,
+     * everyday settings, paired phones and pairing codes go with the account too, so nothing is
+     * delivered for a deleted account and a paired number is free for its next owner. */
+    await require('~/server/services/kadeEveryday').clearFor(user.id).catch(() => {});
+    await require('~/server/services/kadePhonePairing').clearFor(user.id).catch(() => {});
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
     await deleteUserMcpServers(user.id);

@@ -1385,6 +1385,15 @@ async function loadAgentTools({
     ActionToolMap[toolName] = tool;
   }
 
+  /* KADE Nov 11 2026 (home agent card 3, review fix): Forge actions get the phone-lane check too. */
+  for (const t of agentTools) {
+    try {
+      require('./kadeLedger').laneGate(t, req);
+    } catch (e) {
+      logger.warn(`[kade/ledger] lane gate not added to ${t && t.name}: ${e.message}`);
+    }
+  }
+
   if (_agentTools.length > 0 && agentTools.length === 0) {
     logger.warn(`No tools found for the specified tool calls: ${_agentTools.join(', ')}`);
     return {};
@@ -1619,6 +1628,16 @@ async function loadToolsForExecution({
       `[loadToolsForExecution] Capability "${AgentCapabilities.actions}" disabled. ` +
         `Skipping action tool execution. User: ${req.user.id} | Agent: ${agent.id} | Tools: ${actionToolNames.join(', ')}`,
     );
+  }
+
+  /* KADE Nov 11 2026 (home agent card 3, review fix): Forge actions get the phone-lane check too
+   * (services/kadeLedger.js laneGate; tools from loadTools already have it). No off switch. */
+  for (const t of allLoadedTools) {
+    try {
+      require('./kadeLedger').laneGate(t, req);
+    } catch (e) {
+      logger.warn(`[kade/ledger] lane gate not added to ${t && t.name}: ${e.message}`);
+    }
   }
 
   if (isPTC && allLoadedTools.length > 0) {

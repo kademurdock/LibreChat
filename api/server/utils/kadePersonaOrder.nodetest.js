@@ -62,8 +62,9 @@ test('the audience notes still ride inside agent.instructions, so they move with
     /agent\.instructions\s*=\s*agent\.instructions\s*\+\s*KADE_CHILD_NOTE/.test(BUILD),
     'the child note is no longer appended to agent.instructions; the ordering reasoning no longer holds',
   );
-  /* Nov 11 2026 (card 5): the gate is the shared child-or-teen check now. */
-  assert.ok(/isChildLike\(req\?\.user\)\)\s*\{\s*agent\.instructions\s*=\s*agent\.instructions\s*\+\s*KADE_CHILD_NOTE/.test(BUILD), 'the child gate moved');
+  /* Nov 11 2026 (card 5): the gate is the shared child-or-teen check now, on the person on the line
+   * (kadeAccountType.audienceOf), not the service seat a voice turn arrives as. */
+  assert.ok(/isChildLike\(audience\)\)\s*\{\s*agent\.instructions\s*=\s*agent\.instructions\s*\+\s*KADE_CHILD_NOTE/.test(BUILD), 'the child gate moved');
 });
 
 test('the persona is pushed LAST and the house block is built first', () => {

@@ -401,7 +401,7 @@ export const kadeKnownSchema: ExtendedJsonSchema = {
       type: 'string',
       enum: ['count', 'read', 'correct', 'forget', 'forget_source', 'forget_all'],
       description:
-        'count = how many things you know about them, by group (always first). read = the facts in one group. correct = fix one fact. forget = forget one fact. forget_source = forget everything from mail or from errands. forget_all = forget everything (asks first).',
+        'count = how many things you know about them, by group (always first). read = the facts in one group. correct = fix one fact. forget = forget one fact (reads it back and asks first; call again after their yes). forget_source = forget everything from mail or from errands. forget_all = forget everything (asks first).',
     },
     group: { type: 'string', enum: ['told', 'errand', 'mail', 'others', 'all'], description: 'read. Which group. others = facts about other people.' },
     ref: { type: 'string', description: 'correct or forget. The ref of the fact, from read.' },
@@ -711,13 +711,13 @@ const kadeNotifyEverydayActions = [
 ];
 
 const kadeNotifyRemindDescription =
-  'Reminders for the person you are talking with. A reminder comes back to them later as a message from you in this chat, plus a phone notification that says only that you have a reminder for them. ' +
+  'Reminders for the person you are talking with. A reminder comes back to them later as a message from you in this chat, plus a phone notification if their phone has notifications on. ' +
   'Call the tool FIRST. Say a reminder is set only after the tool answers with Reminder set. If it answers FAILED, tell them plainly that it is not set. ' +
-  'Only set what they asked for. Times are in their own time zone. ' +
+  'Only set what they asked for. Times are in their own time zone. For remind me to do something, use set_reminder, never the check-in actions. ' +
   'Other actions: send pings their phone right now. The check-in actions set a repeating message from you. platform_status is a real health check. spontaneous_on and spontaneous_off switch whether you may text them first.';
 
 const kadeNotifyEverydayDescription =
-  ' Everyday helpers too: timers, alarms, the date and time where they live, daily medicine times, running lists such as to-do and shopping, and phone numbers they ask you to keep.';
+  ' Everyday helpers too: timers, alarms, the date and time where they live, daily medicine times, running lists such as to-do and shopping, and phone numbers they ask you to keep. A pill or medicine every day: medicine_add.';
 
 const kadeNotifyActionNoteBase =
   'What to do. set_reminder: one reminder (body, plus in_minutes or fire_date and fire_time; label for paperwork deadlines, ride booking and the like). ' +
@@ -1532,7 +1532,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_known: {
     name: 'kade_known',
     description:
-      'What you know about them, and fixing or forgetting it. Use when they ask what you know or remember about them, say you remember something wrong, or ask you to forget something. Call count first and say the counts; then read the group they pick. To forget or correct, read first and use the ref. If you are not sure which fact they mean, read it back and ask before forgetting. Never say a fact is forgotten unless forget answered ok.',
+      'What you know about them, and fixing or forgetting it. Use when they ask what you know or remember about them, say you remember something wrong, or ask you to forget something. Call count first and say the counts; then read the group they pick. To forget or correct, read first and use the ref. Forget always reads the fact back and asks first; call it again only after their own yes. Never say a fact is forgotten unless forget answered OK with forgotten.',
     schema: kadeKnownSchema,
     toolType: 'builtin',
   },

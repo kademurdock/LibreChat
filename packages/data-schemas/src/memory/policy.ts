@@ -123,8 +123,9 @@ export async function setConversationMemoryPolicy(
 
 /* KADE Nov 11 2026 (card 8): a fact the person asked to forget is not written back by the keeper.
  * The tombstone holds the forgotten words hashed with the person's id (./tombstoneMatch.ts); it is
- * written by api/server/services/kadeKnownTombstones.js. Fails open: a database hiccup never
- * blocks an ordinary write. KADE_KNOWN_TOMBSTONE=0 stops the check. */
+ * written by api/server/services/kadeKnownTombstones.js. Review fix: fails CLOSED, so a database
+ * hiccup skips this one keeper write rather than letting a forgotten fact back.
+ * KADE_KNOWN_TOMBSTONE=0 stops the check. */
 interface MemoryTombstone {
   userId: string;
   hashes: string[];
@@ -141,13 +142,13 @@ export async function memoryTombstoned(userId: string, value: string): Promise<b
         $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
       })
       .project<{ hashes: string[] }>({ hashes: 1 })
-      .limit(500)
+      .limit(2000)
       .toArray();
     if (!rows.length) return false;
     const candidate = tombstoneHashes(String(userId), String(value || ''));
     return rows.some((row) => tombstoneCovers(row.hashes, candidate));
   } catch {
-    return false;
+    return true;
   }
 }
 

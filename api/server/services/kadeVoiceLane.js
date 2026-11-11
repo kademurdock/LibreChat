@@ -109,6 +109,9 @@ function readLane(req, env = process.env, now = Date.now()) {
   const agentId = String(req.body.agentId || req.body.agent_id || '');
   if (p.agentId && agentId && p.agentId !== agentId) return { lane: null, why: 'other-agent' };
   if (p.lane === 'phone') {
+    /* Nov 11 2026 review: a verified phone pass marks the turn as a call even when it names nobody,
+     * so an unknown caller is never taken for the service seat's own signed-in owner. */
+    req.kadeVoicePass = 'phone';
     const num = e164(p.num);
     if (num) req.kadeCallerNumber = num;
     return { lane: 'phone', why: num ? 'phone-number' : 'phone' };
@@ -159,6 +162,11 @@ function isSignedInAppVoice(req) {
   );
 }
 
+/** A turn the bridge signed as a phone call (with or without a caller number). */
+function isPhonePass(req) {
+  return Boolean(req && (req.kadeVoicePass === 'phone' || e164(req.kadeCallerNumber)));
+}
+
 /** The caller's number on a phone turn, as the bridge got it from Twilio; null otherwise. */
 function callerNumberOf(req) {
   if (!req || isSignedInAppVoice(req)) return null;
@@ -174,7 +182,7 @@ function laneOf(req) {
   if (isSignedInAppVoice(req)) return 'app-voice';
   const body = req.body || {};
   if (req.kadeOnBehalfOf || req.kadeOnBehalfOfUnresolved === true || body.kadeOnBehalfOf) return 'phone';
-  if (req.kadeCallerNumber) return 'phone';
+  if (req.kadeCallerNumber || req.kadeVoicePass === 'phone') return 'phone';
   if (isServiceSeat(req) && Array.isArray(body.messages)) return 'phone';
   const raw = typeof body.text === 'string' ? body.text.toLowerCase() : '';
   if (raw.startsWith('[earlier in this conversation')) return 'phone';
@@ -190,6 +198,7 @@ module.exports = {
   markVoiceLane,
   isSignedInAppVoice,
   callerNumberOf,
+  isPhonePass,
   laneOf,
   appVoiceOn,
 };
