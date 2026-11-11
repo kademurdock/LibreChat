@@ -66,11 +66,11 @@ test('dropRepeats keeps order, counts what it dropped, and the switch turns it o
   assert.deepEqual(D.dropRepeats(null, head, {}).kept, []);
 });
 
-test('the overlap setting is read, and junk falls back to 0.8', () => {
-  assert.equal(D.overlapNeeded({}), 0.8);
+test('the overlap setting is read, and junk falls back to all the words', () => {
+  assert.equal(D.overlapNeeded({}), 1);
   assert.equal(D.overlapNeeded({ KADE_RECALL_ONE_FACT_OVERLAP: '0.95' }), 0.95);
-  assert.equal(D.overlapNeeded({ KADE_RECALL_ONE_FACT_OVERLAP: '0.1' }), 0.8);
-  assert.equal(D.overlapNeeded({ KADE_RECALL_ONE_FACT_OVERLAP: 'junk' }), 0.8);
+  assert.equal(D.overlapNeeded({ KADE_RECALL_ONE_FACT_OVERLAP: '0.1' }), 1);
+  assert.equal(D.overlapNeeded({ KADE_RECALL_ONE_FACT_OVERLAP: 'junk' }), 1);
   /* six words, five found: a repeat at 0.8, kept at 0.95 */
   const places = D.headPlaces({ pinned: ['Garden tomatoes ripen late beside the fence.'] });
   const line = 'Garden tomatoes ripen late beside the shed.';
@@ -237,4 +237,22 @@ test('on a small seat every card already rides the head, so none is recalled a s
   assert.equal((await on.run()).block, null);
   const off = fixture({ own, env: { KADE_RECALL_ONE_FACT: '0' } });
   assert.match((await off.run()).block, /Enjoys pottery/, 'the old behaviour, exactly');
+});
+
+test('build two: the card that carries the correction is never dropped as a repeat', () => {
+  const head = {
+    summary:
+      'She has a dentist appointment Thursday at the Springfield clinic. She decided to take the job at the hospital in Springfield.',
+  };
+  const lines = [
+    'Dentist appointment is Friday at the Springfield clinic',
+    'She decided not to take the job at the hospital in Springfield',
+    'She decided to take the job at the hospital in Springfield',
+  ];
+  const out = D.dropRepeats(lines, head, {});
+  assert.deepEqual(out.kept, lines.slice(0, 2), 'the changed day and the "not" are news; the exact repeat is not');
+  assert.equal(out.dropped, 1);
+  /* a negation is a content word however short */
+  assert.equal(D.contentWords('she did not go').has('not'), true);
+  assert.equal(D.contentWords("she didn't go").has('not'), true);
 });

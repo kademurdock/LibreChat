@@ -168,7 +168,12 @@ const ALIASES = {
    * name. It is also in KEYWORD_ONLY below: these patterns (or a tool already riding in the
    * conversation) are the only way it attaches. */
   kade_studio: [
-    /\b(?:make|write|create|generate|compose|record|produce|sing|cook up|whip up)\b[^.!?\n]{0,60}\b(?:songs?|tracks?|tunes?|jingles?|ballads?|anthems?|lullab(?:y|ies))\b/i,
+    /\b(?:make|write|create|generate|compose|record|produce|sing|cook up|whip up)\b[^.!?\n]{0,60}\b(?:songs?|tracks?|tunes?|jingles?|ballads?|anthems?|lullab(?:y|ies)|raps?|music)\b/i,
+    /* Build two review: first asks and follow-ups that named no "song" ("sing me something", "did the song finish",
+     * "play my song", "change the second verse"). */
+    /\bsing (?:me|us|her|him|them) (?:a|an|some|something)\b/i,
+    /\b(?:songs?|tracks?)\b[^.!?\n]{0,30}\b(?:ready|done|finish(?:ed)?|yet|coming)\b|\bplay (?:my|the|that|our) (?:song|track)\b/i,
+    /\b(?:change|fix|rewrite|redo|keep|love|like) (?:the |that |this |my )?(?:first |second |third |last )?(?:verse|chorus|bridge|lyrics|hook)\b|\bthe lyrics (?:look|sound|are) (?:good|great|fine|perfect)\b/i,
     /\b(?:write|make|draft) (?:me |us )?(?:some |the |new )?lyrics\b/i,
     /\b(?:songs?|tracks?|tunes?) (?:about|for (?:my|me|us|her|him|them|the))\b/i,
     /\b(?:is|are|was) (?:my|the|that|our) (?:song|track)\b|\b(?:my|the|that|our) (?:song|track)\b[^.!?\n]{0,30}\b(?:ready|done|finished|yet|coming)\b/i,
@@ -723,12 +728,57 @@ const KEYWORD_ONLY = new Set(['kade_studio']);
 function keywordOnlyOn() {
   return String(process.env.KADE_TOOLS_KEYWORD_ONLY || '') !== '0';
 }
-function keywordOnlyPass(p, out, ridingBefore) {
+/* Build two review: the "yes" after a price, and "is it done yet", name no song, and the riding
+ * set above is lost on every restart and deploy. So a conversation that holds an open song price,
+ * or a song a character started in the last two days, gets kade_studio back. The look is two small
+ * indexed reads by conversation id, started BEFORE tool selection and only peeked at after it: if
+ * it is not back by then it is not used, so it can never add a wait. KADE_STUDIO_OPEN_LOOK=0 stops it. */
+const seam = { studioOpen: null };
+function studioOpenLook(p, ridingBefore) {
+  try {
+    if (!keywordOnlyOn() || String(process.env.KADE_STUDIO_OPEN_LOOK || '') === '0') return null;
+    if (!p || ridingBefore.has('kade_studio') || !(p.tools || []).some((t) => t && t.name === 'kade_studio')) return null;
+    const convo = stickyKey(p.conversationId);
+    if (!convo) return null;
+    const id = String(p.conversationId);
+    const look = seam.studioOpen
+      ? seam.studioOpen(id)
+      : (async () => {
+          const mongoose = require('mongoose');
+          if (mongoose.connection.readyState !== 1) return false;
+          const now = Date.now();
+          const [price, song] = await Promise.all([
+            mongoose.connection
+              .collection('kadesongquotes')
+              .findOne({ conversationId: id, kind: 'studio', usedAt: { $exists: false }, createdAt: { $gte: new Date(now - 60 * 60000) } }, { projection: { _id: 1 } }),
+            mongoose.connection
+              .collection('kadesongcharges')
+              .findOne({ conversationId: id, origin: 'character', createdAt: { $gte: new Date(now - 48 * 3600000) } }, { projection: { _id: 1 } }),
+          ]);
+          return Boolean(price || song);
+        })();
+    return require('./kadeRecallDedupe').peekable(Promise.resolve(look));
+  } catch (_) {
+    return null;
+  }
+}
+
+function keywordOnlyPass(p, out, ridingBefore, open) {
   if (!keywordOnlyOn() || !out || !out.keep || out.reason === 'off') return out;
   const text = recallQuery.turnWords(p && p.text);
   const cut = [];
+  const songHere = Boolean(open && open.peek() === true);
+  if (songHere && !out.keep.has('kade_studio')) {
+    out.keep.add('kade_studio');
+    stickyAdd(p.conversationId, new Set(['kade_studio']));
+    return { ...out, dropped: (out.dropped || []).filter((n) => n !== 'kade_studio'), reason: `${out.reason} studio-open` };
+  }
   for (const name of KEYWORD_ONLY) {
     if (!out.keep.has(name) || ridingBefore.has(name)) continue;
+    if (name === 'kade_studio' && songHere) {
+      stickyAdd(p.conversationId, new Set([name]));
+      continue;
+    }
     if (aliasHits(text, [name]).has(name)) {
       stickyAdd(p.conversationId, new Set([name]));
       continue;
@@ -752,7 +802,8 @@ function keywordOnlyPass(p, out, ridingBefore) {
 
 async function selectTools(p) {
   const ridingBefore = new Set(stickyGet(p && p.conversationId) || []);
-  return keywordOnlyPass(p, await selectToolsCore(p), ridingBefore);
+  const open = studioOpenLook(p, ridingBefore);
+  return keywordOnlyPass(p, await selectToolsCore(p), ridingBefore, open);
 }
 
 /* Part 236 (Sep 20 2026) — JEV WATCHES THE SELECTION, SHADOW ONLY. The header
@@ -875,5 +926,6 @@ module.exports = {
   DEFAULT_CORE,
   DEFERRABLE,
   KEYWORD_ONLY,
+  _seam: seam,
   _resetForTests,
 };

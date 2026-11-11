@@ -323,18 +323,33 @@ function savedDirection(input) {
 }
 /* ============== The YuE2 song charge (Nov 10 2026; services/kadeSongCharge.js) ==============
  * Her words: "subtract ten cents or 12 cents or something like that from their own balance" and "the booth should charge
- * 12 cents also, it's free for me of course." One YuE2 request, whether it asks for one take or four, takes the flat price
- * (KADE_SONG_PRICE_CENTS, 12) from the balance of the person who starts it, here or through a character (kade_studio
- * reaches this same route as that person). It sits after the booth's own gates above and just before the YuE2 router: the
+ * 12 cents also, it's free for me of course." Each take of a YuE2 request takes the price (KADE_SONG_PRICE_CENTS, 12) from
+ * the balance of the person who starts it, here or through a character (kade_studio reaches this same route as that
+ * person): one take 12 cents, four takes 48 (review fix; KADE_SONG_CHARGE_PER_TAKE=0 makes it one flat price per request). It sits after the booth's own gates above and just before the YuE2 router: the
  * price is held first, a balance that is too low is refused in a plain sentence with nothing sent, and the hold is kept
  * only when the router answers that the job was accepted. The administrator pays nothing. KADE_SONG_CHARGE=0 turns it off
  * and every answer is as it was. No limit on who or how many is added: the router's own rule (one YuE2 request in
  * progress per person, one to four takes in it, up to two takes rendering together) is unchanged. */
 const songCharge = require('../services/kadeSongCharge');
+/* The queue's own row for a YuE2 job, so the charge can look at how a job ended (the look after settle, the timed sweep). */
+const songChargeDeps = {
+  job: async (jobId) => {
+    const Jobs = mongoose.models.KadeYueJob;
+    return Jobs ? Jobs.findOne({ id: String(jobId) }).select('id state takes').lean() : null;
+  },
+};
+/* Review fix: holds left by a crash or a deploy are given back for everyone, and a charged song whose job never ends
+ * (a take stuck saving) is closed and its unsaved takes refunded after KADE_SONG_STUCK_HOURS. Every step is an atomic
+ * claim, so two servers may both run it. KADE_SONG_SWEEP=0 stops it. */
+const songChargeSweep = setInterval(() => {
+  if (mongoose.connection.readyState !== 1) return;
+  songCharge.sweep(songChargeDeps).catch(() => {});
+}, 10 * 60 * 1000);
+songChargeSweep.unref();
 router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
   if (!req.body || req.body.engine !== 'yue2' || !songCharge.chargeOn()) return next();
   return requireJwtAuth(req, res, () => {
-    songCharge.boothGate(req, res, next).catch((error) => {
+    songCharge.boothGate(req, res, next, songChargeDeps).catch((error) => {
       logger.warn('[soundbooth/render] song charge gate failed: ' + (error && error.message));
       if (!res.headersSent) res.status(503).json({ error: 'The balance could not be checked just now. Nothing was started and nothing was charged. Try again.' });
     });
@@ -393,7 +408,8 @@ router.use(createYueRouter({
         lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
     });
     /* Nov 10 2026: the song charge follows the job. A song that ends with nothing saved (failed, or stopped before a GPU
-     * began rendering it) gets its 12 cents back, once (services/kadeSongCharge.js). Never throws. */
+     * began rendering it) gets its money back, once, and so does each take that was not saved (services/kadeSongCharge.js).
+     * Never throws. */
     await songCharge.afterJobUpdate(job);
   },
   notify: async job => {

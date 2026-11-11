@@ -399,9 +399,9 @@ export const kadeStudioSchema: ExtendedJsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['quote', 'start', 'status', 'list', 'cancel', 'draft', 'draft_read'],
+      enum: ['quote', 'start', 'status', 'list', 'cancel'],
       description:
-        'quote = the price of a song, before anything is made (always first; needs direction and lyrics). start = make it, only in a later reply after their own message said yes to the price. status = is my song ready. list = their recent songs. cancel = stop one. draft = ask the lyric desk to write words from an idea. draft_read = fetch that draft to read back.',
+        'quote = the price of a song, before anything is made (always first; needs direction and lyrics). start = make it, only in a later reply after their own message said yes to the price. status = is my song ready. list = their recent songs. cancel = stop one.',
     },
     title: { type: 'string', description: 'quote. The song title, up to 80 characters.' },
     direction: {
@@ -412,13 +412,11 @@ export const kadeStudioSchema: ExtendedJsonSchema = {
       type: 'string',
       description: 'quote. The exact words to sing, with [Verse] and [Chorus] tags on their own lines. Leave out only for an instrumental.',
     },
-    instrumental: { type: 'boolean', description: 'quote or draft. True for music with no singing.' },
-    takes: { type: 'integer', minimum: 1, maximum: 4, description: 'quote. How many versions to make of the same song. Default 1. The price is per song, not per take.' },
+    instrumental: { type: 'boolean', description: 'quote. True for music with no singing.' },
+    takes: { type: 'integer', minimum: 1, maximum: 4, description: 'quote. How many versions (takes) to make. Leave out for 1. Ask for more ONLY when they asked for more than one version in their own words: every take is charged, so 2 takes cost twice as much.' },
     style: { type: 'string', description: 'quote. A trained style by name, only if they ask for one. Usually leave out.' },
-    idea: { type: 'string', description: 'draft. What the song is about, in their words.' },
     quoteId: { type: 'string', description: 'start. The quoteId from quote.' },
     jobId: { type: 'string', description: 'status or cancel. The jobId from start. Leave out for their newest song.' },
-    draftId: { type: 'string', description: 'draft_read. The draftId from draft. Leave out for their newest draft.' },
   },
   required: ['action'],
 };
@@ -1313,7 +1311,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_studio: {
     name: 'kade_studio',
     description:
-      'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking: you settle the words and the sound together, then the song is made in the background and arrives here as a message from you with a link to play it. ALWAYS quote first, say the price in your reply in plain words, and call start only in a LATER reply after their own message says yes. Never say a song has started unless start answered started. Use this for songs, not fal_studio, unless they ask for Lyria or MiniMax by name. Also answers "is my song ready" (status).',
+      'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking. YOU write the words with them: ask what the song is about, write the lyrics, read them back, change what they ask. Then the song is made in the background; when it is ready a message from you says so here and it is in their Sound Booth library. ALWAYS quote first, say the price in your reply in plain words, and call start only in a LATER reply after their own message says yes. Never say a song has started unless start answered started. If you are talking by voice or on a phone call, a song cannot be started: say so at once, before writing any words, and ask them to ask again in the text chat. Use this for songs, not fal_studio, unless they ask for Lyria or MiniMax by name. Also answers "is my song ready" (status).',
     schema: kadeStudioSchema,
     toolType: 'builtin',
   },

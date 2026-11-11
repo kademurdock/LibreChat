@@ -61,7 +61,7 @@
  * input is bounded here; the output is the model's own, so that half is an
  * estimate. The nightly ceiling at the default caps is 60 calls, about $0.10.
  *
- * Off: KADE_CARD_CHECK=0 (nothing runs). KADE_CARD_CHECK_FIX=0 keeps the
+ * Off: KADE_CARD_CHECK=0 (nothing runs). Build two: rewriting is OFF unless KADE_CARD_CHECK_FIX=1; off keeps the
  * checked and unconfirmed marks and never rewrites a card.
  */
 'use strict';
@@ -81,7 +81,13 @@ const intEnv = (name, def, lo, hi) => {
   return Number.isFinite(v) && v >= lo && v <= hi ? v : def;
 };
 const enabled = () => process.env.KADE_CARD_CHECK !== '0';
-const fixOn = () => process.env.KADE_CARD_CHECK_FIX !== '0';
+/* Build two review: OFF unless set to 1. The rewrite's rails check words, not who the words are about (a card
+ * about a daughter could take a month said about a niece), so for now the check only marks cards. Turn it on
+ * after a week of reading the "called wrong" count in the nightly log line. */
+const fixOn = () => process.env.KADE_CARD_CHECK_FIX === '1';
+/* Build two review: the person's exact words are not stored with a mark unless KADE_CARD_CHECK_KEEP_QUOTE=1.
+ * Nothing shows them yet, and a full memory clear did not remove them. */
+const keepQuote = () => process.env.KADE_CARD_CHECK_KEEP_QUOTE === '1';
 const lookbackMs = () => intEnv('KADE_CARD_CHECK_LOOKBACK_HOURS', 30, 1, 168) * 3600 * 1000;
 const maxPerRun = () => intEnv('KADE_CARD_CHECK_MAX_PER_RUN', 60, 1, 500);
 const maxPerPerson = () => intEnv('KADE_CARD_CHECK_MAX_PER_PERSON', 3, 1, 10);
@@ -424,6 +430,7 @@ function realDeps() {
       return gone.length;
     },
     excludedConversations: (userId) => ds.excludedMemoryConversations(String(userId)),
+    clear: (userId) => clearChecks(userId),
     complete: (args) => require('~/server/services/kadeMemorySummary').keeperTextCompletion(args),
   };
 }
@@ -437,7 +444,7 @@ function realDeps() {
 async function runCardCheck({ now = new Date() } = {}) {
   if (!enabled()) return { ran: false, reason: 'disabled' };
   const d = seam.deps || realDeps();
-  const stats = { ran: true, people: 0, calls: 0, cards: 0, checked: 0, fixed: 0, unconfirmed: 0, refused: 0, steppedBack: 0, failed: 0, stopped: '' };
+  const stats = { ran: true, people: 0, calls: 0, cards: 0, checked: 0, fixed: 0, unconfirmed: 0, calledWrong: 0, refused: 0, steppedBack: 0, failed: 0, stopped: '' };
   const runId = `cardcheck-${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
   const startedAt = d.clock();
   const since = new Date(now.getTime() - lookbackMs());
@@ -452,7 +459,15 @@ async function runCardCheck({ now = new Date() } = {}) {
         break;
       }
       try {
-        if (!(await d.memoryAllowed(userId))) continue;
+        if (!(await d.memoryAllowed(userId))) {
+          /* Memory is off for them: nothing is checked, and the marks kept about their cards go too. */
+          try {
+            if (typeof d.clear === 'function') await d.clear(userId);
+          } catch (_) {
+            /* tidying never stops the pass */
+          }
+          continue;
+        }
         const [cards, checks, revision] = await Promise.all([d.cards(userId), d.checks(userId), d.policyRevision(userId)]);
         /* Tidy our own marks for this person first: a mark with no card, or a quote from a conversation now kept out of memory. */
         try {
@@ -540,7 +555,7 @@ async function runCardCheck({ now = new Date() } = {}) {
                     agentId: card.agentId,
                     key: card.key,
                     runId,
-                    fields: { ...base, status: 'checked', fixed: true, quote: plan.quote, quoteSpeaker: plan.speaker, quoteAt: plan.quoteAt, valueHash: valueHash(plan.fixed), note: 'fixed' },
+                    fields: { ...base, status: 'checked', fixed: true, quote: keepQuote() ? plan.quote : '', quoteSpeaker: plan.speaker, quoteAt: plan.quoteAt, valueHash: valueHash(plan.fixed), note: 'fixed' },
                   });
                   stats.fixed += 1;
                   continue;
@@ -568,7 +583,7 @@ async function runCardCheck({ now = new Date() } = {}) {
                   ...base,
                   status: checked ? 'checked' : 'unconfirmed',
                   /* A refused rewrite keeps no quote: the card was not changed and stands as it was. */
-                  quote: plan.action !== 'refused' && plan.quote ? plan.quote : '',
+                  quote: keepQuote() && plan.action !== 'refused' && plan.quote ? plan.quote : '',
                   quoteSpeaker: plan.action !== 'refused' && plan.quote ? plan.speaker : '',
                   quoteAt: plan.action !== 'refused' && plan.quote ? plan.quoteAt : null,
                   valueHash: valueHash(card.value),
@@ -577,6 +592,8 @@ async function runCardCheck({ now = new Date() } = {}) {
               });
               if (checked) stats.checked += 1;
               else stats.unconfirmed += 1;
+              /* With fixing off this is the number to read before turning it on: cards the model called wrong. */
+              if (!checked && /^called wrong/.test(String(plan.note || ''))) stats.calledWrong += 1;
             }
           } finally {
             for (const card of claimed) {
@@ -594,7 +611,7 @@ async function runCardCheck({ now = new Date() } = {}) {
     stats.failed += 1;
   }
   d.log(
-    `[kadeCardCheck] done: ${stats.calls} calls, ${stats.cards} cards for ${stats.people} people: ${stats.checked} checked, ${stats.fixed} fixed, ${stats.unconfirmed} unconfirmed, ${stats.refused} refused, ${stats.steppedBack} stepped back, ${stats.failed} failed` +
+    `[kadeCardCheck] done: ${stats.calls} calls, ${stats.cards} cards for ${stats.people} people: ${stats.checked} checked, ${stats.fixed} fixed, ${stats.unconfirmed} unconfirmed (${stats.calledWrong} called wrong, fixing ${fixOn() ? 'on' : 'off'}), ${stats.refused} refused, ${stats.steppedBack} stepped back, ${stats.failed} failed` +
       (stats.stopped ? ` (stopped: ${stats.stopped})` : ''),
   );
   return stats;

@@ -14,8 +14,12 @@
  * The rule is deliberately tight, because the summary has no vector and word
  * overlap can throw away a true, separate fact:
  *   - the line needs at least MIN_WORDS distinct content words;
- *   - nearly all of them (KADE_RECALL_ONE_FACT_OVERLAP, default 0.8) must be in
- *     ONE pinned card, or in one sentence of the summary or two that touch;
+ *   - ALL of them (KADE_RECALL_ONE_FACT_OVERLAP, default 1; build two review: at 0.8
+ *     one word could differ, and that word was often the news, "Friday" against
+ *     the summary's "Thursday") must be in ONE pinned card, or in one sentence of
+ *     the summary or two that touch;
+ *   - "not", "no", "never" and the like are content words, so "decided not to
+ *     take the job" is never the same as "decided to take the job";
  *   - every number in the line (a date, an age, a price, a time) must be in
  *     that same place. A line with a number the head does not carry is kept:
  *     the number is the news.
@@ -29,9 +33,14 @@
 
 const STOP = new Set(
   ('the a an and or but so to of in on at for with is it its i you me my your we our us that this was were be been are am do did does ' +
-    'not no yes just like really oh ok okay well he she they them his her their what when where who how why there here ' +
-    'then than too very can could would should will im youre dont didnt thats got get one all some any ' +
+    'yes just like really oh ok okay well he she they them his her their what when where who how why there here ' +
+    'then than too very can could would should will im youre thats got get one all some any ' +
     'about from out up down off over into have has had also still now says said told tells').split(' '),
+);
+
+/* A negation changes the fact. Each counts as the one content word "not" (short ones included). */
+const NEGATION = new Set(
+  'not no never none cant cannot wont dont didnt doesnt isnt wasnt arent werent havent hasnt hadnt wouldnt couldnt shouldnt nobody nothing neither nor'.split(' '),
 );
 
 const MIN_WORDS = 4;
@@ -42,7 +51,7 @@ function enabled(env = process.env) {
 
 function overlapNeeded(env = process.env) {
   const v = parseFloat(env.KADE_RECALL_ONE_FACT_OVERLAP);
-  return Number.isFinite(v) && v >= 0.5 && v <= 1 ? v : 0.8;
+  return Number.isFinite(v) && v >= 0.5 && v <= 1 ? v : 1;
 }
 
 /** Light stemming, so "walks" meets "walk" and "moved" meets "move". Never used for display. */
@@ -63,7 +72,8 @@ function contentWords(text) {
   const out = new Set();
   for (const raw of found || []) {
     const w = raw.replace(/'s$/, '').replace(/'/g, '');
-    if (w.length > 2 && !STOP.has(w)) out.add(stem(w));
+    if (NEGATION.has(w)) out.add('not');
+    else if (w.length > 2 && !STOP.has(w)) out.add(stem(w));
   }
   return out;
 }

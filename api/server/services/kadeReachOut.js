@@ -37,7 +37,13 @@
  *   KADE_REACHOUT_JUDGE       the Jev reading (0 = a saved open plan is reason enough)
  *   KADE_REACHOUT_SPEAK_GATE  the older bridge friend texts also pass these caps and switches
  *   KADE_REACHOUT_OFF_WORDS   hearing "stop checking on me" in a chat
- *   KADE_REACHOUT_DRY=1       decide and log, never write or send a message
+ *   KADE_REACHOUT_DRY=0       really send. Build two review: the DEFAULT is now a dry run (decide
+ *                             and log "would-send", never write or send a message), because people
+ *                             who switched friend texts off on the bridge before this lane existed
+ *                             are not carried over yet, and opt-in is her decision. Set it to 0 only
+ *                             after the bridge's off list is seeded into this lane's switch rows.
+ *   KADE_REACHOUT_PLAIN_PUSH=0  the push shows the start of the message again (default: the lock
+ *                             screen says only that a message came, never what it is about)
  * Settings: see settings() below.
  *
  * Nothing here logs or stores a word anybody said: rows and log lines carry ids, kinds, counts
@@ -75,7 +81,8 @@ function on(name, env = process.env) {
 function settings(env = process.env) {
   return {
     on: on('KADE_REACHOUT', env),
-    dry: env.KADE_REACHOUT_DRY === '1',
+    dry: env.KADE_REACHOUT_DRY !== '0',
+    plainPush: on('KADE_REACHOUT_PLAIN_PUSH', env),
     judge: on('KADE_REACHOUT_JUDGE', env),
     /* how quiet, and how regular */
     idleDays: num(env, 'KADE_REACHOUT_IDLE_DAYS', 3, 1, 60),
@@ -135,6 +142,13 @@ const OFF_WORDS = [
   /\b(?:stop|quit)\s+reaching\s+out(?:\s+to\s+me)?\b/,
   /\b(?:don'?t|do not|never)\s+(?:text|message|write|ping|contact)\s+me\s+first\b/,
   /\b(?:don'?t|do not|never)\s+reach\s+out\s+to\s+me\b/,
+  /* Build two review: the plainest ways to say stop were missed. */
+  /\b(?:don'?t|do not|never)\s+(?:text|message|write|ping|contact|bother)\s+me\s+(?:anymore|any\s+more|again|ever\s+again|ever|at\s+all)\b/,
+  /\b(?:don'?t|do not|never)\s+(?:text|message|ping|contact|bother)\s+me\s*(?:[.!,]|please\b|ok(?:ay)?\b|$)/,
+  /\b(?:stop|quit)\s+(?:sending|sendin)\s+me\s+(?:texts?|messages?|notifications?|pings?|stuff|things)\b/,
+  /\b(?:stop|quit)\s+(?:bothering|bugging|pestering|nagging)\s+me\b/,
+  /\bleave\s+me\s+alone\b/,
+  /\bno\s+more\s+(?:texts?|messages?|notifications?)\b/,
   /\bno\s+more\s+(?:check[- ]?ins?|friend[- ]texts?|texts?\s+first|messages?\s+first)\b/,
   /\bturn\s+(?:the\s+|those\s+|your\s+)?(?:friend[- ]texts?|check[- ]?ins?)\s+off\b/,
   /\bturn\s+off\s+(?:the\s+|those\s+|your\s+)?(?:friend[- ]texts?|check[- ]?ins?)\b/,
@@ -162,6 +176,15 @@ function switchWords(text) {
     .replace(/\s+/g, ' ');
   /* "she said stop checking on me" is about somebody else's words. */
   if (/\b(?:said|says|told|tells|telling|saying|texted|wrote|yelled)\b[^.!?]{0,40}\b(?:stop|quit|don'?t|do not|never|no more)\b/.test(low)) {
+    return null;
+  }
+  /* Build two review: "my ex won't stop texting me" is a story about somebody else, not an order to us. */
+  if (/\b(?:won'?t|will not|wouldn'?t|would not|doesn'?t|does not|didn'?t|did not|can'?t|cannot|never|not going to|refuses? to)\s+(?:stop|quit|leave)\b/.test(low)) return null;
+  if (
+    /\b(?:he|she|they|him|her|them|ex|mom|mother|mama|dad|father|boss|friend|sister|brother|husband|wife|boyfriend|girlfriend|guy|girl|man|woman|people|everyone|everybody|somebody|someone|number|company|bank|doctor|landlord|neighbou?r|kids?|son|daughter|who)\b[^.!?]{0,30}\b(?:stop|quit|leave me alone|bother|bug|pester|nag)/.test(
+      low,
+    )
+  ) {
     return null;
   }
   if (OFF_WORDS.some((re) => re.test(low))) return 'off';
@@ -699,6 +722,8 @@ async function sendOne({ userId, cand, state, now, s, day }) {
       kind: 'reach-out',
       platformPaid: true,
       push: true,
+      /* The message is about one saved thing in their life; a lock screen on a table shows it to the room. */
+      ...(s.plainPush ? { pushText: 'Sent you a message.' } : {}),
       beforePost: (composed) => {
         problem = wordingProblem(composed && composed.text, s);
         return !problem;

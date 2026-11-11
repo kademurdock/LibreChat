@@ -7,6 +7,11 @@ const assert = require('node:assert/strict');
 
 const C = require('./kadeCardCheck');
 
+/* Build two: rewriting a card and keeping the person's words with a mark are both off unless switched on.
+ * The tests below prove that machinery, so they switch both on; the last test proves the defaults. */
+process.env.KADE_CARD_CHECK_FIX = '1';
+process.env.KADE_CARD_CHECK_KEEP_QUOTE = '1';
+
 const NOW = new Date('2026-11-11T08:05:00Z');
 const TALK = new Date('2026-11-10T20:00:00Z');
 
@@ -342,7 +347,7 @@ test('one night: a true card is checked with the exact quote, a wrong one is fix
   assert.ok(w.checks.every((c) => !c.claimedBy && !c.claimedUntil));
   /* the log line is counts only */
   const line = w.logs.find((l) => l.startsWith('[kadeCardCheck] done:'));
-  assert.equal(line, '[kadeCardCheck] done: 1 calls, 4 cards for 1 people: 1 checked, 1 fixed, 2 unconfirmed, 0 refused, 0 stepped back, 0 failed');
+  assert.equal(line, '[kadeCardCheck] done: 1 calls, 4 cards for 1 people: 1 checked, 1 fixed, 2 unconfirmed (0 called wrong, fixing on), 0 refused, 0 stepped back, 0 failed');
   assert.ok(!w.logs.some((l) => /Dana|library|lemon|Biscuit/.test(l)), 'nothing anyone said is logged');
 });
 
@@ -593,4 +598,26 @@ test('this file cannot delete a card: there is no such call in it', () => {
   const deletes = src.match(/\.delete(One|Many)\(/g) || [];
   assert.equal(deletes.length, 2);
   assert.match(src, /const CHECKS = 'kadecardchecks'/);
+});
+
+test('build two: with nothing set no card is rewritten and no words of theirs are stored with a mark', async () => {
+  const cards = [
+    card('sister_visit', 'Sister Dana visits on Saturday the 15th, driving up from Tulsa.'),
+    card('new_job', 'Starts a new job at the library on Monday.'),
+  ];
+  const answer = json([
+    { id: 'c1', verdict: 'wrong', quote: 'My sister Dana is visiting on Friday the 14th', fixed: 'Sister Dana visits on Friday the 14th, driving up from Tulsa.' },
+    { id: 'c2', verdict: 'confirmed', quote: 'i start the new job at the library on monday' },
+  ]);
+  await withEnv({ KADE_CARD_CHECK_FIX: undefined, KADE_CARD_CHECK_KEEP_QUOTE: undefined }, async () => {
+    const w = world({ cards, answer });
+    const r = await run(w);
+    assert.equal(r.fixed, 0);
+    assert.equal(r.calledWrong, 1);
+    assert.equal(w.sets.length, 0, 'the card store was not written');
+    assert.equal(w.cards[0].value, 'Sister Dana visits on Saturday the 15th, driving up from Tulsa.');
+    assert.equal(mark(w, 'sister_visit').status, 'unconfirmed');
+    assert.equal(mark(w, 'new_job').status, 'checked');
+    for (const c of w.checks) assert.equal(c.quote || '', '', 'no quote is kept');
+  });
 });

@@ -5,7 +5,7 @@
  * rest on: every call yields to the event loop first, so parallel calls interleave as they do
  * against a server, and one findOneAndUpdate checks and writes in a single step (with a
  * duplicate key error, code 11000, when an upsert collides on _id).
- * Supports equality and $exists, $ne, $gte, $gt, $lt, $lte, $in.
+ * Supports equality and $exists, $ne, $gte, $gt, $lt, $lte, $in, $nin.
  */
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -21,6 +21,7 @@ function matches(doc, filter = {}) {
       if (op === '$exists') return (have !== undefined) === Boolean(x);
       if (op === '$ne') return val(have) !== val(x);
       if (op === '$in') return x.map(val).includes(val(have));
+      if (op === '$nin') return !x.map(val).includes(val(have));
       if (have === undefined || have === null) return false;
       if (op === '$gte') return val(have) >= val(x);
       if (op === '$gt') return val(have) > val(x);

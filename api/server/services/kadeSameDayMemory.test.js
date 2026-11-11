@@ -415,3 +415,33 @@ test('a reply only sets a timer; each new reply starts the quiet wait over; noth
   });
   M.__watched.clear();
 });
+
+test('build two: a summary the person had removed is never brought back by a refresh', async () => {
+  /* what the reader hands back for a flagged row: every field blank, the flag still on it */
+  const flagged = { summary: '', take: '', thread: '', revision: 4, invalidated: true, sourceConversationIds: [] };
+  const a = world({ prior: flagged });
+  assert.deepEqual(await run(a), { ok: false, skipped: 'prior-blank' });
+  assert.equal(a.calls.length, 0, 'no model call');
+  assert.equal(a.caps.length, 0, 'no cap spent');
+  assert.equal(a.saved.length, 0, 'nothing saved, so the flag stays and the night rewrites every field');
+  /* blanked because one of its conversations is now kept out of memory: the same blank read, no flag */
+  const b = world({ prior: { summary: '', take: '', thread: '', revision: 4, sourceConversationIds: [] } });
+  assert.deepEqual(await run(b), { ok: false, skipped: 'prior-blank' });
+  assert.equal(b.saved.length, 0);
+  /* no row at all is a first summary and still runs */
+  const c = world({ prior: null });
+  assert.equal((await run(c)).ok, true);
+});
+
+test('build two: a refresh much shorter than the stored summary is not saved', async () => {
+  const long = 'Last week her brother moved into the spare room after the flood, and they have been sorting the insurance together. '.repeat(6).trim();
+  const w = world({ prior: { summary: long, revision: 2, sourceConversationIds: ['c0'] } });
+  const r = await run(w);
+  assert.deepEqual(r, { ok: false, skipped: 'shrunk' });
+  assert.equal(w.saved.length, 0, 'the older story stands');
+  assert.match(w.logs.join('\n'), /much shorter than the stored one/);
+  /* an answer that keeps the story is saved */
+  const kept = world({ prior: { summary: long, revision: 2, sourceConversationIds: ['c0'] }, answer: `SUMMARY:\n${long} On Tuesday November 10 she planned the garden beds.` });
+  assert.equal((await run(kept)).ok, true);
+  assert.equal(kept.saved.length, 1);
+});

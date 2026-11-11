@@ -333,6 +333,8 @@ async function speakFirst({
   requested = false,
   steps,
   push = true,
+  /* Build two: what the push shows instead of the start of the message (a reach-out says only that one came). */
+  pushText,
   timezone,
   timeoutMs,
   onStart,
@@ -375,7 +377,7 @@ async function speakFirst({
     /* Oct 17 2026: the push once never reached the bridge and held the whole call open; a
      * hard 25-second ceiling, and the outcome is logged either way. */
     pushed = await Promise.race([
-      notifyPost({ userId, agentId, agentName: placed.agentName, text: composed.text, conversationId: placed.conversationId, requested }),
+      notifyPost({ userId, agentId, agentName: placed.agentName, text: pushText || composed.text, conversationId: placed.conversationId, requested }),
       new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'push timed out after 25 s' }), 25000)),
     ]);
     logger.info(`[kadeCharacterTurn] push ${kind} convo=${placed.conversationId.slice(0, 8)} -> ${JSON.stringify(pushed).slice(0, 160)}`);

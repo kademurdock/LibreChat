@@ -155,25 +155,28 @@ const YES_WORDS = new Set(
     "let's lets let us start begin run make send ship approve approved approves i i'm im am i'll we you can me my " +
     "is it's its that's thats fine good great perfect cool sounds works work with to pay price cost one on up " +
     'oh uh um well hey really very much be would like want love happy glad ready worth deal sold thing ' +
-    'cent cents dollar dollars about under'
+    'cent cents dollar dollars about under ' +
+    /* Build two review: said beside a yes to a song. Every word must still be one of these. */
+    "he she they will it'll gonna awesome wonderful"
   ).split(' '),
 );
 
 /* Said next to a yes, these are not a hold-on. Taken out before the hold-on check. */
-const SOFT_NO = /\b(?:no problem|no worries|not a problem|don't worry|do not worry)\b/g;
+const SOFT_NO =
+  /\b(?:no problem|no worries|not a problem|don't worry|do not worry|can't wait|cannot wait|can not wait|(?:don't|do not) change (?:a thing|anything|a word|it)|no changes?)\b/g;
 
-const EXTRA_YES = /\b(?:sounds good|that's fine|that is fine|that works|works for me|please do|absolutely|definitely|of course|for sure|alright|all right|yes please)\b/;
+const EXTRA_YES = /\b(?:sounds (?:good|great|perfect|wonderful|awesome)|that's fine|that is fine|that works|works for me|please do|absolutely|definitely|of course|for sure|alright|all right|yes please)\b/;
 
 /* Review fix: people who dictate say yes in more ways than the Forge reading knows. Each of
  * these, when the WHOLE message is still only yes words, is a yes: "fine", "right", "uh huh",
  * "mhm", "proceed", "I agree", "I confirm", "make it", "I want it", "please", "why not". */
 const WHY_NOT = /\bwhy not\b/g;
 const SPOKEN_YES =
-  /^[^a-z0-9]*(?:fine|right|correct|please|proceed)\b|\b(?:i agree|agreed|i confirm|confirmed|uh huh|mhm|mm ?hmm|mmhmm|charge me|(?:make|start|do|send|run|create|generate|write|sing|play) (?:it|that|this|one)|i(?:'d| would)? (?:want|like|love) (?:it|that|this|one)|i can afford (?:it|that))\b/;
+  /^[^a-z0-9]*(?:fine|right|correct|please|proceed|perfect|great|awesome|wonderful)\b|\b(?:i(?:'m| am) ready|i agree|agreed|i confirm|confirmed|uh huh|mhm|mm ?hmm|mmhmm|charge me|(?:make|start|do|send|run|create|generate|write|sing|play) (?:it|that|this|one)|i(?:'d| would)? (?:want|like|love) (?:it|that|this|one)|i can afford (?:it|that))\b/;
 
 const TASK_TOPIC = ['job', 'task', 'search', 'research', 'work'];
 /* A song is made, written, sung and played; said next to a yes these are about the song. */
-const SONG_TOPIC = ['song', 'track', 'music', 'tune', 'create', 'generate', 'write', 'sing', 'play'];
+const SONG_TOPIC = ['song', 'track', 'music', 'tune', 'create', 'generate', 'write', 'sing', 'play', 'hear', 'listen'];
 
 /**
  * Is this message, as a whole, a yes to a price? Reuses the Forge approval reading

@@ -62,7 +62,7 @@ function world({ accounts = {}, balances = {}, env = {} } = {}) {
       w.credits.set(uid, (w.credits.get(uid) ?? 0) + n);
     },
   };
-  w.chargeDeps = { coll: w.charges, wallet, usage: { row: async (doc) => void w.usage.push(doc) }, env, log() {} };
+  w.chargeDeps = { coll: w.charges, wallet, usage: { row: async (doc) => void w.usage.push(doc) }, env, log() {}, job: async (id) => w.jobs.get(id) || null };
 
   /* The fake YuE2 router: the booth's own answers, in the booth's own words. */
   const router = (req, res) => {
@@ -202,14 +202,14 @@ const yes = (w, uid = 'grown', text = 'yes', over = {}) => reqFor(uid, text, w, 
 
 /* ------------------------------------------------------------------ quote */
 
-test('quote: the price is 12 cents, the song is kept as asked, and nothing is spent or queued', async () => {
+test('quote: the price is 12 cents a take, the song is kept as asked, and nothing is spent or queued', async () => {
   spend._resetForTests();
   const w = world();
   const req = reqFor('grown', 'make me a song about the rain', w);
   const q = await studio.quote({ req, ...AGENT, input: { ...SONG, takes: 2 } }, w.deps);
   assert.equal(q.ok, true);
   assert.match(q.quoteId, /^y[0-9a-f]{12}$/);
-  assert.match(q.tellThem, /takes 12 cents from their balance, for 2 takes/);
+  assert.match(q.tellThem, /This takes 24 cents from their balance: 12 cents for each of 2 takes\. A take that fails gets its 12 cents back\./);
   assert.match(q.tellThem, /Do not start it in this reply/);
   assert.equal(w.credits.get('grown'), 100 * CENT, 'a quote spends nothing');
   assert.equal(w.jobs.size, 0);
@@ -439,8 +439,89 @@ test('refund: stopped before rendering comes back; stopped after rendering began
 
   const partial = world();
   const c = await studio.start({ req: yes(partial), ...AGENT, quoteId: (await priced(partial, 'grown', { ...SONG, takes: 2 })).quoteId }, partial.deps);
-  assert.equal(await partial.move(c.jobId, 'failed', ['done', 'failed']), 'kept');
-  assert.equal(partial.credits.get('grown'), 88 * CENT, 'they have a take, so the charge stands');
+  assert.equal(partial.credits.get('grown'), 76 * CENT, 'two takes, 24 cents');
+  const both = await Promise.all([partial.move(c.jobId, 'failed', ['done', 'failed']), charge.afterJobUpdate(partial.jobs.get(c.jobId), partial.chargeDeps)]);
+  assert.equal(both.filter((o) => o === 'refunded').length, 1, 'two servers, one refund');
+  assert.equal(await partial.move(c.jobId, 'failed', ['done', 'failed']), 'none', 'closed: never again');
+  assert.equal(partial.credits.get('grown'), 88 * CENT, 'the saved take is paid for, the failed one came back');
+  assert.equal(partial.charges.rows[0].state, 'part-refunded');
+  assert.equal(partial.charges.rows[0].refundedCents, 12);
+  assert.deepEqual(partial.usage.map((u) => u.chargedUSD), [0.24, -0.12]);
+
+  const whole = world();
+  const d = await studio.start({ req: yes(whole), ...AGENT, quoteId: (await priced(whole, 'grown', { ...SONG, takes: 2 })).quoteId }, whole.deps);
+  assert.equal(await whole.move(d.jobId, 'done', ['done', 'done']), 'kept');
+  assert.equal(await whole.move(d.jobId, 'done', ['done', 'done']), 'none');
+  assert.equal(whole.credits.get('grown'), 76 * CENT, 'both takes saved, both paid for');
+  assert.equal(whole.charges.rows[0].state, 'charged');
+  assert.ok(whole.charges.rows[0].closedAt instanceof Date);
+});
+
+test('build two: the flat price switch charges a request once, and a saved take keeps it all', async () => {
+  spend._resetForTests();
+  const w = world({ env: { KADE_SONG_CHARGE_PER_TAKE: '0' } });
+  assert.equal(charge.priceFor({ role: 'USER' }, w.env, 4).cents, 12);
+  const s = await studio.start({ req: yes(w), ...AGENT, quoteId: (await priced(w, 'grown', { ...SONG, takes: 2 })).quoteId }, w.deps);
+  assert.equal(w.credits.get('grown'), 88 * CENT);
+  assert.equal(await w.move(s.jobId, 'failed', ['done', 'failed']), 'kept');
+  assert.equal(w.credits.get('grown'), 88 * CENT);
+});
+
+test('build two: a song whose job never ends is closed by the sweep and its unsaved takes come back, once', async () => {
+  spend._resetForTests();
+  const w = world();
+  const s = await studio.start({ req: yes(w), ...AGENT, quoteId: (await priced(w, 'grown', { ...SONG, takes: 2 })).quoteId }, w.deps);
+  await w.move(s.jobId, 'running', ['done', 'saving']);
+  assert.equal(w.credits.get('grown'), 76 * CENT);
+  assert.deepEqual(await charge.sweep(w.chargeDeps), { holds: 0, closed: 0 }, 'not old enough: left alone');
+  w.charges.rows[0].settledAt = new Date(Date.now() - 3 * 3600000);
+  const out = await Promise.all([charge.sweep(w.chargeDeps), charge.sweep(w.chargeDeps)]);
+  assert.equal(out[0].closed + out[1].closed, 1, 'two servers, one close');
+  assert.equal(w.credits.get('grown'), 88 * CENT, 'the take stuck saving came back; the saved one is paid for');
+  assert.deepEqual(await charge.sweep(w.chargeDeps), { holds: 0, closed: 0 });
+  /* and if that take saves after all, nothing more moves */
+  assert.equal(await w.move(s.jobId, 'done', ['done', 'done']), 'none');
+  assert.equal(w.credits.get('grown'), 88 * CENT);
+  /* the sweep switch */
+  const off = world({ env: { KADE_SONG_SWEEP: '0' } });
+  off.charges.rows.push({ _id: 'rx', chargeId: 'cx', userId: 'grown', credits: 12 * CENT, state: 'held', createdAt: new Date(Date.now() - 3600000) });
+  assert.deepEqual(await charge.sweep(off.chargeDeps), { holds: 0, closed: 0 });
+});
+
+test('build two: a hold left by a crash is given back by the sweep for anyone, without them starting another song', async () => {
+  const w = world();
+  w.credits.set('grown', 88 * CENT);
+  w.charges.rows.push({ _id: 'r1', chargeId: 'c1', userId: 'grown', credits: 12 * CENT, cents: 12, state: 'held', createdAt: new Date(Date.now() - 11 * 60000) });
+  w.charges.rows.push({ _id: 'r2', chargeId: 'c2', userId: 'kid', credits: 12 * CENT, cents: 12, state: 'held', createdAt: new Date() });
+  const out = await charge.sweep(w.chargeDeps);
+  assert.equal(out.holds, 1);
+  assert.equal(w.credits.get('grown'), 100 * CENT);
+  assert.equal(w.charges.rows[1].state, 'held', 'a fresh hold is a start still in flight');
+});
+
+test('build two: a job that ended in the moment before the charge was written is still refunded', async () => {
+  spend._resetForTests();
+  const w = world();
+  /* the queue ends the job before settle has marked the row charged: its hook finds nothing to refund */
+  const realSettle = w.chargeDeps.coll.findOneAndUpdate.bind(w.chargeDeps.coll);
+  let raced = false;
+  w.chargeDeps.coll.findOneAndUpdate = async (filter, update, opts) => {
+    if (!raced && filter.state === 'held' && update.$set && update.$set.state === 'charged') {
+      raced = true;
+      const job = [...w.jobs.values()][0];
+      job.state = 'failed';
+      job.active = false;
+      job.takes = [{ state: 'failed' }];
+      assert.equal(await charge.afterJobUpdate(job, w.chargeDeps), 'none');
+    }
+    return realSettle(filter, update, opts);
+  };
+  const s = await studio.start({ req: yes(w), ...AGENT, quoteId: (await priced(w)).quoteId }, w.deps);
+  assert.equal(s.ok, true);
+  for (let i = 0; i < 20; i += 1) await tick();
+  assert.equal(raced, true);
+  assert.equal(w.credits.get('grown'), 100 * CENT, 'the look after settle gave it back');
+  assert.equal(w.charges.rows[0].state, 'refunded');
 });
 
 test('refund: a submission the booth could not confirm is never retried and never charged', async () => {
@@ -549,8 +630,15 @@ test('the charge switch and the price setting', async () => {
   assert.equal(charge.priceSentence({ role: 'ADMIN' }, {}), null);
   assert.equal(
     charge.priceSentence({ role: 'USER' }, {}),
+    'Each YuE2 take you start takes 12 cents from your balance: one take is 12 cents, four takes are 48 cents. A take that fails gets its 12 cents back, and so does a song you stop before it starts rendering.',
+  );
+  assert.equal(
+    charge.priceSentence({ role: 'USER' }, { KADE_SONG_CHARGE_PER_TAKE: '0' }),
     'Each YuE2 song you start takes 12 cents from your balance, however many takes you ask for. If the song fails, or you stop it before it starts rendering, the 12 cents goes back to your balance.',
   );
+  assert.equal(charge.priceFor({ role: 'USER' }, {}, 4).cents, 48);
+  assert.equal(charge.priceFor({ role: 'USER' }, {}, 9).cents, 12, 'a count the booth would refuse is priced as one; the booth refuses it and the hold goes back');
+  assert.equal(charge.priceFor({ role: 'ADMIN' }, {}, 4).cents, 0);
   const off = world({ env: { KADE_SONG_CHARGE: '0' } });
   const r = await off.render('grown', { engine: 'yue2', script: 'bright pop', lyrics: 'la la', count: 1 });
   assert.equal(r.status, 200);
@@ -563,13 +651,16 @@ test('the charge switch and the price setting', async () => {
 test('booth page: the estimate says the price, the confirmation says what was taken, the admin hears what she always did', async () => {
   const w = world();
   const est = await w.render('grown', { engine: 'yue2', script: 'bright pop', lyrics: 'la la', count: 2, estimateOnly: true });
-  assert.equal(est.data.estimate.spoken, '2 takes. Starting this song takes 12 cents from your balance, however many takes you ask for.');
-  assert.equal(est.data.charge.cents, 12);
+  assert.equal(est.data.estimate.spoken, '2 takes. Starting this takes 24 cents from your balance, 12 cents for each of 2 takes.');
+  assert.equal(est.data.charge.cents, 24);
   assert.equal(w.credits.get('grown'), 100 * CENT);
   const go = await w.render('grown', { engine: 'yue2', script: 'bright pop', lyrics: 'la la', count: 2 });
-  assert.equal(go.data.estimate.spoken, '2 takes. 12 cents was taken from your balance for this song. If it fails, it goes back.');
+  assert.equal(go.data.estimate.spoken, '2 takes. 24 cents was taken from your balance, 12 cents for each of 2 takes. A take that fails gets its 12 cents back.');
   assert.equal(go.data.charge.state, 'charged');
-  assert.equal(w.credits.get('grown'), 88 * CENT, 'two takes, one charge');
+  assert.equal(w.credits.get('grown'), 76 * CENT, 'two takes, 12 cents each, one hold');
+  const one = world();
+  const single = await one.render('grown', { engine: 'yue2', script: 'bright pop', lyrics: 'la la', count: 1 });
+  assert.equal(single.data.estimate.spoken, '1 take. 12 cents was taken from your balance for this song. If the song fails, the 12 cents goes back.');
   assert.equal(w.charges.rows[0].origin, 'booth');
   const hers = await w.render('boss', { engine: 'yue2', script: 'bright pop', lyrics: 'la la', count: 1, estimateOnly: true });
   assert.equal(hers.data.estimate.spoken, `1 take. ${OLD_LINE}`);
@@ -608,7 +699,7 @@ test('child account: may make songs, charged the same, and explicit words are re
 
 /* ------------------------------------------------------------------- lanes */
 
-test('phone lane: acts as the caller, tells the price, and refuses to start, stop or draft', async () => {
+test('phone lane: acts as the caller, tells the price, and refuses to start, stop, draft, or say anything about the account', async () => {
   spend._resetForTests();
   const w = world();
   const call = (text) => ({ user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'grown', role: 'USER' }, body: { text, conversationId: 'new', kadeOnBehalfOf: 'someone@example.com' } });
@@ -616,14 +707,15 @@ test('phone lane: acts as the caller, tells the price, and refuses to start, sto
   assert.equal(q.ok, true);
   assert.equal(q.quoteId, null);
   assert.match(q.tellThem, /takes 12 cents from their balance/);
-  assert.match(q.tellThem, /cannot be started from a phone call/);
+  assert.match(q.tellThem, /cannot be started while you are talking by voice or on a phone call/);
   assert.equal(w.renders[0].uid, 'grown', 'the booth is asked as the caller, never as the service seat');
   assert.equal(w.quotes.rows.length, 0);
   const s = await studio.start({ req: call(fold(['THEM: make me a song', 'YOU: that is 12 cents, okay?'], 'yes')), ...AGENT }, w.deps);
   assert.equal(s.error, studio.REFUSED.phone);
   assert.equal((await studio.cancel({ req: call('stop my song'), ...AGENT }, w.deps)).ok, false);
   assert.equal((await studio.draft({ req: call('write me lyrics'), ...AGENT, idea: 'a song about rain' }, w.deps)).ok, false);
-  assert.equal((await studio.status({ req: call('is my song ready'), ...AGENT }, w.deps)).ok, true);
+  assert.equal((await studio.status({ req: call('is my song ready'), ...AGENT }, w.deps)).ok, false, 'a caller known only by number hears nothing about the account');
+  assert.equal((await studio.list({ req: call('what songs have I made'), ...AGENT }, w.deps)).ok, false);
   assert.equal(w.jobs.size, 0);
   assert.equal(w.credits.get('grown'), 100 * CENT);
   /* A caller the bridge named but the site could not match is nobody. */
@@ -673,7 +765,7 @@ test('a background run cannot make a song, and KADE_STUDIO=0 refuses everything'
 
 /* ---------------------------------------------------------------- delivery */
 
-test('delivery: the finished song is posted once as the character with the link, and pushed once, even from two servers', async () => {
+test('delivery: the finished song is posted once as the character, library first then the link, and pushed once, even from two servers', async () => {
   spend._resetForTests();
   const w = world();
   const s = await studio.start({ req: yes(w), ...AGENT, quoteId: (await priced(w)).quoteId }, w.deps);
@@ -687,10 +779,14 @@ test('delivery: the finished song is posted once as the character with the link,
   assert.equal(post.userId, 'grown');
   assert.equal(post.agentId, 'agent_testa');
   assert.equal(post.conversationId, 'convo-1');
-  assert.equal(post.text, `Your song "Rain Song" is ready. [Play Rain Song](https://files.example/${s.jobId}_1.mp3) It is in your Sound Booth library too.`);
+  assert.equal(
+    post.text,
+    'Your song "Rain Song" is ready. It is in your Sound Booth library: on the phone app, open the Sound Booth and then your library to play it.' +
+      ` On the website you can also play it from here: [Play Rain Song](https://files.example/${s.jobId}_1.mp3) If a link here stops working, the song is still in your library.`,
+  );
   assert.equal(w.pushes[0].conversationId, 'convo-1');
   assert.equal(w.pushes[0].requested, true);
-  assert.equal(w.pushes[0].text, 'Your song "Rain Song" is ready. Open to play it.');
+  assert.equal(w.pushes[0].text, 'Your song "Rain Song" is ready. It is in your Sound Booth library.');
   const receipt = both.find(Boolean);
   assert.equal(receipt.accepted, 1);
   assert.ok(receipt.at instanceof Date);
@@ -722,7 +818,8 @@ test('delivery: several takes are all linked, and a post that fails falls back t
   const s = await studio.start({ req: yes(w), ...AGENT, quoteId: (await priced(w, 'grown', { ...SONG, takes: 3 })).quoteId }, w.deps);
   await w.move(s.jobId, 'failed', ['done', 'done', 'failed']);
   await w.announce(s.jobId);
-  assert.match(w.posts[0].text, /\[Play Rain Song\]\(.*_1\.mp3\) \[Play take 2\]\(.*_2\.mp3\) 2 of 3 takes were saved\./);
+  assert.match(w.posts[0].text, /2 of 3 takes were saved\. The 12 cents for what was not saved went back to your balance\. On the website you can also play it from here: \[Play Rain Song\]\(.*_1\.mp3\) \[Play take 2\]\(.*_2\.mp3\) If a link/);
+  assert.equal(w.credits.get('grown'), 76 * CENT, 'three takes held, the failed one returned');
 
   const broken = world();
   broken.deps.turn.post = async () => {
@@ -756,21 +853,37 @@ test('status answers "is my song ready", with the play link once it is; list nam
   assert.deepEqual(songs.songs, [{ title: 'Rain Song', state: 'done', takes: 1 }]);
 });
 
-test('lyric desk: a draft is asked for, read back when ready, and split into direction and words', async () => {
+test('build two: the lyric desk is not used from a conversation, so no draft can spend anyone\'s balance unasked', async () => {
   const w = world();
-  const d = await studio.draft({ req: reqFor('grown', 'write me a song about rain', w), ...AGENT, idea: 'a slow song about rain on a tin roof' }, w.deps);
+  for (const uid of ['grown', 'kid', 'boss']) {
+    const d = await studio.draft({ req: reqFor(uid, 'write me a song about rain', w), ...AGENT, idea: 'a slow song about rain on a tin roof' }, w.deps);
+    assert.equal(d.ok, false, uid);
+    assert.equal(d.soft, true);
+    assert.match(d.error, /Write the words yourself, with them/);
+    assert.equal((await studio.draftRead({ req: reqFor(uid, 'read it to me', w), ...AGENT }, w.deps)).ok, false);
+  }
+  assert.equal(w.scripts.size, 0, 'the booth\'s lyric desk was never asked');
+  /* the switch opens it for the administrator only: nobody else is charged for a draft they heard no price for */
+  const on = world({ env: { KADE_STUDIO_DRAFT: '1' } });
+  assert.equal((await studio.draft({ req: reqFor('grown', 'write me a song', on), ...AGENT, idea: 'a slow song about rain' }, on.deps)).ok, false);
+  assert.equal(on.scripts.size, 0);
+});
+
+test('lyric desk, switched on for the administrator: a draft is asked for, read back when ready, and split into direction and words', async () => {
+  const w = world({ env: { KADE_STUDIO_DRAFT: '1' } });
+  const d = await studio.draft({ req: reqFor('boss', 'write me a song about rain', w), ...AGENT, idea: 'a slow song about rain on a tin roof' }, w.deps);
   assert.equal(d.state, 'working');
   const sent = w.scripts.get(d.draftId).body;
   assert.equal(sent.engine, 'yue2');
   assert.equal(sent.mode, 'write');
   assert.equal(sent.background, true);
-  const waiting = await studio.draftRead({ req: reqFor('grown', 'read it to me', w), ...AGENT }, w.deps);
+  const waiting = await studio.draftRead({ req: reqFor('boss', 'read it to me', w), ...AGENT }, w.deps);
   assert.equal(waiting.state, 'working');
   Object.assign(w.scripts.get(d.draftId), {
     state: 'done',
     result: { title: 'Tin Roof', script: 'slow country ballad, warm female lead vocal\n\nLyrics:\n[Verse]\nRain on the tin roof\n[Chorus]\nLet it rain\nREADBACK: a slow song' },
   });
-  const done = await studio.draftRead({ req: reqFor('grown', 'read it to me', w), ...AGENT }, w.deps);
+  const done = await studio.draftRead({ req: reqFor('boss', 'read it to me', w), ...AGENT }, w.deps);
   assert.equal(done.state, 'done');
   assert.equal(done.title, 'Tin Roof');
   assert.equal(done.direction, 'slow country ballad, warm female lead vocal');
@@ -817,4 +930,52 @@ test('kade_studio rides only on song-shaped words, or once it is already riding 
   const loose = await pick('I had the strangest day at work today, honestly', 'c-loose');
   delete process.env.KADE_TOOLS_KEYWORD_ONLY;
   assert.equal(loose.keep.has('kade_studio'), true);
+});
+
+test('build two: after a restart the yes turn still has the tool, when this conversation holds an open song price or a recent song', async () => {
+  const R = require('./kadeToolRetrieval.js');
+  const tools = ['kade_studio', 'kade_weather', 'kade_help', 'web_search', 'kade_joke'].map((name) => ({ name, description: `${name} does things` }));
+  /* an embed that takes a moment, as a real one does, and matches nothing */
+  const slow = () => new Promise((resolve) => setTimeout(() => resolve(null), 30));
+  const pick = (text, conversationId) => R.selectTools({ tools, text, agentId: 'a', conversationId, embed: slow });
+  const looked = [];
+  R._resetForTests();
+  R._seam.studioOpen = async (id) => {
+    looked.push(id);
+    return id === 'c-priced';
+  };
+  try {
+    const yesTurn = await pick('yeah go ahead and make it', 'c-priced');
+    assert.equal(yesTurn.keep.has('kade_studio'), true);
+    assert.match(yesTurn.reason, /studio-open|embed-/);
+    const next = await pick('is it done yet', 'c-priced');
+    assert.equal(next.keep.has('kade_studio'), true, 'and it rides from then on');
+    const other = await pick('yeah go ahead', 'c-plain');
+    assert.equal(other.keep.has('kade_studio'), false, 'a conversation with no song in it does not get the tool on a yes');
+    assert.deepEqual(looked, ['c-priced', 'c-plain'], 'one look per conversation until it rides; never for a placeholder id');
+    assert.equal((await pick('yes', 'new')).keep.has('kade_studio'), false);
+    /* a look that is not back in time is not waited for */
+    R._resetForTests();
+    R._seam.studioOpen = () => new Promise((resolve) => setTimeout(() => resolve(true), 400));
+    const t0 = Date.now();
+    const late = await pick('yes', 'c-slow-look');
+    assert.equal(late.keep.has('kade_studio'), false);
+    assert.ok(Date.now() - t0 < 300, 'the reply did not wait on the look');
+    /* the switch */
+    process.env.KADE_STUDIO_OPEN_LOOK = '0';
+    R._resetForTests();
+    R._seam.studioOpen = async () => true;
+    assert.equal((await pick('yes', 'c-priced')).keep.has('kade_studio'), false);
+  } finally {
+    delete process.env.KADE_STUDIO_OPEN_LOOK;
+    R._seam.studioOpen = null;
+    R._resetForTests();
+  }
+  /* first asks and follow-ups that used to miss */
+  for (const said of ['make me a rap about my cat', 'can we make music together', 'can you sing me something about my dog', 'did the song finish', 'play my song', 'change the second verse', 'the lyrics look good']) {
+    assert.equal(R.keywordHits(said, ['kade_studio']).has('kade_studio'), true, said);
+  }
+  for (const said of ['play some music', 'I love that song by the way', 'what a day']) {
+    assert.equal(R.keywordHits(said, ['kade_studio']).has('kade_studio'), false, said);
+  }
 });

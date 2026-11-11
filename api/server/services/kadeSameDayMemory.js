@@ -152,6 +152,12 @@ function boundedTranscript(turns, { limit = maxMsgs(), charLimit = maxChars() } 
   return { text, used: newest.slice(from), chars: text.length };
 }
 
+/** The share of the stored summary's length a refresh must keep (KADE_SAME_DAY_MIN_KEEP, 0.6; 0 = no check). */
+function minKeep(env = process.env) {
+  const v = parseFloat(env.KADE_SAME_DAY_MIN_KEEP);
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.6;
+}
+
 /** The summary out of the model's answer, or null when the format is not there. Pure. */
 function parseSummary(answer) {
   const text = String(answer || '')
@@ -302,6 +308,11 @@ async function refreshQuiet({ userId, agentId, now = new Date() }) {
       d.policyRevision(userId),
       d.clearCutoff(userId, agentId),
     ]);
+    /* Build two review: a row the person had removed (a conversation kept out of memory, a forgotten card, a
+     * correction) is only flagged, and read back blank. Saving a fresh summary on it would clear the flag and put
+     * the stored private fields back in front of the character. Such a row is left for the night's pass, which
+     * rewrites every field. A blank read means the same thing here, so it is treated the same. */
+    if (prior && (prior.invalidated === true || !String(prior.summary || '').trim())) return { ok: false, skipped: 'prior-blank' };
     /* Count only what nothing has folded in yet: not the night's pass, not an earlier refresh today. */
     const marks = [start.getTime()];
     if (capRow && capRow.lastMessageAt) marks.push(new Date(capRow.lastMessageAt).getTime());
@@ -353,6 +364,13 @@ async function refreshQuiet({ userId, agentId, now = new Date() }) {
     if (!summary) {
       d.warn('[kadeSameDay] no usable summary came back; the stored one stands');
       return { ok: false, skipped: 'no-summary' };
+    }
+    /* Build two review: the night's pass builds on whatever is stored, so a one-line answer here would wipe an
+     * older story for good. A refresh that comes back much shorter than what it replaces is not saved. */
+    const had = String((prior && prior.summary) || '').length;
+    if (had >= 400 && summary.length < had * minKeep()) {
+      d.warn(`[kadeSameDay] the new summary is much shorter than the stored one (${summary.length} of ${had} characters); the stored one stands`);
+      return { ok: false, skipped: 'shrunk' };
     }
     /* The person may have switched memory off, or cleared it, while the model was writing. */
     if (!(await d.memoryAllowed(userId)) || revision !== (await d.policyRevision(userId))) return { ok: false, skipped: 'policy-changed' };

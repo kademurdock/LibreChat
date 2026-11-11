@@ -51,6 +51,8 @@ beforeEach(() => {
   spoke = [];
   judged = [];
   for (const k of Object.keys(process.env)) if (k.startsWith('KADE_REACHOUT')) delete process.env[k];
+  /* Build two: a dry run is the default. These tests prove the sending machinery, so they switch it on. */
+  process.env.KADE_REACHOUT_DRY = '0';
   reach._seam.coll = (name) => (colls[name] = colls[name] || new FakeCollection());
   reach._seam.data = {
     recentPeople: async () => world.recent.slice(),
@@ -225,6 +227,52 @@ test('a dry run decides and sends nothing', async () => {
   assert.deepEqual(out.reasons, { 'would-send': 1 });
   assert.equal(spoke.length, 0);
   assert.equal(row(`s:${uid(1)}:2026-11-12`), undefined);
+});
+
+test('build two: with nothing set the lane is a dry run, and nothing is sent', async () => {
+  delete process.env.KADE_REACHOUT_DRY;
+  assert.equal(reach.settings().dry, true);
+  person(uid(1));
+  const out = await tick();
+  assert.equal(out.dry, true);
+  assert.deepEqual(out.reasons, { 'would-send': 1 });
+  assert.equal(spoke.length, 0);
+  assert.equal(row(`s:${uid(1)}:2026-11-12`), undefined);
+});
+
+test('build two: the push for a first message says only that one came', async () => {
+  person(uid(1));
+  await tick();
+  assert.equal(spoke.length, 1);
+  assert.equal(spoke[0].pushText, 'Sent you a message.');
+  process.env.KADE_REACHOUT_PLAIN_PUSH = '0';
+  person(uid(2));
+  await tick({ now: new Date(NOON.getTime() + 3600000), force: true });
+  assert.equal(spoke[spoke.length - 1].pushText, undefined);
+});
+
+test('build two: the plain ways to say stop are heard, and a story about somebody else is not', () => {
+  for (const off of [
+    "please don't text me anymore",
+    "don't message me again",
+    'leave me alone',
+    'stop sending me messages',
+    'stop bothering me',
+    "Don't text me.",
+    'no more messages please',
+  ]) {
+    assert.equal(reach.switchWords(off), 'off', off);
+  }
+  for (const neither of [
+    "my ex won't stop texting me",
+    'he will not stop messaging me',
+    'I wish she would leave me alone',
+    'tell them to stop bothering me',
+    "my boss doesn't stop texting me on weekends",
+    "don't text me the address, email it",
+  ]) {
+    assert.equal(reach.switchWords(neither), null, neither);
+  }
 });
 
 /* --------------------------------------------------------------------- caps */

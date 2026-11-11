@@ -11,6 +11,7 @@
  * songs for the child account and the App Review seat.
  *
  * Money (her words: no limit on who or how many; 12 cents from their own balance; free for her):
+ *   The price is 12 cents for each take (services/kadeSongCharge.js): one take 12, four takes 48.
  *   quote  works out the price and keeps the song exactly as it will be made. Nothing is spent.
  *   start  is refused unless the price was said in an EARLIER reply and the person's own latest
  *          message is a plain yes (services/kadeSpendGate.js: the same rules, the same collection
@@ -22,8 +23,9 @@
  *
  * Lanes:
  *   text chat          everything.
- *   a phone call       identity is caller ID only, so nothing that spends: no start, no cancel,
- *                      no lyric draft. Status and the list are answered.
+ *   a phone call       identity is caller ID only, so nothing that spends and nothing about the
+ *                      account: no start, no cancel, no lyric draft, no status, no list (review fix:
+ *                      a borrowed or spoofed number must not hear someone's song titles).
  *   signed-in app voice built, and off: the fork cannot yet tell it from a phone call. It is taken
  *                      as app voice only when KADE_STUDIO_APP_VOICE=1 AND the service seat's
  *                      request says kadeCallerSignedIn: true, which the bridge does not send yet.
@@ -31,9 +33,14 @@
  * When the song is finished the booth's notify hook calls deliver(): code, no model, posts the
  * link in the conversation that asked as the character, and pushes. One atomic claim per job.
  *
+ * The lyric desk (draft, draft_read) is OFF from a conversation (review fix): a desk draft is paid
+ * from the person's balance by the booth, about as much as the song, and here it had no price said
+ * and no yes. The character writes the words with the person instead, which costs nothing extra.
+ * KADE_STUDIO_DRAFT=1 opens it for the administrator's own conversations only (her real cost).
+ *
  * Switches: KADE_STUDIO=0 (the tool is not offered and refuses), KADE_STUDIO_DELIVER=0 (the
  * finished song is announced by the Sound Booth's own push only, as before),
- * KADE_STUDIO_APP_VOICE=1 (see above; off unless set).
+ * KADE_STUDIO_APP_VOICE=1 (see above; off unless set), KADE_STUDIO_DRAFT=1 (see above; off unless set).
  *
  * No '~' requires at load time, so node --test loads it.
  */
@@ -54,6 +61,9 @@ function on(env = process.env) {
 }
 function deliverOn(env = process.env) {
   return on(env) && String((env && env.KADE_STUDIO_DELIVER) ?? '') !== '0';
+}
+function draftOn(env = process.env) {
+  return String((env && env.KADE_STUDIO_DRAFT) ?? '') === '1';
 }
 function appVoiceOn(env = process.env) {
   return String((env && env.KADE_STUDIO_APP_VOICE) ?? '') === '1';
@@ -104,9 +114,20 @@ function defaultBooth() {
 function booth(deps) {
   return (deps && deps.booth) || defaultBooth();
 }
+let quotesIndexed = false;
 function quotes(deps) {
-  return (deps && deps.quotes) || require('mongoose').connection.collection(spend.SONG_QUOTES);
+  if (deps && deps.quotes) return deps.quotes;
+  const c = require('mongoose').connection.collection(spend.SONG_QUOTES);
+  if (!quotesIndexed) {
+    quotesIndexed = true;
+    /* A studio price row holds the song's words. It goes by itself a few days on (expireAt is only on studio rows). */
+    Promise.resolve()
+      .then(() => c.createIndex({ expireAt: 1 }, { expireAfterSeconds: 0 }))
+      .catch(() => {});
+  }
+  return c;
 }
+const QUOTE_KEEP_DAYS = 3;
 function drafts(deps) {
   return (deps && deps.drafts) || require('mongoose').connection.collection(DRAFTS);
 }
@@ -175,8 +196,8 @@ const WHY = {
 /* What the character is told when a start is refused. Each begins "Not started:" in the tool. */
 const REFUSED = {
   phone:
-    'a song cannot be started from a phone call, because a call knows the caller only by their number and the yes to the price cannot be trusted here. ' +
-    'Say that kindly in one short sentence and ask them to ask you again in the text chat or the app',
+    'a song cannot be started while you are talking by voice or on a phone call, because the yes to the price cannot be trusted here. ' +
+    'Say that kindly in one short sentence, do not write the song now, and ask them to ask you again in the text chat',
   noQuote: 'there is no price waiting for a yes here. Call quote first, tell them the price in your reply and ask',
   sameTurn:
     'the price was only just worked out in this same reply, so they have not heard it yet. Tell them the price now and ask. ' +
@@ -246,14 +267,17 @@ async function quote({ req, agentId, agentName, input }, deps = {}) {
   if (!checked.ok) {
     return { ok: false, error: `the Sound Booth says: ${String((checked.data && checked.data.error) || 'it cannot take this song right now').slice(0, 400)}` };
   }
-  const price = charge.priceFor(account, env);
   const takes = body.count;
+  const price = charge.priceFor(account, env, takes);
   const title = body.title || 'your song';
+  const each = charge.sayCents(price.unitCents);
   const priceLine = price.admin
     ? `Free for you. It will use ${gpuEstimate(env)}, on the RunPod bill.`
     : price.free
       ? 'This song is free.'
-      : `This song takes ${charge.sayCents(price.cents)} from their balance, for ${takes} take${takes === 1 ? '' : 's'}. If it fails, the ${charge.sayCents(price.cents)} goes back.`;
+      : price.perTake && takes > 1
+        ? `This takes ${charge.sayCents(price.cents)} from their balance: ${each} for each of ${takes} takes. A take that fails gets its ${each} back.`
+        : `This song takes ${charge.sayCents(price.cents)} from their balance, for ${takes} take${takes === 1 ? '' : 's'}. If it fails, the ${charge.sayCents(price.cents)} goes back.`;
 
   if (who.lane === 'phone') {
     return { ok: true, quoteId: null, title, takes, tellThem: `${priceLine} ${REFUSED.phone[0].toUpperCase()}${REFUSED.phone.slice(1)}.` };
@@ -277,6 +301,7 @@ async function quote({ req, agentId, agentName, input }, deps = {}) {
     estUSD: price.usd,
     turnId: spend.turnId(req),
     createdAt: new Date(),
+    expireAt: new Date(Date.now() + QUOTE_KEEP_DAYS * 86400000),
   });
   spend.markQuoted(req, spend.SONG_QUOTES);
   return {
@@ -375,7 +400,7 @@ async function start({ req, agentId, agentName, quoteId }, deps = {}) {
   const data = answer.data || {};
   if (answer.status === 200 && data.jobId && data.ok !== false) {
     const account = await accountOf(who.userId, deps).catch(() => null);
-    const price = charge.priceFor(account, env);
+    const price = charge.priceFor(account, env, q.body.count);
     try {
       await charge.attach(
         { jobId: data.jobId, userId: who.userId, projectId: data.projectId, agentId, agentName, conversationId: q.conversationId, lane: who.lane, title: q.title },
@@ -393,10 +418,12 @@ async function start({ req, agentId, agentName, quoteId }, deps = {}) {
       takes: q.body.count,
       charged: price.free ? 'nothing' : charge.sayCents(price.cents),
       tellThem:
-        `The song is being made now. Say so in a sentence or two: it usually takes a few minutes, and it will arrive ${where} as a message from you with a link to play it` +
+        `The song is being made now. Say so in a sentence or two: it usually takes a few minutes, and when it is ready a message from you will say so ${where}` +
         (data.deliveryLost ? ' (if no message comes, it will be in their Sound Booth library)' : ', with a notification on their phone') +
-        '. ' +
-        (price.free ? '' : `${charge.sayCents(price.cents)} was taken from their balance, and it goes back if the song fails. `) +
+        '. It plays from their Sound Booth library; on the website the message also has a play link. ' +
+        (price.free
+          ? ''
+          : `${charge.sayCents(price.cents)} was taken from their balance, and ${price.perTake && price.takes > 1 ? 'each take that fails gets its share back' : 'it goes back if the song fails'}. `) +
         'Do not say it is finished, and do not wait for it.',
     };
   }
@@ -419,9 +446,19 @@ function takeLinks(project) {
     .map((t, i) => ({ take: i + 1, url: t.url, seconds: t.seconds || null }));
 }
 
+const PHONE_ACCOUNT = 'songs cannot be looked up from a phone call. Ask them to ask you in the text chat, or to open the Sound Booth';
+
+/** What went back to them for this song, in cents (all of it, or the takes that were not saved). */
+function backCents(row) {
+  if (!row) return 0;
+  if (Number(row.refundedCents) > 0) return Number(row.refundedCents);
+  return row.state === 'refunded' ? Number(row.cents) || 0 : 0;
+}
+
 async function status({ req, jobId }, deps = {}) {
   const who = actor(req, deps.env || process.env);
   if (!who.ok) return { ok: false, error: WHY[who.why] || WHY.unavailable };
+  if (who.lane === 'phone') return { ok: false, error: PHONE_ACCOUNT };
   const row = jobId ? await charge.byJob(jobId, who.userId, chargeDeps(deps)) : await charge.latest(who.userId, chargeDeps(deps));
   const id = (row && row.jobId) || jobId;
   if (!id) return { ok: true, none: true, tellThem: 'They have no song in the making that was started here. Songs made on the Sound Booth page are in their library there.' };
@@ -433,16 +470,17 @@ async function status({ req, jobId }, deps = {}) {
     const p = await booth(deps).project(who.userId, d.projectId).catch(() => null);
     out.play = takeLinks(p && p.ok && p.data && p.data.project);
     out.tellThem = out.play.length
-      ? 'It is ready. Give them the play link as a markdown link, [Play the song](url), exactly as given.'
+      ? 'It is ready and in their Sound Booth library, which is where it plays on the phone app. For the website, also give them the play link as a markdown link, [Play the song](url), exactly as given.'
       : 'It is ready and in their Sound Booth library.';
   }
-  if (row && row.state === 'refunded') out.refunded = charge.sayCents(row.cents);
+  if (backCents(row)) out.refunded = charge.sayCents(backCents(row));
   return out;
 }
 
 async function list({ req }, deps = {}) {
   const who = actor(req, deps.env || process.env);
   if (!who.ok) return { ok: false, error: WHY[who.why] || WHY.unavailable };
+  if (who.lane === 'phone') return { ok: false, error: PHONE_ACCOUNT };
   const r = await booth(deps).projects(who.userId);
   if (!r.ok) return { ok: false, error: 'the Sound Booth could not list their songs just now' };
   const songs = (Array.isArray(r.data && r.data.projects) ? r.data.projects : [])
@@ -466,10 +504,10 @@ async function cancel({ req, jobId }, deps = {}) {
     ok: true,
     jobId: id,
     boothSays: (r.data && r.data.spoken) || 'Stop requested.',
-    refunded: after && after.state === 'refunded' ? charge.sayCents(after.cents) : null,
+    refunded: backCents(after) ? charge.sayCents(backCents(after)) : null,
     tellThem:
-      after && after.state === 'refunded'
-        ? `It was stopped before it rendered, so the ${charge.sayCents(after.cents)} went back to their balance.`
+      backCents(after)
+        ? `It was stopped before it rendered, so the ${charge.sayCents(backCents(after))} went back to their balance.`
         : 'Stop requested. Finished takes are kept. If rendering had already begun, the charge stands.',
   };
 }
@@ -502,11 +540,28 @@ function draftResult(result) {
   };
 }
 
+const DESK_OFF =
+  'the lyric desk is not used from a conversation. Write the words yourself, with them: ask what the song is about, write the lyrics with [Verse] and [Chorus] tags on their own lines, ' +
+  'read them back, change what they ask, and when they are happy call quote with the title, the direction and the lyrics';
+
+/**
+ * May this turn use the booth's lyric desk? Off unless KADE_STUDIO_DRAFT=1, and then only for the
+ * administrator's own conversation: a desk draft is charged to the person by the booth, and nobody
+ * else may be charged without a price they heard and a yes.
+ */
+async function deskAllowed(who, deps) {
+  const env = deps.env || process.env;
+  if (!draftOn(env)) return false;
+  const account = await accountOf(who.userId, deps).catch(() => null);
+  return Boolean(account) && charge.priceFor(account, env).admin === true;
+}
+
 /** Ask the booth's lyric desk for a draft. It writes in the background; draft_read fetches it. */
 async function draft({ req, agentId, idea, instrumental }, deps = {}) {
   const who = actor(req, deps.env || process.env);
   if (!who.ok) return { ok: false, error: WHY[who.why] || WHY.unavailable };
-  if (who.lane === 'phone') return { ok: false, error: 'the lyric desk cannot be used from a phone call. Write the words together by talking, or ask them to try in the text chat' };
+  if (who.lane === 'phone') return { ok: false, error: REFUSED.phone };
+  if (!(await deskAllowed(who, deps))) return { ok: false, soft: true, error: DESK_OFF };
   const text = String(idea || '').trim();
   if (text.length < 3) return { ok: false, error: 'say what the song is about first (idea)' };
   const r = await booth(deps).script(who.userId, { engine: 'yue2', mode: 'write', text: text.slice(0, 6000), background: true, notify: false, ...(instrumental === true ? { instrumental: true } : {}) });
@@ -529,7 +584,8 @@ async function draft({ req, agentId, idea, instrumental }, deps = {}) {
 async function draftRead({ req, draftId }, deps = {}) {
   const who = actor(req, deps.env || process.env);
   if (!who.ok) return { ok: false, error: WHY[who.why] || WHY.unavailable };
-  if (who.lane === 'phone') return { ok: false, error: 'the lyric desk cannot be used from a phone call' };
+  if (who.lane === 'phone') return { ok: false, error: REFUSED.phone };
+  if (!(await deskAllowed(who, deps))) return { ok: false, soft: true, error: DESK_OFF };
   let id = draftId ? String(draftId) : '';
   if (!id) {
     const row = await drafts(deps).findOne({ userId: who.userId }, { sort: { createdAt: -1 } });
@@ -580,15 +636,19 @@ async function deliver({ job, title, completed, total, urls = [] }, deps = {}) {
       .slice(1)
       .map((u, i) => ` [Play take ${i + 2}](${u})`)
       .join('');
+    /* Review fix: the phone apps show a link as its label only and cannot open it, so the library
+     * comes first and the links are said to be for the website. A signed link also runs out. */
+    const back = backCents(row);
     text =
-      `Your song "${name}" is ready.${first}${more}` +
+      `Your song "${name}" is ready. It is in your Sound Booth library: on the phone app, open the Sound Booth and then your library to play it.` +
       (total > 1 ? ` ${completed} of ${total} takes were saved.` : '') +
-      ' It is in your Sound Booth library too.';
-    pushText = `Your song "${name}" is ready. Open to play it.`;
+      (back ? ` The ${charge.sayCents(back)} for what was not saved went back to your balance.` : '') +
+      (first ? ` On the website you can also play it from here:${first}${more} If a link here stops working, the song is still in your library.` : '');
+    pushText = `Your song "${name}" is ready. It is in your Sound Booth library.`;
   } else {
     text =
       `Your song "${name}" did not finish, so there is nothing to play.` +
-      (row.state === 'refunded' && row.cents ? ` The ${charge.sayCents(row.cents)} went back to your balance.` : '') +
+      (backCents(row) ? ` The ${charge.sayCents(backCents(row))} went back to your balance.` : '') +
       ' Ask me if you want to try it again.';
     pushText = `Your song "${name}" did not finish.`;
   }
@@ -623,6 +683,7 @@ module.exports = {
   on,
   deliverOn,
   appVoiceOn,
+  draftOn,
   actor,
   songBody,
   quote,
