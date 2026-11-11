@@ -33,7 +33,7 @@
  * No '~' requires at load time, so node --test loads it.
  */
 
-const { laneRefusal, kindOf } = require('./kadeLaneTrust');
+const { laneRefusal, kindOf, resolvePairing } = require('./kadeLaneTrust');
 
 /* The kinds of call that can back "I started it" (services/kadeLaneTrust.js KINDS). */
 const STARTS = new Set(['spend', 'write', 'send']);
@@ -170,6 +170,9 @@ function wrapKadeTool(name, tool, req, env = process.env) {
   const inner = tool._call.bind(tool);
   tool._call = async function kadeLedgerCall(input, ...rest) {
     const action = cleanAction(input);
+    /* Card 2: a phone turn with a bridge-verified number looks its pairing up once (no I/O on
+     * any other turn), so laneTrust can say 'paired-phone'. Never throws. */
+    await resolvePairing(req);
     const refusal = laneRefusal(name, input, req, env);
     if (refusal) {
       record(req, { tool: name, action, ok: false, code: `refused-${refusal.lane}` });
@@ -259,8 +262,67 @@ function countLedgerClaims(req, contentParts, ctx = {}) {
   return out;
 }
 
+/* ------------------------------------------------------- deliveries (card 6) */
+
+/*
+ * A reminder, check-back or medicine dose is delivered by the minute sweep, long after the turn
+ * that set it, so it has no request to hang a row on. Each send still gets a row: delivered or
+ * not, by which channel, as fixed words only (services/kadeEveryday.js ledgerWrite). Never the
+ * reminder's words, never a whole id: the person and the row are kept as their first 8
+ * characters, the same as the sweep's own log lines. Held in memory (the newest MAX_DELIVERIES)
+ * and logged as one [kade/ledger-delivery] line; the reminder row itself keeps its own status.
+ */
+const MAX_DELIVERIES = 500;
+const deliveries = [];
+
+function fixedWord(v, max = 24) {
+  return typeof v === 'string' && /^[a-z][a-z _-]{0,40}$/i.test(v) ? v.slice(0, max) : null;
+}
+function shortId(v) {
+  const s = v == null ? '' : String(v);
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s.slice(0, 8) : null;
+}
+
+/**
+ * Record one delivery (or a set, or a stop) from the reminder sweep. Never throws.
+ * @param {{ tool?: string, event?: string, kind?: string, outcome?: string, channel?: string,
+ *   userId?: unknown, agentId?: unknown, ref?: unknown, at?: Date }} entry
+ */
+function recordDelivery(entry) {
+  try {
+    const e = entry && typeof entry === 'object' ? entry : {};
+    const row = {
+      tool: typeof e.tool === 'string' && /^[a-z0-9_]{1,60}$/i.test(e.tool) ? e.tool : 'kade_notify',
+      event: fixedWord(e.event) || 'event',
+      kind: fixedWord(e.kind),
+      outcome: fixedWord(e.outcome),
+      channel: fixedWord(e.channel),
+      user: shortId(e.userId),
+      agent: shortId(e.agentId),
+      ref: shortId(e.ref),
+      at: e.at instanceof Date ? e.at : new Date(),
+    };
+    row.ok = row.outcome === 'delivered' || row.outcome === 'set' || row.outcome === 'done';
+    deliveries.push(row);
+    if (deliveries.length > MAX_DELIVERIES) deliveries.splice(0, deliveries.length - MAX_DELIVERIES);
+    log()?.info?.(
+      `[kade/ledger-delivery] ${row.event} kind=${row.kind || '-'} outcome=${row.outcome || '-'} channel=${row.channel || '-'} user=${row.user || '-'} ref=${row.ref || '-'}`,
+    );
+    return row;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** The newest delivery rows (copies), for tests and an admin count. */
+function recentDeliveries(limit = MAX_DELIVERIES) {
+  return deliveries.slice(-Math.max(0, limit)).map((r) => ({ ...r }));
+}
+
 module.exports = {
   record,
+  recordDelivery,
+  recentDeliveries,
   rows,
   truthNote,
   judge,

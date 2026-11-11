@@ -136,3 +136,39 @@ test('typing in the app is text; the middleware never throws and always calls ne
   lane.markVoiceLane(voiceReq(VECTOR_APP), null, () => called++);
   assert.equal(called, 3);
 });
+
+test('integration: a phone pass starts the pairing lookup without waiting, and the safety lane then says paired-phone', async () => {
+  const P = require('./kadePhonePairing');
+  const trust = require('./kadeLaneTrust');
+  const orig = P.isPairedPhone;
+  const before = process.env.KADE_CALL_INGEST_SECRET;
+  let release;
+  let asked = 0;
+  P.isPairedPhone = (num) => {
+    asked++;
+    assert.equal(num, '+15550100123');
+    return new Promise((r) => (release = () => r('grown')));
+  };
+  process.env.KADE_CALL_INGEST_SECRET = ENV.KADE_CALL_INGEST_SECRET;
+  try {
+    const t = Date.now();
+    const req = voiceReq(mint({ v: 1, lane: 'phone', num: '+15550100123', agentId: 'agent_x', iat: t, exp: t + 60000 }));
+    let nextRan = false;
+    lane.markVoiceLane(req, null, () => (nextRan = true));
+    assert.equal(nextRan, true, 'the turn goes on at once');
+    await new Promise((r) => setImmediate(r));
+    assert.equal(asked, 1, 'the lookup was started');
+    assert.equal(trust.laneTrust(req), 'phone', 'not settled yet: a plain call');
+    release();
+    assert.equal(await trust.resolvePairing(req), true, 'the same lookup, not a second one');
+    assert.equal(asked, 1);
+    assert.equal(trust.laneTrust(req), 'paired-phone');
+    const app = voiceReq(VECTOR_APP);
+    lane.markVoiceLane(app, null, () => {});
+    assert.equal(asked, 1, 'no lookup without a caller number');
+  } finally {
+    P.isPairedPhone = orig;
+    if (before === undefined) delete process.env.KADE_CALL_INGEST_SECRET;
+    else process.env.KADE_CALL_INGEST_SECRET = before;
+  }
+});

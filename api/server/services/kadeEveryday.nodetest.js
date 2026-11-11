@@ -362,10 +362,15 @@ test('a plain phone call gets the time and nothing that belongs to a person; app
   assert.match(await act(phone(A), 'now'), /^OK\. It is .* where they are \(America\/Chicago\)\./);
   assert.equal(w.db.table('kadereminders').length, 0);
 
+  const bare = phone(A);
+  bare.body.kadeCallerSignedIn = true;
+  assert.equal(E.laneOf(bare, { KADE_STUDIO_APP_VOICE: '1' }).lane, 'phone', 'a bare body flag never counts');
+  /* Card 2: verified app voice is what kadeVoiceLane.markVoiceLane sets from the bridge's signed pass. */
   const signed = phone(A);
-  signed.body.kadeCallerSignedIn = true;
-  assert.equal(E.laneOf(signed, {}).lane, 'phone', 'only with the app voice switch');
-  assert.equal(E.laneOf(signed, { KADE_STUDIO_APP_VOICE: '1' }).lane, 'app-voice');
+  signed.kadeAppVoice = { userId: String(signed.kadeOnBehalfOf.id) };
+  assert.equal(E.laneOf(signed, {}).lane, 'app-voice');
+  /* Card 2 pairing: without a settled lookup (kadeLaneTrust.resolvePairing) a call is a plain call. */
+  assert.equal(E.laneOf(phone(A), {}).lane, 'phone');
   E._seam.pairing = () => true;
   assert.equal(E.laneOf(phone(A), {}).lane, 'paired-phone');
   assert.match(await act(phone(A), 'contact_save', { name: 'my sister', number: '417 555 0100' }), /^OK\. Saved/);

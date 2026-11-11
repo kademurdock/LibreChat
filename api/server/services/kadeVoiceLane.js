@@ -21,7 +21,8 @@
  *                                   seat named, and that person resolved to an account here.
  *   req.kadeCallerNumber '+1...'    the pass says phone and carries the number Twilio gave the
  *                                   bridge for an inbound call. It never makes anyone signed in.
- * It runs only on the service seat, does no I/O, and never throws: a turn with no pass, a bad
+ * It runs only on the service seat, waits on nothing (on a phone turn with a verified number it
+ * starts the one pairing lookup and moves on), and never throws: a turn with no pass, a bad
  * pass or an old bridge goes on exactly as before (a phone call, as today).
  *
  * For other code:
@@ -134,6 +135,14 @@ function markVoiceLane(req, _res, next) {
     }
   } catch (_) {
     /* never break a voice turn */
+  }
+  /* Phone pairing: start this turn's one lookup now, without waiting for it, so it has usually
+   * settled before any tool asks (kadeLaneTrust.resolvePairing; kadeLedger awaits the same
+   * promise only when a kade tool is about to run). No number on the turn: nothing is looked up. */
+  try {
+    if (req && req.kadeCallerNumber) require('./kadeLaneTrust').resolvePairing(req);
+  } catch (_) {
+    /* pairing is never worth a turn */
   }
   return next();
 }

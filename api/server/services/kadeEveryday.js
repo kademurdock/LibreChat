@@ -43,8 +43,10 @@
  * PHONE LANE: a plain phone call is known only by caller ID, which can be borrowed or faked, so
  * it gets the time and nothing that belongs to a person: no reminders made, read or cancelled,
  * no lists, no medicine, no numbers, no stop by words (home agent plan, section 10). Signed-in
- * app voice counts as signed in when the bridge says so (KADE_STUDIO_APP_VOICE=1, as for songs).
- * A paired phone counts too once card 2 provides services/kadePhonePairing.isPairedCall(req).
+ * app voice counts as signed in when the bridge's signed lane pass says so (card 2,
+ * services/kadeVoiceLane.js; KADE_APP_VOICE_SIGNED_IN=0 turns that off). A phone paired by a
+ * spoken code counts as that person (services/kadeLaneTrust.js pairedOnThisCall); the outer lane
+ * gate (kadeLaneTrust KINDS) still keeps removing, clearing and medicine changes off paired phones.
  *
  * No '~' requires at load time, so node --test loads it.
  */
@@ -273,16 +275,24 @@ function clockWords(date, tz) {
 
 /* ----------------------------------------------------------------- lanes */
 
-function appVoiceOn(env) {
-  return String((env && env.KADE_STUDIO_APP_VOICE) ?? '') === '1';
+/** Card 2: verified signed-in app voice (the bridge's signed lane pass, services/kadeVoiceLane.js). */
+function signedInAppVoice(req) {
+  try {
+    return require('./kadeVoiceLane').isSignedInAppVoice(req) === true;
+  } catch (_) {
+    return false;
+  }
 }
 
-/** Card 2 adapter: a phone paired to an account by a spoken code counts as that person. */
+/**
+ * Card 2: a phone paired to this account by a spoken code. The lookup is made once per turn by
+ * services/kadeLaneTrust.js resolvePairing (the ledger wrapper awaits it before any kade tool
+ * runs); here it is only read, so nothing waits. Not looked up yet reads as a plain phone call.
+ */
 function pairedCall(req) {
   try {
     if (seam.pairing) return seam.pairing(req) === true;
-    const P = require('./kadePhonePairing');
-    return Boolean(P && typeof P.isPairedCall === 'function' && P.isPairedCall(req) === true);
+    return require('./kadeLaneTrust').pairedOnThisCall(req) === true;
   } catch (_) {
     return false;
   }
@@ -300,7 +310,7 @@ function laneOf(req, env = process.env) {
   const behalf = req.kadeOnBehalfOf;
   if (behalf && behalf.id) {
     const seat = String(req.user.role || '').toUpperCase() === 'ADMIN';
-    if (seat && appVoiceOn(env) && body.kadeCallerSignedIn === true) {
+    if (seat && signedInAppVoice(req)) {
       return { ok: true, userId: String(behalf.id), lane: 'app-voice' };
     }
     if (seat && pairedCall(req)) return { ok: true, userId: String(behalf.id), lane: 'paired-phone' };
@@ -344,8 +354,9 @@ async function zoneOf(userId, req, lane, env = process.env) {
 /* ---------------------------------------------------------------- ledger */
 
 /**
- * Write one row to the ledger (home agent card 4, lane safety). That service may not exist yet;
- * this adapter uses whichever writer it has and otherwise logs one line. Never chat text.
+ * Write one row to the ledger (home agent card 4, services/kadeLedger.js recordDelivery): set,
+ * delivered or not, by which channel. Fixed words and short ids only, never chat text. A ledger
+ * failure never breaks a delivery; it falls back to one log line with the same fields.
  */
 function ledgerWrite(entry) {
   const row = { tool: 'kade_notify', at: now(), ...entry };
@@ -354,23 +365,11 @@ function ledgerWrite(entry) {
       seam.ledger(row);
       return true;
     }
-    let L = null;
-    try {
-      L = require('./kadeLedger');
-    } catch (_) {
-      L = null;
-    }
-    const fn = L && [L.recordDelivery, L.record, L.write, L.append].find((f) => typeof f === 'function');
-    if (fn) {
-      Promise.resolve()
-        .then(() => fn.call(L, row))
-        .catch((e) => logger.warn('[kadeEveryday] ledger write failed: ' + e.message));
-      return true;
-    }
+    if (require('./kadeLedger').recordDelivery(row)) return true;
   } catch (_) {
     /* the ledger never breaks a delivery */
   }
-  logger.info(`[kadeEveryday] ledger ${row.event} ${row.kind || ''} ${row.outcome || ''} user=${short(row.userId)} ref=${row.ref || ''}`);
+  logger.info(`[kadeEveryday] ledger ${row.event} ${row.kind || ''} ${row.outcome || ''} user=${short(row.userId)} ref=${short(row.ref)}`);
   return false;
 }
 

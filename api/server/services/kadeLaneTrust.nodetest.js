@@ -36,19 +36,60 @@ test('laneTrust: text chat and background runs are signed in; every voice shape 
   assert.equal(lane.laneTrust({ body: {} }), 'phone', 'no signed-in user');
 });
 
-test('laneTrust: app voice counts as signed in only when the bridge says so AND the switch is on', () => {
-  const env = { KADE_STUDIO_APP_VOICE: '1' };
-  assert.equal(lane.laneTrust(call('hi', { kadeCallerSignedIn: true }), {}), 'phone', 'switch off (the default)');
-  assert.equal(lane.laneTrust(call('hi', { kadeCallerSignedIn: true }), env), 'signed-in');
-  assert.equal(lane.laneTrust(call('hi', { kadeCallerSignedIn: 'true' }), env), 'phone', 'only a real true');
-  const notSeat = { ...call('hi', { kadeCallerSignedIn: true }), user: { id: 'x', role: 'USER' } };
-  assert.equal(lane.laneTrust(notSeat, env), 'phone', 'only the service seat may vouch');
+/* What kadeVoiceLane.markVoiceLane sets from the bridge's signed pass (card 2). */
+const appVoice = (t = 'hi') => call(t, {}, { kadeAppVoice: { userId: 'u1' } });
+const numbered = (t = 'hi', num = '+15550100123') => call(t, {}, { kadeCallerNumber: num });
+const pairedTo = (acct) => ({ isPairedPhone: async () => acct });
+
+test('laneTrust: app voice is signed in only with the verified pass for that person; bare body flags never count', () => {
+  assert.equal(lane.laneTrust(appVoice()), 'signed-in');
+  assert.equal(lane.laneTrust(call('hi', { kadeCallerSignedIn: true }), { KADE_STUDIO_APP_VOICE: '1' }), 'phone', 'bare flag');
+  assert.equal(lane.laneTrust(call('hi', { kadeCallerPaired: true }), { KADE_PHONE_PAIRING: '1' }), 'phone', 'bare flag');
+  assert.equal(lane.laneTrust({ ...appVoice(), user: { id: 'x', role: 'USER' } }), 'phone', 'only the service seat may vouch');
+  assert.equal(lane.laneTrust({ ...appVoice(), kadeAppVoice: { userId: 'u2' } }), 'phone', 'a pass for someone else');
 });
 
-test('laneTrust: a paired phone only with the bridge flag AND KADE_PHONE_PAIRING=1', () => {
-  assert.equal(lane.laneTrust(call('hi', { kadeCallerPaired: true }), {}), 'phone');
-  assert.equal(lane.laneTrust(call('hi', { kadeCallerPaired: true }), { KADE_PHONE_PAIRING: '1' }), 'paired-phone');
-  assert.equal(lane.laneTrust({ ...call('hi', { kadeCallerPaired: true }), kadeOnBehalfOfUnresolved: true }, { KADE_PHONE_PAIRING: '1' }), 'phone');
+test('laneTrust: a paired phone only after resolvePairing finds the verified number paired to the named account', async () => {
+  const r1 = numbered();
+  assert.equal(lane.laneTrust(r1), 'phone', 'not looked up yet');
+  assert.equal(await lane.resolvePairing(r1, pairedTo('u1')), true);
+  assert.equal(lane.laneTrust(r1), 'paired-phone');
+  const r2 = numbered();
+  assert.equal(await lane.resolvePairing(r2, pairedTo('u2')), false, 'paired to another account');
+  assert.equal(lane.laneTrust(r2), 'phone');
+  const r3 = numbered();
+  assert.equal(await lane.resolvePairing(r3, pairedTo(null)), false);
+  let looked = 0;
+  const r4 = call('hi');
+  assert.equal(await lane.resolvePairing(r4, { isPairedPhone: async () => (looked++, 'u1') }), false, 'no verified number');
+  const r5 = { ...numbered(), kadeOnBehalfOfUnresolved: true };
+  assert.equal(await lane.resolvePairing(r5, { isPairedPhone: async () => (looked++, 'u1') }), false, 'unmatched caller');
+  assert.equal(await lane.resolvePairing(appVoice(), { isPairedPhone: async () => (looked++, 'u1') }), false, 'app voice');
+  assert.equal(looked, 0, 'no lookup on any turn without a verified phone number');
+  const slow = numbered();
+  assert.equal(await lane.resolvePairing(slow, { isPairedPhone: () => new Promise(() => {}), waitMs: 20 }), false, 'a slow lookup is a plain call');
+  const broken = numbered();
+  assert.equal(await lane.resolvePairing(broken, { isPairedPhone: async () => { throw new Error('db down'); } }), false);
+  /* once per turn */
+  let n = 0;
+  const once = numbered();
+  await Promise.all([1, 2, 3].map(() => lane.resolvePairing(once, { isPairedPhone: async () => (n++, 'u1') })));
+  assert.equal(n, 1);
+});
+
+test('the real pairing store: isPairedPhone is what resolvePairing asks by default', async () => {
+  const P = require('./kadePhonePairing');
+  const orig = P.isPairedPhone;
+  let asked = null;
+  P.isPairedPhone = async (num) => ((asked = num), 'u1');
+  try {
+    const r = numbered('hi', '+15550100999');
+    assert.equal(await lane.resolvePairing(r), true);
+    assert.equal(asked, '+15550100999');
+    assert.equal(lane.laneTrust(r), 'paired-phone');
+  } finally {
+    P.isPairedPhone = orig;
+  }
 });
 
 test('unpaired phone: reminders, lists, memory, forget, deletes, writes, messages, spending and standing yes are refused', () => {
@@ -98,12 +139,18 @@ test('unpaired phone: general things still work', () => {
   }
 });
 
-test('paired phone: hears reminders and lists and may set one; never memory, mail, messages, deletes or spending', () => {
-  const env = { KADE_PHONE_PAIRING: '1' };
-  const req = call('hi', { kadeCallerPaired: true });
+test('paired phone: hears reminders and lists and may set one; never memory, mail, messages, deletes or spending', async () => {
+  const env = {};
+  const req = numbered();
+  await lane.resolvePairing(req, pairedTo('u1'));
   for (const [tool, input] of [
     ['kade_notify', { action: 'list_reminders' }],
     ['kade_notify', { action: 'set_reminder' }],
+    ['kade_notify', { action: 'list_read' }],
+    ['kade_notify', { action: 'list_add' }],
+    ['kade_notify', { action: 'medicine_list' }],
+    ['kade_notify', { action: 'contact_read' }],
+    ['kade_notify', { action: 'check_back' }],
     ['kade_call_me', { action: 'list_calls' }],
     ['kade_task', { action: 'status' }],
   ]) {
@@ -117,6 +164,14 @@ test('paired phone: hears reminders and lists and may set one; never memory, mai
     ['kade_task', { action: 'quote' }],
     ['kade_funding_balance', {}],
     ['kade_approvals', { action: 'approve' }],
+    ['kade_notify', { action: 'list_clear' }],
+    ['kade_notify', { action: 'list_remove' }],
+    ['kade_notify', { action: 'contact_remove' }],
+    ['kade_notify', { action: 'medicine_change' }],
+    ['kade_known', { action: 'count' }],
+    ['kade_known', { action: 'forget' }],
+    ['kade_recall', { query: 'x' }],
+    ['kade_phone_pairing', { action: 'unpair' }],
   ]) {
     const r = lane.laneRefusal(tool, input, req, env);
     assert.ok(r, `${tool} ${input.action || ''}`);
@@ -146,6 +201,70 @@ test('refused in code BEFORE the tool runs: the tool body is never called, and t
   const weather = { _call: async () => 'Sunny, 70.' };
   ledger.wrapKadeTool('kade_weather', weather, req, {});
   assert.match(await weather._call({}), /^OK: Sunny, 70\./);
+});
+
+test('integration (cards 2, 6-9): new tools on an unpaired phone; a pairing code can still be said on a call', () => {
+  for (const [tool, input] of [
+    ['kade_known', { action: 'count' }],
+    ['kade_known', { action: 'forget_all' }],
+    ['kade_recall', { query: 'pharmacy' }],
+    ['kade_notify', { action: 'list_read' }],
+    ['kade_notify', { action: 'medicine_add' }],
+    ['kade_notify', { action: 'timer' }],
+    ['kade_notify', { action: 'contact_read' }],
+    ['kade_phone_pairing', { action: 'code' }],
+    ['kade_phone_pairing', { action: 'list' }],
+  ]) {
+    assert.ok(lane.laneRefusal(tool, input, call()), `${tool} ${input.action || ''} must be refused on a phone`);
+  }
+  assert.equal(lane.laneRefusal('kade_notify', { action: 'now' }, call()), null, 'the time is general');
+  assert.equal(lane.laneRefusal('kade_phone_pairing', { action: 'redeem' }, call()), null, 'redeem happens on the call');
+  assert.equal(lane.laneRefusal('kade_phone_pairing', { action: 'redeem' }, { ...call(), kadeOnBehalfOfUnresolved: true }), null, 'even from a number nobody knows yet');
+});
+
+test('the ledger wrapper looks the pairing up before it decides, and a paired phone may then read its list', async () => {
+  const P = require('./kadePhonePairing');
+  const orig = P.isPairedPhone;
+  P.isPairedPhone = async () => 'u1';
+  try {
+    let ran = 0;
+    const tool = { _call: async () => (ran++, 'OK. The shopping list has 1 item: milk.') };
+    const req = numbered('read my shopping list');
+    ledger.wrapKadeTool('kade_notify', tool, req, {});
+    assert.match(await tool._call({ action: 'list_read' }), /^OK\. The shopping list/);
+    assert.equal(ran, 1);
+    const clear = { _call: async () => (ran++, 'cleared') };
+    ledger.wrapKadeTool('kade_notify', clear, req, {});
+    const out = await clear._call({ action: 'list_clear' });
+    assert.match(out, /^FAILED: not done/);
+    assert.ok(out.includes(lane.LINE_PAIRED));
+    assert.equal(ran, 1, 'the clear never ran');
+  } finally {
+    P.isPairedPhone = orig;
+  }
+});
+
+test('deliveries from the reminder sweep get a ledger row with fixed words only', () => {
+  const row = ledger.recordDelivery({
+    tool: 'kade_notify',
+    event: 'delivery',
+    kind: 'medicine',
+    outcome: 'not delivered',
+    channel: 'none',
+    userId: 'a1b2c3d4e5f6a1b2c3d4e5f6',
+    agentId: 'agent_abcdefghijkl',
+    ref: 'r0123456789',
+    message: 'take the blue pill',
+  });
+  assert.equal(row.ok, false);
+  assert.equal(row.user, 'a1b2c3d4');
+  assert.equal(row.ref, 'r0123456');
+  assert.equal(JSON.stringify(row).includes('pill'), false, 'no reminder words');
+  const bad = ledger.recordDelivery({ event: 'delivery', outcome: 'Take <b>x</b>!', userId: 'a b' });
+  assert.equal(bad.outcome, null);
+  assert.equal(bad.user, null);
+  assert.ok(ledger.recentDeliveries(2).length === 2);
+  assert.equal(ledger.recordDelivery(null).event, 'event', 'never throws');
 });
 
 test('every kade tool the platform builds has a lane kind (a new tool must be classified, or it is refused on phones)', () => {

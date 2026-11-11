@@ -319,11 +319,14 @@ test('only the signed-in app or website: a phone call, a paired phone, a hidden 
   });
 });
 
-test('app voice counts as signed in only when switched on and the bridge says so', async () => {
-  const appVoice = { user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: A }, body: { kadeCallerSignedIn: true, text: 'hi' } };
-  assert.equal(lanes.laneOf(appVoice, {}), 'phone');
-  assert.equal(lanes.laneOf(appVoice, { KADE_STUDIO_APP_VOICE: '1' }), 'signed-in');
-  assert.equal(lanes.laneOf({ ...appVoice, user: { id: 'x', role: 'USER' } }, { KADE_STUDIO_APP_VOICE: '1' }), 'phone');
+test('app voice counts as signed in only when the bridge signed for it (card 2), through the real laneTrust', async () => {
+  const bare = { user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: A }, body: { kadeCallerSignedIn: true, text: 'hi', kadeOnBehalfOf: 'a@example.com' } };
+  assert.equal(lanes.laneOf(bare, { KADE_STUDIO_APP_VOICE: '1' }), 'phone', 'a bare body flag never counts');
+  /* what kadeVoiceLane.markVoiceLane sets from a verified pass */
+  const appVoice = { ...bare, body: { text: 'hi', kadeOnBehalfOf: 'a@example.com' }, kadeAppVoice: { userId: A } };
+  assert.equal(lanes.laneOf(appVoice, {}), 'signed-in');
+  assert.equal(lanes.laneOf({ ...appVoice, user: { id: 'x', role: 'USER' } }, {}), 'phone', 'only the service seat may vouch');
+  assert.equal(lanes.laneOf({ ...appVoice, kadeAppVoice: { userId: 'someone-else' } }, {}), 'phone', 'the pass is for another person');
   assert.equal(lanes.laneOf(textReq(A), {}), 'signed-in');
 });
 
