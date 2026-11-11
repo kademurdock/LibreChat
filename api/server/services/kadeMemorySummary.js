@@ -437,6 +437,66 @@ async function refreshSummaryFromText({
   }
 }
 
+/**
+ * Nov 10 2026: one plain completion on the memory keeper's own model, with no
+ * tools, for the two small passes that need words back and nothing else: the
+ * same-day summary refresh (services/kadeSameDayMemory.js) and the nightly card
+ * check (services/kadeCardCheck.js). The same model wiring as the summary
+ * above, nothing new. The callers bound what they send. Returns the text, or
+ * null on any problem; never throws.
+ */
+async function keeperTextCompletion({ userId, agentId, instructions, userContent, runName = 'KeeperTextRun', temperature = 0.2 }) {
+  try {
+    if (!userId || !instructions || !userContent) {
+      return null;
+    }
+    const appConfig = await getAppConfig();
+    const memoryConfig = appConfig && appConfig.memory;
+    if (!memoryConfig || memoryConfig.disabled === true) {
+      return null;
+    }
+    if (!memoryConfig.agent || !memoryConfig.agent.provider || !memoryConfig.agent.model) {
+      return null;
+    }
+    const llmConfig = await resolveMemoryAgentLLMConfig({
+      appConfig,
+      memoryConfig,
+      userId: String(userId),
+      db: { getUserKey, getUserKeyValues },
+    });
+    const run = await Run.create({
+      runId: `${runName}-${agentId || 'none'}-${Date.now()}`,
+      graphConfig: {
+        type: 'standard',
+        llmConfig: { ...(llmConfig || {}), temperature, streaming: false, disableStreaming: true, maxRetries: 0 },
+        tools: [],
+        instructions,
+        toolEnd: false,
+      },
+      customHandlers: {},
+      returnContent: true,
+    });
+    const content = await run.processStream(
+      { messages: [new HumanMessage(String(userContent))] },
+      {
+        runName,
+        configurable: {
+          user_id: String(userId),
+          thread_id: `${runName}-${userId}-${agentId || 'none'}`,
+          provider: llmConfig && llmConfig.provider,
+        },
+        streamMode: 'values',
+        recursionLimit: 2,
+        version: 'v2',
+      },
+    );
+    return extractText(content) || null;
+  } catch (err) {
+    logger.warn(`[kadeMemorySummary] ${runName} failed: ${err && err.message}`);
+    return null;
+  }
+}
+
 /** Convenience: refresh from a call transcript doc ({user, agentId, agentName, turns}). */
 async function refreshSummaryFromCall(doc) {
   if (!doc || !doc.user || !doc.agentId) {
@@ -577,6 +637,7 @@ async function getRelationshipSummaryBlock(userId, agentId) {
 module.exports = {
   refreshSummaryFromText,
   refreshSummaryFromCall,
+  keeperTextCompletion,
   getRelationshipSummaryText,
   getRelationshipSummaryBlock,
   turnsToText,

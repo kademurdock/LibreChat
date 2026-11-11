@@ -1773,6 +1773,24 @@ class AgentClient extends BaseClient {
     } catch (e) {
       logger.warn('[kadeSoul] after-reply hook skipped:', e.message);
     }
+    /* SAME-DAY MEMORY (Nov 10 2026, N1): the reply is done, so the quiet timer
+     * for this person and character starts over. When the conversation has been
+     * quiet for a while and had enough turns today, the relationship summary
+     * gets a light refresh, at most twice a day (services/kadeSameDayMemory.js).
+     * This line only sets a timer: no database, no model, nothing waited on.
+     * KADE_SAME_DAY_MEMORY=0. */
+    try {
+      if (this.processMemory && this.options?.agent?.id && this.options?.req?.user?.id && !isEphemeralAgentId(this.options.agent.id)) {
+        require('~/server/services/kadeSameDayMemory').noteTurn({
+          userId: String(this.options.req.user.id),
+          agentId: this.options.agent.id,
+          req: this.options.req,
+          offRecord: this.memoryOffRecord,
+        });
+      }
+    } catch (_) {
+      /* a timer that cannot start costs nobody their reply */
+    }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
   }
