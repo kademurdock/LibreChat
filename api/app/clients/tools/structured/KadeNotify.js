@@ -374,6 +374,14 @@ class KadeNotify extends Tool {
          * The bridge stores the flag; the tick honors it before composing a
          * word. userId comes from the authed tool context, never the model. */
         const wantOn = action === 'spontaneous_on';
+        /* Nov 10 2026: every character may text first now, and the site keeps the one switch
+         * for all of them (services/kadeReachOut.js). Set it here too, before the bridge's own
+         * flag, so "off" holds even if the bridge cannot be reached. */
+        try {
+          await require('~/server/services/kadeReachOut').setOff(String(this.userId || ''), !wantOn, 'tool');
+        } catch (e) {
+          logger.warn(`[KadeNotify] site switch for first messages not saved: ${e.message}`);
+        }
         await axios.post(
           `${this.bridgeUrl}/spontaneous/user`,
           { secret: this.notifySecret, userId: String(this.userId || ''), enabled: wantOn },

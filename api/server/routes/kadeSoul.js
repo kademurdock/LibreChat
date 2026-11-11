@@ -59,6 +59,21 @@ router.post('/speak', express.json({ limit: '64kb' }), async (req, res) => {
   }
   if (!/^[a-f0-9]{24}$/.test(userId)) return res.status(400).json({ error: 'a known userId or email is required' });
   if (running >= MAX_RUNNING) return res.status(429).json({ error: 'busy, try again in a minute' });
+  /* Nov 10 2026: a friend text nobody asked for (the bridge's older lane) passes the same rules
+   * as every other first message: the person's off switch, one a day across all characters, the
+   * platform's daily ceilings, never a child or the App Review seat, never with memory off
+   * (services/kadeReachOut.js). KADE_REACHOUT_SPEAK_GATE=0 lets it through as before. */
+  let reach = null;
+  if (b.kind === 'friend-text' && b.platformPaid === true && b.requested !== true) {
+    try {
+      reach = await require('~/server/services/kadeReachOut').gateSpeak({ userId, agentId });
+    } catch (e) {
+      logger.warn('[kadeSoul/speak] reach-out rules could not be read, so nothing is sent: ' + (e && e.message));
+      return res.status(503).json({ ok: false, error: 'first-message rules unavailable' });
+    }
+    if (!reach.ok) return res.status(409).json({ ok: false, error: `not sent: ${reach.why}` });
+  }
+  const reachDone = (out, error) => (reach ? reach.done(out, error).catch(() => {}) : Promise.resolve());
   running += 1;
   try {
     const { speakFirst } = require('~/server/services/kadeCharacterTurn');
@@ -74,12 +89,35 @@ router.post('/speak', express.json({ limit: '64kb' }), async (req, res) => {
       steps: Number.isFinite(Number(b.steps)) ? Math.min(80, Math.max(0, Number(b.steps))) : undefined,
       push: b.push !== false,
     });
+    await reachDone(out, null);
     return res.json({ ok: true, ...out });
   } catch (e) {
+    await reachDone(null, e);
     logger.warn('[kadeSoul/speak] failed: ' + (e && e.message));
     return res.status(502).json({ ok: false, error: String((e && e.message) || e).slice(0, 300) });
   } finally {
     running -= 1;
+  }
+});
+
+/* Nov 10 2026: the person's own switch for characters texting first (services/kadeReachOut.js).
+ * GET reads it; POST { off: true | false } sets it. Saying "stop checking on me" to any
+ * character does the same thing. */
+router.get('/reach-out', requireJwtAuth, async (req, res) => {
+  try {
+    return res.json(await require('~/server/services/kadeReachOut').getSwitch(String(req.user.id)));
+  } catch (e) {
+    return res.status(500).json({ error: 'could not read that right now' });
+  }
+});
+
+router.post('/reach-out', requireJwtAuth, express.json({ limit: '2kb' }), async (req, res) => {
+  if (typeof (req.body || {}).off !== 'boolean') return res.status(400).json({ error: 'off (true or false) is required' });
+  try {
+    const out = await require('~/server/services/kadeReachOut').setOff(String(req.user.id), req.body.off, 'settings');
+    return res.status(out.ok ? 200 : 400).json(out);
+  } catch (e) {
+    return res.status(500).json({ error: 'could not save that right now' });
   }
 });
 

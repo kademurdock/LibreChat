@@ -117,6 +117,36 @@ router.post('/character-days', async (req, res) => {
   }
 });
 
+/* KADE Nov 10 2026: characters texting first (services/kadeReachOut.js). The site runs this
+ * by itself once an hour; these routes are for a session, the brief, or the bridge clock.
+ *   GET  /reach-out   today's counts and the settings in force (nothing about anyone)
+ *   POST /reach-out   run one pass now. Body (all optional): { dry: true } decides and sends
+ *                     nothing, { userId } looks at one person, { force: true } ignores the
+ *                     texting hours and the once-an-hour rule (the caps and switches still hold). */
+router.get('/reach-out', async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    res.json({ ok: true, ...(await require('~/server/services/kadeReachOut').stats()) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+router.post('/reach-out', express.json({ limit: '4kb' }), async (req, res) => {
+  if (!authed(req, res)) return;
+  try {
+    const b = req.body || {};
+    const out = await require('~/server/services/kadeReachOut').runTick({
+      dry: b.dry === true,
+      force: b.force === true,
+      ...(typeof b.userId === 'string' && /^[a-f0-9]{24}$/i.test(b.userId) ? { userId: b.userId } : {}),
+    });
+    res.json(out);
+  } catch (e) {
+    logger.error('[kadeClock] reach-out failed:', e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 /* KADE Oct 17 2026: numbers only, for the session brief — is the soul layer working on real
  * traffic? Moments kept, moods carried, background tasks by status, approvals waiting. */
 router.get('/soul-stats', async (req, res) => {

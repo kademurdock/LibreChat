@@ -159,6 +159,10 @@ const startServer = async () => {
     require('./services/kadeTasks').sweepInterrupted().catch(() => {});
   }, 90 * 1000).unref();
   require('./services/kadeTasks').startTaskSweep();
+  /* KADE Nov 10 2026: characters a person talks with may text first (services/kadeReachOut.js).
+   * Its own hourly look, whoever owns the other timers; KADE_REACHOUT=0 or
+   * KADE_REACHOUT_TIMER=0 keeps it from starting. */
+  require('./services/kadeReachOut').startTimer();
   /* KADE Oct 17 2026: a deploy or restart waits for running background tasks (their hidden
    * turn runs over loopback, so this runs before the HTTP server closes) and refuses new ones. */
   registerDrainTask('background tasks', () => require('./services/kadeTasks').drain());
