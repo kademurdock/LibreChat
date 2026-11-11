@@ -5,7 +5,7 @@
  * rest on: every call yields to the event loop first, so parallel calls interleave as they do
  * against a server, and one findOneAndUpdate checks and writes in a single step (with a
  * duplicate key error, code 11000, when an upsert collides on _id).
- * Supports equality and $exists, $ne, $gte, $gt, $lt, $lte, $in, $nin.
+ * Supports equality and $exists, $ne, $gte, $gt, $lt, $lte, $in, $nin; updates $set, $unset, $inc.
  */
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -35,6 +35,7 @@ function matches(doc, filter = {}) {
 function apply(doc, update = {}) {
   for (const [k, v] of Object.entries(update.$set || {})) doc[k] = v;
   for (const k of Object.keys(update.$unset || {})) delete doc[k];
+  for (const [k, v] of Object.entries(update.$inc || {})) doc[k] = (Number(doc[k]) || 0) + v;
 }
 
 function sorted(rows, sort) {
@@ -109,6 +110,16 @@ class FakeCollection {
     const i = this.rows.findIndex((r) => matches(r, filter));
     if (i >= 0) this.rows.splice(i, 1);
     return { deletedCount: i >= 0 ? 1 : 0 };
+  }
+
+  /* Nov 11 2026: enough of find() for `await c.find(filter).toArray()`. */
+  find(filter, opts = {}) {
+    return {
+      toArray: async () => {
+        await tick();
+        return sorted(this.rows.filter((r) => matches(r, filter)), opts.sort).map((r) => ({ ...r }));
+      },
+    };
   }
 
   async countDocuments(filter) {

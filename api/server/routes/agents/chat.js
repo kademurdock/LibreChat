@@ -10,6 +10,7 @@ const {
 } = require('~/server/middleware');
 const { initializeClient } = require('~/server/services/Endpoints/agents');
 const { resolveKadeOnBehalfOf } = require('~/server/services/kadeOnBehalfOf');
+const { markVoiceLane } = require('~/server/services/kadeVoiceLane');
 const { markHiddenRun } = require('~/server/services/kadeHiddenRun');
 const AgentController = require('~/server/controllers/agents/request');
 const addTitle = require('~/server/services/Endpoints/agents/title');
@@ -34,6 +35,8 @@ router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
 /** KADE session 23: voice-lane identity threading — see services/kadeOnBehalfOf. */
 router.use(resolveKadeOnBehalfOf);
+/** KADE Nov 11 2026: signed-in app voice vs a phone call, from the bridge's signed pass — see services/kadeVoiceLane. */
+router.use(markVoiceLane);
 /** KADE Oct 16 2026: server-built character turns — see services/kadeHiddenRun. */
 router.use(markHiddenRun);
 router.use(buildEndpointOption);

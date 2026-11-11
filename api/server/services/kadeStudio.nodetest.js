@@ -726,11 +726,27 @@ test('phone lane: acts as the caller, tells the price, and refuses to start, sto
   assert.equal(studio.actor({ user: { id: 'seat', role: 'ADMIN' }, body: { text: fold(['THEM: hi'], 'make a song') } }, {}).lane, 'phone');
 });
 
-test('signed-in app voice: off unless the switch is set and the service seat says the caller signed in; then the last utterance alone is the yes', async () => {
+test('signed-in app voice: off unless the switch is set and the bridge pass verified the caller; then the last utterance alone is the yes', async () => {
   spend._resetForTests();
-  const voice = (text, body = {}) => ({ user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'grown', role: 'USER' }, body: { text, conversationId: 'new', kadeOnBehalfOf: 'someone@example.com', kadeCallerSignedIn: true, ...body } });
-  assert.equal(studio.actor(voice('hi'), {}).lane, 'phone', 'the marker alone is not enough');
-  assert.equal(studio.actor(voice('hi', { kadeCallerSignedIn: undefined }), { KADE_STUDIO_APP_VOICE: '1' }).lane, 'phone');
+  /* Nov 11 2026: req.kadeAppVoice is what services/kadeVoiceLane.js markVoiceLane sets for a verified pass. */
+  const voice = (text, body = {}, signed = true) => ({
+    user: { id: 'seat', role: 'ADMIN' },
+    kadeOnBehalfOf: { id: 'grown', role: 'USER' },
+    ...(signed ? { kadeAppVoice: { userId: 'grown' } } : {}),
+    body: { text, conversationId: 'new', kadeOnBehalfOf: 'someone@example.com', ...body },
+  });
+  assert.equal(studio.actor(voice('hi'), {}).lane, 'phone', 'the verified pass alone is not enough');
+  assert.equal(studio.actor(voice('hi', {}, false), { KADE_STUDIO_APP_VOICE: '1' }).lane, 'phone');
+  assert.equal(
+    studio.actor(voice('hi', { kadeCallerSignedIn: true }, false), { KADE_STUDIO_APP_VOICE: '1' }).lane,
+    'phone',
+    'a bare marker in the body no longer counts',
+  );
+  assert.equal(
+    studio.actor({ ...voice('hi'), kadeAppVoice: { userId: 'someone-else' } }, { KADE_STUDIO_APP_VOICE: '1' }).lane,
+    'phone',
+    'a pass for another person is not this caller',
+  );
   assert.equal(studio.actor({ ...voice('hi'), user: { id: 'grown', role: 'USER' } }, { KADE_STUDIO_APP_VOICE: '1' }).lane, 'phone', 'only the service seat may say so');
 
   const w = world({ env: { KADE_STUDIO_APP_VOICE: '1' } });

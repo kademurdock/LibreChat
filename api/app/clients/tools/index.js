@@ -25,6 +25,7 @@ const KadeLivingMemory = require('./structured/KadeLivingMemory');
 const KadeErrand = require('./structured/KadeErrand');
 const KadeTask = require('./structured/KadeTask');
 const KadeStudio = require('./structured/KadeStudio');
+const KadePhonePairing = require('./structured/KadePhonePairing');
 const KadeApprovals = require('./structured/KadeApprovals');
 const KadeCouncil = require('./structured/KadeCouncil');
 const KadeReadPage = require('./structured/KadeReadPage');
@@ -74,6 +75,7 @@ module.exports = {
   KadeErrand,
   KadeTask,
   KadeStudio,
+  KadePhonePairing,
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
