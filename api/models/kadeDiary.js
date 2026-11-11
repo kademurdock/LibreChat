@@ -479,6 +479,14 @@ async function logDiaryEntry({
     (conversationId ? { userId: String(userId), conversationId, kind: 'conversation' } : undefined);
   if (!(await memorySourceAllowed(memorySource)))
     return { ok: false, error: 'Conversation memory is excluded' };
+  /* KADE Nov 11 2026 (card 8): never log a fact the person asked to forget. */
+  try {
+    if (await require('../server/services/kadeKnownTombstones').blocks(userId, text)) {
+      return { ok: false, error: 'they asked for that to be forgotten' };
+    }
+  } catch (_) {
+    /* the entry is written as before */
+  }
   conversationId = conversationId || memorySource?.conversationId || null;
   const writeOrigin = diaryWriteOrigin({ source, conversationId, origin });
   if (!diaryEnabled()) {

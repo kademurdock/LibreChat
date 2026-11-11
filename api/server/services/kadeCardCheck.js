@@ -387,6 +387,7 @@ function realDeps() {
       return asSystem(() => db.setMemory({ userId, agentId: bucketOf(agentId), key, value, tokenCount }));
     },
     ledger: (row) => require('~/models/kadeMemoryLedger').addLedger({ ...row, source: 'card-check' }),
+    blocks: (userId, text) => require('./kadeKnownTombstones').blocks(userId, text),
     checks: async (userId) => (await checkColl()).find({ userId: String(userId) }).toArray(),
     conversationExcluded: (userId, conversationId) => ds.getConversationMemoryPolicy(String(userId), conversationId),
     messages: (userId, conversationId) => db.getMessages({ conversationId, user: String(userId) }),
@@ -530,6 +531,10 @@ async function runCardCheck({ now = new Date() } = {}) {
               /* A card cut for the model cannot be safely rewritten from the cut copy. */
               const whole = flat(card.value).length <= CARD_TEXT_CAP;
               let plan = decide(card, verdicts.get(ids[i]), evidence.turns, { allowFix: fixOn() && whole });
+              /* Card 8 (Nov 11 2026): a fix never writes back a fact the person asked to forget. */
+              if (plan.action === 'fix' && typeof d.blocks === 'function' && (await d.blocks(userId, plan.fixed))) {
+                plan = { action: 'unconfirmed', note: 'the fix carries a forgotten fact' };
+              }
               const base = { conversationId, checkedAt: now, runId, quote: '', quoteSpeaker: '', quoteAt: null, fixed: false, note: plan.note || '' };
               if (plan.action === 'fix') {
                 /* ONE WRITER: read the live card again. If anything changed it since it was read, step back. */

@@ -49,6 +49,8 @@ const {
   KadeErrand,
   KadeTask,
   KadeStudio,
+  KadeKnown,
+  KadeRecall,
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
@@ -234,6 +236,8 @@ const loadTools = async ({
     kade_errand: KadeErrand,
     kade_task: KadeTask,
     kade_studio: KadeStudio,
+    kade_known: KadeKnown,
+    kade_recall: KadeRecall,
     kade_approvals: KadeApprovals,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
@@ -439,6 +443,17 @@ const loadTools = async ({
       req: options.req,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+    },
+    /** KADE KNOWN and KADE RECALL (Nov 11 2026, cards 8 and 9): `req` carries the seat, the lane and
+     * the acting identity; both engines refuse anything but the signed-in app or website. The agent
+     * id scopes what is read to the shared cards plus this character's own, and its own chats. */
+    kade_known: {
+      req: options.req,
+      agentId: agent?.id || agent?.agent_id,
+    },
+    kade_recall: {
+      req: options.req,
+      agentId: agent?.id || agent?.agent_id,
     },
     /** THE COUNCIL (Aug 15 2026, Part 68): Kade's five-seat advisory —
      * Aria, Prism, Sentinel, Vault, Pilgrim. OWNER-ONLY, same four-way gate

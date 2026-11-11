@@ -179,6 +179,22 @@ const ALIASES = {
     /\b(?:is|are|was) (?:my|the|that|our) (?:song|track)\b|\b(?:my|the|that|our) (?:song|track)\b[^.!?\n]{0,30}\b(?:ready|done|finished|yet|coming)\b/i,
     /\b(?:sound booth|yue ?2|kade[_ ]studio|(?:cancel|stop) (?:my|the|that) (?:song|track))\b/i,
   ],
+  /* Nov 11 2026 (card 8): what a character knows about the person, fixing it, forgetting it. In
+   * KEYWORD_ONLY below. */
+  kade_known: [
+    /\bwhat (?:do|else do|all do) you (?:know|remember) about me\b|\bwhat have you (?:got|saved|kept|learned) (?:on|about) me\b|\bwhat do you have (?:on|about) me\b/i,
+    /\b(?:forget|erase|delete|unlearn) (?:that|this|it|everything|all (?:of )?(?:that|it|this)|what i (?:said|told you)|about (?:that|my|me)|my\b)/i,
+    /\b(?:please )?don'?t remember (?:that|this|it)\b|\bstop remembering\b/i,
+    /\byou(?:'ve| have)? (?:got|remember(?:ed)?|have) (?:that|it|this|me) wrong\b|\bremember(?:ed)? (?:that |it |this )?wrong\b|\bthat'?s not right,? (?:i|my)\b/i,
+    /\b(?:what (?:do|did) you (?:know|learn) from my (?:mail|email|errands?))|\bforget (?:everything )?from my (?:mail|email|errands?)\b/i,
+  ],
+  /* Nov 11 2026 (card 9): searching the person's own past chats. In KEYWORD_ONLY below. */
+  kade_recall: [
+    /\bwhat (?:was|were|is) (?:that|the|those)\b[^.!?\n]{0,40}\b(?:number|address|name|code|time|date|place|website|link|word|thing)\b[^.!?\n]{0,40}\b(?:from|you|i|we|last|earlier|before|the other)\b/i,
+    /\b(?:did|have) (?:i|we) (?:ever )?(?:talk|tell you|say|mention|chat)\w*\b[^.!?\n]{0,40}\b(?:about|before|last)\b/i,
+    /\b(?:search|look (?:through|in|back (?:through|in|at))|find (?:it )?in|check) (?:my|our) (?:old |past |earlier |other )?(?:chats?|conversations?|messages?)\b/i,
+    /\bwhen did (?:i|we) (?:say|tell you|talk about|mention)\b|\bwhat did (?:i|we) say about\b[^.!?\n]{0,40}\b(?:last|before|the other day|ago)\b/i,
+  ],
   kade_council: [/\b(council|advisors?)\b/i],
   kade_drive_pc: [
     /\b(my pc|my computer|my laptop|nvda|screen reader|listen run|drive (my|the) (pc|computer))\b/i,
@@ -724,7 +740,7 @@ async function selectToolsCore(p) {
  * one of the caller's last few lines named it. Never by the embed, the Jev add or the fallback.
  * KADE_TOOLS_KEYWORD_ONLY=0 lets them attach like any other tool. With retrieval itself off
  * (KADE_TOOLS_RAG=0 and the like) every tool rides, these included. */
-const KEYWORD_ONLY = new Set(['kade_studio']);
+const KEYWORD_ONLY = new Set(['kade_studio', 'kade_known', 'kade_recall']);
 function keywordOnlyOn() {
   return String(process.env.KADE_TOOLS_KEYWORD_ONLY || '') !== '0';
 }

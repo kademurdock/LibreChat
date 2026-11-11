@@ -36,6 +36,8 @@ class KadeWeather extends Tool {
   constructor() {
     super();
     this.name = 'kade_weather';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Get REAL current weather and a short forecast for any city, free and instantly (Open-Meteo, no key, no cost). ' +
       'Use this instead of web_search for any weather question. Returns temperatures in Fahrenheit, conditions, ' +

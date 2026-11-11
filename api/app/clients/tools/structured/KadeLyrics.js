@@ -38,6 +38,8 @@ class KadeLyrics extends Tool {
   constructor() {
     super();
     this.name = 'kade_lyrics';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Look up the lyrics of a song by artist and title — free, instant, no cost. Built for lyric lookups: use THIS ' +
       '(never web_search or kade_read_page — lyric sites block page readers with bot-walls) whenever someone asks about ' +

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import mongoose from 'mongoose';
+import { tombstoneCovers, tombstoneHashes } from './tombstoneMatch';
 
 export interface MemorySource {
   userId: string;
@@ -118,6 +119,36 @@ export async function setConversationMemoryPolicy(
     { upsert: true },
   );
   await advanceMemoryPolicyRevision(userId);
+}
+
+/* KADE Nov 11 2026 (card 8): a fact the person asked to forget is not written back by the keeper.
+ * The tombstone holds the forgotten words hashed with the person's id (./tombstoneMatch.ts); it is
+ * written by api/server/services/kadeKnownTombstones.js. Fails open: a database hiccup never
+ * blocks an ordinary write. KADE_KNOWN_TOMBSTONE=0 stops the check. */
+interface MemoryTombstone {
+  userId: string;
+  hashes: string[];
+  expiresAt?: Date;
+}
+const tombstones = () => mongoose.connection.collection<MemoryTombstone>('kadeknowntombstones');
+
+export async function memoryTombstoned(userId: string, value: string): Promise<boolean> {
+  if (process.env.KADE_KNOWN_TOMBSTONE === '0') return false;
+  try {
+    const rows = await tombstones()
+      .find({
+        userId: String(userId),
+        $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
+      })
+      .project<{ hashes: string[] }>({ hashes: 1 })
+      .limit(500)
+      .toArray();
+    if (!rows.length) return false;
+    const candidate = tombstoneHashes(String(userId), String(value || ''));
+    return rows.some((row) => tombstoneCovers(row.hashes, candidate));
+  } catch {
+    return false;
+  }
 }
 
 export async function getConversationMemoryPolicy(

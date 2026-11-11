@@ -30,6 +30,8 @@ class KadeWikipedia extends Tool {
      * (util/kadeTurnToolGuard); without one the cap counts per tool instance. */
     this.req = fields.req;
     this.name = 'kade_wikipedia';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Look up a topic on Wikipedia — free, instant, no cost (unlike web search). Best for stable encyclopedic facts: ' +
       'people, places, history, science, definitions. For breaking news, prices, or local info use web_search instead. ' +

@@ -226,6 +226,7 @@ function realDeps() {
     },
     getSummary: (userId, agentId) => summaries.getMemorySummary(userId, agentId),
     saveSummary: (userId, agentId, fields) => summaries.setMemorySummary(userId, agentId, fields),
+    scrub: (userId, text) => require('./kadeKnownTombstones').scrub(userId, text),
     policyRevision: (userId) => ds.memoryPolicyRevision(String(userId)),
     clearCutoff: (userId, agentId) => ds.memoryClearCutoff(String(userId), String(agentId)),
     conversations: async (userId, agentId, since) => {
@@ -375,9 +376,20 @@ async function refreshQuiet({ userId, agentId, now = new Date() }) {
     /* The person may have switched memory off, or cleared it, while the model was writing. */
     if (!(await d.memoryAllowed(userId)) || revision !== (await d.policyRevision(userId))) return { ok: false, skipped: 'policy-changed' };
 
+    /* Card 8 (Nov 11 2026): a sentence carrying a fact the person asked to forget is dropped before
+     * the save, so today's turns cannot bring it back. */
+    let toSave = summary;
+    try {
+      const sc = typeof d.scrub === 'function' ? await d.scrub(userId, summary) : null;
+      if (sc && sc.removed && typeof sc.text === 'string') toSave = sc.text;
+    } catch (_) {
+      /* saved as written */
+    }
+    if (!String(toSave).trim()) return { ok: false, skipped: 'forgotten' };
+
     const last = used[used.length - 1];
     const saved = await d.saveSummary(userId, agentId, {
-      summary,
+      summary: toSave,
       /* Only the summary: every other field of the row keeps the night's value. */
       expectedRevision: (prior && prior.revision) || 0,
       sourceConversationIds: [...new Set([...((prior && prior.sourceConversationIds) || []), ...sources])],

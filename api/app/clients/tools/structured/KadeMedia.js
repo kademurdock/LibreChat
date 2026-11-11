@@ -32,6 +32,8 @@ class KadeMedia extends Tool {
     super();
     this.userId = fields.userId;
     this.name = 'kade_media';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'WATCH or LISTEN to linked media — a YouTube video or a direct audio/video file — and get back an accurate ' +
       'description of what happens on screen and how the music is built: the instrumentation, the arrangement, the ' +

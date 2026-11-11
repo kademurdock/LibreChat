@@ -5,6 +5,14 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
   sourceConversationIds: { type: [String], default: undefined, index: true },
   sourceMessageId: { type: String },
   sourceKind: { type: String },
+  /**
+   * KADE Nov 11 2026 (card 8): where a fact came from, for "what do you know about me".
+   * 'told' (the person said it), 'errand' (learned while doing a job), 'mail' (from their mail).
+   * Absent on every older row, which is read as 'told'.
+   */
+  knownSource: { type: String, enum: ['told', 'errand', 'mail'], required: false },
+  /** KADE Nov 11 2026 (card 8): true when the fact is about someone other than the person. */
+  aboutOther: { type: Boolean, required: false },
   correctionLocked: { type: Boolean, default: false },
   userId: {
     type: Schema.Types.ObjectId,

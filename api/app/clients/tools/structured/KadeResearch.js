@@ -63,6 +63,8 @@ class KadeResearch extends Tool {
     /* Oct 16 2026: the finished report comes back into THIS conversation as the character's message. */
     this.conversationId = fields.conversationId;
     this.name = 'kade_research';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Run REAL background research on a question: many web searches, many sources read and cross-checked, then a ' +
       'clear spoken-style report with numbered citations. Takes minutes, not seconds — the user gets a phone tap when ' +

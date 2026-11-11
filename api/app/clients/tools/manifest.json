@@ -179,6 +179,22 @@
     "authConfig": []
   },
   {
+    "name": "What I know about you",
+    "pluginKey": "kade_known",
+    "description": "Lets a character tell you what it knows about you, counts first, then the group you pick, with where each fact came from. You can correct a fact or have it forgotten. Works in the signed-in app and website only. Try: \"what do you know about me?\"",
+    "icon": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
+    "name": "Search my past chats",
+    "pluginKey": "kade_recall",
+    "description": "Lets a character search your own past chats for something said before, like a phone number or a name. Only your own chats; numbers that look like codes or card numbers stay hidden. Works in the signed-in app and website only. Try: \"what was that pharmacy number from last week?\"",
+    "icon": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Jokes",
     "pluginKey": "kade_joke",
     "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",
