@@ -2849,7 +2849,8 @@ router.delete('/book/:id', requireJwtAuth, async (req, res) => {
   }
 });
 
-const { readingRoomHtml, LIBRARY_VIEWS } = require('./kadeReadingRoomPage');
+const { readingRoomHtml } = require('./kadeReadingRoomPage');
+const { LIBRARY_VIEWS } = require('./kadeReadingRoomPage');
 /* Nov 10 2026: /library is the front desk and /library/<name> one of its small pages; all are the
  * same document. An address that names no page of the Library goes to the front desk. */
 router.page = (req, res) => {

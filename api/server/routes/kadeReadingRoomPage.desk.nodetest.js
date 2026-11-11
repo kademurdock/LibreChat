@@ -54,6 +54,16 @@ test('the front desk: the rows, in the phone order, each a link to its own page'
   page.dom.window.close();
 });
 
+test('hidden means hidden: no display rule can draw something that carries the hidden attribute', async () => {
+  assert.ok(source.includes('\n  [hidden] { display:none !important; }\n'));
+  const page = open(AT);
+  await settle();
+  /* the things this rule was written for: each has a class or tag that sets a display */
+  for (const id of ['row-desk', 'browsePager', 'archivePager', 'castRow', 'accessRow', 'descModeWrap'])
+    assert.equal(page.$(id).hidden, true, id + ' starts hidden');
+  page.dom.window.close();
+});
+
 test('the front desk is short and makes one small call', async () => {
   const page = open(AT);
   await settle();

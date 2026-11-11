@@ -69,6 +69,10 @@ const VIEW_CSS = ['desk', ...LIBRARY_VIEWS].map((view) => `html[data-view="${vie
 const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library — Kade-AI</title>${SHARED_HEAD}
 <style>
   .hidden { display:none !important; }
+  /* Nov 10 2026: "hidden" means hidden. A rule that gives a thing a display (a flex row, a block
+     label) outranks the browser's own rule for the hidden attribute, so a hidden pager, a hidden
+     row of the front desk and the hidden "Play with descriptions" box were all still drawn. */
+  [hidden] { display:none !important; }
   .row { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
   button.act, a.act { font:inherit; font-weight:700; padding:.8rem 1.1rem; border-radius:12px; border:1px solid #1d55d0; background:#fff; color:#1d55d0; cursor:pointer; min-height:48px; }
   a.act { display:inline-block; text-decoration:none; }
@@ -129,6 +133,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   ${VIEW_CSS}
   /* A feature that is part of the Family feature pack is always there, marked in words and with a
      dashed edge (never by colour alone), not hidden. */
+  /* The rows' edges can be seen in both themes (3 to 1 against the page), like the form fields. */
+  #shelf a.hubitem { border-color:#7d8490; }
+  @media (prefers-color-scheme: dark) { #shelf a.hubitem { border-color:#8a919c; } }
   a.hubitem.locked { border-style:dashed; }
   a.hubitem .tag { display:inline-block; margin-top:.3rem; padding:.1rem .5rem; border:1px solid currentColor; border-radius:999px; font-size:.82rem; font-weight:700; }
   ul.plain li a.shelf { flex:1 1 12rem; font-weight:700; padding:.75rem .2rem; min-height:44px; display:inline-flex; align-items:center; color:#1d55d0; }
