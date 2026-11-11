@@ -822,6 +822,20 @@ class AgentClient extends BaseClient {
       }
     }
 
+    /** KADE REACH OUT (Nov 10 2026): "stop checking on me", said to any character, switches
+     * first messages off for this person for good (and asking brings them back). Plain string
+     * work on their own latest words; the write happens in the background, so the reply never
+     * waits on it. The note rides this one reply so the character can say it is done.
+     * Kill: KADE_REACHOUT_OFF_WORDS=0. See services/kadeReachOut.js. */
+    try {
+      const reachNote = require('~/server/services/kadeReachOut').noteFromWords(this.options.req);
+      if (reachNote) {
+        volatileTurnContext = [volatileTurnContext, reachNote].filter(Boolean).join('\n\n');
+      }
+    } catch (reachError) {
+      logger.warn('[AgentClient] reach-out words check failed (non-fatal):', reachError.message);
+    }
+
     /** KADE CANON (Part 124, Sep 4 2026): the character's own life — what it has
      * said about itself to anyone — rides the STABLE head for every person it
      * talks to. Lives under a fixed owner id (see packages/api memory.ts,
