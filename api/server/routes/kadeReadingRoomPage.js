@@ -198,7 +198,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <h3 id="h-results" class="results" tabindex="-1">Results</h3>
     <p id="browseCount" class="hint">Loading…</p>
     <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
-    <button class="act quiet" id="browseMore" type="button" hidden>Load more items</button>
+    <nav class="pager" id="browsePager" aria-label="Result pages" hidden><button class="act quiet" id="browsePrev" type="button">Previous page</button><span id="browsePageInfo"></span><button class="act quiet" id="browseNext" type="button">Next page</button></nav>
     <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
     <h2 id="h-archive" tabindex="-1">Folders</h2>
     <details id="folderBrowse"><summary>Open the folders</summary>
@@ -415,7 +415,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   </section>
   </main>
 
-<script src="/assets/library/browse.js?v=20261110"></script>
+<script src="/assets/library/browse.js?v=20261110b"></script>
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
 <script src="/assets/library/access.js?v=20260928"></script>
@@ -443,6 +443,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   /* Every move inside the Library goes to the bare path plus a query, never carrying a #fragment
      along, so a fragment from an alert link does not follow the person from page to page. */
   function visit(query){ location.href = location.pathname + (query || ''); }
+  /* Nov 10 2026 (redesign): the address holds the search, the filters, the folder and the page
+     number. An Open button notes the address it was pressed on, so "Back to the shelf" returns to
+     that very list and page, where the row is waiting for focus. Without a note it is the plain
+     Library. Only an address inside the Library is ever followed. */
+  var address = window.kadeLibraryAddress || { params: function(){ return new URLSearchParams(location.search); }, set: function(){ return false; } };
+  function leave(){
+    var note = returnNote(), from = note && typeof note.from === 'string' ? note.from : '';
+    var inside = (from.indexOf('/library') === 0 || from.indexOf('/reading-room') === 0) && from.indexOf('book=') === -1 && from.indexOf('collection=') === -1 && from.indexOf('//') === -1;
+    location.href = inside ? from : location.pathname;
+  }
   /* Coming back from an item: the place it was opened from gets focus again. The note is made
      when an Open or Continue button is pressed and is good for one try: the first time the list
      it names is drawn, the row gets focus if it is there, and the note is thrown away either way
@@ -451,7 +461,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
      lists: the ids of the lists just drawn. A note for a list not drawn yet is left for that list.
      missOnly: use the note up without moving focus (the person moved the list themselves). */
   var RETURN_KEY = 'library-return';
-  function noteReturn(li, id){ try { var host = li.parentNode && li.parentNode.closest ? li.parentNode.closest('[id]') : null; sessionStorage.setItem(RETURN_KEY, JSON.stringify({ id: id, host: host ? host.id : '', at: Date.now() })); } catch(e) {} }
+  function noteReturn(li, id){ try { var host = li.parentNode && li.parentNode.closest ? li.parentNode.closest('[id]') : null; sessionStorage.setItem(RETURN_KEY, JSON.stringify({ id: id, host: host ? host.id : '', at: Date.now(), from: location.pathname + location.search })); } catch(e) {} }
   function dropReturn(){ try { sessionStorage.removeItem(RETURN_KEY); } catch(e) {} }
   var RETURN_LISTS = ['browseList', 'archiveList', 'mineList', 'continueList'];
   function returnNote(){ try { return JSON.parse(sessionStorage.getItem(RETURN_KEY) || 'null'); } catch(e) { return null; } }
@@ -659,12 +669,21 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   if (artHiddenWhen) { if (artHiddenWhen.addEventListener) artHiddenWhen.addEventListener('change', refillArt); else if (artHiddenWhen.addListener) artHiddenWhen.addListener(refillArt); }
   var FOLDER_KEY = 'library-folders';
   function folderNote(){ try { return JSON.parse(sessionStorage.getItem(FOLDER_KEY) || 'null') || {}; } catch(e) { return {}; } }
-  function noteFolder(){ try { sessionStorage.setItem(FOLDER_KEY, JSON.stringify({ open: $('folderBrowse').open, path: archivePath, page: archivePage })); } catch(e) {} }
+  function noteFolder(){ try { sessionStorage.setItem(FOLDER_KEY, JSON.stringify({ open: $('folderBrowse').open })); } catch(e) {} }
+  /* Nov 10 2026 (redesign): the folder you are in and its page number are in the address
+     (folder, fpage), so Back walks up out of a folder and a link opens the same folder. */
+  function folderPlace(){ var params = address.params(), page = parseInt(params.get('fpage'), 10); return { path: params.get('folder') || '', page: page > 1 ? page - 1 : 0 }; }
   $('folderBrowse').ontoggle = function(){
-    if (!this.open) { noteFolder(); return; }
-    var was = folderNote();
-    if (was.path) loadArchive(was.path, was.page || 0, false, true); else loadArchive(undefined, 0);
+    noteFolder();
+    if (!this.open) { address.set({ folder: '', fpage: '' }, 'replace'); return; }
+    var was = folderPlace();
+    if (was.path) loadArchive(was.path, was.page, false, true); else loadArchive(undefined, 0);
   };
+  window.addEventListener('popstate', function(){
+    var now = folderPlace();
+    if (!$('folderBrowse').open) { if (now.path) $('folderBrowse').open = true; return; }
+    if (now.path !== archivePath || now.page !== archivePage) loadArchive(now.path, now.page, true, false, 'none');
+  });
   /* focus: true after the person moved (opened a folder, a crumb, moved or deleted an item): the
      button they pressed is destroyed by the redraw, so focus lands on the crumb for where they
      now are, just above the new list. For a page turn, focus is the Previous or Next page button
@@ -673,10 +692,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
      focus move, to the other one, or to the crumb.
      quiet: true when the page itself reopens a remembered folder, so nothing is spoken.
      If the folder cannot be loaded the reason is spoken, and focus that fell off the page with
-     the old list goes to the Folders heading. */
-  async function loadArchive(path, page, focus, quiet){
+     the old list goes to the Folders heading.
+     how: 'none' when the address already says where this is (Back, Forward, a reload); otherwise
+     a move the person made is a new step in the address that Back can return to. */
+  async function loadArchive(path, page, focus, quiet, how){
     var run = ++archiveRun, scope = $('libraryScope').value;
     archivePath = path || ''; archivePage = page || 0;
+    if (focus && how !== 'none') address.set({ folder: archivePath, fpage: archivePage ? archivePage + 1 : '' }, 'push');
     var ul = $('archiveList'); ul.innerHTML = '<li class="muted">Loading…</li>';
     try {
       var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + scope);
@@ -843,7 +865,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       if (focus) focusOn($('collTitle')); else say('Collection ' + c.title + ', ' + c.items.length + ' items.');
     } catch(e) { say(e.message); visit(''); }
   }
-  $('collBack').onclick = function(){ visit(''); };
+  $('collBack').onclick = function(){ leave(); };
   $('reportBtn').onclick = async function(){
     if (!book) return;
     var to = prompt('Where does "' + book.title + '" belong? A folder like Books/Fiction — Romance or Video/Commercials/Coffee & Tea (leave blank to just leave a note).', book.path || '');
@@ -1579,9 +1601,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   };
   $('shareBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { shared: !book.shared } }); book.shared = j.book.shared; renderOwner(); say(j.pending ? 'Submitted for the library. The librarian will look at it and you will be told.' : (book.shared ? 'It is in the family library now. Family library members will see "Donated by ' + (book.ownerName || 'you') + '".' : 'Back on your private shelf.')); } catch(e) { say(e.message); } };
   $('grownBtn').onclick = async function(){ try { var j = await api('/book/' + book.id + '/share', { json: { grownUpsOnly: !book.grownUpsOnly } }); book.grownUpsOnly = j.book.grownUpsOnly; renderOwner(); say(book.grownUpsOnly ? 'Hidden from the kids.' : 'The kids can see it.'); } catch(e) { say(e.message); } };
-  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
-  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); visit(''); } catch(e) { say(e.message); } };
-  $('backToShelf').onclick = function(){ pause(); visit(''); };
+  $('deleteBtn').onclick = async function(){ if (!confirm('Withdraw "' + book.title + '" from the Reading Room for everyone? This cannot be undone.')) return; try { pause(); await api('/book/' + book.id, { method: 'DELETE' }); leave(); } catch(e) { say(e.message); } };
+  $('returnBtn').onclick = async function(){ try { pause(); await api('/book/' + book.id + '/return', { method: 'POST' }); say('Returned. Your place in it is forgotten.'); leave(); } catch(e) { say(e.message); } };
+  $('backToShelf').onclick = function(){ pause(); leave(); };
   window.addEventListener('pagehide', function(){ if (book) saveProgress(true); });
 
   async function openBook(id){
@@ -1636,9 +1658,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search + location.hash); return; }
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
-    if (qs.get('q')) queue = qs.get('q').split(',').filter(Boolean);
+    if (id && qs.get('q')) queue = qs.get('q').split(',').filter(Boolean); // on an item, q is the playlist queue; on the shelf it is the search
 
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, function(){ restoreReturn(['browseList']); }); if (folderNote().open) $('folderBrowse').open = true; else restoreReturn(['archiveList'], true); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, function(){ restoreReturn(['browseList']); }); if (folderPlace().path || folderNote().open) $('folderBrowse').open = true; else restoreReturn(['archiveList'], true); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
   })();
 })();
 </script>

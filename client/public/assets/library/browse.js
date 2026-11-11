@@ -1,24 +1,68 @@
 (function () {
   'use strict';
-  /* Nov 10 2026: `loaded` (optional) runs after each fresh list is drawn, so the page can put
-   * focus back on the item a person just came back from. A "start here" button moves focus to the
-   * Results heading, because its list is drawn somewhere else on the page; filters and the search
-   * box leave focus where it is and speak the count through the page's one status line.
-   * The local section sits between the form and the results, so on a phone a search or a filter
-   * would redraw a list that is below the bottom of the screen. After one of those (`show`), the
-   * count line and the first row are scrolled just into view when they are off screen. Focus
-   * does not move. */
+  /* Nov 10 2026 (redesign): the place you are in lives in the address.
+   * Search words, every filter, the subject you are browsing under and the page number are query
+   * parameters (q, scope, kind, type, decade, sort, under, page), so the browser's Back button
+   * walks back through searches and pages, a reload lands on the same list, and a link can be
+   * sent to someone. Defaults are left out, so a plain address is the plain first page.
+   * Pages are real pages of 60 (Previous page, Next page, "Page 2 of 9"), never one growing list.
+   *
+   * Focus and speech after each move:
+   *  - a search, a filter, Clear: focus stays where it is; the count is spoken once.
+   *  - a "start here" button, a page turn, Back or Forward: focus goes to the Results heading
+   *    (the list under it is new), and the count and page are spoken once.
+   * `loaded` (optional) runs after each fresh list is drawn, so the page can put focus back on the
+   * item a person just came back from. */
+  var FIELDS = {
+    q: 'searchBox',
+    scope: 'libraryScope',
+    kind: 'browseKind',
+    type: 'browseType',
+    decade: 'browseDecade',
+    sort: 'browseSort',
+    under: 'browsePath',
+  };
+  var DEFAULTS = { scope: 'public', sort: 'recent' };
+  var PAGE = 60;
+  /* One writer for the address, shared with the page's own script (the folders use it too).
+   * changes: { name: value }, where an empty value removes the name. how: 'push' or 'replace'. */
+  window.kadeLibraryAddress = {
+    params: function () {
+      return new URLSearchParams(location.search);
+    },
+    set: function (changes, how) {
+      var params = new URLSearchParams(location.search);
+      Object.keys(changes).forEach(function (name) {
+        var value = changes[name];
+        if (value === null || value === undefined || value === '') params.delete(name);
+        else params.set(name, String(value));
+      });
+      var query = params.toString();
+      var address = location.pathname + (query ? '?' + query : '');
+      if (address === location.pathname + location.search) return false;
+      try {
+        if (how === 'replace') history.replaceState(null, '', address);
+        else history.pushState(null, '', address);
+      } catch (error) {
+        return false;
+      }
+      return true;
+    },
+  };
   window.setupLibraryBrowse = function (api, say, bookLi, scopeChanged, loaded) {
     var get = function (id) {
       return document.getElementById(id);
     };
     var form = get('browseForm'),
       list = get('browseList'),
-      more = get('browseMore');
-    var next = '',
-      run = 0,
-      active = null;
-    function options(id, rows, label) {
+      pager = get('browsePager');
+    var run = 0,
+      active = null,
+      pageNumber = 1,
+      pages = 1,
+      lastPush = 0,
+      baseTitle = document.title;
+    function fillMenu(id, rows, label) {
       var select = get(id),
         chosen = select.value;
       select.replaceChildren(new Option(label, ''));
@@ -52,8 +96,9 @@
       }
       select.value = chosen;
     }
+    /* what the server is asked: its own names (path, a page counted from 0) */
     function state() {
-      return new URLSearchParams({
+      var parameters = new URLSearchParams({
         q: get('searchBox').value.trim(),
         scope: get('libraryScope').value,
         kind: get('browseKind').value,
@@ -62,43 +107,98 @@
         sort: get('browseSort').value,
         path: get('browsePath').value,
       });
+      if (pageNumber > 1) parameters.set('page', String(pageNumber - 1));
+      return parameters;
     }
-    function remember() {
-      try {
-        sessionStorage.setItem('library-browse', state().toString());
-      } catch (error) {}
+    /* what the address holds: the same choices, defaults left out, the page counted from 1 */
+    function addressChanges() {
+      var changes = {};
+      Object.keys(FIELDS).forEach(function (name) {
+        var value = get(FIELDS[name]).value.trim();
+        changes[name] = value === (DEFAULTS[name] || '') ? '' : value;
+      });
+      changes.page = pageNumber > 1 ? pageNumber : '';
+      return changes;
     }
-    async function load(append, toResults, show) {
+    function fromAddress() {
+      var params = window.kadeLibraryAddress.params();
+      Object.keys(FIELDS).forEach(function (name) {
+        var field = get(FIELDS[name]),
+          value = params.get(name) || DEFAULTS[name] || '';
+        if (
+          field.tagName === 'SELECT' &&
+          value &&
+          !Array.from(field.options).some(function (option) {
+            return option.value === value;
+          })
+        ) {
+          if (name === 'type' || name === 'decade') field.add(new Option(value, value));
+          else value = DEFAULTS[name] || '';
+        }
+        field.value = value;
+      });
+      var wanted = parseInt(params.get('page'), 10);
+      pageNumber = wanted > 1 && wanted < 10000 ? wanted : 1;
+      showLocation();
+    }
+    function showLocation() {
+      get('browseLocation').hidden = !get('browsePath').value;
+      get('browseLocationName').textContent = get('browsePath').value.split('/').join(' · ');
+    }
+    function words() {
+      return get('browsePath').value
+        ? get('browseLocationName').textContent
+        : get('searchBox').value.trim();
+    }
+    function showTitle() {
+      var found = words();
+      document.title =
+        (found ? (get('browsePath').value ? '' : 'Search: ') + found + ' — ' : '') +
+        (pageNumber > 1 ? 'page ' + pageNumber + ' — ' : '') +
+        baseTitle;
+    }
+    /* how: 'push' (a new step Back can return to), 'replace', or 'none' (the address already says it).
+     * A run of filter changes close together (arrowing through a menu) is one step, not six. */
+    function writeAddress(how) {
+      if (how === 'none') return;
+      var now = Date.now();
+      if (how === 'filter') how = now - lastPush < 1500 ? 'replace' : 'push';
+      if (window.kadeLibraryAddress.set(addressChanges(), how) && how === 'push') lastPush = now;
+    }
+    /* options: how (see writeAddress), toResults (focus the Results heading), show (scroll the
+     * first row into view when it is below the screen; focus does not move). */
+    async function load(options) {
+      options = options || {};
       var parameters = state(),
         signature = parameters.toString();
-      if (append && !next) return;
       if (active) active.abort();
       active = new AbortController();
       var request = ++run;
-      if (append) parameters.set('after', next);
-      else {
-        next = '';
-        list.replaceChildren();
-      }
-      more.hidden = true;
+      list.replaceChildren();
+      pager.hidden = true;
       get('browseCount').textContent = 'Loading…';
       list.setAttribute('aria-busy', 'true');
-      remember();
+      writeAddress(options.how || 'none');
+      showTitle();
       try {
         var result = await api('/browse?' + parameters.toString(), { signal: active.signal });
         if (request !== run || signature !== state().toString()) return;
-        if (!append) {
-          options('browseType', result.types, 'All types');
-          options('browseDecade', result.decades, 'All decades');
+        pages = Math.max(1, Math.ceil((result.total || 0) / PAGE));
+        if (pageNumber > pages) {
+          /* an old link to a page that is no longer there: the last real page, in its place */
+          pageNumber = pages;
+          load({ how: 'replace', toResults: options.toResults, show: options.show });
+          return;
         }
-        var first = list.children.length;
+        fillMenu('browseType', result.types, 'All types');
+        fillMenu('browseDecade', result.decades, 'All decades');
         result.items.forEach(function (item) {
           var li = bookLi(item, 'archive');
           var meta = li.querySelector('.meta');
-          var words = [];
-          if (item.decade) words.push(item.decade);
+          var placement = [];
+          if (item.decade) placement.push(item.decade);
           if (item.path)
-            words.push(
+            placement.push(
               item.path
                 .split('/')
                 .filter(function (part) {
@@ -106,11 +206,11 @@
                 })
                 .join(' · '),
             );
-          if (meta && words.length) {
-            var placement = document.createElement('span');
-            placement.className = 'meta';
-            placement.textContent = words.join(' · ');
-            li.querySelector('.book').appendChild(placement);
+          if (meta && placement.length) {
+            var line = document.createElement('span');
+            line.className = 'meta place';
+            line.textContent = placement.join(' · ');
+            li.querySelector('.book').appendChild(line);
           }
           list.appendChild(li);
         });
@@ -119,32 +219,34 @@
           empty.textContent = 'Nothing matches these filters. Try another type, decade or search.';
           list.appendChild(empty);
         }
-        next = result.next || '';
-        more.hidden = !next;
+        var first = (pageNumber - 1) * PAGE + 1,
+          last = first + result.items.length - 1,
+          paged = pages > 1 ? 'Page ' + pageNumber + ' of ' + pages : '';
         get('browseCount').textContent =
           result.total +
           (result.total === 1 ? ' item' : ' items') +
-          (result.items.length ? ' · ' + list.children.length + ' loaded' : '');
-        if (append && list.children[first]) {
-          var button = list.children[first].querySelector('button');
-          if (button) button.focus();
-        }
+          (paged ? ' · ' + paged.toLowerCase() + ' · showing ' + first + ' to ' + last : '');
+        pager.hidden = pages <= 1;
+        get('browsePageInfo').textContent = paged;
+        get('browsePrev').disabled = pageNumber <= 1;
+        get('browseNext').disabled = pageNumber >= pages;
         say(
           result.total +
             (result.total === 1 ? ' item matches.' : ' items match.') +
-            (next ? ' More items are available.' : ''),
+            (paged ? ' ' + paged + '.' : ''),
         );
-        if (toResults && get('h-results')) {
-          var where = get('browseLocationName').textContent || get('searchBox').value.trim();
-          get('h-results').textContent = where ? 'Results: ' + where : 'Results';
-          get('h-results').focus();
-        } else if (!append && get('h-results')) {
-          var words = get('browsePath').value
-            ? get('browseLocationName').textContent
-            : get('searchBox').value.trim();
-          get('h-results').textContent = words ? 'Results: ' + words : 'Results';
+        var heading = get('h-results');
+        if (heading) {
+          var found = words();
+          heading.textContent = found ? 'Results: ' + found : 'Results';
+          if (options.toResults) {
+            heading.focus();
+            try {
+              heading.scrollIntoView({ block: 'start' });
+            } catch (error) {}
+          }
         }
-        if (show && !toResults) {
+        if (options.show && !options.toResults) {
           try {
             var count = get('browseCount'),
               row = list.firstElementChild || count;
@@ -154,7 +256,7 @@
               count.scrollIntoView({ block: 'nearest' });
           } catch (error) {}
         }
-        if (!append && loaded) loaded();
+        if (loaded) loaded();
       } catch (error) {
         if (request !== run || error.name === 'AbortError') return;
         get('browseCount').textContent = 'The library could not be loaded.';
@@ -163,71 +265,66 @@
         if (request === run) list.removeAttribute('aria-busy');
       }
     }
+    function fresh(how, toResults) {
+      pageNumber = 1;
+      load({ how: how, toResults: toResults, show: !toResults });
+    }
     form.onsubmit = function (event) {
       event.preventDefault();
-      load(false, false, true);
+      fresh('push');
     };
     ['libraryScope', 'browseKind', 'browseType', 'browseDecade', 'browseSort'].forEach(
       function (id) {
         get(id).onchange = function () {
-          load(false, false, true);
+          fresh('filter');
           if (id === 'libraryScope' && scopeChanged) scopeChanged();
         };
       },
     );
-    more.onclick = function () {
-      load(true);
+    function turn(by) {
+      var target = pageNumber + by;
+      if (target < 1 || target > pages) return;
+      pageNumber = target;
+      load({ how: 'push', toResults: true });
+    }
+    get('browsePrev').onclick = function () {
+      turn(-1);
+    };
+    get('browseNext').onclick = function () {
+      turn(1);
     };
     get('browseClear').onclick = function () {
       form.reset();
       get('browsePath').value = '';
-      get('browseLocation').hidden = true;
-      load(false, false, true);
+      showLocation();
+      fresh('push');
     };
     get('browsePathClear').onclick = function () {
       get('browsePath').value = '';
-      get('browseLocation').hidden = true;
-      load(false, false, true);
+      showLocation();
+      fresh('push');
     };
-    get('discoveryLinks').onclick = function (event) {
-      var button = event.target.closest('button');
-      if (!button) return;
-      get('searchBox').value = button.dataset.query || '';
-      get('browsePath').value = button.dataset.folder || '';
-      get('browseLocation').hidden = !get('browsePath').value;
-      get('browseLocationName').textContent = get('browsePath').value.split('/').join(' · ');
-      load(false, true);
-    };
-    try {
-      var saved = new URLSearchParams(sessionStorage.getItem('library-browse') || '');
-      ['q', 'scope', 'kind', 'type', 'decade', 'sort', 'path'].forEach(function (key) {
-        var id = {
-          q: 'searchBox',
-          scope: 'libraryScope',
-          kind: 'browseKind',
-          type: 'browseType',
-          decade: 'browseDecade',
-          sort: 'browseSort',
-          path: 'browsePath',
-        }[key];
-        var value = saved.get(key);
-        if (!value) return;
-        if (
-          (key === 'type' || key === 'decade') &&
-          !Array.from(get(id).options).some(function (option) {
-            return option.value === value;
-          })
-        )
-          get(id).add(new Option(value, value));
-        get(id).value = value;
-      });
-    } catch (error) {}
-    get('browseLocation').hidden = !get('browsePath').value;
-    get('browseLocationName').textContent = get('browsePath').value.split('/').join(' · ');
-    load(false);
+    if (get('discoveryLinks'))
+      get('discoveryLinks').onclick = function (event) {
+        var button = event.target.closest('button');
+        if (!button) return;
+        get('searchBox').value = button.dataset.query || '';
+        get('browsePath').value = button.dataset.folder || '';
+        showLocation();
+        fresh('push', true);
+      };
+    /* Back and Forward: the address has already changed; the form and the list follow it. */
+    window.addEventListener('popstate', function () {
+      var before = state().toString();
+      fromAddress();
+      if (state().toString() === before) return;
+      load({ how: 'none', toResults: true });
+    });
+    fromAddress();
+    load({ how: 'none' });
     return {
       reload: function () {
-        load(false);
+        load({ how: 'none' });
       },
     };
   };

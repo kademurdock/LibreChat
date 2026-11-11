@@ -62,6 +62,7 @@ test('invalid controls and cursor content stay bounded and never widen authorize
       path: '',
       sort: 'recent',
       after: '',
+      page: '0',
     },
   );
   const plan = browsePipeline({ ...reader, hidden: true }, { after: 'bad' }, '$path');
@@ -76,4 +77,25 @@ test('a year query searches normalized metadata even when the title has no date'
   const choices = search.$match.$and[0].$or;
   assert.ok(choices);
   assert.ok(choices.some((row: Record<string, unknown>) => '_browseYear.match' in row));
+});
+
+test('a page number skips whole pages of the same sorted list, and a bad one is the first page', () => {
+  const third = browsePipeline(reader, { page: '2', sort: 'title' }, '$path').at(-1);
+  assert.ok(third && '$facet' in third);
+  assert.deepEqual(third.$facet.items.slice(0, 3), [
+    { $sort: { _browseTitle: 1, _id: 1 } },
+    { $skip: 120 },
+    { $limit: 61 },
+  ]);
+  assert.deepEqual(third.$facet.total, [{ $count: 'count' }]);
+  for (const page of ['-1', '1.5', 'x', '99999', '']) {
+    const first = browsePipeline(reader, { page }, '$path').at(-1);
+    assert.ok(first && '$facet' in first);
+    assert.ok(!first.$facet.items.some((stage: Record<string, unknown>) => '$skip' in stage));
+  }
+  assert.equal(browseInput({ page: '007' }).page, '7');
+  const after = browseCursor({ sort: 'title' }, reader.id, 'm');
+  const both = browsePipeline(reader, { page: '3', sort: 'title', after }, '$path').at(-1);
+  assert.ok(both && '$facet' in both);
+  assert.ok(!both.$facet.items.some((stage: Record<string, unknown>) => '$skip' in stage));
 });

@@ -56,7 +56,7 @@ test('an unavailable chosen filter stays selected so the next cursor retains its
     await tick();
     assert.equal(r.document.getElementById('browseType').value, 'newspaper');
     assert.equal(r.document.getElementById('browseDecade').value, '1930s');
-    assert.equal(r.document.getElementById('browseMore').hidden, true);
+    assert.equal(r.document.getElementById('browsePager').hidden, true);
   } finally {
     r.dom.window.close();
   }
@@ -102,27 +102,25 @@ test('filter changes cancel the prior request and a late response cannot replace
   }
 });
 
-test('more keeps the same query and cursor, appends safely, and places focus on the new item', async () => {
+test('pages keep the same query, replace the list safely, and place focus on the Results heading', async () => {
   const requests = [];
   const r = rig(async (path) => {
     requests.push(path);
-    return answer(
-      requests.length === 1 ? '<First>' : 'Second',
-      requests.length === 1 ? 'next-cursor' : null,
-    );
+    return { ...answer(requests.length === 1 ? '<First>' : 'Second'), total: 61 };
   });
   try {
     await tick();
-    r.document.getElementById('browseMore').click();
+    assert.equal(r.document.getElementById('browsePager').hidden, false);
+    r.document.getElementById('browseNext').click();
     await tick();
-    assert.ok(requests[1].includes('after=next-cursor'));
-    assert.equal(r.document.getElementById('browseList').children.length, 2);
-    assert.equal(
-      r.document.activeElement,
-      r.document.getElementById('browseList').children[1].querySelector('button'),
-    );
+    assert.ok(requests[1].includes('page=1'));
+    assert.ok(!requests[1].includes('after='));
+    assert.equal(r.document.getElementById('browseList').children.length, 1, 'one page at a time');
+    assert.equal(r.document.activeElement, r.document.getElementById('h-results'));
     assert.equal(r.document.querySelectorAll('#browseList first').length, 0);
-    assert.equal(r.document.getElementById('browseMore').hidden, true);
+    assert.equal(r.document.getElementById('browseNext').disabled, true);
+    assert.equal(r.document.getElementById('browsePrev').disabled, false);
+    assert.equal(r.said.at(-1), '61 items match. Page 2 of 2.');
   } finally {
     r.dom.window.close();
   }

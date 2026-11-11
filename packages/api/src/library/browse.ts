@@ -11,6 +11,8 @@ export interface BrowseInput {
   path?: string;
   sort?: string;
   after?: string;
+  /** Nov 10 2026: a page number (0 is the first 60), so a place in the list can live in the address. */
+  page?: string;
 }
 
 interface BrowseCursor {
@@ -37,6 +39,7 @@ export function browseInput(input: BrowseInput): Required<BrowseInput> {
     path: clean(input.path, 400).replace(/^\/+|\/+$/g, ''),
     sort: input.sort === 'title' ? 'title' : 'recent',
     after: clean(input.after, 2000),
+    page: /^\d{1,4}$/.test(input.page || '') ? String(Number(input.page)) : '0',
   };
 }
 
@@ -121,6 +124,9 @@ export function browsePipeline(
         },
       ]
     : [];
+  /* A cursor, when one is sent, already says where to start; a page number is for an address
+   * that can be shared, reloaded and walked back to. Both walk the same sorted list. */
+  const skip = after ? 0 : Number(input.page) * 60;
   return [
     { $match: match },
     { $addFields: { path: pathExpression } },
@@ -221,6 +227,7 @@ export function browsePipeline(
           ...filtered,
           ...paged,
           { $sort: { [field]: direction, _id: direction } },
+          ...(skip ? [{ $skip: skip }] : []),
           { $limit: 61 },
           { $project: { 'tracks.description.scenes': 0, 'tracks.recaps': 0 } },
         ],
