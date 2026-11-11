@@ -27,10 +27,15 @@ function ownsNudgePickup(req) {
 }
 
 /** What this turn may take. The Library digest is chat only: a voice turn (the bridge names who is
- * on the line, Kade included) leaves it for her next web or app chat, as the call-memories route does. */
-function nudgePickupOptions(req) {
+ * on the line, Kade included) leaves it for her next web or app chat, as the call-memories route does.
+ * Nov 11 2026: so is a missed reminder ('everyday'), which carries the reminder's words; and notes
+ * kept for one character are taken only on a turn with that character (`agentId`). */
+function nudgePickupOptions(req, agentId) {
   const voiceLane = Boolean((req && req.kadeOnBehalfOf) || (req && req.body && req.body.kadeOnBehalfOf));
-  return voiceLane ? { exceptTypes: ['library-digest'] } : {};
+  return {
+    ...(voiceLane ? { exceptTypes: ['library-digest', 'everyday'] } : {}),
+    ...(agentId ? { agentId: String(agentId) } : {}),
+  };
 }
 
 /** The dynamic-tail block for the agent the person is talking to; '' when nothing waits. */

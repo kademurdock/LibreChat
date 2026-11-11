@@ -67,6 +67,8 @@ const pendingNudgeSchema = new mongoose.Schema(
     deliveredAt: { type: Date, default: null, index: true },
     /** which channel actually delivered it (chat/push/call), for the page history */
     channel: { type: String, default: 'chat' },
+    /** Nov 11 2026: kept for this one character (a reminder it could not deliver); null = any */
+    agentId: { type: String, default: null },
   },
   { timestamps: true },
 );

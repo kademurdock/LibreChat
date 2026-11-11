@@ -689,7 +689,7 @@ class AgentClient extends BaseClient {
       if (ownsNudgePickup(this.options.req)) {
         const { takePendingChatNudges } = require('~/server/services/kadeNudges');
         nudgeTurnContext = waitingNotesBlock(
-          await takePendingChatNudges(this.options.req.user.id, 5, nudgePickupOptions(this.options.req)),
+          await takePendingChatNudges(this.options.req.user.id, 5, nudgePickupOptions(this.options.req, this.options.agent?.id)),
         );
       }
     } catch (nudgeError) {
@@ -834,6 +834,20 @@ class AgentClient extends BaseClient {
       }
     } catch (reachError) {
       logger.warn('[AgentClient] reach-out words check failed (non-fatal):', reachError.message);
+    }
+
+    /** KADE REMINDERS (Nov 11 2026, home agent card 6): "stop reminders", said to any character in
+     * text chat or signed-in app voice, cancels that person's waiting reminders and check-backs and
+     * pauses medicine times until they ask for them back. A plain phone call changes nothing (caller
+     * ID alone is not proof). Plain string work; the write happens in the background, so the reply
+     * never waits. Off with KADE_REMIND_ALL=0. See services/kadeEveryday.js. */
+    try {
+      const remindNote = require('~/server/services/kadeEveryday').noteFromWords(this.options.req);
+      if (remindNote) {
+        volatileTurnContext = [volatileTurnContext, remindNote].filter(Boolean).join('\n\n');
+      }
+    } catch (remindError) {
+      logger.warn('[AgentClient] reminder words check failed (non-fatal):', remindError.message);
     }
 
     /** KADE CANON (Part 124, Sep 4 2026): the character's own life — what it has

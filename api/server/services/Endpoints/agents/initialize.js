@@ -197,7 +197,15 @@ function createToolLoader(
        * (services/kadePhonePairing.js). Keyword only (kadeToolRetrieval KEYWORD_ONLY), free, no
        * model. KADE_PHONE_PAIRING=0 takes it away. */
       ...(String(process.env.KADE_PHONE_PAIRING || '') === '0' ? [] : ['kade_phone_pairing']),
+      /* KADE 2026-11-11 (home agent card 6): reminders, check-backs and the everyday helpers for
+       * every character. Where the record does not list kade_notify itself, it attaches only when
+       * the person's own words call for it (kadeToolRetrieval, keywordOnly below), so ordinary chat
+       * costs nothing more. Delivery lives in services/kadeEveryday.js. KADE_REMIND_ALL=0 takes it
+       * away again, and the tool goes back to its old words. */
+      ...(String(process.env.KADE_REMIND_ALL || '') === '0' ? [] : ['kade_notify']),
     ];
+    /* Auto-given tools the record does not list itself: these ride by keyword only. */
+    const keywordOnlyHere = ['kade_notify'].filter((t) => autoTools.includes(t) && !_tools.includes(t));
     let fundingHidden = true;
     try {
       fundingHidden = require('~/app/clients/tools/structured/KadeFundingBalance').hiddenFor(req);
@@ -258,6 +266,7 @@ function createToolLoader(
             agentId,
             hasFiles,
             embed: rag.memoEmbed(req, embedText, embedPurpose),
+            keywordOnly: keywordOnlyHere,
           });
           const dropped = rag.applySelection(loaded, sel.keep);
           if (req && dropped.includes('web_search')) {

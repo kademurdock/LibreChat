@@ -120,9 +120,11 @@ async function sendPushToUser(userId, { title, body, url }) {
   return delivered;
 }
 
-async function queueChatNudge(userId, text, type) {
+/* Nov 11 2026: `agentId` keeps a note for one character (a reminder that could not reach the
+ * person's phone is told by the character who set it). Without it, any character may tell it. */
+async function queueChatNudge(userId, text, type, agentId) {
   if (isTestUser(userId)) return;
-  await KadePendingNudge.create({ userId, text, type, channel: 'chat' });
+  await KadePendingNudge.create({ userId, text, type, channel: 'chat', ...(agentId ? { agentId: String(agentId) } : {}) });
 }
 
 async function placeNudgeCall(userId, userName, phone, text) {
@@ -192,12 +194,16 @@ async function deliverNudge(userId, text, { type = 'reminder', userName = '' } =
 
 /** ---- next-chat pickup (called from the agent controller) ----
  * exceptTypes leaves those notes waiting (the phone lane skips the Library
- * digest, which is for Kade's chat only). */
-async function takePendingChatNudges(userId, limit = 5, { exceptTypes } = {}) {
+ * digest, which is for Kade's chat only).
+ * Nov 11 2026: a note kept for one character (agentId) is taken only on a turn
+ * with that character; a pickup that names no character takes only notes kept
+ * for nobody, which is every note made before this. */
+async function takePendingChatNudges(userId, limit = 5, { exceptTypes, agentId } = {}) {
   const filter = { userId, channel: 'chat', deliveredAt: null };
   if (Array.isArray(exceptTypes) && exceptTypes.length) {
     filter.type = { $nin: exceptTypes };
   }
+  filter.agentId = agentId ? { $in: [null, String(agentId)] } : null;
   const pending = await KadePendingNudge.find(filter)
     .sort({ createdAt: 1 })
     .limit(limit)
@@ -213,10 +219,24 @@ async function takePendingChatNudges(userId, limit = 5, { exceptTypes } = {}) {
 }
 
 /** ---- the sweep ---- */
+/* Nov 11 2026 (home agent cards 6 and 7): reminders, check-backs, timers and medicine times set
+ * through kade_notify are rows of their own (services/kadeEveryday.js) and ride this same sweep:
+ * posted in the person's chat with that character, then a push. Never reach-out. A failure here
+ * never stops the memory-card reminders below. */
+async function sweepEverydayDue() {
+  try {
+    return await require('./kadeEveryday').sweepDue();
+  } catch (err) {
+    logger.error('[kadeNudges] everyday reminder sweep failed:', err.message);
+    return 0;
+  }
+}
+
 async function sweepDueReminders() {
+  const everyday = await sweepEverydayDue();
   const MemoryEntry = mongoose.models.MemoryEntry;
   if (!MemoryEntry) {
-    return 0;
+    return everyday;
   }
   const now = new Date();
   const due = await MemoryEntry.find({
@@ -254,7 +274,7 @@ async function sweepDueReminders() {
       logger.error('[kadeNudges] reminder delivery failed:', err.message);
     }
   }
-  return fired;
+  return fired + everyday;
 }
 
 async function sweepBirthdays() {
@@ -379,9 +399,17 @@ function startNudgeSweep() {
  * while the app is awake (they come from live chats), so a 60s reporter
  * always gets the word out before Railway's idle-sleep window closes. */
 async function computeNextDueAt() {
+  /* Nov 11 2026: the soonest kade_notify reminder or medicine time counts too, so a sleeping
+   * site is woken for a timer the same as for a memory-card reminder. */
+  let everyday = null;
+  try {
+    everyday = await require('./kadeEveryday').nextDueAt();
+  } catch (_) {
+    everyday = null;
+  }
   const MemoryEntry = mongoose.models.MemoryEntry;
   if (!MemoryEntry) {
-    return null;
+    return everyday ? new Date(everyday).toISOString() : null;
   }
   const next = await MemoryEntry.findOne({
     type: 'reminder',
@@ -392,7 +420,8 @@ async function computeNextDueAt() {
     .sort({ dueAt: 1 })
     .select('dueAt')
     .lean();
-  return next && next.dueAt ? new Date(next.dueAt).toISOString() : null;
+  const times = [next && next.dueAt, everyday].filter(Boolean).map((d) => new Date(d).getTime());
+  return times.length ? new Date(Math.min(...times)).toISOString() : null;
 }
 
 let dueReportTimer = null;
@@ -435,6 +464,7 @@ module.exports = {
   isPushConfigured,
   deliverNudge,
   sendPushToUser,
+  queueChatNudge,
   takePendingChatNudges,
   startNudgeSweep,
   runNudgeSweepOnce,

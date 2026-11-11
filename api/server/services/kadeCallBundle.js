@@ -236,7 +236,9 @@ function nudgeModel() {
 
 /** Read the waiting chat-channel messages, oldest first, WITHOUT marking them. */
 async function peekCallNudges(userId, limit = 5, { exceptTypes, model } = {}) {
-  const filter = { userId, channel: 'chat', deliveredAt: null };
+  /* Nov 11 2026: a note kept for one character (a reminder it could not deliver, which carries
+   * the reminder's words) never rides a phone call: caller ID alone does not prove who is calling. */
+  const filter = { userId, channel: 'chat', deliveredAt: null, agentId: null };
   if (Array.isArray(exceptTypes) && exceptTypes.length) {
     filter.type = { $nin: exceptTypes };
   }

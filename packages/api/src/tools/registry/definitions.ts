@@ -643,6 +643,170 @@ export const kadeNotifySchema: ExtendedJsonSchema = {
   required: [],
 };
 
+/* KADE Nov 11 2026 (home agent plan cards 6 and 7): reminders that really arrive, for every
+ * character, and the everyday helpers. Kept identical to api/server/services/kadeEverydayTool.js;
+ * kadeEveryday.nodetest.js checks that every string there appears here. KADE_REMIND_ALL=0 puts
+ * the old description and kadeNotifySchema back exactly; KADE_EVERYDAY=0 leaves the helpers out. */
+const kadeNotifyLegacyActions = [
+  'send',
+  'schedule_checkin',
+  'list_checkins',
+  'pause_checkin',
+  'cancel_checkin',
+  'test_checkin',
+  'set_reminder',
+  'list_reminders',
+  'cancel_reminder',
+  'platform_status',
+  'broadcast_whats_new',
+  'spontaneous_on',
+  'spontaneous_off',
+];
+const kadeNotifyRemindActions = ['check_back', 'reminder_wording', 'reminders_on'];
+const kadeNotifyEverydayActions = [
+  'timer',
+  'alarm',
+  'now',
+  'set_timezone',
+  'medicine_add',
+  'medicine_list',
+  'medicine_change',
+  'list_add',
+  'list_remove',
+  'list_read',
+  'list_clear',
+  'contact_save',
+  'contact_read',
+  'contact_remove',
+];
+
+const kadeNotifyRemindDescription =
+  'Reminders for the person you are talking with. A reminder comes back to them later as a message from you in this chat, plus a phone notification that says only that you have a reminder for them. ' +
+  'Call the tool FIRST. Say a reminder is set only after the tool answers with Reminder set. If it answers FAILED, tell them plainly that it is not set. ' +
+  'Only set what they asked for. Times are in their own time zone. ' +
+  'Other actions: send pings their phone right now. The check-in actions set a repeating message from you. platform_status is a real health check. spontaneous_on and spontaneous_off switch whether you may text them first.';
+
+const kadeNotifyEverydayDescription =
+  ' Everyday helpers too: timers, alarms, the date and time where they live, daily medicine times, running lists such as to-do and shopping, and phone numbers they ask you to keep.';
+
+const kadeNotifyActionNoteBase =
+  'What to do. set_reminder: one reminder (body, plus in_minutes or fire_date and fire_time; label for paperwork deadlines, ride booking and the like). ' +
+  'check_back: ask them later whether something got done (body is the question). ' +
+  'list_reminders. cancel_reminder (schedule_id). ' +
+  'reminder_wording: short (the lock screen names nothing) or full. ' +
+  'reminders_on: only after they ask to have reminders back. ' +
+  'send: ping their phone now. schedule_checkin, list_checkins, pause_checkin, cancel_checkin, test_checkin: a repeating check-in. platform_status. broadcast_whats_new is owner only. spontaneous_on, spontaneous_off.';
+
+const kadeNotifyActionNoteEveryday =
+  ' timer: in_minutes. alarm: fire_time. now: the date and time where they live. set_timezone. ' +
+  'medicine_add (name, times, days), medicine_list, medicine_change (name and change). ' +
+  'list_add and list_remove (list and item), list_read (list; leave out for all list names), list_clear (asks first; call again only after their own yes). ' +
+  'contact_save (name and number), contact_read (name), contact_remove (name).';
+
+const kadeNotifyRemindFields: Record<string, ExtendedJsonSchema> = {
+  body: {
+    type: 'string',
+    description: 'The reminder words, the check-back question, or the text for send. Short and plain.',
+  },
+  title: { type: 'string', description: 'Optional short title for send. Defaults to your name.' },
+  urgent: {
+    type: 'boolean',
+    description: 'send only. True only for something truly time critical: it rings through quiet hours (9pm to 8am Central).',
+  },
+  in_minutes: { type: 'number', description: 'set_reminder, check_back or timer: how many minutes from now.' },
+  fire_date: {
+    type: 'string',
+    description: 'set_reminder, check_back or alarm: the date as YYYY-MM-DD in their own time. Work it out from today.',
+  },
+  fire_time: {
+    type: 'string',
+    description: 'set_reminder, check_back or alarm: the time as HH:mm, 24-hour, in their own time.',
+  },
+  label: {
+    type: 'string',
+    description: 'set_reminder, optional: what kind of reminder, for example benefits paperwork, ride booking, appointment.',
+  },
+  follows: { type: 'string', description: 'check_back, optional: the id of the reminder it follows up.' },
+  wording: { type: 'string', enum: ['short', 'full'], description: 'reminder_wording: short or full.' },
+  time: { type: 'string', description: 'schedule_checkin: the daily time, 24-hour Central HH:mm, daytime only.' },
+  days: {
+    type: 'string',
+    description: 'schedule_checkin or medicine_add: daily, or day names such as mon,wed,fri.',
+  },
+  topic: { type: 'string', description: 'schedule_checkin, optional: what to bring up.' },
+  schedule_id: {
+    type: 'string',
+    description: 'cancel_reminder and the check-in actions: the id from the list.',
+  },
+};
+
+const kadeNotifyEverydayFields: Record<string, ExtendedJsonSchema> = {
+  name: {
+    type: 'string',
+    description: 'medicine actions: the medicine. contact actions: who, for example my sister.',
+  },
+  times: {
+    type: 'string',
+    description: 'medicine_add: the times each day, 24-hour, comma separated, for example 08:00,20:00.',
+  },
+  change: {
+    type: 'string',
+    enum: ['pause', 'resume', 'skip_today', 'remove'],
+    description: 'medicine_change: pause, resume, skip_today or remove.',
+  },
+  list: { type: 'string', description: 'list actions: the list name, for example shopping or to-do.' },
+  item: {
+    type: 'string',
+    description: 'list_add or list_remove: the item. Several items may be separated by commas.',
+  },
+  number: { type: 'string', description: 'contact_save: the phone number, digits as they said them.' },
+  timezone: {
+    type: 'string',
+    description: 'set_timezone: their time zone, for example Central, Pacific or America/Denver.',
+  },
+};
+
+function kadeNotifyRemindOn(): boolean {
+  return String(process.env.KADE_REMIND_ALL ?? '') !== '0';
+}
+
+function kadeNotifyEverydayOn(): boolean {
+  return kadeNotifyRemindOn() && String(process.env.KADE_EVERYDAY ?? '') !== '0';
+}
+
+/** kade_notify under the switches in force when the registry is read. */
+function kadeNotifyEntry(legacyDescription: string): ToolRegistryDefinition {
+  return {
+    name: 'kade_notify',
+    get description(): string {
+      if (!kadeNotifyRemindOn()) {
+        return legacyDescription;
+      }
+      return kadeNotifyRemindDescription + (kadeNotifyEverydayOn() ? kadeNotifyEverydayDescription : '');
+    },
+    get schema(): ExtendedJsonSchema {
+      if (!kadeNotifyRemindOn()) {
+        return kadeNotifySchema;
+      }
+      const full = kadeNotifyEverydayOn();
+      return {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: [...kadeNotifyLegacyActions, ...kadeNotifyRemindActions, ...(full ? kadeNotifyEverydayActions : [])],
+            description: kadeNotifyActionNoteBase + (full ? kadeNotifyActionNoteEveryday : ''),
+          },
+          ...kadeNotifyRemindFields,
+          ...(full ? kadeNotifyEverydayFields : {}),
+        },
+        required: ['action'],
+      };
+    },
+    toolType: 'builtin',
+  };
+}
+
 export const kadeNewsSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1208,13 +1372,10 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     schema: kadePhoneCallSchema,
     toolType: 'builtin',
   },
-  kade_notify: {
-    name: 'kade_notify',
-    description:
+  /* KADE Nov 11 2026: the old description is the argument, and stands while KADE_REMIND_ALL=0. */
+  kade_notify: kadeNotifyEntry(
       "Send a push notification to the user's OWN phone (their Kade-AI app) — for reminders they asked for, or to tell them a background job finished. It lands on their lock screen. The server enforces quiet hours (9pm to 8am), a cooldown, and daily caps, so keep notifications meaningful, not chatter. NEVER claim you notified them unless the tool confirms it sent; if it reports blocked or that no phone is registered, say so plainly. Do not duplicate what you just said in chat unless the user asked to be pinged on their phone. Also sets up RECURRING check-ins (action='schedule_checkin' with a time; list/pause/cancel/test actions manage them) where you reach out to the user on a schedule — only when they ask.",
-    schema: kadeNotifySchema,
-    toolType: 'builtin',
-  },
+  ),
   kade_call_me: {
     name: 'kade_call_me',
     description:

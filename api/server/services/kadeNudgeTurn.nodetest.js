@@ -71,11 +71,49 @@ test('a phone call leaves the Library digest for chat; chat takes everything', a
 test('a voice turn leaves the Library digest for chat, Kade on her own call included', () => {
   const { nudgePickupOptions } = require('./kadeNudgeTurn');
   const kade = { id: 'k', role: 'ADMIN' };
-  assert.deepEqual(nudgePickupOptions({ user: kade, kadeOnBehalfOf: { id: 'k' } }), { exceptTypes: ['library-digest'] });
+  /* Nov 11 2026: a missed reminder ('everyday') carries the reminder's words, so it waits for chat too. */
+  assert.deepEqual(nudgePickupOptions({ user: kade, kadeOnBehalfOf: { id: 'k' } }), { exceptTypes: ['library-digest', 'everyday'] });
   assert.deepEqual(nudgePickupOptions({ user: kade, body: { kadeOnBehalfOf: 'kade@example.com' } }), {
-    exceptTypes: ['library-digest'],
+    exceptTypes: ['library-digest', 'everyday'],
   });
   assert.deepEqual(nudgePickupOptions({ user: kade, body: {} }), {});
+  assert.deepEqual(nudgePickupOptions({ user: kade, body: {} }, 'agent_x'), { agentId: 'agent_x' });
   const client = require('node:fs').readFileSync(require.resolve('../controllers/agents/client.js'), 'utf8');
-  assert.match(client, /takePendingChatNudges\(this\.options\.req\.user\.id, 5, nudgePickupOptions\(this\.options\.req\)\)/);
+  assert.match(
+    client,
+    /takePendingChatNudges\(this\.options\.req\.user\.id, 5, nudgePickupOptions\(this\.options\.req, this\.options\.agent\?\.id\)\)/,
+  );
+});
+
+test('Nov 11: a note kept for one character is taken only with that character; a pickup naming none takes only shared notes', async () => {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  const source = fs.readFileSync(require.resolve('./kadeNudges'), 'utf8');
+  const rows = [
+    { _id: 1, userId: 'k', channel: 'chat', deliveredAt: null, type: 'reminder', text: 'Shared note', createdAt: 1 },
+    { _id: 2, userId: 'k', channel: 'chat', deliveredAt: null, type: 'everyday', agentId: 'harley', text: 'Harley tried', createdAt: 2 },
+  ];
+  const matches = (r, f) =>
+    r.userId === f.userId &&
+    r.deliveredAt == null &&
+    !((f.type && f.type.$nin) || []).includes(r.type) &&
+    (f.agentId === null ? r.agentId == null : f.agentId && f.agentId.$in ? f.agentId.$in.includes(r.agentId ?? null) : true);
+  const KadePendingNudge = {
+    find(filter) {
+      const hit = rows.filter((r) => matches(r, filter));
+      return { sort: () => ({ limit: () => ({ lean: async () => hit }) }) };
+    },
+    async updateMany(filter) {
+      for (const r of rows) if (filter._id.$in.includes(r._id)) r.deliveredAt = new Date();
+    },
+  };
+  const context = { KadePendingNudge, Array, String };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('async function takePendingChatNudges('), source.indexOf('/** ---- the sweep')), context);
+  const other = await context.takePendingChatNudges('k', 5, { agentId: 'lilly' });
+  assert.deepEqual(other.map((n) => n.text), ['Shared note'], 'another character leaves it waiting');
+  const none = await context.takePendingChatNudges('k', 5, {});
+  assert.equal(none.length, 0, 'a pickup naming no character never takes a kept note');
+  const harley = await context.takePendingChatNudges('k', 5, { agentId: 'harley' });
+  assert.deepEqual(harley.map((n) => n.text), ['Harley tried']);
 });

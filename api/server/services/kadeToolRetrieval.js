@@ -200,6 +200,13 @@ const ALIASES = {
   ],
   kade_notify: [
     /\b(remind|reminder|notify|notification|ping me|text me|nudge me|check (in|on) me|wake me|alarm)\b/i,
+    /* Nov 11 2026 (home agent cards 6 and 7): every character now has it, keyword only where the
+     * record does not list it, so these are the ways people ask for reminders, check-backs and the
+     * everyday helpers. */
+    /\b(?:remind(?:s|ed|ing|ers)|timers?|alarms|medicines?|meds|medications?|pills?|prescriptions?|refills?|appointments?|deadlines?|paperwork|recertif\w*|benefits (?:forms?|renewal|review|deadline|letter|office)|paratransit|book (?:a|my|the) ride|ride to|check back|ask me (?:later|tomorrow|tonight|again)|follow up with me|to-?do|todo|shopping list|grocery list|groceries|(?:my|the|a|our|that) lists?|time zone)\b/i,
+    /\b(?:add|put)\b[^.!?\n]{1,40}\b(?:to|on) (?:my|the|our) \w+(?: list)?\b|\b(?:take|cross|scratch)\b[^.!?\n]{1,40}\boff (?:my|the|our) \w+/i,
+    /\bwhat time is it\b|\bwhat(?:'?s| is) (?:the )?(?:time|date)\b|\bwhat day is (?:it|today)\b|\btoday'?s date\b/i,
+    /\b(?:phone )?number (?:for|of)\b|'s (?:phone |cell )?number\b|\b(?:save|keep|remember) (?:a|this|that|the|my \w+'?s?) (?:phone )?number\b/i,
   ],
   kade_help: [
     /\b(how do i|how to|where is the (setting|button|page)|help me (with|use|find)|what can you do|settings|turn (on|off))\b/i,
@@ -779,7 +786,11 @@ function keywordOnlyPass(p, out, ridingBefore, open) {
     stickyAdd(p.conversationId, new Set(['kade_studio']));
     return { ...out, dropped: (out.dropped || []).filter((n) => n !== 'kade_studio'), reason: `${out.reason} studio-open` };
   }
-  for (const name of KEYWORD_ONLY) {
+  /* Nov 11 2026: initialize.js also names, per turn, tools it gave a character that the record does
+   * not list itself (kade_notify for every character). They follow the same rule here, even where a
+   * record that does list them keeps them in the core set. */
+  const extra = Array.isArray(p && p.keywordOnly) ? p.keywordOnly.filter((n) => typeof n === 'string' && ALIASES[n]) : [];
+  for (const name of new Set([...KEYWORD_ONLY, ...extra])) {
     if (!out.keep.has(name) || ridingBefore.has(name)) continue;
     if (name === 'kade_studio' && songHere) {
       stickyAdd(p.conversationId, new Set([name]));
