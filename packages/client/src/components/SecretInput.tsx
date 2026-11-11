@@ -46,6 +46,12 @@ const SecretInput: React.ForwardRefExoticComponent<
   ) => {
     const [isVisible, setIsVisible] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+    /* Nov 10 2026: on a password box (sign in, register) the eye button says "Show password";
+     * anywhere else this field holds a key, and it stays "Show secret". */
+    const secretWord =
+      typeof props.autoComplete === 'string' && props.autoComplete.includes('password')
+        ? 'password'
+        : 'secret';
 
     const toggleVisibility = useCallback(() => {
       setIsVisible((prev) => !prev);
@@ -133,7 +139,7 @@ const SecretInput: React.ForwardRefExoticComponent<
                 : 'hover:bg-surface-hover hover:text-text-primary',
               buttonClassName,
             )}
-            aria-label={isVisible ? 'Hide secret' : 'Show secret'}
+            aria-label={isVisible ? `Hide ${secretWord}` : `Show ${secretWord}`}
           >
             {isVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>

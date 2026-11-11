@@ -395,8 +395,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <div class="row" id="castRow" hidden>
       <button class="act quiet" id="airplayBtn" type="button" hidden>AirPlay</button>
       <button class="act quiet" id="castBtn" type="button" hidden>Cast to a TV</button>
-      <button class="act quiet" id="addCollBtn" type="button">Add to a collection</button>
+      <button class="act quiet" id="addCollBtn" type="button">Add to a playlist</button>
       <button class="act quiet" id="reportBtn" type="button">Suggest a different shelf</button>
+    </div>
+    <div id="addCollPanel" role="group" aria-labelledby="addCollLabel" hidden>
+      <label class="field" for="addCollSel" id="addCollLabel">Add to which playlist?</label>
+      <select id="addCollSel"></select>
+      <div id="addCollNewWrap"><label class="field" for="addCollNew">Name for the new playlist</label><input type="text" id="addCollNew" maxlength="120" autocomplete="off"></div>
+      <div class="row" style="margin-top:.6rem"><button class="act primary" id="addCollGo" type="button">Add it</button><button class="act quiet" id="addCollCancel" type="button">Cancel</button></div>
     </div>
     <div class="now" id="nowText" aria-label="Now reading"></div>
     <button class="act" id="readingViewBtn" type="button" style="margin-top:.6rem" hidden>Open reading view</button>
@@ -635,12 +641,23 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (!items.length) { ul.innerHTML = '<li class="muted">' + empty + '</li>'; return; }
     items.forEach(function(b){ ul.appendChild(bookLi(b, where)); });
   }
-  function renderShelf(mine, borrowed){
+  /* Nov 10 2026 (redesign): the shelf holds everything a person ever opened, which for the
+     librarian is thousands of rows. It is drawn 60 at a time, with a count and a "Show 60 more"
+     button; the new rows get focus. Coming back from an item further down, enough rows are drawn
+     for that item to be there. */
+  var SHELF_PAGE = 60, shelfShown = SHELF_PAGE;
+  function renderShelf(mine, borrowed, focusFrom){
     var box = $('mineList'); box.innerHTML = '';
     var all = mine.map(function(b){ return {book:b, where:'mine'}; }).concat(borrowed.map(function(b){ return {book:b, where:'borrowed'}; }));
     if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Open something in the library, or add a file from the Add to the Library page.</p>'; return; }
-    var ul = document.createElement('ul'); ul.className = 'plain';
-    all.forEach(function(entry){
+    var note = returnNote();
+    if (note && note.host === 'mineList') { for (var at = 0; at < all.length; at++) { if (all[at].book.id === note.id) { if (at >= shelfShown) shelfShown = (Math.floor(at / SHELF_PAGE) + 1) * SHELF_PAGE; break; } } }
+    var showing = Math.min(shelfShown, all.length);
+    var count = document.createElement('p'); count.className = 'hint'; count.id = 'mineCount';
+    count.textContent = all.length + ' item' + (all.length === 1 ? '' : 's') + (showing < all.length ? ' · showing the first ' + showing : '');
+    box.appendChild(count);
+    var ul = document.createElement('ul'); ul.className = 'plain'; ul.setAttribute('aria-labelledby', 'h-mine');
+    all.slice(0, showing).forEach(function(entry){
       var b = entry.book, li = bookLi(b, entry.where);
       if (entry.where === 'borrowed') {
         var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove from my shelf'; rm.setAttribute('aria-label', 'Remove ' + b.title + ' from my shelf');
@@ -650,6 +667,17 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       ul.appendChild(li);
     });
     box.appendChild(ul);
+    if (showing < all.length) {
+      var left = all.length - showing, more = document.createElement('button'); more.className = 'act quiet'; more.type = 'button'; more.id = 'mineMore';
+      more.textContent = 'Show ' + Math.min(SHELF_PAGE, left) + ' more'; more.setAttribute('aria-label', 'Show ' + Math.min(SHELF_PAGE, left) + ' more from your shelf, ' + left + ' not shown yet');
+      more.onclick = function(){ var first = shelfShown; shelfShown += SHELF_PAGE; renderShelf(mine, borrowed, first); };
+      box.appendChild(more);
+    }
+    if (focusFrom != null) {
+      var row = ul.children[focusFrom], button = row && row.querySelector('button');
+      focusOn(button || $('h-mine'));
+      say('Showing ' + showing + ' of ' + all.length + '.');
+    }
   }
   /* Nov 10 2026: the three things most recently left unfinished, right under the front desk's
      title (on the Continue page, every unfinished thing, up to 30). They are the same rows the
@@ -1005,16 +1033,35 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var note = prompt('Anything else the librarian should know? (optional)') || '';
     try { var r = await api('/book/' + book.id + '/report', { json: { path: to, note: note } }); say(r.applied ? 'Moved.' : 'Sent to the librarian. You will be told when it is moved.'); } catch(e) { say(e.message); }
   };
+  /* Nov 10 2026: adding to a playlist is a menu of your playlists (with "A new playlist" last) and
+     an Add button, in the page. It was a browser prompt that read out a numbered list and asked
+     for a number to be typed. Focus goes to the menu when it opens and back to the button after. */
   $('addCollBtn').onclick = async function(){
     if (!book) return;
     try {
-      if (!collections.mine.length) collections = await api('/collections');
-      var names = collections.mine.map(function(c, i){ return (i + 1) + '. ' + c.title; });
-      var pick = prompt('Add "' + book.title + '" to which collection?\\n' + (names.length ? names.join('\\n') + '\\nType a number, or a new name to make one.' : 'You have none yet — type a name to make one.'));
-      if (pick == null || !pick.trim()) return;
-      var n = parseInt(pick, 10); var target = (n >= 1 && collections.mine[n - 1]) ? collections.mine[n - 1] : null;
-      if (!target) { var made = await api('/collections', { json: { title: pick.trim() } }); target = made.collection; }
+      collections = await api('/collections');
+      var sel = $('addCollSel'); sel.innerHTML = '';
+      collections.mine.forEach(function(c){ var o = document.createElement('option'); o.value = c.id; o.textContent = c.title + ' (' + c.count + ' item' + (c.count === 1 ? '' : 's') + ')'; sel.appendChild(o); });
+      var fresh = document.createElement('option'); fresh.value = ''; fresh.textContent = 'A new playlist'; sel.appendChild(fresh);
+      sel.onchange = function(){ $('addCollNewWrap').hidden = sel.value !== ''; };
+      sel.onchange();
+      $('addCollPanel').hidden = false; focusOn(sel);
+    } catch(e) { say(e.message); }
+  };
+  $('addCollCancel').onclick = function(){ $('addCollPanel').hidden = true; focusOn($('addCollBtn')); };
+  $('addCollGo').onclick = async function(){
+    if (!book) return;
+    try {
+      var sel = $('addCollSel'), target = null;
+      if (sel.value) target = collections.mine.filter(function(c){ return c.id === sel.value; })[0];
+      else {
+        var name = $('addCollNew').value.trim();
+        if (!name) { say('Give the new playlist a name first.'); focusOn($('addCollNew')); return; }
+        var made = await api('/collections', { json: { title: name } }); target = made.collection;
+      }
+      if (!target) { say('Choose a playlist first.'); return; }
       await api('/collections/' + target.id + '/items', { json: { book: book.id, track: pos.s } });
+      $('addCollPanel').hidden = true; $('addCollNew').value = ''; focusOn($('addCollBtn'));
       say('Added to ' + target.title + '.');
     } catch(e) { say(e.message); }
   };

@@ -3014,14 +3014,20 @@ const diaryHtml = `<!doctype html><html lang="en"><head><title>Your Logbook — 
 const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request an account — Kade Murdock</title>${SHARED_HEAD}
 <style>
   form label { display:block; font-weight:600; margin:.9rem 0 .3rem; }
-  form input[type=text], form textarea { width:100%; font-size:1rem; padding:.6rem .7rem; border-radius:10px; border:1px solid #b9bfc9; background:#fff; color:#16181d; }
+  /* Nov 10 2026: field edges were 1.7 to 1 against the page (the rule is 3 to 1), the text boxes
+     39 pixels tall, and the two small links 22; the page had no main landmark. */
+  form input[type=text], form textarea { width:100%; font-size:1rem; padding:.6rem .7rem; min-height:44px; border-radius:10px; border:1px solid #6b7280; background:#fff; color:#16181d; }
   form textarea { min-height:5rem; }
-  @media (prefers-color-scheme: dark){ form input[type=text], form textarea{ background:#242830; color:#e7e9ee; border-color:#3a3f49; } }
+  @media (prefers-color-scheme: dark){ form input[type=text], form textarea{ background:#242830; color:#e7e9ee; border-color:#8a919c; } }
+  form input[type=text]:focus-visible, form textarea:focus-visible, form label.choice input:focus-visible, p.ways a:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
+  @media (prefers-color-scheme: dark){ form input[type=text]:focus-visible, form textarea:focus-visible, form label.choice input:focus-visible, p.ways a:focus-visible { outline-color:#ffbf47; } }
+  p.ways a { display:inline-block; padding:.7rem .15rem; font-weight:600; }
+  #status:empty { background:transparent; padding:0; }
   .pickbtn { display:inline-block; font-size:1.1rem; font-weight:700; padding:.9rem 1.6rem; border-radius:12px; border:0; background:#1f7a49; color:#fff; cursor:pointer; margin-top:1rem; }
   .pickbtn:focus-visible { outline:4px solid #ffbf47; outline-offset:3px; }
   .hp { position:absolute; left:-9999px; height:1px; overflow:hidden; }
-  fieldset.sightq { border:1px solid #b9bfc9; border-radius:10px; margin:1.1rem 0 .3rem; padding:.4rem .9rem .7rem; }
-  @media (prefers-color-scheme: dark){ fieldset.sightq{ border-color:#3a3f49; } }
+  fieldset.sightq { border:1px solid #6b7280; border-radius:10px; margin:1.1rem 0 .3rem; padding:.4rem .9rem .7rem; }
+  @media (prefers-color-scheme: dark){ fieldset.sightq{ border-color:#8a919c; } }
   fieldset.sightq legend { font-weight:600; padding:0 .3rem; }
   fieldset.sightq p { margin:.2rem 0 .5rem; }
   form label.choice { font-weight:400; display:flex; align-items:center; gap:.6rem; margin:.35rem 0; min-height:44px; cursor:pointer; }
@@ -3029,10 +3035,11 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
 </style>
 </head><body>
 <a class="back" href="/login">&larr; Back to sign in</a>
+<main>
 <h1>Request an account</h1>
 <p class="muted">Want to play or download Kade’s published recordings, or use the platform? Tell Kade a little about yourself below. She reviews requests before approving account access, which helps keep spam out. Published recordings are free once you have an account. Family Library access is separate, and a donation is never required.</p>
-<p>Already have a code? <a href="/register">Create your account</a>. Already registered? <a href="/login">Sign in</a>.</p>
-<div id="status" class="status" role="status" aria-live="polite"></div>
+<p class="ways">Already have a code? <a href="/register">Create your account</a>. Already registered? <a href="/login">Sign in</a>.</p>
+<div id="status" class="status" role="status" aria-live="polite" tabindex="-1"></div>
 <form id="askForm">
   <label for="name">What do people call you?</label>
   <input type="text" id="name" required maxlength="80" autocomplete="name">
@@ -3053,6 +3060,7 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
   <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" tabindex="-1" autocomplete="off"></div>
   <button class="pickbtn" type="submit" id="sendBtn">Send my request</button>
 </form>
+</main>
 <footer class="muted">&mdash; Kade-AI</footer>
 <script>
 (function(){
@@ -3072,7 +3080,7 @@ const requestAccessHtml = `<!doctype html><html lang="en"><head><title>Request a
         website:document.getElementById('website').value
       })});
       var d=await r.json();
-      if(r.ok && d.ok){ setStatus(d.message||'Request sent.'); document.getElementById('askForm').style.display='none'; }
+      if(r.ok && d.ok){ setStatus(d.message||'Request sent.'); document.getElementById('askForm').style.display='none'; try{ statusEl.focus(); }catch(e){} /* the Send button is gone with the form; focus stays on the page, on the answer */ }
       else setStatus(d.error||'Something hiccuped — try again.', true);
     }catch(e){ setStatus('Could not send just now — try again in a minute.', true); }
     btn.disabled=false;
