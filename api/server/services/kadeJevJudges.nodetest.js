@@ -501,11 +501,18 @@ test('keeperGateLog: one line for both outcomes, and it never throws', () => {
     });
     J.keeperGateLog(null, { skipped: false, attachments: [], logged: false, messageId: 'm3', log });
   });
+  /* Nov 10 2026: the logbook floor is named at the end of the line when it differs. */
   assert.deepStrictEqual(lines, [
-    '[kadeJev][keeper-gate] card=0.04 log=0.07 promise=0.02 floor=0.30 keeper=SKIPPED msg=m1',
-    '[kadeJev][keeper-gate] card=0.91 log=0.12 promise=0.03 floor=0.30 keeper=card msg=m2',
-    '[kadeJev][keeper-gate] card=? log=? promise=? (jev silent) floor=0.30 keeper=nothing msg=m3',
+    '[kadeJev][keeper-gate] card=0.04 log=0.07 promise=0.02 floor=0.30 keeper=SKIPPED msg=m1 logfloor=0.15',
+    '[kadeJev][keeper-gate] card=0.91 log=0.12 promise=0.03 floor=0.30 keeper=card msg=m2 logfloor=0.15',
+    '[kadeJev][keeper-gate] card=? log=? promise=? (jev silent) floor=0.30 keeper=nothing msg=m3 logfloor=0.15',
   ]);
+  /* With the logbook floor switched back to the main floor the line is the old one, byte for byte. */
+  const old = [];
+  withEnv({ ...ON, KADE_JEV_KEEPER_LOG_FLOOR: '0.30' }, () => {
+    J.keeperGateLog({ card: 0.04, log: 0.07, promise: 0.02 }, { skipped: true, messageId: 'm1', log: (l) => old.push(l) });
+  });
+  assert.deepStrictEqual(old, ['[kadeJev][keeper-gate] card=0.04 log=0.07 promise=0.02 floor=0.30 keeper=SKIPPED msg=m1']);
   /* a dead logger must not take the keeper down with it */
   J.keeperGateLog({ card: 0, log: 0, promise: 0 }, { skipped: true, log: () => { throw new Error('logger down'); } });
 });
@@ -1220,4 +1227,57 @@ test('keeperGate: a nickname that is none of card, log or promise still lets the
   assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.1, promise: 0.1, moment: 0.9 }, 0.3), false);
   const off = await withEnv({ ...ON, KADE_SOUL_MOMENTS: '0' }, () => J.keeperGate(msgs, { ask: async (st, q) => { assert.ok(!('moment' in q)); return nick(); } }));
   assert.strictEqual(off.skip, true, 'moments off: the old three-question rule');
+});
+
+/* ── Nov 10 2026: the logbook question's own floor ─────────────────────── */
+
+test('keeperLogFloor: 0.15 by default, never above the main floor, and 0.30 is the old rule', () => {
+  withEnv({ KADE_JEV_KEEPER_FLOOR: undefined, KADE_JEV_KEEPER_LOG_FLOOR: undefined }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.15);
+  });
+  withEnv({ KADE_JEV_KEEPER_FLOOR: undefined, KADE_JEV_KEEPER_LOG_FLOOR: '0.30' }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.3);
+  });
+  withEnv({ KADE_JEV_KEEPER_FLOOR: undefined, KADE_JEV_KEEPER_LOG_FLOOR: '0.9' }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.3);
+  });
+  /* the existing setting still rules: a main floor under the logbook floor wins */
+  withEnv({ KADE_JEV_KEEPER_FLOOR: '0.10', KADE_JEV_KEEPER_LOG_FLOOR: undefined }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.1);
+  });
+  withEnv({ KADE_JEV_KEEPER_FLOOR: undefined, KADE_JEV_KEEPER_LOG_FLOOR: 'junk' }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.15);
+  });
+  withEnv({ KADE_JEV_KEEPER_FLOOR: undefined, KADE_JEV_KEEPER_LOG_FLOOR: '-1' }, () => {
+    assert.strictEqual(J.keeperLogFloor(), 0.3);
+  });
+});
+
+test('keeperGateDecide: a logbook reading at or over its own floor runs the keeper; the others keep 0.30', () => {
+  /* the shape of the one real miss found in the Nov 4 to Nov 10 read: log 0.16, the rest low */
+  const miss = { card: 0.06, log: 0.16, promise: 0.03, moment: 0.08 };
+  assert.strictEqual(J.keeperGateDecide(miss, 0.3), true, 'one floor: still skipped');
+  assert.strictEqual(J.keeperGateDecide(miss, 0.3, 0.15), false, 'two floors: the keeper runs');
+  assert.strictEqual(J.keeperGateDecide({ ...miss, log: 0.15 }, 0.3, 0.15), false, 'at the floor is not under it');
+  assert.strictEqual(J.keeperGateDecide({ ...miss, log: 0.14 }, 0.3, 0.15), true);
+  /* the noise seen in that read stays skipped: card, promise and moment between 0.15 and 0.30 */
+  assert.strictEqual(J.keeperGateDecide({ card: 0.29, log: 0.09, promise: 0.03, moment: 0.15 }, 0.3, 0.15), true);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.08, log: 0.08, promise: 0.25, moment: 0.05 }, 0.3, 0.15), true);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.03, log: 0.06, promise: 0.02, moment: 0.21 }, 0.3, 0.15), true);
+  /* a logbook floor above the main floor is ignored */
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.35, promise: 0.1 }, 0.3, 0.9), false);
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: 0.25, promise: 0.1 }, 0.3, 0.9), true);
+  /* garbage still never authorises a skip */
+  assert.strictEqual(J.keeperGateDecide({ card: 0.1, log: NaN, promise: 0.1 }, 0.3, 0.15), false);
+});
+
+test('keeperGate: the live gate uses the logbook floor, and the switch puts the old rule back', async () => {
+  const msgs = [{ role: 'user', content: 'a plain message with a little day in it' }];
+  const answers = { card: { noul: 0.06 }, log: { noul: 0.16 }, promise: { noul: 0.03 }, moment: { noul: 0.08 } };
+  const ask = async () => ({ answers });
+  const now = await withEnv({ ...ON, KADE_JEV_KEEPER_LOG_FLOOR: undefined }, () => J.keeperGate(msgs, { ask }));
+  assert.strictEqual(now.skip, false);
+  assert.strictEqual(now.scores.log, 0.16);
+  const old = await withEnv({ ...ON, KADE_JEV_KEEPER_LOG_FLOOR: '0.30' }, () => J.keeperGate(msgs, { ask }));
+  assert.strictEqual(old.skip, true);
 });
