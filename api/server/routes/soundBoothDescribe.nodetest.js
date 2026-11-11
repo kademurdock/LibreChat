@@ -10,6 +10,10 @@
  *
  * Run: node --test api/server/routes/soundBoothDescribe.nodetest.js
  */
+/* Nov 10 2026, round two: the description now names the layers of the arrangement in up to 420 characters
+ * (KADE_SOUND_RICH, on unless set to 0). Everything below pins the Oct 11 line and its 240 characters, so this file runs
+ * with the switch set back; the rich line has its own tests in soundBoothDescribeRich.nodetest.js. */
+process.env.KADE_SOUND_RICH = '0';
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

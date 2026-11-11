@@ -19,6 +19,10 @@ const musicSource = [seedSource, hitSource, rhymeLexiconSource, rhymeSource, wri
 const { musicWritingPrompt, musicWritingSettings, musicWritingBackground, lyricAgentId } = await import('data:text/javascript;base64,' + Buffer.from(musicSource).toString('base64'));
 const { seedWritingPrompt } = await import('data:text/javascript;base64,' + Buffer.from(seedSource).toString('base64'));
 
+/* Nov 10 2026, round two: YuE2's writing lane now asks for a richer direction (YUE_RICH_DIRECTION, on unless set to 0), and
+ * ACE-Step XL keeps the sentence it had. These tests are about the sentence the two engines share, so they run with the
+ * switch set back; the rich YuE2 line has its own tests in writing.node-test.mjs. */
+process.env.YUE_RICH_DIRECTION = '0';
 const PERSONA = 'Saved persona: protect meaning and use internal rhyme.';
 const read_ = async () => ({ instructions: PERSONA });
 const YUE_DIRECTION =

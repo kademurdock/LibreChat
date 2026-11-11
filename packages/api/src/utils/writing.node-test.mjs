@@ -55,7 +55,22 @@ test('engine delivery contracts separate compact YuE style from Lyria arrangemen
   const read = async () => ({ instructions: 'Write original songs with a distinct point of view.' });
   const yue = (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
   const lyria = (await musicWritingPrompt('Lyria format', { engine: 'lyria', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
-  assert.match(yue, /25 to 45 words in one or two compact sentences/);
+  assert.match(yue, /YuE2 direction is one line of 55 to 85 words in short comma-separated phrases/);
+  assert.match(yue, /rhythm section, harmony bed, a lead or counter line, backing vocal treatment, production texture/);
+  assert.match(yue, /a tempo as a number with BPM/);
+  assert.doesNotMatch(yue, /25 to 45 words/);
+  /* Nov 10 2026, round two: YUE_RICH_DIRECTION=0 puts the old sentence back; formatting her own words never gets the rich one. */
+  process.env.YUE_RICH_DIRECTION = '0';
+  try {
+    const plain = (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
+    assert.match(plain, /YuE2 direction is 25 to 45 words in one or two compact sentences/);
+    assert.doesNotMatch(plain, /55 to 85 words/);
+  } finally {
+    delete process.env.YUE_RICH_DIRECTION;
+  }
+  const ace = (await musicWritingPrompt('ACE format', { engine: 'ace', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
+  assert.match(ace, /ACE-Step XL direction is 25 to 45 words in one or two compact sentences/);
+  assert.doesNotMatch(ace, /55 to 85 words/);
   assert.doesNotMatch(yue, /the technical line says about four minutes|backing vocals and arrangement dynamics as appropriate/);
   assert.match(lyria, /backing vocals and arrangement dynamics as appropriate/);
   assert.match(lyria, /the technical line says about four minutes/);
@@ -822,7 +837,18 @@ test('Part 293 review: the writing lane\'s music grammar describes the voice, th
   const yue = systemPrompt({ engine: 'yue2', mode: 'write' });
   assert.match(yue, /YUE2 MUSIC FORMAT/);
   assert.doesNotMatch(yue, /LYRIA 3.5 MUSIC BRIEF FORMAT|THE TECHNICAL LINE last/);
-  assert.match(yue, /concise style direction/);
+  assert.match(yue, /Write the style direction as ONE line of 55 to 85 words made of short comma-separated phrases, not sentences/);
+  for (const layer of ['the rhythm section', 'the harmony bed', 'one lead or counter line', 'the backing vocal treatment', 'the production texture and space', 'the tempo as a number followed by BPM', 'how the arrangement moves across the song'])
+    assert.ok(yue.includes(layer), layer);
+  assert.doesNotMatch(yue, /concise style direction|Keep the style concise/);
+  /* Nov 10 2026, round two: only YuE2's writing lane. Her own words being formatted, and ACE-Step XL, keep the old line. */
+  assert.match(systemPrompt({ engine: 'yue2', mode: 'format' }), /Write a concise style direction in 25 to 45 words/);
+  assert.match(systemPrompt({ engine: 'ace', mode: 'write' }), /ACE-STEP XL MUSIC FORMAT \(the only format you may output\):\nWrite a concise style direction in 25 to 45 words/);
+  /* the route reads the switch from its own environment */
+  const plain = loadBooth({ reply: () => '', env: { YUE_RICH_DIRECTION: '0' } }).internals.systemPrompt({ engine: 'yue2', mode: 'write' });
+  assert.match(plain, /YUE2 MUSIC FORMAT \(the only format you may output\):\nWrite a concise style direction in 25 to 45 words, one or two compact sentences: language, genre, mood, defining instruments, lead vocal character and rhythmic feel\. Do not narrate the arrangement section by section\. Keep production directions out of the lyrics\./);
+  assert.match(plain, /Keep the style concise and use the lyric structure for a complete song\./);
+  assert.doesNotMatch(plain, /55 to 85 words/);
   assert.match(systemPrompt({ engine: 'yue2', mode: 'format' }), /Never invent lyrics/);
 });
 

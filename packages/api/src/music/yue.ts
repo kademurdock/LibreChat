@@ -920,11 +920,352 @@ export const yueVariationHint: string =
 export const yueGuidanceStyleSentence: string =
   ' With a trained Style on a new song, leave it at 1: higher can make the song lose its words.';
 
+/* ---- Nov 10 2026, round two: a cleaner sheet for a trained style, a guard against a runaway take, a cover that names its key ----
+ * Her words: with style LoRAs the words get garbled. Round one fixed what the request asked the model to do; this looks at
+ * what the SHEET hands it. YuE2 puts the lyrics into its prompt as plain text, word for word (protocol.py: "[Tags]\n{style}\n
+ * [Lyrics]\n{lyrics}"), with no parsing of brackets or parentheses, so what it does with them is whatever its training sheets
+ * taught. Every trained style was taught on sheets with seven lower-case section tags, no other bracket and no parenthesis
+ * at all. Her sheets carry bracketed directions ("[drums drop out, atmospheric pads]", "[belting]", "[spoken]") and up to 25
+ * parenthesised backing phrases, which YuE2 has no backing voice for and sings as extra lead words.
+ *
+ * What four test songs said (Nov 10 2026: Soul at full strength, one 21-line sheet with six directions and 13 backing
+ * phrases, one seed, all four on the same GPU model, the plain sound stage; a small speech model counted the 122 lead words):
+ *   as the booth sends it today, directions and all 13 phrases left in      115 to 117 heard, 3:19, NO direction was sung
+ *   directions lifted and added to the style, all 13 phrases                 24 heard, ran the full six minutes: unusable
+ *   lifted and added to the style, phrases thinned to 8                      111 heard, 3:49
+ *   the same with a long layered direction of the kind the desk now writes   108 heard, 2:43
+ * So a bracketed direction left in the sheet is not sung, taking it out gained nothing, and one of the three takes that
+ * carried the directions in the style fell apart. Thinning did not make the lead clearer on this sheet either, and backing
+ * phrases are layers she asked for more of. One take each is thin evidence, so both are BUILT AND OFF, ready for her ear on
+ * one of her own long sheets, and nothing about the sheet changes by default.
+ * All of it happens in yueWorkerInput, when the request is SENT. The job, the project and the library keep her sheet and her
+ * Music direction exactly as typed. The switches:
+ *   YUE_LIFT_DIRECTIONS=styled   off unless set: bracketed directions are lifted out of the lyrics for a trained style.
+ *                                "all": for plain YuE2 too (its own guide says a tag such as [saxophone solo] can help there).
+ *   YUE_LIFT_FOLD=1              off unless set, and only with lifting: the lifted directions are added to the style as
+ *                                "arrangement: bridge - drums drop out; ...". The take that fell apart had this.
+ *   YUE_STYLE_BACKING_MAX=8      off unless set to a number: a trained style gets at most that many parenthesised backing
+ *                                phrases, echoes of the lead line going first and replies that carry new words last.
+ *   YUE_STYLE_LENGTH_CAP=0       ON unless set to 0: a styled NEW song of fewer than 32 sung lines carries a ceiling
+ *                                (max_seconds) far above any normal take of that sheet, so a take that falls into repeating
+ *                                stops there instead of at six minutes (the unusable take above would have stopped at 4:36).
+ *                                Her usual sheets (45 lines and more) never get one. Needs a worker that knows max_seconds;
+ *                                an older worker ignores it.
+ *   YUE_LANGUAGE_ONCE=0          ON unless set to 0: a styled direction that opens "English," or "English vocals," does not
+ *                                say the language a second time after the style's own lead.
+ *   YUE_COVER_KEY=0              ON unless set to 0, for plain YuE2 only: a cover or score keeping its chords names its
+ *                                score's key in the style beside the tempo (match_score_key), as upstream's own example
+ *                                style does, unless Music direction names a key. "all": trained styles (whose captions
+ *                                never named a key) and covers with a new accompaniment (where a misread key could steer
+ *                                the new chords) too; that waits for her ear.
+ *   YUE_COVER_SCORE_TAGS=1       off unless set: a cover's lyric section tags take the names the score's own sections have,
+ *                                only when both have the same number of sung sections (score_section_tags). Needs her ear.
+ * A worker older than max_seconds, match_score_key and score_section_tags ignores all three. */
+export type YueLift = 'off' | 'styled' | 'all';
+export function yueLiftDirections(env: NodeJS.ProcessEnv = process.env): YueLift {
+  const said = String(env.YUE_LIFT_DIRECTIONS ?? '').trim().toLowerCase();
+  return said === 'all' ? 'all' : said === 'styled' || said === '1' ? 'styled' : 'off';
+}
+export function yueFoldDirectionsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.YUE_LIFT_FOLD ?? '').trim() === '1';
+}
+/** The most parenthesised backing phrases a trained style is sent; undefined (the default) for "send them all". */
+export function yueBackingMax(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const said = String(env.YUE_STYLE_BACKING_MAX ?? '').trim();
+  return /^\d{1,3}$/.test(said) && Number(said) > 0 ? Number(said) : undefined;
+}
+export function yueLengthCapEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !switchedOff(env.YUE_STYLE_LENGTH_CAP);
+}
+export function yueLanguageOnceEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !switchedOff(env.YUE_LANGUAGE_ONCE);
+}
+export function yueCoverKey(env: NodeJS.ProcessEnv = process.env): 'off' | 'plain' | 'all' {
+  if (switchedOff(env.YUE_COVER_KEY)) return 'off';
+  return String(env.YUE_COVER_KEY ?? '').trim().toLowerCase() === 'all' ? 'all' : 'plain';
+}
+export function yueCoverScoreTags(env: NodeJS.ProcessEnv = process.env): boolean {
+  return String(env.YUE_COVER_SCORE_TAGS ?? '').trim() === '1';
+}
+
+export type YueDirection = { section: string; text: string };
+const BRACKET_GROUP = /\[([^\]\n]*)\]/g;
+const LETTER = /\p{L}/u;
+/** A line with something to sing on it once its brackets are set aside. */
+function sungLine(line: string): boolean {
+  return !SECTION_LINE.test(line.replace(/\r$/, '')) && LETTER.test(line.replace(BRACKET_GROUP, ' '));
+}
+/** "Final Chorus - belting", "Verse 2: spoken", "Outro, fading", "Chorus (big)", "Final Chorus belting" and "Rap Verse":
+ * the section name she wrote and the direction beside it. Undefined when no part of the tag is a section name, and for a
+ * repeat such as "Chorus x2", which stays as typed. */
+function sectionWithDirection(tag: string): { head: string; rest: string } | undefined {
+  const bare = (text: string): string => text.replace(/^[\s\-–—:,(]+|[\s\-–—:,()]+$/g, '');
+  const cut = /^([^\-–—:,(]+?)\s*(?:[-–—:,(])\s*(.*)$/.exec(tag.trim());
+  if (cut && nativeSection(cut[1]) && LETTER.test(cut[2])) return { head: cut[1].trim(), rest: bare(cut[2]) };
+  const words = tag.trim().split(/\s+/);
+  if (words.length < 2 || words.length > 6 || sectionRepeat(tag)) return undefined;
+  for (let n = words.length - 1; n >= 1; n -= 1) {
+    const head = bare(words.slice(0, n).join(' '));
+    const rest = bare(words.slice(n).join(' '));
+    if (head && LETTER.test(rest) && nativeSection(head)) return { head, rest };
+  }
+  for (let n = 1; n < words.length; n += 1) {
+    const head = bare(words.slice(n).join(' '));
+    const rest = bare(words.slice(0, n).join(' '));
+    if (head && LETTER.test(rest) && nativeSection(head)) return { head, rest };
+  }
+  return undefined;
+}
+/** "Chorus x2", "Verse 2x": a section name with a repeat count. It stays as typed. */
+function sectionRepeat(tag: string): boolean {
+  const repeat = /^(.*?)\s*(?:[x×]\s*\d+|\d+\s*[x×])$/i.exec(tag.trim());
+  return !!repeat && !!nativeSection(repeat[1]);
+}
+/**
+ * The lyric sheet without its bracketed directions, and the directions with the section each one stood in.
+ * A section tag stays ("[Verse 2]", "[Final Chorus]", "[Guitar Solo]"). A tag that is a section name with a direction
+ * ("[Final Chorus - belting]") keeps the section name and gives up the direction. A bracket line that is no section at all
+ * ("[drums drop out, atmospheric pads]", "[belting]") is taken out, and so is a bracket inside a sung line. One thing stays
+ * as typed: an unknown tag that opens a block of sung words after a blank line, because it is doing a section tag's job and
+ * taking it out would run two sections together. A sheet with nothing to lift comes back unchanged, character for character.
+ */
+export function yueLiftedLyrics(lyrics: string): { lyrics: string; directions: YueDirection[] } {
+  const lines = lyrics.split('\n');
+  const out: string[] = [];
+  const found: Array<{ at: number; text: string }> = [];
+  const sections: string[] = [];
+  let changed = false;
+  const note = (text: string): void => {
+    const clean = text
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s\-–—:,;.]+|[\s\-–—:,;.]+$/g, '');
+    if (clean && LETTER.test(clean)) found.push({ at: sections.length - 1, text: clean });
+  };
+  const open = (name: string): void => {
+    sections.push(name.toLowerCase().replace(/\s+/g, ' ').trim());
+  };
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const cr = raw.endsWith('\r') ? '\r' : '';
+    const line = cr ? raw.slice(0, -1) : raw;
+    const tag = SECTION_LINE.exec(line);
+    if (tag) {
+      if (nativeSection(tag[2])) {
+        open(tag[2]);
+        out.push(raw);
+        continue;
+      }
+      const split = sectionWithDirection(tag[2]);
+      if (split) {
+        open(split.head);
+        out.push(`${tag[1]}[${split.head}]${tag[3]}${cr}`);
+        note(split.rest);
+        changed = true;
+        continue;
+      }
+      const opensBlock = out.length === 0 || out[out.length - 1].trim() === '';
+      if (sectionRepeat(tag[2]) || (opensBlock && i + 1 < lines.length && sungLine(lines[i + 1]))) {
+        open(tag[2]);
+        out.push(raw);
+        continue;
+      }
+      /* A direction standing alone between blank lines belongs to no section's words: it is a break, or the ending. */
+      if (opensBlock) {
+        const later = lines.slice(i + 1).some((next) => sungLine(next));
+        const where = !sections.length ? 'opening' : later ? 'break' : 'ending';
+        if (sections[sections.length - 1] !== where) open(where);
+      }
+      note(tag[2]);
+      changed = true;
+      continue;
+    }
+    if (!line.includes('[') || !/\[[^\]\n]*\]/.test(line)) {
+      out.push(raw);
+      continue;
+    }
+    const kept = line
+      .replace(BRACKET_GROUP, (_whole: string, inner: string) => {
+        note(inner);
+        return ' ';
+      })
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .trim();
+    changed = true;
+    if (/[\p{L}\d]/u.test(kept)) out.push(`${kept}${cr}`);
+  }
+  if (!changed) return { lyrics, directions: [] };
+  const uses = new Map<string, number>();
+  for (const name of sections) uses.set(name, (uses.get(name) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const named = sections.map((name) => {
+    const nth = (seen.get(name) ?? 0) + 1;
+    seen.set(name, nth);
+    return (uses.get(name) ?? 0) > 1 ? `${name} ${nth}` : name;
+  });
+  return {
+    lyrics: out
+      .join('\n')
+      .replace(/\n(?:[ \t]*\r?\n){2,}/g, '\n\n')
+      .replace(/^(?:[ \t]*\r?\n)+/, '')
+      .trimEnd(),
+    directions: found.map(({ at, text }) => ({ section: at < 0 ? 'opening' : named[at], text })),
+  };
+}
+/** The style with the lifted directions after it, section by section, in the order they stood: "..., arrangement: intro -
+ * strummed guitar; bridge - drums drop out". At most `room` characters of them, whole sections only, and never past the
+ * 3000 characters a style may have. */
+export function yueFoldedStyle(style: string, directions: YueDirection[], room = 320): string {
+  const order: string[] = [];
+  const bySection = new Map<string, string[]>();
+  for (const { section, text } of directions) {
+    if (!bySection.has(section)) {
+      bySection.set(section, []);
+      order.push(section);
+    }
+    const said = bySection.get(section) as string[];
+    if (!said.some((other) => other.toLowerCase() === text.toLowerCase())) said.push(text);
+  }
+  const parts: string[] = [];
+  let used = 0;
+  for (const section of order) {
+    const part = `${section} - ${(bySection.get(section) as string[]).join(', ')}`;
+    if (used + part.length + 2 > room) break;
+    parts.push(part);
+    used += part.length + 2;
+  }
+  if (!parts.length) return style;
+  const folded = `${style.replace(/[\s.,;]+$/, '')}, arrangement: ${parts.join('; ')}`;
+  return folded.length <= 3000 ? folded : style;
+}
+
+const PAREN_GROUP = /\(([^()\n]*)\)/g;
+const VOCABLE =
+  /^(?:o+h*|a+h+|aa+|ye+a*h*|yeah+|he+y+|na+h?|la+|m+h*m*|hm+|who+a+h?|wo+a*h+|u+h+|hu+h|wo+|ha+|da+|doo+|sha+|a+y+e*|yo+|ba+|bop|doo+wop|ooh+|oo+|ee+|eh+)$/;
+const wordsOf = (text: string): string[] => text.toLowerCase().match(/[\p{L}]+(?:['’][\p{L}]+)*/gu) ?? [];
+/**
+ * The sheet with at most `keep` parenthesised backing phrases. YuE2 has no backing voice: it sings each one as more lead
+ * words, and the trained styles' sheets had none. What goes first is what adds no word: an echo of its own lead line (or,
+ * on a line of its own, of the line before), verses before choruses; then wordless fills (ooh, yeah, na na); a reply that
+ * says something new goes last. A phrase that comes back with the same line (a repeated chorus) is kept or dropped
+ * everywhere together, so repeated choruses still match. Section tags, sung words and their order are untouched, and a sheet
+ * already at or under `keep` comes back unchanged, character for character.
+ */
+export function yueThinnedBacking(
+  lyrics: string,
+  keep: number,
+): { lyrics: string; total: number; removed: number } {
+  const lines = lyrics.split('\n');
+  type Hit = { line: number; group: number; rank: number; chorus: boolean; key: string };
+  const hits: Hit[] = [];
+  let chorus = false;
+  let before: string[] = [];
+  lines.forEach((raw, index) => {
+    const line = raw.replace(/\r$/, '');
+    const tag = SECTION_LINE.exec(line);
+    if (tag) {
+      const section = nativeSection(tag[2]) ?? (sectionWithDirection(tag[2]) ? nativeSection(sectionWithDirection(tag[2])?.head ?? '') : undefined);
+      if (section) chorus = section === 'chorus';
+      return;
+    }
+    const lead = wordsOf(line.replace(PAREN_GROUP, ' ').replace(BRACKET_GROUP, ' '));
+    const against = new Set(lead.length ? lead : before);
+    let group = 0;
+    for (const match of line.matchAll(PAREN_GROUP)) {
+      const words = wordsOf(match[1]);
+      if (words.length) {
+        const said = words.filter((word) => !VOCABLE.test(word));
+        const rank = !said.length ? 1 : said.every((word) => against.has(word)) ? 0 : 2;
+        hits.push({ line: index, group, rank, chorus, key: `${line.trim().toLowerCase()}|${group}` });
+      }
+      group += 1;
+    }
+    const all = wordsOf(line.replace(BRACKET_GROUP, ' '));
+    if (all.length) before = all;
+  });
+  const total = hits.length;
+  if (total <= keep) return { lyrics, total, removed: 0 };
+  const byKey = new Map<string, Hit[]>();
+  for (const hit of hits) byKey.set(hit.key, [...(byKey.get(hit.key) ?? []), hit]);
+  const order = [...byKey.values()].sort(
+    (a, b) =>
+      a[0].rank - b[0].rank ||
+      Number(a.some((hit) => hit.chorus)) - Number(b.some((hit) => hit.chorus)) ||
+      b[0].line - a[0].line,
+  );
+  const drop = new Set<string>();
+  let left = total;
+  for (const same of order) {
+    if (left <= keep) break;
+    for (const hit of same) drop.add(`${hit.line}|${hit.group}`);
+    left -= same.length;
+  }
+  const out: string[] = [];
+  lines.forEach((raw, index) => {
+    const cr = raw.endsWith('\r') ? '\r' : '';
+    const line = cr ? raw.slice(0, -1) : raw;
+    let group = -1;
+    let touched = false;
+    const kept = line.replace(PAREN_GROUP, (whole: string) => {
+      group += 1;
+      if (!drop.has(`${index}|${group}`)) return whole;
+      touched = true;
+      return ' ';
+    });
+    if (!touched) {
+      out.push(raw);
+      return;
+    }
+    const tidy = kept
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .trim();
+    if (/[\p{L}\d]/u.test(tidy)) out.push(`${tidy}${cr}`);
+  });
+  return { lyrics: out.join('\n'), total, removed: total - left };
+}
+
+/**
+ * A length ceiling in seconds for a score-free song, from its sung lines, or undefined when the sheet is long enough that
+ * six minutes is the only sensible limit. Her score-free takes (Nov 2026, 113 of them): sheets of 57 to 77 lines ran 1:48
+ * to 5:20 and the two runaways hit 6:00; a 16-line test sheet ran 2:38 and its runaway 6:00. The ceiling is the larger of
+ * 150 s + 4.5 s a line and 60 s + 9 s a line (a slow ballad singing one line every two bars at 60 BPM, plus a minute of
+ * intro, breaks and outro), which is 3:42 for 16 lines and 5:30 for 30. From 32 lines up it would pass 5:40, so none is
+ * sent: a normal long song is never cut by this.
+ */
+export function yueLengthCapSeconds(lyrics: string): number | undefined {
+  const sung = lyrics.split('\n').filter((line) => sungLine(line)).length;
+  if (!sung) return undefined;
+  const cap = Math.round(Math.max(150 + 4.5 * sung, 60 + 9 * sung));
+  return cap < 340 ? cap : undefined;
+}
+/** "kdsoulr, in the style of kdsoulr. English, contemporary R&B and soul. English, 1990s R&B, ..." says the language once:
+ * a lead that names English, followed by a direction that opens with the language again ("English," or "English vocals,",
+ * which is how the writing desk opened its first rich direction). */
+export function yueLanguageOnce(style: string, band?: string): string {
+  const lead = band && Object.prototype.hasOwnProperty.call(yueStyles, band) ? yueStyles[band].lead : '';
+  if (!lead || !/\bEnglish\b/.test(lead) || !style.startsWith(`${lead} `)) return style;
+  const rest = style.slice(lead.length + 1);
+  /* "English vocals," is the language again under any lead. A bare "English," is too, after a lead that ends its sentence;
+   * after a lead that stops at "English," that one is round one's rule (yueTidyStyle) and is left to it. */
+  const again = (
+    /English,$/.test(lead)
+      ? /^(?:American[- ])?English (?:vocals?|lyrics|language|singing),\s*(?=\S)/i
+      : /^(?:American[- ])?English(?: (?:vocals?|lyrics|language|singing))?,\s*(?=\S)/i
+  ).exec(rest);
+  return again ? `${lead} ${rest.slice(again[0].length)}` : style;
+}
+const NAMES_KEY =
+  /\b[A-G](?:#|b|♯|♭|[- ]?(?:sharp|flat))?[- ]?(?:major|minor|maj|min)\b|\bkey of [A-G]\b/i;
+
 export type YueWorkerInput = Omit<Input, 'my_voice'> & {
   sampling_map?: 'v2';
   lora_sound_stage?: 'plain';
   lora_modules?: 'attn' | 'mlp';
   lora_layers?: [number, number];
+  max_seconds?: number;
+  match_score_key?: true;
+  score_section_tags?: true;
 };
 /**
  * The request as the music worker gets it: the saved job input (`yueInput`) with the Nov 10 2026 fixes applied. Pure: the job
@@ -937,10 +1278,22 @@ export function yueWorkerInput(
   const sent: YueWorkerInput = { ...input };
   const styled = !!input.lora_key;
   const fixedScore = !!(input.reference_voice_url || input.abc);
-  if (yuePreformatEnabled(env)) {
-    if (typeof input.lyrics === 'string') sent.lyrics = yueNativeLyrics(input.lyrics, styled);
-    if (styled) sent.style = yueTidyStyle(input.style, input.band);
+  /* Round two: lifting and thinning, both off unless switched on. An instrumental sings no words, so its tags are left. */
+  let sheet = input.lyrics;
+  let lifted: YueDirection[] = [];
+  const lift = yueLiftDirections(env);
+  if (typeof sheet === 'string' && !input.instrumental) {
+    if (lift === 'all' || (lift === 'styled' && styled)) ({ lyrics: sheet, directions: lifted } = yueLiftedLyrics(sheet));
+    const most = yueBackingMax(env);
+    if (styled && most !== undefined) sheet = yueThinnedBacking(sheet, most).lyrics;
+    if (sheet !== input.lyrics) sent.lyrics = sheet;
   }
+  if (styled && yueLanguageOnceEnabled(env)) sent.style = yueLanguageOnce(input.style, input.band);
+  if (yuePreformatEnabled(env)) {
+    if (typeof sheet === 'string') sent.lyrics = yueNativeLyrics(sheet, styled);
+    if (styled) sent.style = yueTidyStyle(sent.style, input.band);
+  }
+  if (lifted.length && yueFoldDirectionsEnabled(env)) sent.style = yueFoldedStyle(sent.style, lifted);
   if (yueSamplingMap(env) === 'v2') sent.sampling_map = 'v2';
   if (styled) {
     const stage = yueStyleSoundStage(env);
@@ -966,6 +1319,19 @@ export function yueWorkerInput(
     !NAMES_BPM.test(input.style)
   )
     sent.match_score_tempo = true;
+  /* Round two. A styled new song has no score to measure a length against, so a short sheet carries its own ceiling. */
+  if (styled && !fixedScore && input.cot === 'off' && typeof sent.lyrics === 'string' && yueLengthCapEnabled(env)) {
+    const cap = yueLengthCapSeconds(sent.lyrics);
+    if (cap !== undefined) sent.max_seconds = cap;
+  }
+  /* Upstream's own example style names the key beside the tempo ("G major, 96 BPM"). With the chords kept the key is the
+   * one the score's chords already spell, so naming it can only agree with them. Plain YuE2 only, unless "all" is asked for:
+   * no trained style's captions named a key. */
+  const key = yueCoverKey(env);
+  const keepsChords = input.keep_harmony === true || (!!input.abc && input.cot === 'full');
+  if (fixedScore && !NAMES_KEY.test(input.style) && (key === 'all' || (key === 'plain' && !styled && keepsChords)))
+    sent.match_score_key = true;
+  if (input.reference_voice_url && !input.instrumental && yueCoverScoreTags(env)) sent.score_section_tags = true;
   return sent;
 }
 

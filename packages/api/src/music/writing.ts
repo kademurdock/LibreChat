@@ -2724,6 +2724,22 @@ export function labelReadback(raw: string): string {
   return `${lines.slice(0, -1).join('\n').trimEnd()}\n\nREADBACK: ${last}`;
 }
 
+/* Nov 10 2026, round two: when the desk WRITES a YuE2 song, its music direction names the layers, a tempo and how the
+ * arrangement moves, as one line of short tags (the shape YuE2's own example styles use), instead of 25 to 45 words with
+ * "a few defining instruments" and no tempo. The engine format in kadeSoundBooth.js spells the same line out in order.
+ * YUE_RICH_DIRECTION=0 puts the old sentence back, word for word. ACE-Step XL and the formatting lane are unchanged. */
+export function yueRichDirectionEnabled(env?: NodeJS.ProcessEnv): boolean {
+  /* Some tests load this file where there is no `process` at all. */
+  const vars = env ?? (typeof process === 'undefined' ? {} : process.env);
+  return !['0', 'false', 'no', 'off'].includes(
+    String(vars.YUE_RICH_DIRECTION ?? '')
+      .trim()
+      .toLowerCase(),
+  );
+}
+export const yueRichDirectionContract: string =
+  'YuE2 direction is one line of 55 to 85 words in short comma-separated phrases, not sentences, never more than 85 words: language, genre and era, mood, the pace and a tempo as a number with BPM, the lead vocal character, then the layers by name (rhythm section, harmony bed, a lead or counter line, backing vocal treatment, production texture) and two or three phrases about how the arrangement moves across the song. No section tags in the direction, no production essay, technical duration line or story summary. The story belongs in the lyrics, not in the direction. In the lyrics, mix the two forms of backing vocal: echoes in parentheses after a lead phrase, and a few replies or fills on a line of their own in parentheses.';
+
 export async function musicWritingPrompt(
   base: string,
   request: Request,
@@ -2734,7 +2750,9 @@ export async function musicWritingPrompt(
   const note = audienceNote(audience);
   const songName = request.engine === 'ace' ? 'ACE-Step XL' : 'YuE2';
   const direction =
-    request.engine === 'yue2' || request.engine === 'ace'
+    request.engine === 'yue2' && request.mode === 'write' && yueRichDirectionEnabled()
+      ? yueRichDirectionContract
+      : request.engine === 'yue2' || request.engine === 'ace'
       ? songName +
         ' direction is 25 to 45 words in one or two compact sentences: language, genre, rhythmic feel, a few defining instruments and the lead vocal character. No section-by-section arrangement narrative, production essay, technical duration line or story summary. The full development belongs in the lyrics and section tags, not in a Lyria-style brief. In the lyrics, mix the two forms of backing vocal: echoes in parentheses after a lead phrase, and a few replies or fills on a line of their own in parentheses.'
       : "Lyria direction is music production prose: genre, BPM and feel, instrumentation, the lead voice, backing vocals and arrangement dynamics as appropriate. Keep story and theme in the lyrics. Follow the engine format below for section shape and the technical line. In the lyrics, write backing vocals in parentheses after the lead phrase on the same line, which is the form Lyria's own prompt guide documents; a whole line in parentheses is for a wordless run or a fill.";

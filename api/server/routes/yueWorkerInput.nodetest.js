@@ -23,7 +23,11 @@ const COVER = 'https://assets.test/cover.mp3';
 const SHEET = '[Verse 1]\nPaper boats along the drain\n(along the drain)\n\n[Pre-Chorus]\nHold the line\n\n[Final Chorus]\nSing it clear\n[spoken]\nA made-up aside';
 const ON = { YUE_COVERS_V2: '1' };
 /* Review, Nov 10: the plain sound stage is off until it is asked for, so three switches put the old request back. */
-const BACK = { ...ON, YUE_PREFORMAT: '0', YUE_SAMPLING_V2: '0', YUE_COVER_TEMPO_ALWAYS: '0' };
+/* Round two, Nov 10: five more switches (lifted directions, thinned backing phrases, a length ceiling, the language said
+ * once, a cover's key). ROUND_ONE sets those five back, so every test in this file still describes round one's request;
+ * round two has its own tests in yueRoundTwo.nodetest.js. */
+const ROUND_ONE = { YUE_LIFT_DIRECTIONS: '0', YUE_STYLE_BACKING_MAX: '0', YUE_STYLE_LENGTH_CAP: '0', YUE_LANGUAGE_ONCE: '0', YUE_COVER_KEY: '0' };
+const BACK = { ...ON, ...ROUND_ONE, YUE_PREFORMAT: '0', YUE_SAMPLING_V2: '0', YUE_COVER_TEMPO_ALWAYS: '0' };
 const saved = (body, env = ON) => yue.yueInput({ script: 'Warm soul, female lead vocal', lyrics: SHEET, seed: 11, ...body }, env);
 /** What the previous commit sent: the saved input without my_voice, nothing else. */
 const before = (input) => { const { my_voice: _myVoice, ...rest } = input; return rest; };
@@ -70,7 +74,7 @@ test('a plain new song: the tags take YuE2\'s own spelling, the v2 sampling map 
 });
 
 test('a styled song: the tags are the lower-case ones the styles were taught on; the plain sound stage waits to be asked for', () => {
-  const sent = yue.yueWorkerInput(saved({ band: 'soul', style_strength: 0.7 }), ON);
+  const sent = yue.yueWorkerInput(saved({ band: 'soul', style_strength: 0.7 }), { ...ON, ...ROUND_ONE });
   assert.equal(sent.lyrics, '[verse]\nPaper boats along the drain\n(along the drain)\n\n[prechorus]\nHold the line\n\n[chorus]\nSing it clear\n[spoken]\nA made-up aside');
   assert.equal(sent.lora_sound_stage, undefined, 'unheard and never run on a GPU: off until it is switched on');
   assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, YUE_STYLE_SOUND_STAGE: ' Plain ' }).lora_sound_stage, 'plain');
@@ -129,7 +133,7 @@ test('section tags: sung words, blank lines, spacing and Windows line ends come 
 });
 
 test('a style whose lead ends "English," does not say the language twice', () => {
-  const style = (script, band) => yue.yueWorkerInput(saved({ band, script }), ON).style;
+  const style = (script, band) => yue.yueWorkerInput(saved({ band, script }), { ...ON, ...ROUND_ONE }).style;
   assert.equal(style('English slow jam R&B, dreamy', 'suno'), 'kdsuno, in the style of kdsuno. English, slow jam R&B, dreamy');
   assert.equal(style('American-English, contemporary R&B, slow tempo', 'sona'), 'kdsona, in the style of kdsona. English, contemporary R&B, slow tempo');
   assert.equal(style('Englishman in the rain, folk', 'suno'), 'kdsuno, in the style of kdsuno. English, Englishman in the rain, folk');
