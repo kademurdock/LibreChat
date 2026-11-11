@@ -249,6 +249,38 @@ async function runSummarySweep() {
   return { ran: true, refreshed, skipped, failed, decayed, pending };
 }
 
+/* Nov 10 2026: after the night's summaries, embed logbook entries that have no
+ * vector (their embed failed when they were written), so search by meaning can
+ * find them again. Capped per night and stops after three straight failures;
+ * the work and its switches live in models/kadeDiary.js
+ * (nightlyDiaryEmbedRepair, KADE_DIARY_NIGHTLY_EMBED=0). It runs once per
+ * scheduled night, after the sweep whether or not the sweep itself failed. */
+let _lastRepairDay = null;
+async function repairLogbookVectors(now = new Date()) {
+  const dayKey = now.toISOString().slice(0, 10);
+  if (_lastRepairDay === dayKey) {
+    return null;
+  }
+  try {
+    if (now.getUTCHours() !== intEnv('KADE_SUMMARY_UTC_HOUR', 8)) {
+      return null;
+    }
+    _lastRepairDay = dayKey;
+    const { nightlyDiaryEmbedRepair } = require('~/models/kadeDiary');
+    const result = await nightlyDiaryEmbedRepair();
+    if (result && result.ran) {
+      logger.info(
+        `[kadeSummarySweep] logbook vectors: ${result.embedded} embedded, ${result.failed} failed, ${result.skipped} skipped of ${result.scanned} tried (${result.needing} needed one, cap ${result.cap})` +
+          (result.stopped ? ' -- stopped after three straight failures' : ''),
+      );
+    }
+    return result;
+  } catch (err) {
+    logger.warn(`[kadeSummarySweep] logbook vector repair failed: ${err && err.message}`);
+    return null;
+  }
+}
+
 /** The in-memory scheduler limits runs; stored cursors prevent replay after restarts. */
 let _lastRunDay = null;
 
@@ -274,6 +306,7 @@ function startMemorySummarySweep() {
     } catch (err) {
       logger.warn(`[kadeSummarySweep] tick failed: ${err && err.message}`);
     }
+    await repairLogbookVectors();
   };
   setInterval(tick, HOUR_MS);
   // Catch the case where we boot during the target hour.
@@ -283,4 +316,4 @@ function startMemorySummarySweep() {
   );
 }
 
-module.exports = { runSummarySweep, startMemorySummarySweep };
+module.exports = { runSummarySweep, startMemorySummarySweep, repairLogbookVectors };

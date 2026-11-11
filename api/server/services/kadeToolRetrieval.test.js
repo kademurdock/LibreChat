@@ -353,12 +353,12 @@ test('Oct 16: cold tool descriptions are never awaited; they fill in the backgro
     if (options && options.purpose === 'document') await gate;
     return base(text);
   };
-  const cold = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: null, embed });
+  const cold = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped, said at full length for once', agentId: 'a', conversationId: null, embed });
   assert.strictEqual(cold.reason, 'embed-down', 'nothing cached yet: the full set rides');
   assert.ok(asked.includes('tools') && asked.includes('query'), 'the tools query and the shared memory query both went out');
   release();
   await R.primeToolDescriptions(T(KIANA), embed);
-  const warm = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped', agentId: 'a', conversationId: null, embed });
+  const warm = await R.selectTools({ tools: T(KIANA), text: 'something @kade_lyrics shaped, said at full length for once', agentId: 'a', conversationId: null, embed });
   assert.ok(warm.keep.has('kade_lyrics'), 'the next turn scores the descriptions filled in the background');
   assert.strictEqual(asked.filter((purpose) => purpose === 'document').length, KIANA.length, 'each description embedded once');
 });
@@ -386,7 +386,7 @@ test('Oct 16: a down lane is not asked to embed every tool description on each t
   };
   const r = await R.selectTools({
     tools: T(KIANA),
-    text: 'how are you feeling',
+    text: 'how are you feeling about everything, honestly, my friend',
     agentId: 'a',
     conversationId: 'c-down',
     embed,
@@ -394,4 +394,80 @@ test('Oct 16: a down lane is not asked to embed every tool description on each t
   await new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(r.reason, 'embed-down');
   assert.deepStrictEqual(asked.sort(), ['query', 'tools']);
+});
+
+/* Nov 10 2026: the words come from kadeRecallQuery.js, the same function memory recall uses. */
+const WRAPPED = (earlier, latest) =>
+  '[EARLIER IN THIS CONVERSATION \u2014 context only, already handled, do not re-answer:\n' + earlier.join('\n') +
+  '\n\u2014 end of earlier context. Reply ONLY to what follows.]\n\n' + latest;
+
+test('Nov 10: a voice turn is read by its latest words; the folded earlier turns attach nothing', async () => {
+  R._resetForTests();
+  const sent = [];
+  const embed = async (text, options) => { sent.push([(options && options.purpose) || 'query', text]); return null; };
+  const latest = 'I had a quiet afternoon out in the garden, nothing much happened';
+  const r = await R.selectTools({
+    tools: T(KIANA),
+    text: WRAPPED(['THEM: tell me a joke and then call my mom', 'YOU: Sure thing.'], latest),
+    agentId: 'a',
+    conversationId: 'c-voice',
+    embed,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(r.reason, 'embed-down', 'no alias matched the latest words');
+  assert.deepStrictEqual(sent.sort(), [['query', latest], ['tools', latest]]);
+});
+
+test('Nov 10: KADE_RECALL_QUERY_CLEAN=0 reads the wrapped text as before', async () => {
+  R._resetForTests();
+  process.env.KADE_RECALL_QUERY_CLEAN = '0';
+  try {
+    const r = await R.selectTools({
+      tools: T(KIANA),
+      text: WRAPPED(['THEM: tell me a joke'], 'I had a quiet afternoon out in the garden'),
+      agentId: 'a',
+      conversationId: 'c-voice-off',
+      embed: async () => null,
+    });
+    assert.ok(r.keep.has('kade_joke'));
+    assert.match(r.reason, /kw=\[kade_joke\]/);
+  } finally {
+    delete process.env.KADE_RECALL_QUERY_CLEAN;
+  }
+});
+
+test('Nov 10: a wrapper with no words after it is a turn with no text (the full set rides)', async () => {
+  R._resetForTests();
+  const r = await R.selectTools({ tools: T(KIANA), text: WRAPPED(['THEM: tell me a joke'], ''), agentId: 'a', conversationId: null, embed: async () => null });
+  assert.strictEqual(r.reason, 'no-text');
+});
+
+test('Nov 10: a short message sends only the tools query; recall makes the one memory embed itself', async () => {
+  R._resetForTests();
+  const asked = [];
+  const embed = async (text, options) => { asked.push((options && options.purpose) || 'query'); return null; };
+  await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-short', embed });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(asked, ['tools']);
+  process.env.KADE_RECALL_PREV_TURN = '0';
+  try {
+    asked.length = 0;
+    await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-short-off', embed });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepStrictEqual(asked.sort(), ['query', 'tools'], 'switch off: the old early start');
+  } finally {
+    delete process.env.KADE_RECALL_PREV_TURN;
+  }
+});
+
+test('Nov 10: the first memo made for a request marks when its turn began, once', async () => {
+  const req = {};
+  const before = Date.now();
+  R.memoEmbed(req, async () => [1]);
+  const stamp = req._kadeTurnStartedAt;
+  assert.ok(stamp >= before && stamp <= Date.now());
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  R.memoEmbed(req, async () => [1]);
+  assert.strictEqual(req._kadeTurnStartedAt, stamp, 'a later memo (recall) does not move it');
+  assert.doesNotThrow(() => R.memoEmbed(null, async () => [1]));
 });

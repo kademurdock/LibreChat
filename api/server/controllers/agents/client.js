@@ -717,10 +717,25 @@ class AgentClient extends BaseClient {
         const { getRecallTailBlock } = require('~/server/services/kadeCardRecall');
         const latestUserText =
           orderedMessages.length > 0 ? orderedMessages[orderedMessages.length - 1].text : '';
+        /* Nov 10 2026: recall reads the request's own text first, the same text
+         * tool retrieval read, so the two share one memory embed (the stored
+         * message is the fallback; KADE_RECALL_DEADLINE=0 restores the old
+         * order). The user message before this one is handed over too: recall
+         * adds it to the memory query only when the latest message is short.
+         * The character's name is for the bare-greeting test. */
+        const recallQuery = require('~/server/services/kadeRecallQuery');
+        const userMessages = orderedMessages.filter(
+          (message) => message.isCreatedByUser === true || message.role === 'user',
+        );
+        const earlierUserMessage =
+          userMessages.length >= 2 ? userMessages[userMessages.length - 2] : undefined;
         const { block: recallBlock } = await getRecallTailBlock({
           userId: this.options.req.user.id,
           agentId: this.options.agent?.id,
-          userText: latestUserText || this.options.req?.body?.text || '',
+          userText: recallQuery.recallTurnText(this.options.req?.body?.text, latestUserText),
+          previousUserText:
+            typeof earlierUserMessage?.text === 'string' ? earlierUserMessage.text : '',
+          agentName: this.options.agent?.name,
           req: this.options.req,
         });
         if (recallBlock) {

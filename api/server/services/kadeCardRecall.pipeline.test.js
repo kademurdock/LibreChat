@@ -15,7 +15,7 @@ helperModule._compile(ts.transpileModule(fs.readFileSync(helperFile, 'utf8'), {
 
 // Exercise the real recall service AND vector ranking. Only storage, embedding,
 // and ancillary services are replaced; no model calls or family data are used.
-function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed, queryVector = [1, 0], focused = false } = {}) {
+function fixture({ shared = [], own = [], others = {}, vectors, failReads = false, diarySearch, beforeEmbed, queryVector = [1, 0], focused = false, env: extraEnv = {} } = {}) {
   const reads = [];
   const audits = [];
   const timers = [];
@@ -59,8 +59,10 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
     '@librechat/data-schemas': { logger }, '~/models/kadeDiary': diary,
     '@librechat/api': { ...helperModule.exports, memoryEmbeddingLane: () => ({ dimensions: 2 }) },
   });
+  const serviceEnv = { KADE_MEMORY_RAG: '1', KADE_MEMORY_RAG_AGENTS: 'all', KADE_ECHOES: '0', KADE_FOCUSED_MEMORY_AGENTS: focused ? 'companion' : '', ...extraEnv };
   const service = load(path.join(__dirname, 'kadeCardRecall.js'), {
     '@librechat/data-schemas': { logger },
+    './kadeRecallQuery': load(path.join(__dirname, 'kadeRecallQuery.js'), {}, serviceEnv),
     '~/models': { getAllUserMemories: async (userId, { agentId }) => {
       assert.equal(userId, 'seat'); reads.push(agentId || '');
       if (failReads) throw new Error('storage unavailable');
@@ -75,7 +77,7 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
       agentNameOf: async () => 'Other companion', shareNotice: async () => '',
     },
     '~/models/kadeRecallAudit': { storeRecallAudit: (row) => audits.push(row) },
-  }, { KADE_MEMORY_RAG: '1', KADE_MEMORY_RAG_AGENTS: 'all', KADE_ECHOES: '0', KADE_FOCUSED_MEMORY_AGENTS: focused ? 'companion' : '' });
+  }, serviceEnv);
   const run = () => service.getRecallTailBlock({ userId: 'seat', agentId: 'companion', userText: 'Tell me about the telescope project.', req: {} });
   return { run, reads, audits, split: () => service.getMemorySplit('seat','companion'), expire: () => { assert.ok(timers.length); timers.shift()(); }, timers };
 }
@@ -194,10 +196,24 @@ test('a failed diary lookup does not consume a nudge selected earlier in recall'
   assert.equal(f.timers.length, 0);
 });
 
-test('failed query embedding does not ask diary search to embed again', async () => {
+test('failed query embedding sends no logbook block: the diary is not asked for its newest entries', async () => {
   let embeds = 0;
   let diaryCalls = 0;
   const f = fixture({
+    queryVector: null,
+    beforeEmbed: () => { embeds++; },
+    diarySearch: async () => { diaryCalls++; return [{ date: '2026-09-01', text: 'Newest entry, unrelated.', agentId: null }]; },
+  });
+  assert.equal((await f.run()).block, null);
+  assert.equal(embeds, 1);
+  assert.equal(diaryCalls, 0);
+});
+
+test('KADE_RECALL_DEADLINE=0: failed query embedding does not ask diary search to embed again', async () => {
+  let embeds = 0;
+  let diaryCalls = 0;
+  const f = fixture({
+    env: { KADE_RECALL_DEADLINE: '0' },
     queryVector: null,
     beforeEmbed: () => { embeds++; },
     diarySearch: async (options) => {

@@ -895,13 +895,15 @@ async function editDiaryEntry(filter, { text = null, salience = null } = {}) {
  * candidates, so the vectors are never all in memory at once.
  * Returns null when no lane is configured. */
 const BACKFILL_FIELDS = '_id text embedding embedModel embeddingNext embedNextModel embedNextHash';
-async function diaryEmbedBacklog(model, dimensions, limit) {
+async function diaryEmbedBacklog(model, dimensions, limit, { newestFirst = false } = {}) {
   const filter = {
     $or: [{ embedding: null }, { embedding: { $size: 0 } }, { embedModel: { $ne: model } }],
   };
   const rows = [];
   let needing = 0;
-  for await (const r of KadeDiaryEntry.find(filter).select(BACKFILL_FIELDS).lean().cursor()) {
+  let found = KadeDiaryEntry.find(filter).select(BACKFILL_FIELDS);
+  if (newestFirst) found = found.sort({ _id: -1 });
+  for await (const r of found.lean().cursor()) {
     if (indexedEmbedding(r, model, String(r.text || ''), dimensions)) continue;
     needing += 1;
     if (rows.length < limit) {
@@ -951,6 +953,92 @@ async function backfillDiaryEmbeddings({ dry = false, limit = 300, pauseMs = 150
   return { scanned: rows.length, embedded, failed, remaining, model };
 }
 
+/* Nov 10 2026 -- THE LOGBOOK HEALS ITSELF AT NIGHT.
+ *
+ * A logbook entry whose embed failed when it was written has no vector, and
+ * search by meaning can never find it. Cards mend themselves a few at a time on
+ * every turn (kadeCardRecall's background sync); the logbook only mended when
+ * somebody called the admin backfill route. The nightly summary sweep now calls
+ * this once a night.
+ *
+ * Capped on purpose, because every embed draws on the shared prepaid credit:
+ * at most KADE_DIARY_NIGHTLY_EMBED_MAX rows a night (default 60, about a
+ * hundredth of a cent), newest first, and it stops after three failures in a
+ * row so a dead lane costs three calls. Background only: nothing here runs on
+ * a turn. Kill switch: KADE_DIARY_NIGHTLY_EMBED=0. */
+const NIGHTLY_STRAIGHT_FAILURES = 3;
+function nightlyEmbedCap() {
+  const n = parseInt(process.env.KADE_DIARY_NIGHTLY_EMBED_MAX, 10);
+  return Number.isFinite(n) && n >= 1 && n <= 500 ? n : 60;
+}
+
+/**
+ * The repair loop itself, with everything it touches handed in so it can be
+ * tested bare. Walks at most `cap` rows; a row with no text is skipped and is
+ * not a failure; `maxStraight` failures in a row stop the pass.
+ */
+async function repairEmbedLoop({ rows, cap, embed, save, pause, maxStraight = 3 }) {
+  const out = { scanned: 0, embedded: 0, failed: 0, skipped: 0, stopped: false };
+  let straight = 0;
+  for (const r of (rows || []).slice(0, Math.max(0, cap))) {
+    out.scanned += 1;
+    const text = String((r && r.text) || '');
+    if (!text.trim()) {
+      out.skipped += 1;
+      continue;
+    }
+    let vec = null;
+    try {
+      vec = await embed(text.slice(0, 4000));
+    } catch (_) {
+      vec = null;
+    }
+    if (Array.isArray(vec) && vec.length > 0) {
+      await save(r, vec, text);
+      out.embedded += 1;
+      straight = 0;
+    } else {
+      out.failed += 1;
+      straight += 1;
+      if (straight >= maxStraight) {
+        out.stopped = true;
+        break;
+      }
+    }
+    if (pause) await pause();
+  }
+  return out;
+}
+
+async function nightlyDiaryEmbedRepair({ pauseMs = 150 } = {}) {
+  if (process.env.KADE_DIARY_NIGHTLY_EMBED === '0') return { ran: false, reason: 'disabled' };
+  if (!diaryEnabled()) return { ran: false, reason: 'diary-off' };
+  const lane = embedLane();
+  const model = currentEmbedModel();
+  if (!lane || !model) return { ran: false, reason: 'no-lane' };
+  const cap = nightlyEmbedCap();
+  const { needing, rows } = await diaryEmbedBacklog(model, lane.dimensions, cap, {
+    newestFirst: true,
+  });
+  const result = await repairEmbedLoop({
+    rows,
+    cap,
+    embed: (text) => embedText(text),
+    save: (r, vec, text) =>
+      KadeDiaryEntry.updateOne(
+        { _id: r._id, text: r.text },
+        {
+          $set: r.otherIndex
+            ? { embeddingNext: vec, embedNextModel: model, embedNextHash: embeddingTextHash(text) }
+            : { embedding: vec, embedModel: model },
+        },
+      ),
+    pause: pauseMs > 0 ? () => new Promise((ok) => setTimeout(ok, pauseMs)) : null,
+    maxStraight: NIGHTLY_STRAIGHT_FAILURES,
+  });
+  return { ran: true, needing, cap, model, ...result };
+}
+
 module.exports = {
   KadeDiaryEntry,
   diaryEnabled,
@@ -963,6 +1051,8 @@ module.exports = {
   logDiaryEntry,
   editDiaryEntry,
   backfillDiaryEmbeddings,
+  nightlyDiaryEmbedRepair,
+  repairEmbedLoop,
   searchDiary,
   countEntries,
 };

@@ -53,11 +53,16 @@
  *   KADE_TOOLS_MAX_EMBED        max tools taken by embedding per turn (4)
  *   KADE_TOOLS_RAG_SKIP_AGENTS  comma list of agent ids never filtered
  *   KADE_TOOLS_RAG_STRICT=1     trust keywords alone when the embed lane is down
+ *   KADE_RECALL_QUERY_CLEAN=0   read a voice turn with its "earlier in this
+ *                               conversation" wrapper still on (Nov 10 2026;
+ *                               the words are worked out in kadeRecallQuery.js,
+ *                               the same function memory recall uses)
  *
  * Proof lives outside the fork: the reframe's `tools-fingerprint` line
  * (count + bytes of the tools array on every upstream call).
  */
 const { logger } = require('@librechat/data-schemas');
+const recallQuery = require('./kadeRecallQuery');
 
 const DEFAULT_CORE = [
   'context',
@@ -467,12 +472,18 @@ async function embedHits({
   try {
     let qv = queryVec;
     if (!qv) {
-      const query = String(text).slice(0, 1500);
+      /* Nov 10 2026: the exact string memory recall embeds (kadeRecallQuery.js), so
+       * the per-turn memo always hits and a turn makes one memory embed, not two. */
+      const query = recallQuery.memoryQuery(text);
       /* Card recall reads the memory query for these same words from the per-turn
-       * memo later in the turn; start it here, beside the tools query, as before. */
-      Promise.resolve()
-        .then(() => embed(query))
-        .catch(() => null);
+       * memo later in the turn; start it here, beside the tools query, as before.
+       * Not on a short message: recall may search those with the previous message
+       * in front, and starting the plain query too would be a second embed. */
+      if (recallQuery.seedsMemoryQuery(query)) {
+        Promise.resolve()
+          .then(() => embed(query))
+          .catch(() => null);
+      }
       const asked = Promise.resolve().then(() => embed(query, { purpose: 'tools' }));
       /* Descriptions only once the lane has answered (a down lane is not asked for
        * thirty more), and in the background. */
@@ -533,7 +544,10 @@ async function selectTools(p) {
     return keepAll('skip-agent');
   }
   if ([...all].some(isActionToolName)) return keepAll('has-actions');
-  const text = String(p.text || '').trim();
+  /* Nov 10 2026: the person's own latest words. A voice turn arrives with up to
+   * 24 earlier turns folded in front; the aliases and the embed below were
+   * reading those. KADE_RECALL_QUERY_CLEAN=0 puts the old text back. */
+  const text = recallQuery.turnWords(p.text);
   if (!text) return keepAll('no-text');
 
   const core = coreSet();
@@ -690,6 +704,9 @@ function applySelection(result, keep) {
  * identically into one, so they share one call: on a lane that reads no
  * instruction the tools query is the memory query card recall takes. */
 function memoEmbed(req, embed, samePurpose) {
+  /* Nov 10 2026: the first memo made for a request marks when its turn began.
+   * Recall measures its one embed deadline from here (kadeCardRecall.js). */
+  if (req && !req._kadeTurnStartedAt) req._kadeTurnStartedAt = Date.now();
   return async (text, options = { purpose: 'query' }) => {
     const value = String(text || '');
     const asked = options.purpose || 'query';

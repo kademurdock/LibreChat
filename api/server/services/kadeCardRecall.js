@@ -86,6 +86,51 @@ const DIARY_TOP_K = intEnv('KADE_RECALL_DIARY_TOP_K', 4, 1, 12);
 const DIARY_MIN_SCORE = 0.32;
 const DIARY_BLOCK_CHAR_CAP = intEnv('KADE_RECALL_DIARY_CAP', 1600, 200, 8000);
 
+/* Nov 10 2026 -- ONE DEADLINE FOR THE EMBED, AND ONLY THE EMBED WAITS ON IT.
+ *
+ * Before: the whole lookup (embed, card search, follow-up nudge, logbook, month
+ * echo) raced one 2.5 s timer that started when recall started. A slow embed
+ * therefore threw away the nudge and the echo as well, though neither needs a
+ * vector. And when the embed FAILED fast, the logbook fell back to its newest
+ * four entries whatever was asked, the same four lines turn after turn.
+ *
+ * Now: only the query embed races a deadline. It is measured from when the
+ * turn began (the stamp memoEmbed leaves on the request at tool selection),
+ * so time tool selection already spent is not waited a second time; it is
+ * never later than the old timer would have fired, less a short reserve that
+ * leaves the nudge and echo room inside the old 2.5 s. The whole lookup still
+ * has the old overall cap, so no reply waits longer than before. With no
+ * vector there is no card block and NO logbook block; the nudge and the echo
+ * run regardless. No call is added.
+ *
+ * KADE_RECALL_DEADLINE=0 restores the old behaviour whole: the embed is
+ * awaited inside the one raced block and a missing vector shows the newest
+ * logbook entries. */
+function embedDeadlineOn() {
+  return process.env.KADE_RECALL_DEADLINE !== '0';
+}
+const TAIL_RESERVE_MS = Math.min(400, Math.floor(RECALL_TIMEOUT_MS / 4));
+/** When the embed stops being waited for, in epoch ms. `recallStartedAt` is
+ * when this lookup began; `turnStartedAt` is the request's own stamp, if any. */
+function embedDeadlineAt(recallStartedAt, turnStartedAt) {
+  const stamp = Number(turnStartedAt);
+  const turn = Number.isFinite(stamp) && stamp > 0 && stamp <= recallStartedAt ? stamp : recallStartedAt;
+  return Math.min(turn + RECALL_TIMEOUT_MS, recallStartedAt + RECALL_TIMEOUT_MS - TAIL_RESERVE_MS);
+}
+const EMBED_LOST = Symbol('embed-lost');
+/** The vector if it arrives by `deadlineAt`, else EMBED_LOST. A rejected embed
+ * reads as no vector. The embed itself is never cancelled; a later reader of
+ * the same memo may still get it. */
+function embedByDeadline(asked, deadlineAt) {
+  let timer;
+  return Promise.race([
+    Promise.resolve(asked).catch(() => null),
+    new Promise((resolve) => {
+      timer = setTimeout(() => resolve(EMBED_LOST), Math.max(0, deadlineAt - Date.now()));
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function focusedMemory(agentId) {
   return String(process.env.KADE_FOCUSED_MEMORY_AGENTS || '').split(',').map(s => s.trim()).includes(String(agentId || '')) && Boolean(agentId);
 }
@@ -618,9 +663,12 @@ async function getMemorySplit(userId, agentId) {
  * @param {string} p.userId
  * @param {string|undefined} p.agentId
  * @param {string} p.userText     what the user just said this turn
+ * @param {string} [p.previousUserText]  the user message before it, if any
+ *   (rides the memory query only when the latest one is short)
+ * @param {string} [p.agentName]  the character's own name, for the greeting test
  * @param {object} p.req  request-local embedding memo, shared with tool retrieval
  */
-async function getRecallTailBlock({ userId, agentId, userText, req }) {
+async function getRecallTailBlock({ userId, agentId, userText, previousUserText, agentName, req }) {
   /* ── RECALL AUDIT (Aug 26 2026) ──────────────────────────────────────────
    * Forge's ask, and tonight is the argument for it: SEVEN cards about one
    * surgery surfaced CORRECTLY and the reply still went wrong, and there was
@@ -644,11 +692,22 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
   if (!userId) {
     return empty;
   }
-  const text = String(userText || '').trim();
+  /* Nov 10 2026: the person's own latest words, worked out by the same function
+   * tool retrieval uses (voice wrapper removed), so both embed the same text. */
+  const Q = require('./kadeRecallQuery');
+  const text = Q.turnWords(userText, process.env);
   const focused = focusedMemory(agentId);
-  if (text.length < 12) {
+  /* Nov 10 2026: a bare greeting under 12 characters ("hey", "hi <name>") still
+   * reaches the follow-up nudge and the month echo. It never embeds, so it gets
+   * no card and no logbook block. KADE_RECALL_GREETING=0 closes this again. */
+  const greeting = Q.greetingShaped(text, agentName, process.env);
+  const noEmbed = text.length < Q.GATE_CHARS;
+  if (noEmbed && !Q.shortGreeting(text, agentName, process.env)) {
     return empty; /* "ok" / "lol" turns don't reach for memory */
   }
+  const deadlineOn = embedDeadlineOn();
+  const embedBy = embedDeadlineAt(t0, req && req._kadeTurnStartedAt);
+  let embedLost = false;
   try {
     const work = (async () => {
       // One live snapshot per bucket for THIS lookup only. Reuse it for the
@@ -670,7 +729,24 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
       /* ONE embed for the whole turn. */
       /* Part 132: the same vector the tool-retrieval step already took for
        * this turn (memo on req) — one embed per turn, shared. */
-      const qv = await require('./kadeToolRetrieval').memoEmbed(req, embedText)(text.slice(0, 1500));
+      let query = Q.memoryQuery(text, process.env);
+      let qv = null;
+      if (!noEmbed) {
+        /* A short message ("what about her?") searches with the previous user
+         * message in front. Only when this turn has not already started an embed
+         * of the plain words, so it is never a second embed. Memory only. */
+        if (previousUserText && Q.isShortTurn(text, process.env) && !Q.memoHas(req, query)) {
+          query = Q.withPrevious(text, previousUserText, process.env);
+        }
+        const asked = require('./kadeToolRetrieval').memoEmbed(req, embedText)(query);
+        if (deadlineOn) {
+          const got = await embedByDeadline(asked, embedBy);
+          embedLost = got === EMBED_LOST;
+          qv = embedLost ? null : got;
+        } else {
+          qv = await asked;
+        }
+      }
       const parts = [];
 
       /* Part 128 — MEMORY SHARE: the other companions' buckets this seat has
@@ -685,7 +761,9 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         logger.warn('[kadeCardRecall] share lookup failed (own buckets only): ' + e.message);
         extraAgentIds = [];
       }
-      if (cardsOn) {
+      /* A bare greeting under the gate skips the whole card section: no search
+       * and no background index refresh, so that path never causes an embed. */
+      if (cardsOn && !noEmbed) {
         // Determine eligibility BEFORE the top-K cut. Previously pinned or
         // deleted cards could win every slot, then be discarded with no
         // replacements, hiding a relevant memory ranked ninth.
@@ -791,7 +869,10 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
         })();
       }
 
-      if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0' && (!focused || /^(?:hi|hey|hello|good morning|good evening)(?:[.! ,]+(?:kiana))?[.! ]*$/i.test(text))) {
+      /* A focused character nudges only on a bare greeting; the test now knows
+       * the character's own name (it had one name written into it). A turn under
+       * the 12-character gate got here only by being a greeting. */
+      if (cardsOn && process.env.KADE_LOOP_NUDGE !== '0' && ((!focused && !noEmbed) || greeting)) {
         /* See selectLoopNudges above. Reuse this lookup's live cards. */
         try {
           const nudgeDays = Math.max(1, parseInt(process.env.KADE_LOOP_NUDGE_DAYS || '7', 10));
@@ -834,15 +915,20 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
        * tail. Found by grep, not by a miss: the seat's turns showed no
        * "[from their talks with …]" line because the code never ran.) */
       if (diaryN > 0 || extraAgentIds.length > 0) {
-        const hits = await searchDiary({
-          userId,
-          agentId,
-          query: qv ? text.slice(0, 1500) : null,
-          queryVector: qv || undefined,
-          limit: focused ? 2 : DIARY_TOP_K,
-          minScore: DIARY_MIN_SCORE,
-          extraAgentIds,
-        });
+        /* Nov 10 2026: no vector, no logbook block. The search's own fallback is
+         * the newest entries whatever was asked; those rode every blind turn.
+         * (KADE_RECALL_DEADLINE=0 asks it anyway, as before.) */
+        const hits = qv || !deadlineOn
+          ? await searchDiary({
+              userId,
+              agentId,
+              query: qv ? query : null,
+              queryVector: qv || undefined,
+              limit: focused ? 2 : DIARY_TOP_K,
+              minScore: DIARY_MIN_SCORE,
+              extraAgentIds,
+            })
+          : [];
         if (hits && hits.length > 0) {
           let block =
             '# Logbook recall (auto-surfaced for THIS turn only)\n' +
@@ -944,6 +1030,7 @@ async function getRecallTailBlock({ userId, agentId, userText, req }) {
           (block ? 'yes' : 'no') +
           ' ms=' +
           ms +
+          (embedLost ? ' embed=late' : '') +
           (process.env.KADE_RECALL_AUDIT === '0'
             ? ''
             : ' cards=[' +
