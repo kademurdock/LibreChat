@@ -32,7 +32,7 @@ export interface IUser extends Document {
   openidIssuer?: string;
   twoFactorEnabled?: boolean;
   /** Kade-AI: which signup code registered this account */
-  kadeAccountType?: 'adult' | 'child';
+  kadeAccountType?: 'adult' | 'teen' | 'child';
   /** Kade-AI: family library access Kade set for this account (unset = the default rule) */
   kadeLibraryAccess?: 'family' | 'none';
   /** Kade-AI: the family tree person (a tree id like "@I123@") the owner matched this account to */

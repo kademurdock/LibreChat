@@ -64,7 +64,7 @@ class KadeJoke extends Tool {
         try {
           const { getUserById } = require('~/models');
           const u = await getUserById(this.userId, 'kadeAccountType');
-          if (u && u.kadeAccountType === 'child') {
+          if (require('../../../../server/services/kadeAccountType').isChildLike(u)) {
             dirty = false;
           }
         } catch (_) {

@@ -332,6 +332,12 @@ const loadTools = async ({
    * Amber, her notifies push to her, her reopens find HER reports. Absent
    * the field (every normal chat), this is exactly the old behavior. */
   const kadeActingUserId = options.req?.kadeOnBehalfOf?.id || user;
+  /* KADE Nov 11 2026 (home agent cards 3 and 4): every kade_* tool and fal_studio is wrapped by
+   * services/kadeLedger.js: the phone-lane refusal runs in code before the tool acts
+   * (services/kadeLaneTrust.js), each call gets a ledger row for the turn, and each result
+   * begins OK or FAILED with a code-built note of what really happened. No off switch. */
+  const kadeTurnReq = options.req;
+  const { ledgered: kadeLedgered } = require('../../../../server/services/kadeLedger');
   const kadeActingUserName =
     options.req?.kadeOnBehalfOf?.name ||
     options.req?.user?.name ||
@@ -463,7 +469,7 @@ const loadTools = async ({
       userId: kadeActingUserId,
       userName: kadeActingUserName,
       isWizard: options.req?.user?.role === 'ADMIN',
-      isChild: options.req?.user?.kadeAccountType === 'child',
+      isChild: require('../../../../server/services/kadeAccountType').isChildLike(options.req?.user),
     },
     kade_adventure: {
       agentName: agent?.name,
@@ -673,7 +679,7 @@ const loadTools = async ({
         toolConstructors[tool],
         options,
       );
-      requestedTools[tool] = toolInstance;
+      requestedTools[tool] = kadeLedgered(tool, toolInstance, kadeTurnReq);
       continue;
     }
   }

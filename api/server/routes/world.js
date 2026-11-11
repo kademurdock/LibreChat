@@ -100,7 +100,7 @@ router.post('/command', async (req, res) => {
       /* Part 180: a child seat gets the words-only city (life/index.js
        * KID_QUIET); a client that can PLAY audio says so and gets the radio
        * as a recording instead of a transcript in the log. */
-      isChild: req.user.kadeAccountType === 'child',
+      isChild: require('../services/kadeAccountType').isChildLike(req.user),
       radioAudio: req.body?.radioAudio === true,
       /* Wizard tier = platform admins (the Founder and deputies) — the #2
        * workflow: walk with NVDA, build as you go. */
@@ -288,7 +288,7 @@ router.get('/here', async (req, res) => {
     const ch = await MooChar.findOne({ userId: String(req.user.id), active: true }).lean();
     if (!ch) return res.json({ ok: false });
     const life = (ch.attrs && ch.attrs.life) || {};
-    const ctx = { ch, userId: ch.userId, life, isWizard: req.user.role === 'ADMIN', isChild: req.user.kadeAccountType === 'child', _room: null, async room() { if (!this._room) this._room = await require('~/app/clients/tools/kademoo/life/ctx').roomOf(this.ch); return this._room; } };
+    const ctx = { ch, userId: ch.userId, life, isWizard: req.user.role === 'ADMIN', isChild: require('../services/kadeAccountType').isChildLike(req.user), _room: null, async room() { if (!this._room) this._room = await require('~/app/clients/tools/kademoo/life/ctx').roomOf(this.ch); return this._room; } };
     const [room, hud, actions] = await Promise.all([view.describeRoom(ctx), view.hud(ctx), view.actions(ctx)]);
     res.json({ ok: true, room, hud, actions, people: room.peopleDetail, exits: room.exitsDetail, district: room.district, mode: life.created && !life.wiz ? 'play' : 'create' });
   } catch (e) {

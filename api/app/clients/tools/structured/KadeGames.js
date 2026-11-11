@@ -228,7 +228,7 @@ class KadeGames extends Tool {
           try {
             const { getUserById } = require('~/models');
             const u = await getUserById(this.userId, 'kadeAccountType');
-            if (u && u.kadeAccountType === 'child') cleanDeck = true;
+            if (require('../../../../server/services/kadeAccountType').isChildLike(u)) cleanDeck = true;
           } catch (_) {
             cleanDeck = true; // can't verify the audience -> stay clean
           }

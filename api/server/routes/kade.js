@@ -1901,17 +1901,20 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
 });
 
 /* ----------------------------------------------------------------------------
- * ADMIN: POST /api/kade/account-type { email, type: 'adult'|'child' }
+ * ADMIN: POST /api/kade/account-type { email, type: 'adult'|'teen'|'child' }
  * Flips kadeAccountType on an existing account (e.g. marking Skylee as child
  * after the fact — signup codes only tag NEW accounts). July 3 2026.
+ * Nov 11 2026 (card 5): 'teen' too. A teen gets the child rules everywhere
+ * (services/kadeAccountType.js isChildLike). Admin only, as before.
  * -------------------------------------------------------------------------- */
 router.post('/account-type', requireJwtAuth, requireAdminAccess, async (req, res) => {
   try {
     const { findUser, updateUser } = require('~/models');
+    const { ACCOUNT_TYPES } = require('~/server/services/kadeAccountType');
     const email = String(req.body?.email || '').trim().toLowerCase();
     const type = String(req.body?.type || '').trim();
-    if (!email || !['adult', 'child'].includes(type)) {
-      return res.status(400).json({ message: "Need an email and a type of 'adult' or 'child'." });
+    if (!email || !ACCOUNT_TYPES.includes(type)) {
+      return res.status(400).json({ message: "Need an email and a type of 'adult', 'teen' or 'child'." });
     }
     const user = await findUser({ email }, 'email name kadeAccountType');
     if (!user) {

@@ -306,7 +306,7 @@ const { router, close } = createDescriptionRouter({
   actor: (req) => ({
     id: String(req.user.id || req.user._id),
     role: req.user.role,
-    child: req.user.kadeAccountType === 'child',
+    child: require('../services/kadeAccountType').isChildLike(req.user),
     /* Oct 20 2026 (family at cost): the Family pack answer for the full signed-in account, so the
      * quote, the hold and the settle (which reuses the factor stored at reserve) are at cost. */
     familyPack: payerTier(req.user) === 'family',

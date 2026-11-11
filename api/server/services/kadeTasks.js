@@ -34,8 +34,11 @@
  * Nov 10 2026 (the money review): a start now needs more than a quote row. The quote must come
  * from an EARLIER turn of the same conversation, the person's own latest message must be a plain
  * yes (services/kadeSpendGate.js), a turn starts at most one job, and the quote is claimed in
- * one database step so two calls cannot both start. KADE_TASK_YES_GATE=0 and
- * KADE_TASK_ATOMIC_START=0 put the old checks back.
+ * one database step so two calls cannot both start.
+ *
+ * Nov 11 2026 (home agent plan, card 1): those rules are a safety gate with no off switch. The
+ * old KADE_TASK_YES_GATE=0 and KADE_TASK_ATOMIC_START=0 do nothing now; roll back the build if the
+ * gate misbehaves. Teens are turned away like children (services/kadeAccountType.js, card 5).
  */
 'use strict';
 
@@ -94,7 +97,7 @@ function yesRefusal(req, q, agentName) {
     if (!here || q.conversationId !== here) return voice ? REFUSED.voice : REFUSED.otherConversation;
   }
   if (!said.ok) return said.folded ? REFUSED.voice : REFUSED.noYes;
-  if (spend.on('KADE_SPEND_NO_REPLAY') && spend.isReplay(req)) return REFUSED.replay;
+  if (spend.isReplay(req)) return REFUSED.replay;
   if (!spend.priceWasSaid(q)) return REFUSED.notSaid;
   if (!spend.approvesPrice(said.words, { names: [agentName], topic: spend.TASK_TOPIC })) return REFUSED.noYes;
   return null;
@@ -168,7 +171,7 @@ async function personMayAsk(req) {
    * (factor 1 for a Family pack member). */
   const { PAYER_FIELDS } = require('~/server/services/kadeRealCost');
   const u = await db().getUserById(String(user.id), `kadeAccountType ${PAYER_FIELDS}`);
-  if (u && u.kadeAccountType === 'child') return { ok: false, why: 'child', soft: true };
+  if (require('./kadeAccountType').isChildLike(u)) return { ok: false, why: 'child', soft: true };
   return { ok: true, role: (u && u.role) || user.role, account: u || user };
 }
 
@@ -237,21 +240,17 @@ async function start({ req, agentId, agentName, quoteId, conversationId }) {
   const who = await personMayAsk(req);
   if (!who.ok) return { ok: false, error: who.why, soft: who.soft };
   const userId = String(req.user.id);
-  const yesGate = spend.on('KADE_TASK_YES_GATE');
-  const atomic = spend.on('KADE_TASK_ATOMIC_START');
   const q = await coll(QUOTES).findOne({ quoteId: String(quoteId || ''), userId, agentId });
   if (!q) return { ok: false, error: 'quote first: tell them the price, and start only after they say yes' };
   if (Date.now() - new Date(q.createdAt).getTime() > QUOTE_MINUTES * 60000) {
     return { ok: false, error: 'that price is over an hour old; quote again' };
   }
   if (q.usedAt) return { ok: false, error: q.lapsed ? REFUSED.lapsed : 'that quote already started a task' };
-  if (yesGate) {
-    const refused = yesRefusal(req, q, agentName);
-    if (refused) return { ok: false, error: refused };
-    /* Taken with nothing awaited since the check: a second start call in this turn stops here. */
-    if (!spend.claimOnce(req, 'kade_task_start')) return { ok: false, error: REFUSED.oncePerTurn };
-  }
-  const lock = atomic ? await takeStartLock(userId) : 'off';
+  const refused = yesRefusal(req, q, agentName);
+  if (refused) return { ok: false, error: refused };
+  /* Taken with nothing awaited since the check: a second start call in this turn stops here. */
+  if (!spend.claimOnce(req, 'kade_task_start')) return { ok: false, error: REFUSED.oncePerTurn };
+  const lock = await takeStartLock(userId);
   if (!lock) return { ok: false, error: REFUSED.busyStarting };
   try {
     const running = await coll(TASKS).findOne({ userId, status: 'running' });
@@ -274,19 +273,15 @@ async function start({ req, agentId, agentName, quoteId, conversationId }) {
     };
     /* The claim: one step that both checks the quote is unused and marks it. Of two calls
      * holding the same quote, the database lets exactly one through. */
-    let claimed = true;
+    let claimed = false;
     try {
-      if (atomic) {
-        const found = await coll(QUOTES).findOneAndUpdate(
-          { _id: q._id, usedAt: { $exists: false } },
-          { $set: { usedAt: new Date(), usedTurnId: spend.turnId(req), usedTaskId: taskId } },
-          { returnDocument: 'after' },
-        );
-        const doc = found && (found.value !== undefined ? found.value : found);
-        claimed = !!(doc && doc.usedTaskId === taskId);
-      } else {
-        await coll(QUOTES).updateOne({ _id: q._id }, { $set: { usedAt: new Date() } });
-      }
+      const found = await coll(QUOTES).findOneAndUpdate(
+        { _id: q._id, usedAt: { $exists: false } },
+        { $set: { usedAt: new Date(), usedTurnId: spend.turnId(req), usedTaskId: taskId } },
+        { returnDocument: 'after' },
+      );
+      const doc = found && (found.value !== undefined ? found.value : found);
+      claimed = !!(doc && doc.usedTaskId === taskId);
     } catch (e) {
       done();
       throw e;
@@ -326,7 +321,7 @@ async function start({ req, agentId, agentName, quoteId, conversationId }) {
     });
     return { ok: true, taskId, title, steps: q.steps };
   } finally {
-    if (atomic) await dropStartLock(userId, lock);
+    await dropStartLock(userId, lock);
   }
 }
 
