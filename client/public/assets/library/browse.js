@@ -206,7 +206,7 @@
                 })
                 .join(' · '),
             );
-          if (meta && placement.length) {
+          if (meta && placement.length && !shortRows()) {
             var line = document.createElement('span');
             line.className = 'meta place';
             line.textContent = placement.join(' · ');
@@ -264,6 +264,31 @@
       } finally {
         if (request === run) list.removeAttribute('aria-busy');
       }
+    }
+    /* Short rows (Nov 10 2026): the folder line under every result is a lot of repeated words by
+     * ear ("1990s, Video, Ozarks, Local Commercials" sixty times). One checkbox under the list
+     * leaves it off; the choice is remembered on this device. The folder is still on the item. */
+    function shortRows() {
+      try {
+        return localStorage.getItem('kade.library.shortRows') === '1';
+      } catch (error) {
+        return false;
+      }
+    }
+    if (get('shortRows')) {
+      get('shortRows').checked = shortRows();
+      get('shortRows').onchange = function () {
+        try {
+          localStorage.setItem('kade.library.shortRows', this.checked ? '1' : '0');
+        } catch (error) {}
+        var lines = list.querySelectorAll('.meta.place');
+        if (this.checked)
+          lines.forEach(function (line) {
+            line.remove();
+          });
+        else load({ how: 'none' });
+        if (this.checked) say('Short rows on.');
+      };
     }
     function fresh(how, toResults) {
       pageNumber = 1;

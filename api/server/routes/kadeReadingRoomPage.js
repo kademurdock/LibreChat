@@ -115,6 +115,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   html { scroll-padding-top:5rem; }
   input[type=checkbox] { width:1.25rem; height:1.25rem; vertical-align:-.2rem; margin-right:.35rem; }
   #timeLine { font-variant-numeric:tabular-nums; font-weight:600; margin:.4rem 0; }
+  /* Nov 10 2026 (redesign): the player. Large, plainly worded controls; a state line that says in
+     words what the player is doing (plain text, never spoken by itself); one labelled position
+     slider for audio and video alike. */
+  #player .controls button.act { min-height:56px; font-size:1.05rem; }
+  #playState { font-weight:700; margin:.5rem 0 .2rem; }
+  #seekBar { display:block; width:100%; height:44px; margin:0; padding:0; accent-color:#1d55d0; }
+  #seekBar:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
+  .pager span { font-weight:600; }
   h2.results { font-size:1.05rem; margin:1rem 0 .2rem; }
   /* Nov 10 2026 (redesign): one page of markup, many small pages. Each block says which pages it
      belongs to; the head script names the page before anything is drawn, so nothing flashes. */
@@ -134,6 +142,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     select, input[type=text], input[type=file], textarea { border-color:#8a919c; }
     #live { background:#3a3206; color:#ffe9a8; }
     #live:empty { background:transparent; }
+    #seekBar { accent-color:#8fbcff; }
+    #seekBar:focus-visible { outline-color:#ffbf47; }
     summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline-color:#ffbf47; }
   }
   @media (max-width: 480px) { .controls { grid-template-columns:1fr 1fr; } }
@@ -247,6 +257,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <p id="browseCount" class="hint">Loading…</p>
     <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
     <nav class="pager" id="browsePager" aria-label="Result pages" hidden><button class="act quiet" id="browsePrev" type="button">Previous page</button><span id="browsePageInfo"></span><button class="act quiet" id="browseNext" type="button">Next page</button></nav>
+    <label class="field"><input type="checkbox" id="shortRows"> Short rows: leave the folder line off every result</label>
     </div>
 
     <div data-views="folders">
@@ -365,16 +376,22 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <p class="hint" id="jacketLine"></p>
     <div class="controls" role="group" aria-label="Playback">
       <button class="act big primary wide" id="playBtn" type="button">Play</button>
-      <button class="act" id="backBtn" type="button">Back</button>
-      <button class="act" id="fwdBtn" type="button">Forward</button>
+      <button class="act" id="backBtn" type="button">Back 15 seconds</button>
+      <button class="act" id="fwdBtn" type="button">Forward 15 seconds</button>
       <button class="act" id="markBtn" type="button">Bookmark here</button>
       <button class="act quiet" id="prevSecBtn" type="button">Previous chapter</button>
       <button class="act quiet" id="nextSecBtn" type="button">Next chapter</button>
       <button class="act quiet" id="startBtn" type="button">From the beginning</button>
     </div>
+    <p id="playState"></p>
+    <div id="seekWrap" hidden><label class="field" for="seekBar">Position</label><input type="range" id="seekBar" min="0" max="0" step="1" value="0"></div>
     <p id="timeLine" hidden></p>
-    <p class="hint" id="keysHint">Keys: Space play or pause, Left and Right back or forward, Shift with Left or Right for chapters, B for a bookmark.</p>
-    <video id="fileMedia" class="player audioonly" controls playsinline preload="metadata" x-webkit-airplay="allow" aria-label="The recording"></video>
+    <div class="row" id="accessRow" role="group" aria-label="Captions and description" hidden>
+      <button class="act" id="captionsBtn" type="button" hidden>Captions: off</button>
+      <button class="act" id="descToggleBtn" type="button" hidden>Spoken description: off</button>
+      <button class="act quiet" id="descFindBtn" type="button" hidden>Get a spoken description</button>
+    </div>
+    <video id="fileMedia" class="player audioonly" playsinline preload="metadata" x-webkit-airplay="allow" aria-label="The recording" tabindex="-1"></video>
     <div class="row" id="castRow" hidden>
       <button class="act quiet" id="airplayBtn" type="button" hidden>AirPlay</button>
       <button class="act quiet" id="castBtn" type="button" hidden>Cast to a TV</button>
@@ -425,6 +442,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     <select id="chapterSel"></select>
     <button class="act" id="goChapterBtn" type="button">Go to this chapter</button>
     </div>
+
+    <p class="hint" id="keysHint">Keys: Space play or pause, Left and Right back or forward, Shift with Left or Right for chapters, B for a bookmark.</p>
+    <label class="field"><input type="checkbox" id="keysOn" checked> Keyboard shortcuts for this player</label>
 
     <div id="voiceWrap">
       <label class="field" for="voiceSel">Voice</label>
@@ -1318,9 +1338,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (pipe) { pipe.sources.forEach(function(src){ try { src.onended = null; src.stop(); } catch(e) {} }); }
     pipe = null;
   }
-  function finishBook(){ stopScheduled(); playing = false; $('playBtn').textContent = 'Play'; libraryReader.playback(); say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
+  function finishBook(){ stopScheduled(); playing = false; finished = true; showState(); $('playBtn').textContent = 'Play'; libraryReader.playback(); say('The end. ' + book.title + ' is finished.'); api('/book/' + book.id + '/progress', { json: { s: pos.s, c: pos.c, finished: true } }).catch(function(){}); }
   function play(){
     if (!book) return;
+    finished = false;
     if (isAudio()) { fileAudio.play().then(function(){ playing = true; $('playBtn').textContent = 'Pause'; updateSession(); }).catch(function(e){ say('Could not play: ' + e.message); }); return; }
     stopScheduled();
     ensureCtx();
@@ -1355,7 +1376,15 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (fileAudio.readyState >= 1) setTime(); else fileAudio.addEventListener('loadedmetadata', setTime, { once: true });
     fileAudio.playbackRate = speed;
     $('nowText').textContent = t.title + (t.seconds ? ' — ' + clock(t.seconds) : '');
-    fileAudio.classList.toggle('audioonly', !/^video\\//.test(t.mime || ''));
+    /* A recording with no picture is played through this element but is not a place to stop: it
+       has no controls of its own, takes no focus and is hidden from screen readers. The buttons
+       and the position slider above are its controls. A video keeps the browser's own controls. */
+    var hasPicture = (t.mime || '').indexOf('video/') === 0;
+    fileAudio.classList.toggle('audioonly', !hasPicture);
+    fileAudio.controls = hasPicture;
+    if (hasPicture) { fileAudio.removeAttribute('tabindex'); fileAudio.removeAttribute('aria-hidden'); }
+    else { fileAudio.setAttribute('tabindex', '-1'); fileAudio.setAttribute('aria-hidden', 'true'); }
+    seekShown = -1; $('seekWrap').hidden = true; showSeek(true);
     $('castRow').hidden = false;
     $('airplayBtn').hidden = !(window.WebKitPlaybackTargetAvailabilityEvent && fileAudio.webkitShowPlaybackTargetPicker);
     $('castBtn').hidden = !(fileAudio.remote && fileAudio.remote.prompt);
@@ -1376,7 +1405,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   fileAudio.addEventListener('ended', finishTrack);
   function trackPosition(){ var t = book && book.tracks[pos.s]; return Math.max(0, fileAudio.currentTime - (t && t.clipBegin || 0)); }
   fileAudio.addEventListener('timeupdate', function(){ var t = book && book.tracks[pos.s]; if (playing && t && t.clipEnd != null && fileAudio.currentTime >= t.clipEnd) { finishTrack(); return; } if (playing && Math.floor(trackPosition()) % 10 === 0) saveProgress(); });
-  fileAudio.addEventListener('pause', function(){ if (playing && !fileAudio.ended) { playing = false; $('playBtn').textContent = 'Play'; } });
+  fileAudio.addEventListener('pause', function(){ if (playing && !fileAudio.ended) { playing = false; $('playBtn').textContent = 'Play'; } showState(); showSeek(true); });
 
   function back(){ if (isAudio()) { fileAudio.currentTime = Math.max(book.tracks[pos.s].clipBegin || 0, fileAudio.currentTime - 15); say('Back 15 seconds.'); return; } var p = prevPos(pos); if (p) seekTo(p, false); else say('This is the beginning.'); }
   function forward(){ if (isAudio()) { fileAudio.currentTime = Math.min(book.tracks[pos.s].clipEnd || fileAudio.duration || 1e9, fileAudio.currentTime + 15); say('Forward 15 seconds.'); return; } var p = nextPos(pos); if (p) seekTo(p, false); else say('This is the end.'); }
@@ -1393,8 +1422,91 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (text !== timeShown) { timeShown = text; $('timeLine').textContent = text; }
   }
   fileAudio.addEventListener('timeupdate', showTime); fileAudio.addEventListener('seeked', showTime); fileAudio.addEventListener('loadedmetadata', showTime);
+  /* Nov 10 2026 (redesign): the position slider. One labelled control for audio and video: a seek
+     bar for the eye, and for a screen reader a slider that says "40 seconds of 2 minutes 5 seconds".
+     Arrow keys on it move 5 seconds (1 second in a clip under two minutes). While playing it moves
+     in five-second hops, and it holds still while it has keyboard focus, so a screen reader resting
+     on it is not told the time over and over; the clock line beside it keeps running. */
+  function spokenTime(sec){
+    sec = Math.max(0, Math.floor(sec || 0));
+    var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), r = sec % 60, out = [];
+    if (h) out.push(h + (h === 1 ? ' hour' : ' hours'));
+    if (m) out.push(m + (m === 1 ? ' minute' : ' minutes'));
+    if (r || !out.length) out.push(r + (r === 1 ? ' second' : ' seconds'));
+    return out.join(' ');
+  }
+  function trackLength(){
+    var t = book && book.tracks && book.tracks[pos.s]; if (!t) return 0;
+    var total = t.seconds || (t.clipEnd != null ? t.clipEnd - (t.clipBegin || 0) : fileAudio.duration) || 0;
+    return isFinite(total) && total > 0 ? total : 0;
+  }
+  var seekBar = $('seekBar'), seekShown = -1;
+  function showSeek(force){
+    if (!book || !isAudio()) return;
+    var total = Math.floor(trackLength()), at = Math.min(Math.floor(trackPosition()), total || 0);
+    $('seekWrap').hidden = !total;
+    if (!total) return;
+    if (String(total) !== seekBar.max) { seekBar.max = String(total); seekBar.step = total > 120 ? '5' : '1'; force = true; }
+    var held = false; try { held = playing && document.activeElement === seekBar && seekBar.matches(':focus-visible'); } catch(e) {}
+    if (!force && (held || (playing && Math.abs(at - seekShown) < 5))) return;
+    seekShown = at; seekBar.value = String(at);
+    seekBar.setAttribute('aria-valuetext', spokenTime(at) + ' of ' + spokenTime(total));
+    try { if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) navigator.mediaSession.setPositionState({ duration: total, playbackRate: fileAudio.playbackRate || 1, position: Math.min(at, total) }); } catch(e) {}
+  }
+  fileAudio.addEventListener('timeupdate', function(){ showSeek(false); });
+  fileAudio.addEventListener('seeked', function(){ showSeek(true); });
+  fileAudio.addEventListener('loadedmetadata', function(){ showSeek(true); showCaptions(); });
+  seekBar.addEventListener('input', function(){
+    var at = Number(this.value) || 0, total = Number(this.max) || 0;
+    this.setAttribute('aria-valuetext', spokenTime(at) + ' of ' + spokenTime(total));
+    timeShown = clock(at) + ' of ' + clock(total); $('timeLine').textContent = timeShown;
+  });
+  seekBar.addEventListener('change', function(){
+    if (!book || !isAudio()) return;
+    var t = book.tracks[pos.s], at = Number(this.value) || 0;
+    try { fileAudio.currentTime = (t.clipBegin || 0) + at; } catch(e) {}
+    seekShown = at; saveProgress();
+  });
+  /* Captions and spoken description, in one plain row right under the controls.
+     Captions: the button is there when the file carries a caption or subtitle track, and the choice
+     is remembered. Spoken description: when this video has a description, one button turns
+     "pause and describe each scene" on or off (the same switch as the box further down); when it
+     has none yet, one button goes to where a description is made. */
+  var captionsOn = localStorage.getItem('kade.library.captions') === '1';
+  function captionTracks(){ var out = []; try { for (var i = 0; i < fileAudio.textTracks.length; i++) { var kind = fileAudio.textTracks[i].kind; if (kind === 'captions' || kind === 'subtitles') out.push(fileAudio.textTracks[i]); } } catch(e) {} return out; }
+  function showAccessRow(){ $('accessRow').hidden = $('captionsBtn').hidden && $('descToggleBtn').hidden && $('descFindBtn').hidden; }
+  function showCaptions(){
+    var tracks = captionTracks();
+    $('captionsBtn').hidden = !tracks.length;
+    tracks.forEach(function(track, i){ try { track.mode = captionsOn && i === 0 ? 'showing' : 'disabled'; } catch(e) {} });
+    $('captionsBtn').textContent = 'Captions: ' + (captionsOn ? 'on' : 'off');
+    showAccessRow();
+  }
+  $('captionsBtn').onclick = function(){ captionsOn = !captionsOn; localStorage.setItem('kade.library.captions', captionsOn ? '1' : '0'); showCaptions(); say(captionsOn ? 'Captions on.' : 'Captions off.'); };
+  function showDescToggle(){
+    var t = book && book.tracks && book.tracks[pos.s], video = !!(t && (t.mime || '').indexOf('video/') === 0);
+    var done = !!(video && t.description && t.description.state === 'done');
+    $('descToggleBtn').hidden = !done;
+    $('descToggleBtn').textContent = 'Spoken description: ' + ($('descMode').checked ? 'on' : 'off');
+    $('descFindBtn').hidden = !video || done;
+    showAccessRow();
+  }
+  $('descToggleBtn').onclick = function(){ $('descMode').checked = !$('descMode').checked; $('descMode').onchange(); };
+  $('descFindBtn').onclick = function(){ $('descWrap').open = true; focusOn($('descBtn')); try { $('descWrap').scrollIntoView({ block: 'nearest' }); } catch(e) {} };
+  if ('mediaSession' in navigator) { try { navigator.mediaSession.setActionHandler('seekto', function(d){ if (!book || !isAudio() || !d || typeof d.seekTime !== 'number') return; var t = book.tracks[pos.s]; fileAudio.currentTime = (t.clipBegin || 0) + d.seekTime; }); } catch(e) {} }
 
+  /* The state line, in words for the eye: Playing or Paused, which part, and the speed when it is
+     not normal. It is plain text beside the controls (not a live region): the Play button's own
+     name and the one status line already tell a screen reader what changed. */
+  var finished = false;
+  function showState(){
+    if (!book) return;
+    var count = isAudio() ? book.tracks.length : book.chapters.length, t = chapterTitle(pos.s);
+    var where = count > 1 || (t && t !== book.title) ? (isAudio() ? 'Part ' : 'Chapter ') + (pos.s + 1) + ' of ' + count + (t ? ': ' + t : '') : '';
+    $('playState').textContent = (playing ? 'Playing' : (finished ? 'Finished' : 'Paused')) + (where ? ' · ' + where : '') + (speed !== 1 ? ' · ' + speed + ' times speed' : '');
+  }
   function updateSession(){
+    showState();
     if (!('mediaSession' in navigator) || !book) return;
     try {
       navigator.mediaSession.metadata = new MediaMetadata({ title: book.title, artist: book.author || (book.ownerName ? 'Donated by ' + book.ownerName : 'Kade-AI'), album: chapterTitle(pos.s) || 'The Reading Room' });
@@ -1463,18 +1575,32 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     }
     sel.value = String(n);
   }
-  $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };
+  $('speedSel').onchange = function(){ speed = parseFloat(this.value) || 1; showState(); if (isAudio()) fileAudio.playbackRate = speed; else { cache = {}; var was = playing; if (was) pause(); if (was) play(); } saveProgress(true); };
+  /* Keyboard shortcuts (Nov 10 2026 redesign), made so they never get in a screen reader's way:
+     - they are only the player's while focus is in the player or nowhere, never in a text box, a
+       menu or the position slider, and never on the video's own controls;
+     - a key held with Ctrl, Alt or the Windows or Command key is left alone (Alt+Left is the
+       browser's Back; screen readers build their commands on those keys);
+     - Space on a button, a link or a box row still presses that thing;
+     - one checkbox turns them all off, and every one is also a button.
+     In NVDA's or JAWS's browse mode the screen reader takes plain keys itself, so nothing here
+     clashes with its own single-letter keys. */
+  var keysOn = localStorage.getItem('kade.library.keys') !== '0';
+  $('keysOn').checked = keysOn;
+  $('keysOn').onchange = function(){ keysOn = this.checked; localStorage.setItem('kade.library.keys', keysOn ? '1' : '0'); say(keysOn ? 'Keyboard shortcuts on.' : 'Keyboard shortcuts off.'); };
   document.addEventListener('keydown', function(ev){
-    if (libraryReader.isOpen()) return;
+    if (!keysOn || libraryReader.isOpen()) return;
     if (!book || $('player').classList.contains('hidden')) return;
-    var tag = (ev.target && ev.target.tagName) || '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    var target = ev.target, tag = (target && target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'VIDEO' || (target && target.isContentEditable)) return;
+    if (target && target !== document.body && target !== document.documentElement && !$('player').contains(target)) return;
     // Space presses the focused button, link or summary; the arrows still move through the book
     if (ev.code === 'Space' && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY')) return;
-    if (ev.code === 'Space') { ev.preventDefault(); playing ? pause() : play(); }
+    if (ev.code === 'Space' || (!ev.shiftKey && (ev.key === 'k' || ev.key === 'K'))) { ev.preventDefault(); playing ? pause() : play(); }
     else if (ev.key === 'ArrowLeft') { ev.preventDefault(); ev.shiftKey ? prevSection() : back(); }
     else if (ev.key === 'ArrowRight') { ev.preventDefault(); ev.shiftKey ? nextSection() : forward(); }
-    else if (ev.key === 'b' || ev.key === 'B') { $('markBtn').click(); }
+    else if (!ev.shiftKey && (ev.key === 'b' || ev.key === 'B')) { $('markBtn').click(); }
   });
 
   function renderBookmarks(){
@@ -1547,7 +1673,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function renderDescription(){
     var t = book && book.tracks && book.tracks[pos.s];
     var wrap = $('descWrap');
-    if (!t || !/^video\\//.test(t.mime || '')) { wrap.hidden = true; return; }
+    if (!t || !/^video\\//.test(t.mime || '')) { wrap.hidden = true; showDescToggle(); return; }
     wrap.hidden = false;
     $('descCopyWrap').hidden = !describedVideo;
     $('descCopy').href = '/described-video?book=' + encodeURIComponent(book.id) + '&track=' + pos.s;
@@ -1571,6 +1697,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('descSummary').textContent = 'Video description'; $('descBtn').textContent = 'Describe this video'; $('descReadBtn').hidden = true; $('descModeWrap').hidden = true;
       $('descStatus').textContent = d && d.state === 'failed' ? 'The last try failed: ' + (d.error || 'unknown') : '';
     }
+    showDescToggle();
   }
   async function pollDescription(){
     clearTimeout(descTimer);
@@ -1631,7 +1758,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     }
   });
   fileAudio.addEventListener('seeking', function(){ descSpoken = {}; var t = fileAudio.currentTime; var d = book && book.tracks[pos.s] && book.tracks[pos.s].description; if (d && d.scenes) d.scenes.forEach(function(sc, i){ if (sc.t < t - 1) descSpoken[i] = true; }); });
-  $('descMode').onchange = function(){ say(this.checked ? 'Descriptions on: the video pauses to describe each scene.' : 'Descriptions off.'); };
+  $('descMode').onchange = function(){ say(this.checked ? 'Descriptions on: the video pauses to describe each scene.' : 'Descriptions off.'); showDescToggle(); };
 
   /* what just happened? */
   var recapTimer = null, lastRecap = null;
@@ -1752,7 +1879,9 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('prevSecBtn').hidden = !many; $('nextSecBtn').hidden = !many; $('chapterWrap').hidden = !many;
     $('prevSecBtn').textContent = 'Previous ' + word; $('nextSecBtn').textContent = 'Next ' + word;
     $('chapterLabel').textContent = isAudio() ? 'Part' : 'Chapter'; $('goChapterBtn').textContent = 'Go to this ' + word;
-    $('keysHint').textContent = 'Keys: Space play or pause, Left and Right back or forward' + (many ? ', Shift with Left or Right for ' + word + 's' : '') + ', B for a bookmark.';
+    $('backBtn').textContent = isAudio() ? 'Back 15 seconds' : 'Previous passage'; $('fwdBtn').textContent = isAudio() ? 'Forward 15 seconds' : 'Next passage';
+    $('keysHint').textContent = 'Keys, while you are in the player: Space or K to play or pause, Left and Right to go back or forward' + (many ? ', Shift with Left or Right for ' + word + 's' : '') + ', B for a bookmark. None of them uses Ctrl or Alt, and every one is also a button above.';
+    finished = false; $('seekWrap').hidden = true; $('accessRow').hidden = true;
     $('timeLine').hidden = !isAudio(); $('timeLine').textContent = ''; timeShown = '';
     var p = book.progress || {};
     voice = p.voice || book.defaultVoice; speed = p.speed || 1;
@@ -1764,7 +1893,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     sel.onchange = function(){ };
     renderBookmarks(); renderSkipped(); renderOwner(); renderLibrarian(); updateSession();
     var resume = (pos.s || pos.c || p.pos) && !p.finished;
-    say((resume ? 'Resuming ' : 'Opened ') + book.title + '. ' + (isAudio() ? 'Part ' : 'Chapter ') + (pos.s + 1) + ' of ' + list.length + (chapterTitle(pos.s) ? ': ' + chapterTitle(pos.s) : '') + '. Press Play.');
+    showState();
+    say((resume ? 'Resuming ' : 'Opened ') + book.title + (resume && isAudio() && p.pos >= 1 && !Number.isInteger(wantTrack) ? ' at ' + spokenTime(p.pos) : '') + '. ' + (isAudio() ? 'Part ' : 'Chapter ') + (pos.s + 1) + ' of ' + list.length + (chapterTitle(pos.s) ? ': ' + chapterTitle(pos.s) : '') + '. Press Play.');
     $('playBtn').focus();
   }
 

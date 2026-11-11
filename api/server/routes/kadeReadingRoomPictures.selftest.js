@@ -122,7 +122,13 @@ test('no block of picture words, no extra heading, no live region: only the alt 
   assert.doesNotMatch(readingRoomHtml, /kade-pictures|Pictures on this page|picturesOnPage|shelfArtWords/, 'the end-of-page pictures block is gone');
   assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 14, 'pictures add no heading (14 since the Nov 10 2026 redesign: each small page of the Library is named by its one first-level heading)');
   assert.equal((readingRoomHtml.match(/aria-live=/g) || []).length, 1, 'still ONE live region');
-  assert.equal((readingRoomHtml.replace(/<span class="hicon" aria-hidden="true">[^<]*<\/span>/g, '').match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is hidden (and the small row icons, the house way); never a picture');
+  /* Hidden on purpose, and none of them a picture: the breadcrumb separator, the small row icons (the
+   * house way), and the player's element while it plays a recording with no picture (Nov 10 2026). */
+  const withoutKnown = readingRoomHtml
+    .replace(/<span class="hicon" aria-hidden="true">[^<]*<\/span>/g, '')
+    .replace(/fileAudio\.(?:set|remove)Attribute\('aria-hidden'(?:, 'true')?\);/g, '');
+  assert.equal((withoutKnown.match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is left; never a picture');
+  assert.doesNotMatch(readingRoomHtml, /<img[^>]*aria-hidden|class="kade-art[^"]*"[^>]*aria-hidden/);
   // each sentence is said once, as alt text: the alcove's in its <img>, the shelves' only in the script that sets them
   assert.equal(readingRoomHtml.split(ALCOVE_WORDS).length - 1, 1);
   const body = readingRoomHtml.slice(readingRoomHtml.indexOf('<body>'), readingRoomHtml.indexOf('<script src="/assets/library/requests.js'));
