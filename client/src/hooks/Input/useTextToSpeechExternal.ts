@@ -164,7 +164,8 @@ function useTextToSpeechExternal({
 
   const startMutation = (text: string, download: boolean) => {
     // Only while a face will be drawn for this message; the audio is the same either way.
-    const timing = portraitsOn && !!characterId && faceTimingsAllowed();
+    // A download is a file to keep, not a face to draw, so it never asks.
+    const timing = !download && portraitsOn && !!characterId && faceTimingsAllowed();
     const formData = createFormData(text, voice ?? '', speed, fillers, timing);
     setDownloadFile(download);
     processAudio(formData);

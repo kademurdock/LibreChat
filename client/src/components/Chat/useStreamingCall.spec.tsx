@@ -281,3 +281,22 @@ test('a WAV carrying a face track still decodes and plays, and its track reaches
   expect(second[4]).toBeNull();
   unmount();
 });
+
+test('the hello says faces: true only when a face is shown, so the bridge asks for mouth shapes', async () => {
+  const hellos: Record<string, unknown>[] = [];
+  for (const faces of [true, false, undefined]) {
+    const { result, unmount } = renderHook(() => useStreamingCall());
+    const call = result.current.start({ ...args(), ...(faces === undefined ? {} : { faces }) });
+    await settle();
+    const socket = Socket.instances[Socket.instances.length - 1];
+    socket.onopen?.();
+    socket.ready();
+    await call;
+    const sent = socket.send.mock.calls.map((c) => JSON.parse(String(c[0])));
+    hellos.push(sent.find((m) => m.type === 'hello'));
+    unmount();
+  }
+  expect(hellos[0]).toMatchObject({ type: 'hello', faces: true });
+  expect(hellos[1]).not.toHaveProperty('faces');
+  expect(hellos[2]).not.toHaveProperty('faces');
+});

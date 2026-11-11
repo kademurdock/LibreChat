@@ -61,6 +61,9 @@ export interface StreamingStartArgs {
    *  when they chose one. Chat read-aloud and the classic call engine already follow it;
    *  the bridge applies it to this call's speech in place of the character's own rate. */
   speed?: number;
+  /** Nov 11 2026: a character's face is shown on this call. The hello then says `faces: true`
+   *  and the bridge asks the voice proxy for Inworld's mouth shapes (a `kdtm` chunk in each WAV). */
+  faces?: boolean;
   handlers: StreamingHandlers;
 }
 
@@ -115,7 +118,8 @@ export default function useStreamingCall() {
       if (!activeRef.current || seq !== flushSeqRef.current) return;
       const ctx = outCtxRef.current;
       if (!ctx) return;
-      // Nov 11 2026: Inworld's mouth shapes ride inside the WAV (a `kdtm` chunk) when the bridge asked.
+      // Nov 11 2026: Inworld's mouth shapes ride inside the WAV (a `kdtm` chunk) when the bridge
+      // asked, which it does when the hello said `faces: true` (a face is shown).
       const carried = character?.speech && faceTimingsAllowed() ? readTimingTrack(ab) : null;
       let buf: AudioBuffer;
       try {
@@ -408,6 +412,7 @@ export default function useStreamingCall() {
       token,
       conversationId,
       speed,
+      faces,
       handlers,
     }: StreamingStartArgs) => {
       if (activeRef.current) return;
@@ -491,6 +496,7 @@ export default function useStreamingCall() {
                 spotterDirect: spotterDirect === true,
                 ...(conversationId ? { conversationId } : {}),
                 ...(typeof speed === 'number' && Number.isFinite(speed) ? { speed } : {}),
+                ...(faces === true ? { faces: true } : {}),
               }),
             );
           } catch {

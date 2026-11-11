@@ -2025,6 +2025,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
           conversationId: conversationIdRef.current,
           /* The listener's pace preference, as the classic engine uses it (finding 18). */
           speed: voicePacePreference != null ? generationSpeed : undefined,
+          /* Nov 11 2026: a face is shown, so the bridge asks for Inworld's mouth shapes. */
+          faces: portraitEnabled && !!agentId && faceTimingsAllowed(),
           handlers: {
             onStatus: (st) => {
               if (!ownsCall()) return;
@@ -2125,6 +2127,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     onVideoEvent,
     voicePacePreference,
     generationSpeed,
+    portraitEnabled,
   ]);
 
   // Mirror the call status onto the Live Activity (both engines funnel
