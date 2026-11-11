@@ -85,8 +85,8 @@ function fixture({ own = [], env = {}, embed, cardHits = [], diaryRows = 1, diar
   });
   const TOOLS = ['kade_help', 'kade_joke', 'kade_news', 'web_search', 'kade_games'].map((name) => ({ name, description: name + ' does things' }));
   /** One whole turn the way the server runs it: tool selection, then recall. */
-  const turn = async ({ text, stored, previous, agentName = 'Juniper', samePurpose, tools = true, startedAgoMs }) => {
-    const req = { body: { text, conversationId: 'convo-' + Math.random() } };
+  const turn = async ({ text, stored, previous, agentName = 'Juniper', samePurpose, tools = true, startedAgoMs, convo }) => {
+    const req = { body: { text, conversationId: convo || 'convo-' + Math.random() } };
     let selection = null;
     if (tools) {
       selection = await rag.selectTools({
@@ -149,9 +149,9 @@ test('slow embed: the nudge and the echo still ride; no cards, no logbook; the w
 
 test('slow embed: the deadline is measured from when the turn began, not from when recall began', async () => {
   const slow = pending();
-  const f = fixture({ own: [oldPlan()], embed: () => slow.promise });
-  /* the turn began 450 ms ago (tool selection used it); 50 ms of the 500 are left */
-  const { block, waited } = await f.turn({ text: LONG, tools: false, startedAgoMs: 450 });
+  const f = fixture({ own: [oldPlan()], embed: () => slow.promise, env: { KADE_TOOLS_EMBED_WAIT_MS: '20' } });
+  /* tool selection started the embed; the turn began 450 ms ago; 50 ms of the 500 are left */
+  const { block, waited } = await f.turn({ text: LONG, startedAgoMs: 450 });
   slow.resolve([1, 0]);
   assert.match(block, /# Open loop/);
   assert.ok(waited < 250, `recall waited ${waited} ms after tool selection had used 450 of the 500`);
@@ -163,12 +163,48 @@ test('slow embed: a turn that began long ago does not wait at all, and takes a v
   assert.match(block, /# Logbook recall/, 'the vector tool selection started was ready, so it is used');
   assert.ok(waited < 200, `waited ${waited} ms`);
   const slow = pending();
-  const g = fixture({ own: [oldPlan()], embed: () => slow.promise });
-  const late = await g.turn({ text: LONG, tools: false, startedAgoMs: 60000 });
+  const g = fixture({ own: [oldPlan()], embed: () => slow.promise, env: { KADE_TOOLS_EMBED_WAIT_MS: '20' } });
+  const late = await g.turn({ text: LONG, startedAgoMs: 60000 });
   slow.resolve([1, 0]);
   assert.doesNotMatch(late.block, /# Logbook recall/);
   assert.match(late.block, /# Open loop/);
   assert.ok(late.waited < 200, `waited ${late.waited} ms`);
+});
+
+test('review fix: an embed that only starts at recall keeps its wait from there, however old the turn is', async () => {
+  /* No tool selection this turn, so recall starts the embed itself. A deadline
+   * counted from an old turn stamp would already be past: the embed would be
+   * paid for and dropped at once. It answers in 120 ms and is used. */
+  const f = fixture({ own: [oldPlan()], embed: () => new Promise((done) => setTimeout(() => done([1, 0]), 120)) });
+  const { block, waited } = await f.turn({ text: LONG, tools: false, startedAgoMs: 60000 });
+  assert.match(block, /# Logbook recall/, 'the fresh embed was waited for and used');
+  assert.ok(waited >= 100 && waited < 500, `waited ${waited} ms`);
+  assert.ok(!f.calls.logs.some((l) => /embed=late/.test(l)));
+});
+
+test('review fix: a SHORT message does not wait at recall for an embed started late', async () => {
+  /* The embed takes 300 ms. Tool selection waits for its own tools embed, and
+   * the memory embed must have been started beside it, so recall finds it in.
+   * (Before the fix recall started it from zero here and waited 300 ms more.) */
+  const starts = [];
+  const f = fixture({
+    own: [card('hobby', 'Enjoys pottery.')],
+    env: { KADE_RECALL_TIMEOUT_MS: '2500' },
+    embed: (text, opts) => {
+      starts.push({ purpose: opts.purpose || 'document', at: Date.now() });
+      return new Promise((done) => setTimeout(() => done([1, 0]), 300));
+    },
+  });
+  for (const text of ['what about her?', 'what about tomorrow then?']) {
+    starts.length = 0;
+    const began = Date.now();
+    const { waited, block } = await f.turn({ text, previous: 'My sister starts her pottery class on Thursday.' });
+    const memory = starts.filter((s) => s.purpose === 'query');
+    assert.equal(memory.length, 1, 'one memory embed');
+    assert.ok(memory[0].at - began < 100, `the memory embed started ${memory[0].at - began} ms into the turn, at tool selection`);
+    assert.ok(waited < 150, `recall waited ${waited} ms on a short message`);
+    assert.match(block, /# Logbook recall/);
+  }
 });
 
 test('slow embed: a stamp from the future or a broken stamp falls back to recall start, never a longer wait', async () => {
@@ -213,6 +249,12 @@ test('KADE_RECALL_DEADLINE=0: the old behaviour, whole (newest logbook entries o
   slow.resolve([1, 0]);
   assert.equal(lost.block, null);
   assert.ok(lost.waited >= 450 && lost.waited < 900, `waited ${lost.waited} ms`);
+  /* review fix: with the deadline off a bare greeting still gets no logbook
+   * block (it never searched the logbook before this work either) */
+  const h = fixture({ own: [oldPlan()], env: { KADE_RECALL_DEADLINE: '0' } });
+  const hey = await h.turn({ text: 'hey' });
+  assert.deepEqual(h.calls.diary, []);
+  assert.doesNotMatch(String(hey.block || ''), /# Logbook recall/);
 });
 
 /* ── one memory embed per turn ──────────────────────────────────────────── */
@@ -254,9 +296,28 @@ test('KADE_RECALL_QUERY_CLEAN=0: both readers search the wrapped text again, sti
 test('short message: the previous user message rides the MEMORY query only, and it is still one memory embed', async () => {
   const f = fixture({ own: [card('hobby', 'Enjoys pottery.')] });
   const previous = 'My sister starts her pottery class on Thursday.';
-  await f.turn({ text: 'what about her?', previous });
+  /* the server saw the previous message in this conversation, so tool selection
+   * starts the one memory embed with it in front and recall uses that one */
+  await f.turn({ text: previous, convo: 'c-talk' });
+  f.calls.embeds.length = 0;
+  f.calls.diary.length = 0;
+  await f.turn({ text: 'what about her?', previous, convo: 'c-talk' });
   assert.deepEqual(f.memoryEmbeds(), [{ text: previous + '\nwhat about her?', purpose: 'query' }]);
   assert.deepEqual(f.calls.embeds.filter((e) => e.purpose === 'tools').map((e) => e.text), ['what about her?']);
+  assert.deepEqual(f.calls.diary, [{ query: previous + '\nwhat about her?', hasVector: true }]);
+});
+
+test('short message whose previous one this server never saw: the plain words, one embed, started at tool selection', async () => {
+  const f = fixture({ own: [card('hobby', 'Enjoys pottery.')] });
+  await f.turn({ text: 'what about her?', previous: 'My sister starts her pottery class on Thursday.' });
+  assert.deepEqual(f.memoryEmbeds(), [{ text: 'what about her?', purpose: 'query' }]);
+});
+
+test('short message with no tool selection this turn: recall starts the one embed itself, previous message in front', async () => {
+  const f = fixture({ own: [card('hobby', 'Enjoys pottery.')] });
+  const previous = 'My sister starts her pottery class on Thursday.';
+  await f.turn({ text: 'what about her?', previous, tools: false });
+  assert.deepEqual(f.memoryEmbeds(), [{ text: previous + '\nwhat about her?', purpose: 'query' }]);
 });
 
 test('short message on a lane where the tools query IS the memory query: recall reuses it, adds nothing', async () => {

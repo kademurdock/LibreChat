@@ -67,15 +67,41 @@ test('KADE_RECALL_PREV_TURN=0 never adds the previous message', () => {
   const off = { KADE_RECALL_PREV_TURN: '0' };
   assert.equal(Q.isShortTurn('what about her?', off), false);
   assert.equal(Q.withPrevious('what about her?', 'My sister starts Thursday.', off), 'what about her?');
-  assert.equal(Q.seedsMemoryQuery('what about her?', off), true);
+  assert.equal(Q.earlyMemoryQuery('what about her?', 'My sister starts Thursday.', off), 'what about her?');
 });
 
-test('tool retrieval starts the memory embed early except on a short turn', () => {
-  assert.equal(Q.seedsMemoryQuery('what about her?', ON), false);
-  assert.equal(Q.seedsMemoryQuery('Tell me about the telescope project we planned.', ON), true);
-  assert.equal(Q.seedsMemoryQuery('ok', ON), true, 'under the gate recall never embeds, the old seed is unchanged');
+test('tool retrieval always has a memory query to start early, short turn or not', () => {
+  assert.equal(Q.earlyMemoryQuery('what about her?', '', ON), 'what about her?');
+  assert.equal(Q.earlyMemoryQuery('what about her?', undefined, ON), 'what about her?');
+  assert.equal(Q.earlyMemoryQuery('what about her?', 'My sister starts Thursday.', ON), 'My sister starts Thursday.\nwhat about her?');
+  const long = 'Tell me about the telescope project we planned.';
+  assert.equal(Q.earlyMemoryQuery(long, 'My sister starts Thursday.', ON), long);
+  assert.equal(Q.earlyMemoryQuery('ok', 'My sister starts Thursday.', ON), 'ok');
   assert.equal(Q.isShortTurn('x'.repeat(45), { KADE_RECALL_SHORT_CHARS: '60' }), true);
   assert.equal(Q.isShortTurn('x'.repeat(45), ON), false);
+});
+
+test('seededQuery finds the memory query a turn already started, the one with a previous message first', () => {
+  const memo = (...keys) => ({ _kadeEmbedMemo: new Map(keys.map((k) => [k, Promise.resolve([1])])) });
+  assert.equal(Q.seededQuery(memo('query\0what about her?'), 'what about her?'), 'what about her?');
+  assert.equal(
+    Q.seededQuery(memo('query\0what about her?', 'query\0My sister starts Thursday.\nwhat about her?'), 'what about her?'),
+    'My sister starts Thursday.\nwhat about her?',
+  );
+  assert.equal(Q.seededQuery(memo('tools\0what about her?'), 'what about her?'), null, 'a tools query is not a memory query');
+  assert.equal(Q.seededQuery(memo('query\0what about him?'), 'what about her?'), null);
+  assert.equal(Q.seededQuery({}, 'what about her?'), null);
+  assert.equal(Q.seededQuery(null, 'what about her?'), null);
+  assert.equal(Q.seededQuery(memo('query\0'), ''), null);
+});
+
+test('earlierCallerLines reads the caller\'s own lines out of the voice wrapper, newest last', () => {
+  const text = wrap(['THEM: one', 'YOU: a reply', 'THEM: two', 'THEM: three', 'YOU: THEM: not a caller line', 'THEM: four'], 'latest words');
+  assert.deepEqual(Q.earlierCallerLines(text, 3), ['two', 'three', 'four']);
+  assert.deepEqual(Q.earlierCallerLines(text, 10), ['one', 'two', 'three', 'four']);
+  assert.deepEqual(Q.earlierCallerLines('latest words alone', 3), []);
+  assert.deepEqual(Q.earlierCallerLines('THEM: typed by hand, no wrapper', 3), []);
+  assert.deepEqual(Q.earlierCallerLines(undefined, 3), []);
 });
 
 test('memoHas reads the per-request memo by the exact memory query', () => {

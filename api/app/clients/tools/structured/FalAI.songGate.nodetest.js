@@ -59,6 +59,13 @@ global.setTimeout = (fn, _ms, ...args) => realSetTimeout(fn, 0, ...args);
 const turn = (text, extra = {}) => ({ user: { id: 'u1', role: 'USER' }, body: { conversationId: 'c-1', text, agentName: 'Testa', ...extra } });
 const song = (req, data = {}) =>
   new FalAI({ req, userId: 'u1', override: true })._call({ action: 'generate_song', prompt: 'slow country waltz, warm voice, fiddle', ...data });
+const gate = require(path.join(__dirname, '../../../../server/services/kadeSpendGate'));
+/* A first ask whose reply then said the price (the end of that reply stamps it as heard). */
+const priced = async (req, data = {}, replyText = 'A song like that is about 16 cents. Want me to make it?') => {
+  const out = await song(req, data);
+  await gate.afterReply({ req, replyText, agentName: 'Testa' });
+  return out;
+};
 
 beforeEach(() => {
   colls = {};
@@ -67,10 +74,13 @@ beforeEach(() => {
   rejectSubmit = false;
   delete process.env.KADE_SONG_YES_GATE;
   delete process.env.KADE_SONG_ONCE_PER_TURN;
+  delete process.env.KADE_SPEND_PRICE_HEARD;
+  delete process.env.KADE_SPEND_NO_REPLAY;
+  gate._resetForTests();
 });
 
 test('the first ask spends nothing and tells the character to say the price and ask', async () => {
-  const out = await song(turn('make me a song about rain'));
+  const out = await priced(turn('make me a song about rain'));
   assert.match(out, /^NOT MADE YET, and nothing was charged\./);
   assert.match(out, /costs them about 16 cents/);
   assert.match(out, /Tell them that price/);
@@ -80,7 +90,7 @@ test('the first ask spends nothing and tells the character to say the price and 
 });
 
 test('happy path: price in one reply, a plain yes in the next, one song is made and logged', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   const out = await song(turn('Yes, go ahead'));
   assert.match(out, /^\[Play the song\]\(https:\/\/media\.invalid\/song\.mp3\)/);
   assert.equal(posts.length, 1);
@@ -97,7 +107,7 @@ test('refused: the same reply that first heard the request cannot also buy the s
 });
 
 test('refused: "ok, read this page for me" is not a yes to the price', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   const out = await song(turn('ok, read this page for me'));
   assert.match(out, /^NOT MADE YET, and nothing was charged\. Their last message is not a plain yes/);
   assert.match(out, /about 16 cents/);
@@ -105,7 +115,7 @@ test('refused: "ok, read this page for me" is not a yes to the price', async () 
 });
 
 test('once per reply: three calls in the yes turn make one song', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   const req = turn('yes');
   const out = await Promise.all([song(req), song(req), song(req)]);
   assert.equal(out.filter((o) => o.startsWith('[Play the song]')).length, 1);
@@ -117,7 +127,7 @@ test('once per reply: three calls in the yes turn make one song', async () => {
 });
 
 test('the yes turn sent again (regenerate) does not buy a second song', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   assert.match(await song(turn('yes')), /^\[Play the song\]/);
   const again = await song(turn('yes'));
   assert.match(again, /^NOT MADE YET/);
@@ -125,7 +135,7 @@ test('the yes turn sent again (regenerate) does not buy a second song', async ()
 });
 
 test('the price is per engine: a yes to Lyria does not buy a MiniMax song', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   const out = await song(turn('yes'), { engine: 'minimax' });
   assert.match(out, /^NOT MADE YET/);
   assert.match(out, /MiniMax Music 2\.6 song costs them about 30 cents/);
@@ -133,7 +143,7 @@ test('the price is per engine: a yes to Lyria does not buy a MiniMax song', asyn
 });
 
 test('when fal turns the job away nothing is spent and the yes stands for one more try', async () => {
-  await song(turn('make me a song about rain'));
+  await priced(turn('make me a song about rain'));
   const req = turn('yes');
   rejectSubmit = true;
   assert.match(await song(req), /^fal did not accept/);

@@ -442,21 +442,77 @@ test('Nov 10: a wrapper with no words after it is a turn with no text (the full 
   assert.strictEqual(r.reason, 'no-text');
 });
 
-test('Nov 10: a short message sends only the tools query; recall makes the one memory embed itself', async () => {
+test('Nov 10 review fix: a short message starts the memory embed at tool selection too, never later', async () => {
   R._resetForTests();
   const asked = [];
-  const embed = async (text, options) => { asked.push((options && options.purpose) || 'query'); return null; };
+  const embed = async (text, options) => { asked.push([(options && options.purpose) || 'query', text]); return null; };
   await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-short', embed });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepStrictEqual(asked, ['tools']);
+  assert.deepStrictEqual(asked.sort(), [['query', 'what about her?'], ['tools', 'what about her?']]);
+  /* a call ("new" every turn) keeps no previous message and still starts both */
+  asked.length = 0;
+  await R.selectTools({ tools: T(KIANA), text: 'what about tomorrow then?', agentId: 'a', conversationId: 'new', embed });
+  await R.selectTools({ tools: T(KIANA), text: 'and after that?', agentId: 'a', conversationId: 'new', embed });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(asked.filter(([purpose]) => purpose === 'query').map(([, text]) => text), ['what about tomorrow then?', 'and after that?']);
+});
+
+test('Nov 10 review fix: a short message after one this server saw searches memory with that one in front', async () => {
+  R._resetForTests();
+  const asked = [];
+  const embed = async (text, options) => { asked.push([(options && options.purpose) || 'query', text]); return null; };
+  const first = 'My neighbour starts her pottery class on Thursday.';
+  await R.selectTools({ tools: T(KIANA), text: first, agentId: 'a', conversationId: 'c-prev', embed });
+  asked.length = 0;
+  await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-prev', embed });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(asked.sort(), [['query', first + '\nwhat about her?'], ['tools', 'what about her?']], 'tools read the latest words alone');
+  /* a regenerate sends the same words again: the message before them still rides */
+  asked.length = 0;
+  await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-prev', embed });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(asked.filter(([purpose]) => purpose === 'query'), [['query', first + '\nwhat about her?']]);
+  /* another conversation knows nothing of it */
+  asked.length = 0;
+  await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-other', embed });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(asked.filter(([purpose]) => purpose === 'query'), [['query', 'what about her?']]);
   process.env.KADE_RECALL_PREV_TURN = '0';
   try {
     asked.length = 0;
-    await R.selectTools({ tools: T(KIANA), text: 'what about her?', agentId: 'a', conversationId: 'c-short-off', embed });
+    await R.selectTools({ tools: T(KIANA), text: 'and him?', agentId: 'a', conversationId: 'c-prev', embed });
+    await R.selectTools({ tools: T(KIANA), text: 'and then what?', agentId: 'a', conversationId: 'c-prev', embed });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.deepStrictEqual(asked.sort(), ['query', 'tools'], 'switch off: the old early start');
+    assert.deepStrictEqual(asked.filter(([purpose]) => purpose === 'query').map(([, text]) => text), ['and him?', 'and then what?'], 'switch off: plain words, nothing kept');
   } finally {
     delete process.env.KADE_RECALL_PREV_TURN;
+  }
+});
+
+test('Nov 10 review fix: on a call a tool named in the caller\'s own last lines still rides the next turn', async () => {
+  R._resetForTests();
+  const embed = async () => [0, 0, 1]; /* the lane answers; nothing scores */
+  const ask = (text, conversationId = 'new') => R.selectTools({ tools: T(KIANA), text, agentId: 'a', conversationId, embed });
+  const followUp = 'I will be there at five on Friday.';
+  const call = WRAPPED(['THEM: I need to leave a message for my neighbour.', 'YOU: Sure, what should I say?'], followUp);
+  const r = await ask(call);
+  assert.ok(r.keep.has('kade_message'), 'the message tool is still attached on the follow-up turn');
+  assert.match(r.reason, /carried=\[kade_message\]/);
+  /* the character's own lines never attach anything */
+  const own = await ask(WRAPPED(['THEM: hello there', 'YOU: Want me to leave a message for your neighbour?'], followUp));
+  assert.ok(!own.keep.has('kade_message'));
+  /* only the last three caller lines are read */
+  const old = await ask(WRAPPED(['THEM: leave a message for my neighbour', 'THEM: one', 'THEM: two', 'THEM: three'], followUp));
+  assert.ok(!old.keep.has('kade_message'));
+  /* a real conversation id holds its tools by itself; nothing is carried there */
+  const text = await ask(call, 'c-real');
+  assert.ok(!text.keep.has('kade_message'));
+  process.env.KADE_TOOLS_VOICE_CARRY = '0';
+  try {
+    const off = await ask(call);
+    assert.ok(!off.keep.has('kade_message'), 'switch off: the latest words alone');
+  } finally {
+    delete process.env.KADE_TOOLS_VOICE_CARRY;
   }
 });
 

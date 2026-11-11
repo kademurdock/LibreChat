@@ -20,6 +20,17 @@
  *     a document or a tool result is never read here at all;
  *   - one paid start per turn, claimed before anything is awaited.
  *
+ * Added the same day, after review (the first cut proved a price row existed, not that the
+ * person had heard it, and let any later yes claim it):
+ *   - the price must have been SAID. When a reply ends, the prices worked out during it are
+ *     stamped with whether the reply's own words carried a money amount (afterReply). A price
+ *     that was never said cannot be claimed; the character is told to say it and ask again;
+ *   - the yes must answer the price. When a later message in the conversation is not a plain
+ *     yes, the open prices there are closed, so "sure" to some other question twenty minutes
+ *     on finds nothing to buy;
+ *   - a retry is not a yes. A regenerated or continued reply sends the same old message
+ *     again, so it can never approve a price.
+ *
  * No model call and no wait: string checks and, for a song, one or two small database calls
  * inside a tool call that was about to spend money anyway.
  *
@@ -28,6 +39,9 @@
  *   KADE_TASK_ATOMIC_START=0    kade_task start goes back to read, check, then mark
  *   KADE_SONG_YES_GATE=0        fal generate_song goes back to the budget check only
  *   KADE_SONG_ONCE_PER_TURN=0   no limit on songs per reply
+ *   KADE_SPEND_PRICE_HEARD=0    a price row is enough again: it need not have been said in a
+ *                               reply, and it stays open for its hour whatever is said next
+ *   KADE_SPEND_NO_REPLAY=0      a regenerated or continued reply may approve a price again
  *
  * No '~' requires at load time, so node --test loads it.
  */
@@ -49,7 +63,7 @@ function turnOf(req) {
   if (!req || typeof req !== 'object') return null;
   let t = turns.get(req);
   if (!t) {
-    t = { id: crypto.randomBytes(8).toString('hex'), claims: new Set() };
+    t = { id: crypto.randomBytes(8).toString('hex'), claims: new Set(), quoted: new Set() };
     turns.set(req, t);
   }
   return t;
@@ -72,6 +86,18 @@ function claimOnce(req, key) {
 function releaseOnce(req, key) {
   const t = turnOf(req);
   if (t) t.claims.delete(key);
+}
+
+/** Remember that this turn worked out a price kept in collection `name` (see afterReply). */
+function markQuoted(req, name) {
+  const t = turnOf(req);
+  if (t && name) t.quoted.add(String(name));
+}
+
+/** A regenerated, continued or edited-and-continued reply: the person's message is an old one sent again. */
+function isReplay(req) {
+  const b = (req && req.body) || {};
+  return Boolean(b.isRegenerate) || Boolean(b.isContinued) || Boolean(b.editedContent) || Boolean(b.isEdited);
 }
 
 /** The conversation this turn belongs to, or null when it has no settled id. */
@@ -116,8 +142,14 @@ function latestWords(text) {
 /* ------------------------------------------------------------- the plain yes */
 
 /* Words a yes can be made of. Nothing here names a new job: no "read", "find", "look", "call". */
+const NUMBER_WORDS =
+  'one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen ' +
+  'twenty thirty forty fifty sixty seventy eighty ninety hundred half couple few';
 const YES_WORDS = new Set(
   (
+    NUMBER_WORDS +
+    " i'd id proceed agree agreed confirm confirmed charge afford huh mhm mm hmm mmhmm ma'am maam sir right correct " +
+    'hell heck guess honey dear darling sweetie hon bucks buck penny pennies ' +
     'yes yeah yep yup yea ya aye ok okay kay k sure alright all right absolutely definitely certainly totally ' +
     'of course for please pls thanks thank you ty go ahead it do that this the a an and then now just so ' +
     "let's lets let us start begin run make send ship approve approved approves i i'm im am i'll we you can me my " +
@@ -132,8 +164,16 @@ const SOFT_NO = /\b(?:no problem|no worries|not a problem|don't worry|do not wor
 
 const EXTRA_YES = /\b(?:sounds good|that's fine|that is fine|that works|works for me|please do|absolutely|definitely|of course|for sure|alright|all right|yes please)\b/;
 
+/* Review fix: people who dictate say yes in more ways than the Forge reading knows. Each of
+ * these, when the WHOLE message is still only yes words, is a yes: "fine", "right", "uh huh",
+ * "mhm", "proceed", "I agree", "I confirm", "make it", "I want it", "please", "why not". */
+const WHY_NOT = /\bwhy not\b/g;
+const SPOKEN_YES =
+  /^[^a-z0-9]*(?:fine|right|correct|please|proceed)\b|\b(?:i agree|agreed|i confirm|confirmed|uh huh|mhm|mm ?hmm|mmhmm|charge me|(?:make|start|do|send|run|create|generate|write|sing|play) (?:it|that|this|one)|i(?:'d| would)? (?:want|like|love) (?:it|that|this|one)|i can afford (?:it|that))\b/;
+
 const TASK_TOPIC = ['job', 'task', 'search', 'research', 'work'];
-const SONG_TOPIC = ['song', 'track', 'music', 'tune'];
+/* A song is made, written, sung and played; said next to a yes these are about the song. */
+const SONG_TOPIC = ['song', 'track', 'music', 'tune', 'create', 'generate', 'write', 'sing', 'play'];
 
 /**
  * Is this message, as a whole, a yes to a price? Reuses the Forge approval reading
@@ -150,11 +190,15 @@ function approvesPrice(words, opts = {}) {
     .trim();
   if (!t || t.length > 160) return false;
   if (/https?:|www\.|\n\s*\n/.test(t)) return false;
-  const soft = t.replace(SOFT_NO, ' ');
+  /* "uh-huh" and "mm-hmm" are read as two words; "why not" is a yes, not a hold-on. */
+  const spoken = t.replace(SOFT_NO, ' ').replace(/(?<=[a-z])-(?=[a-z])/g, ' ');
+  const whyNot = WHY_NOT.test(spoken);
+  WHY_NOT.lastIndex = 0;
+  const soft = spoken.replace(WHY_NOT, ' ');
   const { herWordsApprove } = require('./kadeApprovals');
   /* "yes " in front asks only the hold-on question; the yes itself must be in their words. */
   if (!herWordsApprove(`yes ${soft}`)) return false;
-  if (!herWordsApprove(soft) && !EXTRA_YES.test(soft)) return false;
+  if (!herWordsApprove(soft) && !EXTRA_YES.test(soft) && !SPOKEN_YES.test(soft) && !whyNot) return false;
   const allowed = new Set(YES_WORDS);
   for (const w of opts.topic || []) allowed.add(String(w).toLowerCase());
   for (const name of opts.names || []) {
@@ -162,6 +206,92 @@ function approvesPrice(words, opts = {}) {
   }
   const tokens = soft.match(/[a-z0-9']+/g) || [];
   return tokens.every((tok) => allowed.has(tok) || /^\d+$/.test(tok));
+}
+
+/* ------------------------------------------------ the price was said, and answered */
+
+/* Any money amount in the reply's own words: "$0.16", "16 cents", "sixteen cents", "under a cent". */
+const PRICE_SHAPE = /\$\s?\d|\b(?:cents?|dollars?|bucks?|penny|pennies)\b/i;
+const TASK_QUOTES = 'kadetaskquotes';
+
+function priceHeardOn(env = process.env) {
+  return on('KADE_SPEND_PRICE_HEARD', env);
+}
+
+/** May this price row be claimed as far as "was it said" goes? Rows from before the rule
+ *  (no turn on them) pass, as they did. */
+function priceWasSaid(q, env = process.env) {
+  if (!priceHeardOn(env)) return true;
+  if (!q || !q.turnId) return true;
+  return q.heard === true;
+}
+
+/* conversationId -> does it hold an open price, as far as this server knows. A conversation
+ * this server has not seen is checked in the database once. */
+const openPrices = new Map();
+const OPEN_MAX = 5000;
+function noteOpen(convo, open) {
+  openPrices.delete(convo);
+  if (openPrices.size >= OPEN_MAX) {
+    let n = Math.floor(OPEN_MAX / 5);
+    for (const k of openPrices.keys()) {
+      if (n-- <= 0) break;
+      openPrices.delete(k);
+    }
+  }
+  openPrices.set(convo, open);
+}
+
+/**
+ * Runs once a reply is finished (controllers/agents/client.js), after it has gone out; nothing
+ * waits on it. Two jobs, both plain database updates, no model:
+ *   1. a price worked out during this reply is stamped heard or not heard, by whether the
+ *      reply's own words (never a tool result) carried a money amount;
+ *   2. when the person's message this turn was not a plain yes, prices left open in this
+ *      conversation by earlier turns are closed.
+ * Never throws.
+ * @returns {Promise<{ stamped: number, heard: boolean | null, lapsed: number } | null>}
+ */
+async function afterReply({ req, replyText, agentName, env = process.env, colls } = {}) {
+  try {
+    if (!priceHeardOn(env)) return null;
+    if (!req || req.kadeHiddenRun === true) return null;
+    const t = turnOf(req);
+    if (!t) return null;
+    const get = (name) => (colls && colls[name]) || require('mongoose').connection.collection(name);
+    const out = { stamped: 0, heard: null, lapsed: 0 };
+    const now = new Date();
+    const count = (r) => (r && (r.modifiedCount ?? r.nModified)) || 0;
+    if (t.quoted.size > 0) {
+      out.heard = PRICE_SHAPE.test(String(replyText || ''));
+      for (const name of t.quoted) {
+        out.stamped += count(
+          await get(name).updateMany({ turnId: t.id, usedAt: { $exists: false } }, { $set: { heard: out.heard, heardAt: now } }),
+        );
+      }
+    }
+    const convo = conversationOf(req);
+    if (!convo) return out;
+    const said = latestWords(req.body && req.body.text);
+    const plainYes =
+      said.ok && approvesPrice(said.words, { names: [agentName], topic: [...TASK_TOPIC, ...SONG_TOPIC] });
+    if (said.ok && !plainYes && !isReplay(req) && openPrices.get(convo) !== false) {
+      for (const name of [TASK_QUOTES, SONG_QUOTES]) {
+        out.lapsed += count(
+          await get(name).updateMany(
+            { conversationId: convo, usedAt: { $exists: false }, turnId: { $ne: t.id } },
+            { $set: { usedAt: now, lapsed: true } },
+          ),
+        );
+      }
+      noteOpen(convo, t.quoted.size > 0);
+    } else if (t.quoted.size > 0) {
+      noteOpen(convo, true);
+    }
+    return out;
+  } catch (_) {
+    return null;
+  }
 }
 
 /* --------------------------------------------------------------- the song gate */
@@ -180,7 +310,7 @@ function unwrap(found) {
  * (reason 'quoted'): the character says it and asks. A later turn whose message is a plain yes
  * claims that price once and the song is made.
  *
- * @returns {Promise<{ ok: true, release: () => Promise<void> } | { ok: false, reason: 'quoted' | 'not-approved' | 'turn-limit' | 'voice' | 'hidden' | 'unavailable' }>}
+ * @returns {Promise<{ ok: true, release: () => Promise<void> } | { ok: false, reason: 'quoted' | 'not-approved' | 'replay' | 'turn-limit' | 'voice' | 'hidden' | 'unavailable' }>}
  */
 async function songGate({ req, userId, engine, estUSD, agentName, env = process.env, coll } = {}) {
   const gateOn = on('KADE_SONG_YES_GATE', env);
@@ -194,6 +324,10 @@ async function songGate({ req, userId, engine, estUSD, agentName, env = process.
   const uid = userId == null ? '' : String(userId);
   if (!req || !uid) return { ok: false, reason: 'unavailable' };
   if (req.kadeHiddenRun === true) return { ok: false, reason: 'hidden' };
+  /* A call: its conversation is new every turn, so a price given now could never be found
+   * again. Said up front, before any price row is written (the first sentence of a call
+   * carries no folded history and used to be taken for a text chat). */
+  if (isVoiceLane(req)) return { ok: false, reason: 'voice' };
 
   const c = coll || songColl();
   const convo = conversationOf(req);
@@ -202,7 +336,16 @@ async function songGate({ req, userId, engine, estUSD, agentName, env = process.
   const cutoff = new Date(Date.now() - SONG_QUOTE_MINUTES * 60000);
   const open = convo
     ? await c.findOne(
-        { userId: uid, conversationId: convo, engine, usedAt: { $exists: false }, createdAt: { $gte: cutoff }, turnId: { $ne: tid } },
+        {
+          userId: uid,
+          conversationId: convo,
+          engine,
+          usedAt: { $exists: false },
+          createdAt: { $gte: cutoff },
+          turnId: { $ne: tid },
+          /* only a price the person was told (afterReply stamps it) */
+          ...(priceHeardOn(env) ? { heard: true } : {}),
+        },
         { sort: { createdAt: -1 } },
       )
     : null;
@@ -223,10 +366,12 @@ async function songGate({ req, userId, engine, estUSD, agentName, env = process.
         createdAt: new Date(),
       });
     }
+    markQuoted(req, SONG_QUOTES);
     return { ok: false, reason: 'quoted' };
   }
 
   if (!said.ok) return { ok: false, reason: 'voice' };
+  if (on('KADE_SPEND_NO_REPLAY', env) && isReplay(req)) return { ok: false, reason: 'replay' };
   if (!approvesPrice(said.words, { names: [agentName], topic: SONG_TOPIC })) return { ok: false, reason: 'not-approved' };
   if (onceOn && !claimOnce(req, KEY)) return { ok: false, reason: 'turn-limit' };
 
@@ -268,6 +413,14 @@ module.exports = {
   claimOnce,
   releaseOnce,
   conversationOf,
+  markQuoted,
+  isReplay,
+  priceHeardOn,
+  priceWasSaid,
+  afterReply,
+  PRICE_SHAPE,
+  TASK_QUOTES,
+  _resetForTests: () => openPrices.clear(),
   isVoiceLane,
   latestWords,
   approvesPrice,

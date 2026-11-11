@@ -39,9 +39,15 @@ const tasks = require('./kadeTasks');
 
 const turn = (id, text, extra = {}) => ({ user: { id, role: 'USER' }, body: { conversationId: 'c-1', text, ...extra } });
 const GOAL = 'find the cheapest chest freezer near the test town';
-const quoteIn = async (req) => {
+const spend = require('./kadeSpendGate');
+/* The end of a reply: the character's own words go by, and the prices of that turn are stamped. */
+const replied = (req, replyText = 'That job usually costs about 12 cents, 40 cents at the very most. Want me to start it?') =>
+  spend.afterReply({ req, replyText, agentName: 'Testa' });
+/* A quote whose reply said the price, as the tool tells the character to. `say: false` leaves it unsaid. */
+const quoteIn = async (req, { say = true } = {}) => {
   const q = await tasks.quote({ req, agentId: AGENT, goal: GOAL, steps: 8 });
   assert.equal(q.ok, true);
+  if (say) await replied(req);
   return q;
 };
 const startIn = (req, quoteId) => tasks.start({ req, agentId: AGENT, agentName: 'Testa', quoteId, conversationId: req.body.conversationId });
@@ -53,6 +59,9 @@ beforeEach(() => {
   runs.length = 0;
   delete process.env.KADE_TASK_YES_GATE;
   delete process.env.KADE_TASK_ATOMIC_START;
+  delete process.env.KADE_SPEND_PRICE_HEARD;
+  delete process.env.KADE_SPEND_NO_REPLAY;
+  spend._resetForTests();
 });
 
 test('happy path: price in one turn, a plain yes in the next, the job starts once', async () => {
@@ -136,8 +145,10 @@ test('two start calls in one turn: exactly one job', async () => {
 });
 
 test('two start calls in one turn with two different quotes: still exactly one job', async () => {
-  const q1 = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
-  const q2 = await quoteIn(turn('adult', 'and a second job please'));
+  /* two prices worked out, and said, in the one reply */
+  const asked = turn('adult', 'can you find me a cheap chest freezer and a second job please');
+  const q1 = await quoteIn(asked, { say: false });
+  const q2 = await quoteIn(asked);
   const req = turn('adult', 'yes');
   const out = await Promise.all([startIn(req, q1.quoteId), startIn(req, q2.quoteId)]);
   assert.equal(out.filter((o) => o.ok).length, 1);
@@ -155,8 +166,9 @@ test('two requests at the same moment (two servers): one job, by the one-step cl
   /* two different quotes, two requests, same instant: the lock lets one through */
   colls = {};
   runs.length = 0;
-  const qa = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
-  const qb = await quoteIn(turn('adult', 'and a second job please'));
+  const asked = turn('adult', 'can you find me a cheap chest freezer and a second job please');
+  const qa = await quoteIn(asked, { say: false });
+  const qb = await quoteIn(asked);
   const two = await Promise.all([startIn(turn('adult', 'yes'), qa.quoteId), startIn(turn('adult', 'yes'), qb.quoteId)]);
   assert.equal(two.filter((o) => o.ok).length, 1);
   await settle();
@@ -165,8 +177,10 @@ test('two requests at the same moment (two servers): one job, by the one-step cl
 });
 
 test('one task at a time and the daily cap still hold, and leave the quote unused', async () => {
-  const q1 = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
-  const q2 = await quoteIn(turn('adult', 'and a second job please'));
+  /* two prices worked out, and said, in the one reply */
+  const asked = turn('adult', 'can you find me a cheap chest freezer and a second job please');
+  const q1 = await quoteIn(asked, { say: false });
+  const q2 = await quoteIn(asked);
   assert.equal((await startIn(turn('adult', 'yes'), q1.quoteId)).ok, true);
   const s2 = await startIn(turn('adult', 'yes'), q2.quoteId);
   assert.match(s2.error, /one task at a time/);
@@ -250,6 +264,7 @@ test('the tool passes every refusal on plainly, and a start says started only wh
     const sameTurn = await tool(first)._call({ action: 'start', quoteId: quoted.quoteId });
     assert.match(sameTurn, /^Not started: /);
     assert.match(sameTurn, /do not pretend it is running/);
+    await replied(first);
     const noYes = await tool(turn('adult', 'ok, read this page for me'))._call({ action: 'start', quoteId: quoted.quoteId });
     assert.match(noYes, /^Not started: their last message is not a plain yes/);
     const started = JSON.parse(await tool(turn('adult', 'yes please'))._call({ action: 'start', quoteId: quoted.quoteId }));
@@ -260,4 +275,97 @@ test('the tool passes every refusal on plainly, and a start says started only wh
   } finally {
     restore();
   }
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Review fixes, Nov 10 2026: the price must have been SAID, the yes must answer it, and a
+ * retried reply is not a yes.
+ * ---------------------------------------------------------------------------------------- */
+
+test('review: a price worked out but never said cannot be started by a later yes', async () => {
+  /* a page in the turn told the model to quote quietly; the reply was a summary with no price */
+  const first = turn('adult', 'read this page for me');
+  const q = await quoteIn(first, { say: false });
+  await replied(first, 'Here is the summary of that page. Want me to keep going?');
+  assert.equal(colls.kadetaskquotes.rows[0].heard, false);
+  const s = await startIn(turn('adult', 'yes please'), q.quoteId);
+  assert.equal(s.ok, false);
+  assert.match(s.error, /never said to them/);
+  assert.equal(running(), 0);
+  /* and a reply that never ended at all (no stamp) is the same */
+  colls = {};
+  const q2 = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'), { say: false });
+  assert.match((await startIn(turn('adult', 'yes'), q2.quoteId)).error, /never said to them/);
+  assert.equal(running(), 0);
+});
+
+test('review: the price may be said in digits, in words or with a dollar sign; a tool result is never the reply', async () => {
+  for (const words of ['That would be about 12 cents.', 'It runs twelve cents or so, okay?', 'Call it $0.12 at most.', 'Under a cent, honestly.', 'A couple of bucks at the very most.']) {
+    colls = {};
+    spend._resetForTests();
+    const first = turn('adult', 'can you find me a cheap chest freezer');
+    const q = await quoteIn(first, { say: false });
+    await replied(first, words);
+    assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true, words);
+  }
+});
+
+test('review: a message that is not a yes closes the price, so a later "sure" to something else buys nothing', async () => {
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  /* they said no thanks; the reply to that ends */
+  const no = turn('adult', 'no thanks, maybe another day');
+  await replied(no, 'No problem. Want to hear a joke instead?');
+  assert.equal(colls.kadetaskquotes.rows[0].lapsed, true);
+  const s = await startIn(turn('adult', 'sure'), q.quoteId);
+  assert.equal(s.ok, false);
+  assert.match(s.error, /has closed/);
+  assert.equal(running(), 0);
+});
+
+test('review: a yes the server could not act on leaves the price open for the next yes', async () => {
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  const yes = turn('adult', 'yes');
+  await replied(yes, 'The site is restarting, ask me again in a few minutes.');
+  assert.equal(colls.kadetaskquotes.rows[0].usedAt, undefined);
+  assert.equal((await startIn(turn('adult', 'Yes, go ahead'), q.quoteId)).ok, true);
+});
+
+test('review: another conversation saying something else does not close this one\'s price', async () => {
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  await replied(turn('adult', 'what is the weather', { conversationId: 'c-2' }), 'Sunny.');
+  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
+});
+
+test('review: a regenerated, continued or edited reply cannot approve a price', async () => {
+  for (const flag of [{ isRegenerate: true }, { isContinued: true }, { editedContent: { index: 0, text: 'x' } }]) {
+    colls = {};
+    spend._resetForTests();
+    const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+    const s = await startIn(turn('adult', 'yes', flag), q.quoteId);
+    assert.equal(s.ok, false, JSON.stringify(flag));
+    assert.match(s.error, /retry of an earlier one/);
+    /* the retried reply ending does not close the price; a fresh yes still starts it */
+    await replied(turn('adult', 'yes', flag), 'That job is about 12 cents. Want it?');
+    assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true, JSON.stringify(flag));
+  }
+});
+
+test('review: the two new off switches put the first cut back', async () => {
+  process.env.KADE_SPEND_PRICE_HEARD = '0';
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'), { say: false });
+  await replied(turn('adult', 'no thanks'), 'Okay.');
+  assert.equal(colls.kadetaskquotes.rows[0].usedAt, undefined, 'nothing is stamped or closed');
+  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
+  delete process.env.KADE_SPEND_PRICE_HEARD;
+  colls = {};
+  process.env.KADE_SPEND_NO_REPLAY = '0';
+  const q2 = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  assert.equal((await startIn(turn('adult', 'yes', { isRegenerate: true }), q2.quoteId)).ok, true);
+});
+
+test('review: a background run ending stamps and closes nothing', async () => {
+  const q = await quoteIn(turn('adult', 'can you find me a cheap chest freezer'));
+  const hidden = { ...turn('adult', 'do the job now'), kadeHiddenRun: true };
+  assert.equal(await spend.afterReply({ req: hidden, replyText: 'Working.' }), null);
+  assert.equal((await startIn(turn('adult', 'yes'), q.quoteId)).ok, true);
 });

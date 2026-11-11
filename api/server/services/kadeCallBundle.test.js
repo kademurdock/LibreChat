@@ -358,7 +358,7 @@ test('the route is wired: timed from its first line, cards through callCards, me
   assert.ok(start > 0 && route.length > 500);
   assert.match(route, /^router\.get\('\/call-memories', async \(req, res\) => \{\n {2}const startedAt = Date\.now\(\);/);
   assert.match(route, /callBundle\.callCards\(\{ userId: uid, agentId, text: withoutKeys \|\| '', max: 6000 \}\)/);
-  assert.match(route, /callBundle\.holdCallNudges\(\{ userId: uid, req, res, startedAt, limit: 5, exceptTypes: \['library-digest'\] \}\)/);
+  assert.match(route, /callBundle\.holdCallNudges\(\{ userId: uid, req, res, startedAt, limit: 5, exceptTypes: \['library-digest'\], callerWaitMs: req\.query\.wait \}\)/);
   /* the old take-before-answer path exists only behind the off switch */
   const safe = route.indexOf('callBundle.safeNudgesOn()');
   const take = route.indexOf('takePendingChatNudges(uid');
@@ -377,4 +377,58 @@ test('switches default on and read "0" as off', async () => {
     assert.strictEqual(B.safeNudgesOn(), false);
     assert.strictEqual(B.nudgeBudgetMs(), 1800);
   });
+});
+
+test('review fix: the budget follows how long the caller says it waits; a set number wins; junk and no word keep 1,800', async () => {
+  assert.strictEqual(B.nudgeBudgetMs('6000'), 5300);
+  assert.strictEqual(B.nudgeBudgetMs(6000), 5300);
+  assert.strictEqual(B.nudgeBudgetMs('2500'), 1800);
+  assert.strictEqual(B.nudgeBudgetMs('15000'), 14300);
+  for (const junk of [undefined, null, '', ' ', 'soon', '999', '15001', '-6000', 'NaN', ['6000', '9000'], {}]) {
+    assert.strictEqual(B.nudgeBudgetMs(junk), 1800, String(junk));
+  }
+  await withEnv({ KADE_CALL_NUDGE_BUDGET_MS: '900' }, async () => {
+    assert.strictEqual(B.nudgeBudgetMs('6000'), 900);
+  });
+  await withEnv({ KADE_CALL_NUDGE_CALLER_WAIT: '0' }, async () => {
+    assert.strictEqual(B.nudgeBudgetMs('6000'), 1800);
+  });
+});
+
+test('review fix: a route that took 2 s still hands the messages to a caller that waits 6 s, and to no one that waits 2.5 s', async () => {
+  const { EventEmitter } = require('node:events');
+  const mk = () => {
+    const socket = new EventEmitter();
+    socket.destroyed = false;
+    const res = new EventEmitter();
+    res.socket = socket;
+    res.statusCode = 200;
+    return { socket, res };
+  };
+  const model = fakeNudges([{ userId: 'u1', text: 'Reminder: water the beans' }]);
+  /* an older bridge (no word on its wait): 2 s is past the 1.8 s budget */
+  const old = mk();
+  const heldOld = await B.holdCallNudges({ userId: 'u1', req: {}, res: old.res, startedAt: 1000, model, clock: () => 3000 });
+  assert.strictEqual(heldOld.reason, 'slow');
+  assert.deepStrictEqual(heldOld.pending, []);
+  const short = mk();
+  const heldShort = await B.holdCallNudges({ userId: 'u1', req: {}, res: short.res, startedAt: 1000, model, clock: () => 3000, callerWaitMs: '2500' });
+  assert.strictEqual(heldShort.reason, 'slow');
+  assert.deepStrictEqual(delivered(model), []);
+  /* the bridge that waits 6 s gets them, and they are marked once the answer is out */
+  let t = 3000;
+  const now = mk();
+  const held = await B.holdCallNudges({ userId: 'u1', req: {}, res: now.res, startedAt: 1000, model, clock: () => t, callerWaitMs: '6000' });
+  assert.strictEqual(held.reason, 'offered');
+  assert.strictEqual(held.pending.length, 1);
+  t = 3200;
+  now.res.emit('finish');
+  assert.strictEqual(await held.settled, 1);
+  assert.deepStrictEqual(delivered(model), ['n1']);
+  /* past even that caller's patience they stay waiting */
+  const model2 = fakeNudges([{ userId: 'u1', text: 'Reminder: water the beans' }]);
+  const late = mk();
+  const heldLate = await B.holdCallNudges({ userId: 'u1', req: {}, res: late.res, startedAt: 1000, model: model2, clock: () => 6400, callerWaitMs: '6000' });
+  assert.strictEqual(heldLate.reason, 'slow');
+  assert.deepStrictEqual(delivered(model2), []);
 });

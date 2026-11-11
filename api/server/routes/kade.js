@@ -2922,7 +2922,7 @@ router.get('/call-memories', async (req, res) => {
          * route has already run long, and marked only once the answer has
          * gone out to a caller that is still there (kadeCallBundle.js).
          * Off: KADE_CALL_NUDGE_SAFE=0. */
-        ({ pending } = await callBundle.holdCallNudges({ userId: uid, req, res, startedAt, limit: 5, exceptTypes: ['library-digest'] }));
+        ({ pending } = await callBundle.holdCallNudges({ userId: uid, req, res, startedAt, limit: 5, exceptTypes: ['library-digest'], callerWaitMs: req.query.wait }));
       } else {
         const { takePendingChatNudges } = require('~/server/services/kadeNudges');
         pending = await takePendingChatNudges(uid, 5, { exceptTypes: ['library-digest'] });

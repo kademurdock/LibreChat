@@ -1698,6 +1698,21 @@ class AgentClient extends BaseClient {
       } catch (_) {
         /* a counter never costs anyone their reply */
       }
+      /* Nov 10 2026 (spend gate review): a price worked out during this reply is stamped with
+       * whether the reply's own words said it, and a message that was not a yes closes prices
+       * left open before it (services/kadeSpendGate.js afterReply). After the reply, never
+       * waited on, no model. KADE_SPEND_PRICE_HEARD=0. */
+      try {
+        const saidText = (Array.isArray(completion) ? completion : [])
+          .filter((part) => part && part.type === ContentTypes.TEXT)
+          .map((part) => (typeof part.text === 'string' ? part.text : (part.text && part.text.value) || ''))
+          .join('\n');
+        require('~/server/services/kadeSpendGate')
+          .afterReply({ req: this.options?.req, replyText: saidText, agentName: this.options?.agent?.name })
+          .catch(() => {});
+      } catch (_) {
+        /* never costs anyone their reply */
+      }
       completion = applyReminderPromiseGuard(completion, {
         agentTools: this.options?.agent?.tools,
         agentId: this.options?.agent?.id,

@@ -116,10 +116,19 @@ test('conversation and lane helpers', () => {
 
 const turn = (text, extra = {}) => ({ user: { id: 'u1' }, body: { conversationId: 'c-1', text, ...extra } });
 const ask = (coll, req, over = {}) => gate.songGate({ req, userId: 'u1', engine: 'lyria3_pro', estUSD: 0.08, env: {}, coll, ...over });
+/* The end of a reply: the character's own words go by, and the prices of that turn are stamped. */
+const replied = (coll, req, replyText = 'A song like that is about 16 cents. Want me to make it?', env = {}) =>
+  gate.afterReply({ req, replyText, env, agentName: 'Testa', colls: { kadesongquotes: coll, kadetaskquotes: new FakeCollection() } });
+/* A first ask whose reply said the price. */
+const priced = async (coll, req, over = {}) => {
+  const out = await ask(coll, req, over);
+  await replied(coll, req);
+  return out;
+};
 
 test('song: the first ask only records the price; a later plain yes makes one song, once', async () => {
   const coll = new FakeCollection();
-  const first = await ask(coll, turn('make me a song about rain'));
+  const first = await priced(coll, turn('make me a song about rain'));
   assert.deepEqual(first, { ok: false, reason: 'quoted' });
   assert.equal(coll.rows.length, 1);
   const yes = await ask(coll, turn('yes, go ahead'));
@@ -144,7 +153,7 @@ test('song: asked twice in the turn that hears no price yet, nothing is made and
 
 test('song: "ok, read this page for me" is not a yes to the price', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   const out = await ask(coll, turn('ok, read this page for me'));
   assert.deepEqual(out, { ok: false, reason: 'not-approved' });
   assert.equal(coll.rows[0].usedAt, undefined);
@@ -152,7 +161,7 @@ test('song: "ok, read this page for me" is not a yes to the price', async () => 
 
 test('song: two calls in the yes turn make one song', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   const req = turn('yes');
   const out = await Promise.all([ask(coll, req), ask(coll, req), ask(coll, req)]);
   assert.equal(out.filter((o) => o.ok).length, 1);
@@ -161,25 +170,25 @@ test('song: two calls in the yes turn make one song', async () => {
 
 test('song: two yes turns at the same moment still make one song (the claim is one step)', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   const out = await Promise.all([ask(coll, turn('yes')), ask(coll, turn('yes'))]);
   assert.equal(out.filter((o) => o.ok).length, 1);
 });
 
 test('song: a price from another conversation, another engine or over an hour ago does not count', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   assert.equal((await ask(coll, turn('yes', { conversationId: 'c-2' }))).reason, 'quoted');
   assert.equal((await ask(coll, turn('yes'), { engine: 'minimax', estUSD: 0.15 })).reason, 'quoted');
   const old = new FakeCollection();
-  await ask(old, turn('make me a song about rain'));
+  await priced(old, turn('make me a song about rain'));
   old.rows[0].createdAt = new Date(Date.now() - 61 * 60000);
   assert.equal((await ask(old, turn('yes'))).reason, 'quoted');
 });
 
 test('song: one yes closes older unanswered prices too', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   /* asking again without a yes repeats the price and writes no second row */
   assert.equal((await ask(coll, turn('actually make it about snow'))).reason, 'not-approved');
   assert.equal(coll.rows.length, 1);
@@ -192,7 +201,7 @@ test('song: one yes closes older unanswered prices too', async () => {
 
 test('song: when fal turns the job away, release gives the yes back for one more try', async () => {
   const coll = new FakeCollection();
-  await ask(coll, turn('make me a song about rain'));
+  await priced(coll, turn('make me a song about rain'));
   const req = turn('yes');
   const first = await ask(coll, req);
   assert.equal(first.ok, true);
@@ -227,4 +236,118 @@ test('song: the off switches put the old behaviour back', async () => {
   const free = turn('make me a song about rain');
   assert.equal((await ask(coll, free, { env: both })).ok, true);
   assert.equal((await ask(coll, free, { env: both })).ok, true);
+});
+
+/* ------------------------------------------------------------------------------------------
+ * Review fixes, Nov 10 2026.
+ * ---------------------------------------------------------------------------------------- */
+
+test('review: the yeses people who dictate really say', () => {
+  for (const yes of [
+    "Yes, I'd like that", 'yes sixteen cents is fine', 'Uh huh', 'uh-huh', 'mhm', 'mm-hmm', "Yes ma'am", 'Yes, proceed', 'Yes, I agree',
+    'Yes I confirm', 'Hell yes', 'Yeah, why not', 'why not', 'Yes, I can afford that', 'Yes, charge me', 'Okay, I guess', 'fine',
+    'Fine, go ahead', 'Right', 'correct', 'Make it', 'start it', 'I want it', "I'd like that", 'Please', 'please do', 'proceed',
+    'Yes, go ahead and make it, honey', 'yes twenty five cents is okay',
+  ]) {
+    assert.equal(gate.approvesPrice(yes, { topic: gate.SONG_TOPIC }), true, yes);
+    assert.equal(gate.approvesPrice(yes, { topic: gate.TASK_TOPIC }), true, yes + ' (task)');
+  }
+  for (const yes of ['Yes please create it', 'Yes generate the song', 'ok write it', 'yes sing it', 'play it']) {
+    assert.equal(gate.approvesPrice(yes, { topic: gate.SONG_TOPIC }), true, yes);
+  }
+});
+
+test('review: the wider yes list still refuses a no, a maybe, a question and another request', () => {
+  for (const no of [
+    "I'm fine", "no I'm fine", 'not right now', 'ok not now', 'I guess not', 'why', 'hmm', 'huh?', 'uh', 'right now I am busy',
+    "I can't afford that", 'I cannot afford it', "I don't want it", 'I do not agree', 'I disagree', 'please read this page', 'please stop',
+    'fine but make it cheaper', 'right, so what is the weather', 'correct me if I am wrong', 'why not later', 'make it about my dog instead',
+    'start it tomorrow', 'I want it cheaper', 'sixteen cents?', 'how much',
+  ]) {
+    assert.equal(gate.approvesPrice(no, { topic: gate.SONG_TOPIC }), false, no);
+  }
+  /* song words are not yes words for a background job */
+  for (const no of ['ok write it', 'play it', 'yes sing it']) {
+    assert.equal(gate.approvesPrice(no, { topic: gate.TASK_TOPIC }), false, no + ' (task)');
+  }
+});
+
+test('review song: a price never said in the reply is not claimable; the next ask states the price again', async () => {
+  const coll = new FakeCollection();
+  const first = turn('read this page for me');
+  await ask(coll, first);
+  await replied(coll, first, 'Here is the summary. Want me to keep going?');
+  assert.equal(coll.rows[0].heard, false);
+  const next = turn('yes please');
+  assert.deepEqual(await ask(coll, next), { ok: false, reason: 'quoted' }, 'nothing is bought; a fresh price is recorded to be said');
+  assert.equal(coll.rows.filter((r) => r.usedAt === undefined).length, 2);
+  /* this time the reply says it, and the yes after that buys one song */
+  await replied(coll, next, 'A song like that is about 16 cents. Want it?');
+  assert.equal((await ask(coll, turn('yes'))).ok, true);
+});
+
+test('review song: a no closes the price; "sure" to a later question buys nothing', async () => {
+  const coll = new FakeCollection();
+  await priced(coll, turn('make me a song about rain'));
+  await replied(coll, turn('no thanks'), 'No problem. Want a joke instead?');
+  assert.equal(coll.rows[0].lapsed, true);
+  assert.deepEqual(await ask(coll, turn('sure')), { ok: false, reason: 'quoted' });
+});
+
+test('review song: a regenerated yes turn never buys; a fresh yes does', async () => {
+  const coll = new FakeCollection();
+  await priced(coll, turn('make me a song about rain'));
+  assert.deepEqual(await ask(coll, turn('yes', { isRegenerate: true })), { ok: false, reason: 'replay' });
+  assert.deepEqual(await ask(coll, turn('yes', { isContinued: true })), { ok: false, reason: 'replay' });
+  assert.equal(coll.rows[0].usedAt, undefined);
+  /* the reviewer's case: song bought, reply regenerated twice */
+  assert.equal((await ask(coll, turn('yes'))).ok, true);
+  const regen1 = turn('yes', { isRegenerate: true });
+  assert.deepEqual(await ask(coll, regen1), { ok: false, reason: 'quoted' });
+  await replied(coll, regen1);
+  assert.deepEqual(await ask(coll, turn('yes', { isRegenerate: true })), { ok: false, reason: 'replay' }, 'the second retry buys nothing');
+  assert.equal(coll.rows.filter((r) => r.usedAt instanceof Date && !r.lapsed).length, 1);
+  assert.equal((await ask(coll, turn('yes', { isRegenerate: true }), { env: { KADE_SPEND_NO_REPLAY: '0' } })).ok, true, 'switch off: as before');
+});
+
+test('review song: the voice lane is refused up front, before any price row, even on the first sentence of a call', async () => {
+  const coll = new FakeCollection();
+  const first = { ...turn('make me a song about my dog', { conversationId: 'minted-for-this-turn', kadeOnBehalfOf: 'caller@example.com' }) };
+  assert.deepEqual(await ask(coll, first), { ok: false, reason: 'voice' });
+  assert.deepEqual(await ask(coll, { ...turn('yes'), kadeOnBehalfOf: { id: 'u1' } }), { ok: false, reason: 'voice' });
+  assert.equal(coll.rows.length, 0);
+});
+
+test('review: KADE_SPEND_PRICE_HEARD=0 goes back to "a price row is enough"', async () => {
+  const coll = new FakeCollection();
+  const off = { KADE_SPEND_PRICE_HEARD: '0' };
+  const first = turn('make me a song about rain');
+  await ask(coll, first, { env: off });
+  assert.equal(await replied(coll, first, 'no price here', off), null);
+  assert.equal(await replied(coll, turn('no thanks'), 'ok', off), null);
+  assert.equal((await ask(coll, turn('yes'), { env: off })).ok, true);
+});
+
+test('review: afterReply never throws, and a conversation with nothing open is asked about once', async () => {
+  assert.equal(await gate.afterReply({}), null);
+  assert.equal(await gate.afterReply({ req: null }), null);
+  let asked = 0;
+  const counting = { updateMany: async () => { asked += 1; return { modifiedCount: 0 }; } };
+  const colls = { kadesongquotes: counting, kadetaskquotes: counting };
+  gate._resetForTests();
+  await gate.afterReply({ req: turn('hello there', { conversationId: 'c-quiet' }), replyText: 'hi', env: {}, colls });
+  assert.equal(asked, 2, 'first sight of the conversation: both collections once');
+  await gate.afterReply({ req: turn('how are you', { conversationId: 'c-quiet' }), replyText: 'well', env: {}, colls });
+  assert.equal(asked, 2, 'known to hold nothing open: no database call');
+  const broken = { updateMany: async () => { throw new Error('db down'); } };
+  assert.equal(await gate.afterReply({ req: turn('hello', { conversationId: 'c-broken' }), replyText: 'hi', env: {}, colls: { kadesongquotes: broken, kadetaskquotes: broken } }), null);
+});
+
+test('review: the price shape reads digits, words and signs, and not plain talk', () => {
+  for (const yes of ['about 16 cents', 'sixteen cents', '$0.16', 'under a cent', 'two dollars', 'a few bucks', 'one penny']) {
+    assert.equal(gate.PRICE_SHAPE.test(yes), true, yes);
+  }
+  for (const no of ['Here is the summary.', 'It makes sense to me', 'the scent of rain', 'per cent', '16 percent']) {
+    assert.equal(gate.PRICE_SHAPE.test(no), no === 'per cent', no);
+  }
 });

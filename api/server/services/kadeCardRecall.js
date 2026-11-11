@@ -735,12 +735,23 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
         /* A short message ("what about her?") searches with the previous user
          * message in front. Only when this turn has not already started an embed
          * of the plain words, so it is never a second embed. Memory only. */
-        if (previousUserText && Q.isShortTurn(text, process.env) && !Q.memoHas(req, query)) {
+        /* Review fix: tool selection always starts the memory embed now, and on a
+         * short message it may already carry the previous message in front.
+         * Whatever this turn has started is the query; recall starts its own
+         * embed only when nothing was started (no tool selection this turn). */
+        const seeded = Q.seededQuery(req, query);
+        if (seeded) {
+          query = seeded;
+        } else if (previousUserText && Q.isShortTurn(text, process.env)) {
           query = Q.withPrevious(text, previousUserText, process.env);
         }
         const asked = require('./kadeToolRetrieval').memoEmbed(req, embedText)(query);
         if (deadlineOn) {
-          const got = await embedByDeadline(asked, embedBy);
+          /* An embed that only starts now gets the wait it always had, counted
+           * from here: a deadline counted from the turn's start could already be
+           * past, and the embed would be paid for and thrown away at once. */
+          const by = seeded ? embedBy : embedDeadlineAt(t0, undefined);
+          const got = await embedByDeadline(asked, by);
           embedLost = got === EMBED_LOST;
           qv = embedLost ? null : got;
         } else {
@@ -918,7 +929,9 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
         /* Nov 10 2026: no vector, no logbook block. The search's own fallback is
          * the newest entries whatever was asked; those rode every blind turn.
          * (KADE_RECALL_DEADLINE=0 asks it anyway, as before.) */
-        const hits = qv || !deadlineOn
+        /* A bare greeting under the gate never searched the logbook, and still
+         * does not, whichever way the deadline switch is set. */
+        const hits = qv || (!deadlineOn && !noEmbed)
           ? await searchDiary({
               userId,
               agentId,

@@ -69,6 +69,15 @@ const REFUSED = {
     'a paid job cannot be started from a call yet, because the yes to the price cannot be checked here. ' +
     'Say that kindly in one short sentence and ask them to ask you again in the text chat',
   oncePerTurn: 'one job per reply, and this reply already tried to start one',
+  notSaid:
+    'that price was worked out but never said to them in your own words, so their yes was not a yes to it. ' +
+    'Quote again, say the price in your reply and ask. Start in a later reply, after their own message says yes',
+  replay:
+    'this reply is a retry of an earlier one, so their message is an old one sent again and cannot count as a new yes. ' +
+    'Say the price again and ask for a fresh yes',
+  lapsed:
+    'that price was not taken up when it was given (their next message was about something else), so it has closed. ' +
+    'Quote again, tell them the price and ask',
   busyStarting: 'another start for them is going through this very second. Check the list before trying again',
 };
 
@@ -85,6 +94,8 @@ function yesRefusal(req, q, agentName) {
     if (!here || q.conversationId !== here) return voice ? REFUSED.voice : REFUSED.otherConversation;
   }
   if (!said.ok) return said.folded ? REFUSED.voice : REFUSED.noYes;
+  if (spend.on('KADE_SPEND_NO_REPLAY') && spend.isReplay(req)) return REFUSED.replay;
+  if (!spend.priceWasSaid(q)) return REFUSED.notSaid;
   if (!spend.approvesPrice(said.words, { names: [agentName], topic: spend.TASK_TOPIC })) return REFUSED.noYes;
   return null;
 }
@@ -207,6 +218,7 @@ async function quote({ req, agentId, goal, steps = DEFAULT_STEPS }) {
     conversationId: spend.conversationOf(req),
     createdAt: new Date(),
   });
+  spend.markQuoted(req, QUOTES);
   return {
     ok: true,
     quoteId,
@@ -232,7 +244,7 @@ async function start({ req, agentId, agentName, quoteId, conversationId }) {
   if (Date.now() - new Date(q.createdAt).getTime() > QUOTE_MINUTES * 60000) {
     return { ok: false, error: 'that price is over an hour old; quote again' };
   }
-  if (q.usedAt) return { ok: false, error: 'that quote already started a task' };
+  if (q.usedAt) return { ok: false, error: q.lapsed ? REFUSED.lapsed : 'that quote already started a task' };
   if (yesGate) {
     const refused = yesRefusal(req, q, agentName);
     if (refused) return { ok: false, error: refused };

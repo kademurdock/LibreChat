@@ -62,6 +62,8 @@ class FalAI extends Tool {
     this.override = fields.override ?? false;
     this.userId = fields.userId;
     this.req = fields.req;
+    /* The character's own name: "yes, <name>, go ahead" is a yes to a song price. */
+    this.agentName = typeof fields.agentName === 'string' ? fields.agentName : undefined;
     this.name = 'fal_studio';
     /* Part 295 ("Yes, double everything"): every price the model is told is what THIS person pays,
      * the platform factor x fal's price, and the real price for Kade. */
@@ -739,7 +741,7 @@ class FalAI extends Tool {
         userId: this.userId,
         engine,
         estUSD,
-        agentName: this.req?.body?.agentName,
+        agentName: this.agentName || this.req?.body?.agentName,
       });
     } catch (e) {
       logger.warn('[FalAI] song yes check failed closed: ' + (e && e.message));
@@ -758,6 +760,9 @@ class FalAI extends Tool {
       'not-approved':
         `NOT MADE YET, and nothing was charged. Their last message is not a plain yes to the price (${price} for a ${engLabel} song). ` +
         'Say the price again and ask for a plain yes. Do not say the song is being made.',
+      replay:
+        `NOT MADE YET, and nothing was charged. This reply is a retry of an earlier one, so their message is an old one sent again and cannot count as a new yes. ` +
+        `Say the price again (${price} for a ${engLabel} song) and ask for a fresh yes. Do not say the song is being made.`,
       'turn-limit': `${NOT} One paid song per reply, and this reply already has one. If they want another, tell them the price (${price}) and ask.`,
       voice:
         `${NOT} A paid song cannot be started from a call yet, because the yes to the price cannot be checked here. ` +

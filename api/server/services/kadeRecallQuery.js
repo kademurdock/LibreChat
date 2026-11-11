@@ -88,15 +88,6 @@ function isShortTurn(text, env) {
 }
 
 /**
- * Should tool retrieval start the memory embed for these words now, ahead of
- * recall? Not on a short turn: recall may search with the previous message in
- * front, and starting the plain query here as well would be a second embed.
- */
-function seedsMemoryQuery(text, env) {
-  return !isShortTurn(text, env);
-}
-
-/**
  * The memory query for a short latest message: the previous user message (its
  * last PREVIOUS_CHARS characters, wrapper removed) on one line, then the latest
  * words. Returns the plain memoryQuery when the turn is not short or there is
@@ -114,10 +105,68 @@ function withPrevious(latest, previous, env) {
   return (prev.slice(-PREVIOUS_CHARS).trim() + '\n' + plain).slice(0, QUERY_CHARS);
 }
 
+/**
+ * The memory query tool retrieval starts early, beside its tools query. Tool
+ * retrieval runs before the stored messages are read, so `previous` is the
+ * last message it saw in this conversation (held in memory there), or ''.
+ * Always a string to embed: a short turn with no known previous message gets
+ * the plain words, so no turn waits for recall to start the embed itself.
+ */
+function earlyMemoryQuery(latest, previous, env) {
+  return withPrevious(latest, previous || '', env);
+}
+
 /** Has this request already started a memory embed of exactly `query`? */
 function memoHas(req, query) {
   const memo = req && req._kadeEmbedMemo;
   return Boolean(memo && typeof memo.has === 'function' && memo.has('query\0' + String(query || '')));
+}
+
+/**
+ * The memory query this request has ALREADY started for these plain words, if
+ * any: the plain words with a previous message in front (preferred), or the
+ * plain words themselves. Recall searches with it instead of starting another
+ * embed and waiting for that one from zero. null when nothing was started.
+ */
+function seededQuery(req, plain) {
+  const memo = req && req._kadeEmbedMemo;
+  const p = String(plain || '');
+  if (!p || !memo || typeof memo.keys !== 'function') {
+    return null;
+  }
+  const head = 'query\0';
+  let exact = null;
+  for (const key of memo.keys()) {
+    if (typeof key !== 'string' || !key.startsWith(head)) {
+      continue;
+    }
+    const value = key.slice(head.length);
+    if (value === p) {
+      exact = value;
+    } else if (value.endsWith('\n' + p)) {
+      return value;
+    }
+  }
+  return exact;
+}
+
+/**
+ * The caller's own earlier lines from a voice turn's folded history, newest
+ * last, at most `n` of them. The character's own "YOU:" lines are left out.
+ * [] when the text carries no wrapper. Pure.
+ */
+function earlierCallerLines(text, n = 3) {
+  const raw = typeof text === 'string' ? text : '';
+  const out = [];
+  for (const block of raw.match(CONTEXT_REPLAY_RE) || []) {
+    for (const line of block.split('\n')) {
+      const m = /^THEM:\s*(.+)$/.exec(line.trim());
+      if (m && m[1].trim()) {
+        out.push(m[1].trim());
+      }
+    }
+  }
+  return n > 0 ? out.slice(-n) : [];
 }
 
 /**
@@ -184,9 +233,11 @@ module.exports = {
   turnWords,
   memoryQuery,
   isShortTurn,
-  seedsMemoryQuery,
+  earlyMemoryQuery,
   withPrevious,
   memoHas,
+  seededQuery,
+  earlierCallerLines,
   recallTurnText,
   greetingShaped,
   shortGreeting,

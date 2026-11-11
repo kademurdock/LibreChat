@@ -53,6 +53,8 @@
  *   KADE_TOOLS_MAX_EMBED        max tools taken by embedding per turn (4)
  *   KADE_TOOLS_RAG_SKIP_AGENTS  comma list of agent ids never filtered
  *   KADE_TOOLS_RAG_STRICT=1     trust keywords alone when the embed lane is down
+ *   KADE_TOOLS_VOICE_CARRY=0    on a call, do not attach a tool named in the
+ *                               caller's own last three lines (Nov 10 2026)
  *   KADE_RECALL_QUERY_CLEAN=0   read a voice turn with its "earlier in this
  *                               conversation" wrapper still on (Nov 10 2026;
  *                               the words are worked out in kadeRecallQuery.js,
@@ -387,7 +389,8 @@ function worldReferent(text) {
   return PROPER_NOUN.test(stripped);
 }
 
-function keywordHits(text, candidates) {
+/** The alias pass alone: tools whose own names or cue words are in `text`. */
+function aliasHits(text, candidates) {
   const hits = new Set();
   const t = String(text || '');
   if (!t) return hits;
@@ -396,6 +399,52 @@ function keywordHits(text, candidates) {
     if (!pats) continue;
     if (pats.some((re) => re.test(t))) hits.add(name);
   }
+  return hits;
+}
+
+const VOICE_CARRY_LINES = 3;
+function voiceCarryOn() {
+  return String(process.env.KADE_TOOLS_VOICE_CARRY || '') !== '0';
+}
+
+/* Nov 10 2026 (review fix): the last message this server saw in a conversation,
+ * so tool selection can start the memory embed for a SHORT message with the
+ * previous message in front ("what about her?"). Tool selection runs before
+ * the stored messages are read, and waiting for recall to start that embed
+ * made the reply wait a whole embed longer. Held in memory only, never
+ * written or logged: at most LAST_MAX conversations, 1,500 characters each,
+ * dropped after 30 minutes or a restart. A placeholder id ("new", every voice
+ * turn) is never kept. KADE_RECALL_PREV_TURN=0 keeps nothing. */
+const LAST_TTL_MS = 30 * 60 * 1000;
+const LAST_MAX = 2000;
+/** conversationId → { last:string, prev:string, at:number } */
+const lastWords = new Map();
+function previousWords(convoId, text) {
+  if (String(process.env.KADE_RECALL_PREV_TURN || '') === '0') return '';
+  const k = stickyKey(convoId);
+  if (!k) return '';
+  const now = Date.now();
+  let e = lastWords.get(k);
+  if (e && now - e.at > LAST_TTL_MS) e = undefined;
+  const cur = String(text || '').slice(0, recallQuery.QUERY_CHARS);
+  /* A regenerate sends the same words again: the message before them stands. */
+  const prev = e ? (e.last === cur ? e.prev : e.last) : '';
+  lastWords.delete(k);
+  if (lastWords.size >= LAST_MAX) {
+    let n = Math.floor(LAST_MAX / 5);
+    for (const key of lastWords.keys()) {
+      if (n-- <= 0) break;
+      lastWords.delete(key);
+    }
+  }
+  lastWords.set(k, { last: cur, prev, at: now });
+  return prev;
+}
+
+function keywordHits(text, candidates) {
+  const hits = aliasHits(text, candidates);
+  const t = String(text || '');
+  if (!t) return hits;
   if (candidates.includes('web_search') && !hits.has('web_search')) {
     /* Part 132.3: "what's up?", "how's it going?" are greetings, not questions
      * about the world -- the fact-question rule was reading them as one. */
@@ -463,6 +512,7 @@ async function embedHits({
   margin,
   maxTake,
   waitMs = QUERY_WAIT_MS,
+  previous = '',
 }) {
   const out = { hits: new Set(), scored: [], failed: false, slow: false };
   if (!embed || !text || tools.length === 0) {
@@ -477,13 +527,14 @@ async function embedHits({
       const query = recallQuery.memoryQuery(text);
       /* Card recall reads the memory query for these same words from the per-turn
        * memo later in the turn; start it here, beside the tools query, as before.
-       * Not on a short message: recall may search those with the previous message
-       * in front, and starting the plain query too would be a second embed. */
-      if (recallQuery.seedsMemoryQuery(query)) {
-        Promise.resolve()
-          .then(() => embed(query))
-          .catch(() => null);
-      }
+       * ALWAYS started here (a review found short messages were left for recall to
+       * start, which made the reply wait one whole embed longer). On a short
+       * message whose previous message is known, the one memory query carries
+       * that message in front; recall finds it in the memo and uses it as is. */
+      const memoryQuery = recallQuery.earlyMemoryQuery(query, previous);
+      Promise.resolve()
+        .then(() => embed(memoryQuery))
+        .catch(() => null);
       const asked = Promise.resolve().then(() => embed(query, { purpose: 'tools' }));
       /* Descriptions only once the lane has answered (a down lane is not asked for
        * thirty more), and in the background. */
@@ -549,6 +600,8 @@ async function selectTools(p) {
    * reading those. KADE_RECALL_QUERY_CLEAN=0 puts the old text back. */
   const text = recallQuery.turnWords(p.text);
   if (!text) return keepAll('no-text');
+  /* The message before this one in the same conversation, if this server saw it. */
+  const previous = previousWords(p.conversationId, text);
 
   const core = coreSet();
   const keep = new Set();
@@ -573,8 +626,26 @@ async function selectTools(p) {
     text,
     candidates.map((t) => t.name),
   );
+  /* Nov 10 2026 (review fix): a call has no conversation to hold a tool across
+   * turns (its id is "new" every turn), and the folded earlier turns are no
+   * longer read above. So "leave a message for my sister" then "tell her I
+   * will be there at five" lost the message tool on the second turn. On such a
+   * turn the plain tool names in the caller's own last few lines still attach
+   * their tool. Names only (no fact-question rule, no embed), the caller's
+   * lines only, never the character's. Off: KADE_TOOLS_VOICE_CARRY=0. */
+  const carried = new Set();
+  if (voiceCarryOn() && !stickyKey(p.conversationId)) {
+    const names = candidates.map((t) => t.name);
+    for (const line of recallQuery.earlierCallerLines(p.text, VOICE_CARRY_LINES)) {
+      for (const name of aliasHits(line, names)) {
+        if (!kw.has(name)) carried.add(name);
+        kw.add(name);
+      }
+    }
+  }
   const emb = await embedHits({
     text,
+    previous,
     tools: candidates,
     embed: p.embed,
     queryVec: p.queryVec,
@@ -604,7 +675,7 @@ async function selectTools(p) {
   }
   const reason = `kw=[${[...kw].join(',')}] emb=[${[...emb.hits].join(',')}]${
     stickyTools && stickyTools.size ? ` sticky=[${[...stickyTools].join(',')}]` : ''
-  }${emb.slow ? ' embed-slow' : ''}`;
+  }${carried.size ? ` carried=[${[...carried].join(',')}]` : ''}${emb.slow ? ' embed-slow' : ''}`;
   /* Part 239 — F2, THE ADD-ONLY SWITCH. Kade approved the whole ideas list.
    * The shadow above has been watching since Part 236 and its trial is
    * unusually clean: of 24 labelled messages every genuinely needed tool
@@ -731,6 +802,7 @@ function _resetForTests() {
   descVecs.clear();
   descPending.clear();
   pendingWeb.clear();
+  lastWords.clear();
 }
 
 module.exports = {

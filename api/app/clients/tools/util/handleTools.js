@@ -344,7 +344,7 @@ const loadTools = async ({
     /* Part 291: reads the asker from req (voice caller or signed-in person), never userId. */
     kade_funding_balance: { req: options.req },
     flux: imageGenOptions,
-    fal_studio: { req: options.req },
+    fal_studio: { req: options.req, agentName: agent?.name },
     kade_phone_call: {
       req: options.req,
       /* Part 291: the person on the line owns the call's bill, cap and result. Not `userId`:

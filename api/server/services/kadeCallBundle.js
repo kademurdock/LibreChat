@@ -36,6 +36,15 @@
  *    waiting. If the bridge's timeout is raised, raise the budget with it.
  *    Off: KADE_CALL_NUDGE_SAFE=0 (mark before answering, as before).
  *
+ *    Review fix, same day: the bridge now waits about 6 s on a call and says
+ *    so on the request ("wait=6000"). The budget follows what the caller said:
+ *    its wait less 700 ms of slack. A fixed 1,800 ms would have withheld the
+ *    messages on every call where this route took 1.8 s or more, although the
+ *    bridge was still listening, and for a slow seat that is every call. A
+ *    caller that sends no wait (an older bridge) keeps 1,800 ms. A number set
+ *    in KADE_CALL_NUDGE_BUDGET_MS always wins.
+ *    Off: KADE_CALL_NUDGE_CALLER_WAIT=0 (ignore what the caller says).
+ *
  * Neither piece calls a model, and neither is on the path of a spoken reply:
  * the bridge asks for this bundle in the background and never holds the
  * greeting for it.
@@ -51,7 +60,27 @@ const intEnv = (name, def, lo, hi) => {
 
 const pinnedFirstOn = () => process.env.KADE_CALL_PINNED_FIRST !== '0';
 const safeNudgesOn = () => process.env.KADE_CALL_NUDGE_SAFE !== '0';
-const nudgeBudgetMs = () => intEnv('KADE_CALL_NUDGE_BUDGET_MS', 1800, 100, 30000);
+const DEFAULT_BUDGET_MS = 1800;
+const BUDGET_SLACK_MS = 700;
+/**
+ * How long after the route began the waiting messages may still be handed
+ * over. `callerWaitMs` is how long the caller said it will wait for this
+ * answer (the bridge's own timeout), if it said.
+ */
+const nudgeBudgetMs = (callerWaitMs) => {
+  const set = parseInt(process.env.KADE_CALL_NUDGE_BUDGET_MS, 10);
+  if (Number.isFinite(set) && set >= 100 && set <= 30000) {
+    return set;
+  }
+  if (process.env.KADE_CALL_NUDGE_CALLER_WAIT !== '0') {
+    const raw = typeof callerWaitMs === 'string' ? callerWaitMs.trim() : callerWaitMs;
+    const wait = raw === '' || raw == null ? NaN : Number(raw);
+    if (Number.isFinite(wait) && wait >= 1000 && wait <= 15000) {
+      return Math.round(wait) - BUDGET_SLACK_MS;
+    }
+  }
+  return DEFAULT_BUDGET_MS;
+};
 
 function warn(message) {
   try {
@@ -237,13 +266,14 @@ const gone = (socket) => !socket || socket.destroyed === true;
  * @param {object} p.req  the route's request
  * @param {object} p.res  the route's response; this adds one 'finish' and one 'close' listener
  * @param {number} p.startedAt  Date.now() taken when the route began
+ * @param {string|number} [p.callerWaitMs]  how long the caller waits for this answer, if it said
  * @returns {Promise<{ pending: object[], reason: string, settled?: Promise<number> }>}
  */
-async function holdCallNudges({ userId, req, res, startedAt, limit = 5, exceptTypes, model, clock = Date.now }) {
-  const budget = nudgeBudgetMs();
+async function holdCallNudges({ userId, req, res, startedAt, limit = 5, exceptTypes, model, clock = Date.now, callerWaitMs }) {
+  const budget = nudgeBudgetMs(callerWaitMs);
   const socket = (res && res.socket) || (req && req.socket) || null;
   if (clock() - startedAt > budget) {
-    warn(`[kadeCallBundle] bundle took ${clock() - startedAt} ms; waiting messages left for next time`);
+    warn(`[kadeCallBundle] bundle took ${clock() - startedAt} ms (budget ${budget}); waiting messages left for next time`);
     return { pending: [], reason: 'slow' };
   }
   if (gone(socket) || (req && req.aborted === true)) {
