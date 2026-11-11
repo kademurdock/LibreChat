@@ -9,14 +9,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { source, html, row, place, answers, open, settle, visibleHeadings, JSDOM } = require('./kadeReadingRoomPage.rig');
+const { source, html, row, place, answers, open, settle, visibleHeadings, tabStops, JSDOM } = require('./kadeReadingRoomPage.rig');
 
-test('the page has one main landmark, a skip link to search, and a named search form', () => {
+test('the page has one main landmark, a skip link to the results, and a named search form', () => {
   const { document } = new JSDOM(html).window;
   assert.equal(document.querySelectorAll('main').length, 1);
   assert.ok(document.querySelector('main').contains(document.getElementById('pageTitle')));
   const skip = document.querySelector('a.skip');
-  assert.equal(skip.getAttribute('href'), '#searchBox');
+  assert.equal(skip.getAttribute('href'), '#h-results');
+  assert.equal(skip.textContent, 'Skip to results');
   assert.equal(document.body.firstElementChild, skip, 'the skip link is the first thing on the page');
   assert.equal(document.getElementById('browseForm').getAttribute('role'), 'search');
   assert.ok(document.getElementById('browseForm').getAttribute('aria-label'));
@@ -36,15 +37,47 @@ test('no section heading hides inside a closed box, and each box is named for it
   assert.match(document.querySelector('#h-mine + details summary').textContent, /shelf/);
 });
 
-test('the local start-here buttons come after search and before the results', () => {
+test('search comes first, then the results, then the local start-here buttons; headings go in order', async () => {
   const { document } = new JSDOM(html).window;
   const order = (a, b) => !!(a.compareDocumentPosition(b) & 4); // b follows a
   const local = document.getElementById('discoveryLinks');
-  assert.ok(order(document.getElementById('searchBox'), local));
-  assert.ok(order(local, document.getElementById('h-results')));
+  assert.ok(order(document.getElementById('searchBox'), document.getElementById('h-results')));
   assert.ok(order(document.getElementById('h-results'), document.getElementById('browseList')));
+  assert.ok(order(document.getElementById('browsePager'), local), 'the local buttons are under the results and their pager');
+  assert.ok(order(local, document.getElementById('h-archive')));
   assert.equal(document.getElementById('browseList').getAttribute('aria-labelledby'), 'h-results');
+  assert.equal(document.getElementById('h-local').tagName, 'H2', 'its own section, not a part of Browse');
   assert.ok(!html.includes('var(--border)'), 'no colour variable that is never defined');
+  const page = open('https://example.invalid/library');
+  await settle();
+  const levels = visibleHeadings(page.document).map((heading) => Number(heading[1]));
+  assert.equal(levels[0], 1);
+  levels.forEach((level, i) => assert.ok(i === 0 || level - levels[i - 1] <= 1, 'no heading level is skipped: ' + visibleHeadings(page.document)[i]));
+  assert.deepEqual(visibleHeadings(page.document).slice(0, 5), [
+    'H1 The Library',
+    'H2 Browse the library',
+    'H3 Results',
+    'H2 Springfield, the Ozarks & Missouri',
+    'H2 Pick up where you left off',
+  ]);
+  page.dom.window.close();
+});
+
+test('the first result is at most the 11th Tab stop, and three presses away with the skip link', async () => {
+  const page = open('https://example.invalid/library');
+  await settle();
+  const stops = tabStops(page.document);
+  const first = page.$('browseList').querySelector('button');
+  assert.equal(first.getAttribute('aria-label'), 'Open Clip 1');
+  assert.ok(stops.indexOf(first) + 1 <= 11, 'the first result is Tab stop ' + (stops.indexOf(first) + 1));
+  assert.equal(stops[0].id, 'skipLink');
+  page.$('skipLink').click(); // Tab, Enter
+  assert.equal(page.document.activeElement.id, 'h-results');
+  const after = [...page.document.querySelectorAll('a[href], button, input, select, textarea, summary')].filter(
+    (node) => page.$('h-results').compareDocumentPosition(node) & 4 && stops.includes(node),
+  );
+  assert.equal(after[0], first, 'the next Tab from the Results heading is the first result');
+  page.dom.window.close();
 });
 
 test('a start-here button puts focus on the Results heading; a filter leaves focus alone', async () => {
@@ -71,7 +104,7 @@ test('pick up where you left off: three newest unfinished items, and none when n
     .map((button) => button.getAttribute('aria-label'))
     .filter((name) => /^Continue /.test(name));
   assert.deepEqual(names, ['Continue Clip 91', 'Continue Clip 93', 'Continue Clip 92']);
-  assert.equal(visibleHeadings(page.document)[1], 'H2 Pick up where you left off');
+  assert.ok(visibleHeadings(page.document).includes('H2 Pick up where you left off'));
   page.dom.window.close();
 });
 
@@ -241,8 +274,8 @@ test('the skip link moves focus without writing a fragment, and a stray fragment
   const page = open('https://example.invalid/library');
   await settle();
   page.$('skipLink').click();
-  assert.equal(page.document.activeElement.id, 'searchBox');
-  assert.equal(page.window.location.hash, '', 'no #searchBox left in the address');
+  assert.equal(page.document.activeElement.id, 'h-results');
+  assert.equal(page.window.location.hash, '', 'no fragment left in the address');
   page.dom.window.close();
   const note = () => JSON.stringify({ id: 'id2', host: 'browseList', at: Date.now() });
   const old = open('https://example.invalid/library#searchBox', { 'library-return': note() });

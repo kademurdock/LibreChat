@@ -114,7 +114,7 @@ test('the head check marks the page for data saving and very large text before a
 test('no block of picture words, no extra heading, no live region: only the alt text', () => {
   const { readingRoomHtml } = load();
   assert.doesNotMatch(readingRoomHtml, /kade-pictures|Pictures on this page|picturesOnPage|shelfArtWords/, 'the end-of-page pictures block is gone');
-  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 15, 'the unified catalog removes duplicate library headings; pictures add none (15 since Nov 10 2026: "Pick up where you left off")');
+  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 16, 'the unified catalog removes duplicate library headings; pictures add none (16 since the Nov 10 2026 redesign: "Pick up where you left off", and the local section is its own second-level section)');
   assert.equal((readingRoomHtml.match(/aria-live=/g) || []).length, 1, 'still ONE live region');
   assert.equal((readingRoomHtml.match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is hidden');
   // each sentence is said once, as alt text: the alcove's in its <img>, the shelves' only in the script that sets them

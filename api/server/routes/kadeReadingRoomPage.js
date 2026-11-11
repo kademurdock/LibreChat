@@ -85,7 +85,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   summary { cursor:pointer; font-weight:600; padding:.65rem 0; min-height:44px; }
   /* The ring on borderless things (box rows, crumbs, focused headings) is dark on the light page and yellow on the dark one, so it shows on both. */
   summary:focus-visible, nav.crumbs button:focus-visible, a.skip:focus, [tabindex="-1"]:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
-  /* Nov 10 2026. The skip link is off screen until it has focus, then it is a real button-sized link. */
+  /* Nov 10 2026. The skip link is off screen until it has focus, then it is a real button-sized link.
+     It goes straight to the Results heading; the next Tab is the first result. The search form is
+     the first thing after the page title, the local start-here buttons sit under the results, and
+     nothing else stands between, so the first result is at most the 11th Tab stop even without it. */
   a.skip { position:absolute; left:-999rem; top:0; }
   a.skip:focus { position:static; display:inline-block; padding:.7rem 1rem; margin:0 0 .5rem; border-radius:12px; background:#1d55d0; color:#fff; font-weight:700; }
   /* The one status line. It keeps its place in the page (so nothing jumps and a screen reader
@@ -146,23 +149,12 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
 </style>
 <script>${ART_OFF_SCRIPT}</script></head>
 <body>
-  <a class="skip" href="#searchBox" id="skipLink">Skip to search the Library</a>
+  <a class="skip" href="#h-results" id="skipLink">Skip to results</a>
   <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
   <main id="main">
   <h1 id="pageTitle">The Library</h1>
   <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is part of the Family feature pack, which Kade turns on for family members. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
-  <section id="continueBox" hidden>
-    <h2 id="h-continue">Pick up where you left off</h2>
-    <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
-  </section>
-  <section id="librarianCard" aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
-    <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
-    <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
-    <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
-    <p class="hint">Speak or type using the usual voice and chat controls.</p>
-    <p id="requestsLink" hidden>You can also ask her to save a library request from whatever you remember. <a href="/library#libraryRequests">Library requests and updates</a></p>
-  </section>
 
   <section id="shelf">
     <div class="kade-art alcove-art"><img id="alcoveArt" alt="${ALCOVE_ART.alt}" width="1440" height="481" loading="lazy" decoding="async" draggable="false"></div>
@@ -183,8 +175,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       </div>
       <input id="browsePath" type="hidden" value="">
     </form>
+    <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
+    <h3 id="h-results" class="results" tabindex="-1">Results</h3>
+    <p id="browseCount" class="hint">Loading…</p>
+    <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
+    <nav class="pager" id="browsePager" aria-label="Result pages" hidden><button class="act quiet" id="browsePrev" type="button">Previous page</button><span id="browsePageInfo"></span><button class="act quiet" id="browseNext" type="button">Next page</button></nav>
     <section aria-labelledby="h-local" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
-      <h3 id="h-local">Springfield, the Ozarks &amp; Missouri</h3>
+      <h2 id="h-local">Springfield, the Ozarks &amp; Missouri</h2>
       <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
       <div class="row" id="discoveryLinks">
         <button type="button" class="act" data-folder="Videos/Missouri">Explore Missouri</button>
@@ -194,12 +191,18 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
       </div>
     </section>
-    <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
-    <h3 id="h-results" class="results" tabindex="-1">Results</h3>
-    <p id="browseCount" class="hint">Loading…</p>
-    <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
-    <nav class="pager" id="browsePager" aria-label="Result pages" hidden><button class="act quiet" id="browsePrev" type="button">Previous page</button><span id="browsePageInfo"></span><button class="act quiet" id="browseNext" type="button">Next page</button></nav>
     <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
+    <section id="continueBox" hidden>
+      <h2 id="h-continue">Pick up where you left off</h2>
+      <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
+    </section>
+    <section id="librarianCard" aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
+      <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
+      <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
+      <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
+      <p class="hint">Speak or type using the usual voice and chat controls.</p>
+      <p id="requestsLink" hidden>You can also ask her to save a library request from whatever you remember. <a href="/library#libraryRequests">Library requests and updates</a></p>
+    </section>
     <h2 id="h-archive" tabindex="-1">Folders</h2>
     <details id="folderBrowse"><summary>Open the folders</summary>
     <div class="kade-art shelf-art" id="shelfArtBox" hidden><img id="shelfArt" alt="" width="1152" height="648" loading="lazy" fetchpriority="low" decoding="async" draggable="false"></div>
