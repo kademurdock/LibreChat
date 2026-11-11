@@ -141,6 +141,23 @@ class KadeNotify extends Tool {
       "If the user asks for something that will take a while and might step away, tell them plainly you'll ping their phone when it's done, then actually call action='send' with a short done message once you finish -- before your final reply, not instead of it. " +
       "For a platform-wide what's-new announcement, use action='broadcast_whats_new' (OWNER ONLY -- it refuses anyone but the owner account): compose a punchy digest in your own voice (up to 1000 characters -- iOS shows the first lines and expands on press, and VoiceOver reads the whole thing, so say what actually shipped instead of teasing it; no markdown), broadcast it, then suggest folks check Help for the details.";
     this.schema = notifyJsonSchema;
+    this.req = fields.req;
+    /* KADE Nov 11 2026 (home agent cards 6 and 7): with KADE_REMIND_ALL on (the default) the tool
+     * carries the short, plain description and schema in services/kadeEverydayTool.js: reminders
+     * and check-backs delivered by the site, plus everyday helpers (KADE_EVERYDAY). With
+     * KADE_REMIND_ALL=0 everything above stands exactly as it was. */
+    try {
+      const def = require('~/server/services/kadeEverydayTool').notifyDefinition({
+        legacyDescription: this.description,
+        legacyForModel: this.description_for_model,
+        legacySchema: notifyJsonSchema,
+      });
+      this.description = def.description;
+      this.description_for_model = def.descriptionForModel;
+      this.schema = def.schema;
+    } catch (e) {
+      logger.warn(`[KadeNotify] everyday definition not loaded, the old one stands: ${e.message}`);
+    }
     this.bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
     this.notifySecret = process.env.NOTIFY_AGENT_SECRET || process.env.BRIDGE_SECRET || '';
   }
@@ -150,6 +167,24 @@ class KadeNotify extends Tool {
   }
 
   async _call(data) {
+    /* KADE Nov 11 2026: reminders, check-backs and the everyday helpers live on the site
+     * (services/kadeEveryday.js) and need no bridge secret. Which actions, under which switches,
+     * is decided in services/kadeEverydayTool.js. */
+    const wanted = (data && data.action) || 'send';
+    try {
+      if (require('~/server/services/kadeEverydayTool').ownsAction(wanted)) {
+        return await require('~/server/services/kadeEveryday').handle({
+          action: wanted,
+          data: data || {},
+          req: this.req,
+          agentId: this.agentId,
+          agentName: this.agentName,
+        });
+      }
+    } catch (e) {
+      logger.warn(`[KadeNotify] ${wanted} failed: ${e.message}`);
+      return `FAILED: ${wanted} did not work. Tell them plainly it was not done.`;
+    }
     if (!this.notifySecret) {
       return 'Notifications are not configured on this server (missing NOTIFY_AGENT_SECRET).';
     }
