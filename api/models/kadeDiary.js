@@ -479,14 +479,15 @@ async function logDiaryEntry({
     (conversationId ? { userId: String(userId), conversationId, kind: 'conversation' } : undefined);
   if (!(await memorySourceAllowed(memorySource)))
     return { ok: false, error: 'Conversation memory is excluded' };
-  /* KADE Nov 11 2026 (card 8): never log a fact the person asked to forget. */
+  /* KADE Nov 11 2026 (card 8): never log a fact the person asked to forget. A marker read that
+   * fails is left to the write below, which uses the same database and reports the real error. */
+  let tomb = { blocked: false };
   try {
-    if (await require('../server/services/kadeKnownTombstones').blocks(userId, text)) {
-      return { ok: false, error: 'they asked for that to be forgotten' };
-    }
+    tomb = await require('../server/services/kadeKnownTombstones').check(userId, text);
   } catch (_) {
-    /* the entry is written as before */
+    /* the write below reports any real error */
   }
+  if (tomb && tomb.blocked) return { ok: false, error: 'they asked for that to be forgotten' };
   conversationId = conversationId || memorySource?.conversationId || null;
   const writeOrigin = diaryWriteOrigin({ source, conversationId, origin });
   if (!diaryEnabled()) {

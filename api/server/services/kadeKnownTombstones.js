@@ -212,11 +212,21 @@ async function lift({ userId, text }) {
  * because of a database hiccup).
  */
 async function blocks(userId, text, env = process.env) {
+  const c = await check(userId, text, env);
+  return c.blocked || Boolean(c.error);
+}
+
+/**
+ * The same check, saying why: { blocked } when the text carries a forgotten fact, { error } when
+ * the tombstones could not be read (callers that must refuse then say the real reason).
+ * @returns {Promise<{ blocked: boolean, error?: string }>}
+ */
+async function check(userId, text, env = process.env) {
   try {
-    if (!on(env) || !userId || !String(text || '').trim()) return false;
-    return blockedWith(userId, text, await list(userId));
-  } catch (_) {
-    return true;
+    if (!on(env) || !userId || !String(text || '').trim()) return { blocked: false };
+    return { blocked: blockedWith(userId, text, await list(userId)) };
+  } catch (e) {
+    return { blocked: false, error: String((e && e.message) || 'tombstones unreadable').slice(0, 300) };
   }
 }
 
@@ -260,6 +270,7 @@ async function clearFor(userId) {
 module.exports = {
   COLL,
   on,
+  check,
   words,
   hashOf,
   hashes,

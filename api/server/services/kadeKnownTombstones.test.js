@@ -172,6 +172,6 @@ test('every writer named in the header really checks the tombstone', () => {
   assert.match(read('api/models/kadeMemorySummary.js'), /kadeKnownTombstones'\)\.scrubFields\(userId/);
   assert.match(read('api/server/services/kadeSameDayMemory.js'), /scrub: \(userId, text\) => require\('\.\/kadeKnownTombstones'\)\.scrub/);
   assert.match(read('api/server/services/kadeCardCheck.js'), /blocks: \(userId, text\) => require\('\.\/kadeKnownTombstones'\)\.blocks/);
-  assert.match(read('api/models/kadeDiary.js'), /kadeKnownTombstones'\)\.blocks\(userId, text\)/);
+  assert.match(read('api/models/kadeDiary.js'), /kadeKnownTombstones'\)\s*\.check\(userId, text\)/);
   assert.match(read('api/server/services/kadeSoul.js'), /kadeKnownTombstones'\)\.blocks\(userId/);
 });
