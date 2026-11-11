@@ -1,9 +1,11 @@
 'use strict';
-/* Nov 10 2026: finding your way around the Library page, by ear and by eye.
- * What these hold: one main landmark and a skip link; every section heading reachable while its
- * box is closed; the local "start here" buttons above the results, not under them; focus that
- * never falls off the page when a list is redrawn; focus back on the item you came back from;
- * a one-part clip without chapter controls; and the "pick up where you left off" list.
+/* Nov 10 2026: finding your way around the Library, by ear and by eye.
+ * What these hold: one main landmark and a skip link where one is worth having; headings in
+ * order; the first result within 11 Tab stops; focus that never falls off the page when a list
+ * is redrawn; focus back on the item you came back from; a one-part clip without chapter
+ * controls; and the "pick up where you left off" list.
+ * The Library's pages (the front desk and its small pages) have their own file,
+ * kadeReadingRoomPage.desk.nodetest.js, and the address its own, ...address.nodetest.js.
  * Run: node --test api/server/routes/kadeReadingRoomPage.nav.nodetest.js   (needs jsdom) */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -11,7 +13,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { source, html, row, place, answers, open, settle, visibleHeadings, tabStops, JSDOM } = require('./kadeReadingRoomPage.rig');
 
-test('the page has one main landmark, a skip link to the results, and a named search form', () => {
+const AT = 'https://example.invalid/library';
+const submit = (page) => page.$('browseForm').dispatchEvent(new page.window.Event('submit', { cancelable: true }));
+
+test('the page has one main landmark, a skip link to the results, and a named search form', async () => {
   const { document } = new JSDOM(html).window;
   assert.equal(document.querySelectorAll('main').length, 1);
   assert.ok(document.querySelector('main').contains(document.getElementById('pageTitle')));
@@ -22,49 +27,43 @@ test('the page has one main landmark, a skip link to the results, and a named se
   assert.equal(document.getElementById('browseForm').getAttribute('role'), 'search');
   assert.ok(document.getElementById('browseForm').getAttribute('aria-label'));
   assert.equal(document.querySelectorAll('[aria-live]').length, 1, 'still exactly one live region');
+  const search = open(AT + '/search');
+  assert.equal(search.$('skipLink').hidden, false);
+  await settle();
+  search.dom.window.close();
+  const desk = open(AT);
+  assert.equal(desk.$('skipLink').hidden, true, 'a short page of rows has nothing worth skipping');
+  await settle();
+  desk.dom.window.close();
 });
 
-test('no section heading hides inside a closed box, and each box is named for its heading', () => {
+test('no heading hides inside a closed box, and no list is named for a heading on another page', () => {
   const { document } = new JSDOM(html).window;
   assert.equal(document.querySelectorAll('#shelf details h2').length, 0);
-  for (const id of ['h-archive', 'h-collections', 'h-mine']) {
-    const heading = document.getElementById(id);
-    assert.equal(heading.tagName, 'H2');
-    assert.equal(heading.nextElementSibling.tagName, 'DETAILS', id + ' sits right above its box');
+  for (const list of document.querySelectorAll('#shelf [aria-labelledby]:not([hidden])')) {
+    const name = document.getElementById(list.getAttribute('aria-labelledby'));
+    assert.ok(name, list.id + ' is named by something that exists');
+    const block = list.closest('[data-views]');
+    assert.ok(name.id === 'pageTitle' || block.contains(name), list.id + ' is named by the page title or a heading on its own page');
   }
-  assert.equal(document.getElementById('h-collections').textContent, 'Your playlists');
-  assert.match(document.querySelector('#h-collections + details summary').textContent, /playlists/);
-  assert.match(document.querySelector('#h-mine + details summary').textContent, /shelf/);
 });
 
-test('search comes first, then the results, then the local start-here buttons; headings go in order', async () => {
+test('search comes first, then the results; headings go in order on the search page', async () => {
   const { document } = new JSDOM(html).window;
   const order = (a, b) => !!(a.compareDocumentPosition(b) & 4); // b follows a
-  const local = document.getElementById('discoveryLinks');
   assert.ok(order(document.getElementById('searchBox'), document.getElementById('h-results')));
   assert.ok(order(document.getElementById('h-results'), document.getElementById('browseList')));
-  assert.ok(order(document.getElementById('browsePager'), local), 'the local buttons are under the results and their pager');
-  assert.ok(order(local, document.getElementById('h-archive')));
+  assert.ok(order(document.getElementById('browseList'), document.getElementById('browsePager')));
   assert.equal(document.getElementById('browseList').getAttribute('aria-labelledby'), 'h-results');
-  assert.equal(document.getElementById('h-local').tagName, 'H2', 'its own section, not a part of Browse');
   assert.ok(!html.includes('var(--border)'), 'no colour variable that is never defined');
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/search');
   await settle();
-  const levels = visibleHeadings(page.document).map((heading) => Number(heading[1]));
-  assert.equal(levels[0], 1);
-  levels.forEach((level, i) => assert.ok(i === 0 || level - levels[i - 1] <= 1, 'no heading level is skipped: ' + visibleHeadings(page.document)[i]));
-  assert.deepEqual(visibleHeadings(page.document).slice(0, 5), [
-    'H1 The Library',
-    'H2 Browse the library',
-    'H3 Results',
-    'H2 Springfield, the Ozarks & Missouri',
-    'H2 Pick up where you left off',
-  ]);
+  assert.deepEqual(visibleHeadings(page.document), ['H1 Browse and search', 'H2 Results']);
   page.dom.window.close();
 });
 
 test('the first result is at most the 11th Tab stop, and three presses away with the skip link', async () => {
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/search');
   await settle();
   const stops = tabStops(page.document);
   const first = page.$('browseList').querySelector('button');
@@ -73,20 +72,14 @@ test('the first result is at most the 11th Tab stop, and three presses away with
   assert.equal(stops[0].id, 'skipLink');
   page.$('skipLink').click(); // Tab, Enter
   assert.equal(page.document.activeElement.id, 'h-results');
-  const after = [...page.document.querySelectorAll('a[href], button, input, select, textarea, summary')].filter(
-    (node) => page.$('h-results').compareDocumentPosition(node) & 4 && stops.includes(node),
-  );
+  const after = stops.filter((node) => page.$('h-results').compareDocumentPosition(node) & 4);
   assert.equal(after[0], first, 'the next Tab from the Results heading is the first result');
   page.dom.window.close();
 });
 
-test('a start-here button puts focus on the Results heading; a filter leaves focus alone', async () => {
-  const page = open('https://example.invalid/library');
+test('a filter leaves focus on its menu', async () => {
+  const page = open(AT + '/search');
   await settle();
-  page.document.querySelector('#discoveryLinks button').click();
-  await settle();
-  assert.equal(page.document.activeElement.id, 'h-results');
-  assert.equal(page.$('h-results').textContent, 'Results: Videos · Missouri');
   const kind = page.$('browseKind');
   kind.focus();
   kind.value = 'video';
@@ -96,30 +89,43 @@ test('a start-here button puts focus on the Results heading; a filter leaves foc
   page.dom.window.close();
 });
 
-test('pick up where you left off: three newest unfinished items, and none when nothing is unfinished', async () => {
-  const page = open('https://example.invalid/library');
+test('pick up where you left off: three newest unfinished on the front desk, all of them on the Continue page', async () => {
+  const names = (page) =>
+    [...page.$('continueList').querySelectorAll('button')].map((button) => button.getAttribute('aria-label'));
+  const desk = open(AT);
   await settle();
-  assert.equal(page.$('continueBox').hidden, false);
-  const names = [...page.$('continueList').querySelectorAll('button')]
-    .map((button) => button.getAttribute('aria-label'))
-    .filter((name) => /^Continue /.test(name));
-  assert.deepEqual(names, ['Continue Clip 91', 'Continue Clip 93', 'Continue Clip 92']);
-  assert.ok(visibleHeadings(page.document).includes('H2 Pick up where you left off'));
-  page.dom.window.close();
+  assert.equal(desk.$('continueBox').hidden, false);
+  assert.deepEqual(names(desk), ['Continue Clip 91', 'Continue Clip 93', 'Continue Clip 92']);
+  assert.deepEqual(visibleHeadings(desk.document).slice(0, 2), ['H1 The Library', 'H2 Pick up where you left off']);
+  desk.dom.window.close();
+  const all = open(AT + '/continue');
+  await settle();
+  assert.deepEqual(names(all), ['Continue Clip 91', 'Continue Clip 93', 'Continue Clip 92', 'Continue Clip 90']);
+  all.dom.window.close();
+  const kept = answers.shelf;
+  try {
+    answers.shelf = () => ({ me: 'me1', librarian: false, familyLibrary: true, mine: [], borrowed: [row(94, { progress: place('2026-11-10T00:00:00Z', { finished: true }) })] });
+    const none = open(AT);
+    await settle();
+    assert.equal(none.$('continueBox').hidden, true, 'absent when nothing is unfinished');
+    none.dom.window.close();
+  } finally {
+    answers.shelf = kept;
+  }
 });
 
 test('opening a folder moves focus to the crumb for where you now are', async () => {
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/folders');
   await settle();
-  page.$('folderBrowse').open = true;
-  page.$('folderBrowse').dispatchEvent(new page.window.Event('toggle'));
-  await settle();
+  assert.equal(page.$('crumbs').querySelector('button').textContent, 'All folders');
+  assert.equal(page.$('crumbs').querySelector('button').getAttribute('aria-current'), 'location', 'at the top, the top crumb is where you are');
   const first = page.$('archiveList').querySelector('button');
   first.focus();
   first.click();
   await settle();
   assert.equal(page.document.activeElement.textContent, 'Video');
   assert.equal(page.document.activeElement.getAttribute('aria-current'), 'location');
+  assert.equal(page.$('crumbs').querySelectorAll('[aria-current]').length, 1);
   assert.ok(page.$('crumbs').contains(page.document.activeElement));
   assert.equal(page.window.location.search, '?folder=Video', 'the folder is in the address');
   page.dom.window.close();
@@ -127,34 +133,35 @@ test('opening a folder moves focus to the crumb for where you now are', async ()
 
 test('coming back from an item puts focus on the row it was opened from, once', async () => {
   const note = JSON.stringify({ id: 'id2', host: 'browseList', at: Date.now() });
-  const page = open('https://example.invalid/library', { 'library-return': note });
+  const page = open(AT + '/search', { 'library-return': note });
   await settle();
   assert.equal(page.document.activeElement.getAttribute('aria-label'), 'Open Clip 2');
   assert.equal(page.window.sessionStorage.getItem('library-return'), null);
   page.dom.window.close();
   const old = JSON.stringify({ id: 'id2', host: 'browseList', at: Date.now() - 3 * 3600 * 1000 });
-  const stale = open('https://example.invalid/library', { 'library-return': old });
+  const stale = open(AT + '/search', { 'library-return': old });
   await settle();
   assert.equal(stale.document.activeElement, stale.document.body, 'an old note never moves focus');
   stale.dom.window.close();
 });
 
-test('a remembered folder reopens quietly on the way back', async () => {
-  const page = open('https://example.invalid/library?folder=Video%2FMissouri', {
+test('a folder in the address reopens quietly on the way back, with focus on the row', async () => {
+  const page = open(AT + '/folders?folder=Video%2FMissouri', {
     'library-return': JSON.stringify({ id: 'id2', host: 'archiveList', at: Date.now() }),
+    'library-who': JSON.stringify({ me: 'me1', librarian: false }),
   });
-  await settle(120); // the page opens the box itself, and the box's own toggle event loads the folder
-  assert.equal(page.$('folderBrowse').open, true);
+  await settle(120);
   assert.ok(page.calls.some((call) => call.includes('/archive?path=Video%2FMissouri')));
+  assert.ok(!page.calls.some((call) => call.includes('/shelf')), 'who you are is remembered from the front desk; the whole shelf is not fetched again');
   assert.ok(page.$('archiveList').contains(page.document.activeElement));
   assert.equal(page.document.activeElement.getAttribute('aria-label'), 'Open Clip 2');
+  assert.equal(page.$('live').textContent, '', 'nothing is spoken when the page itself reopens a folder');
   page.dom.window.close();
 });
 
 test('a one-part clip: its own title, no shelf behind it, no chapter controls', async () => {
-  const page = open('https://example.invalid/library?book=id1');
+  const page = open(AT + '?book=id1');
   assert.ok(page.$('shelf').classList.contains('hidden'), 'the shelf steps aside before anything loads');
-  assert.equal(page.$('librarianCard').hidden, true);
   await settle();
   assert.equal(page.document.title, 'Clip 1 — The Library — Kade-AI');
   assert.deepEqual(visibleHeadings(page.document), ['H1 The Library', 'H2 Clip 1']);
@@ -167,6 +174,7 @@ test('a one-part clip: its own title, no shelf behind it, no chapter controls', 
   assert.equal(page.document.activeElement.id, 'playBtn');
   assert.equal(page.$('skipLink').getAttribute('href'), '#bookTitle', 'the skip link goes to the item, not the whole page');
   assert.equal(page.$('skipLink').textContent, 'Skip to the item');
+  assert.equal(page.$('skipLink').hidden, false);
   page.$('skipLink').click();
   assert.equal(page.document.activeElement.id, 'bookTitle');
   assert.equal(page.window.location.hash, '');
@@ -174,7 +182,7 @@ test('a one-part clip: its own title, no shelf behind it, no chapter controls', 
 });
 
 test('a book keeps its chapter controls, and removing a bookmark keeps focus on the page', async () => {
-  const page = open('https://example.invalid/library?book=id4');
+  const page = open(AT + '?book=id4');
   await settle();
   assert.equal(page.$('prevSecBtn').hidden, false);
   assert.equal(page.$('prevSecBtn').textContent, 'Previous chapter');
@@ -188,15 +196,16 @@ test('a book keeps its chapter controls, and removing a bookmark keeps focus on 
   page.dom.window.close();
 });
 
-test('form field edges and the quiet button edge are dark enough to see (3 to 1)', () => {
-  const luminance = (hex) => {
-    const part = (i) => {
-      const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
-      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * part(0) + 0.7152 * part(1) + 0.0722 * part(2);
+const luminance = (hex) => {
+  const part = (i) => {
+    const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   };
-  const ratio = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+  return 0.2126 * part(0) + 0.7152 * part(1) + 0.0722 * part(2);
+};
+const ratio = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+
+test('form field edges and the quiet button edge are dark enough to see (3 to 1)', () => {
   const field = source.match(/select, input\[type=text\], input\[type=file\], textarea \{[^}]*border:1px solid (#[0-9a-f]{6})/)[1];
   const fieldDark = source.match(/select, input\[type=text\], input\[type=file\], textarea \{ border-color:(#[0-9a-f]{6})/)[1];
   const quiet = source.match(/button\.act\.quiet, a\.act\.quiet \{ border-color:(#[0-9a-f]{6})/)[1];
@@ -213,6 +222,7 @@ test('a signed-out Library link comes back to the same place after sign-in', () 
   const hard = auth.match(/\[([^\]]*'\/request-access'[^\]]*)\]\.includes\(destinationPath\)/)[1];
   for (const page of ['/library', '/reading-room', '/family-history', '/agent-work'])
     assert.ok(hard.includes(`'${page}'`), page + ' is loaded as a server page after sign-in');
+  assert.ok(auth.includes("destinationPath.startsWith('/library/')"), 'and so is every small page of the Library');
 });
 
 /* ── Independent review, Nov 10 2026 ─────────────────────────────────────── */
@@ -221,28 +231,29 @@ test('a return note whose row is not on the page is used up, and never steals fo
   const note = JSON.stringify({ id: 'id77', host: 'browseList', at: Date.now() - 20 * 60 * 1000 });
   const kept = answers.browse;
   try {
-    const page = open('https://example.invalid/library', { 'library-return': note });
+    const page = open(AT + '/search', { 'library-return': note });
     await settle();
     assert.equal(page.document.activeElement, page.document.body, 'the row is not there, so focus is left alone');
     assert.equal(page.window.sessionStorage.getItem('library-return'), null, 'and the note is gone after its one try');
     answers.browse = () => ({ total: 2, items: [row(77), row(78)], types: [], decades: [], next: null });
-    page.document.querySelector('#discoveryLinks button').click();
+    page.$('searchBtn').focus();
+    submit(page);
     await settle();
-    assert.equal(page.document.activeElement.id, 'h-results', 'a later list that holds the item does not pull focus off the heading');
+    assert.equal(page.document.activeElement.id, 'searchBtn', 'a later list that holds the item does not pull focus');
     page.dom.window.close();
   } finally {
     answers.browse = kept;
   }
 });
 
-test('a note waits for its own list: the shelf loading first does not use up a note for the results', async () => {
+test('a note waits for its own list, and a note for a list on another page is dropped', async () => {
   const kept = answers.browse;
   try {
     answers.browse = async () => {
       await settle(80);
       return kept();
     };
-    const page = open('https://example.invalid/library', {
+    const page = open(AT + '/search', {
       'library-return': JSON.stringify({ id: 'id2', host: 'browseList', at: Date.now() }),
     });
     await settle(40);
@@ -253,47 +264,38 @@ test('a note waits for its own list: the shelf loading first does not use up a n
   } finally {
     answers.browse = kept;
   }
-});
-
-test('a note for the folders is dropped when no folder is going to reopen; so is a note for an unknown list', async () => {
-  const page = open('https://example.invalid/library', {
-    'library-return': JSON.stringify({ id: 'id2', host: 'archiveList', at: Date.now() }),
-  });
-  await settle();
-  assert.equal(page.window.sessionStorage.getItem('library-return'), null);
-  page.dom.window.close();
-  const odd = open('https://example.invalid/library', {
-    'library-return': JSON.stringify({ id: 'id2', host: 'somethingElse', at: Date.now() }),
-  });
-  await settle();
-  assert.equal(odd.window.sessionStorage.getItem('library-return'), null);
-  odd.dom.window.close();
+  for (const [where, host] of [['', 'archiveList'], ['/search', 'archiveList'], ['/folders', 'browseList'], ['/playlists', 'browseList'], ['', 'somethingElse']]) {
+    const other = open(AT + where, { 'library-return': JSON.stringify({ id: 'id2', host, at: Date.now() }) });
+    await settle();
+    assert.equal(other.window.sessionStorage.getItem('library-return'), null, host + ' note on ' + (where || 'the front desk'));
+    other.dom.window.close();
+  }
 });
 
 test('the skip link moves focus without writing a fragment, and a stray fragment does not kill the return', async () => {
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/search');
   await settle();
   page.$('skipLink').click();
   assert.equal(page.document.activeElement.id, 'h-results');
   assert.equal(page.window.location.hash, '', 'no fragment left in the address');
   page.dom.window.close();
   const note = () => JSON.stringify({ id: 'id2', host: 'browseList', at: Date.now() });
-  const old = open('https://example.invalid/library#searchBox', { 'library-return': note() });
+  const old = open(AT + '/search#searchBox', { 'library-return': note() });
   await settle();
   assert.equal(old.document.activeElement.getAttribute('aria-label'), 'Open Clip 2', 'only a request link stands the note down');
   old.dom.window.close();
-  const deep = open('https://example.invalid/library#libraryRequests', { 'library-return': note() });
+  const deep = open(AT + '#libraryRequests', { 'library-return': note() });
   await settle();
   assert.notEqual(deep.document.activeElement.getAttribute('aria-label'), 'Open Clip 2');
   assert.equal(deep.window.sessionStorage.getItem('library-return'), null);
   deep.dom.window.close();
   assert.ok(!/location\.search\s*=[^=]/.test(source), 'every move goes through visit(), which leaves the fragment behind');
-  assert.ok(source.includes("function visit(query){ location.href = location.pathname + (query || ''); }"));
+  assert.ok(source.includes("function visit(query){ location.href = BASE + (query || ''); }"));
   assert.ok(!/<main[^>]*tabindex/.test(html), 'main is not a focus target, so a click on plain text does not ring the whole page');
 });
 
 test('leaving an item by a link drops the return note; the playlist skip link is named for a playlist', async () => {
-  const page = open('https://example.invalid/library?book=id1', {
+  const page = open(AT + '?book=id1', {
     'library-return': JSON.stringify({ id: 'id1', host: 'browseList', at: Date.now() }),
   });
   await settle();
@@ -301,7 +303,7 @@ test('leaving an item by a link drops the return note; the playlist skip link is
   page.document.querySelector('a.back').dispatchEvent(new page.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   assert.equal(page.window.sessionStorage.getItem('library-return'), null);
   page.dom.window.close();
-  const list = open('https://example.invalid/library?collection=c1');
+  const list = open(AT + '?collection=c1');
   assert.equal(list.$('skipLink').getAttribute('href'), '#collTitle');
   assert.equal(list.$('skipLink').textContent, 'Skip to the playlist');
   await settle();
@@ -315,7 +317,7 @@ test('turning a folder page keeps focus on the pager and says the page; a dead b
       const at = new URL(url, 'https://x.invalid').searchParams;
       return { crumbs: [{ name: 'Video' }], folders: [], items: [row(1), row(2)], total: 150, limit: 60, page: Number(at.get('page')) || 0 };
     };
-    const page = open('https://example.invalid/library?folder=Video');
+    const page = open(AT + '/folders?folder=Video');
     await settle(120);
     const next = page.$('pageNext');
     next.focus();
@@ -333,20 +335,18 @@ test('turning a folder page keeps focus on the pager and says the page; a dead b
   }
 });
 
-test('a folder that cannot be loaded says why and puts focus on the Folders heading', async () => {
+test('a folder that cannot be loaded says why and puts focus on the page heading', async () => {
   const kept = answers.archive;
   try {
-    const page = open('https://example.invalid/library');
-    await settle();
-    page.$('folderBrowse').open = true;
-    page.$('folderBrowse').dispatchEvent(new page.window.Event('toggle'));
+    const page = open(AT + '/folders');
     await settle();
     answers.archive = () => ({ failWith: 'The folder is not available.' });
     const first = page.$('archiveList').querySelector('button');
     first.focus();
     first.click();
     await settle();
-    assert.equal(page.document.activeElement.id, 'h-archive');
+    assert.equal(page.document.activeElement.id, 'pageTitle');
+    assert.equal(page.$('pageTitle').textContent, 'Folders');
     assert.equal(page.$('live').textContent, 'The folder is not available.');
     assert.match(page.$('archiveList').textContent, /not available/);
     page.dom.window.close();
@@ -365,13 +365,14 @@ test('pick up where you left off: one stop a row, even for your own upload, and 
       mine: [row(90, { owner: 'me1', path: '', progress: place('2026-11-09T00:00:00Z') })],
       borrowed: [],
     });
-    const page = open('https://example.invalid/library');
+    const page = open(AT + '/continue');
     await settle();
     const buttons = [...page.$('continueList').querySelectorAll('button')].map((button) => button.getAttribute('aria-label'));
     assert.deepEqual(buttons, ['Continue Clip 90']);
     assert.ok([...page.$('mineList').querySelectorAll('button')].some((button) => button.textContent === 'Add parts'), 'Add parts stays on Your shelf');
     assert.equal(page.$('continueBox').hasAttribute('aria-labelledby'), false);
     assert.equal(page.$('continueList').getAttribute('aria-labelledby'), 'h-continue');
+    assert.deepEqual(visibleHeadings(page.document), ['H1 Continue and your shelf', 'H2 Pick up where you left off', 'H2 Your shelf']);
     page.dom.window.close();
   } finally {
     answers.shelf = kept;
@@ -379,7 +380,7 @@ test('pick up where you left off: one stop a row, even for your own upload, and 
 });
 
 test('a search or a filter brings results that are below the screen into view; opening the page does not', async () => {
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/search');
   const scrolled = [];
   page.window.Element.prototype.scrollIntoView = function () {
     scrolled.push(this.id || this.tagName);
@@ -396,24 +397,27 @@ test('a search or a filter brings results that are below the screen into view; o
   await settle();
   assert.deepEqual(scrolled, ['LI']);
   assert.equal(page.document.activeElement.id, 'browseKind', 'focus stays on the menu');
-  page.$('browseForm').dispatchEvent(new page.window.Event('submit', { cancelable: true }));
+  page.$('searchBox').value = 'ky3';
+  submit(page);
   await settle();
   assert.equal(scrolled.length, 2);
   page.dom.window.close();
 });
 
 test('the status line: held to two lines only while it is stuck over a scrolled page, and taps pass through', async () => {
-  const page = open('https://example.invalid/library');
+  const page = open(AT + '/search');
   await settle();
   const live = page.$('live');
   live.classList.remove('fresh');
-  page.document.querySelector('#discoveryLinks button').click();
+  page.$('searchBox').value = 'one';
+  submit(page);
   await settle();
   assert.ok(live.classList.contains('fresh'));
   assert.ok(!live.classList.contains('held'), 'in its own place at the top it shows every line');
   live.classList.remove('fresh');
   live.getBoundingClientRect = () => ({ top: -900, bottom: -850 });
-  page.document.querySelector('#discoveryLinks button').click();
+  page.$('searchBox').value = 'two';
+  submit(page);
   await settle();
   assert.ok(live.classList.contains('held'));
   assert.match(source, /#live\.fresh \{[^}]*pointer-events:none/);
@@ -425,14 +429,6 @@ test('the status line: held to two lines only while it is stuck over a scrolled 
 });
 
 test('the focus ring on box rows, crumbs and focused headings shows on the light page and the dark one (3 to 1)', () => {
-  const luminance = (hex) => {
-    const part = (i) => {
-      const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255;
-      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * part(0) + 0.7152 * part(1) + 0.0722 * part(2);
-  };
-  const ratio = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
   const list = 'summary:focus-visible, nav\\.crumbs button:focus-visible, a\\.skip:focus, \\[tabindex="-1"\\]:focus-visible';
   const light = source.match(new RegExp(list + ' \\{ outline:3px solid (#[0-9a-f]{6})'))[1];
   const dark = source.match(new RegExp(list + ' \\{ outline-color:(#[0-9a-f]{6})'))[1];

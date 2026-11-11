@@ -414,6 +414,7 @@ const startServer = async () => {
   app.get('/kade-tabbar.js', routes.kade.tabBarAssetPage);
   app.get('/parlor', routes.kadeParlor.page);
   app.get('/library', routes.kadeReadingRoom.page);
+  app.get('/library/:view', routes.kadeReadingRoom.page); // Nov 10 2026: the front desk's small pages (search, folders, ...)
   app.get('/reading-room', routes.kadeReadingRoom.page); // the room's first name still works
   app.get('/family-history', require('./routes/kadeFamilyHistoryPage').page); // Sep 29 2026, docs/FAMILY_HISTORY.md
   app.get('/lounge', routes.kadeLounge.page);

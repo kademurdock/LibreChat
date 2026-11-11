@@ -2849,8 +2849,14 @@ router.delete('/book/:id', requireJwtAuth, async (req, res) => {
   }
 });
 
-const { readingRoomHtml } = require('./kadeReadingRoomPage');
-router.page = (_req, res) => res.type('html').send(readingRoomHtml);
+const { readingRoomHtml, LIBRARY_VIEWS } = require('./kadeReadingRoomPage');
+/* Nov 10 2026: /library is the front desk and /library/<name> one of its small pages; all are the
+ * same document. An address that names no page of the Library goes to the front desk. */
+router.page = (req, res) => {
+  const view = req.params && req.params.view;
+  if (view && !LIBRARY_VIEWS.includes(view)) return res.redirect(302, '/library');
+  res.type('html').send(readingRoomHtml);
+};
 
 module.exports = router;
 /* Sep 29 2026: the Family history reads its stories aloud in this same voice, direction and proxy. */

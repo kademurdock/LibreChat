@@ -289,5 +289,7 @@ test('the shelf tells a restricted reader about the family collection, but not t
   assert.equal(shelfFlag(true, { id: 'stranger' }), false, 'the page shows the ask-Kade notice');
   assert.equal(shelfFlag(true, { id: 'review' }), null, 'the review seat hears nothing');
   const page = fs.readFileSync(require.resolve('./kadeReadingRoomPage'), 'utf8');
-  assert.match(page, /\$\('familyLibraryNotice'\)\.hidden = shelfData\.familyLibrary !== false;/);
+  assert.match(page, /\$\('familyLibraryNotice'\)\.hidden = !\(shelfData\.familyLibrary === false && /, 'only a plain false shows the notice');
+  assert.match(page, /if \(shelfData\.familyLibrary === false && !family\.classList\.contains\('locked'\)\)/, 'and only a plain false marks the Family shelves row');
+  assert.match(page, /if \(shelfData && shelfData\.familyLibrary !== true\) \$\('familyBlurb'\)\.hidden = true;/, 'the review seat is told nothing about a family collection');
 });

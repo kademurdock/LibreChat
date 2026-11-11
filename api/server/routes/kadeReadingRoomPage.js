@@ -57,6 +57,15 @@ const ART_DIR = '/assets/art/';
 const ART_HIDDEN_WHEN = '(forced-colors: active), (prefers-contrast: more), (max-width: 22.5em), (max-height: 30em), (prefers-reduced-data: reduce)';
 const ART_OFF_SCRIPT = "(function(){try{var d=document.documentElement,c=navigator.connection,off=!!(c&&c.saveData);if(parseFloat(getComputedStyle(d).fontSize)>20)off=true;if(off)d.classList.add('kade-art-off')}catch(e){}})();";
 
+/* THE LIBRARY'S PAGES (Nov 10 2026 redesign). /library is a short front desk; each row opens its
+ * own small page at /library/<name>. All of them are this one document: the address picks which
+ * blocks show. Old addresses keep landing in the right place: ?book= is an item, ?collection= a
+ * playlist, ?request= or #libraryRequests the requests page, and a search or folder written on
+ * the bare /library address opens the search or the folders. */
+const LIBRARY_VIEWS = ['continue', 'local', 'search', 'folders', 'playlists', 'family', 'requests', 'add', 'librarian'];
+const VIEW_SCRIPT = "function kadeLibraryView(loc){var q=new URLSearchParams(loc.search);if(q.get('book'))return 'item';if(q.get('collection'))return 'playlist';var name=loc.pathname.split('/').filter(Boolean)[1]||'';if(" + JSON.stringify(LIBRARY_VIEWS) + ".indexOf(name)!==-1)return name;if(q.get('request')||loc.hash==='#libraryRequests')return 'requests';if(q.has('folder'))return 'folders';if(['q','kind','type','decade','under','page','sort','scope'].some(function(k){return q.has(k);}))return 'search';return 'desk';}";
+const VIEW_CSS = ['desk', ...LIBRARY_VIEWS].map((view) => `html[data-view="${view}"] [data-views]:not([data-views~="${view}"])`).join(', ') + ', html[data-view="item"] [data-views], html[data-view="playlist"] [data-views] { display:none !important; }';
+
 const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library — Kade-AI</title>${SHARED_HEAD}
 <style>
   .hidden { display:none !important; }
@@ -106,7 +115,18 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   html { scroll-padding-top:5rem; }
   input[type=checkbox] { width:1.25rem; height:1.25rem; vertical-align:-.2rem; margin-right:.35rem; }
   #timeLine { font-variant-numeric:tabular-nums; font-weight:600; margin:.4rem 0; }
-  h3.results { font-size:1.05rem; margin:1rem 0 .2rem; }
+  h2.results { font-size:1.05rem; margin:1rem 0 .2rem; }
+  /* Nov 10 2026 (redesign): one page of markup, many small pages. Each block says which pages it
+     belongs to; the head script names the page before anything is drawn, so nothing flashes. */
+  ${VIEW_CSS}
+  /* A feature that is part of the Family feature pack is always there, marked in words and with a
+     dashed edge (never by colour alone), not hidden. */
+  a.hubitem.locked { border-style:dashed; }
+  a.hubitem .tag { display:inline-block; margin-top:.3rem; padding:.1rem .5rem; border:1px solid currentColor; border-radius:999px; font-size:.82rem; font-weight:700; }
+  ul.plain li a.shelf { flex:1 1 12rem; font-weight:700; padding:.75rem .2rem; min-height:44px; display:inline-flex; align-items:center; color:#1d55d0; }
+  @media (prefers-color-scheme: dark) { ul.plain li a.shelf { color:#93c5fd; } }
+  a.hubitem:focus-visible, ul.plain li a.shelf:focus-visible { outline:3px solid #1d55d0; outline-offset:2px; }
+  @media (prefers-color-scheme: dark) { a.hubitem:focus-visible, ul.plain li a.shelf:focus-visible { outline-color:#ffbf47; } }
   @media (prefers-color-scheme: dark) {
     button.act, a.act { background:#1e2127; color:#9ec2ff; border-color:#4a78d8; }
     button.act.primary, a.act.primary { background:#1f7a49; color:#fff; border-color:#1f7a49; }
@@ -147,20 +167,67 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   .alcove-art.art-shown::before { display:block; mix-blend-mode:screen; background:radial-gradient(ellipse 30% 82% at 67.5% 22%, rgba(255,186,104,.48), rgba(255,170,90,.16) 42%, rgba(255,170,90,0) 70%); }
   @media (prefers-reduced-transparency: reduce) { .kade-art::before, .kade-art::after { display:none !important; } }
 </style>
-<script>${ART_OFF_SCRIPT}</script></head>
+<script>${ART_OFF_SCRIPT}</script>
+<script>${VIEW_SCRIPT}try{document.documentElement.setAttribute('data-view',kadeLibraryView(location))}catch(e){}</script></head>
 <body>
-  <a class="skip" href="#h-results" id="skipLink">Skip to results</a>
-  <p><a class="back" href="/home" aria-label="Back to Home">&larr; Home</a></p>
+  <a class="skip" href="#h-results" id="skipLink" hidden>Skip to results</a>
+  <p><a class="back" href="/home" id="backLink" aria-label="Back to Home">&larr; Home</a></p>
   <main id="main">
-  <h1 id="pageTitle">The Library</h1>
+  <h1 id="pageTitle" tabindex="-1">The Library</h1>
   <p id="familyLibraryNotice" hidden>Your own uploads are here. The family's shared collection is part of the Family feature pack, which Kade turns on for family members. Ask Kade if you should have it.</p>
   <p id="live" class="status" role="status" aria-live="polite"></p>
 
   <section id="shelf">
+    <!-- THE FRONT DESK (Nov 10 2026 redesign): the phone's map. A short list of rows; each opens its
+         own small page with its own address and title. The catalogue only loads when it is asked for. -->
+    <div data-views="desk continue">
+    <section id="continueBox" hidden>
+      <h2 id="h-continue">Pick up where you left off</h2>
+      <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
+    </section>
+    </div>
+    <div data-views="desk">
+    <h2 id="h-desk">Around the Library</h2>
+    <nav class="hublist" id="deskNav" aria-labelledby="h-desk">
+      <a class="hubitem" href="/library/continue" id="row-continue" aria-label="Continue and your shelf" aria-describedby="rowhint-continue"><span class="hicon" aria-hidden="true">🔖</span><span><strong>Continue and your shelf</strong><small id="rowhint-continue">Everything you have opened or uploaded, and where you left off in each.</small></span></a>
+      <a class="hubitem" href="/library/local" id="row-local" aria-label="Springfield and the Ozarks" aria-describedby="rowhint-local"><span class="hicon" aria-hidden="true">📍</span><span><strong>Springfield and the Ozarks</strong><small id="rowhint-local">Local television and radio, hometown businesses and Missouri memories.</small></span></a>
+      <a class="hubitem" href="/library/search" id="row-search" aria-label="Browse and search" aria-describedby="rowhint-search"><span class="hicon" aria-hidden="true">🔍</span><span><strong>Browse and search</strong><small id="rowhint-search">Search the whole collection, or narrow it by format, type and decade.</small></span></a>
+      <a class="hubitem" href="/library/folders" id="row-folders" aria-label="Folders" aria-describedby="rowhint-folders"><span class="hicon" aria-hidden="true">📁</span><span><strong>Folders</strong><small id="rowhint-folders">Walk the shelves: Videos, Audio and Books, then the category, then the decade.</small></span></a>
+      <a class="hubitem" href="/library/playlists" id="row-playlists" aria-label="Playlists" aria-describedby="rowhint-playlists"><span class="hicon" aria-hidden="true">🎵</span><span><strong>Playlists</strong><small id="rowhint-playlists">Collections you put together from anything in the library.</small></span></a>
+      <a class="hubitem" href="/library/family" id="row-family" aria-label="Family shelves" aria-describedby="rowhint-family"><span class="hicon" aria-hidden="true">👪</span><span><strong>Family shelves</strong><small id="rowhint-family">The family&#39;s shared collection and the family history.</small></span></a>
+      <a class="hubitem" href="/library/requests" id="row-requests" aria-label="Requests" aria-describedby="rowhint-requests"><span class="hicon" aria-hidden="true">✉️</span><span><strong>Requests</strong><small id="rowhint-requests">Ask for something for the library, or send in a link you found.</small></span></a>
+      <a class="hubitem" href="/library/add" id="row-add" aria-label="Add to the Library" aria-describedby="rowhint-add"><span class="hicon" aria-hidden="true">➕</span><span><strong>Add to the Library</strong><small id="rowhint-add">Donate a book, a recording or a video.</small></span></a>
+      <a class="hubitem" href="${require('@librechat/api').librarianGuide.chatUrl}" id="row-librarian" aria-label="Talk to the Librarian" aria-describedby="rowhint-librarian"><span class="hicon" aria-hidden="true">🦉</span><span><strong>Talk to the Librarian</strong><small id="rowhint-librarian">Mrs. Witherspoon finds books, shows and tapes on the shelves for you.</small></span></a>
+      <a class="hubitem" href="/library/librarian" id="row-desk" aria-label="The librarian&#39;s desk" aria-describedby="rowhint-desk" hidden><span class="hicon" aria-hidden="true">🗂️</span><span><strong>The librarian&#39;s desk</strong><small id="rowhint-desk">Submissions waiting for you, the sorting, and who has the family library.</small></span></a>
+    </nav>
     <div class="kade-art alcove-art"><img id="alcoveArt" alt="${ALCOVE_ART.alt}" width="1440" height="481" loading="lazy" decoding="async" draggable="false"></div>
     <p class="muted">The family library: books read aloud by a voice you choose, the archive of television, commercials, tapes and radio, recordings and videos the family has donated, and playlists. Your uploads stay yours. Shared items are available to members with the Family feature pack.</p>
+    </div>
 
-    <h2 id="h-browse">Browse the library</h2>
+    <div data-views="continue">
+    <h2 id="h-mine" tabindex="-1">Your shelf</h2>
+    <p class="hint">Everything you have donated and everything you have opened, together. Removing something from your shelf never removes it from the library.</p>
+    <div id="mineList"><p class="muted">Loading…</p></div>
+    <ul class="plain hidden" id="borrowedList"></ul>
+    </div>
+
+    <div data-views="local">
+    <p class="hint">Start here for home. Each row opens the real shelf, where the folders go by kind and then by decade.</p>
+    <nav class="hublist" id="localNav" aria-labelledby="pageTitle">
+      <a class="hubitem" href="/library/folders?folder=Videos%2FOzarks%20(Springfield%20Area)"><span class="hicon" aria-hidden="true">📺</span><span><strong>Local television</strong><small>Springfield stations: local news, local commercials, station sign-offs, weather and sports, by kind and then by decade.</small></span></a>
+      <a class="hubitem" href="/library/folders?folder=Audio%2FOzarks%20(Springfield%20Area)"><span class="hicon" aria-hidden="true">📻</span><span><strong>Local radio and audio</strong><small>Springfield and Ozarks radio, airchecks and tapes.</small></span></a>
+      <a class="hubitem" href="/library/folders?folder=Videos%2FMissouri"><span class="hicon" aria-hidden="true">🗺️</span><span><strong>Missouri</strong><small>St. Louis, Kansas City, Jefferson City and the rest of the state.</small></span></a>
+      <a class="hubitem" href="/library/search?q=Springfield"><span class="hicon" aria-hidden="true">🔍</span><span><strong>Everything that mentions Springfield</strong><small>A search of the whole collection for Springfield, newest first.</small></span></a>
+    </nav>
+    <h2 id="h-elsewhere">From everywhere</h2>
+    <nav class="hublist" aria-labelledby="h-elsewhere">
+      <a class="hubitem" href="/library/folders?folder=Videos%2FCommercials"><span class="hicon" aria-hidden="true">🛒</span><span><strong>Commercials by subject</strong><small>Ads from everywhere, shelved by what they sell.</small></span></a>
+      <a class="hubitem" href="/library/folders?folder=Videos%2FTV%20Shows"><span class="hicon" aria-hidden="true">📼</span><span><strong>TV shows and familiar bumpers</strong><small>Shows, promos and the bits between them.</small></span></a>
+      <a class="hubitem" href="/library/folders?folder=Audio"><span class="hicon" aria-hidden="true">🎧</span><span><strong>Radio, tapes and audio</strong><small>Everything to listen to.</small></span></a>
+    </nav>
+    </div>
+
+    <div data-views="search">
     <p class="hint">One shelf for books, newspapers, recordings and videos. Choose a type or decade, or search across the collection.</p>
     <form id="browseForm" role="search" aria-label="Search and filter the library">
       <label class="field" for="searchBox">Search the library</label>
@@ -176,66 +243,33 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <input id="browsePath" type="hidden" value="">
     </form>
     <p id="browseLocation" hidden><span id="browseLocationName"></span> <button class="act quiet" id="browsePathClear" type="button">All subjects</button></p>
-    <h3 id="h-results" class="results" tabindex="-1">Results</h3>
+    <h2 id="h-results" class="results" tabindex="-1">Results</h2>
     <p id="browseCount" class="hint">Loading…</p>
     <ul class="plain" id="browseList" aria-labelledby="h-results"></ul>
     <nav class="pager" id="browsePager" aria-label="Result pages" hidden><button class="act quiet" id="browsePrev" type="button">Previous page</button><span id="browsePageInfo"></span><button class="act quiet" id="browseNext" type="button">Next page</button></nav>
-    <section aria-labelledby="h-local" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;background:linear-gradient(120deg,rgba(41,130,112,.16),rgba(70,100,160,.1))">
-      <h2 id="h-local">Springfield, the Ozarks &amp; Missouri</h2>
-      <p class="hint">Local television, hometown businesses and Missouri memories. Start here, or explore favorite ads and shows from everywhere.</p>
-      <div class="row" id="discoveryLinks">
-        <button type="button" class="act" data-folder="Videos/Missouri">Explore Missouri</button>
-        <button type="button" class="act quiet" data-query="Springfield">Springfield &amp; Ozarks</button>
-        <button type="button" class="act quiet" data-folder="Videos/Commercials">Commercials by subject</button>
-        <button type="button" class="act quiet" data-folder="Videos/TV Shows">TV shows &amp; familiar bumpers</button>
-        <button type="button" class="act quiet" data-folder="Audio">Radio, tapes &amp; audio</button>
-      </div>
-    </section>
-    <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
-    <section id="continueBox" hidden>
-      <h2 id="h-continue">Pick up where you left off</h2>
-      <ul class="plain" id="continueList" aria-labelledby="h-continue"></ul>
-    </section>
-    <section id="librarianCard" aria-labelledby="librarianHeading" style="padding:1rem;border:1px solid #8a919c;border-radius:14px;margin-bottom:1rem">
-      <h2 id="librarianHeading">Meet Mrs. Witherspoon</h2>
-      <p>Looking for a half-remembered book, commercial, radio show or tape? Tell Olivia what you remember, or talk with her about something in the collection.</p>
-      <a class="act primary" id="talkLibrarian" href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a>
-      <p class="hint">Speak or type using the usual voice and chat controls.</p>
-      <p id="requestsLink" hidden>You can also ask her to save a library request from whatever you remember. <a href="/library#libraryRequests">Library requests and updates</a></p>
-    </section>
-    <h2 id="h-archive" tabindex="-1">Folders</h2>
-    <details id="folderBrowse"><summary>Open the folders</summary>
+    </div>
+
+    <div data-views="folders">
+    <div><label class="field" for="folderScope">Collection</label><select id="folderScope" style="width:auto"><option value="public">Family library</option><option value="mine">Your uploads</option></select></div>
     <div class="kade-art shelf-art" id="shelfArtBox" hidden><img id="shelfArt" alt="" width="1152" height="648" loading="lazy" fetchpriority="low" decoding="async" draggable="false"></div>
     <nav class="crumbs" id="crumbs" aria-label="Where you are in the archive"></nav>
-    <ul class="plain" id="archiveList" aria-labelledby="h-archive"><li class="muted">Loading…</li></ul>
+    <ul class="plain" id="archiveList" aria-labelledby="pageTitle"><li class="muted">Loading…</li></ul>
     <div class="pager" id="archivePager" hidden><button class="act quiet" id="pagePrev" type="button">Previous page</button><span id="pageInfo"></span><button class="act quiet" id="pageNext" type="button">Next page</button></div>
-
-    </details>
-    <h2 id="h-collections">Your playlists</h2>
-    <details><summary>Open your playlists</summary>
-    <p class="hint">Playlists (collections) you put together from anything in the library — yours until you share them.</p>
-    <ul class="plain" id="collectionList" aria-labelledby="h-collections"><li class="muted">Loading…</li></ul>
-    <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
-
-    </details>
-    <h2 id="h-mine" tabindex="-1">Your shelf</h2>
-    <details id="mineBox"><summary>Open your shelf and uploads</summary>
-    <p class="hint">Everything you have donated and everything you have opened, together. Removing something from your shelf never removes it from the library.</p>
-    <div id="mineList" aria-labelledby="h-mine"><p class="muted">Loading…</p></div>
-    <ul class="plain hidden" id="borrowedList"></ul>
-
-    </details>
-
-    <h2 id="h-submit">Submit something for the library</h2>
-    <div class="card">
-      <p class="hint">Found a YouTube video, an archive.org recording, or anything else the family should have? Paste the link. The librarian looks at every submission and you are told when it is approved or declined. To submit a FILE, donate it below first (it lands on your shelf), then use "Submit this for the library" on its page.</p>
-      <label class="field" for="subUrl">Link</label><input type="text" id="subUrl" placeholder="https://www.youtube.com/watch?v=…">
-      <label class="field" for="subTitle">What is it (optional)</label><input type="text" id="subTitle" placeholder="KY3 commercials, 1994">
-      <label class="field" for="subNote">Why it belongs (optional)</label><textarea id="subNote" rows="2"></textarea>
-      <button class="act primary" id="subBtn" type="button">Submit for consideration</button>
     </div>
-    <h2 id="h-mysubs">Your submissions</h2>
-    <ul class="plain" id="mySubs" aria-labelledby="h-mysubs"><li class="muted">Loading…</li></ul>
+
+    <div data-views="playlists">
+    <p class="hint">Playlists (collections) you put together from anything in the library — yours until you share them.</p>
+    <ul class="plain" id="collectionList" aria-labelledby="pageTitle"><li class="muted">Loading…</li></ul>
+    <div class="row"><input type="text" id="newCollTitle" style="flex:1 1 12rem" placeholder="New collection name" aria-label="New collection name"><button class="act" id="newCollBtn" type="button">Make it</button></div>
+    </div>
+
+    <div data-views="family">
+    <p class="muted" id="familyBlurb">The shelves the family shares: the archive of television, commercials, tapes and radio, the books, and what family members have donated. Pick a shelf to walk its folders.</p>
+    <ul class="plain" id="familyList" aria-labelledby="pageTitle"></ul>
+    <p><a class="act quiet" id="familyHistoryLink" href="/family-history" hidden>Family history, photos and records</a></p>
+    </div>
+
+    <div data-views="requests">
     <section id="libraryRequests" aria-labelledby="requestsHeading" hidden>
       <h2 id="requestsHeading" tabindex="-1">Library requests</h2>
       <p>Ask for any book, recording, video or anything else for the family library, even if you only remember a little about it. You can also just tell Mrs. Witherspoon. The library owner reviews every request, and you get an alert with a link when yours is filled. Only you and the library owner see your requests.</p>
@@ -255,16 +289,33 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       <button id="requestMore" class="act quiet" type="button" hidden>More requests</button>
       <section id="requestDetail" aria-labelledby="requestDetailHeading" hidden></section>
     </section>
+    <p id="requestsLink" hidden>You can also ask Mrs. Witherspoon to save a library request from whatever you remember. <a href="${require('@librechat/api').librarianGuide.chatUrl}">Talk to the Librarian</a></p>
+    <h2 id="h-submit">Submit something for the library</h2>
+    <div class="card">
+      <p class="hint">Found a YouTube video, an archive.org recording, or anything else the family should have? Paste the link. The librarian looks at every submission and you are told when it is approved or declined. To submit a FILE, add it on the <a href="/library/add">Add to the Library</a> page first (it lands on your shelf), then use "Submit this for the library" on its page.</p>
+      <label class="field" for="subUrl">Link</label><input type="text" id="subUrl" placeholder="https://www.youtube.com/watch?v=…">
+      <label class="field" for="subTitle">What is it (optional)</label><input type="text" id="subTitle" placeholder="KY3 commercials, 1994">
+      <label class="field" for="subNote">Why it belongs (optional)</label><textarea id="subNote" rows="2"></textarea>
+      <button class="act primary" id="subBtn" type="button">Submit for consideration</button>
+    </div>
+    <h2 id="h-mysubs" tabindex="-1">Your submissions</h2>
+    <ul class="plain" id="mySubs" aria-labelledby="h-mysubs"><li class="muted">Loading…</li></ul>
+    </div>
+
+    <div data-views="librarian">
+    <p id="reviewNo" hidden>This page is the librarian's desk. Only the librarian's account can use it. <a href="/library">Back to the Library</a></p>
     <section id="reviewWrap" hidden>
       <h2 id="h-sort">The librarian's sorting</h2>
       <p class="hint" id="sortStatus">Books arrive without folders; the librarian files them under Books and a shelf (Romance, Urban fiction, Humor and jokes, Self-help…) on her own, a batch every few minutes. Press to do a batch now.</p>
       <button class="act" id="sortBtn" type="button">Sort the books now</button>
-      <h2 id="h-review">Waiting for the librarian</h2>
+      <h2 id="h-review" tabindex="-1">Waiting for the librarian</h2>
       <p class="hint">You are the librarian. Approve a link and it is fetched into the collection from TubeVault's Cloud tab; approve a file and it goes into the library at once. The person who submitted it is told either way.</p>
       <ul class="plain" id="reviewList" aria-labelledby="h-review"></ul>
       <section id="familyAccess" aria-labelledby="h-family-access" hidden></section>
     </section>
+    </div>
 
+    <div data-views="add">
     <h2 id="h-donate">Donate a book</h2>
     <div class="card">
       <p class="hint">An audiobook ZIP containing MP3 or M4B recordings (up to 4 GB), Bookshare's DAISY zip (text or recorded audio), an EPUB, a text file, a Word file or an HTML page. Audio recordings stay together as one audiobook; text-book imports support up to 256 MB. It lands on your shelf first; the Bookshare notice at the front is skipped automatically and the book opens with its jacket.</p>
@@ -292,13 +343,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         <label class="field" for="auTrackTitle">Name for this part (optional)</label><input type="text" id="auTrackTitle" placeholder="Side A, Part 2, Episode 3…">
         <button class="act" id="auAddBtn" type="button">Upload this part</button>
         <ul class="plain" id="auTrackList"></ul>
-        <button class="act quiet" id="auDoneBtn" type="button">Done — back to my shelf</button>
+        <button class="act quiet" id="auDoneBtn" type="button">Done: go to my shelf</button>
       </div>
+
     </div>
   </section>
 
   <section id="collection" class="hidden">
-    <p><button class="act quiet" id="collBack" type="button">&larr; Back to the shelf</button></p>
+    <p><button class="act quiet" id="collBack" type="button">&larr; Back to playlists</button></p>
     <h2 id="collTitle" tabindex="-1"></h2>
     <p class="meta" id="collMeta"></p>
     <div class="row"><button class="act primary" id="collPlayAll" type="button">Play all, in order</button><button class="act quiet" id="collShareBtn" type="button" hidden></button><button class="act quiet" id="collDeleteBtn" type="button" hidden>Delete this collection</button></div>
@@ -429,6 +481,20 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var TTS_BASE = 'https://inworld-tts-proxy-production.up.railway.app';
   var librarianChatUrl = ${JSON.stringify(require('@librechat/api').librarianGuide.chatUrl)};
   var $ = function(id){ return document.getElementById(id); };
+  /* Nov 10 2026 (redesign): which of the Library's small pages this is (the front desk, search,
+     folders, ...). Blocks that belong to other pages are taken out before anything loads, the
+     heading and the browser title name the page, and the link at the top goes back to the front
+     desk (from the front desk it goes Home). */
+  ${VIEW_SCRIPT}
+  var VIEW = kadeLibraryView(location), BASE = '/library';
+  try { document.documentElement.setAttribute('data-view', VIEW); } catch(e) {}
+  [].forEach.call(document.querySelectorAll('[data-views]'), function(el){ el.hidden = el.getAttribute('data-views').split(' ').indexOf(VIEW) === -1; });
+  var PAGE_NAMES = { desk: 'The Library', continue: 'Continue and your shelf', local: 'Springfield and the Ozarks', search: 'Browse and search', folders: 'Folders', playlists: 'Playlists', family: 'Family shelves', requests: 'Requests', add: 'Add to the Library', librarian: "The librarian's desk" };
+  if (PAGE_NAMES[VIEW]) $('pageTitle').textContent = PAGE_NAMES[VIEW];
+  if (PAGE_NAMES[VIEW] && VIEW !== 'desk') document.title = PAGE_NAMES[VIEW] + ' — The Library — Kade-AI';
+  if (VIEW !== 'desk') { $('backLink').href = BASE; $('backLink').setAttribute('aria-label', 'Back to the Library'); $('backLink').textContent = '← The Library'; }
+  // the reading-alcove picture belongs to the front desk; on every other page its box is hidden, so it is never downloaded
+  if (VIEW !== 'desk') $('alcoveArt').parentNode.hidden = true;
   var live = $('live');
   // While the reading view (a modal dialog) is open, #live is inert; the reader says it instead.
   var freshTimer = null;
@@ -445,7 +511,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function focusOn(el){ if (!el) return; try { el.focus(); } catch(e) {} }
   /* Every move inside the Library goes to the bare path plus a query, never carrying a #fragment
      along, so a fragment from an alert link does not follow the person from page to page. */
-  function visit(query){ location.href = location.pathname + (query || ''); }
+  function visit(query){ location.href = BASE + (query || ''); }
   /* Nov 10 2026 (redesign): the address holds the search, the filters, the folder and the page
      number. An Open button notes the address it was pressed on, so "Back to the shelf" returns to
      that very list and page, where the row is waiting for focus. Without a note it is the plain
@@ -453,8 +519,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   var address = window.kadeLibraryAddress || { params: function(){ return new URLSearchParams(location.search); }, set: function(){ return false; } };
   function leave(){
     var note = returnNote(), from = note && typeof note.from === 'string' ? note.from : '';
-    var inside = (from.indexOf('/library') === 0 || from.indexOf('/reading-room') === 0) && from.indexOf('book=') === -1 && from.indexOf('collection=') === -1 && from.indexOf('//') === -1;
-    location.href = inside ? from : location.pathname;
+    var inside = (from.indexOf('/library') === 0 || from.indexOf('/reading-room') === 0) && from.indexOf('book=') === -1 && from.indexOf('//') === -1;
+    location.href = inside ? from : BASE;
   }
   /* Coming back from an item: the place it was opened from gets focus again. The note is made
      when an Open or Continue button is pressed and is good for one try: the first time the list
@@ -539,7 +605,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (where === 'mine' && b.kind !== 'text') {
       var add = document.createElement('button'); add.className = 'act quiet'; add.type = 'button'; add.textContent = 'Add parts';
       add.setAttribute('aria-label', 'Add parts to ' + b.title);
-      add.onclick = function(){ openTrackAdder(b); };
+      add.onclick = function(){ location.href = BASE + '/add?parts=' + encodeURIComponent(b.id); };
       li.appendChild(add);
     }
     return li;
@@ -552,7 +618,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   function renderShelf(mine, borrowed){
     var box = $('mineList'); box.innerHTML = '';
     var all = mine.map(function(b){ return {book:b, where:'mine'}; }).concat(borrowed.map(function(b){ return {book:b, where:'borrowed'}; }));
-    if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Open something in the library or add a file below.</p>'; return; }
+    if (!all.length) { box.innerHTML = '<p class="muted">Nothing on your shelf yet. Open something in the library, or add a file from the Add to the Library page.</p>'; return; }
     var ul = document.createElement('ul'); ul.className = 'plain';
     all.forEach(function(entry){
       var b = entry.book, li = bookLi(b, entry.where);
@@ -565,15 +631,16 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     });
     box.appendChild(ul);
   }
-  /* Nov 10 2026: the three things most recently left unfinished, right under the page title.
-     They are the same rows the shelf holds (Continue plus the title), so nothing new to learn;
-     the section is absent when there is nothing to continue. */
+  /* Nov 10 2026: the three things most recently left unfinished, right under the front desk's
+     title (on the Continue page, every unfinished thing, up to 30). They are the same rows the
+     shelf holds (Continue plus the title), so nothing new to learn; the section is absent when
+     there is nothing to continue. */
   function unfinished(mine, borrowed){
     var all = mine.map(function(b){ return {book:b, where:'mine'}; }).concat(borrowed.map(function(b){ return {book:b, where:'borrowed'}; }));
     all = all.filter(function(entry){ var p = entry.book.progress; return entry.book.state !== 'pending' && p && !p.finished && (p.s || p.c || p.pos); });
     var when = function(entry){ var t = Date.parse(entry.book.progress.updatedAt || ''); return isNaN(t) ? 0 : t; };
     all.sort(function(a, b){ return when(b) - when(a); });
-    return all.slice(0, 3);
+    return all.slice(0, VIEW === 'continue' ? 30 : 3);
   }
   function renderContinue(mine, borrowed){
     var rows = unfinished(mine, borrowed), ul = $('continueList');
@@ -585,7 +652,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
        same amount, so what the person was looking at, or the row they came back to, stays put. */
     var box = $('continueBox'), hide = !rows.length || !$('player').classList.contains('hidden') || !$('collection').classList.contains('hidden');
     var anchored = false; try { anchored = !!(window.CSS && CSS.supports && CSS.supports('overflow-anchor', 'auto')); } catch(e) {}
-    var mark = document.activeElement && document.activeElement !== document.body && !box.contains(document.activeElement) ? document.activeElement : $('librarianCard');
+    var mark = document.activeElement && document.activeElement !== document.body && !box.contains(document.activeElement) ? document.activeElement : $('h-desk');
     var before = 0; try { before = mark.getBoundingClientRect().top; } catch(e) {}
     box.hidden = hide;
     try { var moved = mark.getBoundingClientRect().top - before; if (moved && !anchored && (window.pageYOffset || 0) > 0) window.scrollBy(0, moved); } catch(e) {}
@@ -593,14 +660,46 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   async function loadShelf(){
     try {
       shelfData = await api('/shelf');
-      renderShelf(shelfData.mine, shelfData.borrowed);
-      renderContinue(shelfData.mine, shelfData.borrowed);
-      restoreReturn(['mineList', 'continueList']);
+      if (VIEW === 'continue') renderShelf(shelfData.mine, shelfData.borrowed);
+      if (VIEW === 'desk' || VIEW === 'continue') { renderContinue(shelfData.mine, shelfData.borrowed); restoreReturn(['mineList', 'continueList']); }
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
-      $('familyLibraryNotice').hidden = shelfData.familyLibrary !== false;
-      if (librarian && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
+      // the folders page uses who you are (for Move and Delete) without asking for the whole shelf again
+      try { sessionStorage.setItem('library-who', JSON.stringify({ me: me, librarian: librarian })); } catch(e) {}
+      $('familyLibraryNotice').hidden = !(shelfData.familyLibrary === false && (VIEW === 'desk' || VIEW === 'family'));
+      if (librarian && VIEW === 'librarian' && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       $('familyHistoryLink').hidden = shelfData.familyLibrary !== true;
+      $('row-desk').hidden = !librarian;
+      /* Her rule for the Family feature pack: a door a person cannot use yet is still there, marked
+         in words, never hidden. The row still opens its page, which says how to get the pack. */
+      var family = $('row-family');
+      if (shelfData.familyLibrary === false && !family.classList.contains('locked')) {
+        family.classList.add('locked');
+        var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'Family feature pack';
+        $('rowhint-family').appendChild(document.createTextNode(' ')); $('rowhint-family').appendChild(tag);
+      }
     } catch(e) { restoreReturn(['mineList', 'continueList'], true); say('Could not load the shelf: ' + e.message); }
+  }
+  /* Family shelves: the top shelves of the family's shared collection, each a link into the
+     folders. Without the Family feature pack the page says so and lists nothing. */
+  async function loadFamily(){
+    var ul = $('familyList'); ul.innerHTML = '';
+    /* false: no Family feature pack (the notice above says how to get it). Anything but true:
+       nothing is said about a family collection (the App Review seat), and the shelves listed are
+       whatever that account can open. */
+    if (shelfData && shelfData.familyLibrary !== true) $('familyBlurb').hidden = true;
+    if (shelfData && shelfData.familyLibrary === false) return;
+    ul.innerHTML = '<li class="muted">Loading…</li>';
+    try {
+      var j = await api('/archive?path=&page=0&scope=public');
+      ul.innerHTML = '';
+      if (!j.folders.length) { ul.innerHTML = '<li class="muted">Nothing is on the family shelves yet.</li>'; return; }
+      j.folders.forEach(function(f){
+        var li = document.createElement('li'), a = document.createElement('a');
+        a.className = 'shelf'; a.href = BASE + '/folders?folder=' + encodeURIComponent(f.path);
+        a.textContent = f.name + ' (' + Number(f.count).toLocaleString('en-US') + ' item' + (f.count === 1 ? '' : 's') + ')';
+        li.appendChild(a); ul.appendChild(li);
+      });
+    } catch(e) { ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; say(e.message); }
   }
   /* the archive */
   var archivePath = '', archivePage = 0, archiveRun = 0;
@@ -670,22 +769,27 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   $('alcoveArt').setAttribute('data-src', ${JSON.stringify(ALCOVE_ART.src)});
   fillArt($('alcoveArt'));
   if (artHiddenWhen) { if (artHiddenWhen.addEventListener) artHiddenWhen.addEventListener('change', refillArt); else if (artHiddenWhen.addListener) artHiddenWhen.addListener(refillArt); }
-  var FOLDER_KEY = 'library-folders';
-  function folderNote(){ try { return JSON.parse(sessionStorage.getItem(FOLDER_KEY) || 'null') || {}; } catch(e) { return {}; } }
-  function noteFolder(){ try { sessionStorage.setItem(FOLDER_KEY, JSON.stringify({ open: $('folderBrowse').open })); } catch(e) {} }
-  /* Nov 10 2026 (redesign): the folder you are in and its page number are in the address
-     (folder, fpage), so Back walks up out of a folder and a link opens the same folder. */
-  function folderPlace(){ var params = address.params(), page = parseInt(params.get('fpage'), 10); return { path: params.get('folder') || '', page: page > 1 ? page - 1 : 0 }; }
-  $('folderBrowse').ontoggle = function(){
-    noteFolder();
-    if (!this.open) { address.set({ folder: '', fpage: '' }, 'replace'); return; }
+  /* Nov 10 2026 (redesign): the folders are their own page. The folder you are in, its page number
+     and the collection (the family library or your uploads) are in the address (folder, fpage,
+     scope), so Back walks up out of a folder and a link opens the same folder. */
+  function folderPlace(){ var params = address.params(), page = parseInt(params.get('fpage'), 10); return { path: params.get('folder') || '', page: page > 1 ? page - 1 : 0, scope: params.get('scope') === 'mine' ? 'mine' : 'public' }; }
+  async function startFolders(){
     var was = folderPlace();
-    if (was.path) loadArchive(was.path, was.page, false, true); else loadArchive(undefined, 0);
+    $('libraryScope').value = was.scope; $('folderScope').value = was.scope;
+    var who = null; try { who = JSON.parse(sessionStorage.getItem('library-who') || 'null'); } catch(e) {}
+    if (who && who.me) { me = who.me; librarian = !!who.librarian; } else await loadShelf();
+    loadArchive(was.path, was.page, false, true);
+  }
+  $('folderScope').onchange = function(){
+    $('libraryScope').value = this.value;
+    address.set({ scope: this.value === 'mine' ? 'mine' : '', folder: '', fpage: '' }, 'push');
+    loadArchive('', 0, false, false, 'none');
   };
   window.addEventListener('popstate', function(){
-    var now = folderPlace();
-    if (!$('folderBrowse').open) { if (now.path) $('folderBrowse').open = true; return; }
-    if (now.path !== archivePath || now.page !== archivePage) loadArchive(now.path, now.page, true, false, 'none');
+    if (VIEW !== 'folders') return;
+    var now = folderPlace(), changed = now.scope !== $('libraryScope').value;
+    $('libraryScope').value = now.scope; $('folderScope').value = now.scope;
+    if (changed || now.path !== archivePath || now.page !== archivePage) loadArchive(now.path, now.page, true, false, 'none');
   });
   /* focus: true after the person moved (opened a folder, a crumb, moved or deleted an item): the
      button they pressed is destroyed by the redraw, so focus lands on the crumb for where they
@@ -695,7 +799,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
      focus move, to the other one, or to the crumb.
      quiet: true when the page itself reopens a remembered folder, so nothing is spoken.
      If the folder cannot be loaded the reason is spoken, and focus that fell off the page with
-     the old list goes to the Folders heading.
+     the old list goes to the page heading.
      how: 'none' when the address already says where this is (Back, Forward, a reload); otherwise
      a move the person made is a new step in the address that Back can return to. */
   async function loadArchive(path, page, focus, quiet, how){
@@ -707,7 +811,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       var j = await api('/archive?path=' + encodeURIComponent(archivePath) + '&page=' + archivePage + '&scope=' + scope);
       if (run !== archiveRun || scope !== $('libraryScope').value) return;
       var crumbs = $('crumbs'); crumbs.innerHTML = '';
-      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'Library'; home.onclick = function(){ loadArchive('', 0, true); }; crumbs.appendChild(home);
+      var home = document.createElement('button'); home.type = 'button'; home.textContent = 'All folders'; if (!archivePath) home.setAttribute('aria-current', 'location'); home.onclick = function(){ loadArchive('', 0, true); }; crumbs.appendChild(home);
       var here = home;
       var parts = archivePath ? archivePath.split('/') : [];
       // Part 296: each shelf reads under its display name ("Described audio TV"); it still opens its real path
@@ -718,9 +822,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         if (i === parts.length - 1) { b.setAttribute('aria-current', 'location'); here = b; }
         b.onclick = function(){ loadArchive(target, 0, true); }; crumbs.appendChild(b);
       });
+      // the browser tab and the history list name the folder, so two folders can be told apart
+      document.title = (parts.length ? (named ? named[parts.length - 1].name : parts[parts.length - 1]) + ' — ' : '') + 'Folders — The Library — Kade-AI';
       showShelfArt(archivePath);
       ul.innerHTML = '';
-      if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'No items in this view yet. Add a file below, or choose another view.') + '</li>'; }
+      if (!j.folders.length && !j.items.length) { ul.innerHTML = '<li class="muted">' + (archivePath ? 'This folder is empty.' : 'No items in this collection yet. Choose the other collection above, or add a file from the Add to the Library page.') + '</li>'; }
       j.folders.forEach(function(f){
         var li = document.createElement('li'); li.className = 'folder';
         li.innerHTML = '<span class="t">📁 ' + esc(f.name) + ' <span class="muted">(' + f.count + ')</span></span>';
@@ -751,7 +857,6 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('pageInfo').textContent = 'Page ' + (j.page + 1) + ' of ' + pages + ' (' + j.total + ' items here)';
       $('pagePrev').disabled = j.page <= 0; $('pageNext').disabled = j.page + 1 >= pages;
       // Part 296: the shelf is said by its display names ("Audio, Described audio movies and TV, Described audio movies")
-      noteFolder();
       var turned = focus && focus !== true;
       if (focus === true) focusOn(here);
       else if (turned && (focus.disabled || $('archivePager').hidden)) { var other = focus === $('pageNext') ? $('pagePrev') : $('pageNext'); focusOn($('archivePager').hidden || other.disabled ? here : other); }
@@ -764,7 +869,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       ul.innerHTML = '<li class="muted">' + esc(e.message) + '</li>';
       restoreReturn(['archiveList'], true);
       if (!quiet) say(e.message);
-      if (focus && (!document.activeElement || document.activeElement === document.body)) focusOn($('h-archive'));
+      if (focus && (!document.activeElement || document.activeElement === document.body)) focusOn($('pageTitle'));
     }
   }
   $('pagePrev').onclick = function(){ loadArchive(archivePath, archivePage - 1, this); };
@@ -797,13 +902,13 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     li.innerHTML = '<span class="t book"><strong>' + what + '</strong><span class="meta">' + (review ? 'from ' + esc(sb.userName) + ' · ' : '') + esc(state) + (when ? ' · ' + when : '') + (sb.url ? ' · <a href="' + esc(sb.url) + '" target="_blank" rel="noopener">open the link</a>' : '') + (sb.note ? ' · ' + esc(sb.note) : '') + (sb.decisionNote ? ' · librarian: ' + esc(sb.decisionNote) : '') + (sb.fetchedAt ? ' · fetched' : '') + '</span></span>';
     if (review && sb.status === 'pending') {
       var ok = document.createElement('button'); ok.className = 'act primary'; ok.type = 'button'; ok.textContent = sb.type === 'report' ? 'Move it there' : 'Approve'; ok.setAttribute('aria-label', 'Approve ' + (sb.title || sb.url || 'this file'));
-      ok.onclick = async function(){ var note = prompt('A word for ' + sb.userName + '? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'approved', note: note } }); say('Approved.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      ok.onclick = async function(){ var note = prompt('A word for ' + sb.userName + '? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'approved', note: note } }); say('Approved.'); await loadSubmissions(); focusOn($('h-review')); } catch(e) { say(e.message); } };
       var no = document.createElement('button'); no.className = 'act quiet'; no.type = 'button'; no.textContent = sb.type === 'report' ? 'Leave it' : 'Decline'; no.setAttribute('aria-label', 'Decline ' + (sb.title || sb.url || 'this file'));
-      no.onclick = async function(){ var note = prompt('Tell ' + sb.userName + ' why? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'rejected', note: note } }); say('Declined.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      no.onclick = async function(){ var note = prompt('Tell ' + sb.userName + ' why? (optional)') || ''; try { await api('/submissions/' + sb.id + '/decide', { json: { status: 'rejected', note: note } }); say('Declined.'); await loadSubmissions(); focusOn($('h-review')); } catch(e) { say(e.message); } };
       li.appendChild(ok); li.appendChild(no);
     } else if (!review && sb.status === 'pending') {
       var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Withdraw'; rm.setAttribute('aria-label', 'Withdraw ' + (sb.title || sb.url || 'this submission'));
-      rm.onclick = async function(){ try { await api('/submissions/' + sb.id, { method: 'DELETE' }); say('Withdrawn.'); loadSubmissions(); } catch(e) { say(e.message); } };
+      rm.onclick = async function(){ try { await api('/submissions/' + sb.id, { method: 'DELETE' }); say('Withdrawn.'); await loadSubmissions(); focusOn($('h-mysubs')); } catch(e) { say(e.message); } };
       li.appendChild(rm);
     }
     if (sb.book) { var open = document.createElement('button'); open.className = 'act quiet'; open.type = 'button'; open.textContent = 'Open the file'; open.onclick = function(){ visit('?book=' + sb.book); }; li.appendChild(open); }
@@ -811,9 +916,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   }
   async function loadSubmissions(){
     try {
-      var mine = await api('/submissions?all=0'); var ul = $('mySubs'); ul.innerHTML = '';
-      if (!mine.submissions.length) ul.innerHTML = '<li class="muted">Nothing submitted yet.</li>';
-      mine.submissions.forEach(function(sb){ ul.appendChild(subLi(sb, false)); });
+      var mine = await api('/submissions?all=0');
+      if (VIEW !== 'librarian') {
+        var ul = $('mySubs'); ul.innerHTML = '';
+        if (!mine.submissions.length) ul.innerHTML = '<li class="muted">Nothing submitted yet.</li>';
+        mine.submissions.forEach(function(sb){ ul.appendChild(subLi(sb, false)); });
+        return;
+      }
+      $('reviewNo').hidden = !!mine.librarian;
       if (mine.librarian) {
         var all = await api('/submissions?status=pending'); var rl = $('reviewList'); rl.innerHTML = '';
         $('reviewWrap').hidden = false;
@@ -821,11 +931,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         if (!all.submissions.length) rl.innerHTML = '<li class="muted">Nothing waiting.</li>';
         all.submissions.forEach(function(sb){ rl.appendChild(subLi(sb, true)); });
       }
-    } catch(e) { $('mySubs').innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
+    } catch(e) { $(VIEW === 'librarian' ? 'reviewList' : 'mySubs').innerHTML = '<li class="muted">' + esc(e.message) + '</li>'; }
   }
   $('sortBtn').onclick = async function(){
     this.disabled = true; say('Sorting a batch…');
-    try { var r = await api('/librarian/sort-books', { method: 'POST' }); say('Filed ' + r.filed + ' book' + (r.filed === 1 ? '' : 's') + '. ' + r.unsorted + ' still to go.'); loadSubmissions(); loadArchive(archivePath, archivePage); } catch(e) { say(e.message); }
+    try { var r = await api('/librarian/sort-books', { method: 'POST' }); say('Filed ' + r.filed + ' book' + (r.filed === 1 ? '' : 's') + '. ' + r.unsorted + ' still to go.'); loadSubmissions(); } catch(e) { say(e.message); }
     this.disabled = false;
   };
   $('subBtn').onclick = async function(){
@@ -846,7 +956,6 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     try {
       var c = await api('/collections/' + id);
       $('shelf').classList.add('hidden'); $('collection').classList.remove('hidden');
-      $('librarianCard').hidden = true; $('continueBox').hidden = true;
       $('collTitle').textContent = c.title;
       document.title = c.title + ' — playlist — The Library — Kade-AI';
       $('collMeta').textContent = c.items.length + ' item' + (c.items.length === 1 ? '' : 's') + (c.mine ? (c.shared ? ' · shared with the family' : ' · private') : ' · by ' + c.ownerName) + (c.description ? ' · ' + c.description : '');
@@ -855,7 +964,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         var li = document.createElement('li');
         li.innerHTML = '<span class="t book"><strong>' + (i + 1) + '. ' + esc(it.title) + '</strong><span class="meta">' + esc((it.book.author ? it.book.author + ' · ' : '') + typeWord(it.book) + (it.seconds ? ' · ' + clock(it.seconds) : '')) + '</span></span>';
         var play = document.createElement('button'); play.className = 'act'; play.type = 'button'; play.textContent = 'Play'; play.setAttribute('aria-label', 'Play ' + it.title);
-        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); visit('?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(','))); };
+        play.onclick = function(){ queue = c.items.slice(i + 1).map(function(x){ return x.book.id; }); try { sessionStorage.setItem(RETURN_KEY, JSON.stringify({ id: it.book.id, host: 'collItems', at: Date.now(), from: BASE + '?collection=' + encodeURIComponent(id) })); } catch(e) {} visit('?book=' + it.book.id + '&track=' + it.track + '&q=' + encodeURIComponent(queue.join(','))); };
         li.appendChild(play);
         if (c.mine) { var rm = document.createElement('button'); rm.className = 'act quiet'; rm.type = 'button'; rm.textContent = 'Remove'; rm.setAttribute('aria-label', 'Remove ' + it.title + ' from this collection'); rm.onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { remove: it.n } }); say('Removed.'); openCollection(id, true); } catch(e) { say(e.message); } }; li.appendChild(rm); }
         ol.appendChild(li);
@@ -864,11 +973,11 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       $('collShareBtn').hidden = !c.mine; $('collDeleteBtn').hidden = !c.mine;
       $('collShareBtn').textContent = c.shared ? 'Make it private' : 'Share it with the family';
       $('collShareBtn').onclick = async function(){ try { await api('/collections/' + id + '/edit', { json: { shared: !c.shared } }); openCollection(id, true); say(c.shared ? 'Private now.' : 'Shared with the family.'); } catch(e) { say(e.message); } };
-      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); visit(''); } catch(e) { say(e.message); } };
+      $('collDeleteBtn').onclick = async function(){ if (!confirm('Delete the collection "' + c.title + '"? The items themselves stay in the library.')) return; try { await api('/collections/' + id, { method: 'DELETE' }); visit('/playlists'); } catch(e) { say(e.message); } };
       if (focus) focusOn($('collTitle')); else say('Collection ' + c.title + ', ' + c.items.length + ' items.');
-    } catch(e) { say(e.message); visit(''); }
+    } catch(e) { say(e.message); visit('/playlists'); }
   }
-  $('collBack').onclick = function(){ leave(); };
+  $('collBack').onclick = function(){ visit('/playlists'); };
   $('reportBtn').onclick = async function(){
     if (!book) return;
     var to = prompt('Where does "' + book.title + '" belong? A folder like Books/Fiction — Romance or Video/Commercials/Coffee & Tea (leave blank to just leave a note).', book.path || '');
@@ -1010,8 +1119,8 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
         if (pre.removed) {
           /* The empty item she had just started is gone (nothing was uploaded): close the part adder
              and put focus somewhere real before the message is read. */
-          $('auTracks').classList.add('hidden'); auItem = null; loadShelf();
-          $('h-mine').setAttribute('tabindex','-1'); $('h-mine').focus();
+          $('auTracks').classList.add('hidden'); auItem = null;
+          focusOn($('pageTitle'));
         }
         say(pre.message || ('Nothing was uploaded: this exact file is already in the library as "' + (pre.existing || pre.book || {}).title + '".'));
         return;
@@ -1042,7 +1151,14 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     } catch(e) { say(e.message); }
     btn.disabled = false;
   };
-  $('auDoneBtn').onclick = function(){ $('auTracks').classList.add('hidden'); auItem = null; say('Back on your shelf. Open the item to play it, or put it in the library from its page.'); window.scrollTo(0, 0); $('h-mine').focus && $('h-mine').setAttribute('tabindex','-1'); $('h-mine').focus(); };
+  $('auDoneBtn').onclick = function(){ location.href = BASE + '/continue'; };
+  /* "Add parts" on a shelf row comes here with the item named in the address. */
+  async function startAdd(){
+    var parts = new URLSearchParams(location.search).get('parts');
+    if (!parts) return;
+    try { var it = await api('/book/' + parts); if (it.kind === 'text') return; openTrackAdder({ id: it.id, title: it.title, tracks: (it.tracks || []).length }); say('Add a part to ' + it.title + '.'); }
+    catch(e) { say('Could not open that item: ' + e.message); }
+  }
 
   /* ── player ────────────────────────────────────────────────────────── */
   var book = null, pos = { s: 0, c: 0 }, playing = false, voice = '', speed = 1;
@@ -1615,7 +1731,6 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       if (!me) { try { var sh = await api('/shelf'); me = sh.me || ''; librarian = !!sh.librarian; describedVideo = !!sh.describedVideo; } catch(e2) {} }
     } catch(e) { say('Could not open that: ' + e.message); visit(''); return; }
     $('shelf').classList.add('hidden'); $('player').classList.remove('hidden');
-    $('librarianCard').hidden = true; $('continueBox').hidden = true;
     $('pageTitle').textContent = 'The Library';
     $('bookTitle').textContent = book.title;
     document.title = book.title + ' — The Library — Kade-AI';
@@ -1653,20 +1768,33 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     $('playBtn').focus();
   }
 
-  /* Nov 10 2026: a link to an item or a playlist does not draw the whole shelf first and then
-     swap it away; the shelf and the librarian's card step aside before the first paint. */
-  (function(){ var first = new URLSearchParams(location.search); if (first.get('book') || first.get('collection')) { $('shelf').classList.add('hidden'); $('librarianCard').hidden = true; $('skipLink').href = first.get('book') ? '#bookTitle' : '#collTitle'; $('skipLink').textContent = first.get('book') ? 'Skip to the item' : 'Skip to the playlist'; } })();
+  /* An item or a playlist never has the shelf behind it, and its skip link goes to its title.
+     The search page's skip link goes to the results. The short pages have none to offer. */
+  (function(){ var skip = $('skipLink'); if (VIEW === 'item' || VIEW === 'playlist') { $('shelf').classList.add('hidden'); skip.href = VIEW === 'item' ? '#bookTitle' : '#collTitle'; skip.textContent = VIEW === 'item' ? 'Skip to the item' : 'Skip to the playlist'; skip.hidden = false; } else if (VIEW === 'search') skip.hidden = false; })();
   (async function(){
     token = await getToken();
     if (!token) { say('Please sign in first.'); location.href = '/login?redirect_to=' + encodeURIComponent(location.pathname + location.search + location.hash); return; }
     var qs = new URLSearchParams(location.search);
     var id = qs.get('book'); var coll = qs.get('collection');
-    if (id && qs.get('q')) queue = qs.get('q').split(',').filter(Boolean); // on an item, q is the playlist queue; on the shelf it is the search
-
-    if (id) openBook(id); else if (coll) openCollection(coll); else { loadShelf(); window.setupLibraryBrowse(api, say, bookLi, function(){ if ($('folderBrowse').open) loadArchive('', 0); }, function(){ restoreReturn(['browseList']); }); if (folderPlace().path || folderNote().open) $('folderBrowse').open = true; else restoreReturn(['archiveList'], true); loadCollections(); loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+    if (id && qs.get('q')) queue = qs.get('q').split(',').filter(Boolean); // on an item, q is the playlist queue; on the search page it is the search
+    if (id) { openBook(id); return; }
+    if (coll) { openCollection(coll); return; }
+    /* A return note belongs to one list. On a page that does not hold that list it is dropped,
+       so it can never pull focus somewhere on a later visit. */
+    var lists = { search: ['browseList'], folders: ['archiveList'], continue: ['mineList', 'continueList'], desk: ['continueList'] }[VIEW] || [];
+    var note = returnNote(); if (note && lists.indexOf(note.host) === -1) dropReturn();
+    /* Each page asks only for what it shows: the front desk makes one small call. */
+    if (VIEW === 'desk' || VIEW === 'continue') loadShelf();
+    else if (VIEW === 'search') window.setupLibraryBrowse(api, say, bookLi, null, function(){ restoreReturn(['browseList']); });
+    else if (VIEW === 'folders') startFolders();
+    else if (VIEW === 'playlists') loadCollections();
+    else if (VIEW === 'family') { await loadShelf(); loadFamily(); }
+    else if (VIEW === 'requests') { loadSubmissions(); if (window.setupLibraryRequests) window.setupLibraryRequests(api, say); }
+    else if (VIEW === 'librarian') { loadShelf(); loadSubmissions(); }
+    else if (VIEW === 'add') startAdd();
   })();
 })();
 </script>
 </body></html>`;
 
-module.exports = { readingRoomHtml, ALCOVE_ART, SHELF_ART, ART_DIR, ART_HIDDEN_WHEN };
+module.exports = { readingRoomHtml, ALCOVE_ART, SHELF_ART, ART_DIR, ART_HIDDEN_WHEN, LIBRARY_VIEWS };

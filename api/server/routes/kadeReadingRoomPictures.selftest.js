@@ -39,17 +39,23 @@ const MUSIC_WORDS = 'A cabin music corner at dusk: a fiddle, a banjo and a mando
 test('every inline script still parses with the real shared head', () => {
   const { readingRoomHtml } = load(sharedHead());
   const scripts = [...readingRoomHtml.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)];
-  assert.equal(scripts.length, 3, 'the shared head script, the art step-aside check and the page script');
+  assert.equal(scripts.length, 4, 'the shared head script, the art step-aside check, the which-page check and the page script');
   for (const match of scripts) new vm.Script(match[1]);
   assert.doesNotMatch(readingRoomHtml, /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/, 'no template escape turned into a control character');
 });
 
-test('the alcove banner carries its words as alt text, first on the shelf screen', () => {
+test('the alcove banner carries its words as alt text, on the front desk, after the rows', () => {
   const { readingRoomHtml } = load();
   const shelf = readingRoomHtml.indexOf('<section id="shelf">');
   const box = readingRoomHtml.match(/<div class="kade-art alcove-art"><img id="alcoveArt"[^>]*><\/div>/);
   assert.ok(box, 'the alcove sits in its own plain box');
-  assert.match(readingRoomHtml.slice(shelf, box.index), /^<section id="shelf">\s*$/, 'first thing on the shelf screen');
+  /* Nov 10 2026 redesign: her alt-text rule says a picture never comes before a page's first control,
+   * so the banner sits on the front desk right after its list of rows, and on no other page. */
+  assert.ok(shelf > 0 && box.index > shelf);
+  const desk = readingRoomHtml.indexOf('<div data-views="desk">');
+  const rowsEnd = readingRoomHtml.indexOf('</nav>', desk);
+  assert.match(readingRoomHtml.slice(rowsEnd, box.index), /^<\/nav>\s*$/, 'right after the front desk rows');
+  assert.ok(readingRoomHtml.includes("if (VIEW !== 'desk') $('alcoveArt').parentNode.hidden = true;"), 'hidden, so never downloaded, on every other page');
   const img = box[0].match(/<img[^>]*>/)[0];
   for (const attr of ['alt="' + ALCOVE_WORDS + '"', 'width="1440"', 'height="481"', 'loading="lazy"']) assert.ok(img.includes(attr), attr);
   assert.doesNotMatch(box[0], /aria-|tabindex|role=|\ssrc=|title=/, 'not hidden from screen readers, no focus, no role, and no download until the script says the picture may show');
@@ -67,8 +73,8 @@ test('the shelf picture waits, hidden, in its reserved box for its shelf', () =>
   // above the folder list, not between a heading and its content or inside the list
   const at = readingRoomHtml.indexOf('<div class="kade-art shelf-art"');
   assert.ok(at < readingRoomHtml.indexOf('<nav class="crumbs" id="crumbs"'));
-  assert.ok(at > readingRoomHtml.indexOf('<h3 id="h-local">'));
-  assert.ok(at > readingRoomHtml.indexOf('<details id="folderBrowse">'), 'the folder picture stays inside the optional folder view');
+  const foldersPage = readingRoomHtml.indexOf('<div data-views="folders">');
+  assert.ok(foldersPage > 0 && at > foldersPage && at < readingRoomHtml.indexOf('<div data-views="playlists">'), 'the folder picture stays on the folders page');
   assert.match(readingRoomHtml, /\.shelf-art \{[^}]*aspect-ratio:16 \/ 9;/);
 });
 
@@ -114,9 +120,9 @@ test('the head check marks the page for data saving and very large text before a
 test('no block of picture words, no extra heading, no live region: only the alt text', () => {
   const { readingRoomHtml } = load();
   assert.doesNotMatch(readingRoomHtml, /kade-pictures|Pictures on this page|picturesOnPage|shelfArtWords/, 'the end-of-page pictures block is gone');
-  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 16, 'the unified catalog removes duplicate library headings; pictures add none (16 since the Nov 10 2026 redesign: "Pick up where you left off", and the local section is its own second-level section)');
+  assert.equal((readingRoomHtml.match(/<h2\b/g) || []).length, 14, 'pictures add no heading (14 since the Nov 10 2026 redesign: each small page of the Library is named by its one first-level heading)');
   assert.equal((readingRoomHtml.match(/aria-live=/g) || []).length, 1, 'still ONE live region');
-  assert.equal((readingRoomHtml.match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is hidden');
+  assert.equal((readingRoomHtml.replace(/<span class="hicon" aria-hidden="true">[^<]*<\/span>/g, '').match(/aria-hidden/g) || []).length, 1, 'only the breadcrumb separator is hidden (and the small row icons, the house way); never a picture');
   // each sentence is said once, as alt text: the alcove's in its <img>, the shelves' only in the script that sets them
   assert.equal(readingRoomHtml.split(ALCOVE_WORDS).length - 1, 1);
   const body = readingRoomHtml.slice(readingRoomHtml.indexOf('<body>'), readingRoomHtml.indexOf('<script src="/assets/library/requests.js'));
@@ -174,7 +180,7 @@ test('each shelf picture ships small, 16:9, in both sizes the page asks for, fro
 function artRig({ saveData = false, artOff = false, narrow = false } = {}) {
   const { readingRoomHtml } = load();
   const start = readingRoomHtml.indexOf('  /* pictures (Sep 25 2026 art batch)');
-  const end = readingRoomHtml.indexOf("  $('folderBrowse').ontoggle", start);
+  const end = readingRoomHtml.indexOf('  /* Nov 10 2026 (redesign): the folders are their own page.', start);
   assert.ok(start > 0 && end > start);
   const els = {};
   function classList() {

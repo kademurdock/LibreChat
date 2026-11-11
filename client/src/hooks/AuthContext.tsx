@@ -114,6 +114,7 @@ const AuthContextProvider = ({
             '/family-history',
             '/agent-work',
           ].includes(destinationPath) ||
+          destinationPath.startsWith('/library/') ||
           destinationPath.startsWith('/watch/')
         ) {
           window.location.replace(finalRedirect);

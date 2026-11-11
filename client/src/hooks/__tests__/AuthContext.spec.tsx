@@ -160,6 +160,8 @@ describe('AuthContextProvider — community home sign-in', () => {
    * navigate to them after sign-in lands on the route error page, so they need a full page load. */
   it.each([
     '/library?book=abc#part-2',
+    '/library/search?q=meeks&page=2',
+    '/library/requests?request=abc#libraryRequests',
     '/reading-room',
     '/family-history',
     '/agent-work?task=1',

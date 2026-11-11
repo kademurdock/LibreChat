@@ -11,7 +11,7 @@ function rig(api) {
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./kadeReadingRoomPage'), 'utf8'), context);
   const dom = new JSDOM(context.module.exports.readingRoomHtml, {
-    url: 'https://example.invalid/library',
+    url: 'https://example.invalid/library/search',
     runScripts: 'outside-only',
   });
   const { window } = dom;
@@ -62,7 +62,7 @@ test('an unavailable chosen filter stays selected so the next cursor retains its
   }
 });
 
-test('default view loads one combined shelf with typed filters and optional folders', async () => {
+test('default view loads one combined shelf with typed filters', async () => {
   const requests = [];
   const r = rig(async (path) => {
     requests.push(path);
@@ -71,7 +71,6 @@ test('default view loads one combined shelf with typed filters and optional fold
   try {
     await tick();
     assert.equal(r.document.querySelectorAll('#browseList').length, 1);
-    assert.equal(r.document.getElementById('folderBrowse').open, false);
     assert.ok(requests[0].includes('/browse?'));
     assert.equal(r.document.getElementById('browseType').options[1].textContent, 'Newspapers (2)');
     assert.match(r.document.getElementById('browseList').textContent, /1930s/);

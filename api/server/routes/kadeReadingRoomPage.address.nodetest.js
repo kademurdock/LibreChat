@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { source, row, answers, open, settle } = require('./kadeReadingRoomPage.rig');
 
-const SEARCH = 'https://example.invalid/library';
+const SEARCH = 'https://example.invalid/library/search';
 const many = (url) => {
   const at = new URL(url, 'https://x.invalid').searchParams;
   const page = Number(at.get('page')) || 0;
@@ -165,16 +165,7 @@ test('Back to the shelf returns to the very list and page the item was opened fr
   }
 });
 
-const FOLDERS = 'https://example.invalid/library';
-const openFolders = async (page) => {
-  const box = page.$('folderBrowse');
-  if (box && !box.open) {
-    box.open = true;
-    box.dispatchEvent(new page.window.Event('toggle'));
-  }
-  await settle();
-};
-
+const FOLDERS = 'https://example.invalid/library/folders';
 test('folders: opening one, turning its page and Back are in the address, and Back lands on the crumb', async () => {
   const kept = answers.archive;
   try {
@@ -187,7 +178,6 @@ test('folders: opening one, turning its page and Back are in the address, and Ba
     };
     const page = open(FOLDERS);
     await settle();
-    await openFolders(page);
     page.$('archiveList').querySelector('button').click();
     await settle();
     assert.equal(page.window.location.search, '?folder=Video');
@@ -201,7 +191,7 @@ test('folders: opening one, turning its page and Back are in the address, and Ba
     page.window.history.back();
     await settle(150);
     assert.equal(page.window.location.search, '');
-    assert.equal(page.document.activeElement.textContent, 'Library', 'focus is on the crumb for where you now are');
+    assert.equal(page.document.activeElement.textContent, 'All folders', 'focus is on the crumb for where you now are');
     assert.match(page.$('archiveList').textContent, /Video/);
     page.dom.window.close();
     const deep = open(FOLDERS + '?folder=Video&fpage=3');
@@ -212,6 +202,31 @@ test('folders: opening one, turning its page and Back are in the address, and Ba
   } finally {
     answers.archive = kept;
   }
+});
+
+test('folders: the collection (family library or your uploads) is in the address too', async () => {
+  const page = open(FOLDERS + '?folder=Video');
+  await settle();
+  const scope = page.$('folderScope');
+  assert.equal(page.document.querySelector('label[for="folderScope"]').textContent, 'Collection');
+  scope.focus();
+  scope.value = 'mine';
+  scope.dispatchEvent(new page.window.Event('change'));
+  await settle();
+  assert.equal(page.window.location.search, '?scope=mine', 'a different collection starts at its top');
+  assert.ok(page.calls.at(-1).includes('/archive?path=&page=0&scope=mine'));
+  assert.equal(page.document.activeElement.id, 'folderScope', 'focus stays on the menu');
+  assert.match(page.$('live').textContent, /folder/);
+  page.window.history.back();
+  await settle(150);
+  assert.equal(scope.value, 'public');
+  assert.ok(page.calls.at(-1).includes('/archive?path=Video&page=0&scope=public'));
+  page.dom.window.close();
+  const mine = open(FOLDERS + '?scope=mine&folder=Tapes');
+  await settle();
+  assert.equal(mine.$('folderScope').value, 'mine');
+  assert.ok(mine.calls.some((call) => call.includes('/archive?path=Tapes&page=0&scope=mine')));
+  mine.dom.window.close();
 });
 
 test('a return address outside the Library is never followed', () => {
