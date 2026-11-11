@@ -716,6 +716,59 @@ class FalAI extends Tool {
   }
 
   /**
+   * The yes rule for a paid song (Nov 10 2026, services/kadeSpendGate.js). The first ask in a
+   * conversation only records the price and tells the character to say it and ask; a later reply
+   * whose own message from the person is a plain yes makes the song, once. Every refusal says
+   * plainly that nothing was made. Off switches: KADE_SONG_YES_GATE=0, KADE_SONG_ONCE_PER_TURN=0.
+   * @returns {Promise<{ refusal: string | null, release: () => Promise<void> }>}
+   */
+  async songYesGate(engine, estUSD, engLabel) {
+    const none = { refusal: null, release: async () => {} };
+    let price = '';
+    try {
+      const usd = await this.userPrice(estUSD);
+      price = usd < 1 ? `about ${Math.max(1, Math.round(usd * 100))} cents` : `about $${usd.toFixed(2)}`;
+    } catch (_) {
+      price = `about $${Number(estUSD).toFixed(2)} before their account's rate`;
+    }
+    let out;
+    try {
+      const { songGate } = require('~/server/services/kadeSpendGate');
+      out = await songGate({
+        req: this.req,
+        userId: this.userId,
+        engine,
+        estUSD,
+        agentName: this.req?.body?.agentName,
+      });
+    } catch (e) {
+      logger.warn('[FalAI] song yes check failed closed: ' + (e && e.message));
+      return {
+        ...none,
+        refusal:
+          'NOT MADE, and nothing was charged: the price check had a problem. Tell them plainly that the song did not start, and offer to try again in a minute.',
+      };
+    }
+    if (out.ok) return { refusal: null, release: out.release };
+    const NOT = 'NOT MADE, and nothing was charged.';
+    const words = {
+      quoted:
+        `NOT MADE YET, and nothing was charged. A ${engLabel} song costs them ${price}. Tell them that price in one plain sentence and ask if they want it. ` +
+        'When their next message says yes, call generate_song again with the same style and lyrics. Do not say the song is being made.',
+      'not-approved':
+        `NOT MADE YET, and nothing was charged. Their last message is not a plain yes to the price (${price} for a ${engLabel} song). ` +
+        'Say the price again and ask for a plain yes. Do not say the song is being made.',
+      'turn-limit': `${NOT} One paid song per reply, and this reply already has one. If they want another, tell them the price (${price}) and ask.`,
+      voice:
+        `${NOT} A paid song cannot be started from a call yet, because the yes to the price cannot be checked here. ` +
+        'Say that kindly in one short sentence, and tell them they can ask you for the song in the text chat.',
+      hidden: `${NOT} A background job cannot buy a song. Say in your message that the song still needs their yes, and what it costs (${price}).`,
+      unavailable: `${NOT} Songs are not available from here. Tell them plainly.`,
+    };
+    return { ...none, refusal: words[out.reason] || words.unavailable };
+  }
+
+  /**
    * generate_song — full MUSIC with sung vocals from a style brief + lyrics.
    * Engines: 'lyria3_pro' (Google Lyria 3 Pro, default) and 'minimax'
    * (MiniMax Music 2.6). Both are fal QUEUE jobs (~60-150s), so this submits
@@ -779,6 +832,11 @@ class FalAI extends Tool {
     const blocked = await this.checkBudget(estUSD);
     if (blocked) return blocked;
 
+    /* KADE Nov 10 2026 (the money review): a song is paid for, so it needs a price the person
+     * heard in an earlier reply and their own plain yes, and a reply makes at most one. */
+    const gate = await this.songYesGate(engine, estUSD, engLabel);
+    if (gate.refusal) return gate.refusal;
+
     let submit;
     try {
       submit = await axios.post(`https://queue.fal.run/${model}`, body, {
@@ -786,6 +844,8 @@ class FalAI extends Tool {
         timeout: 30000,
       });
     } catch (e) {
+      /* Nothing was spent: their yes stands for one more try. */
+      await gate.release();
       const detail = e?.response?.data ? JSON.stringify(e.response.data).slice(0, 300) : e.message;
       return `fal did not accept the ${engLabel} song job: ${detail}. Try adjusting the style or lyrics.`;
     }

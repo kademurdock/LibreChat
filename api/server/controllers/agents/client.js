@@ -1689,7 +1689,15 @@ class AgentClient extends BaseClient {
      * one. Never rewrites what was said -- appends one honest correction.
      * Fail-soft: a guard that throws must never cost someone their reply. */
     try {
-      const { applyReminderPromiseGuard, applyOpsPromiseGuard } = require('~/server/utils/kadePromiseGuard');
+      const { applyReminderPromiseGuard, applyOpsPromiseGuard, countUnbackedClaims } = require('~/server/utils/kadePromiseGuard');
+      /* Nov 10 2026 (S7): count only. A reply that states a price, a start or a tool failure
+       * with no tool call this turn gets one log line; nothing is blocked or changed.
+       * Counted before the two guards below add their own words. KADE_CLAIM_COUNTER=0. */
+      try {
+        countUnbackedClaims(completion, { agentId: this.options?.agent?.id, logger });
+      } catch (_) {
+        /* a counter never costs anyone their reply */
+      }
       completion = applyReminderPromiseGuard(completion, {
         agentTools: this.options?.agent?.tools,
         agentId: this.options?.agent?.id,

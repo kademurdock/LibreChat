@@ -48,7 +48,9 @@ afterAll(async () => {
   await mongo.stop();
 });
 
-const req = (id, extra = {}) => ({ user: { id, role: 'USER' }, body: { conversationId: 'new', ...extra } });
+/* Nov 10 2026: every call is its own turn (a new request) of one conversation, and its message is a
+ * plain yes, which a start now needs (services/kadeSpendGate.js; refusals: kadeTasks.spend.nodetest.js). */
+const req = (id, extra = {}) => ({ user: { id, role: 'USER' }, body: { conversationId: 'c-spec', text: 'yes, go ahead', ...extra } });
 
 test('a post with no recent conversation makes a new one titled for the character', async () => {
   const out = await turn.post({ userId, agentId: AGENT, text: '%%%warm%%% Hey, found it.', kind: 'post' });

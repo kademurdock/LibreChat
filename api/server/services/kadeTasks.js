@@ -30,6 +30,12 @@
  * on its own, because a retry spends the person's money again.
  *
  * Kill switch: KADE_TASKS=0.
+ *
+ * Nov 10 2026 (the money review): a start now needs more than a quote row. The quote must come
+ * from an EARLIER turn of the same conversation, the person's own latest message must be a plain
+ * yes (services/kadeSpendGate.js), a turn starts at most one job, and the quote is claimed in
+ * one database step so two calls cannot both start. KADE_TASK_YES_GATE=0 and
+ * KADE_TASK_ATOMIC_START=0 put the old checks back.
  */
 'use strict';
 
@@ -46,6 +52,71 @@ const PER_DAY = Number(process.env.KADE_TASKS_PER_DAY || 12);
 const TOKENS_PER_ROUND = Number(process.env.KADE_TASK_TOKENS_PER_ROUND || 30000);
 const OUTPUT_PER_ROUND = 600;
 const QUOTE_MINUTES = 60;
+const STARTS = 'kadetaskstarts';
+const START_LOCK_MS = 30000;
+
+const spend = require('./kadeSpendGate');
+
+/* What the character is told when a start is refused by the yes rules. */
+const REFUSED = {
+  sameTurn:
+    'the price was only just worked out in this same reply, so they have not heard it yet. Tell them the price now and ask. ' +
+    'Start it in a later reply, after their own message says yes',
+  noYes:
+    'their last message is not a plain yes to the price. Say the price again and ask for a plain yes, and start only after they say it',
+  otherConversation: 'that price was given in a different conversation. Quote again here, tell them the price and ask',
+  voice:
+    'a paid job cannot be started from a call yet, because the yes to the price cannot be checked here. ' +
+    'Say that kindly in one short sentence and ask them to ask you again in the text chat',
+  oncePerTurn: 'one job per reply, and this reply already tried to start one',
+  busyStarting: 'another start for them is going through this very second. Check the list before trying again',
+};
+
+/**
+ * The yes rules for a start (Nov 10 2026). Returns the refusal words, or null to go on.
+ * A quote row from before this change carries no turn or conversation and is taken as earlier.
+ */
+function yesRefusal(req, q, agentName) {
+  const said = spend.latestWords(req && req.body && req.body.text);
+  const voice = spend.isVoiceLane(req) || said.folded;
+  if (q.turnId && q.turnId === spend.turnId(req)) return REFUSED.sameTurn;
+  if (q.conversationId !== undefined) {
+    const here = spend.conversationOf(req);
+    if (!here || q.conversationId !== here) return voice ? REFUSED.voice : REFUSED.otherConversation;
+  }
+  if (!said.ok) return said.folded ? REFUSED.voice : REFUSED.noYes;
+  if (!spend.approvesPrice(said.words, { names: [agentName], topic: spend.TASK_TOPIC })) return REFUSED.noYes;
+  return null;
+}
+
+/**
+ * One start per person at a time, across servers: the row's _id is the person, so a second
+ * taker fails the "expired" filter and collides on the upsert (duplicate key). A lock a crashed
+ * start left behind runs out in 30 seconds.
+ */
+async function takeStartLock(userId) {
+  const token = crypto.randomBytes(8).toString('hex');
+  const now = new Date();
+  try {
+    await coll(STARTS).findOneAndUpdate(
+      { _id: `start:${userId}`, until: { $lt: now } },
+      { $set: { until: new Date(now.getTime() + START_LOCK_MS), token } },
+      { upsert: true },
+    );
+    return token;
+  } catch (e) {
+    if (e && (e.code === 11000 || /E11000|duplicate key/i.test(String(e.message)))) return null;
+    throw e;
+  }
+}
+
+async function dropStartLock(userId, token) {
+  try {
+    await coll(STARTS).deleteOne({ _id: `start:${userId}`, token });
+  } catch (_) {
+    /* it runs out by itself in 30 seconds */
+  }
+}
 
 /* Jobs running in THIS process (taskId -> promise that settles when the job is over), and
  * whether the process is shutting down. A start reserves its slot before its first await, so
@@ -131,13 +202,16 @@ async function quote({ req, agentId, goal, steps = DEFAULT_STEPS }) {
     steps: s,
     typicalUSD: typical,
     mostUSD: most,
+    /* Nov 10 2026: which turn and conversation heard this price (see yesRefusal). */
+    turnId: spend.turnId(req),
+    conversationId: spend.conversationOf(req),
     createdAt: new Date(),
   });
   return {
     ok: true,
     quoteId,
     steps: s,
-    spoken: `A job like this usually costs ${money(typical)}, and ${money(most)} at the very most (that is the ceiling: ${s} rounds of work). Ask them before you start it.`,
+    spoken: `A job like this usually costs ${money(typical)}, and ${money(most)} at the very most (that is the ceiling: ${s} rounds of work). Ask them before you start it: say the price now, and start in a later reply, only after their own message says yes.`,
   };
 }
 
@@ -151,66 +225,97 @@ async function start({ req, agentId, agentName, quoteId, conversationId }) {
   const who = await personMayAsk(req);
   if (!who.ok) return { ok: false, error: who.why, soft: who.soft };
   const userId = String(req.user.id);
+  const yesGate = spend.on('KADE_TASK_YES_GATE');
+  const atomic = spend.on('KADE_TASK_ATOMIC_START');
   const q = await coll(QUOTES).findOne({ quoteId: String(quoteId || ''), userId, agentId });
   if (!q) return { ok: false, error: 'quote first: tell them the price, and start only after they say yes' };
   if (Date.now() - new Date(q.createdAt).getTime() > QUOTE_MINUTES * 60000) {
     return { ok: false, error: 'that price is over an hour old; quote again' };
   }
   if (q.usedAt) return { ok: false, error: 'that quote already started a task' };
-  const running = await coll(TASKS).findOne({ userId, status: 'running' });
-  if (running) return { ok: false, error: `one task at a time: "${running.title}" is still running` };
-  if ((await countToday(userId)) >= PER_DAY) return { ok: false, error: `that is ${PER_DAY} tasks in a day; the next one can start tomorrow` };
-  /* Checked last, with nothing awaited between the check and the reservation. The quote stays
-   * unused, so the same price can start the job on the new server. */
-  if (draining) return { ok: false, error: DRAINING_ERROR, draining: true };
-  const taskId = `t${crypto.randomBytes(6).toString('hex')}`;
-  let release;
-  inflight.set(
-    taskId,
-    new Promise((resolve) => {
-      release = resolve;
-    }),
-  );
-  const done = () => {
-    inflight.delete(taskId);
-    release();
-  };
-  try {
-    await coll(QUOTES).updateOne({ _id: q._id }, { $set: { usedAt: new Date() } });
-  } catch (e) {
-    done();
-    throw e;
+  if (yesGate) {
+    const refused = yesRefusal(req, q, agentName);
+    if (refused) return { ok: false, error: refused };
+    /* Taken with nothing awaited since the check: a second start call in this turn stops here. */
+    if (!spend.claimOnce(req, 'kade_task_start')) return { ok: false, error: REFUSED.oncePerTurn };
   }
-  const title = q.goal.length > 80 ? `${q.goal.slice(0, 77).replace(/\s+\S*$/, '')}…` : q.goal;
-  const convo = conversationId && conversationId !== 'new' ? String(conversationId) : null;
-  const task = {
-    taskId,
-    userId,
-    agentId,
-    agentName: agentName || '',
-    goal: q.goal,
-    title,
-    steps: q.steps,
-    quotedTypicalUSD: q.typicalUSD,
-    quotedMostUSD: q.mostUSD,
-    conversationId: convo,
-    timezone: req.body && typeof req.body.timezone === 'string' ? req.body.timezone : undefined,
-    status: 'running',
-    createdAt: new Date(),
-    bootId: BOOT_ID,
-  };
+  const lock = atomic ? await takeStartLock(userId) : 'off';
+  if (!lock) return { ok: false, error: REFUSED.busyStarting };
   try {
-    await coll(TASKS).insertOne(task);
-  } catch (e) {
-    done();
-    throw e;
+    const running = await coll(TASKS).findOne({ userId, status: 'running' });
+    if (running) return { ok: false, error: `one task at a time: "${running.title}" is still running` };
+    if ((await countToday(userId)) >= PER_DAY) return { ok: false, error: `that is ${PER_DAY} tasks in a day; the next one can start tomorrow` };
+    /* Checked last, with nothing awaited between the check and the reservation. The quote stays
+     * unused, so the same price can start the job on the new server. */
+    if (draining) return { ok: false, error: DRAINING_ERROR, draining: true };
+    const taskId = `t${crypto.randomBytes(6).toString('hex')}`;
+    let release;
+    inflight.set(
+      taskId,
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const done = () => {
+      inflight.delete(taskId);
+      release();
+    };
+    /* The claim: one step that both checks the quote is unused and marks it. Of two calls
+     * holding the same quote, the database lets exactly one through. */
+    let claimed = true;
+    try {
+      if (atomic) {
+        const found = await coll(QUOTES).findOneAndUpdate(
+          { _id: q._id, usedAt: { $exists: false } },
+          { $set: { usedAt: new Date(), usedTurnId: spend.turnId(req), usedTaskId: taskId } },
+          { returnDocument: 'after' },
+        );
+        const doc = found && (found.value !== undefined ? found.value : found);
+        claimed = !!(doc && doc.usedTaskId === taskId);
+      } else {
+        await coll(QUOTES).updateOne({ _id: q._id }, { $set: { usedAt: new Date() } });
+      }
+    } catch (e) {
+      done();
+      throw e;
+    }
+    if (!claimed) {
+      done();
+      return { ok: false, error: 'that quote already started a task' };
+    }
+    const title = q.goal.length > 80 ? `${q.goal.slice(0, 77).replace(/\s+\S*$/, '')}…` : q.goal;
+    const convo = conversationId && conversationId !== 'new' ? String(conversationId) : null;
+    const task = {
+      taskId,
+      userId,
+      agentId,
+      agentName: agentName || '',
+      goal: q.goal,
+      title,
+      steps: q.steps,
+      quotedTypicalUSD: q.typicalUSD,
+      quotedMostUSD: q.mostUSD,
+      conversationId: convo,
+      timezone: req.body && typeof req.body.timezone === 'string' ? req.body.timezone : undefined,
+      status: 'running',
+      createdAt: new Date(),
+      bootId: BOOT_ID,
+    };
+    try {
+      await coll(TASKS).insertOne(task);
+    } catch (e) {
+      done();
+      throw e;
+    }
+    setImmediate(() => {
+      run(task)
+        .catch((e) => logger.error('[kadeTasks] runner crashed: ' + (e && e.message)))
+        .finally(done);
+    });
+    return { ok: true, taskId, title, steps: q.steps };
+  } finally {
+    if (atomic) await dropStartLock(userId, lock);
   }
-  setImmediate(() => {
-    run(task)
-      .catch((e) => logger.error('[kadeTasks] runner crashed: ' + (e && e.message)))
-      .finally(done);
-  });
-  return { ok: true, taskId, title, steps: q.steps };
 }
 
 /** What the person was charged for the hidden turn (credits are millionths of a dollar). */

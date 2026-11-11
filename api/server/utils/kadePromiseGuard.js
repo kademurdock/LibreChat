@@ -235,9 +235,91 @@ function applyOpsPromiseGuard(contentParts, ctx = {}) {
   return next;
 }
 
+/* --------------------------------------------------------------------
+ * THE CLAIM COUNTER (Nov 10 2026, plan item S7). COUNT ONLY.
+ *
+ * How often does a character state a price, say it started something, or say
+ * a tool failed, in a turn where NO tool was called at all? Nobody knows yet,
+ * and normal speech trips these shapes ("that's not working for me"), so this
+ * blocks nothing, appends nothing and changes no tool result. It writes one
+ * log line per such turn, which a day of logs turns into a rate:
+ *
+ *   [kade/claim-counter] agent=<id> tools=0 price=1 start=0 failure=0
+ *
+ * The line carries counts and the agent id only, never a word of the reply.
+ * A turn with any tool call is not counted: a claim there may be true.
+ * Kill switch: KADE_CLAIM_COUNTER=0. */
+
+const MONEY =
+  /\$\s?\d|\b\d+(?:\.\d+)?\s*(?:cents?|dollars?|bucks)\b|\b(?:under|about|around|less\s+than)\s+a\s+(?:cent|penny|dollar)\b/i;
+const COST_WORD = /\b(?:costs?|price[ds]?|charge[ds]?|run\s+you|at\s+(?:the\s+)?(?:very\s+)?most)\b/i;
+
+/** "I started it" shapes: past or present, never an offer ("I can start it"). */
+const START_CLAIM_PATTERNS = [
+  /\b(?:I|i)['’]?ve\s+(?:just\s+|now\s+|already\s+)?(?:started|kicked\s+(?:it\s+|that\s+)?off|queued|begun|launched|submitted)\b/,
+  /\b(?:I|i)\s+(?:just\s+)?(?:started|kicked\s+off|queued|launched|submitted)\s+(?:it|that|the|your)\b/,
+  /\b(?:it|that|your\s+(?:song|job|task|video|picture|image|search))(?:['’]s|\s+is)\s+(?:now\s+|already\s+)?(?:running|started|underway|under\s+way|in\s+the\s+works|rendering|generating|queued)\b/i,
+  /\b(?:is|it['’]s)\s+running\s+now\b/i,
+];
+
+/** "The tool failed" shapes. A tool, a job or "it" must be the thing that failed. */
+const FAILURE_CLAIM_PATTERNS = [
+  /\b(?:tool|search|generator|service|system|studio|booth|server)\s+(?:is\s+|was\s+|keeps?\s+)?(?:not\s+working|down|broken|failing|failed|timed\s+out|timing\s+out|unavailable|erroring|errored|acting\s+up)\b/i,
+  /\b(?:it|that|the\s+(?:tool|search|song|render|job|call|request))\s+(?:failed|errored|timed\s+out|did\s?n[o'’]?t\s+(?:go\s+through|work|start))\b/i,
+  /\b(?:I|i)\s+(?:got|hit|ran\s+into)\s+an?\s+error\b/,
+  /\bnot\s+working\s+(?:right\s+now|at\s+the\s+moment|on\s+my\s+end)\b/i,
+  /\bsomething\s+went\s+wrong\s+on\s+my\s+end\b/i,
+];
+
+/**
+ * Count claims of a price, a start or a tool failure in the turn's reply text, and how many
+ * tools the turn called. Pure: reads the parts, returns numbers.
+ * @param {Array} contentParts
+ * @returns {{ tools: number, price: number, start: number, failure: number }}
+ */
+function countClaims(contentParts) {
+  const out = { tools: 0, price: 0, start: 0, failure: 0 };
+  if (!Array.isArray(contentParts)) return out;
+  for (const part of contentParts) {
+    if (!part || typeof part !== 'object') continue;
+    if (part.type === 'tool_call') {
+      if ((part.tool_call || {}).name) out.tools += 1;
+      continue;
+    }
+    const t = textOf(part);
+    if (!t) continue;
+    for (const sentence of t.split(/(?<=[.!?])\s+|\n+/)) {
+      if (!sentence) continue;
+      if (MONEY.test(sentence) && COST_WORD.test(sentence)) out.price += 1;
+      if (START_CLAIM_PATTERNS.some((re) => re.test(sentence))) out.start += 1;
+      if (FAILURE_CLAIM_PATTERNS.some((re) => re.test(sentence))) out.failure += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Log one counter line when a turn with no tool call claims a price, a start or a failure.
+ * Returns the counts (null when switched off). Never touches contentParts.
+ * @param {Array} contentParts
+ * @param {{ logger?: object, agentId?: string }} [ctx]
+ */
+function countUnbackedClaims(contentParts, ctx = {}) {
+  if (process.env.KADE_CLAIM_COUNTER === '0') return null;
+  const n = countClaims(contentParts);
+  if (n.tools === 0 && n.price + n.start + n.failure > 0) {
+    ctx.logger?.info?.(
+      `[kade/claim-counter] agent=${ctx.agentId || '?'} tools=0 price=${n.price} start=${n.start} failure=${n.failure}`,
+    );
+  }
+  return n;
+}
+
 module.exports = {
   applyReminderPromiseGuard,
   applyOpsPromiseGuard,
+  countClaims,
+  countUnbackedClaims,
   PROMISE_PATTERNS,
   DELIVERY_CLAIM,
   REMINDER_WORD,
