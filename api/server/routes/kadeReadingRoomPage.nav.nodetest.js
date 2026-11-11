@@ -148,11 +148,10 @@ test('coming back from an item puts focus on the row it was opened from, once', 
 test('a folder in the address reopens quietly on the way back, with focus on the row', async () => {
   const page = open(AT + '/folders?folder=Video%2FMissouri', {
     'library-return': JSON.stringify({ id: 'id2', host: 'archiveList', at: Date.now() }),
-    'library-who': JSON.stringify({ me: 'me1', librarian: false }),
   });
   await settle(120);
   assert.ok(page.calls.some((call) => call.includes('/archive?path=Video%2FMissouri')));
-  assert.ok(!page.calls.some((call) => call.includes('/shelf')), 'who you are is remembered from the front desk; the whole shelf is not fetched again');
+  assert.ok(page.calls.some((call) => call.includes('/shelf')), 'who is signed in is asked every time (review, Nov 10 2026), never remembered in the tab');
   assert.ok(page.$('archiveList').contains(page.document.activeElement));
   assert.equal(page.document.activeElement.getAttribute('aria-label'), 'Open Clip 2');
   assert.equal(page.$('live').textContent, '', 'nothing is spoken when the page itself reopens a folder');

@@ -117,10 +117,13 @@ test('while playing, the slider moves in five-second hops and holds still under 
     bar.focus();
     for (let second = 13; second <= 40; second++) page.at(second);
     await settle(10);
-    assert.deepEqual(told, [], 'a screen reader resting on the slider is told nothing while it plays');
+    assert.deepEqual(told, ['10 seconds of 2 minutes 5 seconds'], 'brought up to date once as focus lands (so what is read on arrival is true), then a screen reader resting on it is told nothing while it plays');
+    assert.equal(bar.getAttribute('aria-valuetext'), '12 seconds of 2 minutes 5 seconds');
     page.$('playBtn').click();
     page.$('fileMedia').dispatchEvent(new page.window.Event('pause'));
     assert.equal(bar.getAttribute('aria-valuetext'), '40 seconds of 2 minutes 5 seconds', 'pausing brings it up to date');
+    await settle(10);
+    assert.deepEqual(told, ['10 seconds of 2 minutes 5 seconds', '12 seconds of 2 minutes 5 seconds']);
   });
 });
 

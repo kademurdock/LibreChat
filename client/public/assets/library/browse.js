@@ -60,7 +60,7 @@
       active = null,
       pageNumber = 1,
       pages = 1,
-      lastPush = 0,
+      pushedBy = '',
       baseTitle = document.title;
     function fillMenu(id, rows, label) {
       var select = get(id),
@@ -157,13 +157,20 @@
         (pageNumber > 1 ? 'page ' + pageNumber + ' — ' : '') +
         baseTitle;
     }
-    /* how: 'push' (a new step Back can return to), 'replace', or 'none' (the address already says it).
-     * A run of filter changes close together (arrowing through a menu) is one step, not six. */
-    function writeAddress(how) {
+    /* how: 'push' (a new step Back can return to), 'replace', 'none' (the address already says it),
+     * or 'filter' with the menu that changed. Arrowing through one menu is one step for Back, not
+     * one per option, however slowly it is done (by ear, each option is heard before the next). So
+     * the first change in a menu is a new step and the rest replace it, until focus leaves that
+     * menu or anything else (a search, a page turn, Back) writes the address. */
+    function writeAddress(how, menu) {
       if (how === 'none') return;
-      var now = Date.now();
-      if (how === 'filter') how = now - lastPush < 1500 ? 'replace' : 'push';
-      if (window.kadeLibraryAddress.set(addressChanges(), how) && how === 'push') lastPush = now;
+      var by = '';
+      if (how === 'filter') {
+        how = menu && menu === pushedBy ? 'replace' : 'push';
+        by = menu || '';
+      }
+      var wrote = window.kadeLibraryAddress.set(addressChanges(), how);
+      if (how === 'push') pushedBy = wrote ? by : '';
     }
     /* options: how (see writeAddress), toResults (focus the Results heading), show (scroll the
      * first row into view when it is below the screen; focus does not move). */
@@ -178,7 +185,7 @@
       pager.hidden = true;
       get('browseCount').textContent = 'Loading…';
       list.setAttribute('aria-busy', 'true');
-      writeAddress(options.how || 'none');
+      writeAddress(options.how || 'none', options.menu);
       showTitle();
       try {
         var result = await api('/browse?' + parameters.toString(), { signal: active.signal });
@@ -190,6 +197,10 @@
           load({ how: 'replace', toResults: options.toResults, show: options.show });
           return;
         }
+        /* Without the Family feature pack the page says why the family collection is not here
+         * (false only; the App Review seat gets null and is told nothing). */
+        var notice = get('familyLibraryNotice');
+        if (notice && result.familyLibrary === false) notice.hidden = false;
         fillMenu('browseType', result.types, 'All types');
         fillMenu('browseDecade', result.decades, 'All decades');
         result.items.forEach(function (item) {
@@ -290,9 +301,9 @@
         if (this.checked) say('Short rows on.');
       };
     }
-    function fresh(how, toResults) {
+    function fresh(how, toResults, menu) {
       pageNumber = 1;
-      load({ how: how, toResults: toResults, show: !toResults });
+      load({ how: how, toResults: toResults, show: !toResults, menu: menu });
     }
     form.onsubmit = function (event) {
       event.preventDefault();
@@ -301,9 +312,12 @@
     ['libraryScope', 'browseKind', 'browseType', 'browseDecade', 'browseSort'].forEach(
       function (id) {
         get(id).onchange = function () {
-          fresh('filter');
+          fresh('filter', false, id);
           if (id === 'libraryScope' && scopeChanged) scopeChanged();
         };
+        get(id).addEventListener('blur', function () {
+          if (pushedBy === id) pushedBy = '';
+        });
       },
     );
     function turn(by) {
@@ -341,6 +355,7 @@
     /* Back and Forward: the address has already changed; the form and the list follow it. */
     window.addEventListener('popstate', function () {
       var before = state().toString();
+      pushedBy = '';
       fromAddress();
       if (state().toString() === before) return;
       load({ how: 'none', toResults: true });

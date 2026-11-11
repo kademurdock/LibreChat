@@ -503,7 +503,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   </section>
   </main>
 
-<script src="/assets/library/browse.js?v=20261110b"></script>
+<script src="/assets/library/browse.js?v=20261110c"></script>
 <script src="/assets/library/requests.js?v=20260924b"></script>
 <script src="/assets/library/reader.js?v=20260924"></script>
 <script src="/assets/library/access.js?v=20260928"></script>
@@ -718,9 +718,7 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
       if (VIEW === 'continue') renderShelf(shelfData.mine, shelfData.borrowed);
       if (VIEW === 'desk' || VIEW === 'continue') { renderContinue(shelfData.mine, shelfData.borrowed); restoreReturn(['mineList', 'continueList']); }
       me = shelfData.me || me; librarian = !!shelfData.librarian; describedVideo = !!shelfData.describedVideo; filesRule = shelfData.filesMode || '';
-      // the folders page uses who you are (for Move and Delete) without asking for the whole shelf again
-      try { sessionStorage.setItem('library-who', JSON.stringify({ me: me, librarian: librarian })); } catch(e) {}
-      $('familyLibraryNotice').hidden = !(shelfData.familyLibrary === false && (VIEW === 'desk' || VIEW === 'family'));
+      $('familyLibraryNotice').hidden = !(shelfData.familyLibrary === false && (VIEW === 'desk' || VIEW === 'family' || VIEW === 'folders'));
       if (librarian && VIEW === 'librarian' && window.setupLibraryAccess) window.setupLibraryAccess(api, say);
       $('familyHistoryLink').hidden = shelfData.familyLibrary !== true;
       $('row-desk').hidden = !librarian;
@@ -831,8 +829,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
   async function startFolders(){
     var was = folderPlace();
     $('libraryScope').value = was.scope; $('folderScope').value = was.scope;
-    var who = null; try { who = JSON.parse(sessionStorage.getItem('library-who') || 'null'); } catch(e) {}
-    if (who && who.me) { me = who.me; librarian = !!who.librarian; } else await loadShelf();
+    /* Who is signed in is asked every time (review, Nov 10 2026): a note kept in the tab outlived a
+       sign-out, so the next person in the same tab was drawn the last person's Move and Delete. */
+    try { sessionStorage.removeItem('library-who'); } catch(e) {}
+    await loadShelf();
     loadArchive(was.path, was.page, false, true);
   }
   $('folderScope').onchange = function(){
@@ -1494,7 +1494,10 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     var total = t.seconds || (t.clipEnd != null ? t.clipEnd - (t.clipBegin || 0) : fileAudio.duration) || 0;
     return isFinite(total) && total > 0 ? total : 0;
   }
-  var seekBar = $('seekBar'), seekShown = -1;
+  /* seekShown: the second the slider was last drawn at. seekHeld: the value the slider really holds
+     (a browser snaps it to the step). seekWant: where the person is steering to during one key
+     press or drag, or null between them. */
+  var seekBar = $('seekBar'), seekShown = -1, seekHeld = 0, seekWant = null;
   function showSeek(force){
     if (!book || !isAudio()) return;
     var total = Math.floor(trackLength()), at = Math.min(Math.floor(trackPosition()), total || 0);
@@ -1503,23 +1506,43 @@ const readingRoomHtml = `<!doctype html><html lang="en"><head><title>The Library
     if (String(total) !== seekBar.max) { seekBar.max = String(total); seekBar.step = total > 120 ? '5' : '1'; force = true; }
     var held = false; try { held = playing && document.activeElement === seekBar && seekBar.matches(':focus-visible'); } catch(e) {}
     if (!force && (held || (playing && Math.abs(at - seekShown) < 5))) return;
-    seekShown = at; seekBar.value = String(at);
+    seekShown = at; seekBar.value = String(at); seekHeld = Number(seekBar.value) || 0;
     seekBar.setAttribute('aria-valuetext', spokenTime(at) + ' of ' + spokenTime(total));
     try { if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) navigator.mediaSession.setPositionState({ duration: total, playbackRate: fileAudio.playbackRate || 1, position: Math.min(at, total) }); } catch(e) {}
   }
   fileAudio.addEventListener('timeupdate', function(){ showSeek(false); });
   fileAudio.addEventListener('seeked', function(){ showSeek(true); });
   fileAudio.addEventListener('loadedmetadata', function(){ showSeek(true); showCaptions(); });
+  /* The slider holds still while it plays under keyboard focus, so what it holds goes out of date.
+     Review, Nov 10 2026: an arrow press then stepped from the old value and threw playback back to
+     where focus first landed. So the slider is brought up to date the moment a person reaches for
+     it (focus, a key that moves it, a pointer), before the browser takes its step. */
+  seekBar.addEventListener('focus', function(){ seekWant = null; showSeek(true); });
+  seekBar.addEventListener('blur', function(){ seekWant = null; });
+  seekBar.addEventListener('keydown', function(e){ if (/^(Arrow(Left|Right|Up|Down)|Page(Up|Down)|Home|End)$/.test(e.key) && seekWant === null) showSeek(true); });
+  seekBar.addEventListener('pointerdown', function(){ if (seekWant === null) showSeek(true); });
+  /* A screen reader can also move the slider with no key press reaching the page (a swipe, an
+     "increase" command). If the first move arrives while the slider is out of date, the step is
+     taken from where playback is. The very start and the very end are always meant as written. */
+  function steer(bar){
+    var at = Number(bar.value) || 0, total = Number(bar.max) || 0;
+    if (seekWant === null && seekShown >= 0 && at > 0 && at < total) {
+      var live = Math.min(Math.floor(trackPosition()), total);
+      if (Math.abs(live - seekShown) >= 5) { at = Math.max(0, Math.min(total, live + (at - seekHeld))); bar.value = String(at); }
+    }
+    seekWant = at; return at;
+  }
   seekBar.addEventListener('input', function(){
-    var at = Number(this.value) || 0, total = Number(this.max) || 0;
+    var at = steer(this), total = Number(this.max) || 0;
     this.setAttribute('aria-valuetext', spokenTime(at) + ' of ' + spokenTime(total));
     timeShown = clock(at) + ' of ' + clock(total); $('timeLine').textContent = timeShown;
   });
   seekBar.addEventListener('change', function(){
     if (!book || !isAudio()) return;
-    var t = book.tracks[pos.s], at = Number(this.value) || 0;
+    var t = book.tracks[pos.s], at = seekWant !== null ? seekWant : steer(this);
+    seekWant = null;
     try { fileAudio.currentTime = (t.clipBegin || 0) + at; } catch(e) {}
-    seekShown = at; saveProgress();
+    seekShown = at; seekHeld = Number(this.value) || 0; saveProgress();
   });
   /* Captions and spoken description, in one plain row right under the controls.
      Captions: the button is there when the file carries a caption or subtitle track, and the choice

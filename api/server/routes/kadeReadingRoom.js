@@ -1448,7 +1448,8 @@ router.get('/browse', requireJwtAuth, async (req, res) => {
       types: result?.types || [],
       decades: result?.decades || [],
       next: more && last ? browseCursor(input, String(last._id), input.sort === 'title' ? last._browseTitle : last._browseRecent.toISOString()) : null,
-      familyLibrary: !reader.hidden,
+      // null for the App Review seat, as on /shelf: the search page says nothing about a family collection.
+      familyLibrary: reader.hidden && require('@librechat/api').libraryReviewSeat(req.user) ? null : !reader.hidden,
     });
   } catch (error) {
     logger.error('[library/browse] error:', error);
