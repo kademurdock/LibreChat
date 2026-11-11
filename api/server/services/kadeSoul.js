@@ -31,6 +31,21 @@
  * Kill switches: KADE_SOUL=0 (all), KADE_SOUL_TIME=0, KADE_SOUL_MOOD=0,
  * KADE_SOUL_MOMENTS=0. Fail-soft everywhere: a turn without its soul block
  * beats a broken turn.
+ *
+ * Nov 10 2026, two additions, neither of which adds a model call or a wait
+ * before a reply:
+ *   A CALL COUNTS AS TALKING  a finished call stamps "last talked" from the
+ *               call's own last turn time (noteCallTalked). Off: KADE_SOUL_CALL_TALKED=0.
+ *               Mood is NOT written from calls: the bridge strips the voice
+ *               directions out of a transcript before it stores it, so there is
+ *               nothing to read a feeling from.
+ *   OUR STUFF RESTS  every offer of a moment is counted after the reply; a joke
+ *               or line offered KADE_SOUL_MOMENT_OFFERS times (default 5) rests
+ *               for KADE_SOUL_MOMENT_REST_DAYS days (default 14). A nickname
+ *               never rests: it is how the character says the person's name.
+ *               A one-word quote now counts as used when the word is in the
+ *               reply, and the block names the moment called back last.
+ *               Off: KADE_SOUL_MOMENT_REST=0 (the Oct 16 behaviour, exactly).
  */
 'use strict';
 
@@ -41,6 +56,20 @@ const MOMENTS = 'kademoments';
 const BASELINE_USER = '*';
 
 const on = (name) => process.env.KADE_SOUL !== '0' && process.env[name] !== '0';
+
+const intEnv = (name, def, lo, hi) => {
+  const v = parseInt(process.env[name], 10);
+  return Number.isFinite(v) && v >= lo && v <= hi ? v : def;
+};
+/* Read at call time, so a switch flipped in Railway needs no code change. */
+const restOn = () => on('KADE_SOUL_MOMENTS') && process.env.KADE_SOUL_MOMENT_REST !== '0';
+const offerLimit = () => intEnv('KADE_SOUL_MOMENT_OFFERS', 5, 1, 1000);
+const restDays = () => intEnv('KADE_SOUL_MOMENT_REST_DAYS', 14, 1, 365);
+const LAST_USED_WINDOW_DAYS = 30;
+
+/* For unit tests only: stand-in collections, memory gate and id maker, so the
+ * storage paths run with no database. Never set in the running server. */
+const seam = { coll: null, allowed: null, objectId: null };
 
 /* How each face expression feels: [valence -1..1, arousal 0..1]. */
 const FEEL = Object.freeze({
@@ -298,15 +327,34 @@ function relatedness(moment, userWords) {
   return (hits.length + strong) / Math.sqrt(mw.length);
 }
 
-/** Pick the moments to offer this turn: standing bits first, then what they just said calls to mind. */
+/**
+ * Pick the moments to offer this turn: standing bits first, then what they just said calls to mind.
+ *
+ * With the rest rule on (default): a nickname is always on offer, used or not,
+ * because hiding it would make the character stop saying it; it takes one of
+ * the two standing places and a joke takes the other. Anything else that is
+ * resting (restUntil in the future, set after enough offers) is left out.
+ * Still at most four lines, the same as before.
+ */
 function pickMoments(moments, userText, now = new Date()) {
+  const rest = restOn();
   const recentlyUsed = (m, days) => m.lastUsedAt && now.getTime() - new Date(m.lastUsedAt).getTime() < days * 86400000;
+  const resting = (m) => Boolean(m.restUntil) && new Date(m.restUntil).getTime() > now.getTime();
+  const out = (m, days) => (rest ? m.kind !== 'nickname' && (recentlyUsed(m, days) || resting(m)) : recentlyUsed(m, days));
   const byNewest = [...moments].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const standing = byNewest.filter((m) => STANDING.has(m.kind) && !recentlyUsed(m, 2)).slice(0, 2);
+  let standing;
+  if (rest) {
+    const names = byNewest.filter((m) => m.kind === 'nickname');
+    const jokes = byNewest.filter((m) => m.kind === 'joke' && !out(m, 2));
+    standing = [...names.slice(0, 1), ...jokes.slice(0, names.length ? 1 : 2)];
+    if (standing.length < 2) standing.push(...names.slice(1, 3 - standing.length));
+  } else {
+    standing = byNewest.filter((m) => STANDING.has(m.kind) && !recentlyUsed(m, 2)).slice(0, 2);
+  }
   const taken = new Set(standing.map((m) => String(m._id)));
   const uw = new Set(words(userText));
   const related = byNewest
-    .filter((m) => !taken.has(String(m._id)) && !recentlyUsed(m, 3))
+    .filter((m) => !taken.has(String(m._id)) && !out(m, 3))
     .map((m) => ({ m, s: relatedness(m, uw) }))
     .filter((x) => x.s >= 1)
     .sort((a, b) => b.s - a.s)
@@ -330,10 +378,88 @@ function momentLine(m, tz) {
   return `- "${String(m.quote).trim()}" (${who}, ${shortDate(m.createdAt, tz)}; ${kind}${why})`;
 }
 
+/* Words only, possessives folded, padded with spaces so a whole-word test is one includes(). */
+function phrase(text) {
+  const p = loose(String(text || '').replace(/%%%[^%\n]{1,160}%%%/g, ' '))
+    .replace(/'s(?= |$)/g, '')
+    .replace(/'/g, '')
+    .replace(/ +/g, ' ')
+    .trim();
+  return ` ${p} `;
+}
+
+/**
+ * Did the reply call this moment back? Two or more real words: most of them are
+ * in the reply (the Oct 16 rule). Fewer (a one-word nickname, or a quote made of
+ * small words): the quote itself is in the reply as whole words. Before Nov 10
+ * the second case could never be true, so a one-word nickname was never marked
+ * used.
+ */
+function momentUsed(quote, replyText) {
+  const qw = [...new Set(words(quote))];
+  if (qw.length >= 2) {
+    const replyWords = new Set(words(replyText));
+    return qw.filter((w) => replyWords.has(w)).length / qw.length >= 0.6;
+  }
+  if (!restOn()) return false;
+  const q = phrase(quote);
+  return q.trim().length >= 2 && phrase(replyText).includes(q);
+}
+
+/**
+ * What to write after a reply, for the moments that were offered this turn.
+ * Pure. Every offer is counted. A moment that is not a nickname rests once its
+ * offers since the last rest reach the limit, and the count starts over.
+ * @returns {{ usedIds: any[], restIds: any[], countIds: any[], restUntil: Date }}
+ */
+function offerPlan(recalled, replyText, now = new Date()) {
+  const rest = restOn();
+  const limit = offerLimit();
+  const usedIds = [];
+  const restIds = [];
+  const countIds = [];
+  for (const m of recalled || []) {
+    if (momentUsed(m.quote, replyText)) usedIds.push(m._id);
+    if (!rest) continue;
+    if (m.kind !== 'nickname' && (Number(m.offers) || 0) + 1 >= limit) restIds.push(m._id);
+    else countIds.push(m._id);
+  }
+  return { usedIds, restIds, countIds, restUntil: new Date(now.getTime() + restDays() * 86400000) };
+}
+
+/** The moment the character called back most recently (never a nickname), or null. */
+function lastUsedMoment(moments, now = new Date()) {
+  let best = null;
+  for (const m of moments || []) {
+    if (!m || m.kind === 'nickname' || !m.lastUsedAt) continue;
+    const at = new Date(m.lastUsedAt).getTime();
+    if (!Number.isFinite(at) || at > now.getTime() || now.getTime() - at > LAST_USED_WINDOW_DAYS * 86400000) continue;
+    if (!best || at > new Date(best.lastUsedAt).getTime()) best = m;
+  }
+  return best;
+}
+
+/** The "# Our stuff" section for this turn. Pure. `text` is '' when there is nothing to offer. */
+function ourStuffSection(moments, userText, now = new Date(), tz = 'America/Chicago') {
+  const picked = pickMoments(moments, userText || '', now);
+  if (!picked.length) return { text: '', recalledIds: [] };
+  let text =
+    `# Our stuff\nReal moments with them, in the words that were said. Call one back only when it fits what's happening, like a friend would, and never the same one twice in a row.\n` +
+    picked.map((m) => momentLine(m, tz)).join('\n');
+  if (restOn()) {
+    const pickedIds = new Set(picked.map((m) => String(m._id)));
+    const last = lastUsedMoment(moments, now);
+    if (last && !pickedIds.has(String(last._id))) {
+      text += `\nThe one you called back most recently was "${String(last.quote).trim()}", ${sinceWords(new Date(last.lastUsedAt), now, tz)}. Let that one rest for now.`;
+    }
+  }
+  return { text, recalledIds: picked.map((m) => String(m._id)) };
+}
+
 /* ── storage ──────────────────────────────────────────────────────────── */
 
 function coll(name) {
-  return require('mongoose').connection.collection(name);
+  return seam.coll ? seam.coll(name) : require('mongoose').connection.collection(name);
 }
 
 let indexed = false;
@@ -461,13 +587,10 @@ async function getSoulTailBlock({ userId, agentId, req, conversationId, userText
     let recalledIds = [];
     if (on('KADE_SOUL_MOMENTS')) {
       const moments = await visibleMoments(userId, agentId);
-      const picked = pickMoments(moments, userText || '', now);
-      if (picked.length) {
-        recalledIds = picked.map((m) => String(m._id));
-        sections.push(
-          `# Our stuff\nReal moments with them, in the words that were said. Call one back only when it fits what's happening, like a friend would, and never the same one twice in a row.\n` +
-            picked.map((m) => momentLine(m, tz)).join('\n'),
-        );
+      const ours = ourStuffSection(moments, userText || '', now, tz);
+      if (ours.text) {
+        recalledIds = ours.recalledIds;
+        sections.push(ours.text);
       }
     }
     return { block: sections.join('\n\n'), recalledIds };
@@ -483,7 +606,7 @@ async function getSoulTailBlock({ userId, agentId, req, conversationId, userText
 
 async function noteAfterReply({ userId, agentId, req, conversationId, text, recalledIds = [], offRecord, now = new Date() }) {
   try {
-    if (!(await soulAllowed({ userId, agentId, req, conversationId, offRecord, write: true }))) return { ok: false, skipped: true };
+    if (!(await (seam.allowed || soulAllowed)({ userId, agentId, req, conversationId, offRecord, write: true }))) return { ok: false, skipped: true };
     await ensureIndexes();
     const feeling = on('KADE_SOUL_MOOD') ? replyFeeling(text) : null;
     const { row, base } = await readState(userId, agentId);
@@ -508,7 +631,7 @@ async function noteAfterReply({ userId, agentId, req, conversationId, text, reca
       { upsert: true },
     );
     if (recalledIds.length && text) {
-      const { ObjectId } = require('mongodb');
+      const ObjectId = seam.objectId || require('mongodb').ObjectId;
       const ids = recalledIds.map((id) => {
         try {
           return new ObjectId(id);
@@ -517,19 +640,95 @@ async function noteAfterReply({ userId, agentId, req, conversationId, text, reca
         }
       }).filter(Boolean);
       const recalled = await coll(MOMENTS).find({ _id: { $in: ids }, userId: String(userId), agentId: String(agentId) }).toArray();
-      const replyWords = new Set(words(text));
-      const used = recalled.filter((m) => {
-        const qw = [...new Set(words(m.quote))];
-        return qw.length >= 2 && qw.filter((w) => replyWords.has(w)).length / qw.length >= 0.6;
-      });
-      if (used.length) {
-        await coll(MOMENTS).updateMany({ _id: { $in: used.map((m) => m._id) } }, { $set: { lastUsedAt: now }, $inc: { uses: 1 } });
+      const plan = offerPlan(recalled, text, now);
+      if (plan.usedIds.length) {
+        await coll(MOMENTS).updateMany({ _id: { $in: plan.usedIds } }, { $set: { lastUsedAt: now }, $inc: { uses: 1 } });
+      }
+      /* Nov 10 2026: count the offer. After the reply, never waited on. */
+      if (plan.countIds.length) {
+        await coll(MOMENTS).updateMany({ _id: { $in: plan.countIds } }, { $set: { lastOfferedAt: now }, $inc: { offers: 1, offersTotal: 1 } });
+      }
+      if (plan.restIds.length) {
+        await coll(MOMENTS).updateMany(
+          { _id: { $in: plan.restIds } },
+          { $set: { lastOfferedAt: now, offers: 0, restUntil: plan.restUntil }, $inc: { offersTotal: 1, rests: 1 } },
+        );
       }
     }
     return { ok: true, mood: Boolean(feeling) };
   } catch (e) {
     try {
       require('@librechat/data-schemas').logger.warn('[kadeSoul] after-reply skipped: ' + (e && e.message));
+    } catch (_) {}
+    return { ok: false, error: e && e.message };
+  }
+}
+
+/* ── a finished call counts as talking (Nov 10 2026) ──────────────────── */
+
+const VOICEMAIL_TURN = /^\s*\[VOICEMAIL LEFT\]/i;
+const CLOCK_SLACK_MS = 10 * 60 * 1000;
+
+/**
+ * When did this call last have a turn, and may it count as the two of them
+ * talking? Pure. Never answers "now": the time comes from the call's own last
+ * turn, or from the time the call ended when its turns carry no times (the
+ * phone bridge sends none). A time slightly ahead of this server's clock is
+ * pulled back to the clock; one far ahead is a broken clock and is refused.
+ *
+ * Refused: no resolved caller, no real character, a voicemail (the bridge
+ * marks the message it left with "[VOICEMAIL LEFT]"), a call where the person
+ * never spoke, and an outbound call with fewer than two things said by the
+ * other end (an answering machine's greeting is usually heard as one).
+ *
+ * @param {object} doc lean call transcript ({ user, agentId, turns, endedAt, metadata })
+ * @returns {{ at: Date } | { skip: string }}
+ */
+function callTalkStamp(doc, now = new Date()) {
+  if (!doc || !doc.user) return { skip: 'no-caller' };
+  if (!doc.agentId || String(doc.agentId).startsWith('ephemeral')) return { skip: 'no-character' };
+  const turns = (Array.isArray(doc.turns) ? doc.turns : []).filter((t) => t && String(t.text || '').trim());
+  if (turns.some((t) => VOICEMAIL_TURN.test(String(t.text)))) return { skip: 'voicemail' };
+  const said = turns.filter((t) => t.role === 'user').length;
+  if (!said) return { skip: 'nobody-spoke' };
+  const outbound = Boolean(doc.metadata && doc.metadata.outbound);
+  if (outbound && said < 2) return { skip: 'outbound-unanswered' };
+  const times = turns.map((t) => (t.at ? new Date(t.at).getTime() : NaN)).filter(Number.isFinite);
+  let at = times.length ? Math.max(...times) : doc.endedAt ? new Date(doc.endedAt).getTime() : NaN;
+  if (!Number.isFinite(at)) return { skip: 'no-time' };
+  if (at > now.getTime() + CLOCK_SLACK_MS) return { skip: 'time-ahead' };
+  at = Math.min(at, now.getTime());
+  return { at: new Date(at) };
+}
+
+/**
+ * Stamp "last talked" for this person and character from a finished call.
+ * Only ever moves the time forward ($max), so a second ingest of the same call,
+ * or a call filed after a later text turn, changes nothing. Writes a time and
+ * nothing else: a phone caller is known by caller ID only. Obeys the person's
+ * memory switch and a conversation set to stay out of memory. Never throws.
+ */
+async function noteCallTalked(doc, { now = new Date() } = {}) {
+  try {
+    if (process.env.KADE_SOUL === '0' || process.env.KADE_SOUL_CALL_TALKED === '0') return { ok: false, skipped: 'off' };
+    const stamp = callTalkStamp(doc, now);
+    if (stamp.skip) return { ok: false, skipped: stamp.skip };
+    const userId = String(doc.user);
+    const agentId = String(doc.agentId).slice(0, 64);
+    const conversationId = doc.mergedConversationId || doc.conversationId || null;
+    if (!(await (seam.allowed || soulAllowed)({ userId, agentId, req: null, conversationId, write: true }))) {
+      return { ok: false, skipped: 'memory-off' };
+    }
+    await ensureIndexes();
+    await coll(STATE).updateOne(
+      { userId, agentId },
+      { $max: { lastTurnAt: stamp.at }, $set: { updatedAt: now }, $setOnInsert: { createdAt: now } },
+      { upsert: true },
+    );
+    return { ok: true, at: stamp.at };
+  } catch (e) {
+    try {
+      require('@librechat/data-schemas').logger.warn('[kadeSoul] call stamp skipped: ' + (e && e.message));
     } catch (_) {}
     return { ok: false, error: e && e.message };
   }
@@ -633,6 +832,7 @@ async function clearSoul(userId, agentId) {
 module.exports = {
   getSoulTailBlock,
   noteAfterReply,
+  noteCallTalked,
   keepMoment,
   soulSnapshot,
   forgetMoment,
@@ -647,6 +847,12 @@ module.exports = {
   sinceWords,
   quoteInEvidence,
   pickMoments,
+  momentUsed,
+  offerPlan,
+  lastUsedMoment,
+  ourStuffSection,
+  callTalkStamp,
   words,
   FEEL,
+  __seam: seam,
 };

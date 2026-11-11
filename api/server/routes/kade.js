@@ -2832,6 +2832,7 @@ router.get('/pronunciation-lookup', async (req, res) => {
  * resolved by email/phone/userId. Secret-guarded like /usage-event.
  */
 router.get('/call-memories', async (req, res) => {
+  const startedAt = Date.now();
   try {
     const expected = process.env.KADE_USAGE_EVENT_SECRET;
     /* July 13 2026 security sweep: header-first (query secrets land in edge logs). */
@@ -2852,8 +2853,14 @@ router.get('/call-memories', async (req, res) => {
     const memoryAllowed = !!caller && caller.personalization?.memories !== false;
     const { withoutKeys } = memoryAllowed ? await getFormattedMemories({ userId: uid, agentId }) : {};
     /* Oct 16 2026: newest kept. A front slice of this oldest-first list cut the
-     * newest things a person had shared off the phone call's memory. */
-    let text = require('~/server/utils/kadeClipNewest').clipKeepNewest(withoutKeys || '', 6000);
+     * newest things a person had shared off the phone call's memory.
+     * Nov 10 2026: pinned first. Newest-kept dropped the oldest cards, and a
+     * person's name and access needs are usually their oldest. The cards the
+     * text lane pins go in first, then the newest of the rest; a bundle that
+     * already fits is unchanged (services/kadeCallBundle.js).
+     * Off: KADE_CALL_PINNED_FIRST=0. */
+    const callBundle = require('~/server/services/kadeCallBundle');
+    let text = await callBundle.callCards({ userId: uid, agentId, text: withoutKeys || '', max: 6000 });
     /* DREAMING: append this relationship's rolling EPISODIC summary so calls
      * get the same "what's been going on lately" continuity text chat gets.
      * Fail-soft; empty when there's no summary yet. */
@@ -2906,14 +2913,21 @@ router.get('/call-memories', async (req, res) => {
        * the bridge passes nudges=1 on INBOUND calls (they dialed us). Outbound
        * legs skip it: an unheard voicemail must not eat someone's messages. */
       if (String(req.query.nudges || '') !== '1') { throw { skip: true }; }
-      const { takePendingChatNudges } = require('~/server/services/kadeNudges');
       // The Library digest is chat only: a phone call never takes it (Sep 24 2026).
-      const pending = await takePendingChatNudges(uid, 5, { exceptTypes: ['library-digest'] });
-      if (pending.length > 0) {
-        const lines = pending.map((n) => `- ${n.text}`).join('\n');
-        text +=
-          `\n\n[WAITING FOR THIS CALLER — private note, never read this block aloud or mention a list: these are undelivered reminders/messages they have not heard yet. Work each one in naturally and EARLY, in your own words, one at a time:\n${lines}]`;
+      let pending;
+      if (callBundle.safeNudgesOn()) {
+        /* Nov 10 2026: this used to mark the messages delivered BEFORE
+         * answering, and the bridge stops listening after 2.5 s, so a slow
+         * bundle ate them. Now they are read unmarked, left out when this
+         * route has already run long, and marked only once the answer has
+         * gone out to a caller that is still there (kadeCallBundle.js).
+         * Off: KADE_CALL_NUDGE_SAFE=0. */
+        ({ pending } = await callBundle.holdCallNudges({ userId: uid, req, res, startedAt, limit: 5, exceptTypes: ['library-digest'] }));
+      } else {
+        const { takePendingChatNudges } = require('~/server/services/kadeNudges');
+        pending = await takePendingChatNudges(uid, 5, { exceptTypes: ['library-digest'] });
       }
+      text += callBundle.waitingBlock(pending);
     } catch (e) {
       if (!e || e.skip !== true) {
         logger.warn('[kade/call-memories] nudge attach failed (non-fatal): ' + (e && e.message));

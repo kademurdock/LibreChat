@@ -22,6 +22,19 @@
  *    logging, the merge, or a live call.
  *  - Env hatch KADE_CALL_MEMORY=0 disables instantly (no redeploy), matching the
  *    KADE_SIGHT / KADE_VOICE_TAGS pattern.
+ *
+ * Nov 10 2026: A CALL COUNTS AS TALKING. Only a text reply used to move "last
+ * talked", so the morning after an hour on the phone a character could say it
+ * had been days. The first thing this does now is stamp "last talked" for the
+ * caller and the character from the call's own last turn time
+ * (services/kadeSoul.js noteCallTalked). It runs BEFORE every early return
+ * below, so it does not need the memory writer to be configured, switched on,
+ * or to win the run-once claim; it is safe to run twice because the time only
+ * ever moves forward. Skipped for an unresolved caller, a person whose memory
+ * is switched off, a voicemail, and a call where the person never spoke.
+ * No mood is written: the bridge strips the voice directions from the
+ * transcript before it sends it, so there is nothing to read one from.
+ * Off: KADE_SOUL_CALL_TALKED=0.
  */
 const { logger, memoryClearCutoff } = require('@librechat/data-schemas');
 const {
@@ -50,6 +63,21 @@ const { getAppConfig } = require('~/server/services/Config');
  * the most memory-worthy part (where they land on the real news). */
 const MAX_CALL_BUFFER_CHARS = 120000;
 
+/** "Last talked" from a finished call. Never throws, never blocks the writer below. */
+async function stampLastTalked(transcriptDoc) {
+  try {
+    const { noteCallTalked } = require('~/server/services/kadeSoul');
+    const result = await noteCallTalked(transcriptDoc);
+    if (result && result.ok) {
+      logger.info(`[kadeCallMemoryWrite] call ${transcriptDoc && transcriptDoc._id} counted as talking`);
+    }
+    return result;
+  } catch (err) {
+    logger.warn(`[kadeCallMemoryWrite] last-talked stamp skipped: ${err && err.message}`);
+    return { ok: false };
+  }
+}
+
 /**
  * Run the memory-writer over one finished call transcript so durable facts get
  * saved, just like a text chat. Idempotent + fail-soft. Returns a small status
@@ -58,6 +86,7 @@ const MAX_CALL_BUFFER_CHARS = 120000;
  * @param {object} transcriptDoc  lean KadeCallTranscript ({_id, user, agentId, turns, ...})
  */
 async function extractMemoryFromCall(transcriptDoc) {
+  await stampLastTalked(transcriptDoc);
   try {
     if (String(process.env.KADE_CALL_MEMORY || '') === '0') {
       return { ran: false, reason: 'disabled' };
@@ -182,4 +211,4 @@ async function extractMemoryFromCall(transcriptDoc) {
   }
 }
 
-module.exports = { extractMemoryFromCall };
+module.exports = { extractMemoryFromCall, stampLastTalked };
