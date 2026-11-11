@@ -1,10 +1,10 @@
 'use strict';
 /* Nov 10 2026, round two: what the booth SENDS to the YuE2 worker for a trained style (packages/api/src/music/yue.ts).
  *
- * On by default: a short styled new song carries a length ceiling, a styled direction says the language once, and a plain
- * cover keeping its chords names its score's key. Built and OFF until they are switched on, after four test songs showed no
- * gain and one unusable take: bracketed directions lifted out of the lyrics (and, separately, added to the style), and
- * parenthesised backing phrases thinned. All of it happens when a request is sent, never when it is saved. With every
+ * On by default: a styled direction says the language once, and a plain cover keeping its chords names its score's key.
+ * Built and OFF until they are switched on, after four test songs showed no gain and one unusable take: bracketed
+ * directions lifted out of the lyrics (and, separately, added to the style), parenthesised backing phrases thinned, and
+ * (after review) the length ceiling for a short styled new song. All of it happens when a request is sent, never when it is saved. With every
  * round-two switch set back the request is the one round one sent, key for key.
  *
  * Every line and lyric here is invented for the test. Nothing is sent anywhere.
@@ -99,7 +99,7 @@ test('sending never changes what was saved: the job keeps her own sheet, style a
     const input = saved(body);
     const copy = JSON.parse(JSON.stringify(input));
     yue.yueWorkerInput(input, ON);
-    yue.yueWorkerInput(input, { ...ON, ...SHEET_ON, YUE_LIFT_DIRECTIONS: 'all', YUE_COVER_KEY: 'all', YUE_COVER_SCORE_TAGS: '1' });
+    yue.yueWorkerInput(input, { ...ON, ...SHEET_ON, YUE_LIFT_DIRECTIONS: 'all', YUE_COVER_KEY: 'all', YUE_COVER_SCORE_TAGS: '1', YUE_STYLE_LENGTH_CAP: '1' });
     assert.deepEqual(JSON.parse(JSON.stringify(input)), copy, name);
   }
   assert.equal(saved({ band: 'soul' }).lyrics, SHEET, 'yueInput itself still stores the sheet as typed');
@@ -124,7 +124,7 @@ test('lifting: section tags stay, a direction leaves the lyrics, and every sung 
     'Then we start the song again',
     '',
     '[Bridge]',
-    'Hold the quiet in your hand',
+    'Hold the quiet [spoken] in your hand',
     '(yeah, yeah)',
     '',
     '[Final Chorus]',
@@ -139,13 +139,14 @@ test('lifting: section tags stay, a direction leaves the lyrics, and every sung 
     { section: 'chorus', text: 'full band, layered vocals' },
     { section: 'bridge', text: 'whispered' },
     { section: 'bridge', text: 'drums drop out' },
-    { section: 'bridge', text: 'spoken' },
     { section: 'final chorus', text: 'belting' },
     { section: 'ending', text: 'Hard Stop' },
   ]);
   /* the words that are sung, in order, are the same before and after */
   const sung = (sheet) => sheet.split('\n').map((line) => line.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
   assert.deepEqual(sung(lyrics), sung(SHEET));
+  /* and a line that has anything beside a bracket is the very same line */
+  assert.ok(lyrics.includes('Hold the quiet [spoken] in your hand'));
 });
 
 test('lifting: what counts as a section and what counts as a direction', () => {
@@ -160,7 +161,7 @@ test('lifting: what counts as a section and what counts as a direction', () => {
     ['[Outro, fading out]', '[Outro]', 'fading out'],
     ['[Chorus (big, wide)]', '[Chorus]', 'big, wide'],
     ['[Final Chorus belting]', '[Final Chorus]', 'belting'],
-    ['[Rap Verse]', '[Verse]', 'Rap'],
+    ['[Final Chorus - Belting]', '[Final Chorus]', 'Belting'],
     ['[Pre-Chorus - soft]', '[Pre-Chorus]', 'soft'],
   ]) {
     const got = lift(`${tag}\nA sung line`);
@@ -180,14 +181,33 @@ test('lifting: what counts as a section and what counts as a direction', () => {
   /* a direction with no sung words after it, alone between blank lines, is a break or the ending */
   assert.deepEqual(lift('[Verse]\nla\n\n[Band Drops Out]\n\n[Chorus]\nla la').directions, [{ section: 'break', text: 'Band Drops Out' }]);
   assert.equal(lift('[Verse]\nla\n\n[Band Drops Out]\n\n[Chorus]\nla la').lyrics, '[Verse]\nla\n\n[Chorus]\nla la');
-  /* brackets inside a sung line: the words stay, the bracket goes; a line that was only brackets and marks is gone */
-  assert.equal(lift('[Verse]\n[softly] Hold on , [louder] hold on').lyrics, '[Verse]\nHold on, hold on');
+  /* Review, Nov 10 2026: only a bracket ALONE on its line can be lifted. Each of these lost sung words or fused two
+   * sections in the first version; every one now comes back the very same string. */
+  for (const sheet of [
+    '[Verse]\n[softly] Hold on , [louder] hold on',
+    '[Verse]\nI said [whoa] baby come on',
+    '[Verse]\nla la\n[Hold me] [hold me]\nla',
+    '[Verse 1] Walking down the line\nla la\n\n[Chorus] Hold me tonight\nla',
+    '[Verse]\nla\n\n[Chorus [x2]]\nla la',
+    '[Verse]\nla\n\n[Chorus] x2\nla la',
+    '[Chorus]\nla la\n[Oh-oh-oh]\nla',
+    '[Chorus]\nla la\n[Hey!]\n[Na na na]\nla',
+    '[Verse]\nla la\n[Rap]\nfast words here\n[Drop]\nla',
+    '[Verse 1 - Maria]\nla la\n\n[Verse 2 - Big Tom]\nla',
+    '[Rap Verse]\nA sung line',
+    '[Verse]\r\nI said [whoa] baby\r\n[Oh-oh]\r\nla',
+  ])
+    assert.deepEqual(lift(sheet), { lyrics: sheet, directions: [] }, JSON.stringify(sheet));
+  /* a one-word delivery direction is still a direction, in any case; the tags around it stay */
+  assert.equal(lift('[Verse]\nla la\n[Spoken]\nla la la\n[whispered]\nla').lyrics, '[Verse]\nla la\nla la la\nla');
+  /* a name beside a section never reaches the style, even with folding on */
+  assert.deepEqual(lift('[Verse 1 - Maria]\n[soft piano, brushes]\nla').directions, [{ section: 'verse 1', text: 'soft piano, brushes' }]);
   /* repeated section names are numbered in what is folded, so two choruses are told apart */
   assert.deepEqual(lift('[Chorus]\n[big]\nla\n\n[Chorus]\n[bigger]\nla').directions, [{ section: 'chorus 1', text: 'big' }, { section: 'chorus 2', text: 'bigger' }]);
   /* before any section */
   assert.deepEqual(lift('[soft piano]\n[Verse]\nla').directions, [{ section: 'opening', text: 'soft piano' }]);
   /* an empty or wordless bracket is dropped without a direction */
-  assert.deepEqual(lift('[Verse]\nla la []\n[ ... ]\nla'), { lyrics: '[Verse]\nla la\nla', directions: [] });
+  assert.deepEqual(lift('[Verse]\nla la []\n[ ... ]\nla'), { lyrics: '[Verse]\nla la []\nla', directions: [] });
   /* a sheet with nothing to lift comes back the very same string */
   for (const sheet of ['', '[Verse]\n\n\n\nla la  \n\n\n[Chorus]\nla (la)\n', 'no tags at all\njust words'])
     assert.equal(lift(sheet).lyrics, sheet);
@@ -197,7 +217,7 @@ test('folding: the lifted directions follow the style, section by section, insid
   const { directions } = yue.yueLiftedLyrics(SHEET);
   assert.equal(
     yue.yueFoldedStyle('Warm soul, female lead vocal, 92 BPM.', directions),
-    'Warm soul, female lead vocal, 92 BPM, arrangement: intro - strummed guitar, soft pads; chorus - full band, layered vocals; bridge - whispered, drums drop out, spoken; final chorus - belting; ending - Hard Stop',
+    'Warm soul, female lead vocal, 92 BPM, arrangement: intro - strummed guitar, soft pads; chorus - full band, layered vocals; bridge - whispered, drums drop out; final chorus - belting; ending - Hard Stop',
   );
   assert.equal(yue.yueFoldedStyle('Warm soul', []), 'Warm soul');
   /* the same direction twice in one section is said once */
@@ -244,6 +264,18 @@ test('thinning: echoes go first, then wordless fills, and a reply with new words
   for (const thin of [eight, four, two, none]) assert.deepEqual(lead(thin.lyrics), lead(lifted));
   /* section tags never move, and a parenthesis with no word in it is not a backing phrase */
   assert.deepEqual(yue.yueThinnedBacking('[Verse (soft)]\nla la (2)\nla (la)', 0), { lyrics: '[Verse (soft)]\nla la (2)\nla', total: 1, removed: 1 });
+  /* Review, Nov 10 2026: an aside inside the lead line carries meaning ("You (never) call"): it is not a backing phrase and
+   * is never dropped, while the echo at the end of the same line still is */
+  assert.deepEqual(yue.yueThinnedBacking('[Verse]\nYou (never) call\nWe (always) fall (fall)\nI (don\u2019t) want you back (want you back)', 0), {
+    lyrics: '[Verse]\nYou (never) call\nWe (always) fall\nI (don\u2019t) want you back',
+    total: 2,
+    removed: 2,
+  });
+  /* a chorus that comes back is thinned the same way both times, even when another line stands between */
+  const twice = '[Chorus]\nHold on tight (hold on)\nNever let go (ooh)\n\n[Verse]\nla la (la la)\n\n[Chorus]\nA new first line\nHold on tight (hold on)\nNever let go (ooh)';
+  const thinned = yue.yueThinnedBacking(twice, 4).lyrics;
+  assert.equal((thinned.match(/\(hold on\)/g) || []).length, 0, 'both choruses lose the echo together, though dropping one would have been enough');
+  assert.equal((thinned.match(/\(ooh\)/g) || []).length, 2);
 });
 
 test('by default the sheet goes as round one sent it: nothing is lifted, folded or thinned until it is switched on', () => {
@@ -271,11 +303,12 @@ test('by default the sheet goes as round one sent it: nothing is lifted, folded 
 
 test('switched on: a styled song is sent the lifted, thinned sheet, with the directions in its style only when folding is on too', () => {
   const styled = yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, ...SHEET_ON });
-  assert.doesNotMatch(styled.lyrics, /spoken|belting|drums drop out|strummed|Hard Stop|whispered/);
+  assert.doesNotMatch(styled.lyrics, /belting|drums drop out|strummed|Hard Stop|whispered/);
+  assert.match(styled.lyrics, /Hold the quiet \[spoken\] in your hand/, 'a bracket inside a sung line is hers and stays');
   assert.match(styled.lyrics, /^\[intro\]\n\n\[verse\]\nPaper boats along the drain\n/);
-  assert.match(styled.lyrics, /\n\[bridge\]\nHold the quiet in your hand\n/);
+  assert.match(styled.lyrics, /\n\[bridge\]\nHold the quiet \[spoken\] in your hand\n/);
   assert.equal((styled.lyrics.match(/\([^()]*\)/g) || []).length, 8, 'at most eight backing phrases');
-  assert.equal(styled.style, `${yue.yueStyles.soul.lead} Warm soul, female lead vocal, arrangement: intro - strummed guitar, soft pads; chorus - full band, layered vocals; bridge - whispered, drums drop out, spoken; final chorus - belting; ending - Hard Stop`);
+  assert.equal(styled.style, `${yue.yueStyles.soul.lead} Warm soul, female lead vocal, arrangement: intro - strummed guitar, soft pads; chorus - full band, layered vocals; bridge - whispered, drums drop out; final chorus - belting; ending - Hard Stop`);
   /* lifting without folding: the directions leave the sheet and go nowhere */
   const noFold = yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, ...SHEET_ON, YUE_LIFT_FOLD: '0' });
   assert.equal(noFold.lyrics, styled.lyrics);
@@ -294,7 +327,7 @@ test('switched on: a styled song is sent the lifted, thinned sheet, with the dir
   assert.equal(plain.style, 'Warm soul, female lead vocal');
   /* "all" lifts for plain YuE2 too; backing phrases are thinned for a trained style only */
   const asked = yue.yueWorkerInput(saved({}), { ...ON, ...SHEET_ON, YUE_LIFT_DIRECTIONS: 'all' });
-  assert.doesNotMatch(asked.lyrics, /spoken|belting|drums drop out/);
+  assert.doesNotMatch(asked.lyrics, /belting|drums drop out/);
   assert.equal((asked.lyrics.match(/\([^()]*\)/g) || []).length, 10);
   assert.match(asked.style, /^Warm soul, female lead vocal, arrangement: intro - /);
   /* an instrumental's tags only guide the plan: they are left as they are */
@@ -302,28 +335,34 @@ test('switched on: a styled song is sent the lifted, thinned sheet, with the dir
   assert.equal(instrumental.lyrics, '[Verse]\n[big finish]');
 });
 
-test('the length ceiling: generous for a short sheet, never set for a long one, and only for a styled new song', () => {
+test('the length ceiling: off unless it is switched on; then wide for a short sheet, never set for a long one, and only for a styled new song', () => {
   const sheet = (lines) => `[Verse]\n${Array.from({ length: lines }, (_, index) => `Sung line number ${index + 1}`).join('\n')}`;
-  assert.equal(yue.yueLengthCapSeconds(sheet(16)), 222);
-  assert.equal(yue.yueLengthCapSeconds(sheet(4)), 168);
-  assert.equal(yue.yueLengthCapSeconds(sheet(20)), 240);
-  assert.equal(yue.yueLengthCapSeconds(sheet(30)), 330);
-  assert.equal(yue.yueLengthCapSeconds(sheet(31)), 339);
-  for (const long of [32, 45, 57, 66, 77]) assert.equal(yue.yueLengthCapSeconds(sheet(long)), undefined, `${long} lines`);
+  assert.equal(yue.yueLengthCapSeconds(sheet(16)), 289);
+  assert.equal(yue.yueLengthCapSeconds(sheet(4)), 218);
+  assert.equal(yue.yueLengthCapSeconds(sheet(21)), 324);
+  assert.equal(yue.yueLengthCapSeconds(sheet(22)), 335);
+  for (const long of [23, 32, 45, 57, 66, 77]) assert.equal(yue.yueLengthCapSeconds(sheet(long)), undefined, `${long} lines`);
   assert.equal(yue.yueLengthCapSeconds('[Verse]\n[Chorus]\n\n'), undefined, 'no sung line, no ceiling');
-  /* the measured takes it has to clear: a 16-line test sheet ran 158 s; nothing she made on 57 to 77 lines gets a ceiling */
-  assert.ok(yue.yueLengthCapSeconds(sheet(16)) > 158 * 1.3);
+  /* Review, Nov 10 2026. The measured takes it has to clear with room: a 16-line sheet ran 158 s, and three takes of one
+   * 21-line sheet ran 163, 199 and 229 s. The first formula left the longest of those at 86 percent of its ceiling. */
+  assert.ok(yue.yueLengthCapSeconds(sheet(16)) > 158 * 1.8);
+  assert.ok(yue.yueLengthCapSeconds(sheet(21)) > 229 * 1.4);
   /* tags, blank lines and bracket-only lines are not sung lines; a backing line is */
   assert.equal(yue.yueLengthCapSeconds('[Verse]\nla la\n\n[big]\n(ooh)\n[Chorus]\nla'), yue.yueLengthCapSeconds(sheet(3)));
   const short = { band: 'kids', lyrics: sheet(16) };
-  assert.equal(yue.yueWorkerInput(saved(short), ON).max_seconds, 222);
-  assert.equal(yue.yueWorkerInput(saved(short), { ...ON, YUE_STYLE_LENGTH_CAP: '0' }).max_seconds, undefined);
-  assert.equal(yue.yueWorkerInput(saved({ lyrics: sheet(16) }), ON).max_seconds, undefined, 'plain YuE2 writes a score: no ceiling');
-  assert.equal(yue.yueWorkerInput(saved({ ...short, reference_voice_url: COVER }), ON).max_seconds, undefined, 'a cover has its own length guard');
-  assert.equal(yue.yueWorkerInput(saved({ ...short, abc: 'X:1\nK:C\nCDEF|' }), ON).max_seconds, undefined);
-  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), ON).max_seconds, 222, 'the test sheet has 16 sung lines; a bracket-only line is not one');
-  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...ON, ...SHEET_ON }).max_seconds, 222, 'the same once its directions are lifted');
-  assert.equal(yue.yueWorkerInput(saved({ ...short, style_strength: 0 }), ON).max_seconds, undefined, 'strength 0 is plain YuE2');
+  /* off by default, and for anything but a plain 1 */
+  assert.equal(yue.yueLengthCapEnabled({}), false);
+  for (const off of [undefined, '', '0', 'off', 'yes', 'true'])
+    assert.equal(yue.yueWorkerInput(saved(short), { ...ON, YUE_STYLE_LENGTH_CAP: off }).max_seconds, undefined, String(off));
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), ON).max_seconds, undefined);
+  const CAP = { ...ON, YUE_STYLE_LENGTH_CAP: '1' };
+  assert.equal(yue.yueWorkerInput(saved(short), CAP).max_seconds, 289);
+  assert.equal(yue.yueWorkerInput(saved({ lyrics: sheet(16) }), CAP).max_seconds, undefined, 'plain YuE2 writes a score: no ceiling');
+  assert.equal(yue.yueWorkerInput(saved({ ...short, reference_voice_url: COVER }), CAP).max_seconds, undefined, 'a cover has its own length guard');
+  assert.equal(yue.yueWorkerInput(saved({ ...short, abc: 'X:1\nK:C\nCDEF|' }), CAP).max_seconds, undefined);
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), CAP).max_seconds, 289, 'the test sheet has 16 sung lines; a bracket-only line is not one');
+  assert.equal(yue.yueWorkerInput(saved({ band: 'soul' }), { ...CAP, ...SHEET_ON }).max_seconds, 289, 'the same once its directions are lifted');
+  assert.equal(yue.yueWorkerInput(saved({ ...short, style_strength: 0 }), CAP).max_seconds, undefined, 'strength 0 is plain YuE2');
 });
 
 test('a Soul or Kids direction that opens with the language says it once', () => {
@@ -346,6 +385,9 @@ test('a Soul or Kids direction that opens with the language says it once', () =>
   assert.equal(yue.yueLanguageOnce('English, English folk', undefined), 'English, English folk');
   assert.equal(yue.yueLanguageOnce('English, English folk', 'constructor'), 'English, English folk');
   assert.equal(yue.yueWorkerInput(saved({ script: 'English, folk, fiddle' }), ON).style, 'English, folk, fiddle', 'plain YuE2 keeps the direction whole');
+  /* Review, Nov 10 2026: "English, then Spanish in the chorus" is one instruction about two languages; it stays whole */
+  assert.equal(style('English, then Spanish in the chorus, slow', 'soul'), `${yue.yueStyles.soul.lead} English, then Spanish in the chorus, slow`);
+  assert.equal(style('English vocals, and Spanish ad-libs', 'soul'), `${yue.yueStyles.soul.lead} English vocals, and Spanish ad-libs`);
 });
 
 test('a plain cover keeping its chords asks the worker to name the score\'s key, unless Music direction names one', () => {

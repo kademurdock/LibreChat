@@ -55,22 +55,43 @@ test('engine delivery contracts separate compact YuE style from Lyria arrangemen
   const read = async () => ({ instructions: 'Write original songs with a distinct point of view.' });
   const yue = (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
   const lyria = (await musicWritingPrompt('Lyria format', { engine: 'lyria', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
-  assert.match(yue, /YuE2 direction is one line of 55 to 85 words in short comma-separated phrases/);
+  assert.match(yue, /YuE2 direction is one line of 35 to 55 words in short comma-separated phrases, not sentences, never more than 60 words/);
   assert.match(yue, /rhythm section, harmony bed, a lead or counter line, backing vocal treatment, production texture/);
   assert.match(yue, /a tempo as a number with BPM/);
+  assert.match(yue, /the lead vocal character with the words clear diction/);
+  assert.doesNotMatch(yue, /how the arrangement moves/);
+  /* Review, Nov 10 2026. Music to cover: no tempo number, because any BPM in Music direction stops the worker naming the
+   * score's measured tempo. Kids, Suno and Sona keep the short sentence their captions were shaped like. */
+  const contract = async (request) => (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write', ...request }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
+  const cover = await contract({ cover: true });
+  assert.match(cover, /35 to 55 words/);
+  assert.match(cover, /production texture\), and no tempo number\./);
+  assert.doesNotMatch(cover, /BPM/);
+  for (const band of ['kids', 'suno', 'sona']) assert.match(await contract({ band }), /YuE2 direction is 25 to 45 words in one or two compact sentences/, band);
+  for (const band of ['soul', 'none', '']) assert.match(await contract({ band }), /35 to 55 words/, band || 'no style');
+  const withEnv = async (env, request) => {
+    Object.assign(process.env, env);
+    try { return await contract(request); } finally { for (const key of Object.keys(env)) delete process.env[key]; }
+  };
+  assert.match(await withEnv({ YUE_RICH_DIRECTION: 'all' }, { band: 'kids' }), /35 to 55 words/);
+  const noBpm = await withEnv({ YUE_DIRECTION_BPM: '0' }, {});
+  assert.match(noBpm, /and no tempo number\./);
+  assert.doesNotMatch(noBpm, /BPM/);
+  const moving = await withEnv({ YUE_DIRECTION_MOVEMENT: '1' }, {});
+  assert.match(moving, /one line of 50 to 70 words .* never more than 75 words: .*, two phrases about how the arrangement moves, and last a tempo as a number with BPM\./);
   assert.doesNotMatch(yue, /25 to 45 words/);
   /* Nov 10 2026, round two: YUE_RICH_DIRECTION=0 puts the old sentence back; formatting her own words never gets the rich one. */
   process.env.YUE_RICH_DIRECTION = '0';
   try {
     const plain = (await musicWritingPrompt('YuE format', { engine: 'yue2', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
     assert.match(plain, /YuE2 direction is 25 to 45 words in one or two compact sentences/);
-    assert.doesNotMatch(plain, /55 to 85 words/);
+    assert.doesNotMatch(plain, /35 to 55 words/);
   } finally {
     delete process.env.YUE_RICH_DIRECTION;
   }
   const ace = (await musicWritingPrompt('ACE format', { engine: 'ace', mode: 'write' }, read)).split('SOUND BOOTH DELIVERY CONTRACT')[1];
   assert.match(ace, /ACE-Step XL direction is 25 to 45 words in one or two compact sentences/);
-  assert.doesNotMatch(ace, /55 to 85 words/);
+  assert.doesNotMatch(ace, /35 to 55 words/);
   assert.doesNotMatch(yue, /the technical line says about four minutes|backing vocals and arrangement dynamics as appropriate/);
   assert.match(lyria, /backing vocals and arrangement dynamics as appropriate/);
   assert.match(lyria, /the technical line says about four minutes/);
@@ -837,10 +858,31 @@ test('Part 293 review: the writing lane\'s music grammar describes the voice, th
   const yue = systemPrompt({ engine: 'yue2', mode: 'write' });
   assert.match(yue, /YUE2 MUSIC FORMAT/);
   assert.doesNotMatch(yue, /LYRIA 3.5 MUSIC BRIEF FORMAT|THE TECHNICAL LINE last/);
-  assert.match(yue, /Write the style direction as ONE line of 55 to 85 words made of short comma-separated phrases, not sentences/);
-  for (const layer of ['the rhythm section', 'the harmony bed', 'one lead or counter line', 'the backing vocal treatment', 'the production texture and space', 'the tempo as a number followed by BPM', 'how the arrangement moves across the song'])
+  assert.match(yue, /Write the style direction as ONE line of 35 to 55 words made of short comma-separated phrases, not sentences, never more than 60 words in all/);
+  for (const layer of ['the rhythm section', 'the harmony bed', 'one lead or counter line', 'the backing vocal treatment', 'the production texture and space', 'and last, the tempo as a number followed by BPM', 'then the words clear diction', 'do not call the delivery shouted, whispered, mumbled, slurred, strained or full of runs', 'Name what plays, not when'])
     assert.ok(yue.includes(layer), layer);
   assert.doesNotMatch(yue, /concise style direction|Keep the style concise/);
+  /* Review, Nov 10 2026: movement phrases are off, the tempo comes last, and music to cover gets no tempo number at all. */
+  assert.doesNotMatch(yue, /how the arrangement moves|what drops out|how it ends/);
+  assert.ok(yue.indexOf('the production texture and space') < yue.indexOf('the tempo as a number followed by BPM'), 'the tempo is the last thing in the line');
+  const coverLine = systemPrompt({ engine: 'yue2', mode: 'write', cover: true });
+  assert.match(coverLine, /ONE line of 35 to 55 words/);
+  assert.doesNotMatch(coverLine, /followed by BPM/);
+  assert.match(coverLine, /Give no tempo number and no BPM: the tempo of the attached music is measured and used\./);
+  for (const band of ['kids', 'suno', 'sona']) assert.match(systemPrompt({ engine: 'yue2', mode: 'write', band }), /Write a concise style direction in 25 to 45 words/, band);
+  for (const band of ['soul', 'none', undefined]) assert.match(systemPrompt({ engine: 'yue2', mode: 'write', band }), /ONE line of 35 to 55 words/, String(band));
+  assert.match(loadBooth({ reply: () => '', env: { YUE_RICH_DIRECTION: 'all' } }).internals.systemPrompt({ engine: 'yue2', mode: 'write', band: 'kids' }), /ONE line of 35 to 55 words/);
+  const noBpmLine = loadBooth({ reply: () => '', env: { YUE_DIRECTION_BPM: '0' } }).internals.systemPrompt({ engine: 'yue2', mode: 'write' });
+  assert.doesNotMatch(noBpmLine, /followed by BPM/);
+  assert.match(noBpmLine, /Give no tempo number and no BPM\. Give no key/);
+  const movingLine = loadBooth({ reply: () => '', env: { YUE_DIRECTION_MOVEMENT: '1' } }).internals.systemPrompt({ engine: 'yue2', mode: 'write' });
+  assert.match(movingLine, /ONE line of 50 to 70 words .* never more than 75 words in all/);
+  assert.match(movingLine, /then two phrases about how the arrangement moves across the song: what it opens with and where it lifts or fills out; and last, the tempo/);
+  assert.match(movingLine, /Never say what drops out or how the song ends\./);
+  /* the route tells the desk about the Style and the music to cover, and nothing else decides the line */
+  const boothSource = readFileSync(new URL('../../../../api/server/routes/kadeSoundBooth.js', import.meta.url), 'utf8');
+  assert.match(boothSource, /systemPrompt\(\{ engine, mode, band: b\.band, cover: coverDraft \}\), \{ engine, mode, title: requestedTitle, band: typeof b\.band === 'string' \? b\.band : undefined, cover: coverDraft \}/);
+  assert.match(boothSource, /const coverDraft = engine === 'yue2' && !!\(b\.reference_voice_url \|\| \(typeof b\.abc === 'string' && b\.abc\.trim\(\)\)\);/);
   /* Nov 10 2026, round two: only YuE2's writing lane. Her own words being formatted, and ACE-Step XL, keep the old line. */
   assert.match(systemPrompt({ engine: 'yue2', mode: 'format' }), /Write a concise style direction in 25 to 45 words/);
   assert.match(systemPrompt({ engine: 'ace', mode: 'write' }), /ACE-STEP XL MUSIC FORMAT \(the only format you may output\):\nWrite a concise style direction in 25 to 45 words/);
@@ -848,7 +890,7 @@ test('Part 293 review: the writing lane\'s music grammar describes the voice, th
   const plain = loadBooth({ reply: () => '', env: { YUE_RICH_DIRECTION: '0' } }).internals.systemPrompt({ engine: 'yue2', mode: 'write' });
   assert.match(plain, /YUE2 MUSIC FORMAT \(the only format you may output\):\nWrite a concise style direction in 25 to 45 words, one or two compact sentences: language, genre, mood, defining instruments, lead vocal character and rhythmic feel\. Do not narrate the arrangement section by section\. Keep production directions out of the lyrics\./);
   assert.match(plain, /Keep the style concise and use the lyric structure for a complete song\./);
-  assert.doesNotMatch(plain, /55 to 85 words/);
+  assert.doesNotMatch(plain, /35 to 55 words/);
   assert.match(systemPrompt({ engine: 'yue2', mode: 'format' }), /Never invent lyrics/);
 });
 

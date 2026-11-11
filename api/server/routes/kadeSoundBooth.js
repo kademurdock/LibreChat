@@ -859,22 +859,47 @@ function cleanLyrics(raw) {
 
 /* Nov 10 2026, round two (her words: scores are "not very creative", she wants "more layers, more creativity"). The desk was
  * told to write a YuE2 direction of 25 to 45 words with "defining instruments" and no tempo, while YuE2's own guide puts
- * genre, instruments, vocal character, language and tempo in the style and its own example styles name every instrument.
- * When the desk WRITES a YuE2 song it is now asked for one line of short tags that names the layers, a tempo and how the
- * arrangement moves. It names the shape and shows no sample line, because a sample gets handed back. Only YuE2, and only
- * the writing lane: her own words being formatted are never padded out, and ACE-Step XL keeps its line.
- * YUE_RICH_DIRECTION=0 puts the 25-to-45-word line back, word for word (writing.ts reads the same switch). */
+ * genre, instruments, vocal character, language and tempo in the style. When the desk WRITES a YuE2 song it is now asked
+ * for one line of short tags that names the layers. It names the shape and shows no sample line, because a sample gets
+ * handed back. Only YuE2, and only the writing lane: her own words being formatted are never padded out, and ACE-Step XL
+ * keeps its line.
+ * Review, Nov 10 2026 (two reviewers, before anything went live), and what changed because of it:
+ *   - Upstream's five SUNG example styles are 10 to 24 words and none says how the song moves, so the line is 35 to 55
+ *     words, not 55 to 85 (real drafts of the longer one came back at 86 to 117).
+ *   - A recording or score to cover: the line gives NO tempo number. Any BPM in Music direction stops the worker naming the
+ *     score's measured tempo, and a guessed number would then sit beside a score at another tempo.
+ *   - "How the arrangement moves" is the kind of text one of three test takes fell apart with, so it is off unless
+ *     YUE_DIRECTION_MOVEMENT=1, and even then never says what drops out or how the song ends.
+ *   - The voice is described by tone with the words "clear diction", and the tempo comes last, where the trained styles'
+ *     captions had it.
+ *   - Kids, Suno and Sona were taught on short fixed captions, so they keep the 25-to-45-word line; no Style and Soul get
+ *     the new one. YUE_RICH_DIRECTION=all gives it to every Style.
+ * YUE_RICH_DIRECTION=0 puts the 25-to-45-word line back everywhere, word for word. YUE_DIRECTION_BPM=0 leaves the tempo
+ * number out of every direction. writing.ts reads the same switches for its own sentence about the direction. */
 const YUE_STYLE_LINE_PLAIN = 'Write a concise style direction in 25 to 45 words, one or two compact sentences: language, genre, mood, defining instruments, lead vocal character and rhythmic feel. Do not narrate the arrangement section by section.';
-const YUE_STYLE_LINE_RICH = 'Write the style direction as ONE line of 55 to 85 words made of short comma-separated phrases, not sentences, never more than 85 words in all, in this order: the language of the singing, as its name alone; the genre and era; the mood; the pace in words, then the tempo as a number followed by BPM; the lead vocal, as female lead vocal or male lead vocal and then its tone and delivery; the rhythm section, meaning what the drums or percussion play and what the bass does; the harmony bed, meaning the chordal instruments or pads under the voice; one lead or counter line, meaning the instrument that answers the voice or carries a hook; the backing vocal treatment; the production texture and space; and last, two or three phrases about how the arrangement moves across the song: what it opens with, where it lifts or fills out, what drops out, how it ends. Choose every instrument and playing style for this song and name it exactly, never a generic band; a sparse song still names its few layers. Give no key unless the request names one. For an instrumental, leave out the vocal phrases. Do not narrate the arrangement section by section and do not put section tags in the direction.';
-function yueRichDirection(env = process.env) {
-  return !['0', 'false', 'no', 'off'].includes(String(env.YUE_RICH_DIRECTION ?? '').trim().toLowerCase());
+function yueDirectionOff(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value ?? '').trim().toLowerCase());
+}
+/** Whether the desk writes the layered line for this Style: no Style and Soul, or every Style when asked for "all". */
+function yueRichDirection(band, env = process.env) {
+  if (yueDirectionOff(env.YUE_RICH_DIRECTION)) return false;
+  if (String(env.YUE_RICH_DIRECTION ?? '').trim().toLowerCase() === 'all') return true;
+  const style = String(band ?? '').trim().toLowerCase();
+  return !style || style === 'none' || style === 'soul';
+}
+/** The layered line. `cover`: a recording or a score is attached, so the tempo is the score's and none is written. */
+function yueStyleLineRich({ cover = false } = {}, env = process.env) {
+  const tempo = !cover && !yueDirectionOff(env.YUE_DIRECTION_BPM);
+  const movement = String(env.YUE_DIRECTION_MOVEMENT ?? '').trim() === '1';
+  return `Write the style direction as ONE line of ${movement ? '50 to 70' : '35 to 55'} words made of short comma-separated phrases, not sentences, never more than ${movement ? '75' : '60'} words in all, in this order: the language of the singing, as its name alone; the genre and era; the mood; the pace in words; the lead vocal, as female lead vocal or male lead vocal, then its tone in two or three plain words, then the words clear diction; the rhythm section, meaning what the drums or percussion play and what the bass does; the harmony bed, meaning the chordal instruments or pads under the voice; one lead or counter line, meaning the instrument that answers the voice or carries a hook; the backing vocal treatment; the production texture and space${movement ? '; then two phrases about how the arrangement moves across the song: what it opens with and where it lifts or fills out' : ''}${tempo ? '; and last, the tempo as a number followed by BPM' : ''}. Choose every instrument and playing style for this song and name it exactly, never a generic band; a sparse song still names its few layers. Describe the voice by its tone, not by effort: do not call the delivery shouted, whispered, mumbled, slurred, strained or full of runs unless the request asks for exactly that.${tempo ? '' : cover ? ' Give no tempo number and no BPM: the tempo of the attached music is measured and used.' : ' Give no tempo number and no BPM.'} Give no key unless the request names one. For an instrumental, leave out the vocal phrases.${movement ? ' Never say what drops out or how the song ends.' : ' Name what plays, not when: do not say how the song opens, builds, drops or ends.'} Do not narrate the arrangement section by section and do not put section tags in the direction.`;
 }
 
-function systemPrompt({ engine, mode }) {
+function systemPrompt({ engine, mode, band, cover }) {
   const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
   /* ACE-Step XL takes the YuE2 desk path unchanged (the same style line, Lyrics: heading and section tags); only the
    * name in the heading differs, and the YuE2 text below is byte-identical to what it was. */
-  const styleLine = engine === 'yue2' && mode === 'write' && yueRichDirection() ? YUE_STYLE_LINE_RICH : YUE_STYLE_LINE_PLAIN;
+  const rich = engine === 'yue2' && mode === 'write' && yueRichDirection(band);
+  const styleLine = rich ? yueStyleLineRich({ cover: !!cover }) : YUE_STYLE_LINE_PLAIN;
   const yue = `${engine === 'ace' ? 'ACE-STEP XL' : 'YUE2'} MUSIC FORMAT (the only format you may output):
 ${styleLine} Keep production directions out of the lyrics. Do not use XML, dialogue notation, a Negative Tag Box, trained-style trigger words or a Lyria timeline. The lyrics and section layout determine the song's length; a prose duration is a creative aim, not an exact timing control.
 ${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. Backing vocals and ad-libs go in (parentheses): after the lead phrase on the same line, or on their own line when the backing voice sings alone. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
@@ -883,7 +908,7 @@ No code fence, no preamble, no headings other than Lyrics:.`;
   const job =
     mode === 'write'
       ? (engine === 'lyria' || engine === 'yue2' || engine === 'ace')
-        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the direction for them in the format below. If they did not say how long, aim for a full song of about four minutes when it has sung words, or two minutes when it is instrumental.${engine === 'lyria' ? ' Say the requested length in the technical line.' : engine === 'yue2' && yueRichDirection() ? ' Write the style line in the order the format gives and use the lyric structure for a complete song.' : ' Keep the style concise and use the lyric structure for a complete song.'} If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
+        ? `The user has given you a DESCRIPTION of a piece of music they want made. Write the direction for them in the format below. If they did not say how long, aim for a full song of about four minutes when it has sung words, or two minutes when it is instrumental.${engine === 'lyria' ? ' Say the requested length in the technical line.' : rich ? ' Write the style line in the order the format gives and use the lyric structure for a complete song.' : ' Keep the style concise and use the lyric structure for a complete song.'} If they asked for singing and gave no words, write the words under the "Lyrics:" heading.`
         : engine === 'seed'
           ? `The user has given you a DESCRIPTION of a piece of audio they want made. Write the actual piece in the format below. Honor their requested form and length, including a short ident, jingle or a single narrated voice. When they ask for a story, scene or conversation with people, and have not asked for narration, a monologue or no dialogue, write a developed scene carried by sustained, natural dialogue, with a complete action and ending. Give the people distinct wants and concrete things to do; let their replies change what happens instead of narrating a synopsis of their conversation. Unless they ask for a short piece, use the available space: usually 1,600 to 2,000 characters including concise directions, within the 2,048-character cap. Vary the action and pacing to suit this particular idea; do not impose a two-turn exchange, an obligatory twist or a stock closing line. For music, ambience or effects without speech, keep it wordless and do not pad the description to reach that character range. Do not claim an exact output duration.`
           : `The user has given you a DESCRIPTION of something they want made. Write it for them: invent the words, keep it the length they asked for (if they did not say, aim for 30 to 60 seconds of speech, which is roughly 80 to 160 words), and shape it into the format below.`
@@ -2192,7 +2217,9 @@ async function scriptHandler(req, res) {
      * below reuses this same system prompt, so it keeps the same note. */
     const audience = mode === 'write' && songEngines.includes(engine) ? await songAudience(req.user, { band: b.band }) : null;
     const requestedTitle = typeof b.title === 'string' ? b.title.trim().slice(0, 80) : '';
-    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode }), { engine, mode, title: requestedTitle }, getAgent, audience);
+    /* Round two: the desk's YuE2 direction depends on the Style picked and on whether there is music to cover. */
+    const coverDraft = engine === 'yue2' && !!(b.reference_voice_url || (typeof b.abc === 'string' && b.abc.trim()));
+    const writingSystem = await musicWritingPrompt(systemPrompt({ engine, mode, band: b.band, cover: coverDraft }), { engine, mode, title: requestedTitle, band: typeof b.band === 'string' ? b.band : undefined, cover: coverDraft }, getAgent, audience);
     const draftBudgetMs = draftTimeoutMs(writingSettings.timeoutMs, wantsWords);
     let first = await callModel({
       ...writingSettings,

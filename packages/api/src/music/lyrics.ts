@@ -534,8 +534,14 @@ async function scribeLyrics(buffer: Buffer, mime: string, seconds: number): Prom
  * instrument and how the piece moves. The Oct 11 line named "four to six" things in 240 characters, so a cover's Music
  * direction was thinner than anything she types herself. The rich line keeps the same four fixed parts (the trained
  * styles' caption shape, which yueStyleDirection reads) and then names the layers: voice, rhythm section, harmony bed,
- * lead or counter line, backing vocals, production, and how the arrangement moves. It is still a list of short tags, never
- * sentences, and it still gives no BPM: a cover's worker names the SCORE's own tempo in the style unless Music direction
+ * lead or counter line, backing vocals and production. It is still a list of short tags, never sentences.
+ * Review, Nov 10 2026, before it went live: the first rich line asked for nine to twelve phrases and for how the arrangement
+ * moves and ends. A fixed count made the listener fill slots (the same recording got a flute once and finger snaps the
+ * next time), and accepted lines said "ends abruptly", "fades out on repeated loop" and "whispered", which name YuE2's own
+ * failures: a take that stops dead and a take that repeats to the limit. So the line asks for UP TO ten, puts "only what
+ * is clearly audible" first, asks for no movement at all, and the check leaves out any phrase that still says one of
+ * those things (soundRisky).
+ * It still gives no BPM: a cover's worker names the SCORE's own tempo in the style unless Music direction
  * already holds a BPM, so a number guessed by ear here would push the measured one out.
  * KADE_SOUND_RICH=0 puts the Oct 11 line back, word for word, with its 240 characters and its own cache version. */
 export function soundRichEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -548,7 +554,7 @@ const soundVersionNow = (): string => (soundRichEnabled() ? soundVersionRich : s
 const soundPhrasesPlain =
   'then four to six short phrases about the voice quality, the instruments and the production.';
 const soundPhrasesRich =
-  'then nine to twelve short phrases that name the layers of the arrangement, in this order: one or two about the voice quality and delivery; the rhythm section, meaning what the drums or percussion play and what the bass does; the harmony bed, meaning the chordal instruments or pads under the voice; any lead or counter line, meaning an instrument that answers the voice or carries a hook; the backing vocal treatment if there is any; the production texture and space; and last, one or two phrases about how the arrangement moves across the song: what it opens with, where it fills out or drops back, how it ends. Name only what is clearly audible. Leave out a layer the recording does not have: never write none, and never name something that is absent.';
+  'then up to ten short phrases that name the layers of the arrangement you can clearly hear, in this order: one or two about the tone of the voice; the rhythm section, meaning what the drums or percussion play and what the bass does; the harmony bed, meaning the chordal instruments or pads under the voice; any lead or counter line, meaning an instrument that answers the voice or carries a hook; the backing vocal treatment if there is any; the production texture and space. Name only what is clearly audible: that rule comes before the count, a guessed phrase is worse than a missing one, and five true phrases make a good line. Leave out a layer the recording does not have: never write none, and never name something that is absent. Name what plays, not when: do not say how the recording opens, builds, drops out, repeats, fades or ends.';
 const soundPromptWith = (phrases: string): string =>
   `Listen to this recording and describe how it sounds in ONE line, in exactly this shape: <language of the singing>, <one or two genre or sub-genre words>, <slow tempo, mid-tempo or up-tempo>, <female lead vocal, male lead vocal, female and male vocals or group vocals>, ${phrases}${soundPromptRules}`;
 const soundPromptRules =
@@ -589,6 +595,10 @@ const soundPartWordsRich = 9;
 const soundPartCharsRich = 64;
 /** A phrase about something that is not there. */
 const soundAbsent = /^(?:none|no|without|absent|lacks?)\b/i;
+/** A phrase that names one of YuE2's own failures (a take that stops dead, repeats, or mumbles) or how the recording moves
+ * in time. Left out of the rich line; the rest of the line stays. */
+const soundRisky =
+  /\b(?:abrupt\w*|repeat\w*|loop\w*|fad(?:e|es|ed|ing)|whisper\w*|mumbl\w*|slurr\w*|ends|ending|drops? out|cuts? off)\b/i;
 /** The message shown when a description could not be made. */
 const soundMissNote = 'I could not describe the sound this time; type it yourself.';
 const soundLateNote =
@@ -1002,7 +1012,9 @@ export function checkSoundDirection(raw: string): SoundCheck {
    * Naming what is absent tends to add it, so in the rich line such a phrase is left out and the rest stays. */
   const kept = [
     free[0],
-    ...free.slice(1).filter((part) => !soundFault(part) && !(rich && soundAbsent.test(part))),
+    ...free
+      .slice(1)
+      .filter((part) => !soundFault(part) && !(rich && (soundAbsent.test(part) || soundRisky.test(part)))),
   ];
   if (soundHasName(kept)) return soundReject('name');
   const others = [...new Set(kept.map(soundLower))];
