@@ -371,6 +371,8 @@ const deleteUserController = async (req, res) => {
     await db.deleteAllUserMemories(user.id);
     /* KADE SOUL (Oct 16 2026): moments and carried moods go with the account. */
     await require('~/server/services/kadeSoul').clearSoul(user.id).catch(() => {});
+    /* Nov 10 2026: the nightly card check keeps a mark and a quote per card; those go too. */
+    await require('~/server/services/kadeCardCheck').clearChecks(user.id).catch(() => {});
     await db.deleteUserPrompts(user.id);
     await db.deleteUserSkills(user.id);
     await deleteUserMcpServers(user.id);

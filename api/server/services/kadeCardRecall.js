@@ -708,6 +708,7 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
   const deadlineOn = embedDeadlineOn();
   const embedBy = embedDeadlineAt(t0, req && req._kadeTurnStartedAt);
   let embedLost = false;
+  let droppedRepeats = 0;
   try {
     const work = (async () => {
       // One live snapshot per bucket for THIS lookup only. Reuse it for the
@@ -726,6 +727,58 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
       if (!cardsOn && diaryN === 0) {
         return null;
       }
+      /* Nov 10 2026 (N5) -- ONE FACT, ONCE PER TURN. A recalled card or logbook
+       * line that only repeats a card already in the head, or the relationship
+       * summary, is left out of this turn's tail (services/kadeRecallDedupe.js
+       * has the rule and why it is tight). Nothing in memory is changed.
+       *
+       * NO ADDED WAIT: the summary (and, for a character whose cards all ride
+       * the head, the cards) are asked for HERE, before the embed is waited on,
+       * and only looked at afterwards. A read that is not back by then is not
+       * used. Off: KADE_RECALL_ONE_FACT=0. A missing module reads as off. */
+      let oneFact = null;
+      let summarySeen = null;
+      let headCardsSeen = null;
+      if (!noEmbed) {
+        try {
+          oneFact = require('./kadeRecallDedupe');
+          if (!oneFact.enabled(process.env)) oneFact = null;
+        } catch (_e) {
+          oneFact = null;
+        }
+      }
+      if (oneFact) {
+        try {
+          if (agentId && process.env.KADE_MEMORY_SUMMARY !== '0') {
+            const { getMemorySummary } = require('~/models/kadeMemorySummary');
+            summarySeen = oneFact.peekable(
+              Promise.resolve(getMemorySummary(userId, agentId)).then((row) => String((row && row.summary) || '')),
+            );
+          }
+        } catch (_e) {
+          summarySeen = null;
+        }
+        if (!cardsOn) {
+          headCardsSeen = oneFact.peekable(
+            Promise.all([readBucket(null), agentId ? readBucket(agentId) : Promise.resolve([])]).then(([a, b]) =>
+              [...a, ...b].map((m) => String(m.value ?? '')),
+            ),
+          );
+        }
+      }
+      let headPinned = [];
+      let headPlacesNow = null;
+      const headPlaces = () => {
+        if (!oneFact) return [];
+        if (!headPlacesNow) {
+          headPlacesNow = oneFact.headPlaces({
+            pinned: cardsOn ? headPinned : (headCardsSeen && headCardsSeen.peek()) || [],
+            summary: (summarySeen && summarySeen.peek()) || '',
+          });
+        }
+        return headPlacesNow;
+      };
+      const recalledValues = [];
       /* ONE embed for the whole turn. */
       /* Part 132: the same vector the tool-retrieval step already took for
        * this turn (memo on req) — one embed per turn, shared. */
@@ -809,6 +862,14 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
         const keys = new Set(
           [...liveByKey].filter(([, m]) => !pinnedNow(m)).map(([key]) => key),
         );
+        /* N5: what the head already carries. On a small seat the split is not
+         * used at all (getMemorySplit returns null at or under the token floor)
+         * and EVERY own and shared card rides the head, so every one of them
+         * counts as already said. */
+        const wholeHead =
+          !focused && [...shared, ...own].reduce((sum, m) => sum + (m.tokenCount || 0), 0) <= minRagTokens();
+        const inHead = (m) => !m._secondhand && (wholeHead || pinnedNow(m));
+        headPinned = [...liveByKey.values()].filter(inHead).map((m) => String(m.value ?? ''));
         const cardHits = qv && keys.size > 0
           ? await searchCardVectors(userId, agentId, qv, {
               limit: focused ? 3 : CARD_TOP_K,
@@ -840,6 +901,11 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
             if (pinnedNow(m)) {
               continue;
             }
+            /* N5: the head already says this (a pinned card or the summary). */
+            if (oneFact && (inHead(m) || oneFact.alreadySaid(m.value, headPlaces(), oneFact.overlapNeeded(process.env)))) {
+              droppedRepeats += 1;
+              continue;
+            }
             const line =
               '- [' + fmtDate(m.updated_at) + '] ' + m.value + describeStale(m) +
               (m._secondhand ? ` (secondhand — they told this to ${m._secondhand}, not to you)` : '') + '\n';
@@ -848,6 +914,7 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
             }
             block += line;
             added += 1;
+            recalledValues.push(String(m.value ?? ''));
             /* The audit names a secondhand card as such (keys only, never a
              * value) so "did the share fire" is answerable from the audit. */
             surfacedCards.push((m._secondhand ? 'secondhand:' : '') + String(m.key));
@@ -955,10 +1022,18 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
           const seenText = new Set();
           const normText = (t) =>
             String(t || '').replace(/^\[from (?:her|their|his) talks with [^\]]+\]\s*/i, '').trim().toLowerCase();
+          /* N5: a logbook line is also left out when the head, or a card recalled
+           * just above in this same tail, already says it. */
+          const need = oneFact ? oneFact.overlapNeeded(process.env) : 1;
+          const recalledPlaces = oneFact && recalledValues.length ? oneFact.headPlaces({ pinned: recalledValues }) : [];
           for (const h of hits) {
             const tkey = normText(h.text);
             if (seenText.has(tkey)) continue;
             seenText.add(tkey);
+            if (oneFact && (oneFact.alreadySaid(h.text, headPlaces(), need) || oneFact.alreadySaid(h.text, recalledPlaces, need))) {
+              droppedRepeats += 1;
+              continue;
+            }
             const foreign =
               h.agentId && agentId && String(h.agentId) !== String(agentId) && shareNames.has(String(h.agentId));
             const line =
@@ -1044,6 +1119,7 @@ async function getRecallTailBlock({ userId, agentId, userText, previousUserText,
           ' ms=' +
           ms +
           (embedLost ? ' embed=late' : '') +
+          (droppedRepeats ? ' repeats=' + droppedRepeats : '') +
           (process.env.KADE_RECALL_AUDIT === '0'
             ? ''
             : ' cards=[' +

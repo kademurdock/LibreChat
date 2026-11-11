@@ -1008,8 +1008,27 @@ function keeperFloor() {
   return num('KADE_JEV_KEEPER_FLOOR', 0.3);
 }
 
-/** Pure, so a test can hold the rule still: may the keeper be skipped? */
-function keeperGateDecide(v, floor = keeperFloor()) {
+/* Nov 10 2026: THE LOGBOOK QUESTION GETS ITS OWN, LOWER FLOOR.
+ * A hand read of every skipped turn of Nov 4 to Nov 10 that could still be
+ * found (35 of 58; counts and scores only are kept, in keeper-diagnosis.json
+ * in the project folder): one turn held a real milestone and was skipped with
+ * log=0.16 and everything else under 0.10. The card, promise and moment
+ * readings between 0.15 and 0.30 were all noise (server-written prompts, a
+ * phone line test), so those three keep the 0.30 floor. Only the logbook
+ * reading moves: at or above this floor the keeper runs. In that week it would
+ * have run the keeper 5 more times in 7 days (79 to 84 of 137 turns).
+ * The existing setting still rules: the logbook floor can never sit above
+ * KADE_JEV_KEEPER_FLOOR. Off: KADE_JEV_KEEPER_LOG_FLOOR=0.30 (or any number at
+ * or above the main floor) is the old single floor, exactly. */
+function keeperLogFloor(floor = keeperFloor()) {
+  const own = num('KADE_JEV_KEEPER_LOG_FLOOR', 0.15);
+  return own >= 0 && own < floor ? own : floor;
+}
+
+/** Pure, so a test can hold the rule still: may the keeper be skipped?
+ * `logFloor` defaults to `floor`, so a caller that passes one floor gets the
+ * single-floor rule it always got. */
+function keeperGateDecide(v, floor = keeperFloor(), logFloor = floor) {
   if (!v) return false;
   const { card, log, promise, moment } = v;
   for (const p of [card, log, promise]) {
@@ -1018,7 +1037,8 @@ function keeperGateDecide(v, floor = keeperFloor()) {
   /* moment is optional (older callers, moments switched off); when it is there it can only keep the keeper running. */
   if (moment !== undefined && moment !== null && (typeof moment !== 'number' || !(moment >= 0 && moment <= 1))) return false;
   const momentLow = typeof moment === 'number' ? moment < floor : true;
-  return card < floor && log < floor && promise < floor && momentLow;
+  const logLow = log < (typeof logFloor === 'number' && logFloor >= 0 && logFloor < floor ? logFloor : floor);
+  return card < floor && logLow && promise < floor && momentLow;
 }
 
 /**
@@ -1044,7 +1064,7 @@ async function keeperGate(messages, { ask = jev.ask, timeoutMs } = {}) {
     };
     /* The gate may be off while the reading still happens: that is the shadow,
      * and it is what keeps producing lines to audit. */
-    const skip = process.env.KADE_JEV_KEEPER_GATE === '0' ? false : keeperGateDecide(scores);
+    const skip = process.env.KADE_JEV_KEEPER_GATE === '0' ? false : keeperGateDecide(scores, keeperFloor(), keeperLogFloor());
     return { skip, scores };
   } catch (_) {
     return { skip: false, scores: null };
@@ -1068,7 +1088,11 @@ function keeperGateLog(scores, { skipped, attachments, logged, failed, messageId
       ? `card=${scores.card.toFixed(2)} log=${scores.log.toFixed(2)} promise=${scores.promise.toFixed(2)}` +
         (typeof scores.moment === 'number' ? ` moment=${scores.moment.toFixed(2)}` : '')
       : 'card=? log=? promise=? (jev silent)';
-    log(`[kadeJev][keeper-gate] ${n} floor=${keeperFloor().toFixed(2)} keeper=${wrote} msg=${messageId || '?'}`);
+    /* The logbook floor is named at the END of the line, and only when it differs, so anything
+     * that reads "floor=0.30 keeper=..." keeps reading it. */
+    const logFloor = keeperLogFloor();
+    const tail = logFloor < keeperFloor() ? ` logfloor=${logFloor.toFixed(2)}` : '';
+    log(`[kadeJev][keeper-gate] ${n} floor=${keeperFloor().toFixed(2)} keeper=${wrote} msg=${messageId || '?'}${tail}`);
   } catch (_) {
     /* the gate never throws into the keeper */
   }
@@ -1739,7 +1763,7 @@ module.exports = {
   AD_FRAME_Q, decideAdFromFrame,
   REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,
-  keeperFloor, keeperGateDecide, keeperGate, keeperGateLog,
+  keeperFloor, keeperLogFloor, keeperGateDecide, keeperGate, keeperGateLog,
   TOOL_NEEDS, toolQuestion, toolsShadow,
   SAME_IDEA_Q, ideaKnobs, sameIdea,
   SAME_REPORT_Q, reportText, sameReports,

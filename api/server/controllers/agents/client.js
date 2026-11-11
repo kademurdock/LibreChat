@@ -1359,6 +1359,27 @@ class AgentClient extends BaseClient {
         });
         if (result.ok) {
           this._kadeKeeperLogged = true;
+          /* Nov 10 2026 (N2): the line the keeper just wrote is also why the
+           * character feels the way it does about this talk. A short piece of
+           * it is stored beside the mood, for this person and this character
+           * only (services/kadeSoul.js noteMoodReason has the rules). After the
+           * reply, never waited on, no model. KADE_SOUL_MOOD_REASON=0. */
+          try {
+            if (activeAgentId && !isEphemeralAgentId(activeAgentId)) {
+              require('~/server/services/kadeSoul')
+                .noteMoodReason({
+                  userId,
+                  agentId: activeAgentId,
+                  req: this.options.req,
+                  conversationId,
+                  text,
+                  offRecord: this.memoryOffRecord,
+                })
+                .catch(() => {});
+            }
+          } catch (_) {
+            /* a reason never costs anyone their logbook line */
+          }
         }
         return result;
       },
@@ -1751,6 +1772,24 @@ class AgentClient extends BaseClient {
       }
     } catch (e) {
       logger.warn('[kadeSoul] after-reply hook skipped:', e.message);
+    }
+    /* SAME-DAY MEMORY (Nov 10 2026, N1): the reply is done, so the quiet timer
+     * for this person and character starts over. When the conversation has been
+     * quiet for a while and had enough turns today, the relationship summary
+     * gets a light refresh, at most twice a day (services/kadeSameDayMemory.js).
+     * This line only sets a timer: no database, no model, nothing waited on.
+     * KADE_SAME_DAY_MEMORY=0. */
+    try {
+      if (this.processMemory && this.options?.agent?.id && this.options?.req?.user?.id && !isEphemeralAgentId(this.options.agent.id)) {
+        require('~/server/services/kadeSameDayMemory').noteTurn({
+          userId: String(this.options.req.user.id),
+          agentId: this.options.agent.id,
+          req: this.options.req,
+          offRecord: this.memoryOffRecord,
+        });
+      }
+    } catch (_) {
+      /* a timer that cannot start costs nobody their reply */
     }
     const metadata = this.buildResponseMetadata();
     return metadata ? { completion, metadata } : { completion };
