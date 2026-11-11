@@ -882,6 +882,14 @@ async function keepMoment({ userId, agentId, quote, speaker, kind, why, conversa
   if (q.length < 3 || q.length > 200) return { ok: false, error: 'a moment is a short quote, 3 to 200 characters' };
   if (!userId || !agentId) return { ok: false, error: 'missing person or character' };
   if (!quoteInEvidence(q, evidence)) return { ok: false, error: 'those words are not in the conversation; keep only what was really said' };
+  /* Card 8 (Nov 11 2026): never keep a moment that carries a fact the person asked to forget. */
+  try {
+    if (await require('./kadeKnownTombstones').blocks(userId, `${q}\n${String(why || '')}`)) {
+      return { ok: false, error: 'they asked for that to be forgotten' };
+    }
+  } catch (_) {
+    /* kept as before */
+  }
   const ds = require('@librechat/data-schemas');
   const source =
     (ds.memorySourceStorage && ds.memorySourceStorage.getStore && ds.memorySourceStorage.getStore()) ||

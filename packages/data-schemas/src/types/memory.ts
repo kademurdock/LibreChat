@@ -8,6 +8,10 @@ export interface IMemoryEntry extends Document {
   sourceConversationIds?: string[];
   sourceMessageId?: string;
   sourceKind?: string;
+  /** KADE Nov 11 2026 (card 8): 'told' | 'errand' | 'mail'; absent means 'told'. */
+  knownSource?: 'told' | 'errand' | 'mail';
+  /** KADE Nov 11 2026 (card 8): the fact is about someone other than the person. */
+  aboutOther?: boolean;
   correctionLocked?: boolean;
   userId: Types.ObjectId;
   agentId?: string;
@@ -32,6 +36,8 @@ export interface IMemoryEntryLean {
   sourceConversationIds?: string[];
   sourceMessageId?: string;
   sourceKind?: string;
+  knownSource?: 'told' | 'errand' | 'mail';
+  aboutOther?: boolean;
   correctionLocked?: boolean;
   _id: Types.ObjectId;
   userId: Types.ObjectId;

@@ -53,6 +53,8 @@ class KadeReadPage extends Tool {
   constructor() {
     super();
     this.name = 'kade_read_page';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Fetch a webpage and return ONLY its readable content — article text with the ads, menus, pop-ups, and link ' +
       'clutter stripped out. Free, no key, no cost. Perfect when a user shares a link and wants it read to them, ' +

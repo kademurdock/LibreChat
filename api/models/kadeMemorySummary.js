@@ -124,6 +124,24 @@ async function setMemorySummary(
   if (!userId || !agentId) {
     return null;
   }
+  /* KADE Nov 11 2026 (card 8): a sentence that carries a fact the person asked to forget is dropped
+   * from every field before it is saved. The nightly pass, same-day memory and call summaries all
+   * save here, so none of them can bring it back. KADE_KNOWN_TOMBSTONE=0 stops it. */
+  try {
+    const scrubbed = await require('../server/services/kadeKnownTombstones').scrubFields(userId, {
+      summary,
+      take,
+      thread,
+      learned,
+      curious,
+      verdicts,
+    });
+    if (scrubbed.removed) {
+      ({ summary, take, thread, learned, curious, verdicts } = scrubbed.fields);
+    }
+  } catch (_) {
+    /* the summary is saved as written */
+  }
   const clean = typeof summary === 'string' ? summary.trim().slice(0, 8000) : '';
   if (!clean) {
     await KadeMemorySummary.deleteOne({ userId: String(userId), agentId: String(agentId) });

@@ -203,6 +203,12 @@ function createToolLoader(
        * costs nothing more. Delivery lives in services/kadeEveryday.js. KADE_REMIND_ALL=0 takes it
        * away again, and the tool goes back to its old words. */
       ...(String(process.env.KADE_REMIND_ALL || '') === '0' ? [] : ['kade_notify']),
+      /* KADE 2026-11-11 (cards 8 and 9): "what do you know about me", "forget that", and searching
+       * your own past chats, for every character. Both attach by keyword only (kadeToolRetrieval
+       * KEYWORD_ONLY), work only in the signed-in app or website, and act only on the asker's own
+       * rows. KADE_KNOWN_CARD=0 and KADE_RECALL_SEARCH=0 take them away. */
+      ...(String(process.env.KADE_KNOWN_CARD || '') === '0' ? [] : ['kade_known']),
+      ...(String(process.env.KADE_RECALL_SEARCH || '') === '0' ? [] : ['kade_recall']),
     ];
     /* Auto-given tools the record does not list itself: these ride by keyword only. */
     const keywordOnlyHere = ['kade_notify'].filter((t) => autoTools.includes(t) && !_tools.includes(t));

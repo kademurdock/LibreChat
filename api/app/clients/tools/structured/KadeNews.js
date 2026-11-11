@@ -128,6 +128,8 @@ class KadeNews extends Tool {
   constructor() {
     super();
     this.name = 'kade_news';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Get REAL current news headlines from free RSS feeds — no key, no cost. Categories: national (NPR), world (BBC), ' +
       'local (Springfield MO / Ozarks), tech, entertainment, music, sports — or any custom feed_url the user wants. ' +

@@ -1593,6 +1593,16 @@ class AgentClient extends BaseClient {
         }
       }
 
+      /* KADE Nov 11 2026 (card 10): an earlier turn's tool output rides this window as a ToolMessage,
+       * and getBufferString prints it as a "Tool:" line. Output from a tool that carries outside text
+       * (web pages, search results, files, recordings) is replaced with one short line before the
+       * keeper reads it, so a page can never become a memory card. The person's words and the
+       * character's reply are untouched. KADE_KEEPER_UNTRUSTED_STRIP=0 lets the keeper read it again. */
+      try {
+        messagesToProcess = require('~/server/services/kadeUntrustedTools').forKeeper(messagesToProcess).messages;
+      } catch (_) {
+        /* the keeper reads the window as before */
+      }
       const filteredMessages = messagesToProcess.map((msg) =>
         this.stripContextReplay(this.filterImageUrls(msg)),
       );

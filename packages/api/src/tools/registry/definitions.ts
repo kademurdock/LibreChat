@@ -393,6 +393,36 @@ export const kadeTaskSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+/** KADE Nov 11 2026 (card 8): what I know about you. Kept identical to api/app/clients/tools/structured/KadeKnown.js. */
+export const kadeKnownSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['count', 'read', 'correct', 'forget', 'forget_source', 'forget_all'],
+      description:
+        'count = how many things you know about them, by group (always first). read = the facts in one group. correct = fix one fact. forget = forget one fact. forget_source = forget everything from mail or from errands. forget_all = forget everything (asks first).',
+    },
+    group: { type: 'string', enum: ['told', 'errand', 'mail', 'others', 'all'], description: 'read. Which group. others = facts about other people.' },
+    ref: { type: 'string', description: 'correct or forget. The ref of the fact, from read.' },
+    value: { type: 'string', description: 'correct. The fact as it should be, in their words.' },
+    source: { type: 'string', enum: ['mail', 'errand'], description: 'forget_source. Which source.' },
+    offset: { type: 'integer', description: 'read. Skip this many, to hear more.' },
+  },
+  required: ['action'],
+};
+
+/** KADE Nov 11 2026 (card 9): search your own past chats. Kept identical to api/app/clients/tools/structured/KadeRecall.js. */
+export const kadeRecallSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    query: { type: 'string', description: 'What to look for, in a few words (for example "pharmacy phone number").' },
+    everywhere: { type: 'boolean', description: 'True only when they ask you to look in all their chats, not just yours with them.' },
+    limit: { type: 'integer', description: 'How many bits to bring back, 1 to 8. Default 5.' },
+  },
+  required: ['query'],
+};
+
 /** KADE Nov 10 2026: songs by conversation. Kept identical to api/app/clients/tools/structured/KadeStudio.js. */
 export const kadeStudioSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -1497,6 +1527,20 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Pair a phone number with their account. "Pair my phone" in the app: action code, then say the code once, digit by digit. On a phone call, "my pairing code is ...": action redeem with the digits. Also list paired phones and unpair. Say only what the tool tells you.',
     schema: kadePhonePairingSchema,
+    toolType: 'builtin',
+  },
+  kade_known: {
+    name: 'kade_known',
+    description:
+      'What you know about them, and fixing or forgetting it. Use when they ask what you know or remember about them, say you remember something wrong, or ask you to forget something. Call count first and say the counts; then read the group they pick. To forget or correct, read first and use the ref. If you are not sure which fact they mean, read it back and ask before forgetting. Never say a fact is forgotten unless forget answered ok.',
+    schema: kadeKnownSchema,
+    toolType: 'builtin',
+  },
+  kade_recall: {
+    name: 'kade_recall',
+    description:
+      'Search their own past chats for words they said or you said: a number, a name, a place, something from last week. Use when they ask what was said before and it is not in view. Answer from what comes back; if nothing comes back, say so and do not guess.',
+    schema: kadeRecallSchema,
     toolType: 'builtin',
   },
   kade_joke: {

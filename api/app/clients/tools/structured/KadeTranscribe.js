@@ -14,6 +14,8 @@ class KadeTranscribe extends Tool {
   constructor(fields = {}) {
     super();
     this.name = 'kade_transcribe';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.userId = fields.userId;
     this.description =
       "Transcribe the user's most recently uploaded audio file (voice memo, recording) into formatted text. " +

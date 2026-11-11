@@ -45,6 +45,8 @@ class KadeJoke extends Tool {
      * users whose kadeAccountType is 'child' — the persona never knows. */
     this.userId = fields.userId;
     this.name = 'kade_joke';
+    /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
+    this.untrustedSource = true;
     this.description =
       'Fetch a fresh joke from a live joke database — free, instant, no cost. Use when the user wants a joke or humor; ' +
       'the database keeps it from repeating your own material. Two modes: default is clean/family-safe; dirty=true is ' +

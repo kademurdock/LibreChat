@@ -8,6 +8,7 @@ import {
   advanceMemoryPolicyRevision,
   memoryPolicyRevision,
   setMemoryClearCutoff,
+  memoryTombstoned,
 } from '~/memory/policy';
 
 /* Once-per-process TTL-index ensure for the overwrite-watch receipts. */
@@ -67,6 +68,10 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       const source = memorySourceStorage.getStore();
       if (!(await memorySourceAllowed(source))) return { ok: false };
       if (key?.toLowerCase() === 'nothing') {
+        return { ok: false };
+      }
+      /* KADE Nov 11 2026 (card 8): the keeper never writes back a fact the person asked to forget. */
+      if (source && source.kind !== 'user-correction' && (await memoryTombstoned(String(userId), value))) {
         return { ok: false };
       }
 
@@ -138,6 +143,16 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
       const source = memorySourceStorage.getStore();
       if (!(await memorySourceAllowed(source))) return { ok: false };
       if (key?.toLowerCase() === 'nothing') {
+        return { ok: false };
+      }
+      /* KADE Nov 11 2026 (card 8): the keeper never writes back a fact the person asked to forget.
+       * The person's own correction is never refused. */
+      if (
+        source &&
+        !userCorrection &&
+        source.kind !== 'user-correction' &&
+        (await memoryTombstoned(String(userId), value))
+      ) {
         return { ok: false };
       }
 
