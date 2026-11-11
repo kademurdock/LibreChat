@@ -542,6 +542,8 @@ export type TMessageAudio = {
   isLast?: boolean;
   index: number;
   messageId: string;
+  /** Nov 11 2026: the character whose face may show while this message plays (asks for mouth timings). */
+  characterId?: string | null;
   content: string;
   className?: string;
   renderButton?: (props: {

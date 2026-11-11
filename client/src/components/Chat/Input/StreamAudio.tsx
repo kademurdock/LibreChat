@@ -14,6 +14,9 @@ import { generationRate, voiceCacheKey } from '~/utils/voicePace';
 import { consumeSpeechAudio, speechAudioBlob } from '~/hooks/Audio/speech';
 import { useSpeechRequest } from '~/hooks/Audio/request';
 import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
+import { messageCharacterId } from '../character/voice-message-motion.mjs';
+import { faceTimingsAllowed } from '../character/timing-track.mjs';
+import { useVoicePortraitPreference } from '../character/useVoicePortraitPreference';
 
 export default function StreamAudio({ index = 0 }) {
   const { token } = useAuthContext();
@@ -25,6 +28,7 @@ export default function StreamAudio({ index = 0 }) {
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const speed = generationRate(voiceSpeed, pacePreference);
   const fillers = useRecoilValue(store.voiceFillers);
+  const [portraitsOn] = useVoicePortraitPreference();
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const voiceCallActive = useRecoilValue(store.voiceCallActiveState);
@@ -122,6 +126,10 @@ export default function StreamAudio({ index = 0 }) {
             // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
             speed,
             fillers, // Oct 16 2026: the listener's filler switch
+            // Nov 11 2026: Inworld's mouth shapes for the face, asked only while one will be drawn.
+            ...(portraitsOn && messageCharacterId(latestMessage) && faceTimingsAllowed()
+              ? { timing: true }
+              : {}),
           }),
         });
 
@@ -194,6 +202,7 @@ export default function StreamAudio({ index = 0 }) {
     voice,
     speed,
     fillers,
+    portraitsOn,
     token,
     speechRequest,
   ]);

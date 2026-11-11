@@ -10,13 +10,23 @@ import {
   watchVoiceAudio,
   stopWatchingVoiceAudio,
 } from '~/components/Chat/character/voice-playback.mjs';
+import { faceTimingsAllowed } from '~/components/Chat/character/timing-track.mjs';
+import { useVoicePortraitPreference } from '~/components/Chat/character/useVoicePortraitPreference';
 
-const createFormData = (text: string, voice: string, speed: number, fillers: boolean) => {
+const createFormData = (
+  text: string,
+  voice: string,
+  speed: number,
+  fillers: boolean,
+  timing: boolean,
+) => {
   const formData = new FormData();
   formData.append('input', text);
   formData.append('voice', voice);
   formData.append('speed', String(speed)); // Kade D2d: agent speaking rate
   formData.append('fillers', String(fillers)); // Oct 16 2026: the listener's filler switch
+  // Nov 11 2026: Inworld's mouth shapes ride inside the WAV for the face (timing-track.mjs).
+  if (timing) formData.append('timing', 'true');
   return formData;
 };
 
@@ -24,6 +34,7 @@ type TUseTTSExternal = {
   setIsSpeaking: React.Dispatch<React.SetStateAction<boolean>>;
   audioRef: React.MutableRefObject<HTMLAudioElement | null>;
   messageId?: string;
+  characterId?: string | null;
   isLast: boolean;
   index?: number;
 };
@@ -32,6 +43,7 @@ function useTextToSpeechExternal({
   setIsSpeaking,
   audioRef,
   messageId,
+  characterId,
   isLast,
   index = 0,
 }: TUseTTSExternal) {
@@ -43,6 +55,7 @@ function useTextToSpeechExternal({
   const pacePreference = useRecoilValue(store.voicePacePreference);
   const speed = generationRate(voiceSpeed, pacePreference);
   const fillers = useRecoilValue(store.voiceFillers);
+  const [portraitsOn] = useVoicePortraitPreference();
 
   const [downloadFile, setDownloadFile] = useState(false);
 
@@ -150,7 +163,9 @@ function useTextToSpeechExternal({
   });
 
   const startMutation = (text: string, download: boolean) => {
-    const formData = createFormData(text, voice ?? '', speed, fillers);
+    // Only while a face will be drawn for this message; the audio is the same either way.
+    const timing = portraitsOn && !!characterId && faceTimingsAllowed();
+    const formData = createFormData(text, voice ?? '', speed, fillers, timing);
     setDownloadFile(download);
     processAudio(formData);
   };

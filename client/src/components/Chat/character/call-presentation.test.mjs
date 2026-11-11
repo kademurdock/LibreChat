@@ -137,3 +137,31 @@ test('a listening pose says so (puppet bodies nod along); speaking and thinking 
   assert.equal(sample(controller, { status: 'thinking', level: 0 }).listening, undefined);
   assert.equal(sample(controller, { status: 'listening', reducedMotion: true }).listening, undefined);
 });
+
+// Nov 11 2026: a clip whose WAV carried Inworld's mouth shapes (timing-track.mjs).
+test('a clip with a track gives track visemes on its own clock; one without falls back', () => {
+  const track = {
+    v: 1,
+    src: 'inworld',
+    set: 'oxr',
+    dur: 1000,
+    vis: [
+      [0, 400, 'oh'],
+      [400, 1000, 'E'],
+    ],
+    w: [[500, 700, '[laugh]']],
+    cov: [[0, 1000]],
+  };
+  const controller = createCallPresentation();
+  controller.schedule(controller.token(), 10, 1, identity(), track);
+  controller.schedule(controller.token(), 11, 1, identity());
+  const early = sample(controller, { time: 10.1 });
+  assert.equal(early.visemeSource, 'track');
+  assert.equal(early.viseme, 3, '0.1 s into the clip is "oh", not 10.1 s');
+  const late = sample(controller, { time: 10.6 });
+  assert.equal(late.viseme, 5);
+  assert.equal(late.expression, 'amused', 'the heard laugh is a moment at clip start + 0.5 s');
+  const next = sample(controller, { time: 11.2 });
+  assert.equal(next.visemeSource, 'loudness');
+  assert.equal(controller.current(11.2).track, null);
+});

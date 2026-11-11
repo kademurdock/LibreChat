@@ -94,6 +94,7 @@ import {
   outputLevel,
 } from './character/call-presentation.mjs';
 import { useVoicePortraitPreference } from './character/useVoicePortraitPreference';
+import { readTimingTrack, trackFits, faceTimingsAllowed } from './character/timing-track.mjs';
 import { characterAppearanceKey } from './character/appearance';
 
 // Bigger synth units = better prosody (context batching, July 4 2026).
@@ -1283,6 +1284,8 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         const ctx = audioCtxRef.current;
         if (!ctx) return;
         try {
+          // Nov 11 2026: the clip's own mouth shapes, when its WAV carries them (timing-track.mjs).
+          const carried = character?.speech && faceTimingsAllowed() ? readTimingTrack(raw) : null;
           const decoded = await ctx.decodeAudioData(raw.slice(0));
           if (abortRef.current || turnIdRef.current !== myTurn) return;
           await new Promise<void>((resolve) => {
@@ -1312,6 +1315,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               ctx.currentTime,
               decoded.duration,
               character,
+              trackFits(carried, decoded.duration) ? carried : null,
             );
             src.addEventListener('ended', () => callPresentation.finish(clip), { once: true });
             currentSourceRef.current = src;
@@ -1350,6 +1354,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             voice: useVoice,
             speed: generationSpeed,
             fillers: voiceFillers,
+            // Nov 11 2026: Inworld's mouth shapes for the face, asked only while a face is shown.
+            ...(portraitEnabled && portraitCallAgentRef.current && faceTimingsAllowed()
+              ? { timing: true }
+              : {}),
           }),
         });
         if (!resp.ok) return null;
@@ -1359,7 +1367,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         return null;
       }
     },
-    [voice, generationSpeed, voiceFillers, token],
+    [voice, generationSpeed, voiceFillers, token, portraitEnabled],
   );
 
   // -- LLM streaming turn ------------------------------------------------------

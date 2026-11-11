@@ -20,6 +20,7 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CallAudioIdentity, CallPresentation } from './character/call-presentation.mjs';
 import { characterAudioIdentity } from './character/call-presentation.mjs';
+import { readTimingTrack, trackFits, faceTimingsAllowed } from './character/timing-track.mjs';
 
 export type StreamStatus = 'connecting' | 'listening' | 'thinking' | 'speaking';
 
@@ -114,6 +115,8 @@ export default function useStreamingCall() {
       if (!activeRef.current || seq !== flushSeqRef.current) return;
       const ctx = outCtxRef.current;
       if (!ctx) return;
+      // Nov 11 2026: Inworld's mouth shapes ride inside the WAV (a `kdtm` chunk) when the bridge asked.
+      const carried = character?.speech && faceTimingsAllowed() ? readTimingTrack(ab) : null;
       let buf: AudioBuffer;
       try {
         buf = await ctx.decodeAudioData(ab.slice(0));
@@ -134,7 +137,13 @@ export default function useStreamingCall() {
       const clip =
         presentationToken == null
           ? null
-          : (presentation?.schedule(presentationToken, t, buf.duration, character) ?? null);
+          : (presentation?.schedule(
+              presentationToken,
+              t,
+              buf.duration,
+              character,
+              trackFits(carried, buf.duration) ? carried : null,
+            ) ?? null);
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
       src.onended = () => {

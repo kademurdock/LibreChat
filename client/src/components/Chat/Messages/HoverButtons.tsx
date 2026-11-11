@@ -7,6 +7,7 @@ import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import { BookOpenText } from 'lucide-react';
 import MessageAudio from './MessageAudio';
+import { messageCharacterId } from '~/components/Chat/character/voice-message-motion.mjs';
 import KadeReadingView from './KadeReadingView';
 import DownloadAudioButton from './DownloadAudioButton';
 import { cn } from '~/utils';
@@ -216,6 +217,7 @@ const HoverButtons = ({
           index={index}
           isLast={isLast}
           messageId={message.messageId}
+          characterId={messageCharacterId(message)}
           content={extractMessageContent(message)}
           renderButton={(props) => (
             <HoverButton

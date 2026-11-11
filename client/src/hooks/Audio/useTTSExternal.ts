@@ -13,13 +13,15 @@ import store from '~/store';
 
 type TUseTextToSpeech = {
   messageId?: string;
+  /** Nov 11 2026: the character drawn while this plays; asks the voice for mouth timings. */
+  characterId?: string | null;
   content?: TMessageContentParts[] | string;
   isLast?: boolean;
   index?: number;
 };
 
 const useTTSExternal = (props?: TUseTextToSpeech) => {
-  const { messageId, content, isLast = false, index = 0 } = props ?? {};
+  const { messageId, characterId, content, isLast = false, index = 0 } = props ?? {};
 
   const isMouseDownRef = useRef(false);
   const timerRef = useRef<number | undefined>(undefined);
@@ -40,6 +42,7 @@ const useTTSExternal = (props?: TUseTextToSpeech) => {
     setIsSpeaking,
     audioRef,
     messageId,
+    characterId,
     isLast,
     index,
   });

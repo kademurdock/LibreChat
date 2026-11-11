@@ -1,6 +1,7 @@
 export const CHANNELS: readonly string[];
 export const EXPRESSIONS: Record<string, Record<string, number>>;
 export function hashSeed(text: string): number;
+export const TRACK_SHAPES: readonly (readonly [number, number, number])[];
 
 export type PuppetMotionOptions = {
   seed?: number;
@@ -15,6 +16,9 @@ export type PuppetMotionInput = {
   listening?: boolean;
   reduceMotion?: boolean;
   look?: [number, number];
+  /** Mouth panel 0..8 (timing-track.mjs) and where it came from; 'track' replaces the random pick. */
+  viseme?: number;
+  visemeSource?: 'track' | 'loudness' | string;
 };
 export type PuppetMotion = {
   setExpression(name: string, strength?: number, holdSeconds?: number): void;

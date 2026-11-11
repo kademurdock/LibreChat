@@ -1,4 +1,5 @@
 import AvatarExpression from './avatar-expression.mjs';
+import { LEAD_MS, trackPanelAt, wordAnchors, trackMoments } from './timing-track.mjs';
 
 // Sep 19 2026 (Kade: "I want it to respond to tags in chat like it does in
 // call, I'm surprised it doesn't already"). The call renderer has always fed
@@ -30,19 +31,51 @@ export function messageSpeechText(message) {
   return typeof message.text === 'string' ? message.text.slice(0, 100000) : '';
 }
 
-/** Directions and sounds as {at, expression, kind}, `at` in seconds of audio. */
-export function expressionSchedule(text, duration) {
+/** Directions and sounds as {at, expression, kind}, `at` in seconds of audio.
+ *  Nov 11 2026: with a timing track (timing-track.mjs) each direction lands on its real word: its
+ *  place in the spoken text is read between the two word anchors around it instead of as a share of
+ *  the whole. The little sounds the voice made ([laugh], [sigh], added by the proxy and never in the
+ *  chat text) become face moments at the moment they are heard. */
+export function expressionSchedule(text, duration, track) {
   if (typeof text !== 'string' || !text || text.length > 100000) return [];
   const marks = AvatarExpression.timeline(text);
-  if (!marks.length) return [];
+  const moments = track ? trackMoments(track) : [];
+  if (!marks.length && !moments.length) return [];
   const spokenBefore = (end) => text.slice(0, end).replace(UNSPOKEN, '').replace(/\s+/g, ' ').length;
   const total = Math.max(1, spokenBefore(text.length));
   const seconds = Number.isFinite(duration) && duration > 0 ? duration : total / CHARS_PER_SECOND;
-  return marks.map((mark) => ({
-    at: Math.max(0, (spokenBefore(mark.offset) / total) * seconds - LEAD),
+  const anchors =
+    track && marks.length
+      ? wordAnchors(track, text).map((a) => ({ x: spokenBefore(a.offset), at: a.ms / 1000 }))
+      : [];
+  const placed = (offset) => {
+    const x = spokenBefore(offset);
+    const proportional = (x / total) * seconds;
+    if (anchors.length < 2 || x < anchors[0].x || x > anchors[anchors.length - 1].x)
+      return proportional;
+    let k = 1;
+    while (k < anchors.length - 1 && anchors[k].x < x) k++;
+    const a = anchors[k - 1],
+      b = anchors[k];
+    return b.x > a.x ? a.at + ((x - a.x) / (b.x - a.x)) * (b.at - a.at) : a.at;
+  };
+  const cues = marks.map((mark) => ({
+    at: Math.max(0, placed(mark.offset) - LEAD),
     expression: mark.expression,
     kind: mark.kind,
   }));
+  for (const moment of moments) {
+    const at = Math.max(0, moment.ms / 1000 - LEAD);
+    const near = cues.some(
+      (c) => c.kind === 'moment' && c.expression === moment.expression && Math.abs(c.at - at) < 0.3,
+    );
+    if (!near) cues.push({ at, expression: moment.expression, kind: 'moment' });
+  }
+  // styleAt walks the cues in time order.
+  return cues
+    .map((c, i) => [c, i])
+    .sort((p, q) => p[0].at - q[0].at || p[1] - q[1])
+    .map((p) => p[0]);
 }
 
 const smooth = (n) => {
@@ -88,7 +121,14 @@ export function styleAt(cues, time) {
 // (teeth together for s, f, th), and a new pick about every syllable so the
 // lips keep moving between round, spread and open the way talking does.
 // Index into the mouth sheet; 0 means closed and lets the expression's own mouth show.
-export function visemeAt(time, strength, sibilance = 0, seed = 0) {
+// Nov 11 2026: when the clip carries Inworld's own mouth shapes (timing-track.mjs) and they cover
+// this moment, those win; loudness still decides how far the mouth opens (pose.mouth). Fish voices,
+// clips without data and the moments outside its coverage keep the method below, unchanged.
+export function visemeAt(time, strength, sibilance = 0, seed = 0, track) {
+  if (track) {
+    const panel = trackPanelAt(track, time * 1000 + LEAD_MS, strength);
+    if (panel != null) return panel;
+  }
   if (!(strength > 0.06)) return 0;
   if (sibilance > 0.32 && strength < 0.5) return 7;
   const slot = Math.floor(time / 0.14);
@@ -138,7 +178,18 @@ export function syllableLevel(time, seed = 0) {
   return 0.008 + 0.17 * shape * (0.45 + 0.55 * rand(32 + i));
 }
 
-export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance = 0 }) {
+// track: the clip's timing track, if any; trackTime: where `time` falls on that clip (a call plays
+// many clips on one clock, so its clip starts later than 0; a voice message's clip starts at 0).
+export function voiceMessagePose({
+  id,
+  time,
+  level = 0,
+  active,
+  cues,
+  sibilance = 0,
+  track,
+  trackTime = time,
+}) {
   const still = { characterId: id, active: false, expression: 'neutral', mouth: 0, blink: 0, brow: 0, tilt: 0, nod: 0 };
   if (!active || !Number.isFinite(time) || time < 0) return still;
   let seed = 5381;
@@ -158,13 +209,15 @@ export function voiceMessagePose({ id, time, level = 0, active, cues, sibilance 
   const strength = Number.isFinite(level) ? Math.max(0, Math.min(1, (level - 0.008) * 5)) : 0;
   const tempo = (id === 'agent_BSOLa3eNEZyjs-7abCjMt' ? 0.8 : 1) * style.tempo;
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const panel = track ? trackPanelAt(track, trackTime * 1000 + LEAD_MS, strength) : null;
   return {
     characterId: id,
     active: true,
     time,
     expression,
     face,
-    viseme: visemeAt(time, strength, sibilance, seed),
+    viseme: panel != null ? panel : visemeAt(time, strength, sibilance, seed),
+    visemeSource: panel != null ? 'track' : 'loudness',
     brow: clamp(
       style.brow +
         strength * (style.browTalk + 0.25 * Math.sin(t * 0.65 * tempo)) +

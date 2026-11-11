@@ -1,4 +1,5 @@
 import type { voiceMessagePose } from './voice-message-motion.mjs';
+import type { TimingTrack } from './timing-track.mjs';
 
 export type CallAudioIdentity = {
   speakerId: string | null;
@@ -21,11 +22,16 @@ export function createCallPresentation(): {
     start: number,
     duration: number,
     identity: CallAudioIdentity | null,
+    track?: TimingTrack | null,
   ): number | null;
   finish(token: number | null): void;
-  current(
-    time: number,
-  ): { start: number; duration: number; identity: CallAudioIdentity | null; token: number } | null;
+  current(time: number): {
+    start: number;
+    duration: number;
+    identity: CallAudioIdentity | null;
+    track: TimingTrack | null;
+    token: number;
+  } | null;
   pose(options: {
     id: string;
     time: number;

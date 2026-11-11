@@ -31,7 +31,12 @@ jest.mock('~/models/kadePronunciation', () => ({
 
 const axios = require('axios');
 const { createChunkProcessor } = require('./streamAudio');
-const { textToSpeech, streamAudio, parseKadeTtsFillers } = require('./TTSService');
+const {
+  textToSpeech,
+  streamAudio,
+  parseKadeTtsFillers,
+  parseKadeTtsTiming,
+} = require('./TTSService');
 const { pipeSpeechAudio } = require('@librechat/api');
 const { applyPronunciationRespellings } = require('~/models/kadePronunciation');
 
@@ -242,5 +247,65 @@ describe('/tts auto-play stream matches the manual lane', () => {
   it('drops a delivery that is not one of the three', async () => {
     await streamAudio(streamReq({ delivery: 'LOUD' }), makeRes());
     expect(lastProxyBody()).not.toHaveProperty('delivery');
+  });
+});
+
+/* Nov 11 2026: the face track ask. The website sends timing only while a character's face is
+ * shown; the fork turns it into x-kade-tts-timing: 1 for the Kade proxy, and never otherwise. */
+describe('the face timing ask', () => {
+  const original = process.env.KADE_TTS_TIMING;
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.KADE_TTS_TIMING;
+    } else {
+      process.env.KADE_TTS_TIMING = original;
+    }
+  });
+
+  it('reads a JSON true or the form string, nothing else', () => {
+    expect(parseKadeTtsTiming(true)).toBe(true);
+    expect(parseKadeTtsTiming('true')).toBe(true);
+    for (const value of [undefined, false, 'false', '1', 1, 'yes', null]) {
+      expect(parseKadeTtsTiming(value)).toBe(false);
+    }
+  });
+
+  it('/tts/manual asks the proxy when the body asks, and leaves the body itself alone', async () => {
+    await textToSpeech(manualReq({ timing: 'true' }), makeRes());
+    expect(lastProxyHeaders()['x-kade-tts-timing']).toBe('1');
+    expect(lastProxyBody()).not.toHaveProperty('timing');
+  });
+
+  it('callers that never send timing (the native apps) get the request they always got', async () => {
+    await textToSpeech(manualReq({}), makeRes());
+    const headers = lastProxyHeaders();
+    expect(headers).not.toHaveProperty('x-kade-tts-timing');
+    expect(Object.keys(headers).sort()).toEqual(
+      ['Authorization', 'Content-Type', 'x-kade-caller', 'x-kade-tts-session'].sort(),
+    );
+  });
+
+  it('KADE_TTS_TIMING=0 stops the ask on both lanes', async () => {
+    process.env.KADE_TTS_TIMING = '0';
+    await textToSpeech(manualReq({ timing: true }), makeRes());
+    expect(lastProxyHeaders()).not.toHaveProperty('x-kade-tts-timing');
+    await streamAudio(streamReq({ timing: true }), makeRes());
+    expect(lastProxyHeaders()).not.toHaveProperty('x-kade-tts-timing');
+  });
+
+  it('the auto-play stream asks on its first proxy call only (later WAVs stay byte-identical)', async () => {
+    let call = 0;
+    createChunkProcessor.mockImplementation(() =>
+      jest.fn().mockImplementation(async () => {
+        call++;
+        return call === 1
+          ? [{ text: 'First part of it.', isFinished: false }]
+          : [{ text: 'Second part of it.', isFinished: true }];
+      }),
+    );
+    await streamAudio(streamReq({ timing: true }), makeRes());
+    expect(axios.post).toHaveBeenCalledTimes(2);
+    expect(axios.post.mock.calls[0][2].headers['x-kade-tts-timing']).toBe('1');
+    expect(axios.post.mock.calls[1][2].headers).not.toHaveProperty('x-kade-tts-timing');
   });
 });

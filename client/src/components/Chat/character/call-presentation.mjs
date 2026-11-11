@@ -1,5 +1,6 @@
 import AvatarExpression from './avatar-expression.mjs';
 import { voiceMessagePose } from './voice-message-motion.mjs';
+import { trackMoments } from './timing-track.mjs';
 
 const expressions = new Set(AvatarExpression.expressions);
 const identityValid = (id) => typeof id === 'string' && /^agent_[A-Za-z0-9_-]{1,100}$/.test(id);
@@ -73,7 +74,8 @@ export function createCallPresentation() {
   return {
     token: () => generation,
     clear,
-    schedule(token, start, duration, identity) {
+    // track: the clip's timing track (timing-track.mjs), when its WAV carried one.
+    schedule(token, start, duration, identity, track = null) {
       if (
         token !== generation ||
         !Number.isFinite(start) ||
@@ -89,7 +91,13 @@ export function createCallPresentation() {
       const observedIdentity = identity
         ? Object.freeze({ ...identity })
         : null;
-      const clip = Object.freeze({ start, duration, identity: observedIdentity, token: ++serial });
+      const clip = Object.freeze({
+        start,
+        duration,
+        identity: observedIdentity,
+        track: track && typeof track === 'object' ? track : null,
+        token: ++serial,
+      });
       clips.push(clip);
       return clip.token;
     },
@@ -123,6 +131,9 @@ export function createCallPresentation() {
         cues.push({ at: clip.start, expression: identity.expression, kind: 'direction' });
         if (identity.moment)
           cues.push({ at: clip.start, expression: identity.moment, kind: 'moment' });
+        // Nov 11 2026: a laugh or a sigh the voice made lands when it is heard.
+        for (const m of clip.track ? trackMoments(clip.track) : [])
+          cues.push({ at: clip.start + m.ms / 1000, expression: m.expression, kind: 'moment' });
       }
       const pose = voiceMessagePose({
         id,
@@ -131,6 +142,8 @@ export function createCallPresentation() {
         sibilance,
         active,
         cues,
+        track: ownsSpeech ? clip.track : null,
+        trackTime: ownsSpeech ? time - clip.start : time,
       });
       // Puppet bodies nod along and soften while the person is talking.
       const listening = pose.active && !ownsSpeech && status === 'listening';

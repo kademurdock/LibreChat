@@ -54,6 +54,20 @@ const ENERGY = {
   lively: { breath: 3.3, drift: 1.35, glance: 0.75, nod: 1.35 },
 };
 const BLINK_MEAN = { normal: 4.2, slow: 5.6, quick: 2.8 };
+// Nov 11 2026: mouth panel (timing-track.mjs, 0..8) -> the engine's [wide, round, press] shape, used
+// when the clip carries Inworld's own mouth shapes (input.visemeSource 'track') instead of a random
+// pick per syllable. The random path below stays for Fish voices and clips with no track.
+export const TRACK_SHAPES = Object.freeze([
+  [0, 0, 0], // 0 closed
+  [0.2, 0.2, 0], // 1 slightly open
+  [0.3, 0, 0], // 2 open
+  [0, 0.6, 0], // 3 round "oh"
+  [0, 0.75, 0.15], // 4 pursed "oo"
+  [0.7, 0, 0], // 5 spread "ee"
+  [0, 0, 0.6], // 6 pressed
+  [0.45, 0, 0.3], // 7 teeth nearly together
+  [0.25, 0, 0], // 8 wide open
+]);
 
 function rng(seed) {
   let a = 0x9e3779b9 ^ seed;
@@ -97,7 +111,7 @@ export function createMotion(options = {}) {
     blinkAt: 1 + r() * 2, blinkT: -1, blinkDouble: false,
     headFollow: [0, 0],
     emo: {}, emoTarget: {}, emoUntil: 0,
-    level: 0, prevLevel: 0, onsetCooldown: 0, shape: [0, 0, 0], shapeTarget: [0, 0, 0],
+    level: 0, prevLevel: 0, onsetCooldown: 0, shape: [0, 0, 0], shapeTarget: [0, 0, 0], trackViseme: -1,
     nod: 0, nodV: 0, browLift: 0,
     nodAt: 2 + r() * 3,
     hair: 0, hairV: 0, prevYaw: 0, prevRoll: 0,
@@ -132,7 +146,7 @@ export function createMotion(options = {}) {
       s.emoUntil = s.t + holdSeconds;
       if (name === 'playful') s.winkAt = s.t + 0.25;
     },
-    // dt seconds; input: { speaking, level 0..1, listening, reduceMotion, look:[x,y] }
+    // dt seconds; input: { speaking, level 0..1, listening, reduceMotion, look:[x,y], viseme 0..8, visemeSource }
     update(dt, input = {}) {
       dt = clamp(dt, 0, 0.1);
       const t = (s.t += dt);
@@ -178,16 +192,31 @@ export function createMotion(options = {}) {
       const level = clamp(input.level || 0, 0, 1);
       s.level = approach(s.level, speaking ? level : 0, dt, level > s.level ? 0.035 : 0.085);
       s.onsetCooldown -= dt;
+      const tracked =
+        input.visemeSource === 'track' &&
+        Number.isInteger(input.viseme) &&
+        TRACK_SHAPES[input.viseme];
+      if (!tracked) s.trackViseme = -1;
+      else if (speaking && input.viseme !== s.trackViseme) {
+        // the real shape changed: follow it now, not only at a loudness onset
+        s.trackViseme = input.viseme;
+        s.shapeTarget = TRACK_SHAPES[input.viseme].slice();
+      }
       if (speaking && s.level - s.prevLevel > 0.06 && s.onsetCooldown <= 0 && s.level > 0.18) {
         // a syllable onset: pick a new mouth shape, sometimes nod and lift the brows
         s.onsetCooldown = 0.11;
-        const pick = r();
-        s.shapeTarget = pick < 0.3 ? [0.7, 0, 0] : pick < 0.52 ? [0, 0.75, 0] : pick < 0.66 ? [0, 0, 0.6] : [0.2, 0.2, 0];
+        if (!tracked) {
+          const pick = r();
+          s.shapeTarget = pick < 0.3 ? [0.7, 0, 0] : pick < 0.52 ? [0, 0.75, 0] : pick < 0.66 ? [0, 0, 0.6] : [0.2, 0.2, 0];
+        }
         if (r() < 0.35 * energy.nod && !reduce) s.nodV += 2.2 * (0.6 + expressiveness * 0.6);
         if (r() < 0.25) s.browLift = Math.max(s.browLift, 0.3 * expressiveness + 0.08);
       }
       s.prevLevel = s.level;
-      if (!speaking) s.shapeTarget = [0, 0, 0];
+      if (!speaking) {
+        s.shapeTarget = [0, 0, 0];
+        s.trackViseme = -1;
+      }
       for (let i = 0; i < 3; i++) s.shape[i] = approach(s.shape[i], s.shapeTarget[i], dt, 0.06);
       // nod spring (pitch down then back)
       s.nodV += (-s.nod * 60 - s.nodV * 9) * dt;

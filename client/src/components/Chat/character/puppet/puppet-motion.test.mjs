@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createMotion, CHANNELS, EXPRESSIONS, hashSeed } from './puppet-motion.mjs';
+import { createMotion, CHANNELS, EXPRESSIONS, hashSeed, TRACK_SHAPES } from './puppet-motion.mjs';
 
 const golden = JSON.parse(
   readFileSync(new URL('./fixtures/motion-golden.json', import.meta.url), 'utf8'),
@@ -66,4 +66,40 @@ test('expressions name only real channels and seeds are stable', () => {
       assert.ok(CHANNELS.includes(channel), `${name}: ${channel}`);
   assert.equal(hashSeed('agent_x'), hashSeed('agent_x'));
   assert.notEqual(hashSeed('agent_x'), hashSeed('agent_y'));
+});
+
+// Nov 11 2026: real mouth shapes (timing-track.mjs) instead of a random pick per syllable.
+test('with track visemes the mouth follows the panel, re-picked when the panel changes', () => {
+  const run = (visemes) => {
+    const m = createMotion({ seed: 7 });
+    const seen = [];
+    for (const [panel, frames] of visemes)
+      for (let i = 0; i < frames; i++) {
+        const out = m.update(1 / 24, {
+          speaking: true,
+          level: 0.5,
+          viseme: panel,
+          visemeSource: 'track',
+        });
+        seen.push({
+          panel,
+          round: out['mouth.round'],
+          wide: out['mouth.wide'],
+          press: out['mouth.press'],
+        });
+      }
+    return seen;
+  };
+  const seen = run([
+    [3, 8],
+    [5, 8],
+    [6, 8],
+  ]);
+  const last = (panel) => seen.filter((s) => s.panel === panel).at(-1);
+  assert.ok(last(3).round > 0.3 && last(3).round > last(3).wide, 'round "oh"');
+  assert.ok(last(5).wide > 0.3 && last(5).wide > last(5).round, 'spread "ee"');
+  assert.ok(last(6).press > 0.25, 'pressed');
+  // the same input gives the same motion
+  assert.deepEqual(run([[4, 6]]), run([[4, 6]]));
+  assert.equal(TRACK_SHAPES.length, 9);
 });

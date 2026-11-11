@@ -258,6 +258,8 @@ export function createPuppetRig(
         speaking,
         level,
         listening: !speaking && frame.listening === true,
+        viseme: frame.viseme,
+        visemeSource: frame.visemeSource,
       });
       let ch = out;
       const nudge = speaking && level > 0.06 ? VISEMES[frame.viseme] : null;

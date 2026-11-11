@@ -105,6 +105,7 @@ export function ExternalTTS({
   isLast,
   index,
   messageId,
+  characterId,
   content,
   className,
   renderButton,
@@ -115,6 +116,7 @@ export function ExternalTTS({
     isLast,
     index,
     messageId,
+    characterId,
     content,
   });
 

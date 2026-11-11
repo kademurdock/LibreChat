@@ -58,3 +58,36 @@ test('header fallback is normalized and rejects non-audio or injected types', ()
     });
   }
 });
+
+// Nov 11 2026: the voice proxy can put a `kdtm` chunk (the face timing track) between fmt and data.
+test('a WAV carrying a kdtm timing chunk still sniffs as WAV', () => {
+  const json = Buffer.from(
+    '{"v":1,"src":"inworld","set":"oxr","dur":1,"vis":[[0,1,"sil"]],"cov":[[0,1]]}',
+  );
+  const pad = json.length % 2;
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0, 'ascii');
+  head.writeUInt32LE(4 + 24 + 8 + json.length + pad + 8 + 48, 4);
+  head.write('WAVEfmt ', 8, 'ascii');
+  head.writeUInt32LE(16, 16);
+  head.writeUInt16LE(1, 20);
+  head.writeUInt16LE(1, 22);
+  head.writeUInt32LE(24000, 24);
+  head.writeUInt32LE(48000, 28);
+  head.writeUInt16LE(2, 32);
+  head.writeUInt16LE(16, 34);
+  head.write('kdtm', 36, 'ascii');
+  head.writeUInt32LE(json.length, 40);
+  const data = Buffer.alloc(8);
+  data.write('data', 0, 'ascii');
+  data.writeUInt32LE(48, 4);
+  const withTrack = Buffer.concat([head, json, Buffer.alloc(pad), data, Buffer.alloc(48)]);
+  assert.deepEqual(speechAudioFormat(withTrack, 'audio/mpeg'), {
+    mimeType: 'audio/wav',
+    extension: 'wav',
+  });
+  assert.deepEqual(sniffSpeechAudioFormat(withTrack.subarray(0, 12)), {
+    mimeType: 'audio/wav',
+    extension: 'wav',
+  });
+});

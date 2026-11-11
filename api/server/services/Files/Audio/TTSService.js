@@ -37,6 +37,11 @@ function parseKadeTtsSpeed(raw) {
  * request; true = on; undefined = the proxy's own default. JSON bodies send a
  * boolean, multipart forms (the iPhone app, the web /tts/manual callers) send
  * a string. Anything unrecognised is undefined, never a guess. */
+/* Nov 11 2026: the website asks for Inworld's mouth shapes and word times only while a character's
+ * face is on screen. JSON bodies send a boolean, forms a string; nothing else counts as asking. */
+function parseKadeTtsTiming(raw) {
+  return raw === true || raw === 'true';
+}
 function parseKadeTtsFillers(raw) {
   if (typeof raw === 'boolean') {
     return raw;
@@ -377,7 +382,7 @@ class TTSService {
   async ttsRequest(
     provider,
     ttsSchema,
-    { input, voice, stream = true, speed, sessionKey, kadeStream, delivery, fillers },
+    { input, voice, stream = true, speed, sessionKey, kadeStream, delivery, fillers, kadeTiming },
   ) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
@@ -429,6 +434,14 @@ class TTSService {
     if (provider === TTSProviders.OPENAI) {
       headers['x-kade-caller'] = 'fork-tts'; // Oct 16 2026: names this lane in the proxy's speech-gate summary
     }
+    /* Nov 11 2026 — THE FACE TRACK ASK. With this header the Kade voice proxy asks Inworld for its
+     * lip-sync visemes and word times and carries them inside the WAV as a `kdtm` chunk, which the
+     * website's faces read (client timing-track.mjs). The bytes ride through pipeSpeechAudio untouched.
+     * Only the OpenAI-shaped Kade proxy understands it; KADE_TTS_TIMING=0 stops the fork asking.
+     * Callers that never send `timing` (the native apps, every other lane) get unchanged requests. */
+    if (kadeTiming && provider === TTSProviders.OPENAI && process.env.KADE_TTS_TIMING !== '0') {
+      headers['x-kade-tts-timing'] = '1';
+    }
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
@@ -458,6 +471,7 @@ class TTSService {
     const speed = parseKadeTtsSpeed(req.body.speed); // Kade D2d
     const delivery = parseKadeTtsDelivery(req.body.delivery); // Part 119.3
     const fillers = parseKadeTtsFillers(req.body.fillers); // Oct 16 2026
+    const kadeTiming = parseKadeTtsTiming(req.body.timing); // Nov 11 2026
 
     if (!rawInput) {
       return res.status(400).send('Missing text in request body');
@@ -526,6 +540,7 @@ class TTSService {
           fillers,
           sessionKey: req.user && req.user.id,
           kadeStream,
+          kadeTiming,
         });
         await pipeSpeechAudio(response.data, res, response.headers?.['content-type']);
         return;
@@ -533,6 +548,7 @@ class TTSService {
 
       const textChunks = splitTextIntoChunks(input, 4000);
 
+      let firstChunk = true;
       for (const chunk of textChunks) {
         try {
           const response = await this.ttsRequest(provider, ttsSchema, {
@@ -543,7 +559,11 @@ class TTSService {
             delivery,
             fillers,
             sessionKey: req.user && req.user.id,
+            // Several WAVs are joined into one answer here and a player reads the first one's
+            // chunks only, so only the first asks for a track; the rest stay byte-identical.
+            kadeTiming: kadeTiming && firstChunk,
           });
+          firstChunk = false;
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
           await pipeSpeechAudio(
@@ -605,6 +625,8 @@ class TTSService {
     const delivery = parseKadeTtsDelivery(req.body.delivery);
     const fillers = parseKadeTtsFillers(req.body.fillers);
     const sessionKey = req.user && req.user.id;
+    // Nov 11 2026: only the first proxy WAV of this answer carries a face track (see processTextToSpeech).
+    let kadeTiming = parseKadeTtsTiming(req.body.timing);
     // Kade July 20 2026: fetched once per stream, applied per chunk below.
     const dictionary = await safeGetDictionary(req.user && req.user.id);
 
@@ -665,7 +687,9 @@ class TTSService {
               delivery,
               fillers,
               sessionKey,
+              kadeTiming,
             });
+            kadeTiming = false;
 
             if (!shouldContinue) {
               break;
@@ -767,4 +791,5 @@ module.exports = {
   streamAudio,
   getProvider,
   parseKadeTtsFillers,
+  parseKadeTtsTiming,
 };

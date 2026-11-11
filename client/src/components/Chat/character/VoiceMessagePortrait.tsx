@@ -11,6 +11,8 @@ import {
   syllableLevel,
   textSeed,
 } from './voice-message-motion.mjs';
+import { readTimingTrack, trackFits, faceTimingsAllowed } from './timing-track.mjs';
+import type { TimingTrack } from './timing-track.mjs';
 import { useVoicePortraitPreference } from './useVoicePortraitPreference';
 import { useCharacterLook } from './useCharacterLook';
 
@@ -115,10 +117,12 @@ function PortraitSurface({
   const schedule = useRef<{
     text: string;
     duration: number;
+    track: TimingTrack | null;
     cues: ReturnType<typeof expressionSchedule>;
   }>({
     text: '',
     duration: -1,
+    track: null,
     cues: [],
   });
   const [failed, setFailed] = useState(false);
@@ -134,6 +138,8 @@ function PortraitSurface({
       lastTick = 0;
     let rig: ReturnType<typeof createPortraitRig> | undefined;
     let envelope: { levels: Float32Array; sibilance?: Float32Array; step: number } | undefined;
+    // Nov 11 2026: Inworld's own mouth shapes and word times, when the WAV carried them (timing-track.mjs).
+    let track: TimingTrack | null = null;
     let source = '',
       generation = 0;
     let abort: AbortController | undefined;
@@ -148,6 +154,7 @@ function PortraitSurface({
       abort?.abort();
       source = src;
       envelope = undefined;
+      track = null;
       const mine = ++generation;
       if (!src.startsWith('blob:')) return;
       abort = new AbortController();
@@ -159,8 +166,14 @@ function PortraitSurface({
         const blob = await response.blob();
         if (blob.size > 12 * 1024 * 1024 || disposed || mine !== generation) return;
         const context = new OfflineAudioContext(1, 1, 24000);
-        const decoded = await context.decodeAudioData(await blob.arrayBuffer());
-        if (!disposed && mine === generation) envelope = CharacterMotion.envelope(decoded);
+        const bytes = await blob.arrayBuffer();
+        // Read before decoding: decodeAudioData takes the buffer over.
+        const carried = faceTimingsAllowed() ? readTimingTrack(bytes) : null;
+        const decoded = await context.decodeAudioData(bytes);
+        if (!disposed && mine === generation) {
+          envelope = CharacterMotion.envelope(decoded);
+          track = trackFits(carried, decoded.duration) ? carried : null;
+        }
       } catch {
         /* streaming (MediaSource) and unsupported blobs talk with the syllable stand-in */
       }
@@ -198,11 +211,16 @@ function PortraitSurface({
       const at = envelope ? Math.floor(audio.currentTime / envelope.step) : 0;
       const level = envelope ? envelope.levels[at] || 0 : syllableLevel(audio.currentTime, seed);
       const length = Number.isFinite(audio.duration) ? audio.duration : 0;
-      if (schedule.current.text !== spoken.current || schedule.current.duration !== length)
+      if (
+        schedule.current.text !== spoken.current ||
+        schedule.current.duration !== length ||
+        schedule.current.track !== track
+      )
         schedule.current = {
           text: spoken.current,
           duration: length,
-          cues: expressionSchedule(spoken.current, length),
+          track,
+          cues: expressionSchedule(spoken.current, length, track),
         };
       const pose = voiceMessagePose({
         id: agentId,
@@ -211,6 +229,7 @@ function PortraitSurface({
         sibilance: envelope?.sibilance?.[at] || 0,
         active,
         cues: schedule.current.cues,
+        track,
       });
       rig?.render(pose);
       // Vector rigs (Angel, puppets) move their own head; the others sway the card.
