@@ -307,6 +307,15 @@ function startMemorySummarySweep() {
       logger.warn(`[kadeSummarySweep] tick failed: ${err && err.message}`);
     }
     await repairLogbookVectors();
+    /* Nov 10 2026 (N7): then the cards written or changed in the last day are
+     * read against what was really said (services/kadeCardCheck.js has the
+     * rules, the caps and the cost). Once per scheduled night, after the
+     * dreaming pass whether or not it failed. Never throws. KADE_CARD_CHECK=0. */
+    try {
+      await require('~/server/services/kadeCardCheck').nightlyCardCheck();
+    } catch (err) {
+      logger.warn(`[kadeSummarySweep] card check failed: ${err && err.message}`);
+    }
   };
   setInterval(tick, HOUR_MS);
   // Catch the case where we boot during the target hour.
