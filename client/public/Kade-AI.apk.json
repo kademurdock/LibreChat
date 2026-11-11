@@ -1,7 +1,7 @@
 {
-  "versionCode": 124,
-  "versionName": "2.17.0",
-  "notes": "Public beta 2.17.0: rebuilt to match the iPhone app. Talk, Library, Create, Play and More are native, each message is one TalkBack stop with the iPhone's actions, and there is a new call screen, voice picker, character faces and bodies, the Character Builder, the Sound Booth, Family history and full Settings, Search and Help. Checked by 2,735 automated tests and on an Android emulator, not yet on a real phone with TalkBack. The download is larger, about 78 MB.",
+  "versionCode": 125,
+  "versionName": "2.18.0",
+  "notes": "Public beta 2.18.0: the Library player gets a Status line that says Playing or Paused and your place, Start from the beginning, five and ten minute jumps in films and long tapes, and Back 10 and Forward 10 seconds on the lock screen. The Library's first screen lists up to two more things you are in the middle of, and Springfield and the Ozarks sits near the top. A voice direction is no longer carried onto later lines by mistake. Checked by 2,752 automated tests and on an Android emulator, not yet on a real phone with TalkBack. About 78 MB.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "cf6c018b0d8da2fa79270eba528a88c73b766818e38821c01584957461064f65"
+  "sha256": "0dc5fd72e55f52ac164ad5e310b09934e54de9e67ccf5cde6410864bd0db54b0"
 }
