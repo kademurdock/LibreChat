@@ -321,6 +321,55 @@ function savedDirection(input) {
   const row = input && input.lora_key ? Object.values(yueStyles || {}).find((candidate) => candidate && candidate.key === input.lora_key) : undefined;
   return row && style.startsWith(`${row.lead} `) ? style.slice(row.lead.length + 1).trim() : yueMusicDirection(style);
 }
+/* ============== The YuE2 song charge (Nov 10 2026; services/kadeSongCharge.js) ==============
+ * Her words: "subtract ten cents or 12 cents or something like that from their own balance" and "the booth should charge
+ * 12 cents also, it's free for me of course." One YuE2 request, whether it asks for one take or four, takes the flat price
+ * (KADE_SONG_PRICE_CENTS, 12) from the balance of the person who starts it, here or through a character (kade_studio
+ * reaches this same route as that person). It sits after the booth's own gates above and just before the YuE2 router: the
+ * price is held first, a balance that is too low is refused in a plain sentence with nothing sent, and the hold is kept
+ * only when the router answers that the job was accepted. The administrator pays nothing. KADE_SONG_CHARGE=0 turns it off
+ * and every answer is as it was. No limit on who or how many is added: the router's own rule (one YuE2 request in
+ * progress per person, one to four takes in it, up to two takes rendering together) is unchanged. */
+const songCharge = require('../services/kadeSongCharge');
+router.post('/render', express.json({ limit: '128kb' }), (req, res, next) => {
+  if (!req.body || req.body.engine !== 'yue2' || !songCharge.chargeOn()) return next();
+  return requireJwtAuth(req, res, () => {
+    songCharge.boothGate(req, res, next).catch((error) => {
+      logger.warn('[soundbooth/render] song charge gate failed: ' + (error && error.message));
+      if (!res.headersSent) res.status(503).json({ error: 'The balance could not be checked just now. Nothing was started and nothing was charged. Try again.' });
+    });
+  });
+});
+/* The price line a person reads beside the start control (the guide's cost line is what the page and the phone show there
+ * and in About this engine). The administrator's guide is unchanged. */
+function withSongPrice(guide, user) {
+  const said = songCharge.priceSentence(user);
+  if (!said || !guide || !guide.engines || !guide.engines.yue2) return guide;
+  return { ...guide, engines: { ...guide.engines, yue2: { ...guide.engines.yue2, cost: said } } };
+}
+/* A song a character started (kade_studio) comes back to the conversation that asked: the character's own message with
+ * the link, and a push that opens it (services/kadeStudio.js deliver; code, no model). null for every other song, and
+ * then the Sound Booth's own push runs as before. Never throws. KADE_STUDIO_DELIVER=0 turns it off. */
+async function studioDelivery(job, title, completed) {
+  try {
+    const studio = require('../services/kadeStudio');
+    if (!studio.deliverOn()) return null;
+    return await studio.deliver({
+      job,
+      title,
+      completed,
+      total: job.takes?.length || 1,
+      urls: async () => {
+        const takes = await KadeAsset.find({ user: job.user, service: 'runpod_yue2', 'metadata.projectId': job.projectId })
+          .select('url createdAt').sort({ createdAt: 1 }).limit(4).lean();
+        return Promise.all(takes.map((take) => freshAssetUrl(take.url)));
+      },
+    });
+  } catch (error) {
+    logger.warn('[soundbooth/music] conversation delivery failed, the booth notice is sent instead: ' + (error && error.message));
+    return null;
+  }
+}
 router.use(createYueRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
@@ -343,10 +392,18 @@ router.use(createYueRouter({
       $set: { state: job.state === 'uncertain' ? 'failed' : job.state === 'saving' ? 'running' : job.state,
         lastError: job.error, costUSD: job.costUSD || 0 }, $addToSet: { jobs: job.id },
     });
+    /* Nov 10 2026: the song charge follows the job. A song that ends with nothing saved (failed, or stopped before a GPU
+     * began rendering it) gets its 12 cents back, once (services/kadeSongCharge.js). Never throws. */
+    await songCharge.afterJobUpdate(job);
   },
   notify: async job => {
     const project = await KadeSoundBoothProject.findOne({ _id: job.projectId, user: job.user }).select('title').lean();
     const completed = (job.takes || []).filter(take => take.state === 'done').length;
+    const told = await studioDelivery(job, project?.title || job.input.title || 'Your song', completed);
+    if (told) {
+      logger.info(`[soundbooth/music] conversation delivery job=${job.id} accepted=${told.accepted} blocked=${told.blocked || 'none'}`);
+      return told;
+    }
     const receipt = await notifyMusic(job.user, project?.title || job.input.title || 'Your song', completed, job.takes?.length || 1, job.state !== 'done');
     logger.info(`[soundbooth/music] notification job=${job.id} accepted=${receipt.accepted} deferred=${receipt.deferred === true} blocked=${receipt.blocked || 'none'}`);
     return receipt;
@@ -4223,13 +4280,14 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     /* Part 295: the Style choice is greyed out outside the pack (withStyleAccess). */
     /* ACE-Step XL: its card is added last, and only for an account that may use it (ace.ts withAceGuide returns the very same guide otherwise). */
     /* Its Style choice (ACE_STYLES_ENABLED) is live only for the Family feature pack and greyed out for everyone else, as the YuE2 one is. */
-    guide: ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide,
+    /* Nov 10 2026: the YuE2 cost line says the song price for everyone it is charged to (withSongPrice). */
+    guide: withSongPrice(ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide, req.user),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: priced(SEED_USD_PER_MIN, priceFactor(req.user)) },
       stable: { configured: effectsConfigured(), queued: true, model: effectsModel, usdPerRecording: effectsPrice, models: effectsVariants },
-      yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B' },
+      yue2: { configured: yueConfigured(), queued: true, model: 'm-a-p/YuE2-3B', usdPerSong: songCharge.priceFor(req.user).usd },
       lyria: { configured: !!lyriaKey(), queued: false, usdPerSong: priced(LYRIA_USD_PER_SONG, priceFactor(req.user)), model: LYRIA_MODEL },
       ...(myVoice ? { myvoice: { configured: true, queued: true, model: 'RVC v2' } } : {}),
       ...(aceOn(req.user) ? { ace: { configured: aceConfigured(), queued: true, model: 'ACE-Step 1.5 XL' } } : {}),

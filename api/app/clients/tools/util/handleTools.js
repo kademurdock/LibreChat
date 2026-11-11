@@ -48,6 +48,7 @@ const {
   KadeLivingMemory,
   KadeErrand,
   KadeTask,
+  KadeStudio,
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
@@ -232,6 +233,7 @@ const loadTools = async ({
     kade_living_memory: KadeLivingMemory,
     kade_errand: KadeErrand,
     kade_task: KadeTask,
+    kade_studio: KadeStudio,
     kade_approvals: KadeApprovals,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
@@ -426,6 +428,14 @@ const loadTools = async ({
       req: options.req,
     },
     kade_task: {
+      req: options.req,
+      agentId: agent?.id || agent?.agent_id,
+      agentName: agent?.name,
+    },
+    /** KADE STUDIO (Nov 10 2026): songs by conversation. `req` carries the seat, the acting
+     * identity and the conversation; services/kadeStudio.js reaches the Sound Booth as the person
+     * being served, never as the service seat a call runs under. */
+    kade_studio: {
       req: options.req,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
