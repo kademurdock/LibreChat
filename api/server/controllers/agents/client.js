@@ -1359,6 +1359,27 @@ class AgentClient extends BaseClient {
         });
         if (result.ok) {
           this._kadeKeeperLogged = true;
+          /* Nov 10 2026 (N2): the line the keeper just wrote is also why the
+           * character feels the way it does about this talk. A short piece of
+           * it is stored beside the mood, for this person and this character
+           * only (services/kadeSoul.js noteMoodReason has the rules). After the
+           * reply, never waited on, no model. KADE_SOUL_MOOD_REASON=0. */
+          try {
+            if (activeAgentId && !isEphemeralAgentId(activeAgentId)) {
+              require('~/server/services/kadeSoul')
+                .noteMoodReason({
+                  userId,
+                  agentId: activeAgentId,
+                  req: this.options.req,
+                  conversationId,
+                  text,
+                  offRecord: this.memoryOffRecord,
+                })
+                .catch(() => {});
+            }
+          } catch (_) {
+            /* a reason never costs anyone their logbook line */
+          }
         }
         return result;
       },

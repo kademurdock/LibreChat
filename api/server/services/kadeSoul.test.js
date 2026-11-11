@@ -454,3 +454,159 @@ test('a storage failure never throws out of the stamp', async () => {
     Object.assign(seam, before);
   }
 });
+
+/* ── Nov 10 2026 (N2): a reason for the mood ───────────────────────────── */
+
+test('a reason is one short plain line: tags out, first sentence, cut at a word', () => {
+  assert.strictEqual(S.tidyReason('%%%soft%%% The move fell through and she is gutted. More talk tomorrow.'), 'The move fell through and she is gutted.');
+  assert.strictEqual(S.tidyReason('  ok  '), '', 'too short to be a reason');
+  assert.strictEqual(S.tidyReason(''), '');
+  assert.strictEqual(S.tidyReason(null), '');
+  const long = S.tidyReason('word '.repeat(80));
+  assert.ok(long.length <= 163 && long.endsWith('...'), long);
+  assert.doesNotMatch(long, /\s\.\.\.$/);
+  assert.strictEqual(S.tidyReason('She said "never again" about the night shift, and meant it.'), "She said 'never again' about the night shift, and meant it.");
+});
+
+test('a reason belongs to the mood only when it was written about when the mood was set', () => {
+  const at = new Date(NOW.getTime() - 5 * 3.6e6);
+  const row = (whyAt, text = 'The move fell through and she is gutted.') => ({ mood: { v: -0.4, a: 0.3, at }, moodWhy: { text, at: whyAt } });
+  assert.strictEqual(S.moodReasonText(row(new Date(at.getTime() + 20000))), 'The move fell through and she is gutted.');
+  assert.strictEqual(S.moodReasonText(row(new Date(at.getTime() - 60 * 60000))), 'The move fell through and she is gutted.', 'an hour before still counts');
+  assert.strictEqual(S.moodReasonText(row(new Date(at.getTime() - 3 * 3.6e6))), '', 'from an earlier talk: not this mood');
+  assert.strictEqual(S.moodReasonText(row(new Date(at.getTime() + 2 * 3.6e6))), '', 'long after the mood was set');
+  assert.strictEqual(S.moodReasonText(row(new Date(at.getTime()), 'short')), '');
+  assert.strictEqual(S.moodReasonText({ mood: { v: 0, a: 0, at } }), '');
+  assert.strictEqual(S.moodReasonText({ moodWhy: { text: 'A long enough reason here.', at } }), '', 'no mood, no reason');
+  assert.strictEqual(S.moodReasonText(null), '');
+});
+
+test('the mood line names the reason when there is one, and is the old line exactly when there is not', () => {
+  const base = { v: 0.2, a: 0.4 };
+  const row = { mood: { v: -0.5, a: 0.7, top: ['concerned'], at: new Date(NOW.getTime() - 3 * 3.6e6) } };
+  const plain = S.moodSection(row, base, NOW, '');
+  assert.strictEqual(
+    plain,
+    "# How you're coming in\nYou're still a bit stirred up from last time with them (last time you were mostly concerned). Let it color how you sound if it fits, the way a person carries a mood into the next talk. You don't have to mention it.",
+  );
+  const withWhy = S.moodSection(row, base, NOW, 'The move fell through and she is gutted.');
+  assert.match(withWhy, /What it was about, from your own note that day: "The move fell through and she is gutted\."/);
+  assert.match(withWhy, /not a line to read out/);
+  assert.ok(withWhy.startsWith("# How you're coming in\nYou're still a bit stirred up"));
+  /* a mood that has faded to nothing has no line, reason or not */
+  const faded = { mood: { v: 0.21, a: 0.4, top: ['warm'], at: new Date(NOW.getTime() - 3 * 3.6e6) } };
+  assert.strictEqual(S.moodSection(faded, base, NOW, 'Anything at all, long enough.'), '');
+  assert.strictEqual(S.moodSection({}, base, NOW, 'Anything at all, long enough.'), '');
+});
+
+test('the reason is stored on the row for this person and this character, and nowhere else', async () => {
+  await withFakeDb(async (db) => {
+    /* the character's shared baseline row exists first, as it does in life */
+    db.data.kadesoulstates.push({ userId: '*', agentId: 'agent_x', v: 0.2, a: 0.4, n: 12 });
+    db.data.kadesoulstates.push({ userId: 'u2', agentId: 'agent_x', lastTurnAt: NOW });
+    db.data.kadesoulstates.push({ userId: 'u1', agentId: 'agent_y', lastTurnAt: NOW });
+    const r = await S.noteMoodReason({ userId: 'u1', agentId: 'agent_x', conversationId: 'c1', text: 'The move fell through and she is gutted.', now: NOW });
+    assert.deepStrictEqual(r, { ok: true });
+    const mine = db.data.kadesoulstates.find((d) => d.userId === 'u1' && d.agentId === 'agent_x');
+    assert.deepStrictEqual(mine.moodWhy, { text: 'The move fell through and she is gutted.', at: NOW, conversationId: 'c1' });
+    for (const other of db.data.kadesoulstates.filter((d) => d !== mine)) {
+      assert.strictEqual(other.moodWhy, undefined, `untouched: ${other.userId}/${other.agentId}`);
+    }
+    assert.deepStrictEqual(Object.keys(db.data.kadesoulstates.find((d) => d.userId === '*')).sort(), ['a', 'agentId', 'n', 'userId', 'v']);
+    /* every write named this person and this character */
+    assert.ok(db.writes.length > 0);
+    for (const w of db.writes) assert.deepStrictEqual(w.filter, { userId: 'u1', agentId: 'agent_x' });
+  });
+});
+
+test('the shared baseline row is refused by name, whatever else is true', async () => {
+  await withFakeDb(async (db) => {
+    const r = await S.noteMoodReason({ userId: '*', agentId: 'agent_x', text: 'The move fell through and she is gutted.', now: NOW });
+    assert.deepStrictEqual(r, { ok: false, skipped: 'no-person' });
+    assert.strictEqual(db.writes.length, 0);
+    assert.deepStrictEqual(await S.noteMoodReason({ userId: '', agentId: 'agent_x', text: 'The move fell through and she is gutted.' }), { ok: false, skipped: 'no-person' });
+  });
+});
+
+test('no reason is stored with memory off, off the record, switched off, or from an empty line', async () => {
+  const asked = [];
+  await withFakeDb(
+    async (db) => {
+      const args = { userId: 'u1', agentId: 'agent_x', conversationId: 'c1', text: 'The move fell through and she is gutted.', now: NOW };
+      assert.deepStrictEqual(await S.noteMoodReason(args), { ok: false, skipped: 'memory-off' });
+      assert.deepStrictEqual(await S.noteMoodReason({ ...args, offRecord: true }), { ok: false, skipped: 'memory-off' });
+      assert.strictEqual(asked.length, 2);
+      assert.strictEqual(asked[0].write, true, 'asked as a write, so a hidden run is refused too');
+      assert.strictEqual(asked[1].offRecord, true);
+      assert.deepStrictEqual(await S.noteMoodReason({ ...args, text: '%%%warm%%%' }), { ok: false, skipped: 'empty' });
+      await withEnv({ KADE_SOUL_MOOD_REASON: '0' }, async () => {
+        assert.deepStrictEqual(await S.noteMoodReason(args), { ok: false, skipped: 'off' });
+      });
+      await withEnv({ KADE_SOUL_MOOD: '0' }, async () => {
+        assert.deepStrictEqual(await S.noteMoodReason(args), { ok: false, skipped: 'off' });
+      });
+      await withEnv({ KADE_SOUL: '0' }, async () => {
+        assert.deepStrictEqual(await S.noteMoodReason(args), { ok: false, skipped: 'off' });
+      });
+      assert.strictEqual(db.writes.length, 0);
+    },
+    { allowed: async (a) => { asked.push(a); return false; } },
+  );
+});
+
+test('the reason is shown only while the switch is on and its own checks pass', async () => {
+  const at = new Date(NOW.getTime() - 3 * 3.6e6);
+  const row = { mood: { v: -0.5, a: 0.7, at }, moodWhy: { text: 'The move fell through and she is gutted.', at: new Date(at.getTime() + 15000), conversationId: 'c1' } };
+  const seam = S.__seam;
+  const before = seam.reasonGate;
+  try {
+    seam.reasonGate = async () => true;
+    assert.strictEqual(await S.moodReasonAllowed(row, 'u1', 'agent_x'), 'The move fell through and she is gutted.');
+    await withEnv({ KADE_SOUL_MOOD_REASON: '0' }, async () => {
+      assert.strictEqual(await S.moodReasonAllowed(row, 'u1', 'agent_x'), '');
+    });
+    /* memory cleared since, or the conversation is now kept out of memory */
+    seam.reasonGate = async () => false;
+    assert.strictEqual(await S.moodReasonAllowed(row, 'u1', 'agent_x'), '');
+    /* a reason from another talk never reaches the gate at all */
+    let asked = 0;
+    seam.reasonGate = async () => { asked += 1; return true; };
+    const stale = { ...row, moodWhy: { ...row.moodWhy, at: new Date(at.getTime() - 5 * 3.6e6) } };
+    assert.strictEqual(await S.moodReasonAllowed(stale, 'u1', 'agent_x'), '');
+    assert.strictEqual(asked, 0);
+  } finally {
+    seam.reasonGate = before;
+  }
+});
+
+test('a storage failure never throws out of the reason write', async () => {
+  const seam = S.__seam;
+  const before = { ...seam };
+  seam.allowed = async () => true;
+  seam.coll = () => ({ createIndex: async () => 'ok', updateOne: async () => { throw new Error('db down'); } });
+  try {
+    const r = await S.noteMoodReason({ userId: 'u1', agentId: 'agent_x', text: 'The move fell through and she is gutted.', now: NOW });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.error, 'db down');
+  } finally {
+    Object.assign(seam, before);
+  }
+});
+
+test('a memory clear takes the reason with the mood', async () => {
+  const calls = [];
+  const seam = S.__seam;
+  const before = { ...seam };
+  seam.coll = (name) => ({
+    deleteMany: async (filter) => { calls.push({ name, op: 'deleteMany', filter }); },
+    updateMany: async (filter, update) => { calls.push({ name, op: 'updateMany', filter, update }); },
+  });
+  try {
+    await S.clearSoul('u1', 'agent_x');
+    const unset = calls.find((c) => c.op === 'updateMany');
+    assert.deepStrictEqual(unset.filter, { userId: 'u1', agentId: 'agent_x' });
+    assert.deepStrictEqual(unset.update, { $unset: { mood: 1, moodWhy: 1 } });
+  } finally {
+    Object.assign(seam, before);
+  }
+});

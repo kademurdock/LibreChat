@@ -69,7 +69,7 @@ const LAST_USED_WINDOW_DAYS = 30;
 
 /* For unit tests only: stand-in collections, memory gate and id maker, so the
  * storage paths run with no database. Never set in the running server. */
-const seam = { coll: null, allowed: null, objectId: null };
+const seam = { coll: null, allowed: null, objectId: null, reasonGate: null };
 
 /* How each face expression feels: [valence -1..1, arousal 0..1]. */
 const FEEL = Object.freeze({
@@ -168,6 +168,84 @@ function blendMood(mood, base, feeling, now = new Date()) {
     top: feeling.top,
     at: now,
   };
+}
+
+/* ── a reason for the mood (Nov 10 2026, plan item N2) ────────────────── */
+
+/* The mood line used to be one of seven canned phrases with nothing behind it:
+ * "still a bit stirred up", about what? When the keeper writes a logbook line
+ * on a turn, a short piece of that line is now stored beside the mood, and the
+ * next time the character comes back with a mood it is told what it was about.
+ *
+ * Where it lives: in the ONE row for this person and this character
+ * (kadesoulstates, userId + agentId). Never in the character's shared baseline
+ * row (userId '*'), which every person's turns feed and which holds numbers
+ * only. It is the keeper's own line, so it costs no model call, and it is
+ * written after the reply.
+ *
+ * Who may hear it: only a turn on the person's own signed-in seat. A phone
+ * call's memory bundle (caller ID only) gets the mood without the reason. It
+ * obeys the memory switch, off the record, a conversation kept out of memory
+ * and a memory clear, the same as the rest of this file. A full or
+ * per-character clear removes it.
+ *
+ * Off: KADE_SOUL_MOOD_REASON=0 (nothing stored, nothing shown), and every
+ * switch that turns the mood off. */
+const REASON_MAX = 160;
+const REASON_MIN = 12;
+const REASON_BEFORE_MS = 90 * 60 * 1000;
+const REASON_AFTER_MS = 30 * 60 * 1000;
+const reasonOn = () => on('KADE_SOUL_MOOD') && process.env.KADE_SOUL_MOOD_REASON !== '0';
+
+/** One short plain line from the keeper's logbook text, or '' when there is nothing usable. Pure. */
+function tidyReason(text) {
+  const flat = String(text || '')
+    .replace(/%%%[\s\S]*?%%%/g, ' ')
+    .replace(/%{2,}/g, ' ')
+    .replace(/["“”]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (flat.length < REASON_MIN) return '';
+  /* The first sentence when it is long enough to mean something, else as much as fits. */
+  const first = (flat.match(/^.{12,}?[.!?](?=\s|$)/) || [''])[0];
+  let out = first && first.length <= REASON_MAX ? first : flat;
+  if (out.length > REASON_MAX) {
+    out = out.slice(0, REASON_MAX);
+    const cut = out.lastIndexOf(' ');
+    out = (cut > REASON_MAX * 0.6 ? out.slice(0, cut) : out).replace(/[,;:\s]+$/, '') + '...';
+  }
+  return out;
+}
+
+/**
+ * The stored reason, when it belongs to the mood this row carries: written no
+ * more than 90 minutes before that mood was last set and no more than 30
+ * minutes after (the keeper finishes a little after the reply). Pure.
+ */
+function moodReasonText(row) {
+  const why = row && row.moodWhy;
+  const mood = row && row.mood;
+  if (!why || !mood || !mood.at || !why.at || typeof why.text !== 'string') return '';
+  const text = why.text.trim();
+  if (text.length < REASON_MIN) return '';
+  const whyAt = new Date(why.at).getTime();
+  const moodAt = new Date(mood.at).getTime();
+  if (!Number.isFinite(whyAt) || !Number.isFinite(moodAt)) return '';
+  if (whyAt < moodAt - REASON_BEFORE_MS || whyAt > moodAt + REASON_AFTER_MS) return '';
+  return text.slice(0, REASON_MAX + 3);
+}
+
+/** The "# How you're coming in" section, or '' when there is no mood to speak of. Pure. */
+function moodSection(row, base, now = new Date(), why = '') {
+  if (!row || !row.mood) return '';
+  const dev = deviationNow(row.mood, base, now);
+  const feeling = dev ? moodWords(dev.dv, dev.da) : '';
+  if (!feeling) return '';
+  const top = Array.isArray(row.mood.top) && row.mood.top.length ? ` (last time you were mostly ${row.mood.top.join(' and ')})` : '';
+  const because = why
+    ? ` What it was about, from your own note that day: "${why}" That is why you feel it, not a line to read out; bring the subject up only if it fits.`
+    : '';
+  return `# How you're coming in\nYou're ${feeling}${top}.${because} Let it color how you sound if it fits, the way a person carries a mood into the next talk. You don't have to mention it.`;
 }
 
 function moodWords(dv, da) {
@@ -573,14 +651,17 @@ async function getSoulTailBlock({ userId, agentId, req, conversationId, userText
       sections.push(`# Right now\n${lines.join(' ')}`);
     }
 
-    if (on('KADE_SOUL_MOOD') && comingBack && row && row.mood && !(await clearedSince(userId, agentId, row.mood.at))) {
-      const dev = deviationNow(row.mood, base, now);
-      const feeling = dev ? moodWords(dev.dv, dev.da) : '';
-      if (feeling) {
-        const top = Array.isArray(row.mood.top) && row.mood.top.length ? ` (last time you were mostly ${row.mood.top.join(' and ')})` : '';
-        sections.push(
-          `# How you're coming in\nYou're ${feeling}${top}. Let it color how you sound if it fits, the way a person carries a mood into the next talk. You don't have to mention it.`,
-        );
+    if (on('KADE_SOUL_MOOD') && comingBack && row && row.mood) {
+      /* Nov 10 2026: the reason's own checks run beside the clear check that was
+       * already waited on here, not after it, so this adds no wait. A turn with
+       * no request (a phone call's memory bundle) never gets the reason. */
+      const [cleared, why] = await Promise.all([
+        clearedSince(userId, agentId, row.mood.at),
+        req ? moodReasonAllowed(row, userId, agentId).catch(() => '') : '',
+      ]);
+      if (!cleared) {
+        const section = moodSection(row, base, now, why);
+        if (section) sections.push(section);
       }
     }
 
@@ -662,6 +743,61 @@ async function noteAfterReply({ userId, agentId, req, conversationId, text, reca
     } catch (_) {}
     return { ok: false, error: e && e.message };
   }
+}
+
+/* ── the reason, stored and read ──────────────────────────────────────── */
+
+/**
+ * Store why the character feels the way it does, from the logbook line the
+ * keeper just wrote for this turn. Called after the reply, never waited on.
+ * Writes only the row for this person and this character. Never throws.
+ */
+async function noteMoodReason({ userId, agentId, req, conversationId, text, offRecord, now = new Date() }) {
+  try {
+    if (!reasonOn()) return { ok: false, skipped: 'off' };
+    /* The shared per-character baseline row is keyed by this user id. It holds numbers only, for everyone. */
+    if (!userId || String(userId) === BASELINE_USER) return { ok: false, skipped: 'no-person' };
+    const reason = tidyReason(text);
+    if (!reason) return { ok: false, skipped: 'empty' };
+    if (!(await (seam.allowed || soulAllowed)({ userId, agentId, req, conversationId, offRecord, write: true }))) {
+      return { ok: false, skipped: 'memory-off' };
+    }
+    await ensureIndexes();
+    await coll(STATE).updateOne(
+      { userId: String(userId), agentId: String(agentId) },
+      {
+        $set: { moodWhy: { text: reason, at: now, conversationId: conversationId ? String(conversationId) : null }, updatedAt: now },
+        $setOnInsert: { createdAt: now },
+      },
+      { upsert: true },
+    );
+    return { ok: true };
+  } catch (e) {
+    try {
+      require('@librechat/data-schemas').logger.warn('[kadeSoul] mood reason skipped: ' + (e && e.message));
+    } catch (_) {}
+    return { ok: false, error: e && e.message };
+  }
+}
+
+/**
+ * The reason to show this turn, or ''. On top of moodReasonText: nothing after
+ * a memory clear, and nothing from a conversation now kept out of memory.
+ */
+async function moodReasonAllowed(row, userId, agentId) {
+  if (!reasonOn()) return '';
+  const text = moodReasonText(row);
+  if (!text) return '';
+  if (seam.reasonGate) return (await seam.reasonGate(row, userId, agentId)) ? text : '';
+  const ds = require('@librechat/data-schemas');
+  const from = row.moodWhy.conversationId;
+  const [cleared, excluded] = await Promise.all([
+    clearedSince(userId, agentId, row.moodWhy.at),
+    typeof ds.excludedMemoryConversations === 'function' ? ds.excludedMemoryConversations(String(userId)) : [],
+  ]);
+  if (cleared) return '';
+  if (from && Array.isArray(excluded) && excluded.includes(String(from))) return '';
+  return text;
 }
 
 /* ── a finished call counts as talking (Nov 10 2026) ──────────────────── */
@@ -826,13 +962,14 @@ async function forgetMoment({ userId, agentId, id }) {
 async function clearSoul(userId, agentId) {
   const scope = { userId: String(userId), ...(agentId ? { agentId: String(agentId) } : {}) };
   await coll(MOMENTS).deleteMany(scope);
-  await coll(STATE).updateMany(scope, { $unset: { mood: 1 } });
+  await coll(STATE).updateMany(scope, { $unset: { mood: 1, moodWhy: 1 } });
 }
 
 module.exports = {
   getSoulTailBlock,
   noteAfterReply,
   noteCallTalked,
+  noteMoodReason,
   keepMoment,
   soulSnapshot,
   forgetMoment,
@@ -842,6 +979,10 @@ module.exports = {
   deviationNow,
   blendMood,
   moodWords,
+  tidyReason,
+  moodReasonText,
+  moodReasonAllowed,
+  moodSection,
   baseOf,
   nowLine,
   sinceWords,
