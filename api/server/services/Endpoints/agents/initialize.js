@@ -192,6 +192,11 @@ function createToolLoader(
        * (kadeToolRetrieval KEYWORD_ONLY), so it costs tokens only in song-shaped conversations.
        * KADE_STUDIO=0 takes it away. */
       ...(String(process.env.KADE_STUDIO || '') === '0' ? [] : ['kade_studio']),
+      /* KADE 2026-11-11 (home agent card 2): phone pairing for every seat. "Pair my phone" in the
+       * signed-in app makes a one-time code; "my pairing code is ..." on a call pairs that number
+       * (services/kadePhonePairing.js). Keyword only (kadeToolRetrieval KEYWORD_ONLY), free, no
+       * model. KADE_PHONE_PAIRING=0 takes it away. */
+      ...(String(process.env.KADE_PHONE_PAIRING || '') === '0' ? [] : ['kade_phone_pairing']),
     ];
     let fundingHidden = true;
     try {

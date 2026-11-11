@@ -179,6 +179,12 @@ const ALIASES = {
     /\b(?:is|are|was) (?:my|the|that|our) (?:song|track)\b|\b(?:my|the|that|our) (?:song|track)\b[^.!?\n]{0,30}\b(?:ready|done|finished|yet|coming)\b/i,
     /\b(?:sound booth|yue ?2|kade[_ ]studio|(?:cancel|stop) (?:my|the|that) (?:song|track))\b/i,
   ],
+  /* Nov 11 2026: phone pairing (kade_phone_pairing), keyword only (KEYWORD_ONLY below). "Pair my
+   * phone", "unpair my number", "my pairing code is ...", "which phones are paired". */
+  kade_phone_pairing: [
+    /\b(?:un)?pair(?:ing|ed)?\b[^.!?\n]{0,40}\b(?:phones?|numbers?|cells?|codes?|mobile)\b/i,
+    /\b(?:phones?|numbers?|cells?)\b[^.!?\n]{0,30}\b(?:un)?paired\b|\bpairing code\b|\bunpair\b/i,
+  ],
   kade_council: [/\b(council|advisors?)\b/i],
   kade_drive_pc: [
     /\b(my pc|my computer|my laptop|nvda|screen reader|listen run|drive (my|the) (pc|computer))\b/i,
@@ -724,7 +730,7 @@ async function selectToolsCore(p) {
  * one of the caller's last few lines named it. Never by the embed, the Jev add or the fallback.
  * KADE_TOOLS_KEYWORD_ONLY=0 lets them attach like any other tool. With retrieval itself off
  * (KADE_TOOLS_RAG=0 and the like) every tool rides, these included. */
-const KEYWORD_ONLY = new Set(['kade_studio']);
+const KEYWORD_ONLY = new Set(['kade_studio', 'kade_phone_pairing']);
 function keywordOnlyOn() {
   return String(process.env.KADE_TOOLS_KEYWORD_ONLY || '') !== '0';
 }

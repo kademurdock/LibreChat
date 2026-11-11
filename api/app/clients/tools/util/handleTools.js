@@ -49,6 +49,7 @@ const {
   KadeErrand,
   KadeTask,
   KadeStudio,
+  KadePhonePairing,
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
@@ -234,6 +235,7 @@ const loadTools = async ({
     kade_errand: KadeErrand,
     kade_task: KadeTask,
     kade_studio: KadeStudio,
+    kade_phone_pairing: KadePhonePairing,
     kade_approvals: KadeApprovals,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
@@ -439,6 +441,11 @@ const loadTools = async ({
       req: options.req,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+    },
+    /** PHONE PAIRING (Nov 11 2026): `req` carries the seat, the lane (services/kadeVoiceLane.js)
+     * and the bridge-verified caller number; services/kadePhonePairing.js decides. */
+    kade_phone_pairing: {
+      req: options.req,
     },
     /** THE COUNCIL (Aug 15 2026, Part 68): Kade's five-seat advisory —
      * Aria, Prism, Sentinel, Vault, Pilgrim. OWNER-ONLY, same four-way gate

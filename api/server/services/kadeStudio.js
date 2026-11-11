@@ -26,9 +26,10 @@
  *   a phone call       identity is caller ID only, so nothing that spends and nothing about the
  *                      account: no start, no cancel, no lyric draft, no status, no list (review fix:
  *                      a borrowed or spoofed number must not hear someone's song titles).
- *   signed-in app voice built, and off: the fork cannot yet tell it from a phone call. It is taken
- *                      as app voice only when KADE_STUDIO_APP_VOICE=1 AND the service seat's
- *                      request says kadeCallerSignedIn: true, which the bridge does not send yet.
+ *   signed-in app voice built, and off unless KADE_STUDIO_APP_VOICE=1. Nov 11 2026: a turn is app
+ *                      voice only when the bridge's signed lane pass says so for the person on the
+ *                      line (services/kadeVoiceLane.js isSignedInAppVoice). A bare
+ *                      kadeCallerSignedIn: true in the body no longer counts.
  *
  * When the song is finished the booth's notify hook calls deliver(): code, no model, posts the
  * link in the conversation that asked as the character, and pushes. One atomic claim per job.
@@ -177,7 +178,9 @@ function actor(req, env = process.env) {
   const body = req.body || {};
   if (behalf && behalf.id) {
     const signedIn =
-      appVoiceOn(env) && String(req.user.role || '').toUpperCase() === 'ADMIN' && body.kadeCallerSignedIn === true;
+      appVoiceOn(env) &&
+      String(req.user.role || '').toUpperCase() === 'ADMIN' &&
+      require('./kadeVoiceLane').isSignedInAppVoice(req);
     return { ok: true, userId: String(behalf.id), lane: signedIn ? 'app-voice' : 'phone' };
   }
   /* A caller was named but not resolved to an account (or named by a seat that may not): nobody. */

@@ -421,6 +421,22 @@ export const kadeStudioSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+/** KADE Nov 11 2026: phone pairing. Kept identical to api/app/clients/tools/structured/KadePhonePairing.js. */
+export const kadePhonePairingSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['code', 'redeem', 'list', 'unpair'],
+      description:
+        'code = "pair my phone": make a one-time code (in the app). redeem = on a phone call, the caller says "my pairing code is ...". list = which phones are paired. unpair = "unpair my phone".',
+    },
+    code: { type: 'string', description: 'redeem. The six digits they said.' },
+    ending: { type: 'string', description: 'unpair. Last four digits of the phone to unpair, or "all". Leave out if only one is paired.' },
+  },
+  required: ['action'],
+};
+
 /** KADE Oct 16 2026: approvals. Kept identical to api/app/clients/tools/structured/KadeApprovals.js. */
 export const kadeApprovalsSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -1313,6 +1329,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking. YOU write the words with them: ask what the song is about, write the lyrics, read them back, change what they ask. Then the song is made in the background; when it is ready a message from you says so here and it is in their Sound Booth library. ALWAYS quote first, say the price in your reply in plain words, and call start only in a LATER reply after their own message says yes. Never say a song has started unless start answered started. If you are talking by voice or on a phone call, a song cannot be started: say so at once, before writing any words, and ask them to ask again in the text chat. Use this for songs, not fal_studio, unless they ask for Lyria or MiniMax by name. Also answers "is my song ready" (status).',
     schema: kadeStudioSchema,
+    toolType: 'builtin',
+  },
+  kade_phone_pairing: {
+    name: 'kade_phone_pairing',
+    description:
+      'Pair a phone number with their account. "Pair my phone" in the app: action code, then say the code once, digit by digit. On a phone call, "my pairing code is ...": action redeem with the digits. Also list paired phones and unpair. Say only what the tool tells you.',
+    schema: kadePhonePairingSchema,
     toolType: 'builtin',
   },
   kade_joke: {

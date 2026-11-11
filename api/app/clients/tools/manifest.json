@@ -179,6 +179,14 @@
     "authConfig": []
   },
   {
+    "name": "Phone pairing",
+    "pluginKey": "kade_phone_pairing",
+    "description": "Pairs your phone number with your account using a one-time code you get in the app and say on a phone call. Try: \"pair my phone\", then on the call: \"my pairing code is\" and the six digits.",
+    "icon": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Jokes",
     "pluginKey": "kade_joke",
     "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",
