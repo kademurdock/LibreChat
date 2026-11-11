@@ -393,6 +393,36 @@ export const kadeTaskSchema: ExtendedJsonSchema = {
   required: ['action'],
 };
 
+/** KADE Nov 10 2026: songs by conversation. Kept identical to api/app/clients/tools/structured/KadeStudio.js. */
+export const kadeStudioSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['quote', 'start', 'status', 'list', 'cancel', 'draft', 'draft_read'],
+      description:
+        'quote = the price of a song, before anything is made (always first; needs direction and lyrics). start = make it, only in a later reply after their own message said yes to the price. status = is my song ready. list = their recent songs. cancel = stop one. draft = ask the lyric desk to write words from an idea. draft_read = fetch that draft to read back.',
+    },
+    title: { type: 'string', description: 'quote. The song title, up to 80 characters.' },
+    direction: {
+      type: 'string',
+      description: 'quote. The music in a sentence or two: genre, instruments, tempo, and the singing voice (for example "warm female lead vocal").',
+    },
+    lyrics: {
+      type: 'string',
+      description: 'quote. The exact words to sing, with [Verse] and [Chorus] tags on their own lines. Leave out only for an instrumental.',
+    },
+    instrumental: { type: 'boolean', description: 'quote or draft. True for music with no singing.' },
+    takes: { type: 'integer', minimum: 1, maximum: 4, description: 'quote. How many versions to make of the same song. Default 1. The price is per song, not per take.' },
+    style: { type: 'string', description: 'quote. A trained style by name, only if they ask for one. Usually leave out.' },
+    idea: { type: 'string', description: 'draft. What the song is about, in their words.' },
+    quoteId: { type: 'string', description: 'start. The quoteId from quote.' },
+    jobId: { type: 'string', description: 'status or cancel. The jobId from start. Leave out for their newest song.' },
+    draftId: { type: 'string', description: 'draft_read. The draftId from draft. Leave out for their newest draft.' },
+  },
+  required: ['action'],
+};
+
 /** KADE Oct 16 2026: approvals. Kept identical to api/app/clients/tools/structured/KadeApprovals.js. */
 export const kadeApprovalsSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -1278,6 +1308,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Take a bigger job into the background and come back with the answer: research, comparing options, reading several pages, working something out. You do the job yourself with your own tools; your result arrives in this conversation later as a message from you, and their phone gets a push. ALWAYS quote first (action quote), tell them the price in plain words, and start (with the quoteId) only after they say yes. One job at a time per person. After starting, say briefly that you are on it; never do the job in the same reply and never claim results before your message arrives.',
     schema: kadeTaskSchema,
+    toolType: 'builtin',
+  },
+  kade_studio: {
+    name: 'kade_studio',
+    description:
+      'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking: you settle the words and the sound together, then the song is made in the background and arrives here as a message from you with a link to play it. ALWAYS quote first, say the price in your reply in plain words, and call start only in a LATER reply after their own message says yes. Never say a song has started unless start answered started. Use this for songs, not fal_studio, unless they ask for Lyria or MiniMax by name. Also answers "is my song ready" (status).',
+    schema: kadeStudioSchema,
     toolType: 'builtin',
   },
   kade_joke: {

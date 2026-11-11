@@ -185,6 +185,13 @@ function createToolLoader(
       /* KADE 2026-10-16: background tasks to every seat at her word ("you and adult family"),
        * adults only inside the tool; it attaches per turn by keyword (kadeToolRetrieval ALIASES). */
       'kade_task',
+      /* KADE 2026-11-10: songs by conversation to every seat, at her word ("no limits on who can
+       * use, or the amount of songs"): one shared tool, no agent record edited. It reaches the Sound
+       * Booth's own routes as the person being served, so the booth's rules and its 12 cent charge
+       * decide (services/kadeStudio.js, services/kadeSongCharge.js). It attaches by keyword only
+       * (kadeToolRetrieval KEYWORD_ONLY), so it costs tokens only in song-shaped conversations.
+       * KADE_STUDIO=0 takes it away. */
+      ...(String(process.env.KADE_STUDIO || '') === '0' ? [] : ['kade_studio']),
     ];
     let fundingHidden = true;
     try {

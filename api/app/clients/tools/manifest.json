@@ -171,6 +171,14 @@
     "authConfig": []
   },
   {
+    "name": "Songs by conversation",
+    "pluginKey": "kade_studio",
+    "description": "Lets a character make a real song with you by talking: you settle the words and the sound, hear the price, say yes, and the finished song arrives in your conversation with a link to play it. Uses the Sound Booth's YuE2. Try: \"let's make a song about my dog.\"",
+    "icon": "https://cdn-icons-png.flaticon.com/512/2099/2099058.png",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Jokes",
     "pluginKey": "kade_joke",
     "description": "Pulls fresh jokes from a live joke database — clean by default, uncensored only for adult personas. Try: \"tell me a dad joke.\"",

@@ -164,6 +164,16 @@ const ALIASES = {
   kade_task: [
     /\b(?:in the background|background (?:task|job)|get back to me|let me know (?:what you find|when you(?:'re| are)? done)|come back (?:to me )?with|take your time|go (?:work on|look into|dig into|figure out)|work on (?:it|that|this) and|look into (?:it|that|this) (?:and|for me)|while i(?:'m| am) (?:gone|away|busy|asleep|at work)|ping me when|report back|(?:my|the|that|your) (?:background )?tasks?|(?:the|that) job you|how(?:'s| is) (?:the|that|my) (?:task|job) (?:going|coming)|cancel (?:the|that|my) (?:task|job))\b/i,
   ],
+  /* Nov 10 2026: songs by conversation (kade_studio). Making a song, asking after one, the booth by
+   * name. It is also in KEYWORD_ONLY below: these patterns (or a tool already riding in the
+   * conversation) are the only way it attaches. */
+  kade_studio: [
+    /\b(?:make|write|create|generate|compose|record|produce|sing|cook up|whip up)\b[^.!?\n]{0,60}\b(?:songs?|tracks?|tunes?|jingles?|ballads?|anthems?|lullab(?:y|ies))\b/i,
+    /\b(?:write|make|draft) (?:me |us )?(?:some |the |new )?lyrics\b/i,
+    /\b(?:songs?|tracks?|tunes?) (?:about|for (?:my|me|us|her|him|them|the))\b/i,
+    /\b(?:is|are|was) (?:my|the|that|our) (?:song|track)\b|\b(?:my|the|that|our) (?:song|track)\b[^.!?\n]{0,30}\b(?:ready|done|finished|yet|coming)\b/i,
+    /\b(?:sound booth|yue ?2|kade[_ ]studio|(?:cancel|stop) (?:my|the|that) (?:song|track))\b/i,
+  ],
   kade_council: [/\b(council|advisors?)\b/i],
   kade_drive_pc: [
     /\b(my pc|my computer|my laptop|nvda|screen reader|listen run|drive (my|the) (pc|computer))\b/i,
@@ -587,7 +597,7 @@ async function embedHits({
  * @param {number[]|null} [p.queryVec]  an already-computed embed of `text`
  * @returns {Promise<{keep:Set<string>, dropped:string[], reason:string, scored?:Array}>}
  */
-async function selectTools(p) {
+async function selectToolsCore(p) {
   const all = new Set((p.tools || []).map((t) => t.name));
   const keepAll = (reason) => ({ keep: new Set(all), dropped: [], reason });
   if (!enabled()) return keepAll('off');
@@ -699,6 +709,50 @@ async function selectTools(p) {
   /* computed here, after the add, so it can never disagree with `keep` */
   const dropped = [...all].filter((n) => !keep.has(n));
   return { keep, dropped, reason: added.length ? `${reason} jev+[${added.join(',')}]` : reason, scored: emb.scored.slice(0, 3) };
+}
+
+/* Nov 10 2026: tools that attach by their own keywords only. The plan's review: when the embed
+ * lane is slow or down and no keyword hits, the whole tool set rides (keepAll below), and a new
+ * 500-token tool would ride every one of those turns and disturb the cached prefix. A tool named
+ * here rides only when its alias matches the person's own words this turn, when it is already
+ * riding in this conversation (so the "yes" turn after a price still has it), or, on a call, when
+ * one of the caller's last few lines named it. Never by the embed, the Jev add or the fallback.
+ * KADE_TOOLS_KEYWORD_ONLY=0 lets them attach like any other tool. With retrieval itself off
+ * (KADE_TOOLS_RAG=0 and the like) every tool rides, these included. */
+const KEYWORD_ONLY = new Set(['kade_studio']);
+function keywordOnlyOn() {
+  return String(process.env.KADE_TOOLS_KEYWORD_ONLY || '') !== '0';
+}
+function keywordOnlyPass(p, out, ridingBefore) {
+  if (!keywordOnlyOn() || !out || !out.keep || out.reason === 'off') return out;
+  const text = recallQuery.turnWords(p && p.text);
+  const cut = [];
+  for (const name of KEYWORD_ONLY) {
+    if (!out.keep.has(name) || ridingBefore.has(name)) continue;
+    if (aliasHits(text, [name]).has(name)) {
+      stickyAdd(p.conversationId, new Set([name]));
+      continue;
+    }
+    if (
+      voiceCarryOn() &&
+      !stickyKey(p.conversationId) &&
+      recallQuery.earlierCallerLines(p.text, VOICE_CARRY_LINES).some((line) => aliasHits(line, [name]).has(name))
+    ) {
+      continue;
+    }
+    out.keep.delete(name);
+    const k = stickyKey(p.conversationId);
+    const e = k ? sticky.get(k) : null;
+    if (e) e.tools.delete(name);
+    cut.push(name);
+  }
+  if (!cut.length) return out;
+  return { ...out, dropped: [...new Set([...(out.dropped || []), ...cut])], reason: `${out.reason} kw-only-[${cut.join(',')}]` };
+}
+
+async function selectTools(p) {
+  const ridingBefore = new Set(stickyGet(p && p.conversationId) || []);
+  return keywordOnlyPass(p, await selectToolsCore(p), ridingBefore);
 }
 
 /* Part 236 (Sep 20 2026) — JEV WATCHES THE SELECTION, SHADOW ONLY. The header
@@ -820,5 +874,6 @@ module.exports = {
   ALIASES,
   DEFAULT_CORE,
   DEFERRABLE,
+  KEYWORD_ONLY,
   _resetForTests,
 };
