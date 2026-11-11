@@ -1345,7 +1345,16 @@ class AgentClient extends BaseClient {
       currentOffRecord: this.memoryOffRecord,
       memoryMethods: {
         setMemory: db.setMemory,
-        deleteMemory: db.deleteMemory,
+        /* Nov 11 2026 (home agent card 3, hole N6): a phone turn knows the caller by caller ID
+         * only, so nothing is forgotten or deleted from one. The keeper is told the delete
+         * failed; the person can say it again in the app. No off switch (a safety gate). */
+        deleteMemory:
+          require('~/server/services/kadeLaneTrust').laneTrust(this.options.req) === 'signed-in'
+            ? db.deleteMemory
+            : async () => {
+                logger.info('[kade/lane] keeper delete refused on a phone turn');
+                return { ok: false };
+              },
         getFormattedMemories: db.getFormattedMemories,
       },
       res: this.options.res,
@@ -1730,6 +1739,17 @@ class AgentClient extends BaseClient {
        * Counted before the two guards below add their own words. KADE_CLAIM_COUNTER=0. */
       try {
         countUnbackedClaims(completion, { agentId: this.options?.agent?.id, logger });
+      } catch (_) {
+        /* a counter never costs anyone their reply */
+      }
+      /* Nov 11 2026 (home agent card 4): claims of a start, a reminder, a failure or a price
+       * with no row in this turn's tool ledger (services/kadeLedger.js). Counts only, one log
+       * line, nothing changed. KADE_CLAIM_COUNT=0. */
+      try {
+        require('~/server/services/kadeLedger').countLedgerClaims(this.options?.req, completion, {
+          agentId: this.options?.agent?.id,
+          logger,
+        });
       } catch (_) {
         /* a counter never costs anyone their reply */
       }
