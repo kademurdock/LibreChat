@@ -127,12 +127,29 @@ router.get('/token', requireJwtAuth, (req, res) => {
   return res.json({ token, ingestUrl: `${base}/api/kade/describe/ingest?token=${encodeURIComponent(token)}` });
 });
 
-/** Resolve who may act on an item: a signed-in user, or the upload's bound user. */
+function callerId(req) {
+  return req.user && (req.user.id || req.user._id) ? String(req.user.id || req.user._id) : null;
+}
+
+/** True when the item belongs to one person and a DIFFERENT person is signed in. */
+function someoneElses(req, item) {
+  const signedIn = callerId(req);
+  const bound = item && item.userId ? String(item.userId) : null;
+  return Boolean(signedIn && bound && signedIn !== bound);
+}
+
+const NOT_YOURS = 'This was shared from a different Kade-AI account. Share it again from this one.';
+
+/** Resolve who may act on an item. Audit fix SEC-9 (Nov 12 2026): an upload bound to a person is
+ * theirs alone. A signed-in person acts on an anonymous share or their own item, never on someone
+ * else's. With no sign-in, the item's unguessable id is the only key (the Shortcut/Safari path has
+ * no session) and the bound person is the one acting. Kade's decision: the share link itself does
+ * not expire; only this route half ships. */
 function actingUser(req, item) {
-  if (req.user && (req.user.id || req.user._id)) {
-    return String(req.user.id || req.user._id);
+  if (someoneElses(req, item)) {
+    return null;
   }
-  return item && item.userId ? String(item.userId) : null;
+  return callerId(req) || (item && item.userId ? String(item.userId) : null);
 }
 
 /** Optional-JWT shim: attach req.user when a valid Bearer token is present,
@@ -158,6 +175,9 @@ router.post('/run', optionalJwt, express.json(), async (req, res) => {
       return res.status(404).json({
         error: 'That share has expired (they only keep for about 10 minutes). Share it again.',
       });
+    }
+    if (someoneElses(req, item)) {
+      return res.status(403).json({ error: NOT_YOURS });
     }
     const userId = actingUser(req, item);
     if (!userId) {
@@ -201,15 +221,31 @@ router.post('/reminder', optionalJwt, express.json(), async (req, res) => {
   try {
     const { id, when, label } = req.body || {};
     const item = id ? getShareItem(id) : null;
+    if (someoneElses(req, item)) {
+      return res.status(403).json({ error: NOT_YOURS });
+    }
     const userId = actingUser(req, item);
     if (!userId) {
       return res.status(401).json({ error: 'Sign in to save reminders.' });
+    }
+    /* Audit fix SEC-9 (Nov 12 2026): with no sign-in, the only reminders that can be saved are the
+     * dates the describe step itself found on this item, with the describer's own label. A caller
+     * who merely holds the item id cannot write words of their choosing into the owner's memories. */
+    let labelIn = label;
+    if (!callerId(req)) {
+      const found = ((item && item.result && item.result.dates) || []).find(
+        (d) => d && d.when === String(when || '').trim(),
+      );
+      if (!found) {
+        return res.status(401).json({ error: 'Sign in to save reminders.' });
+      }
+      labelIn = found.label;
     }
     const dueAt = parseCentralDateTime(String(when || ''));
     if (!dueAt) {
       return res.status(400).json({ error: 'Bad date — expected YYYY-MM-DD HH:mm (Central).' });
     }
-    const cleanLabel = String(label || 'Appointment from a shared document').trim().slice(0, 160);
+    const cleanLabel = String(labelIn || 'Appointment from a shared document').trim().slice(0, 160);
     const value = `${cleanLabel} — ${String(when).trim()} (saved from a shared document on /describe)`;
     // MemoryEntry keys allow ONLY lowercase letters + underscores (no digits).
     const slug = cleanLabel.toLowerCase().replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48);
@@ -235,3 +271,4 @@ const { describeHtml } = require('./kadePages');
 router.page = (req, res) => res.type('html').send(describeHtml);
 
 module.exports = router;
+module.exports.actingUser = actingUser; // for the nodetest
