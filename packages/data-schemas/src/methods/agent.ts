@@ -376,12 +376,10 @@ export function createAgentMethods(
    */
   async function getAgentForChat(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    /* DB-2 (platform audit, Nov 12 2026): a turn-path read gives up after KADE_TURN_READ_MAX_MS
-     * (3000 ms; 0 = no limit) instead of holding the reply forever on a stuck query. */
-    const raw = process.env.KADE_TURN_READ_MAX_MS;
-    const maxMs = raw == null || String(raw).trim() === '' ? 3000 : Number(raw);
-    const options = Number.isFinite(maxMs) && maxMs > 0 ? { maxTimeMS: Math.floor(maxMs) } : {};
-    return await Agent.findOne(searchParameter, { versions: 0 }, options).lean<IAgent>();
+    /* No DB-2 time limit here (lead review, Nov 12 2026): this is the turn's main agent load and
+     * the access check, so a limit would FAIL a turn on a slow read instead of slowing it. The
+     * limit stays only on reads that degrade to "nothing found" (nudges, diary, card vectors). */
+    return await Agent.findOne(searchParameter, { versions: 0 }).lean<IAgent>();
   }
 
   /**

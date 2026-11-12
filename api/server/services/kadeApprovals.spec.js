@@ -83,3 +83,18 @@ test('the went-live report reaches her', async () => {
   const a = await approvals.get(approvalId);
   expect(a.deployWords).toBe("It's live: the website is running abc123.");
 });
+
+test('TURN-2: a decision by words does not wait for her live turn; the button and the went-live report do', async () => {
+  const flags = () => turn.post.mock.calls.map(([args]) => args.noWait);
+  turn.post.mockClear();
+  const a = await approvals.create({ kind: 'railway-deploy', params: { commitSha: 'w1' }, summary: 'Deploy w1.' });
+  await approvals.decide({ approvalId: a.approvalId, decision: 'deny', by: 'words' });
+  const b = await approvals.create({ kind: 'github-merge', params: { owner: 'k', repo: 'r', number: 2 }, summary: 'Merge 2.' });
+  await approvals.decide({ approvalId: b.approvalId, decision: 'approve', by: 'words' });
+  expect(flags()).toEqual([true, true]);
+  turn.post.mockClear();
+  const c = await approvals.create({ kind: 'github-merge', params: { owner: 'k', repo: 'r', number: 3 }, summary: 'Merge 3.' });
+  await approvals.decide({ approvalId: c.approvalId, decision: 'approve', by: 'button' });
+  await approvals.followup({ approvalId: b.approvalId, deploy: { status: 'SUCCESS', service: 'the website', commitSha: 'abc' } });
+  expect(flags()).toEqual([false, false]);
+});
