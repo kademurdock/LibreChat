@@ -752,10 +752,12 @@ async function searchDiary({
     return [];
   }
   const cap = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 12);
+  /* TURN-14 (turn audit, Nov 12 2026): one read of the exclusion list, not two. */
+  const excluded = await excludedMemoryConversations(String(userId));
   const filter = {
     userId: String(userId),
-    conversationId: { $nin: await excludedMemoryConversations(String(userId)) },
-    sourceConversationIds: { $nin: await excludedMemoryConversations(String(userId)) },
+    conversationId: { $nin: excluded },
+    sourceConversationIds: { $nin: excluded },
     $or: [
       { agentId: null },
       ...(agentId ? [{ agentId: String(agentId) }] : []),
@@ -803,17 +805,38 @@ async function searchDiary({
         score: null,
       }));
     }
-    /* Family scale: load the scoped slice and rank in-process (see header note). */
-    const rows = await KadeDiaryEntry.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(3000)
-      .select(
-        'text entryDate agentId embedding embedModel embeddingNext embedNextModel embedNextHash salience',
-      )
-      .lean();
     const scored = [];
     const activeModel = currentEmbedModel();
     const dimensions = embedLane()?.dimensions;
+    /* Family scale: load the scoped slice and rank in-process (see header note).
+     * TURN-14 (turn audit, Nov 12 2026): only a vector this lane can compare crosses
+     * the wire. A row keeps its rollback vector beside the live one, and both were read
+     * on every turn (two 1,536-number arrays per row, up to 3,000 rows).
+     * indexedEmbedding() below reads `embedding` only when embedModel is the active
+     * model and `embeddingNext` only when embedNextModel is, so it picks the same field
+     * as before. aggregate() does not cast: every value in `filter` is already a string. */
+    const rows = await KadeDiaryEntry.aggregate([
+      { $match: filter },
+      { $sort: { createdAt: -1 } },
+      { $limit: 3000 },
+      {
+        $project: {
+          text: 1,
+          entryDate: 1,
+          agentId: 1,
+          salience: 1,
+          embedModel: 1,
+          embedNextModel: 1,
+          embedNextHash: 1,
+          embedding: {
+            $cond: [{ $eq: ['$embedModel', activeModel] }, '$embedding', '$$REMOVE'],
+          },
+          embeddingNext: {
+            $cond: [{ $eq: ['$embedNextModel', activeModel] }, '$embeddingNext', '$$REMOVE'],
+          },
+        },
+      },
+    ]);
     /* TIME-AWARE RECALL (Aug 9 2026, Zep's lesson from the northstar pass):
      * relevance gates (raw cosine >= minScore), but the RANKING blends in
      * recency and salience. A fresh entry gets up to +0.05; the boost halves

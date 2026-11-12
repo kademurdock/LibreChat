@@ -209,11 +209,30 @@ async function searchCardVectors(userId, agentId, queryVector, opts = {}) {
         },
       ],
     };
-    const rows = await KadeCardVector.find(filter)
-      .select(
-        'key agentId embedding embedModel embeddingNext embedNextModel embedNextHash embedNextValueHash valueHash',
-      )
-      .lean();
+    /* TURN-14 (turn audit, Nov 12 2026): same rule as the diary. Only the vector written
+     * by the active model crosses the wire; indexedCardEmbedding() below reads each
+     * vector only under that same model test, and still gets every hash it checks.
+     * aggregate() does not cast: every value in `filter` is already a string. */
+    const rows = await KadeCardVector.aggregate([
+      { $match: filter },
+      {
+        $project: {
+          key: 1,
+          agentId: 1,
+          valueHash: 1,
+          embedModel: 1,
+          embedNextModel: 1,
+          embedNextHash: 1,
+          embedNextValueHash: 1,
+          embedding: {
+            $cond: [{ $eq: ['$embedModel', model] }, '$embedding', '$$REMOVE'],
+          },
+          embeddingNext: {
+            $cond: [{ $eq: ['$embedNextModel', model] }, '$embeddingNext', '$$REMOVE'],
+          },
+        },
+      },
+    ]);
     const scored = [];
     for (const r of rows) {
       if (opts.keys && !opts.keys.has((r.agentId ?? '') + '::' + r.key)) {

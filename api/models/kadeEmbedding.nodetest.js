@@ -83,6 +83,59 @@ test('a staged index keeps scope, exclusions, current content and the original v
   } finally { await mongoose.disconnect(); await server.stop(); }
 });
 
+test('TURN-14: recall reads only the active vector and still finds staged, live and rollback rows', async () => {
+  const server = await MongoMemoryServer.create();
+  await mongoose.connect(server.getUri());
+  process.env.KADE_EMBED_MODEL = 'qwen/qwen3-embedding-8b';
+  process.env.KADE_EMBED_DIMENSIONS = '32';
+  process.env.OPENROUTER_KEY = 'test-only';
+  const diary = model('kadeDiary.js');
+  const cards = model('kadeCardVector.js', { '~/models/kadeDiary': diary });
+  const identity = helpers.memoryEmbeddingLane().identity;
+  const vector = Array.from({ length: 32 }, (_, i) => (i === 0 ? 1 : 0));
+  const other = Array.from({ length: 32 }, (_, i) => (i === 5 ? 1 : 0));
+  try {
+    await diary.KadeDiaryEntry.deleteMany({});
+    /* (a) rollback vector from another model + the active model's staged vector, right hash */
+    await diary.KadeDiaryEntry.create({ userId: 'p14', agentId: 'a', text: 'Staged row.', entryDate: '2026-10-13',
+      embedding: other, embedModel: 'gemini-embedding-001', embeddingNext: vector, embedNextModel: identity,
+      embedNextHash: helpers.embeddingTextHash('Staged row.') });
+    /* (b) the active model's vector only */
+    await diary.KadeDiaryEntry.create({ userId: 'p14', agentId: 'a', text: 'Live row.', entryDate: '2026-10-13',
+      embedding: vector, embedModel: identity });
+    /* (c) the active model's staged vector with a WRONG hash: never returned */
+    await diary.KadeDiaryEntry.create({ userId: 'p14', agentId: 'a', text: 'Stale row.', entryDate: '2026-10-13',
+      embedding: other, embedModel: 'gemini-embedding-001', embeddingNext: vector, embedNextModel: identity,
+      embedNextHash: helpers.embeddingTextHash('Other words.') });
+    const found = await diary.searchDiary({ userId: 'p14', agentId: 'a', query: 'row', queryVector: vector, minScore: 0.5 });
+    assert.deepEqual(new Set(found.map((x) => x.text)), new Set(['Staged row.', 'Live row.']));
+    assert.equal(found[0].score, found[1].score, 'the same vector scores the same either way');
+
+    const value = 'Front row seats.';
+    await cards.KadeCardVector.create({ userId: 'p14', agentId: 'a', key: 'seats',
+      valueHash: cards.hashValue('Old value'), embedding: other, embedModel: 'gemini-embedding-001',
+      embeddingNext: vector, embedNextModel: identity, embedNextValueHash: cards.hashValue(value),
+      embedNextHash: helpers.embeddingTextHash('seats: ' + value) });
+    await cards.KadeCardVector.create({ userId: 'p14', agentId: 'a', key: 'band',
+      valueHash: cards.hashValue('The band.'), embedding: vector, embedModel: identity });
+    const options = { values: new Map([['a::seats', value], ['a::band', 'The band.']]), minScore: 0.5 };
+    const hits = await cards.searchCardVectors('p14', 'a', vector, options);
+    assert.deepEqual(new Set(hits.map((h) => h.key)), new Set(['seats', 'band']));
+    const wrong = { ...options, values: new Map([['a::seats', 'Changed value'], ['a::band', 'The band.']]) };
+    assert.deepEqual((await cards.searchCardVectors('p14', 'a', vector, wrong)).map((h) => h.key), ['band']);
+
+    /* the rollback lane: back on the old model, row (a) is served from its kept `embedding` */
+    delete process.env.KADE_EMBED_MODEL;
+    process.env.KADE_EMBED_GEMINI_KEY = 'test-only';
+    const back = await diary.searchDiary({ userId: 'p14', agentId: 'a', query: 'row', queryVector: other, minScore: 0.5 });
+    assert.deepEqual(new Set(back.map((x) => x.text)), new Set(['Staged row.', 'Stale row.']));
+    delete process.env.KADE_EMBED_GEMINI_KEY;
+  } finally {
+    await mongoose.disconnect();
+    await server.stop();
+  }
+});
+
 /** kadeDiary with the provider call replaced; returns the module and the calls it made. */
 function diaryWith(provider) {
   const calls = [];
