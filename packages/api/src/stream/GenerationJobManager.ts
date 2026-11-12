@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { logger, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import {
   Constants,
@@ -150,7 +151,28 @@ interface RuntimeJobState {
   earlyEventBuffer: t.ServerSentEvent[];
   hasSubscriber: boolean;
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void>;
+  /** KADE phase 4 pick 4: the events of this job, numbered, for an exact resume by cursor. */
+  kadeLog?: KadeStreamLog;
 }
+
+/**
+ * KADE Nov 12 2026 (phase 4 pick 4): emitted events kept per job so a dropped client can resume
+ * from a cursor (in-memory mode only). Bounded by count (KADE_STREAM_LOG_MAX, default 8000),
+ * freed with the job. KADE_STREAM_LOG=0 keeps no log. Read by api/server/routes/agents/kadeStreamResume.js.
+ */
+interface KadeStreamLog {
+  epoch: string;
+  next: number;
+  /** Highest seq that has been trimmed away. A cursor below this cannot be served exactly. */
+  floor: number;
+  entries: Array<{ seq: number; event: t.ServerSentEvent }>;
+}
+
+const kadeStreamLogOn = (): boolean => String(process.env.KADE_STREAM_LOG ?? '').trim() !== '0';
+const kadeStreamLogMax = (): number => {
+  const n = parseInt(process.env.KADE_STREAM_LOG_MAX ?? '', 10);
+  return Number.isFinite(n) && n >= 200 ? Math.min(n, 50000) : 8000;
+};
 
 /**
  * Manages generation jobs for resumable LLM streams.
@@ -1065,6 +1087,67 @@ class GenerationJobManagerClass {
     return { subscription, resumeState, pendingEvents };
   }
 
+  /** KADE: event object -> its place in its job's log. In-memory transport hands listeners the same object. */
+  private kadeSeqs = new WeakMap<object, { epoch: string; seq: number }>();
+
+  /** KADE phase 4 pick 4: number this event and keep it in its job's log, once. */
+  private kadeLogEvent(runtime: RuntimeJobState, event: t.ServerSentEvent): void {
+    if (this._isRedis || !kadeStreamLogOn()) return;
+    if (typeof event !== 'object' || event === null) return;
+    if ((event as Record<string, unknown>)._internal) return; // never sent to clients
+    if (this.kadeSeqs.has(event as object)) return; // already logged
+    let log = runtime.kadeLog;
+    if (!log) {
+      log = runtime.kadeLog = {
+        epoch: randomBytes(4).toString('hex'),
+        next: 1,
+        floor: 0,
+        entries: [],
+      };
+    }
+    const seq = log.next++;
+    log.entries.push({ seq, event });
+    this.kadeSeqs.set(event as object, { epoch: log.epoch, seq });
+    const max = kadeStreamLogMax();
+    if (log.entries.length > max + 256) {
+      const drop = log.entries.length - max;
+      log.floor = log.entries[drop - 1].seq;
+      log.entries.splice(0, drop);
+    }
+  }
+
+  /** KADE: the id written on the wire for this event, if it was logged. */
+  kadeIdOf(event: unknown): { epoch: string; seq: number } | undefined {
+    return typeof event === 'object' && event !== null ? this.kadeSeqs.get(event) : undefined;
+  }
+
+  /**
+   * KADE: every logged event after `afterSeq`, in order.
+   * null = no log for this job. exact:false = the cursor is from another job ('other-job')
+   * or was trimmed away or is past the end ('out-of-range').
+   */
+  kadeReplayAfter(
+    streamId: string,
+    epoch: string,
+    afterSeq: number,
+  ): {
+    exact: boolean;
+    reason?: 'other-job' | 'out-of-range';
+    events: t.ServerSentEvent[];
+  } | null {
+    const log = this.runtimeState.get(streamId)?.kadeLog;
+    if (!log) return null;
+    if (log.epoch !== epoch) return { exact: false, reason: 'other-job', events: [] };
+    if (!Number.isInteger(afterSeq) || afterSeq < log.floor || afterSeq > log.next - 1) {
+      return { exact: false, reason: 'out-of-range', events: [] };
+    }
+    const events: t.ServerSentEvent[] = [];
+    for (const entry of log.entries) {
+      if (entry.seq > afterSeq) events.push(entry.event);
+    }
+    return { exact: true, events };
+  }
+
   /**
    * Emit a chunk event to all subscribers.
    * Uses runtime state check for performance (avoids async job store lookup per token).
@@ -1127,6 +1210,7 @@ class GenerationJobManagerClass {
     }
 
     if (!runtime.hasSubscriber) {
+      this.kadeLogEvent(runtime, event); // KADE: held for the next listener, so it is part of the stream
       runtime.earlyEventBuffer.push(event);
       if (!this._isRedis) {
         return;
@@ -1138,6 +1222,7 @@ class GenerationJobManagerClass {
       (this.runtimeState.get(streamId) !== runtime || runtime.abortController.signal.aborted)
     )
       return;
+    this.kadeLogEvent(runtime, event); // KADE: logged only once it is certain to be sent
     await this.eventTransport.emitChunk(streamId, event);
   }
 
