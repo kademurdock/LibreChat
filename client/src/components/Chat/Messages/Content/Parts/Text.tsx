@@ -39,14 +39,16 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
     if (isCreatedByUser) {
       return stripDeepThinkTag(text);
     }
-    const stripped = stripGameSoundTags(stripVoiceTags(text));
+    // Nov 12 2026 (WEB-12): live text also hides a tag whose closer has not arrived yet.
+    const live = isSubmitting && isLatestMessage;
+    const stripped = stripGameSoundTags(stripVoiceTags(text, live));
     // July 19 2026 (Kade: tags flashing in the web chat view): while THIS
     // message is still actively streaming in, also hide a not-yet-closed
     // "%%%" tag -- see hideDanglingVoiceTag's own doc for why. A finished
     // message never takes this branch, so a genuinely unclosed tag in
     // already-saved history still shows up raw rather than silently eating
     // real text.
-    return isSubmitting && isLatestMessage ? hideDanglingVoiceTag(stripped) : stripped;
+    return live ? hideDanglingVoiceTag(stripped) : stripped;
   }, [isCreatedByUser, text, isSubmitting, isLatestMessage]);
 
   // Game Parlor sound cues: while THIS message is actively streaming, play

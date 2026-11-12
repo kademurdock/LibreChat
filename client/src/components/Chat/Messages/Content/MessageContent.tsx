@@ -111,12 +111,14 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
     if (isCreatedByUser) {
       displayText = stripDeepThinkTag(text);
     } else {
-      const stripped = stripGameSoundTags(stripVoiceTags(text));
+      // Nov 12 2026 (WEB-12): live text also hides a tag whose closer has not arrived yet.
+      const live = isSubmitting && isLatestMessage;
+      const stripped = stripGameSoundTags(stripVoiceTags(text, live));
       // July 19 2026 (Kade: tags flashing in the web chat view): while
       // still streaming, also hide a not-yet-closed "%%%" tag -- see
       // hideDanglingVoiceTag's own doc (client/src/utils/voiceTags.ts) for
       // why this never applies to a finished/saved message.
-      displayText = isSubmitting && isLatestMessage ? hideDanglingVoiceTag(stripped) : stripped;
+      displayText = live ? hideDanglingVoiceTag(stripped) : stripped;
     }
     if (!isCreatedByUser) {
       return <Markdown content={displayText} isLatestMessage={isLatestMessage} />;
