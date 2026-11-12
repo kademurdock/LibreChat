@@ -393,10 +393,32 @@ async function loadZip(buffer) {
   const JSZip = require('jszip');
   return JSZip.loadAsync(buffer);
 }
+/* Audit fix (Nov 12 2026): one entry may not unpack past this many characters. The size written in
+ * the ZIP is checked first, but it can be forged, so the text is also counted as it inflates and the
+ * read stops there (a few KB of ZIP can otherwise inflate to gigabytes). Same decoding as
+ * async('string'), which is this stream accumulated. KADE_BOOK_ENTRY_MAX_MB, default 64. */
+const ZIP_ENTRY_LIMIT = () => Math.max(1, Number(process.env.KADE_BOOK_ENTRY_MAX_MB) || 64) * 1024 * 1024;
+const ZIP_ENTRY_TOO_BIG = 'One file inside it is too large to read as a book.';
 async function zipText(zip, path) {
   const f = zip.file(path) || zip.file(path.replace(/^\.?\//, ''));
   if (!f) return '';
-  return f.async('string');
+  const limit = ZIP_ENTRY_LIMIT();
+  if (f._data && Number(f._data.uncompressedSize) > limit) throw new Error(ZIP_ENTRY_TOO_BIG);
+  return new Promise((resolve, reject) => {
+    const parts = [];
+    let chars = 0;
+    let over = false;
+    const stream = f.internalStream('string');
+    stream.on('data', (chunk) => {
+      if (over) return;
+      chars += chunk.length;
+      if (chars > limit) { over = true; stream.pause(); reject(new Error(ZIP_ENTRY_TOO_BIG)); return; }
+      parts.push(chunk);
+    });
+    stream.on('error', reject);
+    stream.on('end', () => { if (!over) resolve(parts.join('')); });
+    stream.resume();
+  });
 }
 function dirOf(p) { const i = p.lastIndexOf('/'); return i === -1 ? '' : p.slice(0, i + 1); }
 function joinPath(dir, rel) {

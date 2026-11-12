@@ -53,7 +53,9 @@ const { logKadeUsage } = require('~/models/kadeUsage');
 const { speechProxyHeaders } = require('~/server/services/kadeSpeechAuth');
 const { userPriceFactor, extraChargeUSD } = require('~/server/services/kadeRealCost');
 const { KadeBook, KadeBookText, KadeReadingProgress, KadeReadingBookmark, KadeCollection, KadeLibraryFold, CATEGORIES } = require('~/models/kadeBook');
-const { parseBook, PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
+const { PARSER_VERSION, NOTICE_REASONS } = require('./kadeReadingRoomParse');
+/* Audit fix SEC-4 (Nov 12 2026): books are read on a worker thread with a time limit. */
+const { parseBookIsolated } = require('./kadeReadingRoomParseWorker');
 
 /* ── the media library on B2 (Part 181 continued) ──────────────────────────
  * Audio donations do not pass through this server: the phone or the browser
@@ -189,7 +191,7 @@ async function reparseIfStale(book) {
       return book;
     }
     const buffer = await getBuffer(key);
-    const parsed = await parseBook(buffer, book.originalName || key.split('/').pop() || 'book');
+    const parsed = await parseBookIsolated({ buffer, filename: book.originalName || key.split('/').pop() || 'book' });
     if (!parsed.sections.length || parsed.stats.chars < 200) throw new Error('re-read found no text');
     const oldCounts = (book.sections || []).map((x) => x.chunkCount || 0);
     const newCounts = parsed.sections.map((x) => x.chunks.length);
@@ -713,7 +715,7 @@ async function importUploadedBook(req, res) {
     f.buffer = await bookTemp.readFile(f.path);
     let parsed;
     try {
-      parsed = await parseBook(f.buffer, f.originalname || 'book');
+      parsed = await parseBookIsolated({ path: f.path, buffer: f.buffer, filename: f.originalname || 'book' });
     } catch (e) {
       logger.warn(`[reading-room/upload] PARSE FAILED user=${req.user.id} name=${String(f.originalname || '?').slice(0, 80)} bytes=${f.buffer.length}: ${e.message}`);
       return res.status(400).json({ error: `I could not read that book. ${e.message}` });

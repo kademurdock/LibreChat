@@ -122,13 +122,14 @@ async function saveTranscript({
   transcript,
 }) {
   const { KadeBook, KadeBookText } = require('~/models/kadeBook');
-  const { parseBook, PARSER_VERSION } = require('./kadeReadingRoomParse');
+  const { PARSER_VERSION } = require('./kadeReadingRoomParse');
+  const { parseBookIsolated } = require('./kadeReadingRoomParseWorker'); // SEC-4: off the main thread
   const textId = new mongoose.Types.ObjectId(
     createHash('sha256').update(`${id}:transcript`).digest('hex').slice(0, 24),
   );
   if (await KadeBook.exists({ _id: textId })) return;
   const name = `${title}, transcript`;
-  const parsed = await parseBook(Buffer.from(transcript, 'utf8'), `${name}.txt`);
+  const parsed = await parseBookIsolated({ buffer: Buffer.from(transcript, 'utf8'), filename: `${name}.txt` });
   if (!parsed.sections.length) return;
   await KadeBookText.updateOne(
     { book: textId },
