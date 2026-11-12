@@ -102,7 +102,7 @@ function loadHouse(value) {
   }
 }
 
-const sha =(s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
 /* The texts as they ran before Part 293 (verified against origin/kade
  * 56aeba215 before the change), and the casual texts that replace them.

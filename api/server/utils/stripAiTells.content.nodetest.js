@@ -96,7 +96,7 @@ test('house instructions and examples are unchanged', () => {
       ? '06063903b9980385a484d442eed34f42929f1093cf42c8d56c255e02e18795ac'
       : '7b3000179be1b6520bf990386ae2bba60a38d9e9d549a228abf51f1ded7abbfc'
     : licence
-      ? 'bf31cf43241f123d8153246e55e40d2b2c45ec31ba5af026b0ec990530d2b2ff'
+      ? '892cd428c2568d2684658da34d1b69886ba836d18ccfb400ad64bda6c564f2ca'
       : '1efef5d82a82408ed18e0ccc45bf7d276b55af37e3687615dcbc18608e86dcc6';
   assert.equal(createHash('sha256').update(candidate.KADE_STYLE_NOTE).digest('hex'), expected);
 });

@@ -41,22 +41,25 @@ const KADE_CHARACTER_CONTINUITY_BASE =
 
 /* Nov 12 2026, the voice licence (see stripAiTells.js for the switch and her words). The length
  * lines told every character to run long, which reads as a rule against a character of few
- * words. With the licence on, how much to say is the character's call: a talker still gets
- * the room, and nobody has to ask for depth first. "Familiar words" becomes the character's own
- * words. Nothing else in either text moves, her hard-line paragraph included.
+ * words. With the licence on, how much to say is the character's call. The room to run long
+ * is still handed to every character, unasked, as it has been since the Oct no-length-cap
+ * decision; a character of few words may now land it in a line. The words are the
+ * character's own, and still familiar and conversational: those two cues are the only push
+ * in these paragraphs against textbook wording, so they stay. Nothing else in either text
+ * moves, her hard-line paragraph included.
  * KADE_VOICE_LICENCE=0 restores both texts byte for byte. The earlier platform text
  * (KADE_CASUAL_HOUSE=0) is a restore point and is left as it was. */
 const KADE_VOICE_LICENCE = process.env.KADE_VOICE_LICENCE !== '0';
 
 const KADE_PLATFORM_NOTE_VOICE = KADE_PLATFORM_NOTE_CASUAL.replace(
   "Give the thought the room it needs. A short question can open a big subject. When somebody explores an interest, idea, story or your opinions, you can follow the thought across several natural paragraphs, with specific details, your reactions and connected tangents. They don't have to ask for depth. Honor an explicit request for brevity; simple practical exchanges can be quick. Keep familiar words and your own rhythm throughout.",
-  "How much you say is your character's call. When somebody explores an interest, idea, story or your opinions, a talker can follow it across several paragraphs of details, reactions and tangents without being asked. A character of few words can land it in a line. Honor an explicit request for brevity; simple practical exchanges can be quick. Keep your own words and rhythm throughout.",
+  "How much you say is your character's call. When somebody explores an interest, idea, story or your opinions, you can follow it across several paragraphs of details, reactions and tangents without being asked. A character of few words can land it in a line. Honor an explicit request for brevity; simple practical exchanges can be quick. Keep your own familiar words and your own rhythm throughout.",
 );
 
 const KADE_CHARACTER_CONTINUITY = KADE_VOICE_LICENCE
   ? KADE_CHARACTER_CONTINUITY_BASE.replace(
       'A short message is not a request for a short answer. Give an interesting subject room to develop in your own conversational voice, like a thoughtful voice message, with concrete details, reactions and connected tangents. Several paragraphs are welcome without a special request to go deep. Keep the language familiar and the thread easy to follow by ear.',
-      "How much you say is your character's call; a short message sets no limit. A talker can give an interesting subject several paragraphs of concrete details, reactions and tangents without being asked. A character of few words can say it in a line. Keep the language your own and the thread easy to follow by ear.",
+      "How much you say is your character's call; a short message sets no limit. You can give an interesting subject several paragraphs of concrete details, reactions and tangents without being asked. A character of few words can say it in a line. Keep the language conversational, familiar and your own, with the thread easy to follow by ear.",
     )
   : KADE_CHARACTER_CONTINUITY_BASE;
 

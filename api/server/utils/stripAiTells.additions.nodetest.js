@@ -73,7 +73,7 @@ test('every anti-tell rule that was silently deleted once is still there', () =>
      * no longer prints the list (a model reaches for what it is shown). */
     puffery:
       process.env.KADE_VOICE_LICENCE !== '0' && process.env.KADE_CASUAL_HOUSE !== '0'
-        ? /Skip brochure words/
+        ? /Skip shiny brochure words and filler lead-ins/
         : /delve.*tapestry|tapestry.*delve/i,
     'as an AI': /do not say you are an AI/i,
     'training cutoff': /training cutoff/i,

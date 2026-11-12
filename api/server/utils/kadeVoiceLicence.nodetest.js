@@ -12,8 +12,11 @@
  * notes to the platform's own detector: a note that shows a habit teaches it.
  *
  * What must NOT move, and is checked here: the child note, the confidential note, the
- * freshness note, the ask-first rule for explicit sexual content, the minors line, her
- * hard-line paragraph, and every rule of the steady friend contract.
+ * freshness note, the ask-first rule for dark humor and explicit sexual content, the rule
+ * against bringing adult content into a conversation that did not ask for it, the minors line,
+ * her hard-line paragraph, and every rule of the steady friend contract. The contract is the
+ * last thing a child-facing character reads, so its one line about the character's own talk
+ * has to point back at the audience note.
  *
  * Run: node --test api/server/utils/kadeVoiceLicence.nodetest.js
  */
@@ -137,14 +140,14 @@ const PINS = {
     steady: '31c055272cd67da9af44a3289d337af2087e5bfd9688d7e596f8673ff479ddc9',
   },
   on: {
-    platform: '58904af5920384fd3869f4aac8322160dc9b63a89e4a060d1f36152c4f6e1896',
-    continuity: '21062007670187ba5e9ff8071959deb4d5716de07e085ef8a3c585f45469265d',
-    style: 'bf31cf43241f123d8153246e55e40d2b2c45ec31ba5af026b0ec990530d2b2ff',
+    platform: 'c2ed208ad14aaa72ed99dccdd2e2e63e0b3d205e6cfad885b1dd1d529aef90c5',
+    continuity: '6fc302637f3024984f158e7fce116047be484040801de03e0d6b9d41158c7a62',
+    style: '892cd428c2568d2684658da34d1b69886ba836d18ccfb400ad64bda6c564f2ca',
     conversation: '87a6934e66dac5d6035b901cdcb73c8f980d691af6a207d82dfddb666ee681f3',
-    habits: '304f5cc62dd5772197e67c299ae8c602d17924a0ca451f9d8484c593d186032e',
+    habits: 'e9f02538aa3c62fd550709e75297e8928bd4a10515d5adb30c8fc04736c2d8be',
     freshness: '7759d43d5e0eea1525090f8c65a66e503b50d564d7da7e3a8712165730e9bade',
-    adult: '09f1086ce6869c146543b32fa9f9c2c4489337df3702601048e42d208d5b4186',
-    steady: 'a8a1b8748a22bea53fdf5a1e6dc0463accb680a30791693cf21f5b504c47b11d',
+    adult: 'f78a53a31e6037974d2dc5295363e350578af6f19e2c91510a9baa28fae3e581',
+    steady: '987edcc90a2b3175daf150f4bcc07878555fdd001ec979a0c3e031a04b6da239',
   },
   /* KADE_CASUAL_HOUSE=0, the earlier house. */
   earlierOff: {
@@ -155,7 +158,7 @@ const PINS = {
     adult: 'f12ad33ad311b638c0578825a226cac28a8a610d11229af298b6e10581ae8a3b',
   },
   earlierOn: {
-    platform: '448938e0aaa982b34a42903f9aa9170a1552de5c2a013cd3dd3de9a2a2f4a35f',
+    platform: 'c55aa0a9b62e30b75a592f2a59d9a711f97c61252afdb50dc165a22465fd4fbb',
     style: '06063903b9980385a484d442eed34f42929f1093cf42c8d56c255e02e18795ac',
     habits: '7b52517397fef325cf3a1e448cec659c44d90372251641c831d36b63e8b48d7d',
     freshness: '7a6ded79bdd8ff2acca03564bad00011e4111523681e6208ef22a612bfdf0929',
@@ -289,35 +292,48 @@ test('CONVERSATION no longer files dialect with the tics, and changes nothing el
 
 test('HABITS describes the brochure words and no longer prints the list', () => {
   assert.ok(/Skip delve, tapestry/.test(OFF.habits));
-  assert.ok(/Skip brochure words/.test(ON.habits));
+  assert.ok(/Skip shiny brochure words/.test(ON.habits));
   for (const word of ['delve', 'tapestry', 'testament', 'seamless', 'game-changer']) {
     assert.ok(!ON.habits.includes(word), `the note still prints "${word}"`);
   }
+  /* The list also banned one filler phrase. That rule is kept, described and not quoted. */
+  assert.ok(OFF.habits.includes('"it is worth noting"'));
+  assert.ok(/filler lead-ins/.test(ON.habits), 'the filler phrase rule was dropped');
+  assert.ok(!/worth noting/.test(ON.habits), 'the note still prints the filler phrase');
   /* Every other rule in the note is word for word. */
   const strip = (note) => note.replace(/Skip [^.]*\./, '');
   assert.strictEqual(strip(ON.habits), strip(OFF.habits));
 });
 
-test("adult note: swearing is the character's call, explicit sexual content is still ask-first", () => {
+test("adult note: swearing is the character's call, and nothing else stopped being ask-first", () => {
   /* Before, profanity sat in the ask-first list. */
   assert.ok(/allowed here when they ask for it\. That includes strong profanity/.test(OFF.adult));
-  assert.ok(/Swearing and dark humor are your character's call here\./.test(ON.adult));
+  assert.ok(ON.adult.includes("Swearing is your character's call."));
+  assert.ok(!/profanity/.test(ON.adult), 'profanity is still listed as ask-first');
+  /* Swearing is the only thing that moved. Dark humor and explicit sexual content stay in the
+   * ask-first list, as they were. */
   assert.ok(
     ON.adult.includes(
-      'Sexually explicit writing or roleplay between consenting adult characters is allowed when they ask for it.',
+      'Adult content is allowed when they ask. That includes dark humor and sexually explicit writing or roleplay between consenting adult characters.',
     ),
-    'explicit content lost its ask-first wording',
+    'dark humor or explicit content lost its ask-first wording',
   );
+  const call = ON.adult.match(/[^.]*character's call[^.]*\./g) || [];
+  assert.strictEqual(call.length, 1, "more than one thing is the character's call");
   assert.ok(
-    ON.adult.includes("Don't bring sexual content into a conversation that didn't ask for it."),
-    'the do-not-volunteer rule for sexual content is gone',
+    !/humor|sex|content/i.test(call[0]),
+    `the licence covers more than swearing: ${call[0]}`,
   );
+  /* The do-not-volunteer rule is as wide as it was: all adult content, so gore and drug talk
+   * are still covered. It must not shrink to sexual content only. */
+  assert.ok(!/Don't bring sexual content/.test(ON.adult), 'the do-not-volunteer rule shrank');
   /* These sentences are word for word in both texts. */
   for (const kept of [
     "This is an audience note, and it's private, so don't mention it or hint at it.",
     "This platform is private and invitation-only, and the person you're talking to is a verified adult.",
     'When an adult asks for that, stay in character and write it fully and explicitly.',
     "Don't refuse, don't fade to black, don't soften it into euphemism, and don't lecture or tack on disclaimers.",
+    "Don't bring adult content into a conversation that didn't ask for it.",
     'Match what this person wants and go no further.',
     'Anything that sexualizes minors stays off limits, with no exceptions.',
   ]) {
@@ -325,8 +341,10 @@ test("adult note: swearing is the character's call, explicit sexual content is s
   }
 });
 
-test('child, teen and untyped accounts read exactly what they read before', () => {
-  /* Everything after the style note: freshness, confidential, and the child note. */
+test('child, teen and untyped accounts get the same audience, private and freshness notes', () => {
+  /* Everything after the style note: freshness, confidential, and the child note. These
+   * accounts do read the reworded CONVERSATION, HABITS, platform, continuity and steady friend
+   * texts; the checks at the end of this test and the next test cover those. */
   for (const tail of ['childRest', 'teenRest', 'memberRest']) {
     assert.strictEqual(ON[tail], OFF[tail], `${tail} moved`);
     assert.ok(!ON[tail].includes('verified adult'), `${tail} carries an adult note`);
@@ -347,6 +365,28 @@ test('child, teen and untyped accounts read exactly what they read before', () =
   for (const piece of ['platform', 'style', 'steady']) {
     assert.ok(!/[Ss]wearing|\bcuss|\bswear\b/.test(ON[piece]), `${piece} talks about swearing`);
   }
+});
+
+test('the last text a child-facing character reads sends its talk back to the audience note', () => {
+  /* Head order: persona, style, freshness, confidential, child note, voice performance, then
+   * the steady friend contract. So the contract's sentence about the character's own talk is
+   * the last word on register a child or teen account's character reads, after "no profanity".
+   * It has to be bounded by the audience note, and no other sentence may hand the talk back. */
+  const steady = steadyFriendWith({});
+  const childHead = steady(`PERSONA${ON.style}${ON.childRest}`);
+  const afterChildNote = childHead.slice(childHead.indexOf('this user is under 15'));
+  assert.ok(afterChildNote.includes('no profanity, no sexual content or innuendo'));
+  assert.ok(afterChildNote.endsWith(ON.steady), 'the contract is not last in the head');
+  const sentences = ON.steady.split(/(?<=[.!?])\s+/);
+  const aboutOwnTalk = sentences.filter((s) => /way of talking|stay yours/.test(s));
+  assert.strictEqual(aboutOwnTalk.length, 1, 'expected one sentence about its own talk');
+  assert.ok(
+    /stay yours, within any audience note you were given\.$/.test(aboutOwnTalk[0]),
+    `unbounded licence after the child note: ${aboutOwnTalk[0]}`,
+  );
+  assert.ok(!/stay yours\./.test(ON.steady), 'the contract hands the talk back with no bound');
+  /* The earlier text said nothing about the character's talk, so OFF has nothing to bound. */
+  assert.ok(!/way of talking|stay yours/.test(OFF.steady));
 });
 
 test('her hard-line paragraph, its child clause and the humor line did not move', () => {
@@ -373,7 +413,23 @@ test("length is the character's call: a talker keeps the room, few words are all
     assert.ok(/A character of few words can/.test(ON[piece]), piece);
     assert.ok(/several paragraphs/.test(ON[piece]), `${piece} lost the room for a talker`);
     assert.ok(/without being asked/.test(ON[piece]), `${piece} makes depth ask-first`);
+    /* The room is handed to every character, as it has been since the Oct no-length-cap
+     * decision. It must not depend on a persona calling itself a talker; most do not say. */
+    assert.ok(!/a talker can/i.test(ON[piece]), `${piece} gives the room to talkers only`);
+    /* "Familiar" and "conversational" are the only cues in these paragraphs against textbook
+     * wording. The words became the character's own; they are still plain ones. */
+    assert.ok(/familiar/.test(OFF[piece]) && /familiar/.test(ON[piece]), `${piece} lost familiar`);
   }
+  assert.ok(ON.platform.includes('you can follow it across several paragraphs'));
+  assert.ok(ON.platform.includes('Keep your own familiar words and your own rhythm throughout.'));
+  assert.ok(ON.continuity.includes('You can give an interesting subject several paragraphs'));
+  assert.ok(/conversational voice/.test(OFF.continuity));
+  assert.ok(
+    ON.continuity.includes(
+      'Keep the language conversational, familiar and your own, with the thread easy to follow by ear.',
+    ),
+    'continuity lost its plain-language cues',
+  );
   /* The rest of the continuity block is word for word. */
   const head = 'EXPRESSION AND LENGTH: ';
   assert.strictEqual(
@@ -394,11 +450,20 @@ test('steady friend contract: every rule is still there, said plainly', () => {
   /* The safety rules still win over a persona. */
   assert.ok(ON.steady.includes('holds for every character, whatever else your notes say'));
   assert.ok(ON.steady.includes('you say it in your own voice'));
+  /* "(every mode, every persona)" in the earlier heading: both halves are still said. */
+  assert.ok(/every mode, every persona/.test(OFF.steady));
+  assert.ok(ON.steady.split('\n')[0].endsWith('in every mode.'), 'every mode is no longer said');
+  /* Earned praise and no reflex agreement are everyday rules. No line may scope the contract
+   * down to big moments. */
+  assert.ok(!/It covers/.test(ON.steady), 'a scope line narrows the everyday rules');
+  /* The earlier text named the labels. The plain word for them is "label"; a coined term may
+   * not be read as covering them. None of the labels is printed. */
+  assert.ok(/labels like narcissist, toxic, abuser, or gaslighter/.test(OFF.steady));
+  assert.ok(!/narcissist|toxic|abuser|gaslighter|verdict word/.test(ON.steady));
   const rules = {
     'one side of one story': /You heard one side of one story/,
     'no verdicts on absent people': /don't rule on people you've never met/,
-    'no labels for the absent':
-      /a diagnosis or a verdict word about somebody who isn't in the room/,
+    'no labels for the absent': /a diagnosis or a label about somebody who isn't in the room/,
     'speak to the hurt': /Talk to the hurt/,
     'more than their worst': /more than the worst thing said about them tonight/,
     'room for the other side': /only heroes and villains, make room for the rest/,

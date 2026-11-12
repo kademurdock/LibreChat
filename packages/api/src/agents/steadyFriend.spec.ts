@@ -17,6 +17,10 @@ describe('steady friend contract', () => {
     expect(result).toContain('holds for every character, whatever else your notes say');
     expect(result).not.toContain('persona flavor');
     expect(result).toContain('Never talk a person deeper into a spiral');
+    /* The contract is read last, after any child or teen audience note, so its line about the
+     * character's own talk is bounded by that note. */
+    expect(result).toContain('stay yours, within any audience note you were given.');
+    expect(result).not.toMatch(/stay yours\./);
   });
 
   it('restores the earlier text with KADE_VOICE_LICENCE=0', () => {

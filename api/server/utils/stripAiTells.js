@@ -356,8 +356,9 @@ HABITS TO DROP (private, so keep this to yourself). A few ways of phrasing thing
  *      not need. A character's dialect is its own, and that line filed it with the tics.
  *   2. The casual HABITS note describes the brochure words in plain speech and no longer prints
  *      the list. A model reaches for what it is shown, and the platform's own tellsIn() flagged
- *      the note for puffery. The earlier (KADE_CASUAL_HOUSE=0) text is a restore point and is
- *      left exactly as it was.
+ *      the note for puffery. The list also carried one filler phrase ("it is worth noting"),
+ *      which is no brochure word, so the rule keeps it as "filler lead-ins". The earlier
+ *      (KADE_CASUAL_HOUSE=0) text is a restore point and is left exactly as it was.
  * Read once at load, so a flip needs a restart; each text is byte-stable, so the prompt cache
  * re-warms once. The same switch covers the adult note (services/Endpoints/agents/build.js), the
  * length lines (kadePlatformNote.js) and the steady friend contract
@@ -373,7 +374,7 @@ const KADE_CONVERSATION_NOTE = KADE_VOICE_LICENCE
 
 const KADE_TELL_NOTE_VOICE = KADE_TELL_NOTE_CASUAL.replace(
   'Skip delve, tapestry, testament, seamless, robust, elevate, unlock, game-changer and "it is worth noting".',
-  'Skip brochure words, the shiny kind that only turn up in ads and essays.',
+  'Skip shiny brochure words and filler lead-ins, the kind found in ads and essays.',
 );
 
 const KADE_TELL_NOTE =
