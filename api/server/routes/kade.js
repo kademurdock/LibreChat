@@ -2624,6 +2624,21 @@ router.post('/voice-prefs', requireJwtAuth, async (req, res) => {
   }
 });
 
+/* Nov 12 2026 (platform audit, phase 3 A3): one pacing config the server owns. "legacy" (default)
+ * answers today's 1.5 s everywhere; KADE_CLIENT_PACING=lanes answers per-lane gaps. kadeClientConfig.js. */
+router.get('/client-config', requireJwtAuth, (req, res) =>
+  require('~/server/services/kadeClientConfig').clientConfigHandler(req, res),
+);
+
+/* Nov 12 2026 (platform audit, phase 3 A2): saved messages with kade.readableText for the apps.
+ * LibreChat's own GET /api/messages/:conversationId stays untouched for the website. */
+const { createKadeMessagesHandler } = require('~/server/services/kadeMessagesRead');
+const kadeMessages = createKadeMessagesHandler({
+  getMessages: (filter, select) => require('~/models').getMessages(filter, select),
+  logger,
+});
+router.get('/messages/:conversationId', requireJwtAuth, kadeMessages);
+
 /* ----------------------------------------------------------------------------
  * PHONE-LINE PERSONAL VOICES (July 12 2026): secret-guarded server-to-server
  * lookup/ingest so the BRIDGE can apply (and save) a caller's own per-agent
