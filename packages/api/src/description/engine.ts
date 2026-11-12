@@ -22,7 +22,7 @@ import type {
   Tier,
   Word,
 } from './types';
-import type { Freeze, Media, Rational } from './media';
+import type { Freeze, Media, Rational, Soundtrack } from './media';
 import type { ClipSpeed, Leftover, Variant } from './timing';
 import type { Brief, Heard } from './prompt';
 import type { Duck, Pause } from './mix';
@@ -39,6 +39,7 @@ import {
   MediaError,
   normalize,
   saveSound,
+  scanPicture,
   sectionPicture,
   sectionSound,
   soundtrack,
@@ -517,6 +518,92 @@ type Carried = { id: string; cue: Cue; clips: Map<Variant, Voiced> };
  */
 type Tagged = Placement & { id?: string };
 const emptyContinuity: Continuity = { kind: '', setting: '', people: [], speakers: [], recent: [] };
+
+type Resolvable<T> = { promise: Promise<T>; resolve: (value: T) => void };
+function resolvable<T>(): Resolvable<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * How many looks may be in flight at once (KADE_DESCRIPTION_LOOKS, 1 to 4), for `todo` sections
+ * still to render. 1, the default, keeps one look ahead as before. Fewer than six sections per
+ * run are not split. Keep it at 1 until a measured A/B says otherwise.
+ */
+export function lookWidth(todo: number): number {
+  const asked = Number.parseInt(process.env.KADE_DESCRIPTION_LOOKS || '', 10);
+  const wanted = Number.isFinite(asked) ? Math.min(4, Math.max(1, asked)) : 1;
+  return Math.max(1, Math.min(wanted, Math.floor(todo / 6)));
+}
+
+/**
+ * Where each run of looks starts: `width` runs of about equal length from section `first` on,
+ * each start moved to the nearest section (at most two away) that opens on a scene cut. A run
+ * never starts inside a still picture that began earlier: stills are looked at once, in film
+ * order (`seen.main`), so a later run must not see one before the run that owns its beginning.
+ */
+export function runStarts(
+  sections: Interval[],
+  cuts: number[],
+  stills: Interval[],
+  width: number,
+  first: number = 0,
+): number[] {
+  const starts = [first];
+  const onCut = (i: number) => cuts.some((cut) => Math.abs(cut - sections[i].start) < 0.5);
+  const inStill = (i: number) =>
+    stills.some(
+      (still) => still.start < sections[i].start - 0.5 && still.end > sections[i].start + 2,
+    );
+  for (let k = 1; k < width; k++) {
+    const aim = first + Math.round((k * (sections.length - first)) / width);
+    const last = starts[starts.length - 1];
+    const open = (i: number) => i > last && i < sections.length && !inStill(i);
+    let start = [0, -1, 1, -2, 2].map((step) => aim + step).find((i) => open(i) && onCut(i));
+    for (let i = aim; start === undefined && i < sections.length; i++) if (open(i)) start = i;
+    if (start !== undefined) starts.push(start);
+  }
+  return starts;
+}
+
+/**
+ * A look made ahead of the real continuity (KADE_DESCRIPTION_LOOKS > 1) numbers people from its
+ * own run's provisional state, and those ids can belong to someone else in the real continuity
+ * (`mergePeople` and `resolvePerson` match the id first). Its ids are turned into labels, the
+ * state's label when the id was known there, so the render merges people by label and never
+ * gives one person's name to another. An id nobody carries is dropped. Done before the look is
+ * kept, so a later run that reuses it is safe too.
+ */
+export function byLabel(analysis: Analysis, state: Continuity | null): Analysis {
+  const labels = new Map<string, string>();
+  for (const person of [...(state?.people ?? []), ...analysis.people]) {
+    const id = person.id?.toUpperCase();
+    if (id && person.label && !labels.has(id)) labels.set(id, person.label);
+  }
+  const isId = (who: string) => /^p\d+$/i.test(who.trim());
+  const named = (who: string): string | undefined =>
+    isId(who) ? labels.get(who.trim().toUpperCase()) : who;
+  return {
+    ...analysis,
+    people: analysis.people.map(({ id, ...person }) => ({
+      ...person,
+      label: (id && labels.get(id.toUpperCase())) || person.label,
+    })),
+    speakers: analysis.speakers.flatMap((item) => {
+      const who = named(item.who);
+      return who ? [{ ...item, who }] : [];
+    }),
+    cues: analysis.cues.map((cue) => {
+      if (!cue.who) return cue;
+      const who = cue.who.map(named).filter((value): value is string => !!value);
+      const { who: _ids, ...rest } = cue;
+      return who.length ? { ...rest, who } : rest;
+    }),
+  };
+}
 const blank = (state: Continuity | null): Analysis => ({
   kind: state?.kind ?? '',
   setting: state?.setting ?? '',
@@ -550,6 +637,11 @@ const seconds1 = (value: number) => `${value.toFixed(1)} s`;
 
 /** Deepgram key terms cost extra per minute, so they run only when KADE_DESCRIPTION_KEYTERMS=1. */
 const keytermsWanted = (): boolean => process.env.KADE_DESCRIPTION_KEYTERMS === '1';
+/**
+ * The plan's picture scan runs beside the sound pass and dialogue timing, and for silent videos
+ * too (Nov 2026). KADE_DESCRIPTION_SCAN_BESIDE=0 runs it after the sound pass, as before.
+ */
+const scanBeside = (): boolean => process.env.KADE_DESCRIPTION_SCAN_BESIDE !== '0';
 
 export async function describeVideo(request: Request): Promise<Outcome> {
   const { directory, settings, signal, progress, meter } = request;
@@ -588,30 +680,55 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   if (!plan) {
     const media = working.media;
     await progress('Measuring the soundtrack', 1);
-    const sound = media.audio ? await soundtrack(source, directory, signal, media) : null;
-    await progress('Finding the dialogue', 3);
+    /**
+     * The picture scan reads only the picture, and the whole film's picture is the plan's longest
+     * read: it runs beside the sound pass and the dialogue timing, and for a video with no sound.
+     * It has its own stop so a failed sound pass or dialogue timing ends it at once instead of
+     * waiting out the scan, and a handler from the start so a cancelled scan is never unhandled.
+     * KADE_DESCRIPTION_SCAN_BESIDE=0 runs it after the sound pass again, and not for a silent
+     * video, as before Nov 2026.
+     */
+    const beside = scanBeside();
+    const scanStop = new AbortController();
+    const scanning: Promise<Pick<Soundtrack, 'cuts' | 'stills'>> = beside
+      ? scanPicture(source, directory, AbortSignal.any([signal, scanStop.signal]), media)
+      : Promise.resolve({});
+    scanning.catch(() => undefined);
+    let sound: Soundtrack | null = null;
     let language: string | undefined;
-    words = sound
-      ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {
-          keyterms: keytermsWanted()
-            ? keytermsFor({
-                title: request.title,
-                notes: settings.notes,
-                about: request.about,
-                chapters,
-              })
-            : [],
-          onLanguage: (code) => {
-            language = code;
-          },
-        })
-      : [];
+    try {
+      sound = media.audio
+        ? await soundtrack(source, directory, signal, media, { scan: !beside })
+        : null;
+      await progress('Finding the dialogue', 3);
+      words = sound
+        ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {
+            keyterms: keytermsWanted()
+              ? keytermsFor({
+                  title: request.title,
+                  notes: settings.notes,
+                  about: request.about,
+                  chapters,
+                })
+              : [],
+            onLanguage: (code) => {
+              language = code;
+            },
+          })
+        : [];
+    } catch (error) {
+      scanStop.abort();
+      await scanning.catch(() => undefined);
+      throw error;
+    }
     if (sound) await rm(sound.dialogue, { force: true });
+    if (beside) await progress('Finding the scene changes', 4);
+    const events = beside ? await scanning : { cuts: sound?.cuts, stills: sound?.stills };
     const dialogue = sound?.momentary
       ? dialogueLoudness(sound.momentary, words, media.seconds)
       : undefined;
     const sections = planSections(media.seconds, words, 90, 60, 120, {
-      cuts: sound?.cuts,
+      cuts: events.cuts,
       chapters: chapters.map((item) => item.start),
     });
     plan = {
@@ -627,8 +744,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       },
       sections: alignSections(sections, media.fps, media.seconds),
       ...(settings.range ? { range: settings.range } : {}),
-      ...(sound?.cuts?.length ? { cuts: sound.cuts } : {}),
-      ...(sound?.stills?.length ? { stills: sound.stills } : {}),
+      ...(events.cuts?.length ? { cuts: events.cuts } : {}),
+      ...(events.stills?.length ? { stills: events.stills } : {}),
       ...(language ? { language } : {}),
       ...(sound?.oneSided ? { oneSided: sound.oneSided } : {}),
     };
@@ -708,6 +825,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let keptSecondsPerByte = carriedPace;
   let voiceFailures = 0;
   let stripMissing = false;
+  let thinNoted = false;
   const carried = new Map<number, Carried[]>();
   /**
    * Sections this run still has to look at (a saved first look still waiting for its second look
@@ -805,6 +923,8 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     i: number,
     state: Continuity | null,
     survey: boolean = false,
+    /** Made ahead of the real continuity: people are kept by label, not by id (`byLabel`). */
+    local: boolean = false,
   ): Promise<Looked> {
     const section = fixed.sections[i];
     /** A first look an earlier run paid for and kept, stopped before its second look was asked. */
@@ -848,7 +968,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const nativeClose = settings.closeLook && !survey && nativeVideo;
       const scale = settings.closeLook && !survey && !nativeClose ? 4 : 1;
       const film = survey ? undefined : (settings.range?.start ?? 0) + section.start;
-      const { file: clip, stamped } = await lookClip(
+      const {
+        file: clip,
+        stamped,
+        thinned,
+      } = await lookClip(
         source,
         dir,
         section.start,
@@ -860,6 +984,10 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         nativeClose,
         clipBytes(),
       );
+      if (thinned && !thinNoted) {
+        thinNoted = true;
+        log('Look clips drop repeated pictures (KADE_DESCRIPTION_THIN_FRAMES=1).');
+      }
       if (!nativeVideo && film !== undefined && !stamped && !stripMissing) {
         stripMissing = true;
         log('Look clips carry no time strip: the media tools have no drawtext or no font.');
@@ -915,7 +1043,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
             );
           }
         }
-        return result;
+        return local ? byLabel(result, state) : result;
       };
       let result: Analysis;
       try {
@@ -1402,6 +1530,62 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     const planned = layout(estimate);
     const hopeful = layout((index, variant) => estimate(index, variant) * 0.8);
     const unplanned = new Set(planned.left.map((item) => item.index));
+    /**
+     * Whether a description left out at this section's end goes on into the next section instead
+     * of being left out (its voice permitting). One rule for the prediction below and for the
+     * real carry after voicing.
+     */
+    const carriesOver = (index: number, reason: Leftover): boolean => {
+      const cue = cues[index];
+      const shotEnds = (fixed.cuts ?? []).some(
+        (time) => time > section.start + cue.at + 0.05 && time <= section.end + 0.3,
+      );
+      return (
+        reason !== 'priority' &&
+        cue.until >= seconds - 0.25 &&
+        !shotEnds &&
+        i + 1 < active &&
+        !savedRecords.has(i + 1) &&
+        !records.has(i + 1)
+      );
+    };
+    /**
+     * The next section's look starts here, before this one is voiced (Nov 2026): what the listener
+     * will hear is predicted from the layout at estimated lengths, the one the first voices are
+     * asked for. A description that would be carried into the next section is neither spoken nor
+     * left, as after voicing. Names are still gated at render time on what was really heard
+     * (`gateCues`), so a wrong guess can only cost wording, never an early name; each wrong guess
+     * is logged. KADE_DESCRIPTION_LOOK_AFTER_VOICE=1 waits for the voices again, as before.
+     */
+    let told = false;
+    let predicted: { spoken: string[]; left: string[] } | undefined;
+    const tell = (continuity: Continuity) => {
+      if (told) return;
+      told = true;
+      onPlaced?.(continuity);
+    };
+    if (analysis && onPlaced && process.env.KADE_DESCRIPTION_LOOK_AFTER_VOICE !== '1') {
+      predicted = {
+        spoken: [...planned.placed]
+          .sort(
+            (a, b) => a.placement.at - b.placement.at || a.placement.pauseAt - b.placement.pauseAt,
+          )
+          .map((item) => item.placement.text),
+        left: planned.left
+          .filter((item) => !carriesOver(item.index, item.reason))
+          .map((item) => cues[item.index].text),
+      };
+      tell(
+        nextContinuity(stateIn, analysis, {
+          ...predicted,
+          sectionIndex: i,
+          sectionStart: section.start,
+          sectionEnd: section.end,
+          words,
+          notes: settings.notes,
+        }),
+      );
+    }
     await speak(
       [...planned.placed, ...hopeful.placed.filter((item) => unplanned.has(item.index))],
       'a',
@@ -1523,17 +1707,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
         !(ranLong.has(key(item.index, 'short')) && clips.has(key(item.index, 'full')));
       const voiceLost =
         shortLost || (failed.has(key(item.index, 'full')) && !clips.has(key(item.index, 'short')));
-      const shotEnds = (fixed.cuts ?? []).some(
-        (time) => time > section.start + cue.at + 0.05 && time <= section.end + 0.3,
-      );
-      const carry =
-        !voiceLost &&
-        item.reason !== 'priority' &&
-        cue.until >= seconds - 0.25 &&
-        !shotEnds &&
-        i + 1 < active &&
-        !savedRecords.has(i + 1) &&
-        !records.has(i + 1);
+      const carry = !voiceLost && carriesOver(item.index, item.reason);
       if (carry) {
         const kept = new Map<Variant, Voiced>();
         for (const variant of variants(item.index)) {
@@ -1595,7 +1769,15 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       analysis || aligned.length
         ? nextContinuity(stateIn, analysis ?? blank(stateIn), heard)
         : (stateIn ?? emptyContinuity);
-    onPlaced?.(continuity);
+    if (
+      predicted &&
+      (predicted.spoken.join('\n') !== heard.spoken.join('\n') ||
+        predicted.left.join('\n') !== heard.left.join('\n'))
+    )
+      log(
+        `Section ${i + 1} of ${count}: the next look started on a predicted layout (${predicted.spoken.length} spoken, ${predicted.left.length} left out); ${heard.spoken.length} were spoken and ${heard.left.length} left out.`,
+      );
+    tell(continuity);
     const timeline = outputTimeline(aligned.map((item) => item.placement));
     await progress(`Mixing section ${i + 1} of ${count}`, at(0.75));
     const pauses = timeline.filter((item) => item.pause > 0);
@@ -1779,46 +1961,166 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   let failures = 0;
   const ahead = new Map<number, Promise<Looked>>();
   const deferred: { index: number; state: Continuity | null; at: number }[] = [];
-  for (let i = 0; i < active; i++) {
-    signal.throwIfAborted();
-    const done = savedRecords.get(i);
-    if (done) {
-      records.set(i, done);
-      if (done.analysis) markSeen(fixed.sections[i], seen.main);
-      state = done.continuity;
-      failures = 0;
-      continue;
+  /**
+   * Looks in flight at once (`lookWidth`, KADE_DESCRIPTION_LOOKS, 1 by default). With more than
+   * one, the sections still to do are cut into that many runs (`runStarts`); each run's looks
+   * follow one another on the provisional continuity (`nextContinuity` without `heard`), or on the
+   * real one whenever the section before is already rendered, while sections are still voiced,
+   * mixed and kept strictly in order on the real continuity, so `gateCues` holds every name to
+   * what was heard. These looks keep people by label (`byLabel`).
+   */
+  const todo: number[] = [];
+  for (let i = 0; i < active; i++) if (!savedRecords.has(i)) todo.push(i);
+  const first = todo[0] ?? 0;
+  const wanted = lookWidth(todo.length);
+  const starts =
+    wanted > 1
+      ? runStarts(fixed.sections.slice(0, active), fixed.cuts ?? [], stills, wanted, first)
+      : [first];
+  const width = starts.length;
+  const made = new Map<number, Resolvable<Looked>>();
+  const madeAt = (index: number): Resolvable<Looked> => {
+    let entry = made.get(index);
+    if (!entry) {
+      entry = resolvable<Looked>();
+      made.set(index, entry);
     }
-    await progress(`Watching section ${i + 1} of ${count}`, share(i, 0));
-    const section = fixed.sections[i];
-    log(`Section ${i + 1} of ${count} (${clock(section.start)} to ${clock(section.end)}) started.`);
-    const looked: Looked = (await ahead.get(i)) ?? (await look(i, state));
-    ahead.delete(i);
-    if (looked.fatal) throw looked.fatal;
-    failures = looked.failure && !looked.reused ? failures + 1 : 0;
-    if (failures >= 3)
-      throw new Error(
-        `${looked.failure} Three sections in a row could not be described, so the job stopped.`,
-      );
-    const lookAhead = (from: Continuity | null) => {
-      if (i + 1 < active && !savedRecords.has(i + 1)) ahead.set(i + 1, look(i + 1, from));
-    };
-    if (!looked.analysis) lookAhead(state);
-    if (looked.failureClass === 'transient' && !looked.reused) {
-      deferred.push({ index: i, state, at: Date.now() });
-      continue;
+    return entry;
+  };
+  /**
+   * Looks up to this section never wait for room: the section the render loop needs next and,
+   * once its look is in, the one after it, which is the one look ahead a run always had.
+   */
+  let free = first;
+  let turn = resolvable<void>();
+  const advance = (to: number) => {
+    free = to;
+    turn.resolve();
+    turn = resolvable<void>();
+  };
+  const halt: { error?: Error } = {};
+  const stop = (error: unknown) => {
+    halt.error ??= error instanceof Error ? error : new Error('The run stopped.');
+    turn.resolve();
+  };
+  /**
+   * A look further ahead starts only while what is left of her approval, with requests in flight
+   * at their full reserve (`approvedRoom`), covers `relookMargin` looks more than every look
+   * still to make, at the mean real look or the quote's share when that is more. Otherwise the
+   * run waits and the film is looked at one section ahead, as before; the meter stays every
+   * request's backstop. True when the look had to wait.
+   */
+  const roomFor = async (index: number): Promise<boolean> => {
+    let waited = false;
+    while (!halt.error && index > free) {
+      const left = request.approvedRoom?.();
+      if (left === undefined) return waited;
+      const quotedShare = lookCount ? (request.quotedUSD ?? 0) / lookCount : 0;
+      const mean = firstCosts.length
+        ? firstCosts.reduce((sum, cost) => sum + cost, 0) / firstCosts.length
+        : 0;
+      if (left + 1e-9 >= Math.max(quotedShare, mean) * (relookMargin + toLook.size)) return waited;
+      waited = true;
+      await Promise.race([wait(2000, signal), turn.promise]);
     }
+    return waited;
+  };
+  const runLooks = async (from: number, to: number, rooted: boolean): Promise<void> => {
+    let carry: Continuity | null = rooted
+      ? (neighbour(from - 1)?.continuity ?? null)
+      : { ...emptyContinuity };
+    let j = from;
+    let told = false;
     try {
+      for (; j < to && !halt.error; j++) {
+        const done = savedRecords.get(j);
+        if (done) {
+          carry = done.continuity;
+          continue;
+        }
+        /** The section before is already voiced: its real continuity beats the provisional one. */
+        const real = records.get(j - 1)?.continuity;
+        if (real) carry = real;
+        if ((await roomFor(j)) && !told) {
+          told = true;
+          log(
+            `Section ${j + 1} of ${count}: its look waited for room under the approved maximum; this part is looked at one section ahead for now.`,
+          );
+        }
+        if (halt.error) break;
+        const looked = await look(j, carry, false, true);
+        madeAt(j).resolve(looked);
+        if (looked.fatal) {
+          stop(looked.fatal);
+          j++;
+          break;
+        }
+        if (looked.analysis) carry = nextContinuity(carry, looked.analysis);
+      }
+    } catch (error) {
+      stop(error);
+    } finally {
+      /** A run that stopped early still answers its sections, so the render loop never waits forever. */
+      const fatal = halt.error ?? new Error('A run of looks stopped.');
+      for (; j < to; j++) if (!savedRecords.has(j)) madeAt(j).resolve({ analysis: null, fatal });
+    }
+  };
+  const runs: Promise<void>[] = [];
+  if (width > 1) {
+    log(
+      `Looking at ${width} parts of the video at once (from sections ${starts.map((s) => s + 1).join(', ')}).`,
+    );
+    starts.forEach((from, k) => runs.push(runLooks(from, starts[k + 1] ?? active, k === 0)));
+  }
+  try {
+    for (let i = 0; i < active; i++) {
+      signal.throwIfAborted();
+      const done = savedRecords.get(i);
+      if (done) {
+        records.set(i, done);
+        if (done.analysis) markSeen(fixed.sections[i], seen.main);
+        state = done.continuity;
+        failures = 0;
+        continue;
+      }
+      if (width > 1) advance(i);
+      await progress(`Watching section ${i + 1} of ${count}`, share(i, 0));
+      const section = fixed.sections[i];
+      log(
+        `Section ${i + 1} of ${count} (${clock(section.start)} to ${clock(section.end)}) started.`,
+      );
+      const looked: Looked =
+        width > 1 ? await madeAt(i).promise : ((await ahead.get(i)) ?? (await look(i, state)));
+      ahead.delete(i);
+      made.delete(i);
+      if (looked.fatal) throw looked.fatal;
+      if (width > 1) advance(i + 1);
+      failures = looked.failure && !looked.reused ? failures + 1 : 0;
+      if (failures >= 3)
+        throw new Error(
+          `${looked.failure} Three sections in a row could not be described, so the job stopped.`,
+        );
+      const lookAhead = (from: Continuity | null) => {
+        if (width === 1 && i + 1 < active && !savedRecords.has(i + 1))
+          ahead.set(i + 1, look(i + 1, from));
+      };
+      if (!looked.analysis) lookAhead(state);
+      if (looked.failureClass === 'transient' && !looked.reused) {
+        deferred.push({ index: i, state, at: Date.now() });
+        continue;
+      }
       const record = await render(i, looked, state, false, (continuity) => {
         if (looked.analysis) lookAhead(continuity);
       });
       records.set(i, record);
       state = record.continuity;
-    } catch (error) {
-      await Promise.all(ahead.values());
-      throw error;
     }
+  } catch (error) {
+    stop(error);
+    await Promise.allSettled([...runs, ...ahead.values()]);
+    throw error;
   }
+  await Promise.all(runs);
   for (const item of deferred) {
     const remaining = lookRetryMilliseconds() - (Date.now() - item.at);
     if (remaining > 0) {

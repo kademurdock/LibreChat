@@ -57,6 +57,16 @@ const outputThreads = (complex: boolean = false): string[] => [
   '1',
   ...(complex ? ['-filter_complex_threads', '1'] : []),
 ];
+/**
+ * Decoder threads for the whole-film picture scan (KADE_DESCRIPTION_SCAN_THREADS; by default the
+ * larger of KADE_DESCRIPTION_THREADS and 4, at most 16). The scan is the plan's longest read and
+ * runs beside the sound pass, at lowered priority like every media tool.
+ */
+export function scanThreadCount(): number {
+  const value = Number.parseInt(process.env.KADE_DESCRIPTION_SCAN_THREADS || '', 10);
+  return Number.isFinite(value) && value >= 1 ? Math.min(value, 16) : Math.max(threadCount(), 4);
+}
+const scanThreads = (): string[] => ['-threads', String(scanThreadCount())];
 
 export type MediaProblem =
   | 'damaged'
@@ -477,6 +487,8 @@ export type Capabilities = {
   freezedetect: boolean;
   /** Text drawn on frames (needs libfreetype), for the time strip on look clips. */
   drawtext: boolean;
+  /** Drops pictures that repeat the one before, for thinned look clips. */
+  mpdecimate: boolean;
   limiterLatency: boolean;
   perChannel: boolean;
 };
@@ -501,6 +513,7 @@ async function checkTools(bin: string): Promise<Capabilities> {
     scdet: names.has('scdet'),
     freezedetect: names.has('freezedetect'),
     drawtext: names.has('drawtext'),
+    mpdecimate: names.has('mpdecimate'),
     limiterLatency: /\blatency\b/.test(limiter),
     perChannel: /measure_perchannel/.test(stats),
   };
@@ -891,7 +904,7 @@ async function pictureScan(
     [
       ...quiet,
       ...sourceOnly,
-      ...inputThreads(),
+      ...scanThreads(),
       '-skip_loop_filter',
       'all',
       '-reinit_filter:v',
@@ -931,21 +944,40 @@ async function pictureScan(
 }
 
 /**
+ * Scene cuts and still stretches of the whole picture, for callers that run the scan beside the
+ * sound pass (soundtrack with `scan: false`). A scan that fails or runs out of time finds nothing;
+ * only an aborted signal rejects.
+ */
+export async function scanPicture(
+  source: string,
+  directory: string,
+  signal: AbortSignal,
+  media?: Media,
+): Promise<Pick<Soundtrack, 'cuts' | 'stills'>> {
+  const info = await mediaOf(source, media, signal);
+  return pictureScan(source, directory, signal, info, await capabilities());
+}
+
+/**
  * The whole soundtrack on the picture's clock: its loudness (integrated, peak, range and momentary
  * blocks), the mono copy speech recognition reads (centre channel first for surround), a check for
  * captures with sound on one channel only (measured again with that channel on both sides), and a
- * separate picture scan for scene cuts and still stretches, which also runs when there is no sound.
+ * separate picture scan for scene cuts and still stretches (scanPicture runs it alone, which also
+ * works when there is no sound). `scan: false` leaves the picture scan to the caller, which can
+ * run it alongside.
  */
 export async function soundtrack(
   source: string,
   directory: string,
   signal: AbortSignal,
   media?: Media,
+  options: { scan?: boolean } = {},
 ): Promise<Soundtrack> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
   const { levels, ...result } = await soundPass(source, directory, signal, info, tools);
-  const events = await pictureScan(source, directory, signal, info, tools);
+  const events =
+    options.scan === false ? {} : await pictureScan(source, directory, signal, info, tools);
   const live =
     info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
   if (!live) return { ...result, ...events, ...(info.oneSided ? { oneSided: info.oneSided } : {}) };
@@ -969,6 +1001,22 @@ export function videoCeiling(outputSeconds: number, limit: number = clipLimit): 
 
 /** Analysis frame rate: 8 fps for clips of 20 s or less (idents, bumpers), otherwise 3. */
 export const lookRate = (seconds: number): number => (seconds <= 20 ? 8 : 3);
+
+/**
+ * Look clips may drop pictures that repeat the one before (KADE_DESCRIPTION_THIN_FRAMES=1, off
+ * until measured): held cels and still shots then cost fewer frames, and a host that samples a
+ * fixed number of frames per clip spends them on what moves. Close looks are never thinned: they
+ * exist for dense frames. Needs ffmpeg 5.1 or later (-fps_mode) and the mpdecimate filter.
+ */
+const thinFrames = (): boolean => process.env.KADE_DESCRIPTION_THIN_FRAMES === '1';
+
+/**
+ * The thinning filter for a clip at `rate` pictures a second: a run of repeats is cut short so
+ * that a still shot keeps one picture every two seconds, whatever the rate (5 dropped in a row at
+ * 3 fps, 15 at 8 fps). Kept pictures keep their own times, so the output is variable frame rate.
+ */
+export const thinning = (rate: number): string =>
+  `mpdecimate=max=${Math.max(1, Math.round(rate * 2) - 1)}`;
 
 /**
  * Fonts for the time strip, first found wins: KADE_DESCRIPTION_FONT, then DejaVu Sans Mono from
@@ -1110,12 +1158,14 @@ export async function lookClip(
   film?: number,
   nativeClose: boolean = false,
   limit: number = clipLimit,
-): Promise<{ file: string; stamped: boolean }> {
+): Promise<{ file: string; stamped: boolean; thinned: boolean }> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
   const video = join(directory, 'analysis.mp4');
   const outputSeconds = closeLook ? seconds * 4 : seconds;
   const ceiling = videoCeiling(outputSeconds, limit);
+  const rate = closeLook || nativeClose ? 4 : lookRate(seconds);
+  const thinned = thinFrames() && tools.mpdecimate && !closeLook && !nativeClose;
   const font = film !== undefined && tools.drawtext ? await stripFont() : null;
   let stamped = font !== null;
   const stripFor = (width: number): string[] =>
@@ -1126,8 +1176,11 @@ export async function lookClip(
     const picture = [
       pictureClock(info, start),
       deinterlace(info, tools),
-      `fps=${closeLook || nativeClose ? 4 : lookRate(seconds)}:start_time=0`,
+      `fps=${rate}:start_time=0`,
       ...shape(info, tools, width),
+      // After shape (8-bit, standard range, the size the model sees) and before the strip, so a
+      // changing clock never keeps a repeated picture and every picture left prints its own time.
+      ...(thinned ? [thinning(rate)] : []),
       ...strip,
       `trim=end=${seconds.toFixed(6)}`,
       ...(closeLook ? ['setpts=4*PTS'] : []),
@@ -1169,6 +1222,8 @@ export async function lookClip(
         'high',
         '-pix_fmt',
         'yuv420p',
+        // Without this a constant-rate output would put the dropped pictures back as copies.
+        ...(thinned ? ['-fps_mode:v', 'vfr'] : []),
         ...colourTags(info, tools),
         '-c:a',
         'aac',
@@ -1198,8 +1253,8 @@ export async function lookClip(
     return encode(width, []);
   };
   const width = closeLook || nativeClose ? 1440 : 960;
-  if ((await attempt(width)) <= limit) return { file: video, stamped };
-  if ((await attempt(closeLook ? 960 : 640)) <= limit) return { file: video, stamped };
+  if ((await attempt(width)) <= limit) return { file: video, stamped, thinned };
+  if ((await attempt(closeLook ? 960 : 640)) <= limit) return { file: video, stamped, thinned };
   await rm(video, { force: true });
   throw new MediaError(
     'too-detailed',
@@ -1257,8 +1312,22 @@ export async function sectionSound(
     ],
     signal,
   );
-  const decoded = floats(await readFile(file));
-  out.set(decoded.subarray(0, Math.min(decoded.length, out.length)));
+  /**
+   * Read straight into the section's buffer: a 120 s section is 46 MB of float PCM, and reading it
+   * whole, copying it to an aligned array and copying that again held three of them at once.
+   */
+  const handle = await open(file, 'r');
+  try {
+    const target = new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+    let filled = 0;
+    while (filled < target.length) {
+      const { bytesRead } = await handle.read(target, filled, target.length - filled, filled);
+      if (!bytesRead) break;
+      filled += bytesRead;
+    }
+  } finally {
+    await handle.close();
+  }
   await rm(file, { force: true });
   return out;
 }

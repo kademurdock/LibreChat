@@ -1128,3 +1128,120 @@ test('Kade-AI credit: the held first frame is exactly the frames asked for, shap
   }
   assert.ok(left > 0.45 && right < 0.01, 'the channels stay apart');
 });
+
+test('DESC-6: the picture scan can run apart from the sound pass, with its own thread count', async () => {
+  const file = await make('scenes.mp4', [
+    ...lavfi("testsrc2=s=320x240:r=30:d=12,drawbox=x=0:y=0:w=iw:h=ih:color=blue:t=fill:enable='between(t,4,10)'"),
+    ...lavfi("aevalsrc='if(lt(t,6),0.5,0.1)*sin(2*PI*440*t)':s=48000:d=12"),
+    ...h264,
+    '-c:a',
+    'aac',
+  ]);
+  const info = await media.probe(file, signal);
+  const whole = await media.soundtrack(file, await folder('desc6-whole'), signal, info);
+  const sound = await media.soundtrack(file, await folder('desc6-sound'), signal, info, { scan: false });
+  assert.equal(sound.cuts, undefined, 'scan: false finds no cuts');
+  assert.equal(sound.stills, undefined, 'and no stills');
+  assert.ok(Math.abs(sound.program - whole.program) < 0.1, `loudness intact: ${sound.program}`);
+  assert.equal(sound.momentary.length, whole.momentary.length);
+  const scanned = await media.scanPicture(file, await folder('desc6-scan'), signal, info);
+  assert.deepEqual(scanned.cuts, whole.cuts, 'the scan alone finds the same cuts');
+  assert.deepEqual(scanned.stills, whole.stills, 'and the same still');
+
+  const saved = { scan: process.env.KADE_DESCRIPTION_SCAN_THREADS, threads: process.env.KADE_DESCRIPTION_THREADS };
+  try {
+    delete process.env.KADE_DESCRIPTION_SCAN_THREADS;
+    delete process.env.KADE_DESCRIPTION_THREADS;
+    assert.equal(media.scanThreadCount(), 4, '4 by default');
+    process.env.KADE_DESCRIPTION_THREADS = '6';
+    assert.equal(media.scanThreadCount(), 6, 'the media thread count when that is more');
+    process.env.KADE_DESCRIPTION_SCAN_THREADS = '2';
+    assert.equal(media.scanThreadCount(), 2, 'its own switch wins');
+    process.env.KADE_DESCRIPTION_SCAN_THREADS = '99';
+    assert.equal(media.scanThreadCount(), 16, 'at most 16');
+    process.env.KADE_DESCRIPTION_SCAN_THREADS = 'many';
+    assert.equal(media.scanThreadCount(), 6, 'garbage is ignored');
+  } finally {
+    for (const [key, value] of [
+      ['KADE_DESCRIPTION_SCAN_THREADS', saved.scan],
+      ['KADE_DESCRIPTION_THREADS', saved.threads],
+    ])
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  }
+});
+
+test('DESC-8: a section read straight into its buffer is exact, with a silent tail past the source', async () => {
+  const file = await make('desc8.mp4', [
+    ...lavfi('testsrc2=s=160x120:r=30:d=2'),
+    ...lavfi("aevalsrc='0.5*sin(2*PI*440*t)|0.3*sin(2*PI*660*t)':s=48000:d=2"),
+    ...h264,
+    '-c:a',
+    'pcm_s16le',
+    '-f',
+    'mov',
+  ]);
+  const info = await media.probe(file, signal);
+  const frames = 4 * 48000;
+  const pcm = await media.sectionSound(file, await folder('desc8'), 0, frames, true, signal, info);
+  assert.equal(pcm.length, frames * 2);
+  const heard = pcm.subarray(0, 2 * 48000 * 2 - 2 * 4800);
+  assert.ok(heard.some((value) => Math.abs(value) > 0.2), 'the source sound is there');
+  const tail = pcm.subarray(Math.ceil(2.2 * 48000) * 2);
+  assert.ok(tail.every((value) => value === 0), 'exact zeros past the source end');
+  const short = await media.sectionSound(file, await folder('desc8-short'), 0, 48000, true, signal, info);
+  assert.equal(short.length, 48000 * 2, 'a section shorter than the source is cut to length');
+  assert.deepEqual(Array.from(short.subarray(0, 4000)), Array.from(pcm.subarray(0, 4000)), 'the same samples');
+});
+
+test('DESC-13: thinned look clips are off by default, drop repeats when switched on, and never thin close looks', async () => {
+  const file = await make('desc13.mp4', [
+    ...lavfi('testsrc=s=320x240:r=30:d=10'),
+    ...lavfi('color=c=gray:s=320x240:r=30:d=16'),
+    ...lavfi("aevalsrc='0.2*sin(2*PI*440*t)':s=48000:d=26"),
+    '-filter_complex',
+    '[0:v][1:v]concat=n=2:v=1:a=0[v]',
+    '-map',
+    '[v]',
+    '-map',
+    '2:a',
+    ...h264,
+    '-c:a',
+    'aac',
+  ]);
+  const info = await media.probe(file, signal);
+  const frames = async (clip) =>
+    Number(
+      (
+        await media.command(
+          ffprobePath.path,
+          ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', clip],
+          signal,
+        )
+      )
+        .toString()
+        .trim(),
+    );
+  assert.equal(media.thinning(3), 'mpdecimate=max=5');
+  assert.equal(media.thinning(8), 'mpdecimate=max=15');
+  delete process.env.KADE_DESCRIPTION_THIN_FRAMES;
+  const plain = await media.lookClip(file, await folder('desc13-off'), 0, 26, signal, false, info);
+  assert.equal(plain.thinned, false, 'off by default');
+  const plainFrames = await frames(plain.file);
+  assert.ok(Math.abs(plainFrames - 78) <= 2, `constant rate: ${plainFrames}`);
+  const tools = await media.capabilities();
+  process.env.KADE_DESCRIPTION_THIN_FRAMES = '1';
+  try {
+    const thin = await media.lookClip(file, await folder('desc13-on'), 0, 26, signal, false, info);
+    assert.equal(thin.thinned, tools.mpdecimate);
+    if (tools.mpdecimate) {
+      const thinFrames = await frames(thin.file);
+      assert.ok(thinFrames < plainFrames - 20, `repeats dropped: ${thinFrames} of ${plainFrames}`);
+      assert.ok(thinFrames >= 30, `the moving part keeps its pictures: ${thinFrames}`);
+    }
+    const close = await media.lookClip(file, await folder('desc13-close'), 0, 4, signal, true, info);
+    assert.equal(close.thinned, false, 'close looks are never thinned');
+  } finally {
+    delete process.env.KADE_DESCRIPTION_THIN_FRAMES;
+  }
+});
