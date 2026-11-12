@@ -45,7 +45,10 @@ test('labels line up with tool_calls and leave data alone', () => {
 test('fail-soft on odd frames', () => {
   assert.strictEqual(withToolLabels(null), null);
   assert.strictEqual(withToolLabels(undefined), undefined);
-  const noCalls = { event: 'on_run_step', data: { stepDetails: { type: 'tool_calls', tool_calls: [] } } };
+  const noCalls = {
+    event: 'on_run_step',
+    data: { stepDetails: { type: 'tool_calls', tool_calls: [] } },
+  };
   assert.strictEqual(withToolLabels(noCalls), noCalls);
   assert.strictEqual(spokenToolLabel(undefined), '');
 });

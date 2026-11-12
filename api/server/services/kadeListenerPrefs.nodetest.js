@@ -3,11 +3,7 @@
  * Run: node --test api/server/services/kadeListenerPrefs.nodetest.js */
 const test = require('node:test');
 const assert = require('node:assert');
-const {
-  buildUpdate,
-  toListenerJson,
-  createListenerPrefsHandlers,
-} = require('./kadeListenerPrefs');
+const { buildUpdate, toListenerJson, createListenerPrefsHandlers } = require('./kadeListenerPrefs');
 
 function fakeRes() {
   return {
@@ -55,7 +51,10 @@ const quietLogger = { error() {}, warn() {} };
 
 test('buildUpdate takes good values and refuses bad ones field by field', () => {
   const now = new Date('2026-11-12T20:00:00Z');
-  const ok = buildUpdate({ pace: 1.234, fillers: false, delivery: { agent_a: 'STABLE', 'library-reading': null } }, now);
+  const ok = buildUpdate(
+    { pace: 1.234, fillers: false, delivery: { agent_a: 'STABLE', 'library-reading': null } },
+    now,
+  );
   assert.deepStrictEqual(ok.errors, []);
   assert.strictEqual(ok.changed, true);
   assert.deepStrictEqual(ok.update.$set, {
@@ -71,9 +70,15 @@ test('buildUpdate takes good values and refuses bad ones field by field', () => 
   const character = buildUpdate({ pace: null }, now);
   assert.deepStrictEqual(character.update.$set, { pace: null, paceAt: now });
 
-  const bad = buildUpdate({ pace: 3, fillers: 'yes', delivery: { 'a.b': 'STABLE', agent_x: 'LOUD', $where: 'x' } }, now);
+  const bad = buildUpdate(
+    { pace: 3, fillers: 'yes', delivery: { 'a.b': 'STABLE', agent_x: 'LOUD', $where: 'x' } },
+    now,
+  );
   assert.strictEqual(bad.changed, false);
-  assert.deepStrictEqual(bad.errors.sort(), ['delivery.$where', 'delivery.a.b', 'delivery.agent_x', 'fillers', 'pace'].sort());
+  assert.deepStrictEqual(
+    bad.errors.sort(),
+    ['delivery.$where', 'delivery.a.b', 'delivery.agent_x', 'fillers', 'pace'].sort(),
+  );
   assert.strictEqual(buildUpdate({ delivery: [] }).changed, false);
   assert.strictEqual(buildUpdate(null).changed, false);
   assert.strictEqual(buildUpdate({ pace: Number.NaN }).changed, false);
@@ -130,7 +135,10 @@ test('GET keeps the old prefs map and adds listener beside it', async () => {
 test('delivery merges per character and null clears one', async () => {
   const store = memoryStore();
   const { putListener } = createListenerPrefsHandlers(store, quietLogger);
-  await putListener({ user: { id: 'u1' }, body: { delivery: { agent_a: 'STABLE', agent_b: 'CREATIVE' } } }, fakeRes());
+  await putListener(
+    { user: { id: 'u1' }, body: { delivery: { agent_a: 'STABLE', agent_b: 'CREATIVE' } } },
+    fakeRes(),
+  );
   const res = fakeRes();
   await putListener({ user: { id: 'u1' }, body: { delivery: { agent_a: null } } }, res);
   assert.deepStrictEqual(res.body.listener.delivery, { agent_b: 'CREATIVE' });

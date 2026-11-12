@@ -82,7 +82,12 @@ function buildUpdate(body, now = new Date()) {
     if (pace === null) {
       set.pace = null;
       set.paceAt = now;
-    } else if (typeof pace === 'number' && Number.isFinite(pace) && pace >= PACE_MIN && pace <= PACE_MAX) {
+    } else if (
+      typeof pace === 'number' &&
+      Number.isFinite(pace) &&
+      pace >= PACE_MIN &&
+      pace <= PACE_MAX
+    ) {
       set.pace = Math.round(pace * 100) / 100;
       set.paceAt = now;
     } else {
@@ -168,7 +173,11 @@ function createListenerPrefsHandlers(store, logger = console) {
         return res.status(400).json({ error: 'Nothing to save', fields: errors });
       }
       const row = await store.updateListener(req.user.id, update);
-      return res.json({ ok: true, listener: toListenerJson(row), ...(errors.length ? { refused: errors } : {}) });
+      return res.json({
+        ok: true,
+        listener: toListenerJson(row),
+        ...(errors.length ? { refused: errors } : {}),
+      });
     } catch (e) {
       logger.error('[kade/voice-prefs] listener save failed:', e);
       return res.status(500).json({ error: 'Could not save voice settings' });

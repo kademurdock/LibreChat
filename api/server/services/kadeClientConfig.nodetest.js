@@ -13,7 +13,10 @@ test('legacy (default) answers exactly what the apps do today', () => {
   for (const lane of ['message', 'auth', 'speech', 'bulk', 'standard']) {
     assert.strictEqual(config.pacing.lanes[lane].minGapMs, 1500, lane);
   }
-  assert.deepStrictEqual(config.pacing.unpaced, ['/api/agents/chat/stream/', '/api/agents/chat/abort']);
+  assert.deepStrictEqual(config.pacing.unpaced, [
+    '/api/agents/chat/stream/',
+    '/api/agents/chat/abort',
+  ]);
   assert.deepStrictEqual(config.limits, { ttsPerMinute: 200, messagesPerMinute: 40 });
 });
 
@@ -77,7 +80,11 @@ test('kade messages route: own rows, after filter, readableText added', async ()
   });
   const res = fakeRes();
   await handler(
-    { params: { conversationId: 'c-1' }, query: { after: '2026-11-12T00:00:00Z' }, user: { id: 'u1' } },
+    {
+      params: { conversationId: 'c-1' },
+      query: { after: '2026-11-12T00:00:00Z' },
+      user: { id: 'u1' },
+    },
     res,
   );
   assert.strictEqual(res.statusCode, 200);
@@ -94,6 +101,9 @@ test('kade messages route: own rows, after filter, readableText added', async ()
   assert.strictEqual(bad.statusCode, 400);
 
   const noAfter = fakeRes();
-  await handler({ params: { conversationId: 'c-1' }, query: { after: 'not a date' }, user: { id: 'u1' } }, noAfter);
+  await handler(
+    { params: { conversationId: 'c-1' }, query: { after: 'not a date' }, user: { id: 'u1' } },
+    noAfter,
+  );
   assert.strictEqual(seen.filter.createdAt, undefined);
 });

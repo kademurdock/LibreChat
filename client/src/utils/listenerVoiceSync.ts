@@ -97,7 +97,10 @@ export function hasSavedValue(key: string): boolean {
 
 /** A pace the website can use: a finite number in 0.5..1.5, or null for the character's speed. */
 export function validPace(value: unknown): value is number | null {
-  return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 1.5);
+  return (
+    value === null ||
+    (typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 1.5)
+  );
 }
 
 export function cleanDelivery(map: unknown): Record<string, DeliveryMode> {
@@ -106,7 +109,11 @@ export function cleanDelivery(map: unknown): Record<string, DeliveryMode> {
     return out;
   }
   for (const [agentId, mode] of Object.entries(map as Record<string, unknown>)) {
-    if (/^[A-Za-z0-9_-]{1,64}$/.test(agentId) && typeof mode === 'string' && DELIVERY_MODES.has(mode)) {
+    if (
+      /^[A-Za-z0-9_-]{1,64}$/.test(agentId) &&
+      typeof mode === 'string' &&
+      DELIVERY_MODES.has(mode)
+    ) {
       out[agentId] = mode as DeliveryMode;
     }
   }

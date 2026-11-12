@@ -4,7 +4,12 @@
  * 200,000 characters). Run: node --test api/server/utils/kadeReadableText.nodetest.js */
 const test = require('node:test');
 const assert = require('node:assert');
-const { toReadableText, withReadableText, messageBodyText, MAX_CHARS } = require('./kadeReadableText');
+const {
+  toReadableText,
+  withReadableText,
+  messageBodyText,
+  MAX_CHARS,
+} = require('./kadeReadableText');
 
 test('the Nov 6 stray-tag shape reads only the words', () => {
   const raw = 'Two different problems.\n\n%%%\n%%%warm and curious%%% So what is the shape of it?';
@@ -28,13 +33,19 @@ test('tags, markdown, scene tags, cues, citations and tokens', () => {
     toReadableText('See [Ozarks](https://en.wikipedia.org/wiki/Ozarks_(region)) please.'),
     'See Ozarks please.',
   );
-  assert.strictEqual(toReadableText('a *quiet* word and ~~old~~ __new__'), 'a quiet word and old new');
+  assert.strictEqual(
+    toReadableText('a *quiet* word and ~~old~~ __new__'),
+    'a quiet word and old new',
+  );
   assert.strictEqual(toReadableText('one\n\n\n\n\ntwo'), 'one\n\ntwo');
 });
 
 test('doubled percents: prose loses them, code keeps them', () => {
   assert.strictEqual(toReadableText('It is 100%% true.'), 'It is 100 true.');
-  assert.strictEqual(toReadableText('Use `printf("%%d", n)` here.'), 'Use `printf("%%d", n)` here.');
+  assert.strictEqual(
+    toReadableText('Use `printf("%%d", n)` here.'),
+    'Use `printf("%%d", n)` here.',
+  );
   const fenced = 'Code:\n```c\nprintf("%%d", n);\n  **not bold**\n```\nDone.';
   assert.strictEqual(toReadableText(fenced), fenced);
 });
@@ -89,9 +100,38 @@ test('32 hostile 200,000-character inputs stay fast', () => {
   const N = 199990;
   const fill = (unit) => unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
   const units = [
-    '`', '```', '[[', '[[ ', '[[a', '[', '[a](', '[a](b', '[a](b(', '](',
-    '\\', '\\u', '\\ue20', '\\u e20', '', 'turn1', 'turn1search', '<|', '<|a',
-    '#', '## ', '*', '**', '*a', '* ', '_', '__', '~~', '%', '%%%', ' ', '\n',
+    '`',
+    '```',
+    '[[',
+    '[[ ',
+    '[[a',
+    '[',
+    '[a](',
+    '[a](b',
+    '[a](b(',
+    '](',
+    '\\',
+    '\\u',
+    '\\ue20',
+    '\\u e20',
+    '',
+    'turn1',
+    'turn1search',
+    '<|',
+    '<|a',
+    '#',
+    '## ',
+    '*',
+    '**',
+    '*a',
+    '* ',
+    '_',
+    '__',
+    '~~',
+    '%',
+    '%%%',
+    ' ',
+    '\n',
   ];
   assert.strictEqual(units.length, 32);
   let total = 0;

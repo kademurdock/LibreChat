@@ -113,7 +113,10 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
     }
     void sync();
     const onVisible = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetch.current > REFRESH_MIN_MS) {
+      if (
+        document.visibilityState === 'visible' &&
+        Date.now() - lastFetch.current > REFRESH_MIN_MS
+      ) {
         void sync();
       }
     };

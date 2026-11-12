@@ -14,6 +14,7 @@
 const { stripSteeringTags } = require('./steeringStrip');
 
 const CODE_SPAN = /```[\s\S]*?(?:```|$)|`[^`\n]+`/g;
+// eslint-disable-next-line no-control-regex -- the code-span placeholders are control characters on purpose
 const HELD_CODE = /\u0001(\d{1,6})\u0002/g;
 const SCENE_TAG = /\[\[[ \t]{0,4}([^[\]\n]{1,58}?)[: \t]{0,4}\]\][ \t]{0,8}/g;
 const GAME_SOUND = /\[sound:[a-z0-9_]{1,40}\]/gi;
@@ -22,7 +23,8 @@ const DEEP_THINK = /\[DEEP THINK(?: {1,4}\d{10,17})?\]/gi;
 const INSTANT = /\[INSTANT(?: {1,4}\d{10,17})?\]/gi;
 const LITERAL_CITATION = /\\{1,4}u ?e?20[0-9a-f](?:turn\d{1,3}[a-z]{2,10}\d{1,3})?/gi;
 const PUA_CITATION = /[-](?:turn\d{1,3}[a-z]{2,10}\d{1,3})?/gi;
-const ORPHAN_ANCHOR = /\bturn\d{1,3}(?:search|news|image|ref|view|fetch|video|file|local|tech)\d{1,3}\b/gi;
+const ORPHAN_ANCHOR =
+  /\bturn\d{1,3}(?:search|news|image|ref|view|fetch|video|file|local|tech)\d{1,3}\b/gi;
 const SPECIAL_TOKEN = /<\|[^|<>]{1,48}\|>/g;
 const MD_HEADER = /^#{1,6}[ \t]+/;
 const MD_BULLET = /^[ \t]*[-*•][ \t]+/;

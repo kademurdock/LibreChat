@@ -54,13 +54,20 @@ describe('planListenerSync (decision 24)', () => {
     const empty = { delivery: {} };
     expect(planListenerSync(empty, local(), emptySyncState()).push).toEqual({});
     expect(
-      planListenerSync(empty, local({ pace: 1.1, paceSaved: true, fillers: false, fillersSaved: true }), emptySyncState())
-        .push,
+      planListenerSync(
+        empty,
+        local({ pace: 1.1, paceSaved: true, fillers: false, fillersSaved: true }),
+        emptySyncState(),
+      ).push,
     ).toEqual({ pace: 1.1, fillers: false });
   });
 
   it("null pace is the character's own speed and is applied as such", () => {
-    const plan = planListenerSync({ pace: null, paceAt: 't1' }, local({ pace: 1.3 }), emptySyncState());
+    const plan = planListenerSync(
+      { pace: null, paceAt: 't1' },
+      local({ pace: 1.3 }),
+      emptySyncState(),
+    );
     expect(plan.apply).toEqual({ pace: null });
   });
 
@@ -78,8 +85,10 @@ describe('planListenerSync (decision 24)', () => {
     expect(plan.apply.delivery).toEqual({ agent_a: 'STABLE' });
     expect(plan.seen.delivery).toBe('d1');
     expect(
-      planListenerSync({ delivery: {}, deliveryAt: 'd1' }, local(), { seen: { delivery: 'd1' }, pending: {} })
-        .apply,
+      planListenerSync({ delivery: {}, deliveryAt: 'd1' }, local(), {
+        seen: { delivery: 'd1' },
+        pending: {},
+      }).apply,
     ).toEqual({});
   });
 
