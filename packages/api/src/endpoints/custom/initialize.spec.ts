@@ -702,3 +702,50 @@ describe('initializeCustom – native Anthropic provider', () => {
     expect(options.provider).toBeUndefined();
   });
 });
+
+describe('initializeCustom – kade_live (gateway audit GW-6, Nov 12 2026)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.KADE_SEND_LIVE;
+  });
+
+  const addParamsOf = () =>
+    (mockGetOpenAIConfig.mock.calls[0][1] as { addParams?: Record<string, unknown> }).addParams;
+
+  it('adds kade_live: true only when the client asked with kadeLive: true', async () => {
+    const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+    (params.req.body as Record<string, unknown>).kadeLive = true;
+    await initializeCustom(params);
+    expect(addParamsOf()).toEqual({ kade_live: true });
+  });
+
+  it('keeps configured addParams beside the flag', async () => {
+    const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+    mockGetCustomEndpointConfig.mockReturnValue({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://gateway.example.com/v1',
+      models: {},
+      addParams: { provider: { zdr: true } },
+    });
+    (params.req.body as Record<string, unknown>).kadeLive = true;
+    await initializeCustom(params);
+    expect(addParamsOf()).toEqual({ provider: { zdr: true }, kade_live: true });
+  });
+
+  it('sends nothing new when the client did not ask, asked with a non-boolean, or the switch is off', async () => {
+    for (const [value, env] of [
+      [undefined, undefined],
+      ['true', undefined],
+      [true, '0'],
+    ] as const) {
+      jest.clearAllMocks();
+      if (env) process.env.KADE_SEND_LIVE = env;
+      else delete process.env.KADE_SEND_LIVE;
+      const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+      if (value !== undefined) (params.req.body as Record<string, unknown>).kadeLive = value;
+      await initializeCustom(params);
+      expect(addParamsOf()).toBeUndefined();
+    }
+    delete process.env.KADE_SEND_LIVE;
+  });
+});
