@@ -123,6 +123,20 @@ function kadeStepLimit(resolved, stepBudget, maxRecursionLimit) {
 }
 
 /**
+ * KADE turn audit TURN-1 (Nov 12 2026): how long a reply's FINAL event waits for the memory keeper.
+ * The keeper starts beside the reply and usually outlasts it (Jev gate, then glm-5.3-flash, ~8 s
+ * median), so the old fixed 3 s wait held FINAL -- and with it the website's read-aloud, every
+ * client's "done" and the next send -- for up to 3 s on most turns where the keeper runs. Receipts
+ * that finish later are saved onto the same reply by scheduleMemoryArtifactPersistence (request.js).
+ * KADE_KEEPER_FINAL_WAIT_MS=3000 is the old wait; 0 (default) waits for nothing.
+ */
+function kadeKeeperFinalWaitMs() {
+  const raw = process.env.KADE_KEEPER_FINAL_WAIT_MS;
+  const ms = raw == null || raw === '' ? 0 : Number(raw);
+  return Number.isFinite(ms) && ms >= 0 ? Math.min(ms, 10000) : 0;
+}
+
+/**
  * The voice/phone lane's replayed-transcript envelope, as written by
  * inworld-tts-proxy's `composeTextWithHistory`. Matched by its own opening and
  * closing sentences so ordinary prose that happens to mention the phrase is
@@ -1154,30 +1168,42 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * Creates a promise that resolves with the memory promise result or undefined after a timeout
+   * Resolves with the memory keeper's receipts if it settles within `timeoutMs`, else undefined.
+   * TURN-1 (Nov 12 2026): the only caller (chatCompletion's finally) passes
+   * kadeKeeperFinalWaitMs(), 0 by default; 0 means "take it only if already settled". A keeper
+   * still running is left to scheduleMemoryArtifactPersistence (request.js), never waited on here.
    * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
+   * @param {number} timeoutMs - Longest wait in milliseconds (default: 3000, the upstream value)
    * @returns {Promise<(TAttachment | null)[] | undefined>}
    */
   async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
     if (!memoryPromise) {
       return;
     }
-
+    /* A keeper that already finished still rides this FINAL (Promise.race takes the first SETTLED
+     * entry in order); one still running is left to scheduleMemoryArtifactPersistence. */
+    const NOT_READY = Symbol('keeper-not-ready');
+    let timer;
     try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Memory processing timeout')), timeoutMs),
-      );
-
-      const attachments = await Promise.race([memoryPromise, timeoutPromise]);
+      const later =
+        timeoutMs > 0
+          ? new Promise((resolve) => {
+              timer = setTimeout(() => resolve(NOT_READY), timeoutMs);
+            })
+          : Promise.resolve(NOT_READY);
+      const attachments = await Promise.race([memoryPromise, later]);
+      if (attachments === NOT_READY) {
+        logger.info(
+          `[AgentClient] keeper still running at FINAL (waited ${timeoutMs} ms); receipts are saved when it finishes`,
+        );
+        return;
+      }
       return attachments;
     } catch (error) {
-      if (error.message === 'Memory processing timeout') {
-        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
-      } else {
-        logger.error('[AgentClient] Error processing memory:', error);
-      }
+      logger.error('[AgentClient] Error processing memory:', error);
       return;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -1343,6 +1369,10 @@ class AgentClient extends BaseClient {
       kind: 'conversation',
     });
     const streamId = this.options.req?._resumableStreamId || null;
+    /* TURN-6: the keeper usually finishes after this client is disposed (cleanup.js nulls
+     * this.options), so its callbacks must not read this.options when they run. */
+    const keeperReq = this.options.req;
+    const keeperOffRecord = this.memoryOffRecord;
     const { diaryChatOrigin } = require('@librechat/api');
     const diaryOrigin = diaryChatOrigin({
       isTemporary: this.options.req.body?.isTemporary,
@@ -1407,15 +1437,18 @@ class AgentClient extends BaseClient {
                 .noteMoodReason({
                   userId,
                   agentId: activeAgentId,
-                  req: this.options.req,
+                  req: keeperReq,
                   conversationId,
                   text,
-                  offRecord: this.memoryOffRecord,
+                  offRecord: keeperOffRecord,
                 })
-                .catch(() => {});
+                .catch((error) =>
+                  logger.warn('[kadeSoul] mood reason failed: ' + (error && error.message)),
+                );
             }
-          } catch (_) {
+          } catch (error) {
             /* a reason never costs anyone their logbook line */
+            logger.warn('[kadeSoul] mood reason not started: ' + (error && error.message));
           }
         }
         return result;
@@ -1692,10 +1725,11 @@ class AgentClient extends BaseClient {
       try {
         jevJudges = require('~/server/services/kadeJevJudges');
         this._kadeKeeperLogged = false;
-        /* Part 237: AWAITED, unlike the Part 236 shadow. This road already
-         * runs after the reply has gone out, so the ~400 ms costs the person
-         * nothing, and the answer decides whether the generative keeper runs
-         * at all. keeperGate never rejects and returns skip:false on every
+        /* Part 237: AWAITED, unlike the Part 236 shadow. This road runs BESIDE
+         * the reply (started at chatCompletion before the model call), so the
+         * gate's ~400 ms delays only the keeper; FINAL no longer waits for the
+         * keeper at all (TURN-1, KADE_KEEPER_FINAL_WAIT_MS). The answer decides
+         * whether the generative keeper runs at all. keeperGate never rejects and returns skip:false on every
          * failure, so the keeper's old behaviour is what a broken Jev buys. */
         const gate = await jevJudges.keeperGate(filteredMessages);
         jevScores = gate.scores;
@@ -2648,7 +2682,7 @@ class AgentClient extends BaseClient {
       }
 
       try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        const attachments = await this.awaitMemoryWithTimeout(memoryPromise, kadeKeeperFinalWaitMs());
         if (attachments && attachments.length > 0) {
           this.artifactPromises.push(...attachments);
         }
