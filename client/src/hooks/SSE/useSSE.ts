@@ -17,6 +17,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
 import { clearAllDrafts } from '~/utils';
+import { kadeLiveFields } from '~/utils/kadeLive';
 import { rememberToolLabels } from '~/utils/toolLabels';
 import store from '~/store';
 
@@ -89,6 +90,8 @@ export default function useSSE(
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
     payload = removeNullishValues(payload) as TPayload;
+    // Nov 12 2026 (GW-6 web half): read-aloud on = this browser will speak it, so ask for live.
+    payload = { ...payload, ...kadeLiveFields() } as TPayload;
 
     let textIndex = null;
     clearStepMaps();

@@ -45,6 +45,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
 import useUsageHandler from './useUsageHandler';
 import { kadeSwitchOn } from '~/utils/kadeSwitch';
+import { kadeLiveFields } from '~/utils/kadeLive';
 import { rememberToolLabels } from '~/utils/toolLabels';
 import store from '~/store';
 
@@ -1345,6 +1346,8 @@ export default function useResumableSSE(
       payload = removeNullishValues(payload) as TPayload;
       const requestId = getRequestId(currentSubmission);
       payload.requestId = requestId;
+      // Nov 12 2026 (GW-6 web half): read-aloud on = this browser will speak it, so ask for live.
+      payload = { ...payload, ...kadeLiveFields() } as TPayload;
 
       clearStepMaps();
 
