@@ -19,6 +19,8 @@ const {
   memoryInstructions,
   createTokenCounter,
   applyContextToAgent,
+  withKadeVoiceTags,
+  withKadeSteadyFriend,
   isMemoryAgentEnabled,
   recordCollectedUsage,
   prepareTokenSpend,
@@ -1174,6 +1176,34 @@ class AgentClient extends BaseClient {
         if (!isBareProbe && ![...headParts, agent.instructions].some(part =>
           String(part || '').includes(KADE_CHARACTER_CONTINUITY))) {
           headParts.push(KADE_CHARACTER_CONTINUITY);
+        }
+        /** KADE Nov 12 2026 (turn audit, TURN-12) — THE HOUSE BLOCKS RIDE THE SHARED PREFIX.
+         * applyContextToAgent appends the two fleet-wide constant blocks (voice performance v2
+         * and the steady friend contract, about 4K chars) AFTER the persona. With the switch on
+         * they sit inside the constant prefix every agent shares, so a memory, canon or summary
+         * change no longer re-bills them, and nothing of ours sits between the persona and the
+         * conversation (MCP and tool instructions, when attached, still follow it). Each block
+         * is skipped when the persona or the head so far already carries its marker, the same
+         * no-op the old append had, so nothing is ever sent twice; applyContextToAgent then
+         * finds the markers and appends nothing. Bare probes keep the old place.
+         * KADE_VOICE_TAGS=0 and KADE_STEADY_FRIEND=0 still remove each block.
+         * OFF by default (Kade's Nov 12 choice: it needs her listen first, since the voice
+         * block moves about a persona-length earlier). KADE_HOUSE_FIRST=1 turns it on. */
+        if (!isBareProbe && process.env.KADE_HOUSE_FIRST === '1') {
+          const carried = [...headParts, personaBlock]
+            .map((part) => String(part || ''))
+            .join('\n\n');
+          const houseParts = [];
+          if (withKadeVoiceTags(carried) !== carried) {
+            houseParts.push(withKadeVoiceTags(''));
+          }
+          if (withKadeSteadyFriend(carried) !== carried) {
+            houseParts.push(withKadeSteadyFriend(''));
+          }
+          const house = houseParts.filter(Boolean).join('\n\n');
+          if (house) {
+            headParts.push(house);
+          }
         }
         /** KADE Aug 6 2026 — LIVING WORLD LAYER (ideas 25+26, her pick):
          * daily seed + family board, byte-stable per (agent, Central day) so

@@ -1520,6 +1520,53 @@ describe('AgentClient - titleConvo', () => {
       expect(client.options.agent.instructions).toContain('Base agent instructions');
       expect(client.options.agent.instructions).not.toContain('[object Promise]');
     });
+
+    it('TURN-12: with KADE_HOUSE_FIRST=1 the house blocks appear once, before the persona', async () => {
+      const prev = process.env.KADE_HOUSE_FIRST;
+      process.env.KADE_HOUSE_FIRST = '1';
+      try {
+        mockFormatInstructions.mockResolvedValue('');
+        const messages = [
+          { messageId: 'msg-1', parentMessageId: null, sender: 'User', text: 'Hello', isCreatedByUser: true },
+        ];
+        await client.buildMessages(messages, null, { instructions: null, additional_instructions: null });
+        const text = client.options.agent.instructions;
+        const count = (needle) => text.split(needle).length - 1;
+        expect(count('## Voice performance v2')).toBe(1);
+        expect(count('## The steady friend contract')).toBe(1);
+        expect(text.indexOf('## Voice performance v2')).toBeLessThan(text.indexOf('Base agent instructions'));
+        expect(text.indexOf('## The steady friend contract')).toBeLessThan(text.indexOf('Base agent instructions'));
+        expect(text.trimEnd().endsWith('Base agent instructions')).toBe(true);
+
+        /* a second pass over the same agent object must not add second copies */
+        await client.buildMessages(messages, null, { instructions: null, additional_instructions: null });
+        const again = client.options.agent.instructions;
+        expect(again.split('## Voice performance v2').length - 1).toBe(1);
+        expect(again.split('## The steady friend contract').length - 1).toBe(1);
+      } finally {
+        if (prev === undefined) delete process.env.KADE_HOUSE_FIRST;
+        else process.env.KADE_HOUSE_FIRST = prev;
+      }
+    });
+
+    it('TURN-12: off by default, the house blocks stay after the persona', async () => {
+      const prev = process.env.KADE_HOUSE_FIRST;
+      delete process.env.KADE_HOUSE_FIRST;
+      try {
+        mockFormatInstructions.mockResolvedValue('');
+        const messages = [
+          { messageId: 'msg-1', parentMessageId: null, sender: 'User', text: 'Hello', isCreatedByUser: true },
+        ];
+        await client.buildMessages(messages, null, { instructions: null, additional_instructions: null });
+        const text = client.options.agent.instructions;
+        if (text.includes('## Voice performance v2')) {
+          expect(text.indexOf('## Voice performance v2')).toBeGreaterThan(text.indexOf('Base agent instructions'));
+        }
+        expect(text.split('## Voice performance v2').length - 1).toBeLessThanOrEqual(1);
+      } finally {
+        if (prev !== undefined) process.env.KADE_HOUSE_FIRST = prev;
+      }
+    });
   });
 
   describe('buildMessages with request and agent-scoped context attachments', () => {
