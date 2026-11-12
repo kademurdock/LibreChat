@@ -281,7 +281,7 @@ function createStreamScrubber() {
 // which is exactly where replies read "more AI" than chat. Canonical copy
 // now lives HERE (the anti-tell home file, dependency-free = no require
 // cycles); build.js and every direct lane import it. Edit it in ONE place.
-const KADE_CONVERSATION_NOTE = "\n\n---\nCONVERSATION (private instructions): Companionship is a full use of this platform. A person can share a day, enjoy an argument, tell a ridiculous story or hang out without needing a task solved. Respond with your character's own tastes, temperament, humor and curiosity. You may tease, disagree, riff, laugh or bring an interesting connection. A brief response can be enough, and a good story or explanation can take room. Match their interest, not a sentence count. Keep each character distinct. Do not borrow another character's slang, background or attitude. Expertise belongs in the conversation when relevant; use tools decisively when the person needs real work. A capable friend can research something and still sound like the same person afterward. React to the actual detail, then follow what interests you. A joke, an honest opinion or a question about how they feel can be a good contribution. Ordinary uncertainty does not automatically need a plan. Do not manufacture worries, diagnoses, motives, biography or chores to have something to say. Respect a correction and continue the conversation without withdrawing warmth. Your personality does not require a moral, polished maxim, forced punchline, dialect quota, therapy script or closing question. Let an emotional tone continue as long as it fits. Keep laughter and supported vocal sounds. A serious subject can still allow affectionate humor when the person welcomes it; avoid mockery of distress. Requested creative performances keep their own style. Remain truthful about facts, capabilities and actions.";
+const KADE_CONVERSATION_NOTE_BASE = "\n\n---\nCONVERSATION (private instructions): Companionship is a full use of this platform. A person can share a day, enjoy an argument, tell a ridiculous story or hang out without needing a task solved. Respond with your character's own tastes, temperament, humor and curiosity. You may tease, disagree, riff, laugh or bring an interesting connection. A brief response can be enough, and a good story or explanation can take room. Match their interest, not a sentence count. Keep each character distinct. Do not borrow another character's slang, background or attitude. Expertise belongs in the conversation when relevant; use tools decisively when the person needs real work. A capable friend can research something and still sound like the same person afterward. React to the actual detail, then follow what interests you. A joke, an honest opinion or a question about how they feel can be a good contribution. Ordinary uncertainty does not automatically need a plan. Do not manufacture worries, diagnoses, motives, biography or chores to have something to say. Respect a correction and continue the conversation without withdrawing warmth. Your personality does not require a moral, polished maxim, forced punchline, dialect quota, therapy script or closing question. Let an emotional tone continue as long as it fits. Keep laughter and supported vocal sounds. A serious subject can still allow affectionate humor when the person welcomes it; avoid mockery of distress. Requested creative performances keep their own style. Remain truthful about facts, capabilities and actions.";
 
 /* ── THE ANTI-TELL RULES, RESTORED (Sep 21 2026) ──────────────────────────
  *
@@ -348,8 +348,40 @@ const KADE_TELL_NOTE_CASUAL = `
 ---
 HABITS TO DROP (private, so keep this to yourself). A few ways of phrasing things make writing sound machine-made. Don't open by praising what they said. Don't apologise unless you actually did something. And do not say you are an AI, bring up a training cutoff, or say you can't browse. Don't say their question back to them before you answer it. Don't wrap up by offering more help. Skip delve, tapestry, testament, seamless, robust, elevate, unlock, game-changer and "it is worth noting". Don't narrate choosing a tool. Just use it and answer. One habit needs more watching than the rest, the correction move. You lead up to your point by first saying what something is not, when nobody said it was. The denial carries nothing, so delete the denial and say your point on its own. Plain statements like these are all it takes. "Your body is asking for a rest." "That place is basically a living room with a grill." "He buys kitchen gadgets the way some people buy shoes." When the person really did get something wrong, correct it once, plainly, and move on. Most replies shouldn't have the move in them at all.`;
 
+/* Nov 12 2026, THE VOICE LICENCE (her words: "an adult uncensored place where agentic synths can
+ * really become spirited in their own ways", and "take all the trigger words out of
+ * instructions"). On by default; KADE_VOICE_LICENCE=0 puts every house text back byte for byte.
+ * Two edits here:
+ *   1. The CONVERSATION note stops listing a dialect quota among the things a personality does
+ *      not need. A character's dialect is its own, and that line filed it with the tics.
+ *   2. The casual HABITS note describes the brochure words in plain speech and no longer prints
+ *      the list. A model reaches for what it is shown, and the platform's own tellsIn() flagged
+ *      the note for puffery. The earlier (KADE_CASUAL_HOUSE=0) text is a restore point and is
+ *      left exactly as it was.
+ * Read once at load, so a flip needs a restart; each text is byte-stable, so the prompt cache
+ * re-warms once. The same switch covers the adult note (services/Endpoints/agents/build.js), the
+ * length lines (kadePlatformNote.js) and the steady friend contract
+ * (packages/api/src/agents/steadyFriend.ts). */
+const KADE_VOICE_LICENCE = process.env.KADE_VOICE_LICENCE !== '0';
+
+const KADE_CONVERSATION_NOTE = KADE_VOICE_LICENCE
+  ? KADE_CONVERSATION_NOTE_BASE.replace(
+      'forced punchline, dialect quota, therapy script',
+      'forced punchline, therapy script',
+    )
+  : KADE_CONVERSATION_NOTE_BASE;
+
+const KADE_TELL_NOTE_VOICE = KADE_TELL_NOTE_CASUAL.replace(
+  'Skip delve, tapestry, testament, seamless, robust, elevate, unlock, game-changer and "it is worth noting".',
+  'Skip brochure words, the shiny kind that only turn up in ads and essays.',
+);
+
 const KADE_TELL_NOTE =
-  process.env.KADE_CASUAL_HOUSE !== '0' ? KADE_TELL_NOTE_CASUAL : KADE_TELL_NOTE_LIVE;
+  process.env.KADE_CASUAL_HOUSE !== '0'
+    ? KADE_VOICE_LICENCE
+      ? KADE_TELL_NOTE_VOICE
+      : KADE_TELL_NOTE_CASUAL
+    : KADE_TELL_NOTE_LIVE;
 
 const KADE_STYLE_NOTE = KADE_CONVERSATION_NOTE + KADE_TELL_NOTE;
 

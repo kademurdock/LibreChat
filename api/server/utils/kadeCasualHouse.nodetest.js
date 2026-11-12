@@ -52,9 +52,15 @@ Module._load = function (request, parent, isMain) {
 };
 
 /** Load all three modules fresh with KADE_CASUAL_HOUSE set to `value`
- * (undefined = unset), then put the environment back. */
+ * (undefined = unset), then put the environment back.
+ *
+ * Nov 12 2026: these pins are the texts as they ran before the voice licence, so every load
+ * here runs with KADE_VOICE_LICENCE=0. The licensed texts and that switch are pinned in
+ * kadeVoiceLicence.nodetest.js. */
 function loadHouse(value) {
   const before = process.env.KADE_CASUAL_HOUSE;
+  const licenceBefore = process.env.KADE_VOICE_LICENCE;
+  process.env.KADE_VOICE_LICENCE = '0';
   if (value === undefined) {
     delete process.env.KADE_CASUAL_HOUSE;
   } else {
@@ -88,22 +94,32 @@ function loadHouse(value) {
     } else {
       process.env.KADE_CASUAL_HOUSE = before;
     }
+    if (licenceBefore === undefined) {
+      delete process.env.KADE_VOICE_LICENCE;
+    } else {
+      process.env.KADE_VOICE_LICENCE = licenceBefore;
+    }
   }
 }
 
-const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+const sha =(s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
 /* The texts as they ran before Part 293 (verified against origin/kade
- * 56aeba215 before the change), and the casual texts that replace them. */
+ * 56aeba215 before the change), and the casual texts that replace them.
+ *
+ * Nov 12 2026: the two platform pins had gone stale. Both platform texts gained the character
+ * continuity block and the no-length-cap wording after Part 293 (24f8e0bd, a77155af) and the
+ * pins were not moved, so three tests here were failing on origin/kade d0f4c992. They now hold
+ * the platform texts as they stand at d0f4c992 with the voice licence off. */
 const PINS = {
   live: {
-    platform: 'e94eaacbd85678cab705254e86aaf9f7f52d8de1af55e5db4dd488e0e026a738',
+    platform: '277c2df848d1ca358d05547e37f790af59a374cef18fae81b3706386a26c77d0',
     style: '7b3000179be1b6520bf990386ae2bba60a38d9e9d549a228abf51f1ded7abbfc',
     freshness: '7a6ded79bdd8ff2acca03564bad00011e4111523681e6208ef22a612bfdf0929',
     adult: 'f12ad33ad311b638c0578825a226cac28a8a610d11229af298b6e10581ae8a3b',
   },
   casual: {
-    platform: '7f71cfdffa5a0fe7b8485d0b49505f4a9ccf0e0d7bfd6de4405a610ca478f39a',
+    platform: '04fc4d349b94ff7747bc8f9058598c0ad46785670a3bad4f0a3e95af5f93b34b',
     style: '1efef5d82a82408ed18e0ccc45bf7d276b55af37e3687615dcbc18608e86dcc6',
     freshness: '7759d43d5e0eea1525090f8c65a66e503b50d564d7da7e3a8712165730e9bade',
     adult: 'a9bde2c15ff76aad9e65354a71ece6066938d8afd18d11ea8d13651de288ff62',
