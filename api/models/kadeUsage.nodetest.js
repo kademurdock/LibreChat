@@ -40,6 +40,12 @@ function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', owner
   class Schema {
     constructor(def) {
       this.def = def;
+      this.indexes = [];
+    }
+
+    /* DB-1: the real schema declares compound indexes; the stand-in records them. */
+    index(spec) {
+      this.indexes.push(spec);
     }
   }
   Schema.Types = { ObjectId: 'ObjectId', Mixed: 'Mixed' };
@@ -135,6 +141,13 @@ function load({ multiplier = '2', roleLookupFails = false, owner = 'kade', owner
   });
   return { U: module.exports, rows, moves, warnings, ctl };
 }
+
+test('DB-1: the usage rows are indexed for date-windowed reads', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'kadeUsage.js'), 'utf8');
+  for (const spec of ['{ user: 1, createdAt: -1 }', '{ service: 1, createdAt: -1 }', '{ createdAt: -1 }']) {
+    assert.ok(src.includes(`kadeUsageSchema.index(${spec});`), `missing index ${spec}`);
+  }
+});
 
 test('a person pays the platform factor x the real cost, and the row keeps the real cost', async () => {
   const { U, rows, moves } = load();
