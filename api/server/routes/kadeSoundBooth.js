@@ -34,6 +34,9 @@ const {
   lyricLiftIssue,
   lyricPetWords,
   lyricLongLines,
+  lyricJoinBreaks,
+  lyricMisreadLines,
+  lyricLineWords,
   lyricEndingTells,
   lyricKissOffTells,
   songSectionMap,
@@ -839,6 +842,17 @@ const MUSIC_GRAMMAR_WRITE_STEPS = [
   [/^3\. STRUCTURE.*$/m, '3. STRUCTURE as the section tags this song uses, in order, joined by arrows, then a few words on what changes at each: what drops out, where it lifts, how it ends. For an exact timeline, give each section a [start - end] timestamp instead.'],
   [/^4\. VOCAL PROFILE.*$/m, '4. VOCAL PROFILE if anyone sings: sex, timbre, range and delivery, chosen for this genre and this singer.'],
   [/^6\. THE TECHNICAL LINE.*$/m, '6. THE TECHNICAL LINE last: BPM as a number, the key, and the length in plain words. This engine reads the length from the prompt, so always say how long.'],
+  /* Nov 12 2026 craft review: steps 1, 2 and 5 still carried three sample genres, a whole sample arrangement and three
+   * sample mood words, and the LYRICS paragraph offered to ask for the mood of the words although the contract says
+   * never ask. The writer copies what it is shown. KADE_LYRIC_CRAFT_NOV12=0 leaves these four as they were. */
+  ...(process.env.KADE_LYRIC_CRAFT_NOV12 === '0'
+    ? []
+    : [
+        [/^1\. GENRE WITH ERA.*$/m, '1. GENRE WITH ERA, first and plainly: the genre with its decade or scene. A genre with a decade beats a feeling. Put the feeling AFTER the genre, never instead of it.'],
+        [/^2\. INSTRUMENTS.*$/m, '2. INSTRUMENTS you actually want to hear, and what each one does in this song: which carries the chords, what the drums and bass do, and which instrument answers the voice.'],
+        [/^5\. MOOD.*$/m, '5. MOOD in two or three adjectives chosen for this song.'],
+        [/^LYRICS:.*$/m, 'LYRICS: if the person supplied their own words, the booth attaches them under a "Lyrics:" heading after your prose, so do not repeat or paraphrase them. If they did not, write the words yourself under a final "Lyrics:" heading with section tags on their own lines and (parentheses) after a lead phrase for echoes and backing vocals. Stay on the subject they named.'],
+      ]),
 ];
 const MUSIC_GRAMMAR_WRITE = MUSIC_GRAMMAR_WRITE_STEPS.reduce((grammar, [step, plain]) => grammar.replace(step, plain), MUSIC_GRAMMAR);
 
@@ -969,13 +983,16 @@ function yueStyleLineRich({ cover = false } = {}, env = process.env) {
 
 function systemPrompt({ engine, mode, band, cover }) {
   const music = mode === 'write' ? MUSIC_GRAMMAR_WRITE : MUSIC_GRAMMAR;
+  /* Nov 12 2026 craft review: the writer's half of the desk's misread check. A singing engine reads digits, symbols,
+   * abbreviations and capitals its own way. KADE_LYRIC_CRAFT_NOV12=0 leaves the sentence out. */
+  const spelling = process.env.KADE_LYRIC_CRAFT_NOV12 === '0' ? '' : ' Spell every sung word the way it is said aloud: numbers as words, and no abbreviations, symbols or capitals for emphasis.';
   /* ACE-Step XL takes the YuE2 desk path unchanged (the same style line, Lyrics: heading and section tags); only the
    * name in the heading differs, and the YuE2 text below is byte-identical to what it was. */
   const rich = engine === 'yue2' && mode === 'write' && yueRichDirection(band);
   const styleLine = rich ? yueStyleLineRich({ cover: !!cover }) : YUE_STYLE_LINE_PLAIN;
   const yue = `${engine === 'ace' ? 'ACE-STEP XL' : 'YUE2'} MUSIC FORMAT (the only format you may output):
 ${styleLine} Keep production directions out of the lyrics. Do not use XML, dialogue notation, a Negative Tag Box, trained-style trigger words or a Lyria timeline. The lyrics and section layout determine the song's length; a prose duration is a creative aim, not an exact timing control.
-${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. Backing vocals and ad-libs go in (parentheses): after the lead phrase on the same line, or on their own line when the backing voice sings alone. If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
+${mode === 'write' ? 'For a sung song, follow the direction with a Lyrics: heading and complete original lyrics. Keep [Verse 1], [Chorus] and other section tags alone on their lines. Write out each repeated chorus. Backing vocals and ad-libs go in (parentheses): after the lead phrase on the same line, or on their own line when the backing voice sings alone.' + spelling + ' If the user supplies lyrics, preserve every word exactly. For an instrumental request, provide only the instrumental style direction: do not invent words.' : 'Format the direction only. Never invent lyrics. If lyrics are included in the text, preserve them exactly under a separate Lyrics: heading.'}
 No code fence, no preamble, no headings other than Lyrics:.`;
   const grammar = engine === 'yue2' || engine === 'ace' ? yue : engine === 'lyria' ? music : engine === 'seed' ? SEED_GRAMMAR : SCENEMA_GRAMMAR;
   const job =
@@ -2276,7 +2293,7 @@ async function scriptHandler(req, res) {
      * seeded by the idea, who asked and when (asking again draws again), and the length
      * check below holds the song to that same map. None when the brief sets its own shape. */
     const sectionMap = wantsWords && typeof songSectionMap === 'function' ? songSectionMap(text, `${req.user.id}\n${started}`) : null;
-    if (sectionMap) lines.splice(1, 0, sectionMapNote(sectionMap));
+    if (sectionMap) lines.splice(1, 0, sectionMapNote(sectionMap, engine));
     /* Part 296: her "the chorus is horrible... over and over, nothing else". One chorus
      * shape drawn in code with the same salt, said in words under the map. None for the
      * story song's refrain or a brief that asks for a chant or no chorus.
@@ -2426,14 +2443,24 @@ async function scriptHandler(req, res) {
      * audit gave the draft back unchanged in 10 of 12 songs when it was only asked to "change what
      * fails". KADE_LYRIC_GATES=0 stands them down. */
     const gatesOn = wantsWords && process.env.KADE_LYRIC_GATES !== '0';
+    /* Nov 12 2026 craft review: three line checks ride in the same audit section, with no new call. One long line is
+     * now enough to name it, a sung line that breaks on a small joining word is named, and so is a line holding digits,
+     * a symbol, an abbreviation or capitals a singing engine may read wrong. Replayed free over 178 stored rig drafts
+     * first (Oct 8 and Oct 27 test output from several writers, not her songs): they fired on 16, 1 and 6 percent of
+     * them. Reviewed the same day: "of" came off the joining words (its one hit was a good line), and a line the idea
+     * already holds word for word is hers, so no line check names it, a long one included.
+     * KADE_LYRIC_LINE_CHECKS=0 stands the three down. */
+    const lineChecksOn = gatesOn && process.env.KADE_LYRIC_LINE_CHECKS !== '0';
     const gateReport = (script) => {
       const thin = gatesOn && typeof lyricThinSections === 'function' ? lyricThinSections(script, text) : [];
       const backing = gatesOn && typeof lyricBackingIssue === 'function' ? lyricBackingIssue(script, text) : null;
       const rhyme = gatesOn && typeof lyricRhymeReport === 'function' ? lyricRhymeReport(script, text) : null;
       const lift = gatesOn && typeof lyricLiftIssue === 'function' ? lyricLiftIssue(script, text) : false;
       const pets = gatesOn && typeof lyricPetWords === 'function' ? lyricPetWords(script, text) : [];
-      const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text) : [];
-      return { thin, backing, rhyme, lift, pets, longLines };
+      const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text, lineChecksOn) : [];
+      const joinBreaks = lineChecksOn && typeof lyricJoinBreaks === 'function' ? lyricJoinBreaks(script, text) : [];
+      const misread = lineChecksOn && typeof lyricMisreadLines === 'function' ? lyricMisreadLines(script, text) : [];
+      return { thin, backing, rhyme, lift, pets, longLines, joinBreaks, misread };
     };
     const gatesInDraft = gateReport(raw);
     /* Part 296: what repeats instead of saying something, measured in code, rides into the
@@ -2465,6 +2492,10 @@ async function scriptHandler(req, res) {
               lift: gatesInDraft.lift,
               pets: gatesInDraft.pets,
               longLines: gatesInDraft.longLines,
+              lineChecks: lineChecksOn,
+              joinBreaks: gatesInDraft.joinBreaks,
+              misread: gatesInDraft.misread,
+              clean: audience === 'clean',
             },
           ),
           maxTokens: writingSettings.maxTokens,
@@ -2534,7 +2565,11 @@ async function scriptHandler(req, res) {
         const answer = await callModel({
           ...writingSettings,
           system: writingSystem,
-          user: lyricRepeatRequest(raw, repeatsLeft, text),
+          /* Nov 12 2026 craft review: with KADE_LYRIC_REPEAT_SHAPE=1 the rewrite is told where the chorus shape drawn
+           * for this song puts the hook, instead of "open and close on it, or sing it first and third", which is a
+           * different shape when the desk drew the one that climbs to the hook. Off by default: the old sentence was
+           * measured (14 of 14 flagged drafts fixed) and the new one has not been replayed through a model yet. */
+          user: lyricRepeatRequest(raw, repeatsLeft, text, process.env.KADE_LYRIC_REPEAT_SHAPE === '1' ? chorusShape : null),
           maxTokens: writingSettings.maxTokens,
           reasoning: editPassReasoning(writingSettings.model),
           thinkMs: 0,
@@ -2707,6 +2742,8 @@ async function scriptHandler(req, res) {
             'The partial draft is saved for review. Check the missing sections before generating the song.',
         }
       : readyEstimate;
+    /* Measured once for the ledger: the rhyme report inside it is the slow part. */
+    const lineChecksLeft = lineChecksOn ? gateReport(raw) : null;
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -2741,6 +2778,15 @@ async function scriptHandler(req, res) {
               },
             }
           : undefined,
+        /* Nov 12 2026: the line checks, in the first draft and in what she gets. */
+        lineChecks: lineChecksOn
+          ? {
+              draft: { long: gatesInDraft.longLines.length, joinBreaks: gatesInDraft.joinBreaks.length, misread: gatesInDraft.misread.length },
+              left: { long: lineChecksLeft.longLines.length, joinBreaks: lineChecksLeft.joinBreaks.length, misread: lineChecksLeft.misread.length },
+            }
+          : undefined,
+        /* Nov 12 2026, logged only and acted on by nothing: average words in a verse line and in a chorus line. */
+        lineWords: wantsWords && typeof lyricLineWords === 'function' ? lyricLineWords(raw) || undefined : undefined,
         model: writingSettings.model || MODEL,
         /* Oct 2 2026, AuK with a chosen voice: ok, rewritten (the second ask fixed it), off, or
          * clip (a reference clip is the voice, so nothing was checked). */

@@ -726,13 +726,40 @@ function lyricLines(script) {
   return out;
 }
 
+/* Nov 12 2026 craft review. The part of a song that is allowed to be plain: Jev
+ * never adds a flag here. Its question rewards a name, a place or an object and
+ * calls a named feeling stock, so a plain spoken chorus line could be flagged
+ * and then rewritten into an image. Jev can still clear a flag anywhere, and the
+ * word list, the kiss-off check, the ending check and the clean check still read
+ * the chorus. A pre-chorus is not a chorus. KADE_JEV_LYRIC_CHORUS_PLAIN=0 puts
+ * the old rule back. */
+function chorusLines(script) {
+  const text = String(script || '');
+  const m = /^\s*lyrics\s*:/im.exec(text);
+  const out = new Set();
+  if (!m) return out;
+  let inside = false;
+  for (const raw of text.slice(m.index + m[0].length).split('\n').slice(1)) {
+    const line = raw.trim();
+    if (/^READBACK:/i.test(line)) break;
+    const tag = /^\[([^\]]*)\]$/.exec(line);
+    if (tag) {
+      inside = /^(?:final |last )?(?:post-?chorus|chorus|hook|refrain)\b/i.test(tag[1].trim());
+      continue;
+    }
+    if (line && inside) out.add(line);
+  }
+  return out;
+}
+
 /**
  * Pure: the word list's tells plus Jev's scores → the tells that survive.
  * Kept separate from the asking so a test can hold the rule still.
  * `scores` is a Map of line → 0..1. A line with no score is left exactly as
  * the word list left it, which is what makes a partial failure harmless.
+ * `skipCatch` holds lines Jev may clear but never add (the chorus).
  */
-function refineTells(tells, scores, knobs = lyricKnobs(), { veto = true, catchMissed = true } = {}) {
+function refineTells(tells, scores, knobs = lyricKnobs(), { veto = true, catchMissed = true, skipCatch = new Set() } = {}) {
   const flagged = new Set(tells.map((t) => t.line));
   const kept = veto
     ? tells.filter((t) => {
@@ -743,7 +770,7 @@ function refineTells(tells, scores, knobs = lyricKnobs(), { veto = true, catchMi
   if (!catchMissed) return kept;
   const added = [];
   for (const [line, s] of scores) {
-    if (flagged.has(line) || typeof s !== 'number' || s < knobs.minFlag) continue;
+    if (flagged.has(line) || skipCatch.has(line) || typeof s !== 'number' || s < knobs.minFlag) continue;
     added.push({ line, tell: 'reads like stock lyric writing rather than something you would say' });
   }
   return [...kept, ...added];
@@ -781,7 +808,11 @@ async function lyricTellsJev(script, tells, { ask = jev.ask, timeoutMs = 4000, c
   }
   await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, lines.length)) }, worker));
   return {
-    tells: refineTells(tells || [], scores, knobs, { veto, catchMissed }),
+    tells: refineTells(tells || [], scores, knobs, {
+      veto,
+      catchMissed,
+      skipCatch: process.env.KADE_JEV_LYRIC_CHORUS_PLAIN === '0' ? new Set() : chorusLines(script),
+    }),
     scores,
     costUSD: (inputTokens * num('KADE_JEV_IN_USD_PER_M', 0.042)) / 1e6,
     asked: lines.length,
@@ -1788,7 +1819,7 @@ module.exports = {
   AD_CATEGORY_CRITERIA, AD_CATEGORY_Q, IS_AD_Q, adState, adDecade, adKnobs, decideAd, fileAds,
   LOCAL_ROOT, LOCAL_KIND_CRITERIA, LOCAL_KIND_Q, localState, localKnobs, decideLocal, localDestination, fileLocal,
   AUDIO_ROOT, AUDIO_LOCAL_ROOT, AUDIO_KIND_CRITERIA, AUDIO_KIND_Q, OZARKS_Q, audioKnobs, audioDecade, audioGame, audioDestination, fileAudio,
-  LYRIC_STOCK_Q, lyricKnobs, lyricLines, refineTells, lyricTellsJev, lyricTellsLog,
+  LYRIC_STOCK_Q, lyricKnobs, lyricLines, chorusLines, refineTells, lyricTellsJev, lyricTellsLog,
   AD_FRAME_Q, decideAdFromFrame,
   REVERIE_NOBODY, DIRECTOR_FRESH_Q, directorOptions, directorKnobs, decideDirector, directRoom,
   KEEPER_CARD_Q, KEEPER_LOG_Q, KEEPER_PROMISE_Q, keeperState, keeperWrote, keeperShadowStart, keeperShadowFinish,

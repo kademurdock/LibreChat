@@ -809,6 +809,67 @@ test('refineTells: never flags the same line twice', () => {
   assert.strictEqual(r[0].tell, 'neon, shadows, whispers or echoes', 'the list keeps its own wording');
 });
 
+/* Nov 12 2026 craft review: the chorus is allowed to be plain. */
+const PLAIN_SONG = [
+  'Lyrics:',
+  '[Verse 1]',
+  'I just want you to stay',
+  'You left your boots by the door again',
+  '',
+  '[Pre-Chorus]',
+  'The weight of everything we never said',
+  '',
+  '[Chorus]',
+  'I just want you here',
+  'Say you want me too',
+  '',
+  '[Final Chorus]',
+  'I just want you here',
+  'Say it one more time',
+  '',
+  '[Post-Chorus]',
+  'Stay, stay, stay',
+  'READBACK: plain',
+].join('\n');
+
+test('chorusLines: chorus, final chorus and post-chorus lines only, never a verse or a pre-chorus', () => {
+  assert.deepStrictEqual([...J.chorusLines(PLAIN_SONG)], ['I just want you here', 'Say you want me too', 'Say it one more time', 'Stay, stay, stay']);
+  assert.deepStrictEqual([...J.chorusLines('Lyrics:\n[Hook]\nOne\n[Refrain 2]\nTwo\n[Bridge]\nThree\n[Chorus riff]\nFour')], ['One', 'Two', 'Four']);
+  assert.strictEqual(J.chorusLines('no heading here').size, 0);
+  assert.strictEqual(J.chorusLines(null).size, 0);
+});
+
+test('refineTells: a chorus line is never added, the same score in a verse is, and a chorus flag can still be cleared', () => {
+  const knobs = { minFlag: 0.7, maxVeto: 0.4, perSong: 80 };
+  const skipCatch = J.chorusLines(PLAIN_SONG);
+  const scores = new Map([['I just want you here', 0.9], ['I just want you to stay', 0.9], ['The weight of everything we never said', 0.9]]);
+  assert.deepStrictEqual(
+    J.refineTells([], scores, knobs, { skipCatch }).map((t) => t.line),
+    ['I just want you to stay', 'The weight of everything we never said'],
+    'the verse line and the pre-chorus line are caught, the chorus line is left plain',
+  );
+  assert.deepStrictEqual(J.refineTells([], scores, knobs).map((t) => t.line).length, 3, 'with nothing to skip the rule is the old one');
+  const listed = [{ line: 'Say you want me too', tell: 'filler' }];
+  assert.deepStrictEqual(J.refineTells(listed, new Map([['Say you want me too', 0.1]]), knobs, { skipCatch }), [], 'Jev still clears a flag inside a chorus');
+  assert.deepStrictEqual(J.refineTells(listed, new Map([['Say you want me too', 0.95]]), knobs, { skipCatch }), listed, 'and the word list keeps its own chorus flag');
+});
+
+test('lyricTellsJev: no flag is added inside a chorus, and KADE_JEV_LYRIC_CHORUS_PLAIN=0 puts the old rule back', async () => {
+  const ask = async () => ({ answers: { stock: { noul: 0.9 } }, usage: { input_tokens: 100 } });
+  const chorus = ['I just want you here', 'Say you want me too', 'Say it one more time', 'Stay, stay, stay'];
+  await withEnv({ ...ON, KADE_JEV_LYRIC_CHORUS_PLAIN: undefined }, async () => {
+    const r = await J.lyricTellsJev(PLAIN_SONG, [], { ask });
+    const lines = r.tells.map((t) => t.line);
+    assert.deepStrictEqual(lines, ['I just want you to stay', 'You left your boots by the door again', 'The weight of everything we never said']);
+    assert.strictEqual(r.asked, 7, 'every line is still asked about, so a chorus flag can still be cleared');
+    for (const line of chorus) assert.ok(!lines.includes(line), line);
+  });
+  await withEnv({ ...ON, KADE_JEV_LYRIC_CHORUS_PLAIN: '0' }, async () => {
+    const r = await J.lyricTellsJev(PLAIN_SONG, [], { ask });
+    assert.strictEqual(r.tells.length, 7, 'switched off, all seven lines are caught as before');
+  });
+});
+
 test('lyricTellsJev: off means the word list is handed straight back, unasked', async () => {
   const tells = [{ line: 'x', tell: 'coffee' }];
   let asked = 0;

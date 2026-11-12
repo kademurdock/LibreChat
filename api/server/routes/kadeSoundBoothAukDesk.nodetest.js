@@ -60,7 +60,9 @@ function booth(replies = [], env = {}) {
   }
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map((m) => [m, (p, ...v) => handlers.set(m + p, v.at(-1))]));
   const context = {
-    module: { exports: {} }, Buffer, URL, console, AbortSignal,
+    /* Nov 12 2026: the route keeps a ten-minute sweep on a timer (Nov 10); this context had none, so
+     * the file could not load and 48 of these tests failed before they began. */
+    module: { exports: {} }, Buffer, URL, console, AbortSignal, setInterval: () => ({ unref() {} }),
     process: { env: { REFRAME_PROXY_SECRET: 'offline-fixture', BRIDGE_SECRET: 'offline-fixture', ...env } },
     require(name) {
       if (name === 'express') return { Router: () => router, json: () => () => {} };

@@ -88,9 +88,16 @@ test('user-created messages remain untouched', () => {
 });
 
 test('house instructions and examples are unchanged', () => {
+  /* Nov 12 2026: KADE_VOICE_LICENCE (default on) drops "dialect quota" from the CONVERSATION
+   * half and the printed word list from the casual HABITS half; =0 gives the earlier bytes. */
+  const licence = process.env.KADE_VOICE_LICENCE !== '0';
   const expected = process.env.KADE_CASUAL_HOUSE === '0'
-    ? '7b3000179be1b6520bf990386ae2bba60a38d9e9d549a228abf51f1ded7abbfc'
-    : '1efef5d82a82408ed18e0ccc45bf7d276b55af37e3687615dcbc18608e86dcc6';
+    ? licence
+      ? '06063903b9980385a484d442eed34f42929f1093cf42c8d56c255e02e18795ac'
+      : '7b3000179be1b6520bf990386ae2bba60a38d9e9d549a228abf51f1ded7abbfc'
+    : licence
+      ? '892cd428c2568d2684658da34d1b69886ba836d18ccfb400ad64bda6c564f2ca'
+      : '1efef5d82a82408ed18e0ccc45bf7d276b55af37e3687615dcbc18608e86dcc6';
   assert.equal(createHash('sha256').update(candidate.KADE_STYLE_NOTE).digest('hex'), expected);
 });
 

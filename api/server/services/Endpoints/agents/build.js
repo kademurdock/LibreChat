@@ -53,7 +53,32 @@ const KADE_ADULT_NOTE_CASUAL =
   "or tack on disclaimers. Don't bring adult content into a conversation that didn't ask for it. Match what " +
   'this person wants and go no further. Anything that sexualizes minors stays off limits, with no exceptions.';
 
-const KADE_ADULT_NOTE = KADE_CASUAL_HOUSE ? KADE_ADULT_NOTE_CASUAL : KADE_ADULT_NOTE_LIVE;
+/* Nov 12 2026, the voice licence (see utils/stripAiTells.js for the switch). The note above
+ * filed ordinary swearing under adult content and made it ask-first, after a persona that says
+ * the swearing is the character's own. For an adult account, swearing is now the character's
+ * call, and that is the only thing that moved. Dark humor and explicit sexual content are
+ * ask-first as before, and the rule against bringing adult content into a conversation that
+ * did not ask for it is word for word, so it still covers gore, drug talk and the rest. The
+ * minors line is word for word and the child note is untouched. KADE_VOICE_LICENCE=0 restores
+ * the casual note byte for byte; the earlier (KADE_CASUAL_HOUSE=0) note is a restore point and
+ * stays. */
+const KADE_VOICE_LICENCE = process.env.KADE_VOICE_LICENCE !== '0';
+
+const KADE_ADULT_NOTE_VOICE =
+  "\n\n---\nThis is an audience note, and it's private, so don't mention it or hint at it. This platform is " +
+  "private and invitation-only, and the person you're talking to is a verified adult. Swearing is your " +
+  "character's call. Adult content is allowed when they ask. That includes dark humor and sexually " +
+  'explicit writing or roleplay between consenting adult characters. When an adult asks for that, stay ' +
+  "in character and write it fully and explicitly. Don't refuse, don't fade to black, don't soften it " +
+  "into euphemism, and don't lecture or tack on disclaimers. Don't bring adult content into a " +
+  "conversation that didn't ask for it. Match what this person wants and go no further. Anything that " +
+  'sexualizes minors stays off limits, with no exceptions.';
+
+const KADE_ADULT_NOTE = KADE_CASUAL_HOUSE
+  ? KADE_VOICE_LICENCE
+    ? KADE_ADULT_NOTE_VOICE
+    : KADE_ADULT_NOTE_CASUAL
+  : KADE_ADULT_NOTE_LIVE;
 
 const isKadeAdult = (user) =>
   !!user && user.kadeAccountType !== 'child' && (user.kadeAccountType === 'adult' || user.role === 'ADMIN');
