@@ -363,7 +363,13 @@ async function refreshFace(row) {
   return row;
 }
 
+/* Audit SEC-8 (Nov 12 2026): the day's builds are counted from the registry, which is only written after about
+ * 150 s of face-service calls, so posts fired together all read the same count. One build at a time
+ * per character (everyone) and per person (not the administrator, who has no cap) closes that.
+ * The check and the add happen with no await between them. */
+const building = new Set();
 router.post('/live-face/faces/:agentId', requireJwtAuth, canEditAgent, express.json({ limit: '2kb' }), async (req, res) => {
+  let held = [];
   try {
     if (!configured()) return res.status(503).json({ error: 'Live faces are not set up on this server yet.' });
     const agentId = String(req.params.agentId).slice(0, 64);
@@ -377,6 +383,12 @@ router.post('/live-face/faces/:agentId', requireJwtAuth, canEditAgent, express.j
     if (existing && existing.status === 'completed' && !(admin && (req.body || {}).again)) {
       return res.json({ ok: true, ...existing });
     }
+    const locks = admin ? ['a:' + agentId] : ['a:' + agentId, 'u:' + String(req.user.id)];
+    if (locks.some((k) => building.has(k))) {
+      return res.status(429).json({ error: 'A face is already being started. Give it a couple of minutes, then try again.' });
+    }
+    locks.forEach((k) => building.add(k));
+    held = locks;
     if (!admin) {
       const today = await registry.requestsSince(req.user.id, new Date(Date.now() - 24 * 3600 * 1000));
       if (today >= BUILDS_PER_DAY) {
@@ -394,6 +406,8 @@ router.post('/live-face/faces/:agentId', requireJwtAuth, canEditAgent, express.j
     logger.warn('[kade/live-face] bring to life failed: ' + (e && e.message));
     const words = e instanceof PersonError ? e.message : 'The face could not be started.';
     res.status(e instanceof PersonError ? 400 : 500).json({ error: words });
+  } finally {
+    held.forEach((k) => building.delete(k));
   }
 });
 

@@ -365,8 +365,36 @@ function buildDescription(a) {
  * ledger underneath it either way.
  * ──────────────────────────────────────────────────────────────────────── */
 const GEN_DAILY_CAP = Number(process.env.KADE_AVATAR_GEN_DAILY_CAP || 8);
-let genDayStamp = '';
-const genCounts = new Map();
+/* Audit SEC-8 (Nov 12 2026): a day's slot is taken BEFORE the first await (ten requests at once
+ * used to pass a cap that was only counted after each one finished) and given back if that attempt
+ * fails. The day rollover lives in here so every door that shares a desk rolls it the same way.
+ * A desk is { day, counts }. Returns { left(), release() }, or null when today's cap is used up. */
+const centralDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+function takeSlot(desk, userId, cap) {
+  const today = centralDay();
+  if (desk.day !== today) {
+    desk.day = today;
+    desk.counts.clear();
+  }
+  const id = String(userId);
+  const used = desk.counts.get(id) || 0;
+  if (used >= cap) return null;
+  desk.counts.set(id, used + 1);
+  let open = true;
+  return {
+    left: () => Math.max(0, cap - (desk.counts.get(id) || 0)),
+    release() {
+      if (!open) return;
+      open = false;
+      if (desk.day !== today) return; // the day rolled over meanwhile: yesterday's slot is already gone
+      const now = desk.counts.get(id) || 0;
+      if (now > 0) desk.counts.set(id, now - 1);
+    },
+  };
+}
+const easel = { day: '', counts: new Map() };
+/* One easel for both portrait doors (/api/kade/builder/avatar here, /api/kade/avatar-generate in kade.js). */
+const takePortraitSlot = (userId) => takeSlot(easel, userId, GEN_DAILY_CAP);
 const FLUX_ENDPOINT = '/v1/flux-2-pro';
 
 function httpsReq(url, { method = 'GET', headers = {}, body = null } = {}) {
@@ -416,16 +444,16 @@ router.post('/quiz/compose', express.json({ limit: '32kb' }), (req, res) => {
 });
 
 router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
+  let slot = null;
+  let kept = false;
   try {
     const key = process.env.FLUX_API_KEY || '';
     if (!key) return res.status(503).json({ error: 'Picture-making is not configured right now.' });
     const prompt = String((req.body && req.body.prompt) || '').slice(0, 2400);
     if (prompt.length < 8) return res.status(400).json({ error: 'A short description is needed first.' });
 
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
-    if (genDayStamp !== today) { genDayStamp = today; genCounts.clear(); }
-    const used = genCounts.get(req.user.id) || 0;
-    if (used >= GEN_DAILY_CAP) {
+    slot = takePortraitSlot(req.user.id);
+    if (!slot) {
       return res.status(429).json({ error: `That's ${GEN_DAILY_CAP} portraits today — the easel reopens tomorrow.` });
     }
 
@@ -450,7 +478,7 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
         if (img.status !== 200 || !img.buf.length) {
           return res.status(502).json({ error: 'The picture finished but could not be fetched. Try again.' });
         }
-        genCounts.set(req.user.id, used + 1);
+        kept = true;
         const cost = fluxCost(FLUX_ENDPOINT, 1);
         /* Part 113: the explicit deductKadeCredits that used to sit here was a
          * DOUBLE CHARGE -- logKadeUsage deducts the same cost itself (see
@@ -459,7 +487,7 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
          * the persona writer below, which is why that one logs and does not
          * deduct separately. */
         logKadeUsage({ userId: req.user.id, service: 'flux', quantity: 1, unit: 'image', costUSD: cost, metadata: { via: 'character-builder' } }).catch(() => {});
-        return res.json({ ok: true, image_b64: img.buf.toString('base64'), remainingToday: GEN_DAILY_CAP - used - 1 });
+        return res.json({ ok: true, image_b64: img.buf.toString('base64'), remainingToday: slot.left() });
       }
       if (['Error', 'Content Moderated', 'Request Moderated', 'Task not found'].includes(pd.status)) {
         return res.status(502).json({ error: 'The picture engine declined that one. Adjust the description and try again.' });
@@ -469,6 +497,8 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
   } catch (e) {
     logger.error(`[kadeBuilder] avatar gen failed: ${e.message}`);
     res.status(502).json({ error: 'The picture engine is unreachable right now.' });
+  } finally {
+    if (slot && !kept) slot.release();
   }
 });
 
@@ -513,8 +543,7 @@ const PERSONA_MAX_TOKENS = Number(process.env.KADE_PERSONA_MAX_TOKENS || 6000);
 const PERSONA_PRICE_IN = Number(process.env.KADE_PERSONA_PRICE_IN || 0.435);
 const PERSONA_PRICE_OUT = Number(process.env.KADE_PERSONA_PRICE_OUT || 0.87);
 
-let personaDayStamp = '';
-const personaCounts = new Map();
+const writingDesk = { day: '', counts: new Map() };
 
 /* ⭐ THE CRAFT BRIEF. Without this the generator produces exactly the
  * six-paragraph mush the templates already produce — "write a detailed system
@@ -524,6 +553,8 @@ const personaCounts = new Map();
  * FREE_THINKER_PERSONA_CRAFT, CHARISMA_RESEARCH_FOR_PERSONA,
  * PERSONA_SECTIONS_DRAFTS) — a year of hard-won craft, spent here. */
 router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res) => {
+  let slot = null;
+  let kept = false;
   try {
     const gatewayUrl =
       process.env.KADE_LLM_GATEWAY_URL ||
@@ -549,13 +580,8 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
         .json({ error: 'Tell me a little about them first — even one sentence is enough to start.' });
     }
 
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
-    if (personaDayStamp !== today) {
-      personaDayStamp = today;
-      personaCounts.clear();
-    }
-    const used = personaCounts.get(req.user.id) || 0;
-    if (used >= PERSONA_DAILY_CAP) {
+    slot = takeSlot(writingDesk, req.user.id, PERSONA_DAILY_CAP);
+    if (!slot) {
       return res
         .status(429)
         .json({ error: `That's ${PERSONA_DAILY_CAP} drafts today — the writing desk reopens tomorrow.` });
@@ -602,7 +628,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       : ((userContent.length + PERSONA_CRAFT.length) / 4 * PERSONA_PRICE_IN +
           (raw.length / 4) * PERSONA_PRICE_OUT) / 1e6);
 
-    personaCounts.set(req.user.id, used + 1);
+    kept = true;
     logKadeUsage({
       userId: req.user.id,
       service: 'openrouter',
@@ -625,7 +651,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
       /* Part 295 review: what this person paid (the real cost for Kade); the log line keeps the real one. */
       costUSD: Number((costUSD * userPriceFactor(req.user)).toFixed(5)),
       costMeasured: measured,
-      remainingToday: PERSONA_DAILY_CAP - used - 1,
+      remainingToday: slot.left(),
       model: PERSONA_MODEL,
     });
   } catch (e) {
@@ -634,6 +660,8 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
     res
       .status(502)
       .json({ error: 'The writing desk is having a moment. Try again in a minute — nothing was charged.' });
+  } finally {
+    if (slot && !kept) slot.release();
   }
 });
 
@@ -881,4 +909,4 @@ const createCharacterPage = (req, res) => {
   res.set('Content-Type', 'text/html; charset=utf-8').send(pageHtml);
 };
 
-module.exports = { router, createCharacterPage, MODEL_MENU, QUIZ, compose };
+module.exports = { router, createCharacterPage, MODEL_MENU, QUIZ, compose, takeSlot, takePortraitSlot, GEN_DAILY_CAP };

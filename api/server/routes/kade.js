@@ -1827,7 +1827,13 @@ const { fluxCost } = require('~/models/kadeUsage');
 const _avatarGenLast = new Map(); // userId -> ts (simple cooldown)
 const AVATAR_ENDPOINT = '/v1/flux-2-pro';
 
+/* Audit SEC-8 (Nov 12 2026): this door had a 12 s cooldown and no daily cap. It now shares the
+ * character builder's easel (one count for both doors, kadeCreateCharacter.js takePortraitSlot),
+ * taken before the first await and given back if the picture fails. Required lazily: this file
+ * should not load another route file at start. KADE_AVATAR_GEN_DAILY_CAP sets the cap (8). */
 router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
+  let slot = null;
+  let kept = false;
   try {
     const apiKey = process.env.FLUX_API_KEY;
     if (!apiKey) {
@@ -1844,6 +1850,11 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
     const last = _avatarGenLast.get(uid) || 0;
     if (Date.now() - last < 12000) {
       return res.status(429).json({ error: 'Hold on a few seconds between generations.' });
+    }
+    const { takePortraitSlot, GEN_DAILY_CAP } = require('./kadeCreateCharacter');
+    slot = takePortraitSlot(uid);
+    if (!slot) {
+      return res.status(429).json({ error: `That's ${GEN_DAILY_CAP} portraits today — the easel reopens tomorrow.` });
     }
     _avatarGenLast.set(uid, Date.now());
 
@@ -1880,6 +1891,7 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
 
     const img = await axios.get(sampleUrl, { responseType: 'arraybuffer', timeout: 30000, maxContentLength: 15 * 1024 * 1024 });
     const mime = (img.headers['content-type'] || 'image/jpeg').split(';')[0];
+    kept = true;
     const costUSD = fluxCost(AVATAR_ENDPOINT, 1);
     logKadeUsage({
       userId: req.user.id,
@@ -1897,6 +1909,8 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
   } catch (err) {
     logger.error(`[kade/avatar-generate] failed: ${err && err.message}`);
     return res.status(500).json({ error: 'Avatar generation failed. Try again in a moment.' });
+  } finally {
+    if (slot && !kept) slot.release();
   }
 });
 
