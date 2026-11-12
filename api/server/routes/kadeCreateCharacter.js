@@ -764,7 +764,7 @@ const pageHtml = `<!doctype html><html lang="en"><head><title>Create a Character
       writePersona({description:describeText,name:describeName,existingInstructions:document.getElementById('pinst').value.trim(),answers:ans,round:personaRound+1}); }; }
   }
 
-  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   function renderStep(){
     var q=QUIZ[step];

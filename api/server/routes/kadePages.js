@@ -843,7 +843,7 @@ const creationsHtml = `<!doctype html><html lang="en"><head><title>My Creations<
       const docs = d.assets.filter(function(a){ return a.kind === 'document'; }).length;
       const imgs = d.assets.length - vids - auds - docs;
       status.textContent = 'You have ' + d.assets.length + ' creation' + (d.assets.length===1?'':'s') + ': ' + vids + ' video' + (vids===1?'':'s') + ', ' + imgs + ' image' + (imgs===1?'':'s') + ', ' + auds + ' audio clip' + (auds===1?'':'s') + (docs ? ', and ' + docs + ' document' + (docs===1?'':'s') : '') + '.';
-      function esc(s){ const div=document.createElement('div'); div.textContent = s || ''; return div.innerHTML; }
+      function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
       function when(iso){
         try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }); }
         catch(e){ return ''; }
@@ -995,7 +995,7 @@ const wallHtml = `<!doctype html><html lang="en"><head><title>Wall of Fame</titl
         return;
       }
       status.textContent = d.assets.length + ' shared creation' + (d.assets.length===1?'':'s') + ' on the wall.';
-      function esc(s){ const div=document.createElement('div'); div.textContent = s || ''; return div.innerHTML; }
+      function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
       function when(iso){
         try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric', year:'numeric' }); }
         catch(e){ return ''; }
@@ -2390,7 +2390,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
         ['menu','setup','table'].forEach(function(id){ $(id).hidden = (id !== section); });
         if(section !== 'menu' && lobbyTimer){ clearInterval(lobbyTimer); lobbyTimer = null; }
       }
-      function esc(s){ const d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML; }
+      function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
       /* ── MENU ── */
       async function loadMenu(){
@@ -2671,7 +2671,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           const mt = await apiGet('/api/kade/my-tables', token);
           if (mt.ok) {
             const m = await mt.json();
-            const esc0 = function(s){ const dv=document.createElement('div'); dv.textContent = s==null?'':s; return dv.innerHTML; };
+            const esc0 = function(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
             grEl('mine-chips').innerHTML =
               'Chip bank: <strong>' + num(m.chips) + '</strong> fake chips (never real money)' +
               (m.lifetimeWon || m.lifetimeLost ? ' — lifetime ' + num(m.lifetimeWon) + ' won, ' + num(m.lifetimeLost) + ' lost.' : '.');
@@ -2688,7 +2688,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           return;
         }
         const d = await r.json();
-        function esc(s){ const div=document.createElement('div'); div.textContent = s == null ? '' : s; return div.innerHTML; }
+        function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
         function when(iso){
           try { return new Date(iso).toLocaleString('en-US', { month:'long', day:'numeric' }); }
           catch(e){ return ''; }

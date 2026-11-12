@@ -144,7 +144,7 @@ const roomHtml = `<!doctype html>
     statusEl.hidden = false; statusEl.textContent = msg;
     statusEl.className = 'status' + (isErr ? ' err' : '');
   }
-  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   async function getToken(){
     try{
@@ -469,7 +469,7 @@ const hallHtml = `<!doctype html>
 <script>
 (function(){
   var $ = function(id){ return document.getElementById(id); };
-  function esc(s){ var d=document.createElement('div'); d.textContent=String(s==null?'':s); return d.innerHTML; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   async function getToken(){
     try{
       var r = await fetch('/api/auth/refresh', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:'{}'});
