@@ -44,6 +44,7 @@ import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandler
 import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
 import useUsageHandler from './useUsageHandler';
+import { kadeSwitchOn } from '~/utils/kadeSwitch';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -60,6 +61,14 @@ const getStreamStartFailureData = (errorData?: Record<string, unknown>): TResDat
   }) as unknown as TResData;
 
 const MAX_RETRIES = 5;
+/** sse.js readyState for a closed stream. */
+const SSE_CLOSED = 2;
+/** Nov 12 2026 (WEB-13): no bytes this long (the server writes a comment every 20 s) = a dead
+ *  connection. */
+const STREAM_IDLE_MS = 45000;
+/** Clean 2xx closes in a row, with nothing new in between, before the hook gives up.
+ *  `open` resets reconnectAttemptRef, so MAX_RETRIES alone never bounds this loop. */
+const MAX_EMPTY_CLOSES = 3;
 const requestIds = new WeakMap<TSubmission, string>();
 const getRequestId = (submission: TSubmission): string => {
   const existing = submission.requestId ?? requestIds.get(submission);
@@ -504,6 +513,7 @@ export default function useResumableSSE(
 
   const sseRef = useRef<SSE | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const emptyCloseRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
   const optimisticStreamIdsRef = useRef(new Set<string>());
@@ -598,6 +608,44 @@ export default function useResumableSSE(
       });
       sseRef.current = sse;
 
+      /* Nov 12 2026 (WEB-13): a stream that closes cleanly without its final event, or goes
+       * silent on a dead connection, used to leave the chat "submitting" for good. Undo on one
+       * browser: localStorage kadeStreamWatchdog = '0'. */
+      const watchdogOn = kadeSwitchOn('streamWatchdog');
+      /** The stream reached an end this hook already handles (final, error, abort).
+       *  watchStream() clears it again: the 401 path re-streams the same SSE object. */
+      let settled = false;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      /** Set once onError exists; the watchdog is declared before it. */
+      let reconnectAfterDrop: () => void = () => undefined;
+      const stopIdleWatch = () => {
+        if (idleTimer != null) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      };
+      const armIdleWatch = () => {
+        stopIdleWatch();
+        if (settled || !watchdogOn) {
+          return;
+        }
+        idleTimer = setTimeout(() => {
+          idleTimer = null;
+          if (settled || sseRef.current !== sse) {
+            return;
+          }
+          console.warn('[ResumableSSE] No bytes for 45s - reconnecting');
+          reconnectAfterDrop();
+        }, STREAM_IDLE_MS);
+      };
+      /** Call right after every sse.stream(): sse.js makes a new XMLHttpRequest each time, and
+       *  it swallows comment chunks, so the heartbeat is only visible as XHR progress. */
+      const watchStream = () => {
+        settled = false;
+        armIdleWatch();
+        sse.xhr?.addEventListener('progress', armIdleWatch);
+      };
+
       sse.addEventListener('open', () => {
         console.log('[ResumableSSE] Stream connected');
         setAbortScroll(false);
@@ -612,8 +660,14 @@ export default function useResumableSSE(
         try {
           const data = JSON.parse(e.data);
 
+          if (data.sync == null) {
+            emptyCloseRef.current = 0;
+          }
+
           if (data.final != null) {
             finalSeen = true;
+            settled = true;
+            stopIdleWatch();
             console.log('[ResumableSSE] Received FINAL event', {
               aborted: data.aborted,
               conversationId: data.conversation?.conversationId,
@@ -921,7 +975,9 @@ export default function useResumableSSE(
        *
        * Order matters: check responseCode first since HTTP errors may also include data
        */
-      sse.addEventListener('error', async (e: MessageEvent) => {
+      const onError = async (e: MessageEvent) => {
+        settled = true;
+        stopIdleWatch();
         /* @ts-ignore - sse.js types don't expose responseCode */
         const responseCode = e.responseCode;
 
@@ -1029,6 +1085,7 @@ export default function useResumableSSE(
             };
             request.dispatchTokenUpdatedEvent(newToken);
             sse.stream();
+            watchStream();
             return;
           } catch (error) {
             console.log('[ResumableSSE] Token refresh failed:', error);
@@ -1147,7 +1204,33 @@ export default function useResumableSSE(
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);
         }
-      });
+      };
+      sse.addEventListener('error', onError);
+      reconnectAfterDrop = () => {
+        void onError(new MessageEvent('error'));
+      };
+
+      /** sse.js ends a 2xx stream that never sent `final` with only a CLOSED readystatechange (no
+       *  error, no abort); the chat stayed "submitting" for good. Treat it as a dropped
+       *  connection: the reconnect asks with resume=true, which syncs the rest or 404s into the
+       *  saved reply. error and abort are dispatched before CLOSED, so `settled` is already true
+       *  for those. */
+      if (watchdogOn) {
+        sse.addEventListener('readystatechange', (e: { readyState?: number }) => {
+          if (e.readyState !== SSE_CLOSED || settled || finalSeen || sseRef.current !== sse) {
+            return;
+          }
+          emptyCloseRef.current += 1;
+          if (emptyCloseRef.current > MAX_EMPTY_CLOSES) {
+            console.error('[ResumableSSE] Stream keeps closing without a final event - giving up');
+            emptyCloseRef.current = 0;
+            // Sends onError down its existing "max reconnect attempts" branch (error shown, UI
+            // reset).
+            reconnectAttemptRef.current = MAX_RETRIES;
+          }
+          reconnectAfterDrop();
+        });
+      }
 
       /**
        * Abort event - fired when sse.close() is called (intentional close).
@@ -1155,6 +1238,8 @@ export default function useResumableSSE(
        * Only reset state if we're NOT in a reconnection cycle.
        */
       sse.addEventListener('abort', () => {
+        settled = true;
+        stopIdleWatch();
         // If we're in a reconnection cycle, don't reset state
         // (error handler will set up the reconnect timeout)
         if (reconnectAttemptRef.current > 0) {
@@ -1181,6 +1266,7 @@ export default function useResumableSSE(
 
       // Start the SSE connection
       sse.stream();
+      watchStream();
 
       // Debug hooks for testing reconnection vs clean close behavior (dev only)
       if (import.meta.env.DEV) {
