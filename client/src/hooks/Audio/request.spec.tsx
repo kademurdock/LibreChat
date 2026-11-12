@@ -51,3 +51,14 @@ test('unmount aborts the pending response; successful completion needs no cancel
   second.unmount();
   expect(cancelled).toHaveBeenCalledTimes(1);
 });
+
+test('cancel aborts the request in flight and gives up ownership (WEB-10)', () => {
+  const cancelled = jest.fn();
+  const { result } = renderHook(() => useSpeechRequest('chat', 'run', false, cancelled));
+  const controller = result.current.begin();
+  act(() => result.current.cancel());
+  expect(controller.signal.aborted).toBe(true);
+  expect(result.current.isCurrent(controller)).toBe(false);
+  expect(result.current.finish(controller)).toBe(false);
+  expect(cancelled).not.toHaveBeenCalled();
+});

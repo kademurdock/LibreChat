@@ -1,7 +1,8 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { EventSubmission, TMessage } from 'librechat-data-provider';
 import {
   buildCreatedInitialResponse,
+  finalReplyAnnouncement,
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
   mergeRegenerateFinalMessages,
@@ -171,5 +172,31 @@ describe('getExistingConversationAbortMessages', () => {
         currentMessages,
       }).map(({ messageId }) => messageId),
     ).toEqual(['user-1']);
+  });
+});
+
+describe('finalReplyAnnouncement (WEB-2)', () => {
+  const reply = {
+    messageId: 'r',
+    text: '',
+    content: [{ type: ContentTypes.TEXT, text: 'Here it is.' }],
+  } as unknown as TMessage;
+
+  it('gives the screen reader the reply when no voice will read it', () => {
+    expect(finalReplyAnnouncement(reply, false)).toBe('Here it is.');
+  });
+
+  it('stays quiet when the reply voice is about to read it', () => {
+    expect(finalReplyAnnouncement(reply, true)).toBeNull();
+  });
+
+  it('returns null, never an empty announcement, for a reply with no words', () => {
+    expect(
+      finalReplyAnnouncement(
+        { messageId: 'r', text: '', content: [] } as unknown as TMessage,
+        false,
+      ),
+    ).toBeNull();
+    expect(finalReplyAnnouncement(undefined, false)).toBeNull();
   });
 });

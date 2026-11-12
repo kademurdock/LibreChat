@@ -4,8 +4,9 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { generationRate, voiceCacheKey } from '~/utils/voicePace';
+import { generationRate, voiceCacheKey, storeVoiceAudio } from '~/utils/voicePace';
 import { speechAudioFile, speechAudioBlob } from '~/hooks/Audio/speech';
+import { claimVoice } from '~/hooks/Audio/voiceFocus';
 import {
   watchVoiceAudio,
   stopWatchingVoiceAudio,
@@ -78,6 +79,10 @@ function useTextToSpeechExternal({
 
     initializeAudio();
     watchVoiceAudio(newAudio, messageId);
+    // Nov 12 2026 (WEB-5): one reply voice at a time. Another voice, or a call starting, can pause
+    // this clip; the button must go back to Read aloud.
+    newAudio.addEventListener('playing', () => claimVoice(newAudio));
+    newAudio.addEventListener('pause', () => setIsSpeaking(false));
     const playPromise = () => newAudio.play().then(() => setIsSpeaking(true));
 
     playPromise().catch((error: Error) => {
@@ -130,16 +135,15 @@ function useTextToSpeechExternal({
 
         if (cacheTTS && inputText) {
           const cache = await caches.open('tts-responses');
-          const request = new Request(
-            voiceCacheKey(
-              inputText,
-              String(variables.get('voice') ?? ''),
-              Number(variables.get('speed') ?? 1),
-              variables.get('fillers') !== 'false',
-            ),
+          // Nov 12 2026 (WEB-1): fail-soft save plus a size cap on the voice cache.
+          void storeVoiceAudio(
+            cache,
+            inputText,
+            String(variables.get('voice') ?? ''),
+            Number(variables.get('speed') ?? 1),
+            variables.get('fillers') !== 'false',
+            audioBlob,
           );
-          const response = new Response(audioBlob);
-          cache.put(request, response);
         }
 
         const blobUrl = URL.createObjectURL(audioBlob);
