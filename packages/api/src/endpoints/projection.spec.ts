@@ -71,6 +71,55 @@ describe('resolveContextProjection', () => {
     expect(serialized.match(/voice message transcribed to text/g)).toHaveLength(1);
   });
 
+  it('TURN-13: only the newest voice turn carries the speech note and is recounted', async () => {
+    const { createTokenCounter, projectAgentContextUsage } = jest.requireMock('@librechat/agents');
+    const counter = jest.fn(() => 99);
+    createTokenCounter.mockResolvedValueOnce(counter);
+    const graph = [
+      { messageId: 'voice-1', parentMessageId: null },
+      { messageId: 'reply-1', parentMessageId: 'voice-1' },
+      { messageId: 'message-1', parentMessageId: 'reply-1' },
+    ];
+    const bodies = [
+      {
+        ...graph[0],
+        isCreatedByUser: true,
+        text: 'first spoken words',
+        tokenCount: 5,
+        kadeInputSource: 'voice_transcript' as const,
+      },
+      { ...graph[1], isCreatedByUser: false, text: 'an answer', tokenCount: 5 },
+      {
+        ...graph[2],
+        isCreatedByUser: true,
+        text: 'second spoken words',
+        tokenCount: 5,
+        kadeInputSource: 'voice_transcript' as const,
+      },
+    ];
+    const getMessages = jest.fn(async (_filter: object, select?: string) =>
+      select === GRAPH_SELECT ? graph : bodies,
+    );
+    await resolveContextProjection(
+      {
+        userId: 'user-1',
+        getMessages,
+        getMessageTextStats: jest.fn(async () => [
+          textStats('voice-1'),
+          textStats('reply-1'),
+          textStats('message-1'),
+        ]),
+      },
+      baseParams,
+    );
+    const serialized = JSON.stringify(projectAgentContextUsage.mock.calls);
+    expect(serialized.match(/voice message transcribed to text/g)).toHaveLength(1);
+    expect(serialized.indexOf('voice message transcribed to text')).toBeGreaterThan(
+      serialized.indexOf('first spoken words'),
+    );
+    expect(counter).toHaveBeenCalledTimes(1);
+  });
+
   it('returns null before tokenization when the conversation is too large', async () => {
     const { createTokenCounter } = jest.requireMock('@librechat/agents');
     const messages = Array.from({ length: 513 }, (_, index) => ({

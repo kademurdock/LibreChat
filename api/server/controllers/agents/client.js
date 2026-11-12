@@ -519,6 +519,17 @@ class AgentClient extends BaseClient {
     const memoryEvidenceTurns = [];
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
+    /* TURN-13: the voice note rides only the newest user message; older voice turns are already
+     * answered. Repeating it cost ~90 tokens per past voice message on every later turn and forced
+     * a recount of each one. Newest USER message, not the last index: on Continue the last message
+     * is the assistant reply. */
+    let newestUserIndex = -1;
+    for (let j = orderedMessages.length - 1; j >= 0; j--) {
+      if (orderedMessages[j]?.isCreatedByUser) {
+        newestUserIndex = j;
+        break;
+      }
+    }
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
         message,
@@ -572,10 +583,11 @@ class AgentClient extends BaseClient {
         payload: memoryFormattedMessage,
       });
 
-      const sourceNote = message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
+      const sourceNote = i === newestUserIndex ? speechContext(message.kadeInputSource) : '';
       if (sourceNote) {
+        /* The memory copy gets the note below, after the canonical count, so the stored
+         * tokenCount is the bare message: later turns send it without the note. */
         prependFileContext(formattedMessage, sourceNote);
-        prependFileContext(memoryFormattedMessage, sourceNote);
       }
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
@@ -588,7 +600,6 @@ class AgentClient extends BaseClient {
        * copy keeps context accounting accurate (and self-heals stale counts).
        */
       const needsCanonicalTokenCount =
-        Boolean(sourceNote) ||
         !hasDbTokenCount ||
         (this.isVisionModel && (message.image_urls || message.files)) ||
         (Array.isArray(message.quotes) && message.quotes.length > 0);
@@ -598,9 +609,14 @@ class AgentClient extends BaseClient {
         canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
       }
 
-      const promptMessageTokenCount = message.fileContext
-        ? countFormattedMessageTokens(formattedMessage, encoding)
-        : canonicalTokenCount;
+      if (sourceNote) {
+        prependFileContext(memoryFormattedMessage, sourceNote);
+      }
+
+      const promptMessageTokenCount =
+        message.fileContext || sourceNote
+          ? countFormattedMessageTokens(formattedMessage, encoding)
+          : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -638,7 +654,7 @@ class AgentClient extends BaseClient {
         const suffix = hasSummary ? '[S]' : '';
         const id = (message.messageId ?? message.id ?? '').slice(-8);
         const recalced = needsCanonicalTokenCount ? normalizedCanonicalTokenCount : null;
-        const promptRecalced = message.fileContext ? normalizedPromptTokenCount : null;
+        const promptRecalced = message.fileContext || sourceNote ? normalizedPromptTokenCount : null;
         logger.debug(
           `[AgentClient] msg[${i}] ${role}${suffix} id=…${id} db=${dbTokenCount} needsRecount=${needsCanonicalTokenCount} recalced=${recalced} promptRecalced=${promptRecalced} tokens=${normalizedPromptTokenCount}`,
         );
