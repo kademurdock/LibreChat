@@ -333,9 +333,25 @@ export async function initializeCustom({
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {
+    /** KADE Nov 12 2026 (gateway audit GW-6): a client that will speak the reply as it arrives says
+     *  so with `kadeLive: true` in its request body; the gateway then may stream a turn that is proved
+     *  not to think (its KADE_SCREEN_LIVE=asked). The gateway takes `kade_live` off before any host
+     *  sees it. Absent unless the client asked, so every other body is byte-identical. Kill switch:
+     *  KADE_SEND_LIVE=0. */
+    const liveAsked =
+      process.env.KADE_SEND_LIVE !== '0' &&
+      (req.body as Record<string, unknown> | undefined)?.kadeLive === true;
     const finalClientOptions = {
       modelOptions,
       ...clientOptions,
+      ...(liveAsked
+        ? {
+            addParams: {
+              ...((clientOptions.addParams as Record<string, unknown> | undefined) ?? {}),
+              kade_live: true,
+            },
+          }
+        : {}),
     };
     options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
     if (options != null) {
