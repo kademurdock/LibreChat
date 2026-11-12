@@ -475,7 +475,7 @@ export const kadeApprovalsSchema: ExtendedJsonSchema = {
       type: 'string',
       enum: ['list', 'approve', 'deny'],
       description:
-        'list = requests waiting on Kade and recent outcomes. approve = run a waiting request, ONLY when the message Kade just sent says yes to it. deny = drop it when she says no.',
+        'list = requests waiting on Kade and recent outcomes. approve = run a waiting request, ONLY when the message Kade just sent is a plain yes to it and the request was made in an EARLIER reply (never one made in this reply). One approve per reply. deny = drop it when she says no.',
     },
     approvalId: { type: 'string', description: 'approve or deny: the request id (starts with "a"), from list or from the held action.' },
   },

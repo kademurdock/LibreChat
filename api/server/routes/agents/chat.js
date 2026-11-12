@@ -18,6 +18,14 @@ const { getRoleByName } = require('~/models');
 
 const router = express.Router();
 
+/** KADE audit fix SEC-1 (Nov 12 2026): when the person's message reached the server, so a tool can tell
+ *  what existed before it from what was made during the reply (kade_approvals: no same-reply
+ *  approve). Not req._kadeTurnStartedAt: that one is set later and is recall's deadline base. */
+router.use((req, _res, next) => {
+  req.kadeMessageArrivedAt = Date.now();
+  next();
+});
+
 const checkAgentAccess = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
   permissions: [Permissions.USE],
