@@ -4,7 +4,10 @@ const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-
 const { getMCPServerTools } = require('~/server/services/Config');
 const db = require('~/models');
 
-const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+/* TURN-11: a chat turn never reads `versions`; do not ship the copies. Resolved per call so a
+ * mocked or older ~/models without getAgentForChat falls back to getAgent. */
+const loadAgent = (params) =>
+  loadAgentFn(params, { getAgent: db.getAgentForChat ?? db.getAgent, getMCPServerTools });
 
 /* Part 293 (Sep 25 2026): the freshness and adult notes default to casual
  * speech. KADE_CASUAL_HOUSE=0 restores the earlier texts byte for byte; see

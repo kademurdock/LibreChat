@@ -680,7 +680,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
       codeEnvAvailable,
     },
     {
-      getAgent: db.getAgent,
+      /* TURN-11: handoff/connected agents are chat reads too; no `versions`. */
+      getAgent: db.getAgentForChat ?? db.getAgent,
       checkPermission,
       logViolation,
       db: {
@@ -867,7 +868,8 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     }
 
     try {
-      const agent = await db.getAgent({ id: agentId });
+      /* TURN-11: subagent / library consultation read; no `versions`. */
+      const agent = await (db.getAgentForChat ?? db.getAgent)({ id: agentId });
       if (!agent) {
         skippedAgentIds.add(agentId);
         return null;
