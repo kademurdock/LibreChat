@@ -1634,7 +1634,6 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
             break;
           }
           const { done, value } = await reader.read();
-          lastByteAtRef.current = Date.now();
           if (done) break;
 
           sseBuf += decoder.decode(value, { stream: true });
@@ -1652,6 +1651,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
               continue;
             }
             if (!line.startsWith('data:')) continue;
+            /* Nov 12 2026 (WEB-13): only a real data line resets the stall watchdog. The server's
+             * ': ping' heartbeat lines keep a hung turn's socket busy, and counting them left a
+             * stuck turn on "thinking" until the 20-minute job reaper. */
+            lastByteAtRef.current = Date.now();
 
             const payload = line.slice(5).trim();
             if (payload === '[DONE]') break streamLoop;
