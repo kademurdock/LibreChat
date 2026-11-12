@@ -56,6 +56,47 @@ router.use('/chat/tasks', createTaskRouter({ getMessages, getConvo }));
  * These are GET requests and don't need message body validation or rate limiting
  */
 
+/** KADE Nov 12 2026 (WEB-13): a comment line every 20 s so a connection that died without a word
+ * is noticed (the web client reconnects after 45 s of no bytes). Every SSE parser skips ':' lines,
+ * and the phone apps' parsers ignore lines that are not `event:`/`data:`.
+ * KADE_SSE_HEARTBEAT_MS sets the gap; 0 turns the heartbeat off. Ship this before the client
+ * watchdog, or a long silent tool call makes the web client reconnect. */
+const DEFAULT_SSE_HEARTBEAT_MS = 20000;
+function sseHeartbeatMs() {
+  const raw = process.env.KADE_SSE_HEARTBEAT_MS;
+  if (raw == null || raw === '') {
+    return DEFAULT_SSE_HEARTBEAT_MS;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_SSE_HEARTBEAT_MS;
+}
+function startStreamHeartbeat(res) {
+  const every = sseHeartbeatMs();
+  if (!every) {
+    return null;
+  }
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded || res.destroyed) {
+      clearInterval(heartbeat);
+      return;
+    }
+    try {
+      res.write(': ping\n\n');
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, every);
+  if (typeof heartbeat.unref === 'function') {
+    heartbeat.unref();
+  }
+  res.on('close', () => clearInterval(heartbeat));
+  res.on('finish', () => clearInterval(heartbeat));
+  return heartbeat;
+}
+
 /**
  * @route GET /chat/stream/:streamId
  * @desc Subscribe to an ongoing generation job's SSE stream with replay support
@@ -96,6 +137,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   streamTelemetry.recordHeadersFlushed();
+  startStreamHeartbeat(res);
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
