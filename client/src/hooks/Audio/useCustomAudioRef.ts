@@ -73,7 +73,9 @@ export default function useCustomAudioRef({
 
     if (audioRef.current) {
       audioRef.current.addEventListener('ended', handleEnded);
-      audioRef.current.addEventListener('play', handleStart);
+      /* Nov 12 2026 (WEB-10): 'playing', not 'play'. StreamAudio now calls play() itself, and
+       * 'play' fires at the call, before any sound; the bubbles would stop early and leave dead air. */
+      audioRef.current.addEventListener('playing', handleStart);
       audioRef.current.addEventListener('pause', handlePause);
       audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
 
@@ -88,7 +90,7 @@ export default function useCustomAudioRef({
       if (audioElement) {
         stopWatchingVoiceAudio(audioElement);
         audioElement.removeEventListener('ended', handleEnded);
-        audioElement.removeEventListener('play', handleStart);
+        audioElement.removeEventListener('playing', handleStart);
         audioElement.removeEventListener('pause', handlePause);
         audioElement.removeEventListener('timeupdate', handleTimeUpdate);
         URL.revokeObjectURL(audioElement.src);

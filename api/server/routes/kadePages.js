@@ -2315,8 +2315,9 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
   <section id="table" hidden>
     <h2 id="ttitle"></h2>
     <div id="tstatus" class="status" role="status" aria-live="polite" tabindex="-1"></div>
+    <div id="tsay" role="status" aria-live="polite" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden"></div>
     <div class="card"><h3 style="margin-top:0">The table</h3><div id="tlines"></div></div>
-    <div id="moves-card" class="card"><h3 style="margin-top:0" id="moves-h">Your moves</h3><div id="tmoves" class="movegrid" role="group" aria-labelledby="moves-h"></div></div>
+    <div id="moves-card" class="card"><h3 style="margin-top:0" id="moves-h" tabindex="-1">Your moves</h3><div id="tmoves" class="movegrid" role="group" aria-labelledby="moves-h"></div></div>
     <div class="card" id="talk-card" hidden>
       <h3 style="margin-top:0">Table talk</h3>
       <ul id="talklog" style="list-style:none; padding:0; margin:0 0 .5rem"></ul>
@@ -2350,6 +2351,25 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       /* ── speech: one queue, one audio element, her clone on the mic ── */
       const speaker = new Audio();
       let speechQueue = []; let speaking = false;
+      /* Safari plays an <audio> only after it has played inside a tap, click or key press, and narrator
+       * clips arrive after a fetch. So the first gesture on the page plays a twentieth of a second of
+       * silence on this element. Screen readers press buttons with a bare click, so click is listed. */
+      const SILENCE = 'data:audio/wav;base64,UklGRkYDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSID' + 'A'.repeat(1072);
+      const GESTURES = ['pointerdown', 'keydown', 'click'];
+      let speakerLocked = false; let blockedTold = false;
+      function armSpeaker(){ GESTURES.forEach(function(g){ document.addEventListener(g, unlockSpeaker, true); }); }
+      function disarmSpeaker(){ GESTURES.forEach(function(g){ document.removeEventListener(g, unlockSpeaker, true); }); }
+      function unlockSpeaker(){
+        if(speaking) return;   // a clip is loading or playing: leave the element alone and stay armed
+        disarmSpeaker(); speakerLocked = false;
+        speaker.onended = null; speaker.onerror = null;
+        try{ speaker.src = SILENCE; const pr = speaker.play(); if(pr && pr.catch) pr.catch(function(){}); }catch(e){}
+      }
+      armSpeaker();
+      /* Whatever the narrator voice does not say (or could not say) goes to the hidden live region,
+       * so the screen reader says it and the table is never silent. */
+      function sayAside(text){ const el = $('tsay'); if(el && text) el.textContent = text; }
+      function tell(text){ $('tstatus').textContent = text; if(narrator.mode !== 'off') sayAside(text); }
       function speak(text){
         if(narrator.mode === 'off' || !text) return;
         speechQueue.push(text);
@@ -2358,6 +2378,11 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       async function nextSpeech(){
         const text = speechQueue.shift();
         if(text == null){ speaking = false; return; }
+        if(speakerLocked){
+          // The browser is refusing the voice: no paid clip for nothing, the screen reader gets the words.
+          sayAside([text].concat(speechQueue.splice(0)).join(' '));
+          speaking = false; return;
+        }
         speaking = true;
         try{
           const r = await fetch('/api/files/speech/tts/manual', { method:'POST', headers:{ 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }, body: JSON.stringify({ input: text, voice: narrator.voice }) });
@@ -2367,7 +2392,19 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           speaker.onended = () => { URL.revokeObjectURL(speaker.src); nextSpeech(); };
           speaker.onerror = () => { nextSpeech(); };
           await speaker.play();
-        }catch(e){ nextSpeech(); }
+          disarmSpeaker();
+        }catch(e){
+          const name = e && e.name;
+          if(name === 'NotAllowedError'){
+            speakerLocked = true; armSpeaker();
+            if(!blockedTold){
+              blockedTold = true;
+              status.textContent = 'This browser blocked the narrator voice. Press any key or tap once and it will speak again. Until then your screen reader reads the table.';
+            }
+            speechQueue.unshift(text);   // said in one piece with whatever else is waiting
+          } else if(name !== 'AbortError') sayAside(text);
+          nextSpeech();
+        }
       }
       function stopSpeech(){ speechQueue = []; try{ speaker.pause(); }catch(e){} speaking = false; }
 
@@ -2416,11 +2453,22 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       }
 
       /* ── THE LOBBY (Part 179): who is hosting what, with a free seat ── */
-      async function loadLobby(){
+      let lobbyKey = '';
+      async function loadLobby(ev){
         if($('menu').hidden) return;
+        const asked = !!(ev && ev.type);   // the Check the lobby again button always redraws
         try{
           const l = await api('GET', '/api/kade/parlor/lobby');
+          if($('menu').hidden) return;
           const tables = l.tables || [];
+          /* The 30 second refresh used to rebuild the list even when nothing changed, which destroyed
+           * the Sit at button a screen reader was resting on. Redraw only on a real change, and put
+           * focus back on the same table. */
+          const key = JSON.stringify([l.spoken || '', tables.map(function(t){ return [t.code, t.seatsOpen, t.mine, t.name, t.host]; })]);
+          if(!asked && key === lobbyKey) return;
+          lobbyKey = key;
+          const at = document.activeElement;
+          const held = at && at.getAttribute ? at.getAttribute('data-join') : null;
           $('lobby-note').textContent = tables.length
             ? (l.spoken || '')
             : 'Nobody has a table open right now. Deal a game with open seats for friends and it shows up here for the whole family.';
@@ -2428,7 +2476,11 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
             const who = t.mine ? 'Your ' : 'Sit at '+esc(t.host)+"'s ";
             return '<button type="button" class="game" role="listitem" data-join="'+esc(t.code)+'">'+who+esc(t.name)+' table <span class="desc">'+t.seatsOpen+' seat'+(t.seatsOpen===1?'':'s')+' open &middot; code '+esc(t.code)+(t.mine?' &middot; this one is yours':'')+'</span></button>';
           }).join('');
-        }catch(e){ $('lobby-note').textContent = 'Could not read the lobby right now.'; }
+          if(held){
+            const again = Array.prototype.find.call($('lobby-list').querySelectorAll('button[data-join]'), function(b){ return b.getAttribute('data-join') === held; });
+            (again || $('lobby-list').querySelector('button') || $('lobby-refresh')).focus({ preventScroll: true });
+          }
+        }catch(e){ lobbyKey = ''; $('lobby-note').textContent = 'Could not read the lobby right now.'; }
       }
       $('lobby-refresh').addEventListener('click', loadLobby);
       $('lobby-list').addEventListener('click', async function(ev){
@@ -2556,7 +2608,7 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
             const fresh = (p.log || []).length > 0;
             historyCursor = p.historyCursor || historyCursor;
             if(fresh || p.yourTurn !== table.yourTurn || p.over !== table.over){
-              renderTable(p, fresh ? null : ['']);
+              renderTable(p, fresh ? null : [''], false);
             } else {
               table = p;
             }
@@ -2576,27 +2628,48 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
       }
       function openTable(p, resumed){
         table = p; show('table');
+        // The narrator voice says each event, so the visible status line stops being a live region
+        // (it would say the event a second time). What the voice skips goes to #tsay instead.
+        $('tstatus').setAttribute('aria-live', narrator.mode === 'off' ? 'polite' : 'off');
         historyCursor = p.historyCursor || p.historyCount || 0;
         $('ttitle').textContent = p.name + ' — table ' + p.gameId + (p.party && p.code ? ' — join code ' + p.code : '');
         $('talk-card').hidden = !((p.seatAgents && p.seatAgents.length) || (p.party && p.seatKinds && Object.values(p.seatKinds).indexOf('agent') !== -1));
-        renderTable(p, resumed ? ['Back at the table.'] : null);
+        renderTable(p, resumed ? ['Back at the table.'] : null, true);
         if(p.party && p.code) speak('Your join code is ' + p.code.split('').join(' ') + '.');
         if(resumed) speak('Back at your '+p.name+' table.');
         if(p.party) startPartyPolling(); else stopPartyPolling();
       }
-      function renderTable(p, extraStatus){
+      /* userAction: the person just did this (opened the table, made a move). Only then may focus
+       * move. A poll that finds another player's move never pulls focus out of the talk box; if focus
+       * was on a move button, it goes back to the same move after the buttons are rebuilt. */
+      function renderTable(p, extraStatus, userAction){
         table = p;
-        $('tlines').textContent = (p.lines||[]).join('\n');
+        const at = document.activeElement;
+        const heldMove = at && at.getAttribute && $('tmoves').contains(at) ? (at.getAttribute('data-move') || '') : null;
+        $('tlines').textContent = (p.lines||[]).join('\\n');
         const over = p.over;
         $('moves-h').textContent = over ? 'This table is finished' : (p.party ? (p.yourTurn ? 'Your moves' : 'Waiting on ' + (p.turnName || p.names[p.turnSeat] || 'the table')) : (p.turnSeat === 0 ? 'Your moves' : 'Waiting on ' + (p.names[p.turnSeat]||'the table')));
         $('tmoves').innerHTML = over
           ? '<button type="button" class="mv" id="btn-rematch">Deal a rematch</button>'
           : (p.legal||[]).map(function(m){ return '<button type="button" class="mv" data-move="'+esc(m.token)+'">'+esc(m.label)+'</button>'; }).join('') || '<p class="muted">No moves for you right now.</p>';
         const news = (extraStatus || p.log || []).join(' ');
-        $('tstatus').textContent = news || (over ? 'Game over.' : 'Your table is ready.');
+        const statusText = news || (over ? 'Game over.' : 'Your table is ready.');
+        $('tstatus').textContent = statusText;
+        if(narrator.mode !== 'off'){
+          // Same test as narrate(): chatter is not voiced in events mode, and a bare status has no log line.
+          const lines = p.log || [];
+          sayAside(lines.length
+            ? lines.filter(function(l){ return narrator.mode !== 'everything' && / says: /.test(l); }).join(' ')
+            : (news ? '' : statusText));
+        }
         playCues(p.sounds);
         narrate(p.log);
-        $('tstatus').focus({ preventScroll: false });
+        if(userAction){
+          (narrator.mode === 'off' ? $('tstatus') : $('moves-h')).focus({ preventScroll: false });
+        } else if(heldMove !== null){
+          const same = Array.prototype.find.call($('tmoves').querySelectorAll('button'), function(b){ return (b.getAttribute('data-move') || '') === heldMove; });
+          (same || $('tmoves').querySelector('button') || $('moves-h')).focus({ preventScroll: true });
+        }
       }
       $('tmoves').addEventListener('click', async function(ev){
         const r = ev.target.closest('#btn-rematch');
@@ -2606,10 +2679,10 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           const path = table.party ? '/api/kade/parlor/party-move/' : '/api/kade/parlor/move/';
           const p = await api('POST', path+table.gameId, { move: b.getAttribute('data-move') });
           if(p.historyCursor) historyCursor = p.historyCursor;
-          renderTable(p);
+          renderTable(p, null, true);
         }catch(e){
           $('tstatus').textContent = e.message; speak(e.message);
-          try{ const p = await api('GET', '/api/kade/parlor/state/'+table.gameId); renderTable(p, [e.message]); }catch(e2){}
+          try{ const p = await api('GET', '/api/kade/parlor/state/'+table.gameId); renderTable(p, [e.message], true); }catch(e2){}
         }
       });
       $('btn-reread').addEventListener('click', function(){
@@ -2626,8 +2699,8 @@ const parlorHtml = `<!doctype html><html lang="en"><head><title>The Parlor</titl
           a.href = URL.createObjectURL(blob);
           a.download = 'kade-parlor-'+table.gameKey+'-'+table.gameId+'.txt';
           document.body.appendChild(a); a.click(); a.remove();
-          $('tstatus').textContent = 'Transcript downloaded.';
-        }catch(e){ $('tstatus').textContent = 'Could not download the transcript.'; }
+          tell('Transcript downloaded.');
+        }catch(e){ tell('Could not download the transcript.'); }
       });
       $('btn-quit').addEventListener('click', async function(){
         if(!table) return;

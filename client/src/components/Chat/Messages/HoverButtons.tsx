@@ -9,6 +9,7 @@ import { BookOpenText } from 'lucide-react';
 import MessageAudio from './MessageAudio';
 import { messageCharacterId } from '~/components/Chat/character/voice-message-motion.mjs';
 import KadeReadingView from './KadeReadingView';
+import { toReadableText } from '~/utils/readable';
 import DownloadAudioButton from './DownloadAudioButton';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -260,7 +261,7 @@ const HoverButtons = ({
       )}
       {showReadingView && (
         <KadeReadingView
-          text={extractMessageContent(message)}
+          text={toReadableText(extractMessageContent(message))}
           onClose={() => setShowReadingView(false)}
         />
       )}

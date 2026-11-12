@@ -47,6 +47,7 @@ import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
+import { kadeSwitchOn } from '~/utils/kadeSwitch';
 import store from '~/store';
 
 type TSyncData = {
@@ -156,6 +157,8 @@ export const getExistingConversationAbortMessages = ({
 
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
+  /** The chat pane whose reply voice (StreamAudio) belongs to this stream. */
+  runIndex?: number;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -266,11 +269,23 @@ export const getConvoTitle = ({
   return currentTitle;
 };
 
+/** How long the reply voice gets to take a finished reply before the screen reader is given it. */
+export const VOICE_START_GRACE_MS = 6000;
+
+/** Nov 12 2026 (WEB-2): what the screen reader gets when a reply lands. When auto read-aloud is
+ *  about to speak it, a second reading by the screen reader talks over the voice; "Reply ready"
+ *  still marks the end. */
+export const finalReplyAnnouncement = (
+  responseMessage: TMessage | null | undefined,
+  voiceWillRead: boolean,
+): string | null => (voiceWillRead ? null : getAllContentText(responseMessage) || null);
+
 export default function useEventHandlers({
   setMessages,
   getMessages,
   setCompleted,
   isAddedRequest = false,
+  runIndex = 0,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -278,6 +293,60 @@ export default function useEventHandlers({
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
+
+  /** The run auto read-aloud is about to speak, or null when no voice will read this reply.
+   *  Mirrors what mounts and gates StreamAudio (ChatForm.tsx, StreamAudio.tsx): a run id cleared
+   *  by pauseGlobalAudio means that reply is never auto-played. Undo on one browser:
+   *  localStorage kadeQuietUnderVoice = '0' (the screen reader reads every reply again). */
+  const replyVoiceRun = useRecoilCallback(
+    ({ snapshot }) =>
+      (): string | null => {
+        if (!kadeSwitchOn('quietScreenReaderUnderVoice')) {
+          return null;
+        }
+        const voiceOn =
+          snapshot.getLoadable(store.textToSpeech).valueMaybe() === true &&
+          snapshot.getLoadable(store.automaticPlayback).valueMaybe() === true &&
+          snapshot.getLoadable(store.voiceCallActiveState).valueMaybe() !== true;
+        if (!voiceOn) {
+          return null;
+        }
+        return snapshot.getLoadable(store.activeRunFamily(runIndex)).valueMaybe() ?? null;
+      },
+    [runIndex],
+  );
+
+  /** True once the voice has taken this run (fetching, or fetched: its failures are announced by
+   *  StreamAudio), or the run is no longer current (the listener stopped the voice, or a newer
+   *  turn owns it). */
+  const replyVoiceTookRun = useRecoilCallback(
+    ({ snapshot }) =>
+      (runId: string): boolean => {
+        if (snapshot.getLoadable(store.activeRunFamily(runIndex)).valueMaybe() !== runId) {
+          return true;
+        }
+        return (
+          snapshot.getLoadable(store.audioRunFamily(runIndex)).valueMaybe() === runId ||
+          snapshot.getLoadable(store.globalAudioFetchingFamily(runIndex)).valueMaybe() === true
+        );
+      },
+    [runIndex],
+  );
+
+  const voiceWatchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const getMessagesRef = useRef(getMessages);
+  useEffect(() => {
+    getMessagesRef.current = getMessages;
+  }, [getMessages]);
+  useEffect(
+    () => () => {
+      if (voiceWatchRef.current) {
+        clearTimeout(voiceWatchRef.current);
+      }
+    },
+    [],
+  );
+
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
   const navigate = useNavigate();
@@ -716,7 +785,32 @@ export default function useEventHandlers({
 
         /* a11y announcements */
         announcePolite({ message: 'end', isStatus: true });
-        announcePolite({ message: getAllContentText(responseMessage) });
+        if (voiceWatchRef.current) {
+          clearTimeout(voiceWatchRef.current);
+          voiceWatchRef.current = null;
+        }
+        /* Nov 12 2026 (WEB-2): when the reply's own voice is about to read it, the voice is the
+         * announcement; the screen reader reading the same words talked over it. */
+        const voiceRun = replyVoiceRun();
+        const replyText = finalReplyAnnouncement(responseMessage, voiceRun != null);
+        if (replyText) {
+          announcePolite({ message: replyText });
+        } else if (voiceRun != null) {
+          /* Never silent: the voice only starts after the messages refetch and several other
+           * gates. If it has not taken this run in time, the screen reader gets the reply. */
+          const spokenText = getAllContentText(responseMessage);
+          const replyId = responseMessage?.messageId;
+          if (spokenText && replyId) {
+            voiceWatchRef.current = setTimeout(() => {
+              voiceWatchRef.current = null;
+              const stillShown =
+                getMessagesRef.current()?.some((message) => message.messageId === replyId) === true;
+              if (stillShown && !replyVoiceTookRun(voiceRun)) {
+                announcePolite({ message: spokenText });
+              }
+            }, VOICE_START_GRACE_MS);
+          }
+        }
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
@@ -881,6 +975,8 @@ export default function useEventHandlers({
       applyAgentTemplate,
       attachmentHandler,
       restorePendingQuotes,
+      replyVoiceRun,
+      replyVoiceTookRun,
     ],
   );
 

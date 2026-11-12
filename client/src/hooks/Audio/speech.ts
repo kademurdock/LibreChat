@@ -97,3 +97,25 @@ export async function consumeSpeechAudio(
     reader.releaseLock();
   }
 }
+
+export type PlayRefusal = 'blocked' | 'failed';
+
+/** play(), reporting a refusal by the browser's autoplay rule ('blocked') or a clip that cannot be
+ *  decoded ('failed'). A pause or a new load racing the call (AbortError) is neither.
+ *  Nov 12 2026 (WEB-10): auto read-aloud used to rely on the autoPlay attribute and never heard
+ *  about either refusal, so a reply could end in silence with nothing said. */
+export async function playOrReport(
+  audio: HTMLMediaElement,
+  onRefused: (why: PlayRefusal) => void,
+): Promise<void> {
+  try {
+    await audio.play();
+  } catch (error) {
+    const name = (error as { name?: string } | null)?.name;
+    if (name === 'NotAllowedError') {
+      onRefused('blocked');
+    } else if (name === 'NotSupportedError') {
+      onRefused('failed');
+    }
+  }
+}

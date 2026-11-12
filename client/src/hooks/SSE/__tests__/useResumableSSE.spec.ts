@@ -1927,4 +1927,99 @@ describe('useResumableSSE - 404 error path', () => {
       unmount();
     });
   });
+
+  describe('stream watchdog (WEB-13, Nov 12 2026)', () => {
+    it('reconnects with resume when the stream closes cleanly without a final event', async () => {
+      jest.useFakeTimers();
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'clean-close' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('readystatechange', {
+          readyState: 2,
+        } as unknown as Partial<MessageEvent>);
+      });
+      await advanceRetryTimer(1000);
+      expect(mockFinalHandler).not.toHaveBeenCalled();
+      expect(mockSSEInstances).toHaveLength(2);
+      const { SSE } = jest.requireMock('sse.js');
+      expect(SSE.mock.calls[1][0]).toContain('resume=true');
+      unmount();
+    });
+
+    it('does not reconnect when CLOSED follows a final event', async () => {
+      jest.useFakeTimers();
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'final-then-close' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        const sse = getLastSSE();
+        sse._emit('message', {
+          data: JSON.stringify({ final: true, conversation: {}, responseMessage: {} }),
+        });
+        sse._emit('readystatechange', { readyState: 2 } as unknown as Partial<MessageEvent>);
+      });
+      await advanceRetryTimer(60000);
+      expect(mockSSEInstances).toHaveLength(1);
+      unmount();
+    });
+
+    it('reconnects when no bytes arrive for 45 seconds', async () => {
+      jest.useFakeTimers();
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'idle-stream' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await advanceRetryTimer(44000);
+      expect(mockSSEInstances).toHaveLength(1);
+      await advanceRetryTimer(1000);
+      await advanceRetryTimer(1000);
+      expect(mockSSEInstances).toHaveLength(2);
+      unmount();
+    });
+
+    it('gives up with an error when the stream keeps closing cleanly without a final event', async () => {
+      jest.useFakeTimers();
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'close-loop' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      for (let i = 0; i < 4; i++) {
+        await act(async () => {
+          const sse = getLastSSE();
+          sse._emit('open');
+          sse._emit('readystatechange', { readyState: 2 } as unknown as Partial<MessageEvent>);
+        });
+        await advanceRetryTimer(1000);
+      }
+      expect(mockSSEInstances).toHaveLength(4);
+      expect(mockErrorHandler).toHaveBeenCalled();
+      unmount();
+    });
+
+    it('the kadeStreamWatchdog undo switch leaves a clean close alone', async () => {
+      jest.useFakeTimers();
+      localStorage.setItem('kadeStreamWatchdog', '0');
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'switch-off' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('readystatechange', {
+          readyState: 2,
+        } as unknown as Partial<MessageEvent>);
+      });
+      await advanceRetryTimer(60000);
+      expect(mockSSEInstances).toHaveLength(1);
+      localStorage.removeItem('kadeStreamWatchdog');
+      unmount();
+    });
+  });
 });

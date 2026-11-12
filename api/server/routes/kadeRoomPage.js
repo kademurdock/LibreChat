@@ -58,6 +58,7 @@ const roomHtml = `<!doctype html>
   ul.rooms .info { flex:1 1 14rem; min-width:0; }
   ul.rooms .topic { font-weight:600; }
   footer { margin-top:2rem; font-size:.85rem; }
+  .sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); clip-path:inset(50%); white-space:nowrap; border:0; }
   /* KADE session 22: press-down feedback on anything tappable. Motion only
      under prefers-reduced-motion: no-preference; static pages otherwise. */
   @media (prefers-reduced-motion: no-preference) {
@@ -112,6 +113,7 @@ const roomHtml = `<!doctype html>
     <p id="rv-cast" class="muted"></p>
     <div id="log" role="log" aria-live="polite" aria-label="Room conversation"></div>
     <p id="thinking" class="muted" role="status" aria-live="polite"></p>
+    <div id="raFallback" class="sr-only" aria-live="polite"></div>
     <label for="saybox">Say something in the room (after you speak, each character gets a turn)</label>
     <textarea id="saybox" rows="2"></textarea>
     <div class="controls">
@@ -136,6 +138,27 @@ const roomHtml = `<!doctype html>
   var token = null, agents = [], room = null, busy = false, stopFlag = false;
   var readAloud = false, audioEl = null, speakQ = [], speaking = false, voicesList = null;
   try { readAloud = localStorage.getItem('kadeRoomRA') === '1'; } catch(e){}
+  /* WEB-8: a remembered "ON" has had no tap on this page yet, and Safari plays nothing until the
+   * <audio> has played inside one. Unlock on a click or key press (a touch pointerdown is not a
+   * gesture Safari accepts; VoiceOver's double tap sends click), and keep listening until a play
+   * has really worked. */
+  var raUnlocked = false, raBlockedSaid = false, raFallbackTimer = null;
+  var SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
+  function voicesUnlocked(){
+    if(raUnlocked) return;
+    raUnlocked = true;
+    document.removeEventListener('click', unlockVoices, true);
+    document.removeEventListener('keydown', unlockVoices, true);
+  }
+  function unlockVoices(){
+    if(raUnlocked || !readAloud || speaking) return;
+    if(!audioEl){ audioEl = new Audio(); }
+    audioEl.src = SILENT_WAV;
+    var p = audioEl.play();
+    if(p && p.then){ p.then(voicesUnlocked, function(){}); }
+  }
+  document.addEventListener('click', unlockVoices, true);
+  document.addEventListener('keydown', unlockVoices, true);
   var $ = function(id){ return document.getElementById(id); };
   var statusEl = $('status');
 
@@ -235,6 +258,16 @@ const roomHtml = `<!doctype html>
     var b = $('raBtn');
     b.setAttribute('aria-pressed', readAloud ? 'true' : 'false');
     b.textContent = readAloud ? 'Read aloud: ON' : 'Read aloud: OFF';
+    // WEB-8: the voices read each line; the screen reader must not read it a second time.
+    $('log').setAttribute('aria-live', readAloud ? 'off' : 'polite');
+  }
+  /* WEB-8: the log is quiet while read aloud is on, so a line the voices could not say is handed
+   * to the screen reader here instead. Never silence. */
+  function sayFallback(m){
+    var box = $('raFallback');
+    box.textContent = m.name + ': ' + m.text;
+    clearTimeout(raFallbackTimer);
+    raFallbackTimer = setTimeout(function(){ box.textContent = ''; }, 8000);
   }
   async function voiceFor(ag){
     if(ag && ag.voiceId) return ag.voiceId;
@@ -268,7 +301,7 @@ const roomHtml = `<!doctype html>
   async function pumpSpeech(){
     if(speaking || !speakQ.length) return;
     speaking = true;
-    var m = speakQ.shift();
+    var m = speakQ.shift(), url = null;
     try{
       var ag = (room && room.agents || []).filter(function(a){ return a.agentId === m.speaker; })[0] || {};
       var fd = new FormData();
@@ -280,13 +313,26 @@ const roomHtml = `<!doctype html>
       var r = await fetch('/api/files/speech/tts/manual', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
       if(!r.ok){ throw new Error('tts '+r.status); }
       var blob = await r.blob();
-      var url = URL.createObjectURL(blob);
-      if(!audioEl){ audioEl = new Audio(); }
-      audioEl.src = url;
-      await audioEl.play();
-      await new Promise(function(done){ audioEl.onended = done; audioEl.onerror = done; });
-      URL.revokeObjectURL(url);
-    }catch(e){ /* one bad clip never blocks the queue */ }
+      if(readAloud){ // turned off while the clip was on its way: say nothing
+        url = URL.createObjectURL(blob);
+        if(!audioEl){ audioEl = new Audio(); }
+        var el = audioEl;
+        el.src = url;
+        // pause too: "Read aloud: OFF" pauses the clip, and a wait on ended alone never came back
+        var finished = new Promise(function(done){ el.onended = done; el.onerror = done; el.onpause = done; });
+        await el.play();
+        voicesUnlocked();
+        await finished;
+      }
+    }catch(e){
+      /* one bad clip never blocks the queue; its line goes to the screen reader instead */
+      if(readAloud){ sayFallback(m); }
+      if(e && e.name === 'NotAllowedError' && !raBlockedSaid){
+        raBlockedSaid = true;
+        setStatus('Read aloud is on, but this browser blocked the voices. Press any button on this page once to let them play.', true);
+      }
+    }
+    if(url){ URL.revokeObjectURL(url); }
     speaking = false;
     pumpSpeech();
   }
@@ -371,8 +417,8 @@ const roomHtml = `<!doctype html>
     if(readAloud){
       // unlock audio inside the tap gesture (iOS)
       if(!audioEl){ audioEl = new Audio(); }
-      audioEl.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=';
-      audioEl.play()['catch'](function(){});
+      audioEl.src = SILENT_WAV;
+      audioEl.play().then(voicesUnlocked, function(){});
     } else {
       speakQ = [];
       if(audioEl){ try{ audioEl.pause(); }catch(e){} }

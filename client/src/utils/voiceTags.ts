@@ -21,6 +21,9 @@
  * to keep the delimiter so the proxy can convert it to real steering brackets.
  */
 
+import { balanceSteeringRuns } from './steeringBalance';
+import { kadeSwitchOn } from './kadeSwitch';
+
 const VOICE_TAG_RE = /%%%([\s\S]*?)%%%/g;
 
 /**
@@ -98,7 +101,76 @@ export function markdownToCleanProse(text: string): string {
     .replace(/[ \t]{2,}/g, ' ');
 }
 
-export function stripVoiceTags(text: string): string {
+/* Nov 12 2026 (WEB-12) -- pair %%% runs by SHAPE, exactly as the voice proxy and the rooms do
+ * (api/server/utils/steeringStrip.js), so a stray run can no longer flip the rest of a reply into
+ * tag words on screen and in announcements. steeringBalance.js is a generated copy of the server's
+ * pinned balancer (scripts/sync-steering-balance.mjs); never edit it here. Undo on one browser:
+ * localStorage kadeBalancedTags = '0' (back to left-to-right pairing). */
+const ANY_RUN_RE = /%{2,}/g;
+/** Fenced blocks (an unclosed fence runs to the end while streaming) and inline code spans. */
+const CODE_SPAN_RE = /```[\s\S]*?(?:```|$)|`[^`\n]+`/g;
+// The U+0001/U+0002 pair marks a held-out code span; they never occur in chat text.
+// eslint-disable-next-line no-control-regex
+const HELD_CODE_RE = /\u0001(\d+)\u0002/g;
+/** The balancer hands texts past this on untouched (its MAX_CHARS). */
+const BALANCE_MAX_CHARS = 150000;
+/** A tag still streaming in is short; past this, or past a line break, the run was a stray. */
+const IN_FLIGHT_MAX = 200;
+/** Read once per page load: this runs on every render of every reply. */
+const BALANCE_ON = kadeSwitchOn('balancedVoiceTags');
+
+/** The balanced text, or null when the balancer could not run (the caller keeps the old pairing). */
+function balanced(text: string): string | null {
+  if (!BALANCE_ON || text.length > BALANCE_MAX_CHARS) {
+    return null;
+  }
+  try {
+    return balanceSteeringRuns(text);
+  } catch {
+    return null;
+  }
+}
+
+const tagMarks = (text: string): number => text.split('%%%').length - 1;
+
+/**
+ * Streaming only. The balancer drops an opener whose closer has not arrived yet as a stray, which
+ * would put the direction's words on screen until the closer lands (July 19 2026, Kade: tags
+ * flashing in the web chat view). So when the LAST run of the text is not the closer of a tag, the
+ * balancer did not close it itself (a forgotten closer: `%%%warm Hello`), and a word touches it on
+ * the right with no line break after it, the text is cut at that run until more arrives.
+ */
+function cutTagInFlight(text: string): string {
+  let start = -1;
+  let end = -1;
+  for (const m of text.matchAll(ANY_RUN_RE)) {
+    start = m.index ?? -1;
+    end = start + m[0].length;
+  }
+  if (start === -1 || end >= text.length) {
+    return text;
+  }
+  const tail = text.slice(end);
+  if (/\s/.test(tail[0]) || tail.length > IN_FLIGHT_MAX || tail.indexOf('\n') !== -1) {
+    return text;
+  }
+  const before = balanced(text.slice(0, end));
+  const whole = balanced(text);
+  if (before == null || whole == null) {
+    return text;
+  }
+  // the run closes a tag (the balancer writes `%%%direction%%%`), or the balancer closed it itself
+  if (before.endsWith('%%%') || tagMarks(whole) > tagMarks(before)) {
+    return text;
+  }
+  return text.slice(0, start);
+}
+
+/**
+ * @param streaming pass true ONLY for text that is still streaming in (the same gate as
+ *   hideDanglingVoiceTag): it also hides a tag whose closer has not arrived yet.
+ */
+export function stripVoiceTags(text: string, streaming = false): string {
   if (!text) {
     return text;
   }
@@ -106,9 +178,31 @@ export function stripVoiceTags(text: string): string {
   if (text.indexOf('%%') === -1) {
     return text;
   }
-  return text
+  // Code keeps its doubled percent signs (printf "%%d", batch "%%i"): held out of the pairing and
+  // put back untouched at the end.
+  const held: string[] = [];
+  let work = text;
+  if (BALANCE_ON && text.indexOf('`') !== -1) {
+    work = text.replace(CODE_SPAN_RE, (code) => {
+      if (code.indexOf('%%') === -1) {
+        return code;
+      }
+      held.push(code);
+      return `\u0001${held.length - 1}\u0002`;
+    });
+  }
+  if (streaming && BALANCE_ON) {
+    work = cutTagInFlight(work);
+  }
+  const paired = balanced(work);
+  let out = (paired == null ? work : paired)
     .replace(VOICE_TAG_RE, '')
-    .replace(SLOPPY_VOICE_TAG_RE, '')
+    .replace(SLOPPY_VOICE_TAG_RE, '');
+  if (paired != null) {
+    // a stray the balancer left, which it should not, never stays on screen (as steeringStrip.js)
+    out = out.replace(ANY_RUN_RE, '');
+  }
+  out = out
     // A removed leading tag often leaves a stray space before the next
     // word, and removing one mid-sentence can leave doubled spaces behind.
     .replace(/[ \t]{2,}/g, ' ')
@@ -118,6 +212,7 @@ export function stripVoiceTags(text: string): string {
     // leading whitespace/newlines from the start of the whole string only --
     // never mid-document, where blank lines are real paragraph breaks.
     .replace(/^\s+/, '');
+  return held.length ? out.replace(HELD_CODE_RE, (m, n: string) => held[Number(n)] ?? m) : out;
 }
 
 /**

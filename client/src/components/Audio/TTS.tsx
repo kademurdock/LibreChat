@@ -4,6 +4,7 @@ import {
   watchVoiceAudio,
   stopWatchingVoiceAudio,
 } from '~/components/Chat/character/voice-playback.mjs';
+import { claimVoice } from '~/hooks/Audio/voiceFocus';
 import type { TMessageAudio } from '~/common';
 import { VolumeIcon, VolumeMuteIcon, Spinner } from '@librechat/client';
 import { useLocalize, useTTSBrowser, useTTSExternal } from '~/hooks';
@@ -77,7 +78,10 @@ export function BrowserTTS({
         </button>
       )}
       <audio
-        onPlaying={(event) => watchVoiceAudio(event.currentTarget, messageId)}
+        onPlaying={(event) => {
+          claimVoice(event.currentTarget); // Nov 12 2026 (WEB-5): one reply voice at a time
+          watchVoiceAudio(event.currentTarget, messageId);
+        }}
         onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls
@@ -176,7 +180,10 @@ export function ExternalTTS({
         </button>
       )}
       <audio
-        onPlaying={(event) => watchVoiceAudio(event.currentTarget, messageId)}
+        onPlaying={(event) => {
+          claimVoice(event.currentTarget); // Nov 12 2026 (WEB-5): one reply voice at a time
+          watchVoiceAudio(event.currentTarget, messageId);
+        }}
         onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
         ref={audioRef}
         controls

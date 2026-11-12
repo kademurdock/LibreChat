@@ -1,3 +1,6 @@
+import { parseTextParts } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
+
 /** Oct 30 2026: one speed number everywhere, on every voice. Her words: "The brisk and all that,
  * that wasn't original, that was just because we couldn't get fish api to sound right. Inworld
  * originally just had a speed, 1x 1.2x whatever, up and down." The proxy now stretches the finished
@@ -44,15 +47,18 @@ export function characterSpeedFor(
   return personalVoice == null || personalVoice === builderVoice ? speakingRate : undefined;
 }
 
-const VOICE_CACHE_VERSION = 'pacing-v4';
+const VOICE_CACHE_VERSION = 'pacing-v5';
 const VOICE_CACHE_PATH = '/__voice-cache/';
 const VOICE_CACHE_PURGED_KEY = 'voiceCachePurged';
+const VOICE_CACHE_MAX_ENTRIES = 60;
 
 /** Oct 16 2026: v3 added the listener's filler switch, so audio made with fillers on never
  * replays after they are switched off (and the other way round).
  * Oct 30 2026: v4 because the same speed number now sounds different: a 1.2 used to play at
  * about 1.05 and is now a real 1.2. Older entries are never matched again; purgeOldVoiceCache
- * deletes them, since nothing else ever would. */
+ * deletes them, since nothing else ever would.
+ * Nov 12 2026 (WEB-1): v5 drops the v4 entries saved under an empty text. Every agent reply shared
+ * that one entry, so auto read-aloud replayed an old reply. */
 export function voiceCacheKey(
   text: string,
   voice: string | null | undefined,
@@ -65,6 +71,59 @@ export function voiceCacheKey(
     speed: String(speed),
     fillers: fillers ? '1' : '0',
   })}`;
+}
+
+/** The words a reply's voice is made from, in the same order the server (streamAudio.js) and the
+ * Read aloud button pick them: content parts first, thoughts skipped, then the plain text field.
+ * Agent replies keep `text` empty, so keying on `text` alone gave them all one cache entry. */
+export function voiceCacheText(message?: Pick<TMessage, 'text' | 'content'> | null): string {
+  if (!message) {
+    return '';
+  }
+  if (Array.isArray(message.content) && message.content.length > 0) {
+    return parseTextParts(message.content, true);
+  }
+  return message.text || '';
+}
+
+/** Keeps only the newest voice entries (Cache keys come back oldest first). Fail-soft. Returns
+ * how many it removed. */
+export async function trimVoiceCache(
+  cache: Cache,
+  max: number = VOICE_CACHE_MAX_ENTRIES,
+): Promise<number> {
+  try {
+    const keys = (await cache.keys()).filter((request) =>
+      new URL(request.url).pathname.startsWith(VOICE_CACHE_PATH),
+    );
+    const extra = keys.slice(0, Math.max(0, keys.length - max));
+    await Promise.all(extra.map((request) => cache.delete(request)));
+    return extra.length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Saves one finished take and trims the cache. Never throws and never saves under empty words:
+ * a full or blocked cache must not stop the voice that is already playing. */
+export async function storeVoiceAudio(
+  cache: Cache,
+  text: string,
+  voice: string | null | undefined,
+  speed: number,
+  fillers: boolean,
+  audio: Blob,
+): Promise<boolean> {
+  if (!text) {
+    return false;
+  }
+  try {
+    await cache.put(voiceCacheKey(text, voice, speed, fillers), new Response(audio));
+    await trimVoiceCache(cache);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Deletes every older /__voice-cache/ entry, once per browser. Fail-soft: blocked storage or no

@@ -56,6 +56,77 @@ router.use('/chat/tasks', createTaskRouter({ getMessages, getConvo }));
  * These are GET requests and don't need message body validation or rate limiting
  */
 
+/** KADE Nov 12 2026 (WEB-13): a comment line every 20 s so a connection that died without a word
+ * is noticed (the web client reconnects after 45 s of no bytes). Every SSE parser skips ':' lines,
+ * and the phone apps' parsers ignore lines that are not `event:`/`data:`.
+ * KADE_SSE_HEARTBEAT_MS sets the gap; 0 turns the heartbeat off. Ship this before the client
+ * watchdog, or a long silent tool call makes the web client reconnect.
+ *
+ * The pings stop once nothing real (an `event:`/`data:` write) has gone out for
+ * KADE_SSE_HEARTBEAT_IDLE_CAP_MS (default 240000; 0 = never stop). A hung job must still go quiet,
+ * so the clients' own byte-silence watchdogs can end the turn: the web call screen's 75 s, the
+ * web chat's 45 s, and the phones' 300 s request timeouts (iPhone timeoutInterval, Android
+ * readTimeout). Without the cap a stuck turn sat on "thinking" until the 20-minute job reaper.
+ * Keep the cap under the phones' 300 s and well above 45 s. */
+const DEFAULT_SSE_HEARTBEAT_MS = 20000;
+const DEFAULT_SSE_HEARTBEAT_IDLE_CAP_MS = 240000;
+function envMs(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') {
+    return fallback;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+function sseHeartbeatMs() {
+  return envMs('KADE_SSE_HEARTBEAT_MS', DEFAULT_SSE_HEARTBEAT_MS);
+}
+function sseHeartbeatIdleCapMs() {
+  return envMs('KADE_SSE_HEARTBEAT_IDLE_CAP_MS', DEFAULT_SSE_HEARTBEAT_IDLE_CAP_MS);
+}
+/** Returns { noteRealWrite } (call it on every real event written), or null when off. */
+function startStreamHeartbeat(res) {
+  const every = sseHeartbeatMs();
+  if (!every) {
+    return null;
+  }
+  const idleCap = sseHeartbeatIdleCapMs();
+  let lastRealWriteAt = Date.now();
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded || res.destroyed) {
+      clearInterval(heartbeat);
+      return;
+    }
+    if (idleCap && Date.now() - lastRealWriteAt >= idleCap) {
+      // Nothing real for the whole cap: the job is probably hung. Go quiet for good so the
+      // clients' silence watchdogs can end the turn; the job reaper still ends the response.
+      clearInterval(heartbeat);
+      logger.warn(
+        `[AgentStream] No events for ${Math.round(idleCap / 1000)}s - heartbeat stopped so clients can time out`,
+      );
+      return;
+    }
+    try {
+      res.write(': ping\n\n');
+      if (typeof res.flush === 'function') {
+        res.flush();
+      }
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, every);
+  if (typeof heartbeat.unref === 'function') {
+    heartbeat.unref();
+  }
+  res.on('close', () => clearInterval(heartbeat));
+  res.on('finish', () => clearInterval(heartbeat));
+  return {
+    noteRealWrite() {
+      lastRealWriteAt = Date.now();
+    },
+  };
+}
+
 /**
  * @route GET /chat/stream/:streamId
  * @desc Subscribe to an ongoing generation job's SSE stream with replay support
@@ -96,6 +167,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   streamTelemetry.recordHeadersFlushed();
+  const heartbeat = startStreamHeartbeat(res);
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 
@@ -105,6 +177,7 @@ router.get('/chat/stream/:streamId', async (req, res) => {
       const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
       res.write(payload);
       streamTelemetry.recordWrite(payload, { final: options.final });
+      heartbeat?.noteRealWrite();
       if (typeof res.flush === 'function') {
         res.flush();
       }

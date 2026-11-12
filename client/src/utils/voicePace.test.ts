@@ -1,3 +1,5 @@
+import { ContentTypes } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import {
   characterSpeedFor,
   generationRate,
@@ -5,6 +7,9 @@ import {
   speedLabel,
   speedOptions,
   speedSpoken,
+  storeVoiceAudio,
+  trimVoiceCache,
+  voiceCacheText,
   voiceCacheKey,
   voiceSpeeds,
 } from './voicePace';
@@ -74,8 +79,60 @@ describe('voice audio cache', () => {
     expect(key).not.toBe(voiceCacheKey('same words', 'Classic voice', 1.2, true));
     expect(key).not.toBe(voiceCacheKey('same words', 'Fish voice', 1, true));
     expect(key).not.toBe(voiceCacheKey('same words', 'Fish voice', 1.2, false));
-    expect(key).toContain('pacing-v4');
-    expect(key).not.toContain('pacing-v3');
+    expect(key).toContain('pacing-v5');
+    expect(key).not.toContain('pacing-v4');
+  });
+
+  it('keys agent replies by their content, never by the empty text field (WEB-1)', () => {
+    const one = {
+      text: '',
+      content: [{ type: ContentTypes.TEXT, text: 'First answer.' }],
+    } as unknown as TMessage;
+    const two = {
+      text: '',
+      content: [{ type: ContentTypes.TEXT, text: 'A different answer.' }],
+    } as unknown as TMessage;
+    expect(voiceCacheText(one)).toBe('First answer.');
+    expect(voiceCacheKey(voiceCacheText(one), 'Voice 85', 1, true)).not.toBe(
+      voiceCacheKey(voiceCacheText(two), 'Voice 85', 1, true),
+    );
+    expect(voiceCacheText({ text: 'plain', content: [] })).toBe('plain');
+    expect(voiceCacheText({ text: '', content: [] })).toBe('');
+    expect(voiceCacheText(null)).toBe('');
+  });
+
+  it('skips thoughts, like the server and the Read aloud button', () => {
+    const message = {
+      text: '',
+      content: [
+        { type: ContentTypes.THINK, think: 'private' },
+        { type: ContentTypes.TEXT, text: 'Spoken.' },
+      ],
+    } as unknown as TMessage;
+    expect(voiceCacheText(message)).toBe('Spoken.');
+  });
+
+  it('trims to the newest entries and never saves under empty words or throws', async () => {
+    const origin = 'https://example.test';
+    const urls = ['a', 'b', 'c'].map((t) => `${origin}/__voice-cache/pacing-v5?text=${t}`);
+    const entries = [...urls, `${origin}/other`];
+    const cache = {
+      keys: async () => entries.map((url) => ({ url })),
+      delete: async (request: { url: string }) => {
+        entries.splice(entries.indexOf(request.url), 1);
+        return true;
+      },
+      put: jest.fn(async () => {
+        throw new Error('QuotaExceededError');
+      }),
+    } as unknown as Cache;
+    await expect(trimVoiceCache(cache, 2)).resolves.toBe(1);
+    expect(entries).toEqual([urls[1], urls[2], `${origin}/other`]);
+    await expect(storeVoiceAudio(cache, '', 'Voice', 1, true, new Blob())).resolves.toBe(false);
+    expect(cache.put).not.toHaveBeenCalled();
+    await expect(storeVoiceAudio(cache, 'words', 'Voice', 1, true, new Blob())).resolves.toBe(
+      false,
+    );
   });
 
   describe('purge of older keys', () => {

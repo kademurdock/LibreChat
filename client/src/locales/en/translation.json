@@ -1561,6 +1561,8 @@
   "com_ui_quotes_queued": "Quotes added for your next message",
   "com_ui_ran_n_agents": "Ran {{0}} agents",
   "com_ui_read_aloud": "Read aloud",
+  "com_ui_read_aloud_blocked": "The browser blocked the voice for this reply. Use Read aloud on the message to hear the voice.",
+  "com_ui_read_aloud_failed": "The voice for this reply failed.",
   "com_ui_read_file": "Read {{0}}",
   "com_ui_reading_file": "Reading {{0}}",
   "com_ui_redirect_uri": "Redirect URI",

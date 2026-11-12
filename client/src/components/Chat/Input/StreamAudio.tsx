@@ -1,18 +1,20 @@
 import { useParams } from 'react-router-dom';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
 import { useCustomAudioRef, MediaSourceAppender, usePauseGlobalAudio } from '~/hooks/Audio';
 import { useLatestMessage } from '~/hooks/Messages/useLatestMessage';
-import { getLatestText, logger } from '~/utils';
-import { useAuthContext } from '~/hooks';
+import { getLatestText, getAllContentText, logger } from '~/utils';
+import { useAuthContext, useLocalize } from '~/hooks';
+import { useLiveAnnouncer } from '~/Providers';
 import { globalAudioId } from '~/common';
 import store from '~/store';
-import { generationRate, voiceCacheKey } from '~/utils/voicePace';
-import { consumeSpeechAudio, speechAudioBlob } from '~/hooks/Audio/speech';
+import { generationRate, voiceCacheKey, voiceCacheText, storeVoiceAudio } from '~/utils/voicePace';
+import { consumeSpeechAudio, speechAudioBlob, playOrReport } from '~/hooks/Audio/speech';
 import { useSpeechRequest } from '~/hooks/Audio/request';
+import { claimVoice } from '~/hooks/Audio/voiceFocus';
 import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
 import { messageCharacterId } from '../character/voice-message-motion.mjs';
 import { faceTimingsAllowed } from '../character/timing-track.mjs';
@@ -47,6 +49,45 @@ export default function StreamAudio({ index = 0 }) {
 
   const onCancelled = useCallback(() => setIsFetching(false), [setIsFetching]);
   const speechRequest = useSpeechRequest(queryParam, activeRunId, voiceCallActive, onCancelled);
+
+  /* Nov 12 2026 (WEB-10): auto read-aloud never ends in silence. Refs, not effect deps: a new
+   * localize or announcer identity must not re-run the play effect and replay a finished clip. */
+  const localize = useLocalize();
+  const { announcePolite } = useLiveAnnouncer();
+  const words = useRef({ localize, announcePolite });
+  words.current = { localize, announcePolite };
+  /** The URL this mounted instance published; a stale URL left in the store is never played. */
+  const freshURLRef = useRef<string | null>(null);
+  /** The reply the clip in flight belongs to. */
+  const clipMessageRef = useRef<TMessage | null>(null);
+  /** One lost-voice announcement per reply, whatever retries or double failures follow. */
+  const lostVoiceRef = useRef<string | null>(null);
+
+  const showClip = useCallback(
+    (url: string) => {
+      freshURLRef.current = url;
+      setGlobalAudioURL(url);
+    },
+    [setGlobalAudioURL],
+  );
+
+  const announceVoiceLost = useCallback(
+    (key: 'com_ui_read_aloud_blocked' | 'com_ui_read_aloud_failed', message?: TMessage | null) => {
+      const id = message?.messageId ?? '';
+      if (id && lostVoiceRef.current === id) {
+        return;
+      }
+      lostVoiceRef.current = id;
+      const { localize: say, announcePolite: announce } = words.current;
+      announce({ message: say(key), isStatus: true });
+      // The voice was the reading; give the screen reader the reply itself.
+      const text = getAllContentText(message);
+      if (text) {
+        announce({ message: text });
+      }
+    },
+    [],
+  );
 
   const queryClient = useQueryClient();
   const getMessages = useCallback(
@@ -90,6 +131,7 @@ export default function StreamAudio({ index = 0 }) {
     async function fetchAudio() {
       const controller = speechRequest.begin();
       setIsFetching(true);
+      clipMessageRef.current = latestMessage ?? null;
 
       try {
         if (audioRef.current) {
@@ -98,9 +140,12 @@ export default function StreamAudio({ index = 0 }) {
           setGlobalAudioURL(null);
         }
 
-        let cacheKey = voiceCacheKey(latestMessage?.text ?? '', voice, speed, fillers);
+        /* Nov 12 2026 (WEB-1): keyed on the words spoken. Agent replies have an empty `text`, and
+         * one shared key made every later reply play the first reply's audio. */
+        const spokenText = voiceCacheText(latestMessage);
+        const cacheKey = spokenText ? voiceCacheKey(spokenText, voice, speed, fillers) : '';
         const cache = await caches.open('tts-responses');
-        const cachedResponse = await cache.match(cacheKey);
+        const cachedResponse = cacheKey ? await cache.match(cacheKey) : undefined;
         if (!speechRequest.isCurrent(controller)) return;
 
         setAudioRunId(activeRunId);
@@ -109,7 +154,7 @@ export default function StreamAudio({ index = 0 }) {
           const audioBlob = await speechAudioBlob(await cachedResponse.blob());
           if (!speechRequest.isCurrent(controller)) return;
           const blobUrl = URL.createObjectURL(audioBlob);
-          setGlobalAudioURL(blobUrl);
+          showClip(blobUrl);
           setIsFetching(false);
           return;
         }
@@ -151,7 +196,7 @@ export default function StreamAudio({ index = 0 }) {
               return null;
             const mediaSource = new MediaSourceAppender(type);
             streamed = true;
-            setGlobalAudioURL(mediaSource.mediaSourceUrl);
+            showClip(mediaSource.mediaSourceUrl);
             return {
               append: (data) => mediaSource.addData(data),
               close: () => mediaSource.close(),
@@ -161,24 +206,30 @@ export default function StreamAudio({ index = 0 }) {
         });
 
         if (!speechRequest.isCurrent(controller)) return;
+        if (!audioBlob && !streamed) {
+          throw new Error('Empty audio response');
+        }
+        /* Voice first, cache second: saving must never delay or stop the reply. */
+        if (audioBlob && !streamed) {
+          showClip(URL.createObjectURL(audioBlob));
+        }
         if (audioBlob && cacheTTS) {
-          const latestMessages = getMessages() ?? [];
-          const targetMessage = latestMessages.find(
+          const targetMessage = (getMessages() ?? []).find(
             (msg) => msg.messageId === latestMessage?.messageId,
           );
-          cacheKey = voiceCacheKey(targetMessage?.text ?? '', voice, speed, fillers);
-          if (cacheKey) await cache.put(cacheKey, new Response(audioBlob));
-        }
-        if (audioBlob && !streamed && speechRequest.isCurrent(controller)) {
-          setGlobalAudioURL(URL.createObjectURL(audioBlob));
+          const savedText = voiceCacheText(targetMessage ?? latestMessage);
+          void storeVoiceAudio(cache, savedText, voice, speed, fillers, audioBlob);
         }
 
         logger.log('Audio stream reading ended');
       } catch (error) {
         if (!speechRequest.isCurrent(controller)) return;
         logger.error('Error fetching audio:', error);
+        // Mark the run as attempted, so a failure before the fetch cannot loop.
+        setAudioRunId(activeRunId);
         setIsFetching(false);
         setGlobalAudioURL(null);
+        announceVoiceLost('com_ui_read_aloud_failed', latestMessage);
       } finally {
         if (speechRequest.finish(controller)) setIsFetching(false);
       }
@@ -205,6 +256,46 @@ export default function StreamAudio({ index = 0 }) {
     portraitsOn,
     token,
     speechRequest,
+    showClip,
+    announceVoiceLost,
+  ]);
+
+  /* Nov 12 2026 (WEB-10): play explicitly. The autoPlay attribute was switched off on every <audio>
+   * when a call started, and Safari refuses a clip that arrives seconds after the tap; both ended
+   * in silence. A refused clip is cleared and its request dropped, so it cannot burst out on the
+   * next tap or fail a second time. */
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !globalAudioURL || freshURLRef.current !== globalAudioURL) {
+      return;
+    }
+    let current = true;
+    void playOrReport(audio, (why) => {
+      if (!current) {
+        return;
+      }
+      speechRequest.cancel();
+      audio.removeAttribute('src');
+      audio.load();
+      URL.revokeObjectURL(globalAudioURL);
+      freshURLRef.current = null;
+      setGlobalAudioURL(null);
+      setIsFetching(false);
+      announceVoiceLost(
+        why === 'blocked' ? 'com_ui_read_aloud_blocked' : 'com_ui_read_aloud_failed',
+        clipMessageRef.current,
+      );
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    audioRef,
+    globalAudioURL,
+    speechRequest,
+    setGlobalAudioURL,
+    setIsFetching,
+    announceVoiceLost,
   ]);
 
   useEffect(() => {
@@ -272,7 +363,13 @@ export default function StreamAudio({ index = 0 }) {
   return (
     // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
-      onPlaying={(event) => watchVoiceAudio(event.currentTarget, latestMessage?.messageId)}
+      onPlaying={(event) => {
+        claimVoice(event.currentTarget);
+        watchVoiceAudio(event.currentTarget, latestMessage?.messageId);
+      }}
+      /* Nov 12 2026 (WEB-5): another voice can now pause this element (voiceFocus); the Read aloud
+       * button on the latest reply reads this flag, so it must not stay on "Stop" while silent. */
+      onPause={() => setIsPlaying(false)}
       onEmptied={(event) => stopWatchingVoiceAudio(event.currentTarget)}
       ref={audioRef}
       controls
@@ -286,7 +383,6 @@ export default function StreamAudio({ index = 0 }) {
       }}
       src={globalAudioURL ?? undefined}
       id={globalAudioId}
-      autoPlay
     />
   );
 }

@@ -44,14 +44,43 @@ function getCtx(): AudioContext | null {
       return null;
     }
     audioCtx = audioCtx || new Ctx();
-    if (audioCtx.state === 'suspended') {
-      // resume() needs a prior user gesture; sending the message was one.
+    if (audioCtx.state !== 'running' && audioCtx.state !== 'closed') {
+      // Covers 'suspended' and WebKit's 'interrupted'. Outside a tap or key press
+      // Safari refuses this, so setGestureUnlock() below repeats it inside one.
       audioCtx.resume().catch(() => {});
     }
     return audioCtx;
   } catch {
     return null;
   }
+}
+
+/** Nov 12 2026 (WEB-9): Safari starts an AudioContext only inside a tap or key
+ *  press, and the sound kit is first used from an effect after that gesture has
+ *  ended. So start (or restart) the context on the person's real gestures.
+ *  pointerdown is NOT an activating event on a touch screen; pointerup,
+ *  touchend, click and keydown are, and a VoiceOver double-tap arrives as click.
+ *  The listeners stay for the life of the page because iOS suspends the context
+ *  again after Siri, a phone call or a web call; when the context is already
+ *  running they do nothing. Only armed while Chat sounds is on. */
+const UNLOCK_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
+let unlockWanted = false;
+let unlockArmed = false;
+
+function setGestureUnlock(wanted: boolean): void {
+  unlockWanted = wanted;
+  if (!wanted || unlockArmed || typeof document === 'undefined') {
+    return;
+  }
+  unlockArmed = true;
+  const unlock = () => {
+    if (unlockWanted && audioCtx?.state !== 'running') {
+      getCtx(); // creates it inside the gesture, or resumes it
+    }
+  };
+  UNLOCK_EVENTS.forEach((type) => {
+    document.addEventListener(type, unlock, { capture: true, passive: true });
+  });
 }
 
 /** Old synth chime — kept verbatim as the fallback if chat-received.mp3
@@ -185,8 +214,10 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
   const autoPlayback = useRecoilValue(store.automaticPlayback);
   const globalPlaying = useRecoilValue(store.globalAudioPlayingFamily(index));
   const globalFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
+  const globalAudioURL = useRecoilValue(store.globalAudioURLFamily(index));
   const globalPlayingRef = useRef(false);
   const globalFetchingRef = useRef(false);
+  const voiceFetchSeenRef = useRef(false);
   const awaitingVoiceRef = useRef(false);
   const awaitGraceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const awaitCapRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -320,6 +351,7 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
     if (isSubmitting) {
       // A fresh send cancels any voice-wait left over from the last turn.
       awaitingVoiceRef.current = false;
+      voiceFetchSeenRef.current = false;
       clearAwaitTimers();
       announcePolite({ message: localize('com_ui_reply_working'), isStatus: true });
       const t = setTimeout(() => {
@@ -379,15 +411,27 @@ export default function useCompletionChime(isSubmitting: boolean, index: string 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSubmitting]);
 
-  // Voice-wait watcher: the instant playback starts, the bubbles bow out.
+  // Voice-wait watcher: the instant playback starts, the bubbles bow out. Nov 12 2026 (WEB-10):
+  // they also bow out when the voice fetch ended and left no clip (error, refusal, cancel)
+  // instead of waiting for the 15 s cap. A fetch that ended WITH a clip keeps the bridge until
+  // the clip is audible.
   useEffect(() => {
     globalPlayingRef.current = globalPlaying;
     globalFetchingRef.current = globalFetching;
-    if (awaitingVoiceRef.current && globalPlaying) {
+    if (globalFetching) {
+      voiceFetchSeenRef.current = true;
+    }
+    const voiceGone = voiceFetchSeenRef.current && !globalFetching && !globalAudioURL;
+    if (awaitingVoiceRef.current && (globalPlaying || voiceGone)) {
       endAwaitingVoice();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalPlaying, globalFetching]);
+  }, [globalPlaying, globalFetching, globalAudioURL]);
+
+  // Nov 12 2026 (WEB-9): let the next tap or key press start the sound kit (Safari).
+  useEffect(() => {
+    setGestureUnlock(enabled);
+  }, [enabled]);
 
   useEffect(() => {
     wasSubmitting.current = isSubmitting;

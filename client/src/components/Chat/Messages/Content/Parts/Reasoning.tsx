@@ -6,6 +6,7 @@ import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext, useChatContext, useLiveAnnouncer } from '~/Providers';
+import { returnFocusToMainTextarea } from '~/utils/returnFocus';
 import { stripDeepThinkTag } from '~/utils/gameSounds';
 import { cn } from '~/utils';
 
@@ -139,31 +140,37 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const { ask, stopGenerating, getMessages } = useChatContext();
   const { announcePolite } = useLiveAnnouncer();
   const answerNowFiredRef = useRef(false);
-  const handleAnswerNow = useCallback(() => {
-    if (answerNowFiredRef.current) {
-      return;
-    }
-    const messages = getMessages() ?? [];
-    const assistantMsg = messages.find((m) => m.messageId === messageId);
-    const userMsg =
-      (assistantMsg && messages.find((m) => m.messageId === assistantMsg.parentMessageId)) ||
-      [...messages].reverse().find((m) => m.isCreatedByUser);
-    const rawText = userMsg?.text ?? '';
-    if (!rawText) {
-      return;
-    }
-    answerNowFiredRef.current = true;
-    announcePolite({ message: localize('com_ui_answer_now_announce'), isStatus: true });
-    stopGenerating();
-    const parentId = userMsg?.parentMessageId ?? null;
-    setTimeout(() => {
-      ask({
-        text: `${stripDeepThinkTag(rawText)} [INSTANT ${Date.now()}]`,
-        parentMessageId: parentId,
-      });
-      answerNowFiredRef.current = false;
-    }, 800);
-  }, [getMessages, messageId, stopGenerating, ask, announcePolite, localize]);
+  const handleAnswerNow = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      if (answerNowFiredRef.current) {
+        return;
+      }
+      const messages = getMessages() ?? [];
+      const assistantMsg = messages.find((m) => m.messageId === messageId);
+      const userMsg =
+        (assistantMsg && messages.find((m) => m.messageId === assistantMsg.parentMessageId)) ||
+        [...messages].reverse().find((m) => m.isCreatedByUser);
+      const rawText = userMsg?.text ?? '';
+      if (!rawText) {
+        return;
+      }
+      answerNowFiredRef.current = true;
+      // Nov 12 2026 (WEB-7): stopping removes this button under the keyboard; land in the message
+      // box, not the page top.
+      returnFocusToMainTextarea(e.currentTarget);
+      announcePolite({ message: localize('com_ui_answer_now_announce'), isStatus: true });
+      stopGenerating();
+      const parentId = userMsg?.parentMessageId ?? null;
+      setTimeout(() => {
+        ask({
+          text: `${stripDeepThinkTag(rawText)} [INSTANT ${Date.now()}]`,
+          parentMessageId: parentId,
+        });
+        answerNowFiredRef.current = false;
+      }, 800);
+    },
+    [getMessages, messageId, stopGenerating, ask, announcePolite, localize],
+  );
 
   const label = useMemo(
     () =>

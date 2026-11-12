@@ -22,6 +22,12 @@ export function useSpeechRequest(
     current.current = null;
     return true;
   }, []);
+  /** Drop the request in flight without the scope changing (the browser refused its clip). */
+  const cancel = useCallback(() => {
+    const controller = current.current;
+    current.current = null;
+    controller?.abort();
+  }, []);
   useEffect(
     () => () => {
       if (!current.current) return;
@@ -32,5 +38,5 @@ export function useSpeechRequest(
     },
     [conversationId, runId, callActive, onCancelled],
   );
-  return useMemo(() => ({ begin, isCurrent, finish }), [begin, isCurrent, finish]);
+  return useMemo(() => ({ begin, isCurrent, finish, cancel }), [begin, isCurrent, finish, cancel]);
 }
