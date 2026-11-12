@@ -694,6 +694,16 @@ async function selectToolsCore(p) {
       }
     }
   }
+  /* TURN-3 (Nov 12 2026): Jev's add-only ask needs only these words and the loaded names, so it
+   * is STARTED here and runs beside the embedding pass instead of after it. It is applied in the
+   * same place as before (Part 239 below), so add-only and the order of the log lines are
+   * unchanged. The two embed-slow / embed-down returns below waste one ask; that is the cost. */
+  let jevAdd = null;
+  try {
+    jevAdd = require('./kadeJevJudges').toolsAddStart({ text, tools: [...all], log: (line) => logger.info(line) });
+  } catch (_) {
+    jevAdd = null;
+  }
   const emb = await embedHits({
     text,
     previous,
@@ -742,7 +752,7 @@ async function selectToolsCore(p) {
    * Kill: KADE_JEV_TOOLS_ADD=0. Budget: KADE_JEV_TOOLS_ADD_MS (1200). */
   let added = [];
   try {
-    added = await require('./kadeJevJudges').toolsAdd({ text, tools: [...all], keep, log: (line) => logger.info(line) });
+    added = jevAdd ? await jevAdd.apply(keep) : [];
   } catch (_) {
     added = [];
   }

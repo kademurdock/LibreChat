@@ -1081,6 +1081,68 @@ test('toolsAdd: ADDS and never removes, and a failure leaves the selection alone
   assert.deepStrictEqual([...keep3], before);
 });
 
+test('toolsAddStart: starts at once, adds exactly what toolsAdd adds, never rejects', async () => {
+  const tools = ['web_search', 'kade_news', 'kade_weather', 'not_a_known_tool'];
+  const ask = async (state, questions) => {
+    const answers = {};
+    for (const k of Object.keys(questions)) answers[k] = { noul: k === 'web_search' ? 0.96 : 0.02 };
+    return { answers };
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const stray = [];
+  const onStray = (e) => stray.push(e);
+  process.on('unhandledRejection', onStray);
+  try {
+    await withEnv(ON, async () => {
+      /* same adds, same keep, same log line as toolsAdd */
+      const k1 = new Set(['kade_weather']);
+      const k2 = new Set(['kade_weather']);
+      const l1 = [];
+      const l2 = [];
+      const a1 = await J.toolsAdd({ text: 'whats the news looking like tonight', tools, keep: k1, log: (l) => l1.push(l) }, { ask });
+      const a2 = await J.toolsAddStart({ text: 'whats the news looking like tonight', tools, log: (l) => l2.push(l) }, { ask }).apply(k2);
+      assert.deepStrictEqual(a2, a1);
+      assert.deepStrictEqual([...k2], [...k1]);
+      assert.deepStrictEqual(l2, l1);
+
+      /* the ask is sent before apply is called */
+      let sent = 0;
+      const h = J.toolsAddStart({ text: 'news', tools }, { ask: async (s, q) => { sent++; return ask(s, q); } });
+      await sleep(5);
+      assert.strictEqual(sent, 1, 'asked at start, not at apply');
+
+      /* keep is read at apply time: what the embed attached meanwhile is not added again */
+      const kept = new Set(['web_search']);
+      assert.deepStrictEqual(await h.apply(kept), []);
+
+      /* the two waits overlap */
+      const t0 = Date.now();
+      const slow = J.toolsAddStart({ text: 'news', tools }, { ask: async (s, q) => { await sleep(200); return ask(s, q); } });
+      await sleep(200);
+      assert.deepStrictEqual(await slow.apply(new Set()), ['web_search']);
+      assert.ok(Date.now() - t0 < 350, 'beside, not after');
+
+      /* failures add nothing, applied or never applied */
+      for (const bad of [async () => { throw new Error('HTTP 500'); }, () => { throw new Error('sync'); }, async () => undefined, async () => ({})]) {
+        const k = new Set(['kade_weather']);
+        assert.deepStrictEqual(await J.toolsAddStart({ text: 'hi', tools }, { ask: bad }).apply(k), []);
+        assert.deepStrictEqual([...k], ['kade_weather']);
+        J.toolsAddStart({ text: 'hi', tools }, { ask: bad }); /* the early-return path: never applied */
+      }
+      assert.deepStrictEqual(await J.toolsAddStart({ text: '', tools }, { ask }).apply(new Set()), []);
+      assert.deepStrictEqual(await J.toolsAddStart({ text: 'x', tools: ['not_a_known_tool'] }, { ask }).apply(new Set()), []);
+    });
+    let asked = 0;
+    const off = await withEnv({ ...ON, KADE_JEV_TOOLS_ADD: '0' }, () => J.toolsAddStart({ text: 'news?', tools }, { ask: async () => { asked++; } }).apply(new Set()));
+    assert.deepStrictEqual(off, []);
+    assert.strictEqual(asked, 0);
+    await sleep(20);
+    assert.strictEqual(stray.length, 0, 'an ask nobody applied never becomes an unhandled rejection');
+  } finally {
+    process.removeListener('unhandledRejection', onStray);
+  }
+});
+
 test('the approved questions are shaped the way kadeJev demands', () => {
   for (const q of [J.SAME_IDEA_Q, J.SAME_REPORT_Q, J.PUSHBACK_Q, J.FOLD_Q]) {
     assert.strictEqual(q.type, 'noul');
