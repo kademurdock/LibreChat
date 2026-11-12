@@ -56,6 +56,14 @@ const {
   memorySourceAllowed,
   excludedMemoryConversations,
 } = require('@librechat/data-schemas');
+/* DB-2 (platform audit, Nov 12 2026): reads the reply waits on give up after KADE_TURN_READ_MAX_MS
+ * (3000 ms; 0 = no limit, the old behaviour). The same rule as api/server/utils/kadeTurnRead.js,
+ * written out here because several tests load this file in a bare vm with no module paths. */
+function turnReadOptions() {
+  const raw = process.env.KADE_TURN_READ_MAX_MS;
+  const n = raw == null || String(raw).trim() === '' ? 3000 : Number(raw);
+  return Number.isFinite(n) && n > 0 ? { maxTimeMS: Math.floor(n) } : {};
+}
 
 const kadeDiarySchema = new mongoose.Schema(
   {
@@ -773,9 +781,12 @@ async function searchDiary({
       filter.entryDate.$lte = String(dateTo);
     }
   }
+  /* DB-2 (platform audit, Nov 12 2026): recall runs inside the turn; each read gives up after
+   * KADE_TURN_READ_MAX_MS (3 s) and the catch below returns nothing, as for any failure. */
+  const readOptions = turnReadOptions();
   try {
     if (!query) {
-      const rows = await KadeDiaryEntry.find(filter)
+      const rows = await KadeDiaryEntry.find(filter, null, readOptions)
         .sort({ entryDate: -1, createdAt: -1 })
         .limit(cap)
         .lean();
@@ -793,7 +804,7 @@ async function searchDiary({
         : await embedText(String(query), { purpose: 'query' });
     if (!qVec) {
       /* embedding down → degrade to recency within the same filter */
-      const rows = await KadeDiaryEntry.find(filter)
+      const rows = await KadeDiaryEntry.find(filter, null, readOptions)
         .sort({ entryDate: -1, createdAt: -1 })
         .limit(cap)
         .lean();
@@ -836,7 +847,7 @@ async function searchDiary({
           },
         },
       },
-    ]);
+    ], readOptions);
     /* TIME-AWARE RECALL (Aug 9 2026, Zep's lesson from the northstar pass):
      * relevance gates (raw cosine >= minScore), but the RANKING blends in
      * recency and salience. A fresh entry gets up to +0.05; the boost halves

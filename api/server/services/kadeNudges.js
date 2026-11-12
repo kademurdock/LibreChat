@@ -7,6 +7,7 @@
  */
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { turnReadOptions } = require('~/server/utils/kadeTurnRead');
 const {
   KadePushSub,
   KadeNudgePref,
@@ -204,7 +205,8 @@ async function takePendingChatNudges(userId, limit = 5, { exceptTypes, agentId }
     filter.type = { $nin: exceptTypes };
   }
   filter.agentId = agentId ? { $in: [null, String(agentId)] } : null;
-  const pending = await KadePendingNudge.find(filter)
+  /* DB-2: a turn waits on this read; it gives up after KADE_TURN_READ_MAX_MS (3 s). */
+  const pending = await KadePendingNudge.find(filter, null, turnReadOptions())
     .sort({ createdAt: 1 })
     .limit(limit)
     .lean();

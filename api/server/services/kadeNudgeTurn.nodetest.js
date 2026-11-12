@@ -54,7 +54,7 @@ test('a phone call leaves the Library digest for chat; chat takes everything', a
       for (const r of rows) if (filter._id.$in.includes(r._id)) r.deliveredAt = new Date();
     },
   };
-  const context = { KadePendingNudge, Array };
+  const context = { KadePendingNudge, Array, turnReadOptions: () => ({}) };
   vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('async function takePendingChatNudges('), source.indexOf('/** ---- the sweep')), context);
   const phone = await context.takePendingChatNudges('k', 5, { exceptTypes: ['library-digest'] });
@@ -108,7 +108,8 @@ test('Nov 11: a note kept for one character is taken only with that character; a
       for (const r of rows) if (filter._id.$in.includes(r._id)) r.deliveredAt = new Date();
     },
   };
-  const context = { KadePendingNudge, Array, String };
+  /* DB-2: the take passes turn-read options; the stub ignores them. */
+  const context = { KadePendingNudge, Array, String, turnReadOptions: () => ({}) };
   vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('async function takePendingChatNudges('), source.indexOf('/** ---- the sweep')), context);
   const other = await context.takePendingChatNudges('k', 5, { agentId: 'lilly' });

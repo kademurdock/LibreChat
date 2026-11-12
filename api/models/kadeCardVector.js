@@ -30,6 +30,14 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { embedText, currentEmbedModel, readEmbedHealth } = require('~/models/kadeDiary');
 const { indexedCardEmbedding, memoryEmbeddingLane } = require('@librechat/api');
+/* DB-2 (platform audit, Nov 12 2026): reads the reply waits on give up after KADE_TURN_READ_MAX_MS
+ * (3000 ms; 0 = no limit, the old behaviour). The same rule as api/server/utils/kadeTurnRead.js,
+ * written out here because several tests load this file in a bare vm with no module paths. */
+function turnReadOptions() {
+  const raw = process.env.KADE_TURN_READ_MAX_MS;
+  const n = raw == null || String(raw).trim() === '' ? 3000 : Number(raw);
+  return Number.isFinite(n) && n > 0 ? { maxTimeMS: Math.floor(n) } : {};
+}
 
 const kadeCardVectorSchema = new mongoose.Schema(
   {
@@ -232,7 +240,8 @@ async function searchCardVectors(userId, agentId, queryVector, opts = {}) {
           },
         },
       },
-    ]);
+      /* DB-2: inside recall's window; gives up after KADE_TURN_READ_MAX_MS (3 s). */
+    ], turnReadOptions());
     const scored = [];
     for (const r of rows) {
       if (opts.keys && !opts.keys.has((r.agentId ?? '') + '::' + r.key)) {

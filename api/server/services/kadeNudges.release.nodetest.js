@@ -58,7 +58,7 @@ function load(rows) {
   const model = stubModel(rows);
   const logs = [];
   const logger = { info: (l) => logs.push(l), warn: (l) => logs.push(l) };
-  const context = { KadePendingNudge: model, Array, String, Set, Date, logger };
+  const context = { KadePendingNudge: model, Array, String, Set, Date, logger, turnReadOptions: () => ({ maxTimeMS: 3000 }) };
   vm.createContext(context);
   vm.runInContext(
     source.slice(source.indexOf('async function takePendingChatNudges('), source.indexOf('/** ---- the sweep')) +
