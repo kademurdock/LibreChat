@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
+import { returnFocusToMainTextarea } from '~/utils/returnFocus';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -24,6 +25,8 @@ export default memo(function StopButton({
           )}
           aria-label={localize('com_nav_stop_generating')}
           onClick={(e) => {
+            // This button leaves as the reply stops; keep keyboard focus in the message box.
+            returnFocusToMainTextarea(e.currentTarget);
             setShowStopButton(false);
             stop(e);
           }}

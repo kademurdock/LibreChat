@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import type { MouseEvent } from 'react';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
@@ -13,6 +14,7 @@ import {
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
+import { returnFocusToMainTextarea } from '~/utils/returnFocus';
 import { useLocalize, useAuthContext } from '~/hooks';
 
 const containerClassName =
@@ -69,7 +71,10 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       .catch(() => { /* fail-soft: no nudge */ });
     return () => { dead = true; };
   }, [token]);
-  const dismissSpotterNudge = useCallback(() => {
+  const dismissSpotterNudge = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+    // Nov 12 2026 (WEB-7): the whole card leaves with this button; keep keyboard focus in the
+    // message box.
+    returnFocusToMainTextarea(e.currentTarget);
     setShowSpotterNudge(false);
     try { localStorage.setItem('kadeSpotterNudgeDone', '1'); } catch { /* fine */ }
   }, []);

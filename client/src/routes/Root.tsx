@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
@@ -15,7 +15,9 @@ import {
   useAuthContext,
   useAgentsMap,
   useFileMap,
+  useLocalize,
 } from '~/hooks';
+import { mainTextareaId } from '~/common';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import Settings from '~/components/Nav/Settings';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
@@ -53,11 +55,34 @@ function KeyboardShortcutsProvider() {
 /* Part 116.5 hid LibreChat's drawer behind a toggle; Part 116.6 removed it
  * (see the note in Root below). The strip is the chat screen's only nav. */
 function KadeHomeStrip() {
+  const localize = useLocalize();
+  const { pathname } = useLocation();
+  // Nov 12 2026 (WEB-11): the drawer held the only skip link and the drawer is gone (Part
+  // 116.6). Only chat routes have a message box, so only they get the link.
+  const hasMessageBox = pathname.startsWith('/c/');
+  const skipToMessageBox = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    const box = document.getElementById(mainTextareaId) as HTMLTextAreaElement | null;
+    if (box && !box.disabled) {
+      box.focus();
+      return;
+    }
+    // Box missing or disabled: never leave Enter silent. Land on the chat's main landmark
+    // instead so the next Tab is inside the conversation.
+    const main = document.querySelector<HTMLElement>('main, [role="main"]');
+    if (main) {
+      if (!main.hasAttribute('tabindex')) {
+        main.setAttribute('tabindex', '-1');
+      }
+      main.focus();
+    }
+  };
   return (
     <div
       role="navigation"
       aria-label="Kade home"
       style={{
+        position: 'relative',
         height: 32,
         flex: '0 0 auto',
         display: 'flex',
@@ -71,6 +96,15 @@ function KadeHomeStrip() {
         color: 'var(--text-secondary, #9aa3b5)',
       }}
     >
+      {hasMessageBox && (
+        <a
+          href={`#${mainTextareaId}`}
+          className="sr-only rounded-lg bg-surface-submit px-2 py-1 text-sm text-white focus:not-sr-only focus:absolute focus:left-2 focus:top-0.5 focus:z-50"
+          onClick={skipToMessageBox}
+        >
+          {localize('com_nav_skip_to_message_box')}
+        </a>
+      )}
       <a href="/home" style={{ color: '#6ea8ff', textDecoration: 'none' }}>
         <span aria-hidden="true">{'\uD83C\uDFE0 '}</span>Kade Home
       </a>
