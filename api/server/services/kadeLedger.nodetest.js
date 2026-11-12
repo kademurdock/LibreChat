@@ -177,3 +177,62 @@ test('review fix: the lane gate stops a non-kade tool on a phone call and leaves
   const kade = ledger.laneGate({ name: 'kade_weather', _call: async () => 'Sunny.' }, turn('weather'));
   assert.match(await kade._call({}), /^OK: Sunny\./, 'a kade tool gets the full ledger');
 });
+
+/* Audit SEC-12 (Nov 12 2026): outside text never acts by itself in the same request. */
+const wrapOut = (name, req, ret = 'Done.', env) => {
+  let ran = 0;
+  const t = ledger.wrapKadeTool(name, fake(async () => { ran += 1; return ret; }), req, env);
+  return { call: (i) => t._call(i), ran: () => ran };
+};
+
+test('SEC-12: read_page then place_call on the same request is held; the tool never runs', async () => {
+  const req = turn();
+  await wrapOut('kade_read_page', req, 'Page text').call({ url: 'x' });
+  const call = wrapOut('kade_phone_call', req);
+  const out = await call.call({ action: 'place_call' });
+  assert.match(out, /^NOT YET: not done/);
+  assert.match(out, /outside text \(kade_read_page\)/);
+  assert.match(out, /kade_phone_call place_call: NOT DONE YET/);
+  assert.equal(call.ran(), 0);
+  assert.equal(ledger.rows(req)[1].code, 'needs-yes');
+});
+
+test('SEC-12: place_call alone runs; weather, a reminder, a quote and a song still run after outside text', async () => {
+  assert.match(await wrapOut('kade_phone_call', turn(), 'Call placed').call({ action: 'place_call' }), /^OK:/);
+  const req = turn();
+  await wrapOut('kade_read_page', req).call({});
+  for (const [n, i] of [['kade_weather', {}], ['kade_notify', { action: 'set_reminder' }], ['kade_task', { action: 'quote' }],
+    ['kade_studio', { action: 'quote' }], ['fal_studio', { action: 'generate_song' }], ['fal_studio', { action: 'check_video' }],
+    ['kade_phone_call', { action: 'check_result' }], ['kade_drive_pc', { action: 'read_screen' }]]) {
+    assert.match(await wrapOut(n, req, 'Fine.').call(i), /^OK:/, `${n} ${i.action}`);
+  }
+  for (const [n, i] of [['fal_studio', { action: 'generate_image' }], ['kade_message', {}], ['kade_approvals', { action: 'approve' }],
+    ['kade_drive_pc', { action: 'type', text: 'x' }], ['kade_drive_pc', { action: 'confirm', approve: true }]]) {
+    const t = wrapOut(n, req, 'Fine.');
+    assert.match(await t.call(i), /^NOT YET:/, `${n} ${i.action}`);
+    assert.equal(t.ran(), 0);
+  }
+});
+
+test('SEC-12: a hidden run never messages, calls, approves or presses keys; a picture runs until outside text is read', async () => {
+  const req = { ...turn(), kadeHiddenRun: true };
+  for (const [n, i] of [['kade_message', {}], ['kade_phone_call', { action: 'place_call' }], ['kade_approvals', { action: 'approve' }],
+    ['kade_drive_pc', { action: 'press', keys: 'enter' }]]) {
+    assert.match(await wrapOut(n, req).call(i), /^NOT YET: .*background job/s, n);
+  }
+  assert.match(await wrapOut('fal_studio', req, 'Image made.').call({ action: 'generate_image' }), /^OK:/);
+  await wrapOut('kade_research', req, 'found').call({ action: 'get' });
+  assert.match(await wrapOut('fal_studio', req, 'Image made.').call({ action: 'generate_image' }), /^NOT YET:/);
+});
+
+test('SEC-12: her screen does not hold the next key but holds a message; search through laneGate marks the request; the switch turns it off', async () => {
+  const req = turn();
+  await wrapOut('kade_drive_pc', req, 'Her screen').call({ action: 'read_screen' });
+  assert.match(await wrapOut('kade_drive_pc', req, 'Sent 1 chord').call({ action: 'press', keys: 'tab' }), /^OK:/);
+  assert.match(await wrapOut('kade_message', req).call({}), /^NOT YET: .*kade_drive_pc/s);
+  const req2 = turn();
+  const search = ledger.laneGate({ name: 'web_search', _call: async () => ['raw', { a: 1 }] }, req2);
+  assert.deepEqual(await search._call({ query: 'x' }), ['raw', { a: 1 }]);
+  assert.match(await wrapOut('kade_message', req2).call({}), /^NOT YET: .*web_search/s);
+  assert.match(await wrapOut('kade_message', req2, 'Held.', { KADE_OUTSIDE_TEXT_GATE: '0' }).call({}), /^OK:/);
+});

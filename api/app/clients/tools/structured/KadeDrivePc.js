@@ -30,6 +30,12 @@ const { logger } = require('@librechat/data-schemas');
  */
 
 const OWNER_ID_DEFAULT = '6a3cba4d0b0afa92194e42f7';
+/* Audit fix SEC-12 (Nov 12 2026): words that may sit beside her yes to the driver's question. */
+const CONFIRM_TOPIC = [
+  'submit', 'save', 'click', 'press', 'button', 'form', 'step', 'driver', 'pc', 'computer', 'install',
+  'open', 'close', 'delete', 'post', 'publish', 'sign', 'download', 'upload', 'enter', 'type',
+  'continue', 'next', 'allow', 'take', 'him', 'her', 'them', 'page', 'link',
+];
 
 const driveSchema = {
   type: 'object',
@@ -78,6 +84,7 @@ class KadeDrivePc extends Tool {
     this.name = 'kade_drive_pc';
     this.userId = fields.userId;
     this.agentName = fields.agentName;
+    this.req = fields.req;
     const ownerId = process.env.KADE_OWNER_USER_ID || OWNER_ID_DEFAULT;
     const authedId = String(fields.req?.user?.id || fields.req?.user?._id || '');
     const authedRole = fields.req?.user?.role;
@@ -224,6 +231,26 @@ class KadeDrivePc extends Tool {
 
   async _confirm({ run_id, approve }) {
     if (!run_id) return 'confirm needs the run_id from start.';
+    /* Audit fix SEC-12: a yes to the driver must be HER yes, in her own latest message. The
+     * character may refuse a step by itself (approve=false), never allow one. No off switch. */
+    if (approve === true) {
+      const spend = require('~/server/services/kadeSpendGate');
+      const req = this.req;
+      const said = spend.latestWords(req && req.body && req.body.text);
+      const yes =
+        Boolean(req) &&
+        req.kadeHiddenRun !== true &&
+        !spend.isReplay(req) &&
+        said.ok &&
+        spend.approvesPrice(said.words, { names: [this.agentName], topic: CONFIRM_TOPIC });
+      if (!yes) {
+        logger.info('[KadeDrivePc] confirm held: her latest message is not a plain yes');
+        return (
+          'NOT YET: nothing was approved and the driver is still waiting. Her latest message is not a plain yes to this step. ' +
+          "Read her the driver's question exactly as status gives it and ask for a plain yes or no. Send approve=true only after her own next message says yes."
+        );
+      }
+    }
     const r = await axios.post(
       `${this.bridgeUrl}/nvda/confirm`,
       { runId: run_id, approve: approve === true },
