@@ -3842,3 +3842,47 @@ test('narration speeds: every sentence that names 1x says Normal, and any other 
   await seen.timers.advance(700);
   assert.match(seen.$('version').options[0].textContent, /^Version 1: Oak 0\.9×, Standard detail/);
 });
+
+test('listen while it is made (phase 4 pick 2): plays finished sections in order, waits at the edge, stops for the main player', async () => {
+  const server = makeServer();
+  server.override((method, path) => path === '/config', () => ({ status: 200, body: { ...config, listenAhead: true } }));
+  const job = server.add(jobOf({ name: 'Long film', state: 'running', progress: 20, done: 1, sections: 3, stage: 'Watching section 2 of 3' }));
+  const ready = [{ index: 0, seconds: 60, undescribed: false, url: 'https://media.test/0.flac' }];
+  server.override(
+    (method, path) => path.startsWith(`/jobs/${job.id}/sections/ready`),
+    (method, path) => {
+      const from = Number(new URL('http://x' + path).searchParams.get('from') || 0);
+      return { status: 200, body: { state: job.state, making: job.state === 'running', sections: ready.filter((s) => s.index >= from), count: 3, readySeconds: 60, totalSeconds: 180, waitSeconds: 0 } };
+    },
+    false,
+  );
+  const env = await boot({ server, search: '?id=' + job.id });
+  const { $ } = env;
+  assert.equal($('ahead-box').hidden, false, 'offered once a section is finished');
+  assert.equal($('ahead-status').getAttribute('role'), null, 'the page keeps one live region');
+  await env.click('listen-ahead');
+  assert.equal($('ahead').src, 'https://media.test/0.flac');
+  assert.equal($('ahead').paused, false);
+  assert.equal($('video').paused, true);
+  /* Caught up: one sentence, then it starts by itself when the next section is kept. */
+  $('ahead').paused = true;
+  await env.fire($('ahead'), 'ended');
+  assert.match(env.status(), /You have caught up\. Section 2 of 3 is still being made\. It will start by itself\./);
+  ready.push({ index: 1, seconds: 60, undescribed: true, url: 'https://media.test/1.flac' });
+  await env.timers.advance(30000);
+  assert.match(env.status(), /The next part has no description/);
+  await env.timers.advance(2500);
+  assert.equal($('ahead').src, 'https://media.test/1.flac');
+  assert.equal($('ahead').paused, false);
+  /* Her main player takes over: the section player stops and forgets its place. */
+  await env.fire($('video'), 'play');
+  assert.equal($('ahead').paused, true);
+  assert.equal($('ahead-status').textContent, '');
+});
+
+test('listen while it is made: hidden when the server switches it off', async () => {
+  const server = makeServer();
+  const job = server.add(jobOf({ name: 'Long film', state: 'running', progress: 20, done: 1, sections: 3 }));
+  const env = await boot({ server, search: '?id=' + job.id });
+  assert.equal(env.$('ahead-box').hidden, true);
+});
