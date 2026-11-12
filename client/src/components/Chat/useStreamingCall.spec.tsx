@@ -24,6 +24,39 @@ jest.mock('./character/timing-track.mjs', () => ({
   },
 }));
 
+// Nov 11 2026: same story for the playback log (heard-report.mjs, its own node:test suite). This
+// stand-in keeps the same rules so the wiring test below checks what reaches the socket.
+type MockLog = {
+  received: number;
+  clips: { seq: number; start: number; dur: number }[];
+  last: { seq: number; ms: number };
+};
+jest.mock('./heard-report.mjs', () => {
+  const heardAt = (log: MockLog, now: number) => {
+    let best: { seq: number; ms: number } | null = null;
+    for (const c of log.clips) {
+      if (c.start > now) continue;
+      const ms = Math.round(Math.min(now - c.start, c.dur) * 1000);
+      if (!best || c.seq > best.seq) best = { seq: c.seq, ms };
+    }
+    return !best || best.seq < log.last.seq ? { ...log.last } : best;
+  };
+  return {
+    createPlaybackLog: () => ({ received: 0, clips: [], last: { seq: 0, ms: 0 } }),
+    noteClipReceived: (log: MockLog) => (log.received += 1),
+    noteClipScheduled: (log: MockLog, seq: number, start: number, dur: number) => {
+      if (seq > 0) log.clips.push({ seq, start, dur });
+    },
+    flushReport: (log: MockLog, now: number) => {
+      const r = heardAt(log, now);
+      log.clips = [];
+      log.last = r;
+      return { type: 'heard', seq: r.seq, ms: r.ms };
+    },
+    heardClock: (ctx: { currentTime: number } | null) => (ctx ? ctx.currentTime : 0),
+  };
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
@@ -299,4 +332,32 @@ test('the hello says faces: true only when a face is shown, so the bridge asks f
   expect(hellos[0]).toMatchObject({ type: 'hello', faces: true });
   expect(hellos[1]).not.toHaveProperty('faces');
   expect(hellos[2]).not.toHaveProperty('faces');
+});
+
+test('after a clear or the Stop button, the call tells the bridge how far playback got', async () => {
+  const ctx = {
+    currentTime: 0,
+    destination: {},
+    decodeAudioData: jest.fn(async () => ({ duration: 1 }) as AudioBuffer),
+    createBufferSource: () => ({ buffer: null, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), onended: null }),
+  } as unknown as AudioContext & { currentTime: number };
+  const { result, unmount } = renderHook(() => useStreamingCall());
+  const call = result.current.start({ ...args(), ctx });
+  await settle();
+  const socket = Socket.instances[0];
+  socket.ready();
+  await call;
+  socket.onmessage?.({ data: wavWithTrack(null) }); // clip 1, starts at 0.03
+  socket.onmessage?.({ data: wavWithTrack(null) }); // clip 2, starts at 1.03
+  await settle();
+  await settle();
+  ctx.currentTime = 1.28;
+  socket.onmessage?.({ data: '{"type":"clear"}' });
+  const sent = () => socket.send.mock.calls.map((c) => JSON.parse(String(c[0])));
+  expect(sent()).toContainEqual({ type: 'heard', seq: 2, ms: 250 });
+  socket.send.mockClear();
+  // The Stop button: the barge goes first, then the report (nothing new has played since).
+  result.current.barge();
+  expect(sent()).toEqual([{ type: 'barge' }, { type: 'heard', seq: 2, ms: 250 }]);
+  unmount();
 });

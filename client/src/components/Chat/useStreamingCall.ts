@@ -21,6 +21,13 @@ import { useRef, useCallback, useEffect, useMemo } from 'react';
 import type { CallAudioIdentity, CallPresentation } from './character/call-presentation.mjs';
 import { characterAudioIdentity } from './character/call-presentation.mjs';
 import { readTimingTrack, trackFits, faceTimingsAllowed } from './character/timing-track.mjs';
+import {
+  createPlaybackLog,
+  noteClipReceived,
+  noteClipScheduled,
+  flushReport,
+  heardClock,
+} from './heard-report.mjs';
 
 export type StreamStatus = 'connecting' | 'listening' | 'thinking' | 'speaking';
 
@@ -91,6 +98,9 @@ export default function useStreamingCall() {
   const presentationRef = useRef<CallPresentation | null>(null);
   const pendingCharacterRef = useRef<CallAudioIdentity | null>(null);
   const sessionRef = useRef(0);
+  // Nov 11 2026: which WAV clip is playing and how far in, so a barge-in can tell the bridge what
+  // was actually heard ({type:'heard', seq, ms}; heard-report.mjs). The bridge then stores only that.
+  const playbackLogRef = useRef(createPlaybackLog());
 
   const flushPlayback = useCallback(() => {
     flushSeqRef.current += 1;
@@ -110,8 +120,9 @@ export default function useStreamingCall() {
 
   // Decode + schedule serially so clips can never play out of order (the same
   // reserve-your-slot-synchronously lesson enqueueAudio learned on July 4).
-  const enqueueWav = useCallback((ab: ArrayBuffer, character: CallAudioIdentity | null) => {
+  const enqueueWav = useCallback((ab: ArrayBuffer, character: CallAudioIdentity | null, clipSeq = 0) => {
     const seq = flushSeqRef.current;
+    const playbackLog = playbackLogRef.current;
     const presentation = presentationRef.current;
     const presentationToken = presentation?.token();
     const chain = decodeChainRef.current.then(async () => {
@@ -148,6 +159,7 @@ export default function useStreamingCall() {
               character,
               trackFits(carried, buf.duration) ? carried : null,
             ) ?? null);
+      noteClipScheduled(playbackLog, clipSeq, t, buf.duration);
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
       src.onended = () => {
@@ -390,17 +402,26 @@ export default function useStreamingCall() {
     [drainMicBuffer, stopMic, flushPlayback],
   );
 
+  /** Where playback had got to at this moment; starts the playback log afresh. Read BEFORE a flush. */
+  const takeHeardReport = useCallback(
+    () => flushReport(playbackLogRef.current, heardClock(outCtxRef.current)),
+    [],
+  );
+
   const barge = useCallback(() => {
+    const heard = takeHeardReport();
     flushPlayback();
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       try {
         ws.send(JSON.stringify({ type: 'barge' }));
+        // After the barge, so the bridge reads it as the report for this stop.
+        ws.send(JSON.stringify(heard));
       } catch {
         /* ignore */
       }
     }
-  }, [flushPlayback]);
+  }, [flushPlayback, takeHeardReport]);
 
   const start = useCallback(
     async ({
@@ -427,6 +448,7 @@ export default function useStreamingCall() {
       presentationRef.current?.clear();
       pendingCharacterRef.current = null;
       nextTimeRef.current = 0;
+      playbackLogRef.current = createPlaybackLog(); // clip numbers count from 1 on each socket
       handlers.onStatus('connecting');
 
       let ticket = '';
@@ -520,7 +542,8 @@ export default function useStreamingCall() {
               enqueueLivePcm(ev.data);
               return;
             }
-            enqueueWav(ev.data, character);
+            // Every WAV is numbered on arrival, the way the bridge numbered it when sending.
+            enqueueWav(ev.data, character, noteClipReceived(playbackLogRef.current));
             return;
           }
           let m: any;
@@ -551,9 +574,18 @@ export default function useStreamingCall() {
               if (m.role === 'user') handlers.onUserCaption(String(m.text || ''));
               else handlers.onAgentCaption(String(m.text || ''));
               break;
-            case 'clear':
+            case 'clear': {
+              // Nov 11 2026: tell the bridge how far playback got, so an interrupted reply is
+              // stored as heard, not as written. Old bridges ignore the message.
+              const heard = takeHeardReport();
               flushPlayback();
+              try {
+                ws.send(JSON.stringify(heard));
+              } catch {
+                /* socket raced closed */
+              }
               break;
+            }
             case 'table':
               if (handlers.onTable && m.id) handlers.onTable(String(m.id));
               break;
@@ -601,7 +633,7 @@ export default function useStreamingCall() {
         };
       });
     },
-    [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm],
+    [startMic, stop, stopMic, flushPlayback, enqueueWav, enqueueLivePcm, takeHeardReport],
   );
 
   useEffect(() => () => stop(false), [stop]);
