@@ -225,6 +225,86 @@ async function pickConversation({ userId, agent, conversationId, title }) {
 }
 
 /**
+ * TURN-2 (turn audit, Nov 12 2026). While a reply is being written in this conversation the
+ * person's message is saved and the reply is not (request.js saves it at the end), so "the newest
+ * message" is the person's own and a post parented on it becomes a SIBLING of the reply: the web
+ * client shows only the newest sibling and the next turn's history follows only that branch, so a
+ * song, task result or reminder silently drops out of the thread and out of the character's own
+ * history. So a post waits for the turn's job to stop running, then picks the leaf.
+ *
+ * KADE_POST_WAIT_MS: the longest wait (default 20000, Kade's Nov 12 choice "up to 20 seconds";
+ * 0 = do not wait; cap 600000). Reminders and approval outcomes never wait more than 20 s even if
+ * the setting is raised: their push is sent after the post, the reminder sweep delivers
+ * everyone's rows one after another, and an approval button is waiting on the answer.
+ * A turn longer than the wait still leaves the post beside the reply; the warn line records it.
+ */
+const POST_WAIT_MAX_MS = 600000;
+const POST_WAIT_DEFAULT_MS = 20000;
+const POST_WAIT_PROMPT_MS = 20000;
+const PROMPT_KINDS = new Set(['reminder', 'approval']);
+
+function liveTurnWaitMs(kind, env = process.env) {
+  const raw = env.KADE_POST_WAIT_MS;
+  const n = raw === undefined || String(raw).trim() === '' ? NaN : Number(raw);
+  const most = Number.isFinite(n) && n >= 0 ? Math.min(n, POST_WAIT_MAX_MS) : POST_WAIT_DEFAULT_MS;
+  return PROMPT_KINDS.has(kind) ? Math.min(most, POST_WAIT_PROMPT_MS) : most;
+}
+
+/** The status of this conversation's turn job, if any (streamId === conversationId). A plain store
+ * read: getJob() would build runtime state for a job this server does not own. */
+async function liveTurnStatus(conversationId) {
+  const { GenerationJobManager } = require('@librechat/api');
+  if (typeof GenerationJobManager.getJobStatus === 'function') {
+    return GenerationJobManager.getJobStatus(String(conversationId));
+  }
+  const job = await GenerationJobManager.getJob(String(conversationId));
+  return job ? job.status : undefined;
+}
+
+/**
+ * Wait until no reply is being written in this conversation. NEVER throws and never outlasts
+ * maxMs by more than one read: a post must not be lost to its own courtesy. A stopped turn drops
+ * its job BEFORE its unfinished reply is saved, so after a running job goes away this settles for
+ * a moment and looks once more (which also catches a new turn starting in that gap).
+ * @returns {Promise<{ quiet: boolean, sawRunning: boolean, waitedMs: number }>} quiet=false: gave up.
+ */
+async function waitForQuietConversation(conversationId, maxMs, { stepMs = 500, settleMs = 1500, read = liveTurnStatus } = {}) {
+  const t0 = Date.now();
+  const out = (quiet, sawRunning) => ({ quiet, sawRunning, waitedMs: Date.now() - t0 });
+  if (!conversationId || !(maxMs > 0)) return out(true, false);
+  const until = t0 + maxMs;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let sawRunning = false;
+  let settled = false;
+  for (;;) {
+    let status;
+    let timer;
+    try {
+      status = await Promise.race([
+        Promise.resolve().then(() => read(conversationId)),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('status read took longer than 3 s')), 3000);
+        }),
+      ]);
+    } catch (_) {
+      return out(true, sawRunning);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (status === 'running') {
+      sawRunning = true;
+      settled = false;
+      if (Date.now() >= until) return out(false, true);
+      await sleep(Math.min(stepMs, Math.max(1, until - Date.now())));
+      continue;
+    }
+    if (!sawRunning || settled || settleMs <= 0) return out(true, sawRunning);
+    settled = true;
+    await sleep(settleMs);
+  }
+}
+
+/**
  * Write `text` into the person's conversation as the character's message.
  * @returns {Promise<{ conversationId: string, messageId: string, created: boolean }>}
  */
@@ -232,6 +312,17 @@ async function post({ userId, agentId, text, conversationId, title, kind = 'post
   const agent = await step('agent', agentBasics(agentId));
   if (!agent) throw new Error('no such character');
   const picked = await step('pick-conversation', pickConversation({ userId, agent, conversationId, title }));
+  /* TURN-2: not through step(): its timer REJECTS, and a slow wait must never lose the post. */
+  if (!picked.created) {
+    const waited = await waitForQuietConversation(picked.conversationId, liveTurnWaitMs(kind));
+    logger.info(`[kadeCharacterTurn] step wait-live-turn ${waited.waitedMs} ms`);
+    if (!waited.quiet) {
+      logger.warn(
+        `[kadeCharacterTurn] ${kind} placed while a reply was still running convo=${picked.conversationId.slice(0, 8)} ` +
+          `after ${waited.waitedMs} ms (it may sit beside that reply instead of after it)`,
+      );
+    }
+  }
   const Message = require('mongoose').models.Message;
   const leaf = await step(
     'leaf',
@@ -385,4 +476,4 @@ async function speakFirst({
   return { ...placed, posted: true, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId, pushed };
 }
 
-module.exports = { compose, post, notifyPost, speakFirst, pushPreview, finalText };
+module.exports = { compose, post, notifyPost, speakFirst, pushPreview, finalText, liveTurnWaitMs, waitForQuietConversation };
