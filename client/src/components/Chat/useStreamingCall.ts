@@ -653,8 +653,12 @@ export default function useStreamingCall() {
     }
   }, []);
 
+  /** Bytes the call socket has not sent yet (Nov 12 2026, DESC-3), so pictures can wait behind
+   *  her voice. */
+  const queuedBytes = useCallback(() => wsRef.current?.bufferedAmount ?? 0, []);
+
   return useMemo(
-    () => ({ start, stop, barge, isActive, sendJson }),
-    [start, stop, barge, isActive, sendJson],
+    () => ({ start, stop, barge, isActive, sendJson, queuedBytes }),
+    [start, stop, barge, isActive, sendJson, queuedBytes],
   );
 }

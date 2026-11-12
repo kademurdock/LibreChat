@@ -51,6 +51,9 @@ import {
 } from 'lucide-react';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { usePauseGlobalAudio } from '~/hooks/Audio';
+import { silenceAllVoices } from '~/hooks/Audio/voiceFocus';
+import useDialogFocusRescue from '~/hooks/useDialogFocusRescue';
+import { kadeSwitchOn } from '~/utils/kadeSwitch';
 import { cn } from '~/utils';
 import { stripVoiceTags, hideDanglingVoiceTag } from '~/utils/voiceTags';
 import { stripGameSoundTags, gameSoundSrcsIn, gameTableIdIn } from '~/utils/gameSounds';
@@ -76,7 +79,9 @@ function scrubCaption(text: string): string {
   // SPAN_REGEX/COMPOSITE_REGEX (the composite/highlighted-span citation
   // forms) at all -- it strips any complete pair the same way those two
   // regexes would, then additionally hides a still-open, not-yet-closed one.
-  return hideDanglingCitationMarker(hideDanglingVoiceTag(stripGameSoundTags(stripVoiceTags(text))))
+  return hideDanglingCitationMarker(
+    hideDanglingVoiceTag(stripGameSoundTags(stripVoiceTags(text, true))),
+  )
     .replace(INVALID_CITATION_REGEX, '')
     .replace(CLEANUP_REGEX, '')
     .replace(LITERAL_NBSP_REGEX, ' ')
@@ -346,6 +351,12 @@ const KADE_AUTO_CALL = (() => {
   }
 })();
 let kadeAutoCallConsumed = false;
+/* Nov 12 2026 (WEB-9): a ?kade=call start has no tap behind it, so the browser
+ * may refuse to start the call's AudioContext and the call would be silent. */
+const CALL_SOUND_BLOCKED = 'Tap the screen or press a key to turn on the call sound.';
+const CALL_SOUND_EVENTS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
+/** Nov 12 2026 (DESC-3): about one frame still unsent on the call socket. */
+const FRAME_GATE_BYTES = 48 * 1024;
 
 // KADE July 17 2026 — Live Activity during calls (iOS app shell only; a no-op
 // everywhere else). The KadeLiveActivity Capacitor plugin puts an
@@ -433,6 +444,7 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
   const laActiveRef = useRef(false);
   const [mediaAvail, setMediaAvail] = useState(false);
   const [error, setError] = useState('');
+  const [autoCallSoundCheck, setAutoCallSoundCheck] = useState(false);
 
   // Audio out (TTS playback)
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -674,6 +686,22 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       }
       const canvas = document.createElement('canvas');
       const lumaCanvas = document.createElement('canvas'); // auto-flash brightness probe
+      /* Nov 12 2026 (DESC-11): still-scene check for the Spotter. Gemini Live keeps every frame in
+       * its context and bills the whole context each turn, so while live a frame that barely
+       * differs from the last one SENT is skipped, with a key frame every 3 s. 64x48 averaged
+       * down to 16x12 cells; a frame is "still" when the mean cell difference is under 6 and no
+       * cell differs by 32 (a finger on the page changes a few cells a lot, the mean hardly).
+       * Undo on one browser: localStorage kadeStillFrames = '0'. */
+      const thumbCanvas = document.createElement('canvas');
+      thumbCanvas.width = 64;
+      thumbCanvas.height = 48;
+      const sentThumb = new Float32Array(16 * 12);
+      const thumbNow = new Float32Array(16 * 12);
+      let haveSentThumb = false;
+      let sentAt = 0;
+      let wasLive = false;
+      const stillSkipOn = kadeSwitchOn('stillFrameSkip');
+      const frameGateOn = kadeSwitchOn('frameGate');
       /* Oct 20 2026: the Spotter (live mode) gets a frame every second, the
        * most Gemini Live takes, at the iPhone's 0.78 quality. At one frame
        * every two seconds it kept missing the moment ("the camera panned away
@@ -704,8 +732,57 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
         } else {
           g.drawImage(vid, 0, 0, w, h);
         }
-        const b64 = canvas.toDataURL('image/jpeg', live ? 0.78 : 0.65).split(',')[1];
-        if (b64) streamingEngine.sendJson({ type: 'frame', data: b64 });
+        if (live !== wasLive) {
+          // Live just turned on or off: whoever listens next has not seen this picture.
+          wasLive = live;
+          haveSentThumb = false;
+        }
+        let still = false;
+        let haveThumb = false;
+        if (live && stillSkipOn) {
+          try {
+            const tg = thumbCanvas.getContext('2d', { willReadFrequently: true });
+            if (tg) {
+              tg.imageSmoothingQuality = 'high';
+              tg.drawImage(canvas, 0, 0, 64, 48);
+              const d = tg.getImageData(0, 0, 64, 48).data;
+              thumbNow.fill(0);
+              for (let y = 0; y < 48; y++) {
+                for (let x = 0; x < 64; x++) {
+                  const p = (y * 64 + x) * 4;
+                  thumbNow[(y >> 2) * 16 + (x >> 2)] +=
+                    (d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114) / 16;
+                }
+              }
+              haveThumb = true;
+              if (haveSentThumb && Date.now() - sentAt < 3000) {
+                let total = 0;
+                let worst = 0;
+                for (let k = 0; k < thumbNow.length; k++) {
+                  const diff = Math.abs(thumbNow[k] - sentThumb[k]);
+                  total += diff;
+                  if (diff > worst) worst = diff;
+                }
+                still = total / thumbNow.length < 6 && worst < 32;
+              }
+            }
+          } catch {
+            /* the still check is best-effort: on any trouble the frame is sent */
+          }
+        }
+        /* Nov 12 2026 (DESC-3): a picture never queues in front of her voice. While the socket
+         * still holds about a frame (a slow uplink), this one is skipped; the next one is newer
+         * anyway. The pace stays one a second. Undo on one browser: kadeFrameGate = '0'. */
+        const socketClear = !frameGateOn || streamingEngine.queuedBytes() < FRAME_GATE_BYTES;
+        if (!still && socketClear) {
+          const b64 = canvas.toDataURL('image/jpeg', live ? 0.78 : 0.65).split(',')[1];
+          if (b64) {
+            streamingEngine.sendJson({ type: 'frame', data: b64 });
+            sentAt = Date.now();
+            haveSentThumb = haveThumb;
+            if (haveThumb) sentThumb.set(thumbNow);
+          }
+        }
         // Auto-flash: cheap brightness read on a tiny downsample (see ref note).
         const c = torchCtlRef.current;
         if (everyOther && torchOk && !c.manual && !c.autoLit && !c.on) {
@@ -1915,11 +1992,18 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       /* ignore */
     }
     try {
+      silenceAllVoices(); // Nov 12 2026 (WEB-5): also reaches a Read aloud clip not in the page
+    } catch {
+      /* ignore */
+    }
+    try {
       document.querySelectorAll('audio').forEach((el) => {
         const a = el as HTMLAudioElement;
         try {
           a.pause();
-          a.autoplay = false;
+          /* Nov 12 2026 (WEB-10): autoplay is no longer switched off here. That left auto
+           * read-aloud silent for the rest of the visit after any call; the src removal and load()
+           * below are what stop a buffered clip from flushing on unlock. */
           try {
             a.srcObject = null;
           } catch {
@@ -2402,6 +2486,10 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
     }
   }, [open]);
 
+  // Nov 12 2026 (WEB-3): Spotter, camera and the cost notices unmount under the keyboard. A
+  // fallen focus returns to the dialog; Escape and Tab from outside it still work.
+  useDialogFocusRescue(open, dialogRef, endCall);
+
   // Escape to end; trap Tab within the dialog's controls.
   const onDialogKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -2511,8 +2599,46 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
       /* cosmetic only */
     }
     if (KADE_AUTO_CALL === 'spotter') spotterAutoRef.current = true;
+    setAutoCallSoundCheck(true);
     void startCall();
   }, [open, agentId, mediaAvail, startCall]);
+
+  /* Nov 12 2026 (WEB-9): watch the auto-started call's sound. Retry resume() for the first few
+   * seconds (WebKit allows it once the mic is capturing), resume on any real gesture, and if it
+   * is still not running after 2.5 s say so in the alert. Never creates a context (no
+   * getAudioCtx()), so a tap after hang-up cannot re-open the audio session. Ends itself once
+   * sound is running. */
+  useEffect(() => {
+    if (!open || !autoCallSoundCheck) return;
+    const startedAt = Date.now();
+    const tryResume = () => {
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') {
+        void ctx.resume().catch(() => {});
+      }
+    };
+    const poll = setInterval(() => {
+      if (audioCtxRef.current?.state === 'running') {
+        setError((prev) => (prev === CALL_SOUND_BLOCKED ? '' : prev));
+        setAutoCallSoundCheck(false); // cleanup below removes the timer and listeners
+        return;
+      }
+      const waited = Date.now() - startedAt;
+      if (waited < 4000) tryResume();
+      // Functional form: never replaces a mic or connection error, and comes back if
+      // startCall's own setError('') wiped it while still silent.
+      if (waited >= 2500) setError((prev) => prev || CALL_SOUND_BLOCKED);
+    }, 500);
+    CALL_SOUND_EVENTS.forEach((type) => {
+      document.addEventListener(type, tryResume, { capture: true, passive: true });
+    });
+    return () => {
+      clearInterval(poll);
+      CALL_SOUND_EVENTS.forEach((type) => {
+        document.removeEventListener(type, tryResume, { capture: true });
+      });
+    };
+  }, [open, autoCallSoundCheck]);
 
   // -- Trigger button ----------------------------------------------------------
   if (!open) {
@@ -2812,16 +2938,29 @@ export default function ConversationMode({ index = 0 }: ConversationModeProps) {
 
       {/* Controls */}
       <div className="mt-10 flex shrink-0 flex-wrap items-center justify-center gap-6">
-        {(status === 'speaking' || status === 'thinking') && (
-          <button
-            onClick={interruptAI}
-            aria-label="Interrupt the agent and start listening"
-            title="Interrupt agent"
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-600/90 text-white shadow-lg transition-colors hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
-          >
-            <StopCircle size={24} aria-hidden="true" />
-          </button>
-        )}
+        {/* Nov 12 2026 (WEB-3, DESC-2): Interrupt stays in place for the whole call. It used to
+            unmount at the end of every agent turn and drop keyboard focus to the page body; now
+            it is aria-disabled (still focusable) while nothing is talking. While the Spotter is
+            on it is always live: a Spotter turn never sets the speaking state, so Stop was
+            missing exactly when the Spotter was talking. */}
+        {(() => {
+          const interruptLive =
+            status === 'speaking' || status === 'thinking' || (streamingRef.current && liveMode);
+          return (
+            <button
+              onClick={interruptLive ? interruptAI : undefined}
+              aria-disabled={interruptLive ? undefined : true}
+              aria-label="Interrupt the agent and start listening"
+              title="Interrupt agent"
+              className={cn(
+                'flex h-12 w-12 items-center justify-center rounded-full bg-amber-600/90 text-white shadow-lg transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400',
+                interruptLive ? 'hover:bg-amber-600' : 'cursor-default opacity-40',
+              )}
+            >
+              <StopCircle size={24} aria-hidden="true" />
+            </button>
+          );
+        })()}
 
         {streamingRef.current && !liveMode && !liveNotice && (
           <button
