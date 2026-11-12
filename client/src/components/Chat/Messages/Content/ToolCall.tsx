@@ -15,7 +15,8 @@ import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { logger, kadeToolLabel } from '~/utils';
+import { logger } from '~/utils';
+import { kadeToolLabel } from '~/utils/toolLabels';
 import store from '~/store';
 
 export default function ToolCall({
