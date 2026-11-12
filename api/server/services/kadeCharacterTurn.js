@@ -308,12 +308,15 @@ async function waitForQuietConversation(conversationId, maxMs, { stepMs = 500, s
  * Write `text` into the person's conversation as the character's message.
  * @returns {Promise<{ conversationId: string, messageId: string, created: boolean }>}
  */
-async function post({ userId, agentId, text, conversationId, title, kind = 'post' }) {
+async function post({ userId, agentId, text, conversationId, title, kind = 'post', noWait = false }) {
   const agent = await step('agent', agentBasics(agentId));
   if (!agent) throw new Error('no such character');
   const picked = await step('pick-conversation', pickConversation({ userId, agent, conversationId, title }));
-  /* TURN-2: not through step(): its timer REJECTS, and a slow wait must never lose the post. */
-  if (!picked.created) {
+  /* TURN-2: not through step(): its timer REJECTS, and a slow wait must never lose the post.
+   * noWait: the caller is itself running inside this conversation's live turn (Forge deciding an
+   * approval from her words), so that turn cannot finish until this returns; waiting for it would
+   * only add the whole wait as dead air. */
+  if (!picked.created && !noWait) {
     const waited = await waitForQuietConversation(picked.conversationId, liveTurnWaitMs(kind));
     logger.info(`[kadeCharacterTurn] step wait-live-turn ${waited.waitedMs} ms`);
     if (!waited.quiet) {

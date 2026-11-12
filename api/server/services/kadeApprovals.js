@@ -134,10 +134,10 @@ function resultWords(kind, result) {
 }
 
 /** Post a plain message (no model call) into Kade's conversation with the requesting character. */
-async function tellKade(approval, text) {
+async function tellKade(approval, text, { noWait = false } = {}) {
   try {
     const { post, notifyPost } = require('./kadeCharacterTurn');
-    const placed = await post({ userId: ownerId(), agentId: approval.agentId, text, kind: 'approval' });
+    const placed = await post({ userId: ownerId(), agentId: approval.agentId, text, kind: 'approval', noWait });
     await notifyPost({ userId: ownerId(), agentId: approval.agentId, agentName: 'Forge', text, conversationId: placed.conversationId, requested: true });
   } catch (e) {
     logger.warn('[kadeApprovals] could not post the outcome: ' + e.message);
@@ -163,7 +163,7 @@ async function decide({ approvalId, decision, by }) {
     throw Object.assign(new Error(`that request is already ${new Date(existing.expiresAt) < now && existing.status === 'pending' ? 'expired' : existing.status}`), { status: 409 });
   }
   if (!approve) {
-    await tellKade(doc, `Okay, I won't. Nothing changed: ${doc.summary}`);
+    await tellKade(doc, `Okay, I won't. Nothing changed: ${doc.summary}`, { noWait: by === 'words' });
     return publicView(doc);
   }
   const secret = process.env.KADE_APPROVAL_SECRET || '';
@@ -193,6 +193,8 @@ async function decide({ approvalId, decision, by }) {
     after.status === 'done'
       ? `You approved it, and it's done. ${after.resultWords} (${after.summary})`
       : `You approved it, but it didn't go through: ${after.error}. Nothing else changed.`,
+    /* TURN-2: a decision by words runs inside her live turn with Forge; do not wait for it. */
+    { noWait: by === 'words' },
   );
   return publicView(after);
 }

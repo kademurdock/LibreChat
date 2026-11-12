@@ -116,6 +116,18 @@ test('a reminder gives up after its short wait and is still posted (TURN-2)', as
   expect(turn.liveTurnWaitMs('song', { KADE_POST_WAIT_MS: '0' })).toBe(0);
 });
 
+test('noWait: a post made from inside the live turn itself does not wait for it (TURN-2)', async () => {
+  const { GenerationJobManager } = require('@librechat/api');
+  const first = await turn.post({ userId, agentId: AGENT, text: 'before the words' });
+  const spy = jest.spyOn(GenerationJobManager, 'getJobStatus').mockResolvedValue('running');
+  const t0 = Date.now();
+  const out = await turn.post({ userId, agentId: AGENT, text: 'Okay, I will not.', conversationId: first.conversationId, kind: 'approval', noWait: true });
+  expect(spy).not.toHaveBeenCalled();
+  spy.mockRestore();
+  expect(Date.now() - t0).toBeLessThan(5000);
+  expect(out.messageId).toBeTruthy();
+});
+
 test('the lock-screen preview drops voice directions and stops at a sentence', () => {
   const p = turn.pushPreview('%%%warm, bright%%% Found three freezers under four hundred dollars at stores in town. The best one is at Lowe\'s and it is on sale until Sunday, which matters because the price goes back up after that and I would not wait.');
   expect(p).not.toMatch(/%%%/);
