@@ -241,7 +241,7 @@ const NOV12_TEXT: [string, string][] = [
     'audition a new rhyme family if the old one forces weak language.',
   ],
   [
-    'manageable phrases and room for held notes. The generator sings each written line as one phrase and breathes at the line break: split a line that holds two full thoughts into two lines at its natural pause, and rebuild a line that ends on the, of, and or another small joining word so that it ends on a word that carries meaning. Preserve intentional',
+    'manageable phrases and room for held notes. The generator sings each written line as one phrase and breathes at the line break: split a line that holds two full thoughts into two lines at its natural pause, and rebuild a line that ends on the, and, my or another small joining word so that it ends on a word that carries meaning. Preserve intentional',
     'manageable phrases and room for held notes. Preserve intentional',
   ],
   [
@@ -1921,17 +1921,20 @@ export function lyricRhymeWeight(report: RhymeReport | null): number {
 }
 
 /** Sung lines too long for a singer at tempo: more than 14 syllables, or 17 for rap. The verse
- *  note from the desk only compares a verse's lines with each other; this one reads the line. */
-export function lyricLongLines(script: string, brief = ''): string[] {
+ *  note from the desk only compares a verse's lines with each other; this one reads the line.
+ *  With spareSupplied (the Nov 12 line checks) a line the idea holds word for word is left out. */
+export function lyricLongLines(script: string, brief = '', spareSupplied = false): string[] {
   const at = script.search(/^\s*lyrics\s*:/im);
   if (at === -1) return [];
   const rapped = /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(
     `${brief}\n${script.slice(0, at)}`,
   );
   const limit = rapped ? 17 : 14;
+  const idea = spareSupplied ? ideaWords(brief) : '';
   const found = new Set<string>();
   for (const pass of sectionPasses(script))
-    for (const line of pass.leads) if (syllables(line) > limit) found.add(line);
+    for (const line of pass.leads)
+      if (syllables(line) > limit && !(spareSupplied && suppliedLine(idea, line))) found.add(line);
   return [...found];
 }
 
@@ -1939,8 +1942,27 @@ export function lyricLongLines(script: string, brief = ''): string[] {
  * line break, and the Oct 8 panel found 14 to 18 syllable pop lines; a check in code moves the
  * output where a note does not. Two more things the desk can see on the page, handed to the audit
  * beside the long lines. The route runs them under KADE_LYRIC_LINE_CHECKS, only on lyrics the desk
- * wrote, and KADE_LYRIC_GATES=0 stands them down with the other gates. */
-const JOINING_WORDS: Set<string> = new Set('the an of and my your our their'.split(' '));
+ * wrote, and KADE_LYRIC_GATES=0 stands them down with the other gates.
+ * Reviewed the same day: "of" is left off the joining words, because "what I'm made of" is a whole
+ * phrase and the one hit in the replay of 178 stored drafts was a line like it. */
+const JOINING_WORDS: Set<string> = new Set('the an and my your our their'.split(' '));
+/* Words typed into the idea are hers (the first desk note). A line the idea already holds word for
+ * word is never named to the audit by a line check, the way the tells and the pet words step
+ * around the idea's own words. The idea is read once per check and every step is one pass over
+ * the text. A line counts with its backing part or without it, so a backing part she typed is
+ * hers too. */
+const wordsOnly = (text: string): string =>
+  text
+    .toLowerCase()
+    .replace(/[‘’`]/g, "'")
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+const ideaWords = (brief: string): string => ` ${wordsOnly(brief)} `;
+const suppliedLine = (idea: string, line: string): boolean =>
+  [wordsOnly(line.replace(/\([^()]*\)/g, ' ')), wordsOnly(line)].some(
+    (said) => !!said && idea.includes(` ${said} `),
+  );
 
 /** Sung lead lines, never rap, that break on a small joining word: the breath lands mid-thought. */
 export function lyricJoinBreaks(script: string, brief = ''): string[] {
@@ -1950,11 +1972,17 @@ export function lyricJoinBreaks(script: string, brief = ''): string[] {
     /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(`${brief}\n${script.slice(0, at)}`)
   )
     return [];
+  const idea = ideaWords(brief);
   const found = new Set<string>();
   for (const pass of sectionPasses(script))
     for (const line of pass.leads) {
       const words = sayable(line).split(' ').map(bare).filter(Boolean);
-      if (words.length > 1 && JOINING_WORDS.has(words[words.length - 1])) found.add(line);
+      if (
+        words.length > 1 &&
+        JOINING_WORDS.has(words[words.length - 1]) &&
+        !suppliedLine(idea, line)
+      )
+        found.add(line);
     }
   return [...found];
 }
@@ -1962,24 +1990,32 @@ export function lyricJoinBreaks(script: string, brief = ''): string[] {
 const MISREAD_TITLE = /\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|Mt|Ave|Blvd)\./;
 const MISREAD_SHORTHAND = /\b(?:vs|etc)\./i;
 /* A wordless syllable sung loud is not a word in capitals. */
-const WORDLESS_SHOUT = /^(?:O+H+|A+H+|U+H+|M+|SH+|(?:NA)+|(?:LA)+|WHOA+|YEAH+|HEY+)$/;
+const WORDLESS_SHOUT =
+  /^(?:O+H*|A+H+|U+H+|M+|SH+|(?:NA)+|(?:LA)+|(?:HA)+|WHOA+|WOAH+|YEAH+|HEY+|A+Y+)$/;
+/* A swear hidden behind symbols, as it reaches the misread lines: a$$, f#@k. */
+const BLEEPED_WORD = /[a-z][$@#%]|[$@#%][a-z]/i;
 
 /** Sung lines, lead or backing, holding something a singing engine may read wrong: a digit, a
  *  symbol, an abbreviation with its full stop, or a word of four letters or more in capitals on
- *  a line that is not all capitals. Report only; nothing is rewritten in code. */
-export function lyricMisreadLines(script: string): string[] {
+ *  a line whose lead part is not all capitals (a shout line may carry a lower-case backing part).
+ *  A line the idea holds word for word is hers and is left out. Report only; nothing is rewritten
+ *  in code. */
+export function lyricMisreadLines(script: string, brief = ''): string[] {
+  const idea = ideaWords(brief);
   const found = new Set<string>();
   for (const pass of sectionPasses(script))
     for (const line of pass.all) {
+      const lead = line.replace(/\([^()]*\)/g, ' ').trim() || line;
       const shouted =
-        /[a-z]/.test(line) &&
+        /[a-z]/.test(lead) &&
         (line.match(/\b[A-Z]{4,}\b/g) || []).some((word) => !WORDLESS_SHOUT.test(word));
       if (
-        /\d/.test(line) ||
-        /[&%$@+=#]/.test(line) ||
-        MISREAD_TITLE.test(line) ||
-        MISREAD_SHORTHAND.test(line) ||
-        shouted
+        (/\d/.test(line) ||
+          /[&%$@+=#]/.test(line) ||
+          MISREAD_TITLE.test(line) ||
+          MISREAD_SHORTHAND.test(line) ||
+          shouted) &&
+        !suppliedLine(idea, line)
       )
         found.add(line);
     }
@@ -2547,7 +2583,7 @@ function liftGate(
   pets: PetWord[],
   longLines: string[],
   number: number,
-  lineChecks: { on?: boolean; joinBreaks?: string[]; misread?: string[] } = {},
+  lineChecks: { on?: boolean; joinBreaks?: string[]; misread?: string[]; clean?: boolean } = {},
 ): string {
   const quoted = (lines: string[]): string =>
     lines
@@ -2573,10 +2609,14 @@ function liftGate(
     parts.push(
       `A line break is sung as a breath, and these lines break on a small joining word: ${quoted(lineChecks.joinBreaks)}. Move each break to the natural pause, or rebuild the line so it ends on a word that carries meaning.`,
     );
-  if (lineChecks.misread?.length)
+  if (lineChecks.misread?.length) {
+    /* A clean song is never asked to spell out a word its writer hid behind symbols. */
+    const hidden =
+      lineChecks.clean && lineChecks.misread.slice(0, 6).some((line) => BLEEPED_WORD.test(line));
     parts.push(
-      `These sung lines hold something a singing engine may read wrong, a number in digits, a symbol, an abbreviation or capitals for emphasis: ${quoted(lineChecks.misread)}. Write each the way it is said aloud, in ordinary words.`,
+      `These sung lines hold something a singing engine may read wrong, a number in digits, a symbol, an abbreviation or capitals for emphasis: ${quoted(lineChecks.misread)}. Write each the way it is said aloud, in ordinary words.${hidden ? ' This song has to be clean: a word hidden behind symbols becomes a clean word, never the word it hides.' : ''}`,
     );
+  }
   for (const p of pets)
     parts.push(
       `The word "${p.word}" appears in ${p.lines.length} or more different lines (${p.lines.map((l) => `"${l}"`).join(', ')}). Check whether it is a filler habit or carries the intended meaning. Revise filler, not a meaningful repetition, and do not add an arbitrary number or object to avoid the word.`,
@@ -2853,6 +2893,8 @@ export function lyricAuditRequest(
     lineChecks?: boolean;
     joinBreaks?: string[];
     misread?: string[];
+    /** The song's audience is clean (the route knows; the audit request itself does not). */
+    clean?: boolean;
   } = {},
 ): string {
   const rapped = /\b(?:rap|hip[ -]?hop|spoken[ -]word|grime|drill)\b/i.test(
@@ -2861,6 +2903,12 @@ export function lyricAuditRequest(
   const cadence = rapped
     ? '5. FLOW AND MEANING. Check the bars against the requested groove, with internal and multisyllabic rhyme, deliberate stress placement, changes of cadence and usable breath points. Preserve intentional enjambment and unequal bar lengths. Do not force rap into four-stress couplets or predictable end rhymes. Every rhyme must serve the sentence, the character or the payoff; remove filler wordplay. Keep hooks memorable in the form the brief asks for.'
     : "5. SING-ALONG. Read the verses aloud against their groove. Preserve a coherent audible rhyme pattern and melodic stresses. A verse that rhymes every second line is complete; a repair keeps the section's pattern or moves the whole section to another one. Keep the closeness of rhyme the genre expects: perfect rhyme for traditional country and children's songs, slant rhyme and shared vowels as well for pop, R&B and rock. Pursue natural, inventive rhyme including multi-syllable, mosaic and internal rhyme without meeting a quota. After fixing meaning, audition a new rhyme family if the old one forces weak language, and rebuild the setup line toward the line that matters. Keep deliberate pickups and held notes. Syllable and rhyme reports are clues to inspect by ear, not evidence that a line is good or bad. The chorus needs a clear feeling and a memorable hook in this singer's own words.";
+  /* Nov 12 2026 review: a rap bar may run over the line and check 5 says to keep that, so the
+   * sentence about the breath at the line break goes to sung songs only. "of" is not on its list:
+   * "what I'm made of" is a whole phrase. */
+  const breath = rapped
+    ? ''
+    : ' The generator sings each written line as one phrase and breathes at the line break: split a line that holds two full thoughts into two lines at its natural pause, and rebuild a line that ends on the, and, my or another small joining word so that it ends on a word that carries meaning.';
   const hookCount =
     briefWantsRepeats(brief) || briefRepeatsItself(brief)
       ? 'The idea asked for this repetition (a chant, or a chorus it spelled out itself), so the chorus sings its hook as often as the idea does.'
@@ -2884,6 +2932,7 @@ export function lyricAuditRequest(
     on: !!gates.lineChecks,
     joinBreaks: gates.joinBreaks,
     misread: gates.misread,
+    clean: !!gates.clean,
   });
   if (lifts) next += 1;
   const repeatText = repeatGate(repeats, next);
@@ -2899,7 +2948,7 @@ Check, in this order. Content decides what stays; the later mechanical reports a
 3. DEVELOPMENT. Verses add another aspect, pressure, choice, consequence or event. Could verse two replace verse one without changing anything? If so, develop the thought rather than adding another interchangeable activity. A happy song can deepen desire or confidence without manufactured conflict. The bridge should change the angle, intimacy, stakes or phrasing; a new rhyme family alone is not a new thought. No compulsory planted prop, plot twist or rewritten final chorus. For coping, preserve human language and let frustration coexist with care.
 4. EMOTIONAL HONESTY. Preserve the stance requested in the brief. Encouragement can coexist with continuing difficulty. No unearned cure, superiority speech, guaranteed victory or fairy-tale ending. A good chorus can return unchanged.
 ${cadence}
-6. Singability. Natural speech stress, plausible breaths, manageable phrases and room for held notes. The generator sings each written line as one phrase and breathes at the line break: split a line that holds two full thoughts into two lines at its natural pause, and rebuild a line that ends on the, of, and or another small joining word so that it ends on a word that carries meaning. Preserve intentional long-short patterns, pickups and expressive repeats. Parentheses are sung backing vocals and ad-libs; production cues stay separate. Without a melody, do not claim exact timing or force equal syllable counts.${shape ? `\n7. Length. ${shape}` : ''}${sizes}${backs}${rhymes}${lifts}${repeatText}${endings}${flagged}${lyricMeterNote(script, brief)}
+6. Singability. Natural speech stress, plausible breaths, manageable phrases and room for held notes.${breath} Preserve intentional long-short patterns, pickups and expressive repeats. Parentheses are sung backing vocals and ad-libs; production cues stay separate. Without a melody, do not claim exact timing or force equal syllable counts.${shape ? `\n7. Length. ${shape}` : ''}${sizes}${backs}${rhymes}${lifts}${repeatText}${endings}${flagged}${lyricMeterNote(script, brief)}
 
 Last, read the revised sections together. Did a repair introduce a different subject or attitude just to improve a rhyme count? Does the backing voice support the feeling and groove, or keep interrupting with little jokes and explanations? Harmony echoes and wordless responses need no dialogue quota. Keep the successful simple lines, musical repetition and clear transitions. Make only edits with a real content or performance benefit; do not change a fixed number of lines to demonstrate effort.
 

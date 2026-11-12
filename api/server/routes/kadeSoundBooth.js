@@ -2445,8 +2445,11 @@ async function scriptHandler(req, res) {
     const gatesOn = wantsWords && process.env.KADE_LYRIC_GATES !== '0';
     /* Nov 12 2026 craft review: three line checks ride in the same audit section, with no new call. One long line is
      * now enough to name it, a sung line that breaks on a small joining word is named, and so is a line holding digits,
-     * a symbol, an abbreviation or capitals a singing engine may read wrong. Replayed free over 178 stored desk drafts
-     * first: they fired on 16, 1 and 6 percent of them. KADE_LYRIC_LINE_CHECKS=0 stands the three down. */
+     * a symbol, an abbreviation or capitals a singing engine may read wrong. Replayed free over 178 stored rig drafts
+     * first (Oct 8 and Oct 27 test output from several writers, not her songs): they fired on 16, 1 and 6 percent of
+     * them. Reviewed the same day: "of" came off the joining words (its one hit was a good line), and a line the idea
+     * already holds word for word is hers, so no line check names it, a long one included.
+     * KADE_LYRIC_LINE_CHECKS=0 stands the three down. */
     const lineChecksOn = gatesOn && process.env.KADE_LYRIC_LINE_CHECKS !== '0';
     const gateReport = (script) => {
       const thin = gatesOn && typeof lyricThinSections === 'function' ? lyricThinSections(script, text) : [];
@@ -2454,9 +2457,9 @@ async function scriptHandler(req, res) {
       const rhyme = gatesOn && typeof lyricRhymeReport === 'function' ? lyricRhymeReport(script, text) : null;
       const lift = gatesOn && typeof lyricLiftIssue === 'function' ? lyricLiftIssue(script, text) : false;
       const pets = gatesOn && typeof lyricPetWords === 'function' ? lyricPetWords(script, text) : [];
-      const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text) : [];
+      const longLines = gatesOn && typeof lyricLongLines === 'function' ? lyricLongLines(script, text, lineChecksOn) : [];
       const joinBreaks = lineChecksOn && typeof lyricJoinBreaks === 'function' ? lyricJoinBreaks(script, text) : [];
-      const misread = lineChecksOn && typeof lyricMisreadLines === 'function' ? lyricMisreadLines(script) : [];
+      const misread = lineChecksOn && typeof lyricMisreadLines === 'function' ? lyricMisreadLines(script, text) : [];
       return { thin, backing, rhyme, lift, pets, longLines, joinBreaks, misread };
     };
     const gatesInDraft = gateReport(raw);
@@ -2492,6 +2495,7 @@ async function scriptHandler(req, res) {
               lineChecks: lineChecksOn,
               joinBreaks: gatesInDraft.joinBreaks,
               misread: gatesInDraft.misread,
+              clean: audience === 'clean',
             },
           ),
           maxTokens: writingSettings.maxTokens,
@@ -2738,6 +2742,8 @@ async function scriptHandler(req, res) {
             'The partial draft is saved for review. Check the missing sections before generating the song.',
         }
       : readyEstimate;
+    /* Measured once for the ledger: the rhyme report inside it is the slow part. */
+    const lineChecksLeft = lineChecksOn ? gateReport(raw) : null;
     logKadeUsage({
       userId: req.user.id,
       service: 'soundbooth_script',
@@ -2776,7 +2782,7 @@ async function scriptHandler(req, res) {
         lineChecks: lineChecksOn
           ? {
               draft: { long: gatesInDraft.longLines.length, joinBreaks: gatesInDraft.joinBreaks.length, misread: gatesInDraft.misread.length },
-              left: { long: gateReport(raw).longLines.length, joinBreaks: gateReport(raw).joinBreaks.length, misread: gateReport(raw).misread.length },
+              left: { long: lineChecksLeft.longLines.length, joinBreaks: lineChecksLeft.joinBreaks.length, misread: lineChecksLeft.misread.length },
             }
           : undefined,
         /* Nov 12 2026, logged only and acted on by nothing: average words in a verse line and in a chorus line. */
