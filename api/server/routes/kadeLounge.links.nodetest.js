@@ -65,7 +65,7 @@ const stubs = {
   '~/models/kadeClubRoom': { KadeClubRoom: {} },
   './Clubhouse/pages': { loungeHtml: '', engineHtml: '' },
   '~/server/utils/stripAiTells': { stripAiTells: (s) => s, KADE_STYLE_NOTE: '' },
-  '@librechat/api': { familyFeatures: () => pack.familyFeatures(packUser) },
+  '@librechat/api': { familyFeatures: () => pack.familyFeatures(packUser), limiterCache: () => undefined },
 };
 const realLoad = Module._load;
 Module._load = function (request, parent, isMain) {

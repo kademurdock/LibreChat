@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -180,10 +181,43 @@ router.post('/hotel', requireJwtAuth, express.json(), async (req, res) => {
   }
 });
 
+/* Audit fix SEC-10 (Nov 12 2026): passcodes are short on purpose, so WRONG guesses are limited
+ * per person: 10 a minute and 30 an hour, shared by check-in and Hotel room keys. Only refused
+ * answers (4xx) count: a right code, a server hiccup (5xx) and every public room, table room and
+ * '-dj' engine key never use the budget, so room hopping and the music engine are never slowed. */
+function tokenRoomKey(req) {
+  return String(req.body?.room || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32);
+}
+function codeLimiter(windowMs, max, prefix, words) {
+  return rateLimit({
+    windowMs,
+    max,
+    skipSuccessfulRequests: true,
+    requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.statusCode >= 500,
+    handler: (_req, res) => res.status(429).set('Cache-Control', 'no-store').json({ error: words }),
+    keyGenerator: (req) => String(req.user?.id || ''),
+    store: require('@librechat/api').limiterCache(prefix),
+  });
+}
+const codeLimitMinute = codeLimiter(
+  60 * 1000,
+  10,
+  'kade_hotel_code_limiter',
+  'That is a lot of passcodes at once. Try again in a minute.',
+);
+const codeLimitHour = codeLimiter(
+  60 * 60 * 1000,
+  30,
+  'kade_hotel_code_hour_limiter',
+  'Too many wrong passcodes. Check the code with whoever opened the room, and try again in an hour.',
+);
+const hotelKeyOnly = (limiter) => (req, res, next) =>
+  tokenRoomKey(req).startsWith('hotel-') ? limiter(req, res, next) : next();
+
 /** Check in: the passcode alone finds its room — rooms are hidden by
  * design ("They check in with pass codes"), and codes are unique across
  * the Hotel (enforced at create). The token mint still re-verifies. */
-router.post('/hotel/checkin', requireJwtAuth, express.json(), async (req, res) => {
+router.post('/hotel/checkin', requireJwtAuth, codeLimitMinute, codeLimitHour, express.json(), async (req, res) => {
   try {
     const code = normalizeCode(req.body?.code);
     if (!code) {
@@ -218,7 +252,7 @@ router.delete('/hotel/:key', requireJwtAuth, async (req, res) => {
   }
 });
 
-router.post('/token', requireJwtAuth, express.json(), async (req, res) => {
+router.post('/token', requireJwtAuth, express.json(), hotelKeyOnly(codeLimitMinute), hotelKeyOnly(codeLimitHour), async (req, res) => {
   try {
     if (!loungeConfigured()) {
       return res.status(503).json({
@@ -226,7 +260,7 @@ router.post('/token', requireJwtAuth, express.json(), async (req, res) => {
           "The Clubhouse is built but its room server isn't wired in yet — Kade just needs to drop the LiveKit keys into Railway.",
       });
     }
-    let room = String(req.body?.room || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32);
+    let room = tokenRoomKey(req);
     if (!room) return res.status(400).json({ error: 'Which room?' });
     // Parlor fusion: joining by a 4-char table code lands everyone from that
     // party table in the same voice room, no extra coordination.
