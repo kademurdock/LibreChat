@@ -822,6 +822,19 @@ const copyName = (job: Pick<Job, 'name'>, range?: Interval) =>
     : plainName(job.name);
 const workingSeconds = (seconds: number, range?: Interval) =>
   range ? range.end - range.start : seconds;
+/**
+ * How long one render run may take before it is stopped: 8 hours, or 6 seconds per second of the
+ * part being described when that is more (a 180-minute run on slow MiMo looks needs 9 to 11 hours
+ * and gets 18), never more than a day. Reads the stored job as it is, before its settings are
+ * parsed, so anything that is not a positive number counts as no length: a NaN delay would fire
+ * the timer at once. KADE_DESCRIPTION_RENDER_SCALED=0 keeps the fixed 8 hours, as before.
+ */
+export function renderLimitMs(job: { seconds?: number; settings?: { range?: Interval } }): number {
+  if (process.env.KADE_DESCRIPTION_RENDER_SCALED === '0') return 8 * hour;
+  const length = Number(workingSeconds(job.seconds ?? 0, job.settings?.range));
+  const scaled = Number.isFinite(length) && length > 0 ? Math.round(length * 6) * second : 0;
+  return Math.min(day, Math.max(8 * hour, scaled));
+}
 /** A rehearsal keeps its own plan, so its made-up dialogue is never reused by a paid run. */
 const planKey = (range?: Interval, rehearsal: boolean = false) =>
   (rehearsal ? 'rehearsal-' : '') +
@@ -4227,7 +4240,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     );
     const deadline = setTimeout(
       () => stop(new Halt('The job exceeded its processing time limit.')),
-      lane === 'render' ? 8 * hour : 2 * hour,
+      lane === 'render' ? renderLimitMs(job) : 2 * hour,
     );
     deadline.unref();
     let renewed = Date.now();

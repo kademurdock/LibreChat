@@ -54,6 +54,9 @@ import {
   dialogueLoudness,
   reasoningFloor,
   relookMargin,
+  lookWidth,
+  runStarts,
+  byLabel,
 } from './engine.ts';
 import { readAnalysis, nextContinuity, analysisPrompt, plainCapitals } from './prompt.ts';
 import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
@@ -5346,4 +5349,271 @@ test('slower narration: the credit at 0.75 is left as it came back, stamped, leg
   const inworld = await lead('slow-credit-inworld', { exact: true, fish: false });
   assert.ok(stamped > 3, `lead ${stamped}`);
   for (const other of [hiccup, legacy, inworld]) closeTo(other, stamped, 'the same clip, the same lead');
+});
+
+test('DESC-10: the next look starts before this section is voiced, and waits again under the switch', async () => {
+  for (const after of [false, true]) {
+    if (after) process.env.KADE_DESCRIPTION_LOOK_AFTER_VOICE = '1';
+    else delete process.env.KADE_DESCRIPTION_LOOK_AFTER_VOICE;
+    try {
+      const f = await fixture(after ? 'look-late' : 'look-early', 30);
+      const { keeper } = keeperFor(savedPlan(30, [10, 20]), [{ word: 'Talk.', start: 4.2, end: 10 }]);
+      const voice = measuredVoice();
+      const backend = providers(f.voice, [], []);
+      const order = [];
+      let sawNext;
+      const nextLook = new Promise((resolve) => (sawNext = resolve));
+      let held = false;
+      backend.synthesize = async (...args) => {
+        if (!held) {
+          held = true;
+          /** The first voice waits for the next look, or 4 s when that look waits for the voice. */
+          await Promise.race([nextLook, new Promise((resolve) => setTimeout(resolve, 4000))]);
+          order.push('voice');
+        }
+        return voice.synthesize(...args);
+      };
+      backend.analyze = async (look) => {
+        const index = look.brief.position.index;
+        order.push(`look ${index}`);
+        if (index === 1) sawNext();
+        return {
+          kind: 'other',
+          setting: 'A test pattern.',
+          people: [],
+          speakers: [],
+          protectedSounds: [],
+          cues:
+            index === 0
+              ? [{ at: 1, until: 4, text: 'The square moves.', shortText: 'The square moves.', importance: 3 }]
+              : [],
+        };
+      };
+      await run(f, [], [], { providers: backend, keeper });
+      const look = order.indexOf('look 1');
+      const spoke = order.indexOf('voice');
+      assert.ok(look >= 0 && spoke >= 0, order.join(' | '));
+      if (after) assert.ok(spoke < look, `the switch waits for the voice: ${order.join(' | ')}`);
+      else assert.ok(look < spoke, `the next look started first: ${order.join(' | ')}`);
+    } finally {
+      delete process.env.KADE_DESCRIPTION_LOOK_AFTER_VOICE;
+    }
+  }
+});
+
+/** A silent 12 s picture with cuts at 4 and 10 s and a still between them. */
+async function silentScenes(name) {
+  const dir = join(root, name);
+  await mkdir(dir, { recursive: true });
+  const file = join(dir, 'silent.mp4');
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin',
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      "testsrc2=s=320x240:r=30:d=12,drawbox=x=0:y=0:w=iw:h=ih:color=blue:t=fill:enable='between(t,4,10)'",
+      '-an',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-pix_fmt',
+      'yuv420p',
+      '-g',
+      '30',
+      file,
+    ],
+    signal,
+  );
+  return file;
+}
+
+test('DESC-6: a video with no sound is still scanned for cuts and stills, unless the switch keeps the old order', async () => {
+  for (const old of [false, true]) {
+    if (old) process.env.KADE_DESCRIPTION_SCAN_BESIDE = '0';
+    try {
+      const f = await fixture(old ? 'silent-scan-old' : 'silent-scan', 12, false);
+      const source = await silentScenes(old ? 'silent-scan-old-src' : 'silent-scan-src');
+      const { keeper, kept } = keeperFor(undefined);
+      const stages = [];
+      await run(f, [], [], {
+        keeper,
+        source,
+        progress: async (stage) => {
+          stages.push(stage);
+        },
+      });
+      const plan = kept.plans[0];
+      assert.equal(plan.audio, false);
+      if (old) {
+        assert.equal(plan.cuts, undefined, 'the old order never scanned a silent video');
+        assert.ok(!stages.includes('Finding the scene changes'));
+        continue;
+      }
+      assert.ok(plan.cuts?.some((t) => Math.abs(t - 4) < 0.1), `cut at 4: ${plan.cuts}`);
+      assert.ok(plan.cuts?.some((t) => Math.abs(t - 10) < 0.1), `cut at 10: ${plan.cuts}`);
+      assert.equal(plan.stills?.length, 1, JSON.stringify(plan.stills));
+      assert.ok(plan.stills[0].end - plan.stills[0].start > 4, JSON.stringify(plan.stills));
+      assert.ok(
+        stages.indexOf('Finding the dialogue') < stages.indexOf('Finding the scene changes'),
+        stages.join(' | '),
+      );
+    } finally {
+      delete process.env.KADE_DESCRIPTION_SCAN_BESIDE;
+    }
+  }
+});
+
+test('DESC-6: a failed dialogue pass or a cancel stops the plan at once, with no unhandled rejection', async () => {
+  const unhandled = [];
+  const note = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', note);
+  try {
+    const f = await fixture('scan-dialogue-fails', 12);
+    const backend = providers(f.voice, [], []);
+    backend.transcribe = async () => {
+      throw new Error('The dialogue pass failed.');
+    };
+    const { keeper } = keeperFor(undefined);
+    await assert.rejects(run(f, [], [], { providers: backend, keeper }), /The dialogue pass failed\./);
+
+    const g = await fixture('scan-cancelled', 12);
+    const controller = new AbortController();
+    const cancelling = providers(g.voice, [], []);
+    cancelling.transcribe = async () => {
+      controller.abort();
+      throw controller.signal.reason;
+    };
+    const { keeper: other } = keeperFor(undefined);
+    await assert.rejects(
+      run(g, [], [], { providers: cancelling, keeper: other, signal: controller.signal }),
+      (error) => error?.name === 'AbortError',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(unhandled, [], 'nothing was left unhandled');
+  } finally {
+    process.off('unhandledRejection', note);
+  }
+});
+
+test('DESC-12: look width stays 1 by default, and run starts and labels are safe', () => {
+  const saved = process.env.KADE_DESCRIPTION_LOOKS;
+  try {
+    delete process.env.KADE_DESCRIPTION_LOOKS;
+    assert.equal(lookWidth(100), 1, 'one look ahead by default');
+    process.env.KADE_DESCRIPTION_LOOKS = '2';
+    assert.equal(lookWidth(11), 1, 'fewer than six sections a run are not split');
+    assert.equal(lookWidth(12), 2);
+    process.env.KADE_DESCRIPTION_LOOKS = '9';
+    assert.equal(lookWidth(100), 4, 'at most 4');
+    process.env.KADE_DESCRIPTION_LOOKS = 'lots';
+    assert.equal(lookWidth(100), 1, 'garbage is 1');
+  } finally {
+    if (saved === undefined) delete process.env.KADE_DESCRIPTION_LOOKS;
+    else process.env.KADE_DESCRIPTION_LOOKS = saved;
+  }
+  const sections = Array.from({ length: 18 }, (_, i) => ({ start: i * 2, end: i * 2 + 2 }));
+  const cuts = sections.map((section) => section.start).filter((t) => t > 0);
+  assert.deepEqual(runStarts(sections, cuts, [], 3), [0, 6, 12]);
+  assert.deepEqual(
+    runStarts(sections, cuts, [{ start: 10, end: 16 }], 3),
+    [0, 5, 12],
+    'never inside a still that began earlier',
+  );
+  assert.deepEqual(runStarts(sections, [14], [], 3), [0, 7, 12], 'snaps to a cut within two sections');
+  assert.deepEqual(runStarts(sections, cuts, [], 2, 6), [6, 12], 'from the first section still to do');
+
+  const look = {
+    kind: 'other',
+    setting: '',
+    people: [
+      { id: 'P1', label: 'the tall woman', name: '', look: '' },
+      { label: 'a dog', name: '', look: '' },
+    ],
+    speakers: [
+      { speaker: 0, who: 'P1' },
+      { speaker: 1, who: 'P7' },
+    ],
+    protectedSounds: [],
+    cues: [
+      { at: 1, until: 2, text: 'She waves.', shortText: 'She waves.', importance: 2, who: ['P1', 'P7'] },
+      { at: 3, until: 4, text: 'A dog barks.', shortText: 'A dog barks.', importance: 2, who: ['a dog'] },
+      { at: 5, until: 6, text: 'Rain.', shortText: 'Rain.', importance: 1, who: ['P7'] },
+    ],
+  };
+  const fresh = byLabel(look, null);
+  assert.ok(fresh.people.every((person) => person.id === undefined), 'no ids are kept');
+  assert.equal(fresh.people[0].label, 'the tall woman');
+  assert.deepEqual(fresh.speakers, [{ speaker: 0, who: 'the tall woman' }], 'an unknown id is dropped');
+  assert.deepEqual(fresh.cues[0].who, ['the tall woman']);
+  assert.deepEqual(fresh.cues[1].who, ['a dog'], 'a label is left alone');
+  assert.equal(fresh.cues[2].who, undefined);
+  const known = byLabel(look, {
+    kind: '',
+    setting: '',
+    people: [{ id: 'P1', label: 'the woman in red', name: 'Ann', look: '' }],
+    speakers: [],
+    recent: [],
+  });
+  assert.equal(known.people[0].label, 'the woman in red', "the run's own state names its ids");
+  assert.deepEqual(known.cues[0].who, ['the woman in red']);
+});
+
+test('DESC-12: at the default width a run keeps one look ahead; at 3 the looks overlap and sections stay in order', async () => {
+  const f = await fixture('looks-wide', 36);
+  const cuts = Array.from({ length: 17 }, (_, i) => (i + 1) * 2);
+  for (const width of [undefined, '3']) {
+    if (width) process.env.KADE_DESCRIPTION_LOOKS = width;
+    try {
+      const { keeper, kept } = keeperFor(savedPlan(36, cuts));
+      const backend = providers(f.voice, [], []);
+      let inFlight = 0;
+      let most = 0;
+      backend.analyze = async (look) => {
+        inFlight++;
+        most = Math.max(most, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        inFlight--;
+        const index = look.brief.position.index;
+        return {
+          kind: 'other',
+          setting: 'A test pattern.',
+          people: [{ id: 'P1', label: `person ${index}`, name: '', look: '' }],
+          speakers: [],
+          protectedSounds: [],
+          cues: [],
+        };
+      };
+      const log = [];
+      await run(f, [], [], { providers: backend, keeper, log });
+      assert.deepEqual(
+        kept.records.map((record) => record.index),
+        Array.from({ length: 18 }, (_, i) => i),
+        'sections are kept in order',
+      );
+      if (!width) {
+        assert.ok(most <= 2, `at most one look ahead: ${most}`);
+        assert.ok(!log.some((line) => /Looking at \d parts/.test(line)));
+        continue;
+      }
+      assert.ok(most >= 2 && most <= 3, `looks overlapped: ${most}`);
+      assert.ok(
+        log.some((line) => /^Looking at 3 parts of the video at once/.test(line)),
+        log.join('\n'),
+      );
+      assert.ok(
+        kept.looks.every(
+          ({ look }) => !look.analysis || look.analysis.people.every((person) => person.id === undefined),
+        ),
+        'looks made ahead keep people by label',
+      );
+    } finally {
+      delete process.env.KADE_DESCRIPTION_LOOKS;
+    }
+  }
 });

@@ -15,7 +15,7 @@ import Module, { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { S3Client } from '@aws-sdk/client-s3';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createDescriptionRouter } from './router.ts';
+import { createDescriptionRouter, renderLimitMs } from './router.ts';
 import { familyFeatures } from '../family/pack.ts';
 import { describeVideo } from './engine.ts';
 import { createDescriptionWallet } from './wallet.ts';
@@ -4735,5 +4735,33 @@ test('slower narration: a sample is never slowed by atempo, and a slow Fish samp
     assert.equal(calls.synthesize - voiced, 1);
   } finally {
     voiceApplied = undefined;
+  }
+});
+
+test('DESC-7: the render deadline grows with the part being described', () => {
+  const h = 60 * 60 * 1000;
+  assert.equal(renderLimitMs({}), 8 * h);
+  assert.equal(renderLimitMs({ seconds: 600 }), 8 * h);
+  assert.equal(renderLimitMs({ seconds: 4800 }), 8 * h);
+  assert.equal(renderLimitMs({ seconds: 10800 }), 18 * h);
+  // A part of a long source is timed by the part, not the source.
+  assert.equal(
+    renderLimitMs({ seconds: 21600, settings: { range: { start: 0, end: 10800 } } }),
+    18 * h,
+  );
+  assert.equal(
+    renderLimitMs({ seconds: 21600, settings: { range: { start: 100, end: 400 } } }),
+    8 * h,
+  );
+  // A broken stored range must never give a NaN or oversized timer delay (both fire after 1 ms).
+  assert.equal(renderLimitMs({ seconds: 10800, settings: { range: { start: 0 } } }), 8 * h);
+  assert.equal(renderLimitMs({ seconds: Number.NaN }), 8 * h);
+  assert.equal(renderLimitMs({ seconds: 1e9 }), 24 * h);
+  // The switch keeps the old fixed limit.
+  process.env.KADE_DESCRIPTION_RENDER_SCALED = '0';
+  try {
+    assert.equal(renderLimitMs({ seconds: 10800 }), 8 * h);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_RENDER_SCALED;
   }
 });
