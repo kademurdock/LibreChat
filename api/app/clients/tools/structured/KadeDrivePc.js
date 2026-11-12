@@ -236,7 +236,16 @@ class KadeDrivePc extends Tool {
     if (approve === true) {
       const spend = require('~/server/services/kadeSpendGate');
       const req = this.req;
-      const said = spend.latestWords(req && req.body && req.body.text);
+      /* Review fix (Nov 12 2026): every bridge voice turn appends PHONE_SUFFIX ("[PHONE CALL ...",
+       * ~1,900 characters) and surface lines AFTER her words, so on the voice lane her words end at
+       * the first '[PHONE CALL' after the fold. Without this cut a spoken "yes" could never approve. */
+      let text = req && req.body && typeof req.body.text === 'string' ? req.body.text : '';
+      if (req && spend.isVoiceLane(req)) {
+        const close = text.toLowerCase().lastIndexOf('reply only to what follows.]');
+        const marker = text.indexOf('[PHONE CALL', close < 0 ? 0 : close);
+        if (marker >= 0) text = text.slice(0, marker);
+      }
+      const said = spend.latestWords(text);
       const yes =
         Boolean(req) &&
         req.kadeHiddenRun !== true &&

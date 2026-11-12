@@ -57,3 +57,36 @@ test('refusing a step needs no yes', async () => {
   assert.match(r.out, /Refused/);
   assert.equal(r.posted, 1);
 });
+
+/* Review fix (Nov 12 2026): a bridge voice turn carries PHONE_SUFFIX and surface lines after her
+ * words, so on the voice lane her words end at the first '[PHONE CALL'. */
+const FOLD = '[earlier in this conversation, for context only; do not re-answer]\nYOU: shall I submit?\nTHEM: hmm\n[reply only to what follows.]';
+const SUFFIX =
+  '\n\n[PHONE CALL — you are literally on the phone with this person right now. ' +
+  'Talk the way you naturally would: warm, engaged, conversational. '.repeat(28) +
+  ']\n[SURFACE: this is a live voice call inside the Kade-AI app, not a telephone.]\n[The person on this call is Kade.]';
+const voice = (said) => ({ user: { id: 'kade', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'kade' }, body: { text: `${FOLD} ${said}${SUFFIX}` } });
+
+test('voice: a spoken plain yes followed by the phone suffix approves the step', async () => {
+  assert.ok(SUFFIX.length > 1800);
+  const r = await confirm(voice('yes'), true);
+  assert.match(r.out, /Approved/);
+  assert.equal(r.posted, 1);
+  const unfolded = { ...voice('yes'), body: { text: `yes, go ahead${SUFFIX}` } };
+  assert.match((await confirm(unfolded, true)).out, /Approved/);
+});
+
+test('voice: "yes but wait", a long sentence, or the yes only in the fold does not approve', async () => {
+  for (const said of ['yes but wait', 'yes, and then after that I want you to go back to the other page and read me every single heading on it slowly please']) {
+    const r = await confirm(voice(said), true);
+    assert.match(r.out, /^NOT YET/, said);
+    assert.equal(r.posted, 0, said);
+  }
+  const foldOnly = { ...voice(''), body: { text: `${FOLD.replace('THEM: hmm', 'YOU: yes')}${SUFFIX}` } };
+  assert.match((await confirm(foldOnly, true)).out, /^NOT YET/);
+});
+
+test('typed chat is not cut: a message that merely contains "[PHONE CALL" text is read whole', async () => {
+  const r = await confirm(turn('yes [PHONE CALL note pasted here]'), true);
+  assert.match(r.out, /^NOT YET/);
+});
