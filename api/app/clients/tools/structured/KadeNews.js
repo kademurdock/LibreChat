@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
+const toolCache = require('../util/kadeToolCache');
 
 /**
  * KadeNews — free RSS morning news briefing (July 2 2026, Kade's ask).
@@ -124,9 +125,28 @@ async function fetchFeed(url) {
   return resp.data;
 }
 
+/* KADE Nov 12 2026 (phase 4 pick 3): one download and parse per feed per 5 minutes, shared by
+ * this person's characters, never between people (a custom feed_url can be private). Eight is the
+ * most any call asks for; callers slice. The address is matched exactly (paths are case-sensitive). */
+async function feedItems(req, url) {
+  return toolCache.cachedForPerson(
+    req,
+    {
+      tool: 'kade_news_feed',
+      args: { url },
+      exact: true,
+      ttlMs: 5 * 60 * 1000,
+      cacheable: (v) => Array.isArray(v) && v.length > 0,
+    },
+    async () => parseFeed(await fetchFeed(url), 8),
+  );
+}
+
 class KadeNews extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
+    /* Nov 12 2026 (phase 4 pick 3): the request names the person served, the cache's scope. */
+    this.req = fields.req;
     this.name = 'kade_news';
     /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
     this.untrustedSource = true;
@@ -147,7 +167,7 @@ class KadeNews extends Tool {
     try {
       if (feed_url) {
         if (!/^https?:\/\//i.test(feed_url)) return 'feed_url must be a full http(s) URL.';
-        const items = parseFeed(await fetchFeed(feed_url), perCat);
+        const items = (await feedItems(this.req, feed_url)).slice(0, perCat);
         if (!items.length) return `That feed (${feed_url}) returned no readable stories — it may not be an RSS/Atom feed.`;
         return [`Latest from ${feed_url}:`, ...items.map((i) => `- ${i.title}${i.age ? ` (${i.age})` : ''}${i.summary ? ` — ${i.summary}` : ''}`)].join('\n');
       }
@@ -160,7 +180,7 @@ class KadeNews extends Tool {
         cats.map(async (cat) => {
           for (const feed of CATEGORY_FEEDS[cat]) {
             try {
-              const items = parseFeed(await fetchFeed(feed.url), perCat);
+              const items = (await feedItems(this.req, feed.url)).slice(0, perCat);
               if (items.length) {
                 return [`== ${cat.toUpperCase()} (${feed.src}) ==`, ...items.map((i) => `- ${i.title}${i.age ? ` (${i.age})` : ''}${i.summary ? ` — ${i.summary}` : ''}`)].join('\n');
               }

@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
+const toolCache = require('../util/kadeToolCache');
 
 const weatherJsonSchema = {
   type: 'object',
@@ -33,8 +34,10 @@ const WMO = {
  * no per-call cost (nothing to bill to the user's tab).
  */
 class KadeWeather extends Tool {
-  constructor() {
+  constructor(fields = {}) {
     super();
+    /* Nov 12 2026 (phase 4 pick 3): the request names the person served, the cache's scope. */
+    this.req = fields.req;
     this.name = 'kade_weather';
     /* Card 10: its output is outside text, kept away from memory (services/kadeUntrustedTools.js). */
     this.untrustedSource = true;
@@ -49,6 +52,22 @@ class KadeWeather extends Tool {
     const { location, days } = data || {};
     if (!location) return 'I need a location.';
     const nDays = Math.min(7, Math.max(1, parseInt(days, 10) || 3));
+    /* KADE Nov 12 2026 (phase 4 pick 3): the same place asked again within 10 minutes, by any of
+     * this person's characters, reuses the answer. Never shared between people
+     * (util/kadeToolCache.js cachedForPerson). KADE_TOOL_CACHE=0 turns it off. */
+    return toolCache.cachedForPerson(
+      this.req,
+      {
+        tool: 'kade_weather',
+        args: { location, days: nDays },
+        ttlMs: 10 * 60 * 1000,
+        cacheable: (s) => typeof s === 'string' && s.startsWith('Weather for '),
+      },
+      () => this._lookup(location, nDays),
+    );
+  }
+
+  async _lookup(location, nDays) {
     try {
       // Open-Meteo's geocoder matches on the place NAME only — "Ozark, Missouri"
       // returns nothing. Split off any region hint and use it to pick among results.

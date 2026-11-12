@@ -352,6 +352,10 @@ const loadTools = async ({
   const toolOptions = {
     /* KADE Oct 20 2026: the request is the turn's key for the lookup cap (kadeTurnToolGuard). */
     kade_wikipedia: { req: options.req },
+    /* KADE Nov 12 2026 (phase 4 pick 3): the request names the person served, the tool cache's
+     * scope (util/kadeToolCache.js); without it the lookup is never cached. */
+    kade_weather: { req: options.req },
+    kade_news: { req: options.req },
     kade_library: { req: options.req },
     kade_family_history: { req: options.req },
     kade_library_requests: { req: options.req },

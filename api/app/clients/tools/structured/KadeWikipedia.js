@@ -2,6 +2,7 @@ const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 const turnGuard = require('../util/kadeTurnToolGuard');
+const toolCache = require('../util/kadeToolCache');
 
 const wikiJsonSchema = {
   type: 'object',
@@ -46,6 +47,27 @@ class KadeWikipedia extends Tool {
     const turnKey = this.req || this;
     const gate = turnGuard.beginCall(turnKey, turnGuard.WIKIPEDIA);
     if (!gate.ok) return gate.text;
+    /* KADE Nov 12 2026 (phase 4 pick 3): the same topic asked again within 6 hours, by any of this
+     * person's characters, reuses the answer. Never shared between people
+     * (util/kadeToolCache.js cachedForPerson). The turn gate above still counts every call. */
+    return toolCache.cachedForPerson(
+      this.req,
+      {
+        tool: 'kade_wikipedia',
+        args: { query, full: Boolean(full_intro) },
+        ttlMs: 6 * 60 * 60 * 1000,
+        cacheable: (s) =>
+          typeof s === 'string' &&
+          s.length <= 60000 &&
+          !s.startsWith('Wikipedia lookup failed') &&
+          !s.startsWith('Wikipedia has no article') &&
+          s !== turnGuard.UNAVAILABLE[turnGuard.WIKIPEDIA],
+      },
+      () => this._lookup(query, full_intro, turnKey),
+    );
+  }
+
+  async _lookup(query, full_intro, turnKey) {
     const ua = { 'User-Agent': 'KadeAI/1.0 (kademurdock.com)' };
     try {
       const s = await axios.get('https://en.wikipedia.org/w/rest.php/v1/search/page', {
