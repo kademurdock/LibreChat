@@ -1,5 +1,6 @@
 import { Constants } from 'librechat-data-provider';
 import { parseToolName, getToolDisplayLabel, TOOL_FRIENDLY_NAME_KEYS } from '../toolLabels';
+import * as labels from '../toolLabels';
 
 describe('parseToolName', () => {
   it('splits an MCP tool id into server + tool name', () => {
@@ -76,5 +77,51 @@ describe('getToolDisplayLabel', () => {
 
   it('returns the raw name for an unknown native tool', () => {
     expect(getToolDisplayLabel('custom_tool', identityLocalize)).toBe('custom_tool');
+  });
+});
+
+describe('kade.toolLabels from the stream (phase 3 A1)', () => {
+  const localize = ((key: string) => key) as Parameters<typeof getToolDisplayLabel>[1];
+
+  beforeEach(() => {
+    localStorage.clear();
+    labels.resetKadeToolLabelsForTest();
+  });
+
+  it('remembers the server label for each call by its index', () => {
+    labels.rememberToolLabels({
+      event: 'on_run_step',
+      data: {
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ name: 'kade_known' }, {}, { function: { name: 'kade_drive_pc' } }],
+        },
+      },
+      kade: { toolLabels: ['what I know', '', 'your computer'] },
+    });
+    expect(labels.kadeToolLabel('kade_known')).toBe('what I know');
+    expect(labels.kadeToolLabel('kade_drive_pc')).toBe('your computer');
+    expect(getToolDisplayLabel('kade_known', localize)).toBe('what I know');
+    // survives a reload
+    labels.resetKadeToolLabelsForTest();
+    expect(labels.kadeToolLabel('kade_known')).toBe('what I know');
+  });
+
+  it('frames without labels and unknown names change nothing', () => {
+    labels.rememberToolLabels({ event: 'on_run_step', data: { stepDetails: { tool_calls: [] } } });
+    labels.rememberToolLabels(null);
+    labels.rememberToolLabels('junk');
+    expect(labels.kadeToolLabel('kade_known')).toBeUndefined();
+    expect(getToolDisplayLabel('some_custom_tool', localize)).toBe('some_custom_tool');
+  });
+
+  it("the browser switch kadeToolLabels = '0' shows raw names", () => {
+    labels.rememberToolLabels({
+      data: { stepDetails: { tool_calls: [{ name: 'kade_known' }] } },
+      kade: { toolLabels: ['what I know'] },
+    });
+    localStorage.setItem('kadeToolLabels', '0');
+    expect(labels.kadeToolLabel('kade_known')).toBeUndefined();
+    expect(getToolDisplayLabel('kade_known', localize)).toBe('kade_known');
   });
 });

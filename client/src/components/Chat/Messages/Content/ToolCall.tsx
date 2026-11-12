@@ -15,7 +15,7 @@ import { useMCPIconMap } from '~/hooks/MCP';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { logger } from '~/utils';
+import { logger, kadeToolLabel } from '~/utils';
 import store from '~/store';
 
 export default function ToolCall({
@@ -98,7 +98,8 @@ export default function ToolCall({
       ? name.split(actionDelimiter)
       : [name, ''];
     return {
-      function_name: func || '',
+      // Nov 12 2026 (phase 3 A1): the server's spoken name for a Kade tool ("what I know").
+      function_name: (func && kadeToolLabel(func)) || func || '',
       domain: _domain && (_domain.replaceAll(actionDomainSeparator, '.') || null),
       isMCPToolCall: false,
       mcpServerName: '',

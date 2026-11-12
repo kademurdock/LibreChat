@@ -1,5 +1,6 @@
 import { Constants } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import { kadeSwitchOn } from './kadeSwitch';
 
 /**
  * Shared tool-name parsing + friendly-label mapping used by the main
@@ -77,5 +78,77 @@ export function getToolDisplayLabel(
   const parsed = parseToolName(rawName);
   if (parsed.mcpServer) return parsed.mcpServer;
   if (parsed.friendlyKey) return localize(parsed.friendlyKey);
-  return parsed.toolName;
+  return kadeToolLabel(parsed.toolName) ?? parsed.toolName;
+}
+
+/* Nov 12 2026 (platform audit, phase 3 A1): the server names every tool beside its run step,
+ * { event: 'on_run_step', data, kade: { toolLabels: [...] } }, toolLabels[i] for tool_calls[i]
+ * (api/server/services/kadeToolLabels.js). This browser remembers name -> label, so "kade_known"
+ * shows and reads as "what I know", also after a reload. Undo on one browser: localStorage
+ * kadeToolLabels = '0'. */
+const KADE_TOOL_LABELS_KEY = 'kadeToolLabelNames';
+const KADE_TOOL_LABELS_MAX = 120;
+let kadeLabels: Record<string, string> | null = null;
+
+function loadKadeLabels(): Record<string, string> {
+  if (kadeLabels) return kadeLabels;
+  kadeLabels = {};
+  try {
+    const raw = globalThis.localStorage?.getItem(KADE_TOOL_LABELS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const [name, label] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof label === 'string' && label) kadeLabels[name] = label;
+      }
+    }
+  } catch {
+    /* storage blocked or bad JSON: start empty */
+  }
+  return kadeLabels;
+}
+
+/** The server's label for a tool name this browser has seen, or undefined. */
+export function kadeToolLabel(rawName: string): string | undefined {
+  if (!rawName || !kadeSwitchOn('toolLabels')) return undefined;
+  const labels = loadKadeLabels();
+  return Object.prototype.hasOwnProperty.call(labels, rawName) ? labels[rawName] : undefined;
+}
+
+type ToolCallLike = { name?: unknown; function?: { name?: unknown } } | null | undefined;
+
+/** Reads kade.toolLabels off one stream frame. Never throws; frames without it are ignored. */
+export function rememberToolLabels(frame: unknown): void {
+  try {
+    if (!frame || typeof frame !== 'object' || !kadeSwitchOn('toolLabels')) return;
+    const { kade, data } = frame as {
+      kade?: { toolLabels?: unknown };
+      data?: { stepDetails?: { tool_calls?: unknown } };
+    };
+    const toolLabels = kade?.toolLabels;
+    const calls = data?.stepDetails?.tool_calls;
+    if (!Array.isArray(toolLabels) || !Array.isArray(calls)) return;
+    const labels = loadKadeLabels();
+    let changed = false;
+    calls.forEach((call: ToolCallLike, i: number) => {
+      const name = call?.name ?? call?.function?.name;
+      const label = toolLabels[i];
+      if (typeof name !== 'string' || !name || typeof label !== 'string' || !label) return;
+      if (name === label || labels[name] === label) return;
+      labels[name] = label;
+      changed = true;
+    });
+    if (!changed) return;
+    const names = Object.keys(labels);
+    if (names.length > KADE_TOOL_LABELS_MAX) {
+      for (const old of names.slice(0, names.length - KADE_TOOL_LABELS_MAX)) delete labels[old];
+    }
+    globalThis.localStorage?.setItem(KADE_TOOL_LABELS_KEY, JSON.stringify(labels));
+  } catch {
+    /* a label is a nicety; the raw name still shows */
+  }
+}
+
+/** Tests only. */
+export function resetKadeToolLabelsForTest(): void {
+  kadeLabels = null;
 }

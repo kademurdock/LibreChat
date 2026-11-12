@@ -24,6 +24,7 @@ const {
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { createStreamScrubber } = require('~/server/utils/stripAiTells');
+const { withToolLabels } = require('~/server/services/kadeToolLabels');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
@@ -376,12 +377,15 @@ function getDefaultHandlers({
        */
       handle: async (event, data, metadata) => {
         aggregateContent({ event, data });
+        /* KADE Nov 12 2026 (phase 3 A1): spoken tool names ride beside `data`, never inside it.
+         * KADE_TOOL_LABELS=0 sends the plain frame. */
+        const frame = withToolLabels({ event, data });
         if (data?.stepDetails.type === StepTypes.TOOL_CALLS) {
-          await emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, frame);
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
-          await emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, frame);
         } else if (!metadata?.hide_sequential_outputs) {
-          await emitEvent(res, streamId, { event, data });
+          await emitEvent(res, streamId, frame);
         } else {
           const agentName = metadata?.name ?? 'Agent';
           const isToolCall = data?.stepDetails.type === StepTypes.TOOL_CALLS;

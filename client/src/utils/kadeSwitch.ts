@@ -18,6 +18,12 @@ export const KADE_SWITCHES = {
   frameGate: 'kadeFrameGate',
   /** DESC-11: skip Spotter pictures that barely differ from the last one sent. */
   stillFrameSkip: 'kadeStillFrames',
+  /** GW-6 web half: with automatic read-aloud on, a chat request says kadeLive: true. */
+  sendLive: 'kadeSendLive',
+  /** Phase 3 A1: show the server's tool names (kade.toolLabels) for Kade tools. */
+  toolLabels: 'kadeToolLabels',
+  /** Decision 24: voice speed, fillers and delivery follow the account. */
+  voiceSync: 'kadeVoiceSync',
 } as const;
 
 export type KadeSwitch = keyof typeof KADE_SWITCHES;

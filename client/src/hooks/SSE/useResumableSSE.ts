@@ -45,6 +45,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useLocalize from '~/hooks/useLocalize';
 import useUsageHandler from './useUsageHandler';
 import { kadeSwitchOn } from '~/utils/kadeSwitch';
+import { rememberToolLabels } from '~/utils/toolLabels';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -756,6 +757,7 @@ export default function useResumableSSE(
             ) {
               tapStream(data.data, { ...currentSubmission, userMessage });
             }
+            rememberToolLabels(data); // Nov 12 2026 (phase 3 A1): kade.toolLabels beside data
             if (!isResume && !createdStreamIdsRef.current.has(currentStreamId)) {
               if (isOAuthStepEvent(data)) {
                 preCreatedStepEvents.push(data);
