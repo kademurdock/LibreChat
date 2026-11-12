@@ -122,6 +122,56 @@ function kadeStepLimit(resolved, stepBudget, maxRecursionLimit) {
   return Number.isFinite(maxRecursionLimit) && maxRecursionLimit > 0 ? Math.min(wanted, maxRecursionLimit) : wanted;
 }
 
+/** KADE TURN-5: the tool-view record is evidence, never something a reply waits for. Indexed once
+ * per process (non-unique: older rows may already hold duplicates). Rows are KEPT: Kade's Nov 12
+ * choice was "keep all, just speed up", so KADE_CAP_SNAPSHOT_DAYS defaults to 0 (keep forever, no
+ * expiry index; an expiry index left by an earlier setting is dropped, which deletes no rows).
+ * Setting it to a number of days adds an expiry index that DELETES rows older than that, so only
+ * set it on her say. A changed day count is applied to the existing index with collMod. A failed
+ * setup is retried at most once every ten minutes, so an outage never adds index commands or log
+ * lines to every turn. */
+const KADE_CAP_INDEX_RETRY_MS = 10 * 60 * 1000;
+let kadeCapIndexing = null;
+let kadeCapIndexRetryAt = 0;
+function kadeCapabilitySnapshots() {
+  const mongoose = require('mongoose');
+  const coll = mongoose.connection.collection('kadecapabilitysnapshots');
+  if (!kadeCapIndexing && Date.now() >= kadeCapIndexRetryAt) {
+    const days = Number(process.env.KADE_CAP_SNAPSHOT_DAYS ?? 0);
+    const ttl = Number.isFinite(days) && days > 0 ? Math.round(days * 86400) : 0;
+    kadeCapIndexing = (async () => {
+      await coll.createIndex({ userId: 1, conversationId: 1, agentId: 1 }, { name: 'kade_cap_turn' });
+      if (ttl > 0) {
+        try {
+          await coll.createIndex({ checkedAt: 1 }, { name: 'kade_cap_ttl', expireAfterSeconds: ttl });
+        } catch (error) {
+          if (error?.code !== 85 && error?.codeName !== 'IndexOptionsConflict') {
+            throw error;
+          }
+          await mongoose.connection.db.command({
+            collMod: 'kadecapabilitysnapshots',
+            index: { name: 'kade_cap_ttl', expireAfterSeconds: ttl },
+          });
+        }
+      } else {
+        try {
+          await coll.dropIndex('kade_cap_ttl');
+        } catch (error) {
+          /* 26 = no such collection yet, 27 = no such index: both mean nothing to drop */
+          if (error?.code !== 26 && error?.code !== 27) {
+            throw error;
+          }
+        }
+      }
+    })().catch((error) => {
+      kadeCapIndexing = null;
+      kadeCapIndexRetryAt = Date.now() + KADE_CAP_INDEX_RETRY_MS;
+      logger.warn('[capabilities] index setup failed: ' + error.message);
+    });
+  }
+  return coll;
+}
+
 /** TURN-8 (turn audit, Nov 12 2026): start a turn read now and collect it later. Never rejects, so a
  * read that fails while the turn waits on another one can never become an unhandled rejection. */
 function kadeStart(work) {
@@ -1218,10 +1268,17 @@ class AgentClient extends BaseClient {
         const capabilities = require('@librechat/api').runtimeCapabilities(agent);
         agentRunContextParts.push('TOOLS AVAILABLE FOR THIS REPLY\n' + JSON.stringify(capabilities));
         try {
-          await require('mongoose').connection.collection('kadecapabilitysnapshots').updateOne(
-            { userId: String(this.options.req.user.id), conversationId: this.conversationId, agentId },
-            { $set: { ...capabilities, role: this.options.req.user.role, checkedAt: new Date() } }, { upsert: true });
-        } catch (error) { logger.warn('[capabilities] Could not save the tool view: ' + error.message); }
+          /* TURN-5: not awaited. The reply never waits on this record. */
+          kadeCapabilitySnapshots()
+            .updateOne(
+              { userId: String(this.options.req.user.id), conversationId: this.conversationId, agentId },
+              { $set: { ...capabilities, role: this.options.req.user.role, checkedAt: new Date() } },
+              { upsert: true },
+            )
+            .catch((error) => logger.warn('[capabilities] Could not save the tool view: ' + error.message));
+        } catch (error) {
+          logger.warn('[capabilities] Could not save the tool view: ' + error.message);
+        }
         if (ragNote && agentId === this.options.agent.id) {
           agentRunContextParts.push(ragNote);
         }
