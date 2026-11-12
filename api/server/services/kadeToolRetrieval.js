@@ -534,12 +534,17 @@ function within(promise, ms) {
  * again next turn, the old behaviour) before it is asked again. */
 let descActive = 0;
 const descQueue = [];
+/** An env number; unset or empty means the default (an empty value never switches to the old way). */
+function descEnvNumber(name, fallback) {
+  const raw = process.env[name];
+  return raw == null || String(raw).trim() === '' ? fallback : Number(raw);
+}
 function descConcurrency() {
-  const n = Number(process.env.KADE_TOOLS_DESC_CONCURRENCY ?? 4);
+  const n = descEnvNumber('KADE_TOOLS_DESC_CONCURRENCY', 4);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : Infinity;
 }
 function descRetryMs() {
-  const n = Number(process.env.KADE_TOOLS_DESC_RETRY_MS ?? 60000);
+  const n = descEnvNumber('KADE_TOOLS_DESC_RETRY_MS', 60000);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 /** Run `work` when a description slot is free. Never rejects on behalf of the queue. */
