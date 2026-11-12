@@ -34,6 +34,11 @@ function fixture({ shared = [], own = [], others = {}, vectors, failReads = fals
       const scopes = new Set(filter.$or.map((x) => x.agentId));
       return { select: () => ({ lean: async () => vectorRows.filter((x) => scopes.has(x.agentId)) }) };
     },
+    /* TURN-14: searchCardVectors reads through aggregate(); the stand-in applies the same $match
+     * (every fixture row is the active model's, so the $project changes nothing here). */
+    aggregate(pipeline) {
+      return this.find(pipeline.find((stage) => stage.$match).$match).select().lean();
+    },
   };
   class Schema { index() {} }
   const diary = {

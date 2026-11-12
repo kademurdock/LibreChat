@@ -418,8 +418,8 @@ memory:
     # 12/12. It is also CHEAPER on both axes ($0.075/$0.25 vs $0.13/$0.85 per M).
     # ⚠️ It always thinks (GLM-5.3+ cannot disable it) — reframe's modelbudget floors
     # max_tokens at 16000 for it, and measured reasoning was 40-360 chars, ~8.3s
-    # median vs Air's 1.7s. Free here: the keeper runs after the reply, blocking
-    # nobody. ⚠️ Known cost, watch it: 5.3-flash files a card AND a logbook line on
+    # median vs Air's 1.7s. Free here only because FINAL does not wait for the
+    # keeper (KADE_KEEPER_FINAL_WAIT_MS=0); at 3000 it holds FINAL up to 3 s. ⚠️ Known cost, watch it: 5.3-flash files a card AND a logbook line on
     # the same card-shaped turn (durable fact 12/12, cancellation 8/12) where Air
     # never did. That is the over-eager direction on a logbook that has been EMPTY
     # for a week; if it reads as double-filing in her logbook, tighten the "never

@@ -99,8 +99,19 @@ function hasValidProjectionIds(params: TContextProjectionRequest): boolean {
   return typeof params.conversationId === 'string' && typeof params.messageId === 'string';
 }
 
-function getProjectionText(message: ProjectionMessage): string | null {
-  const note = message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
+/** Mirror the live path (TURN-13): only the newest user message carries the voice note. */
+function getNewestUserIndex(branch: ProjectionMessage[]): number {
+  for (let i = branch.length - 1; i >= 0; i--) {
+    if (branch[i].isCreatedByUser === true) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function getProjectionText(message: ProjectionMessage, withSpeechNote = false): string | null {
+  const note =
+    withSpeechNote && message.isCreatedByUser ? speechContext(message.kadeInputSource) : '';
   const withSource = (text: string) => (note ? `${note}\n${text}` : text);
   const hasQuotes =
     message.isCreatedByUser === true && Array.isArray(message.quotes) && message.quotes.length > 0;
@@ -120,8 +131,9 @@ function getProjectionText(message: ProjectionMessage): string | null {
 
 function hasExceededBranchTextLimit(branch: ProjectionMessage[]): boolean {
   let bytes = 0;
-  for (const message of branch) {
-    const text = getProjectionText(message);
+  const newestUserIndex = getNewestUserIndex(branch);
+  for (let i = 0; i < branch.length; i++) {
+    const text = getProjectionText(branch[i], i === newestUserIndex);
     if (text == null) {
       return true;
     }
@@ -329,6 +341,7 @@ export async function resolveContextProjection(
 
   const messages: BaseMessage[] = [];
   const indexTokenCountMap: Record<string, number> = {};
+  const newestUserIndex = getNewestUserIndex(bodyBranch);
   for (let i = 0; i < bodyBranch.length; i++) {
     const message = bodyBranch[i];
     /** Mirror the live path: prepend quoted excerpts into the user text the model
@@ -337,7 +350,9 @@ export async function resolveContextProjection(
       message.isCreatedByUser === true &&
       Array.isArray(message.quotes) &&
       message.quotes.length > 0;
-    const text = getProjectionText(message);
+    const hasSpeechNote =
+      i === newestUserIndex && speechContext(message.kadeInputSource) !== '';
+    const text = getProjectionText(message, hasSpeechNote);
     if (text == null) {
       return null;
     }
@@ -350,7 +365,7 @@ export async function resolveContextProjection(
      *  recount quoted messages: a text-only Save edit leaves a stale text-only
      *  `tokenCount` that omits the quote block, so trust the merged recount. */
     indexTokenCountMap[String(i)] =
-      !hasQuotes && !message.kadeInputSource && message.tokenCount != null && message.tokenCount > 0
+      !hasQuotes && !hasSpeechNote && message.tokenCount != null && message.tokenCount > 0
         ? message.tokenCount
         : tokenCounter(lcMessage);
   }

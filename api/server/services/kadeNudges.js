@@ -7,6 +7,7 @@
  */
 const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
+const { turnReadOptions } = require('~/server/utils/kadeTurnRead');
 const {
   KadePushSub,
   KadeNudgePref,
@@ -204,18 +205,60 @@ async function takePendingChatNudges(userId, limit = 5, { exceptTypes, agentId }
     filter.type = { $nin: exceptTypes };
   }
   filter.agentId = agentId ? { $in: [null, String(agentId)] } : null;
-  const pending = await KadePendingNudge.find(filter)
+  /* DB-2: a turn waits on this read; it gives up after KADE_TURN_READ_MAX_MS (3 s). */
+  const pending = await KadePendingNudge.find(filter, null, turnReadOptions())
     .sort({ createdAt: 1 })
     .limit(limit)
     .lean();
   if (pending.length === 0) {
     return [];
   }
-  await KadePendingNudge.updateMany(
-    { _id: { $in: pending.map((p) => p._id) } },
-    { $set: { deliveredAt: new Date() } },
+  /* TURN-9 (turn audit, Nov 12 2026): two turns at once could both read the same notes. The mark
+   * now only touches notes still waiting, so each note goes to one turn: all marked = all ours,
+   * none marked = another turn has them, some marked = keep the ones carrying our own stamp. */
+  const ids = pending.map((p) => p._id);
+  const at = new Date();
+  const marked = await KadePendingNudge.updateMany(
+    { _id: { $in: ids }, deliveredAt: null },
+    { $set: { deliveredAt: at } },
   );
+  const count = marked && typeof marked.modifiedCount === 'number' ? marked.modifiedCount : pending.length;
+  if (count === 0) {
+    return [];
+  }
+  if (count < pending.length) {
+    const mine = await KadePendingNudge.find({ _id: { $in: ids }, deliveredAt: at }).select('_id').lean();
+    const kept = new Set(mine.map((n) => String(n._id)));
+    return pending.filter((p) => kept.has(String(p._id)));
+  }
   return pending;
+}
+
+/** TURN-9 (turn audit, Nov 12 2026): put back notes a turn picked up but never got to say (stopped,
+ * failed, replaced). Better said twice than never, but not forever: a note goes back at most
+ * MAX_NOTE_RELEASES times, so stopping a reply that already said it cannot repeat it without end.
+ * Never throws. */
+const MAX_NOTE_RELEASES = 2;
+async function releaseChatNudges(ids) {
+  try {
+    const list = (Array.isArray(ids) ? ids : []).filter(Boolean);
+    if (!list.length) return 0;
+    const r = await KadePendingNudge.updateMany(
+      {
+        _id: { $in: list },
+        channel: 'chat',
+        deliveredAt: { $ne: null },
+        releases: { $not: { $gte: MAX_NOTE_RELEASES } },
+      },
+      { $set: { deliveredAt: null }, $inc: { releases: 1 } },
+    );
+    const n = (r && r.modifiedCount) || 0;
+    logger.info(`[kadeNudges] released ${n} waiting note(s) from an unfinished turn`);
+    return n;
+  } catch (e) {
+    logger.warn('[kadeNudges] release failed: ' + e.message);
+    return 0;
+  }
 }
 
 /** ---- the sweep ---- */
@@ -476,6 +519,7 @@ module.exports = {
   sendPushToUser,
   queueChatNudge,
   takePendingChatNudges,
+  releaseChatNudges,
   startNudgeSweep,
   runNudgeSweepOnce,
   computeNextDueAt,

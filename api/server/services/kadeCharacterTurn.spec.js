@@ -78,6 +78,44 @@ test('a named conversation that belongs to someone else is never used', async ()
   expect(mine.conversationId).not.toBe(theirs.conversationId);
 });
 
+test('a post waits for a live turn and lands after the reply, not beside it (TURN-2)', async () => {
+  const { GenerationJobManager } = require('@librechat/api');
+  const first = await turn.post({ userId, agentId: AGENT, text: 'before' });
+  const convo = first.conversationId;
+  const ask = { messageId: 'turn2-user', conversationId: convo, parentMessageId: first.messageId, isCreatedByUser: true, sender: 'User', text: 'is my song done yet?', user: userId };
+  await models.saveMessage({ userId, isTemporary: false }, ask, { context: 'spec' });
+  let running = true;
+  const spy = jest.spyOn(GenerationJobManager, 'getJobStatus').mockImplementation(async (id) => (id === convo && running ? 'running' : undefined));
+  setTimeout(async () => {
+    await models.saveMessage({ userId, isTemporary: false }, { messageId: 'turn2-reply', conversationId: convo, parentMessageId: 'turn2-user', isCreatedByUser: false, sender: 'Testa', text: 'Let me look.', user: userId }, { context: 'spec' });
+    running = false;
+  }, 1200);
+  const t0 = Date.now();
+  const out = await turn.post({ userId, agentId: AGENT, text: 'Your song is ready.', conversationId: convo, kind: 'song' });
+  spy.mockRestore();
+  expect(Date.now() - t0).toBeGreaterThanOrEqual(1200);
+  const msg = await mongoose.models.Message.findOne({ messageId: out.messageId }).lean();
+  expect(msg.parentMessageId).toBe('turn2-reply');
+}, 15000);
+
+test('a reminder gives up after its short wait and is still posted (TURN-2)', async () => {
+  const { GenerationJobManager } = require('@librechat/api');
+  const prev = process.env.KADE_POST_WAIT_MS;
+  process.env.KADE_POST_WAIT_MS = '600';
+  const first = await turn.post({ userId, agentId: AGENT, text: 'before again' });
+  const spy = jest.spyOn(GenerationJobManager, 'getJobStatus').mockResolvedValue('running');
+  const out = await turn.post({ userId, agentId: AGENT, text: 'Time for your medicine.', conversationId: first.conversationId, kind: 'reminder' });
+  spy.mockRestore();
+  if (prev === undefined) delete process.env.KADE_POST_WAIT_MS; else process.env.KADE_POST_WAIT_MS = prev;
+  expect(out.messageId).toBeTruthy();
+  /* Kade's Nov 12 choice: every kind waits up to 20 s by default; reminders never more. */
+  expect(turn.liveTurnWaitMs('reminder', {})).toBe(20000);
+  expect(turn.liveTurnWaitMs('song', {})).toBe(20000);
+  expect(turn.liveTurnWaitMs('song', { KADE_POST_WAIT_MS: '120000' })).toBe(120000);
+  expect(turn.liveTurnWaitMs('reminder', { KADE_POST_WAIT_MS: '120000' })).toBe(20000);
+  expect(turn.liveTurnWaitMs('song', { KADE_POST_WAIT_MS: '0' })).toBe(0);
+});
+
 test('the lock-screen preview drops voice directions and stops at a sentence', () => {
   const p = turn.pushPreview('%%%warm, bright%%% Found three freezers under four hundred dollars at stores in town. The best one is at Lowe\'s and it is on sale until Sunday, which matters because the price goes back up after that and I would not wait.');
   expect(p).not.toMatch(/%%%/);

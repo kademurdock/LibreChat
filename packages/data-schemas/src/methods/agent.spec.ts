@@ -522,6 +522,27 @@ describe('Agent Methods', () => {
       expect(retrievedAgent!.description).toBe('Test description');
     });
 
+    test('TURN-11: getAgentForChat reads the agent without its saved versions', async () => {
+      const { agentId, authorId } = createTestIds();
+      await createAgent({
+        id: agentId,
+        name: 'Chat Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        instructions: 'first',
+      });
+      await updateAgent({ id: agentId }, { instructions: 'second' });
+      const full = await getAgent({ id: agentId });
+      expect(full!.versions!.length).toBeGreaterThan(1);
+      const chat = await methods.getAgentForChat({ id: agentId });
+      expect(chat).toBeDefined();
+      expect(chat!.id).toBe(agentId);
+      expect(chat!.instructions).toBe('second');
+      expect(chat!.versions).toBeUndefined();
+      expect(await methods.getAgentForChat({ id: 'agent_missing_turn11' })).toBeNull();
+    });
+
     test('should derive mcpServerNames only from MCP tools on create', async () => {
       const { agentId, authorId } = createTestIds();
       const actionTool = `sync${Constants.mcp_delimiter}state${actionDelimiter}api---example---com`;

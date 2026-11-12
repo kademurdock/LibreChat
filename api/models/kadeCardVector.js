@@ -30,6 +30,14 @@ const mongoose = require('mongoose');
 const { logger } = require('@librechat/data-schemas');
 const { embedText, currentEmbedModel, readEmbedHealth } = require('~/models/kadeDiary');
 const { indexedCardEmbedding, memoryEmbeddingLane } = require('@librechat/api');
+/* DB-2 (platform audit, Nov 12 2026): reads the reply waits on give up after KADE_TURN_READ_MAX_MS
+ * (3000 ms; 0 = no limit, the old behaviour). The same rule as api/server/utils/kadeTurnRead.js,
+ * written out here because several tests load this file in a bare vm with no module paths. */
+function turnReadOptions() {
+  const raw = process.env.KADE_TURN_READ_MAX_MS;
+  const n = raw == null || String(raw).trim() === '' ? 3000 : Number(raw);
+  return Number.isFinite(n) && n > 0 ? { maxTimeMS: Math.floor(n) } : {};
+}
 
 const kadeCardVectorSchema = new mongoose.Schema(
   {
@@ -209,11 +217,31 @@ async function searchCardVectors(userId, agentId, queryVector, opts = {}) {
         },
       ],
     };
-    const rows = await KadeCardVector.find(filter)
-      .select(
-        'key agentId embedding embedModel embeddingNext embedNextModel embedNextHash embedNextValueHash valueHash',
-      )
-      .lean();
+    /* TURN-14 (turn audit, Nov 12 2026): same rule as the diary. Only the vector written
+     * by the active model crosses the wire; indexedCardEmbedding() below reads each
+     * vector only under that same model test, and still gets every hash it checks.
+     * aggregate() does not cast: every value in `filter` is already a string. */
+    const rows = await KadeCardVector.aggregate([
+      { $match: filter },
+      {
+        $project: {
+          key: 1,
+          agentId: 1,
+          valueHash: 1,
+          embedModel: 1,
+          embedNextModel: 1,
+          embedNextHash: 1,
+          embedNextValueHash: 1,
+          embedding: {
+            $cond: [{ $eq: ['$embedModel', model] }, '$embedding', '$$REMOVE'],
+          },
+          embeddingNext: {
+            $cond: [{ $eq: ['$embedNextModel', model] }, '$embeddingNext', '$$REMOVE'],
+          },
+        },
+      },
+      /* DB-2: inside recall's window; gives up after KADE_TURN_READ_MAX_MS (3 s). */
+    ], turnReadOptions());
     const scored = [];
     for (const r of rows) {
       if (opts.keys && !opts.keys.has((r.agentId ?? '') + '::' + r.key)) {

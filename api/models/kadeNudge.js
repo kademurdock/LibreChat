@@ -69,6 +69,8 @@ const pendingNudgeSchema = new mongoose.Schema(
     channel: { type: String, default: 'chat' },
     /** Nov 11 2026: kept for this one character (a reminder it could not deliver); null = any */
     agentId: { type: String, default: null },
+    /** TURN-9 (Nov 12 2026): times an unfinished turn put this note back; capped in kadeNudges.js */
+    releases: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

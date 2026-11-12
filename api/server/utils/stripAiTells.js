@@ -163,13 +163,13 @@ function lastStableCut(raw) {
 }
 
 function createStreamScrubber() {
-  const streams = new Map(); // id -> { raw, sent, template, mode, passthrough }
+  const streams = new Map(); // id -> { raw, sent, upTo, template, mode, passthrough }
   let dead = false;
 
   function stateFor(id) {
     let st = streams.get(id);
     if (!st) {
-      st = { raw: '', sent: '', template: null, mode: null, passthrough: false };
+      st = { raw: '', sent: '', upTo: 0, template: null, mode: null, passthrough: false };
       streams.set(id, st);
     }
     return st;
@@ -198,17 +198,23 @@ function createStreamScrubber() {
     return { ...data, delta: { ...data.delta, content: [{ ...first, text: chunk }] } };
   }
 
-  /** Advance a stream's stable prefix; returns the newly-emittable chunk or ''. */
+  /** Advance a stream's stable prefix; returns the newly-emittable chunk or ''.
+   *  st.upTo is the raw index st.sent covers. */
   function advance(st, upTo) {
     const clean = scrubCore(st.raw.slice(0, upTo), false, true);
     if (typeof clean !== 'string' || !clean.startsWith(st.sent)) {
       // Extension property violated (should not happen) — degrade to
       // pass-through for this stream rather than ever re-writing history.
+      // TURN-7: hand back the raw text held since the last good cut (and the
+      // whitespace scrubCore trimmed before it), so no word is dropped from
+      // the live stream at the moment it degrades.
       st.passthrough = true;
-      return '';
+      const from = st.raw.slice(0, st.upTo).replace(/\s+$/, '').length;
+      return st.raw.slice(from);
     }
     const chunk = clean.slice(st.sent.length);
     st.sent = clean;
+    st.upTo = upTo;
     return chunk;
   }
 
@@ -237,8 +243,13 @@ function createStreamScrubber() {
         if (end < 0) end = 0;
         if (st.raw.length - end > STREAM_FLUSH_CHARS) end = st.raw.length;
         if (end === 0) return [];
+        /* TURN-7 (turn audit, Nov 12 2026): the same prefix always scrubs to the same text, so a
+         * delta that did not move the cut has nothing new to emit -- skipping it turns one
+         * whole-prefix scrub per DELTA into one per sentence. A cut that moves back (a "3." that
+         * became "3.5") now waits for the next real cut instead of dropping the stream to raw. */
+        if (end <= st.upTo) return [];
         const chunk = advance(st, end);
-        if (st.passthrough) return [data]; // degraded mid-delta: emit raw
+        // On a degrade, chunk is the held raw tail and already includes this delta.
         return chunk === '' ? [] : [withText(data, st.mode, chunk)];
       } catch {
         dead = true;
@@ -251,7 +262,7 @@ function createStreamScrubber() {
       try {
         const st = streams.get(id);
         if (!st || st.passthrough || !st.template) return [];
-        const chunk = advance(st, st.raw.length);
+        const chunk = st.raw.length > st.upTo ? advance(st, st.raw.length) : '';
         streams.delete(id);
         return chunk ? [withText(st.template, st.mode, chunk)] : [];
       } catch {

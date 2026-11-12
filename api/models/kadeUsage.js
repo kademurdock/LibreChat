@@ -34,6 +34,15 @@ const kadeUsageSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+/* DB-1 (platform audit, Nov 12 2026): every spoken piece logs a row, and every date-windowed
+ * read (kade.js, kadeFunding.js, kadeReadingRoomDescribe.js, kadeReadingRoomSort.js,
+ * packages/api kade/monthly.ts) scanned the whole collection, because only `user` and `service`
+ * were indexed, one field each. Built on boot by autoIndex (api/db/connect.js), in the
+ * background; no row changes. */
+kadeUsageSchema.index({ user: 1, createdAt: -1 });
+kadeUsageSchema.index({ service: 1, createdAt: -1 });
+kadeUsageSchema.index({ createdAt: -1 });
+
 const KadeUsage =
   mongoose.models.KadeUsage || mongoose.model('KadeUsage', kadeUsageSchema, 'kadeusage');
 

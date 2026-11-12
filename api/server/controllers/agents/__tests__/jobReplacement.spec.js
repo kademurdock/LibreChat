@@ -426,12 +426,12 @@ describe('Job Replacement Detection', () => {
         'utf8',
       );
 
+      /* TURN-4 (Nov 12 2026): the one check became newerJobCreatedAt(), asked again before each
+       * ending; it must still read an absent job as "nobody newer", never as replaced. */
       expect(src).toContain(
-        'const jobWasReplaced = !!currentJob && currentJob.createdAt !== jobCreatedAt;',
+        'return currentJob && currentJob.createdAt !== jobCreatedAt ? currentJob.createdAt : null;',
       );
-      expect(src).not.toContain(
-        'const jobWasReplaced = !currentJob || currentJob.createdAt !== jobCreatedAt;',
-      );
+      expect(src).not.toMatch(/[Rr]eplaced\w* = !currentJob \|\|/);
     });
   });
 });

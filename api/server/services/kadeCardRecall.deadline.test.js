@@ -52,7 +52,7 @@ function fixture({ own = [], env = {}, embed, cardHits = [], diaryRows = 1, diar
   const rag = load('kadeToolRetrieval.js', {
     '@librechat/data-schemas': { logger },
     './kadeRecallQuery': Q,
-    './kadeJevJudges': { toolsAdd: async () => [], toolsShadow: () => null },
+    './kadeJevJudges': { toolsAdd: async () => [], toolsAddStart: () => ({ apply: async () => [] }), toolsShadow: () => null },
   });
   const embedText = async (text, opts = {}) => {
     calls.embeds.push({ text: String(text), purpose: opts.purpose || 'document' });

@@ -1616,37 +1616,66 @@ function toolsToAdd(scores, keep, knobs = toolAddKnobs()) {
 }
 
 /**
- * Ask, then ADD. Returns the names added (possibly empty). NEVER throws and
- * never waits longer than its own budget — on any failure the selection is
- * exactly what the regexes and the embedding floor chose.
+ * TURN-3 (turn audit, Nov 12 2026): the add-only ask in two halves, so the caller can START it
+ * before the embedding pass and the two waits overlap instead of adding up. The questions need
+ * only the words and the loaded tool names. Returns { apply(keep) }: apply waits for the answers
+ * (never longer than the ask's own budget, counted from the start), ADDS to `keep` and returns
+ * the names added. `keep` is read at apply time, so a tool the embed attached meanwhile is not
+ * added or logged twice. NEVER throws and never rejects, applied or not: on any failure the
+ * selection is exactly what the regexes and the embedding floor chose.
  */
-async function toolsAdd({ text, tools, keep, log }, { ask = jev.ask } = {}) {
-  if (!jev.enabled('KADE_JEV_TOOLS_ADD')) return [];
-  const knobs = toolAddKnobs();
+function toolsAddStart({ text, tools, log }, { ask = jev.ask } = {}) {
+  const none = { apply: async () => [] };
   try {
+    if (!jev.enabled('KADE_JEV_TOOLS_ADD')) return none;
+    const knobs = toolAddKnobs();
     const questions = {};
     for (const name of tools || []) {
       if (TOOL_NEEDS[name]) questions[name] = toolQuestion(name);
     }
-    if (!Object.keys(questions).length || !String(text || '').trim()) return [];
-    const { answers } = await ask({ message: String(text).replace(/%%%[^%]*%%%/g, '').trim().slice(0, 2000) }, questions, knobs.timeoutMs);
-    const scores = {};
-    for (const name of Object.keys(questions)) {
-      try {
-        scores[name] = jev.noulOf(answers, name);
-      } catch (_) {
-        /* one unread tool */
-      }
-    }
-    const add = toolsToAdd(scores, keep, knobs);
-    for (const name of add) keep.add(name);
-    if (add.length && typeof log === 'function') {
-      log(`[kadeJev][tools-add] added=[${add.join(',')}] jev={${Object.entries(scores).map(([k, v]) => `${k}:${v.toFixed(2)}`).join(',')}}`);
-    }
-    return add;
+    if (!Object.keys(questions).length || !String(text || '').trim()) return none;
+    /* Settles to the answers or null. The .catch is last so nothing here can be left as an
+       unhandled rejection when the caller returns early and never applies. */
+    const asked = Promise.resolve()
+      .then(() => ask({ message: String(text).replace(/%%%[^%]*%%%/g, '').trim().slice(0, 2000) }, questions, knobs.timeoutMs))
+      .then((r) => (r && r.answers && typeof r.answers === 'object' ? r.answers : null))
+      .catch(() => null);
+    return {
+      async apply(keep) {
+        try {
+          const answers = await asked;
+          if (!answers) return [];
+          const scores = {};
+          for (const name of Object.keys(questions)) {
+            try {
+              scores[name] = jev.noulOf(answers, name);
+            } catch (_) {
+              /* one unread tool */
+            }
+          }
+          const add = toolsToAdd(scores, keep, knobs);
+          for (const name of add) keep.add(name);
+          if (add.length && typeof log === 'function') {
+            log(`[kadeJev][tools-add] added=[${add.join(',')}] jev={${Object.entries(scores).map(([k, v]) => `${k}:${v.toFixed(2)}`).join(',')}}`);
+          }
+          return add;
+        } catch (_) {
+          return [];
+        }
+      },
+    };
   } catch (_) {
-    return [];
+    return none;
   }
+}
+
+/**
+ * Ask, then ADD, in one call. Returns the names added (possibly empty). NEVER throws and
+ * never waits longer than its own budget. One rule, one place: this is toolsAddStart applied
+ * straight away.
+ */
+async function toolsAdd({ text, tools, keep, log }, opts = {}) {
+  return toolsAddStart({ text, tools, log }, opts).apply(keep);
 }
 
 /* ── 5e. THE BATTERY'S FLAGS, ON EVERY REPLY (Part 239) ───────────────────
@@ -1768,6 +1797,6 @@ module.exports = {
   SAME_IDEA_Q, ideaKnobs, sameIdea,
   SAME_REPORT_Q, reportText, sameReports,
   PUSHBACK_Q, FOLD_Q, readSpine,
-  toolAddKnobs, toolsToAdd, toolsAdd,
+  toolAddKnobs, toolsToAdd, toolsAdd, toolsAddStart,
   VOICE_FLAG_QS, readVoiceFlags,
 };

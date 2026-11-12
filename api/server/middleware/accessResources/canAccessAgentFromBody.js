@@ -23,7 +23,9 @@ const resolveAgentIdFromBody = async (agentCustomId) => {
   if (isEphemeralAgentId(agentCustomId)) {
     return null;
   }
-  return getAgent({ id: agentCustomId });
+  /* TURN-11: only _id is needed here (and loadAddedAgent's fields via req.resolvedAddedAgent);
+   * never the saved versions. */
+  return (db.getAgentForChat ?? getAgent)({ id: agentCustomId });
 };
 
 /**

@@ -14,7 +14,8 @@ const { canAuthorSkillFiles } = require('./skillDeps');
 const db = require('~/models');
 
 const loadAddedAgent = (params) =>
-  loadAddedAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
+  /* TURN-11: chat read, no `versions`. */
+  loadAddedAgentFn(params, { getAgent: db.getAgentForChat ?? db.getAgent, getMCPServerTools });
 
 /**
  * Process addedConvo for parallel agent execution.

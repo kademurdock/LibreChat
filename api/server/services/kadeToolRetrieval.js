@@ -306,6 +306,8 @@ const sticky = new Map();
 const descVecs = new Map();
 /** tool name → its description embed still on the way (one per tool at a time) */
 const descPending = new Map();
+/** TURN-10: tool name → when a failed description embed may be asked again */
+const descRetryAt = new Map();
 
 /* Part 176: the NO_WEB_NOTE promises "if they say yes, the search comes along
  * on the next turn" -- and nothing made that true. "Yes", "sure", "go ahead",
@@ -525,23 +527,66 @@ function within(promise, ms) {
   ]).finally(() => clearTimeout(timer));
 }
 
+/* TURN-10 step A (turn audit, Nov 12 2026), from the design review: the description burst
+ * after a restart was 20 to 30 requests at once with no cap, and a description that failed was
+ * asked again on every turn. Now at most KADE_TOOLS_DESC_CONCURRENCY (4; 0 = no cap, the old
+ * behaviour) are out at a time, and a failed one waits KADE_TOOLS_DESC_RETRY_MS (60000; 0 = ask
+ * again next turn, the old behaviour) before it is asked again. */
+let descActive = 0;
+const descQueue = [];
+function descConcurrency() {
+  const n = Number(process.env.KADE_TOOLS_DESC_CONCURRENCY ?? 4);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : Infinity;
+}
+function descRetryMs() {
+  const n = Number(process.env.KADE_TOOLS_DESC_RETRY_MS ?? 60000);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+/** Run `work` when a description slot is free. Never rejects on behalf of the queue. */
+function inDescSlot(work) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      descActive += 1;
+      Promise.resolve()
+        .then(work)
+        .then(resolve, reject)
+        .finally(() => {
+          descActive -= 1;
+          const next = descQueue.shift();
+          if (next) next();
+        });
+    };
+    if (descActive < descConcurrency()) run();
+    else descQueue.push(run);
+  });
+}
+
 /** Embed the descriptions the cache lacks. Resolves when they are in (or failed); the turn never waits on it. */
 function primeToolDescriptions(tools, embed) {
   if (!embed) return Promise.resolve();
+  const now = Date.now();
   const jobs = (tools || [])
     .filter((t) => !descVecs.has(t.name))
+    .filter((t) => descPending.has(t.name) || !(descRetryAt.get(t.name) > now))
     .map((t) => {
       if (descPending.has(t.name)) return descPending.get(t.name);
       const name = String(t.name)
         .replace(/^kade_/, '')
         .replace(/_/g, ' ');
       const desc = `${name}: ${String(t.description || '').slice(0, 1200)}`;
-      const job = Promise.resolve()
-        .then(() => embed(desc, { purpose: 'document' }))
+      const job = inDescSlot(() => embed(desc, { purpose: 'document' }))
         .then((vec) => {
-          if (vec) descVecs.set(t.name, { text: desc, vec });
+          if (vec) {
+            descVecs.set(t.name, { text: desc, vec });
+            descRetryAt.delete(t.name);
+            return;
+          }
+          throw new Error('no vector');
         })
-        .catch(() => {})
+        .catch(() => {
+          const wait = descRetryMs();
+          if (wait > 0) descRetryAt.set(t.name, Date.now() + wait);
+        })
         .finally(() => descPending.delete(t.name));
       descPending.set(t.name, job);
       return job;
@@ -583,13 +628,19 @@ async function embedHits({
        * message whose previous message is known, the one memory query carries
        * that message in front; recall finds it in the memo and uses it as is. */
       const memoryQuery = recallQuery.earlyMemoryQuery(query, previous);
-      Promise.resolve()
+      const memorySettled = Promise.resolve()
         .then(() => embed(memoryQuery))
         .catch(() => null);
       const asked = Promise.resolve().then(() => embed(query, { purpose: 'tools' }));
       /* Descriptions only once the lane has answered (a down lane is not asked for
-       * thirty more), and in the background. */
-      asked.then((vec) => vec && primeToolDescriptions(tools, embed)).catch(() => {});
+       * thirty more), and in the background. TURN-10 step A (turn audit, Nov 12 2026): and
+       * only once this turn's memory query has settled, so the description burst after a
+       * restart never competes with the query recall is waiting on.
+       * KADE_TOOLS_DESC_AFTER_MEMORY=0 starts them as soon as the tools query answers (old). */
+      const descGate = process.env.KADE_TOOLS_DESC_AFTER_MEMORY === '0' ? null : memorySettled;
+      Promise.all([asked, descGate])
+        .then(([vec]) => vec && primeToolDescriptions(tools, embed))
+        .catch(() => {});
       const got = await within(asked, waitMs);
       out.slow = got === SLOW;
       qv = out.slow ? null : got;
@@ -694,6 +745,16 @@ async function selectToolsCore(p) {
       }
     }
   }
+  /* TURN-3 (Nov 12 2026): Jev's add-only ask needs only these words and the loaded names, so it
+   * is STARTED here and runs beside the embedding pass instead of after it. It is applied in the
+   * same place as before (Part 239 below), so add-only and the order of the log lines are
+   * unchanged. The two embed-slow / embed-down returns below waste one ask; that is the cost. */
+  let jevAdd = null;
+  try {
+    jevAdd = require('./kadeJevJudges').toolsAddStart({ text, tools: [...all], log: (line) => logger.info(line) });
+  } catch (_) {
+    jevAdd = null;
+  }
   const emb = await embedHits({
     text,
     previous,
@@ -742,7 +803,7 @@ async function selectToolsCore(p) {
    * Kill: KADE_JEV_TOOLS_ADD=0. Budget: KADE_JEV_TOOLS_ADD_MS (1200). */
   let added = [];
   try {
-    added = await require('./kadeJevJudges').toolsAdd({ text, tools: [...all], keep, log: (line) => logger.info(line) });
+    added = jevAdd ? await jevAdd.apply(keep) : [];
   } catch (_) {
     added = [];
   }
@@ -946,6 +1007,7 @@ function _resetForTests() {
   sticky.clear();
   descVecs.clear();
   descPending.clear();
+  descRetryAt.clear();
   pendingWeb.clear();
   lastWords.clear();
 }

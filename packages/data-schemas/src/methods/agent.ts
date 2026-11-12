@@ -252,6 +252,7 @@ export function createAgentMethods(
   deps: AgentDeps,
 ): {
   getAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
+  getAgentForChat: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
   getAgents: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent[]>;
   createAgent: (agentData: Record<string, unknown>) => Promise<IAgent>;
   hasAgentWithMCPServerName: ({
@@ -364,6 +365,23 @@ export function createAgentMethods(
   async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.findOne(searchParameter).lean<IAgent>();
+  }
+
+  /**
+   * KADE turn audit TURN-11: the chat path's read -- everything a turn uses, without `versions`
+   * (a full copy of the agent per edit, never read on a turn; loadAgent/loadAddedAgent only
+   * counted it, so `agent.version` is 0 on documents read this way and must not be trusted
+   * there). The builder and every write path keep getAgent, so version history and revert are
+   * unchanged. Never pass a document read here to updateAgent/revert logic.
+   */
+  async function getAgentForChat(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    /* DB-2 (platform audit, Nov 12 2026): a turn-path read gives up after KADE_TURN_READ_MAX_MS
+     * (3000 ms; 0 = no limit) instead of holding the reply forever on a stuck query. */
+    const raw = process.env.KADE_TURN_READ_MAX_MS;
+    const maxMs = raw == null || String(raw).trim() === '' ? 3000 : Number(raw);
+    const options = Number.isFinite(maxMs) && maxMs > 0 ? { maxTimeMS: Math.floor(maxMs) } : {};
+    return await Agent.findOne(searchParameter, { versions: 0 }, options).lean<IAgent>();
   }
 
   /**
@@ -995,6 +1013,7 @@ export function createAgentMethods(
 
   return {
     getAgent,
+    getAgentForChat,
     getAgents,
     createAgent,
     hasAgentWithMCPServerName,
