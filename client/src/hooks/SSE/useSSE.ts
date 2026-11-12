@@ -17,6 +17,8 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
 import { clearAllDrafts } from '~/utils';
+import { kadeLiveFields } from '~/utils/kadeLive';
+import { rememberToolLabels } from '~/utils/toolLabels';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -88,6 +90,8 @@ export default function useSSE(
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
     payload = removeNullishValues(payload) as TPayload;
+    // Nov 12 2026 (GW-6 web half): read-aloud on = this browser will speak it, so ask for live.
+    payload = { ...payload, ...kadeLiveFields() } as TPayload;
 
     let textIndex = null;
     clearStepMaps();
@@ -145,6 +149,7 @@ export default function useSSE(
         ) {
           tapStream(data.data, { ...submission, userMessage });
         }
+        rememberToolLabels(data); // Nov 12 2026 (phase 3 A1): kade.toolLabels beside data
         stepHandler(data, { ...submission, userMessage } as EventSubmission);
       } else if (data.sync != null) {
         const runId = v4();

@@ -1,5 +1,6 @@
 import { parseTextParts } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import { kadeSwitchOn } from './kadeSwitch';
 
 /** Oct 30 2026: one speed number everywhere, on every voice. Her words: "The brisk and all that,
  * that wasn't original, that was just because we couldn't get fish api to sound right. Inworld
@@ -64,13 +65,31 @@ export function voiceCacheKey(
   voice: string | null | undefined,
   speed: number,
   fillers: boolean,
+  delivery?: string | null,
 ): string {
   return `${VOICE_CACHE_PATH}${VOICE_CACHE_VERSION}?${new URLSearchParams({
     text,
     voice: voice ?? '',
     speed: String(speed),
     fillers: fillers ? '1' : '0',
+    /* Nov 12 2026 (decision 24): a take made with the listener's delivery for this character never
+     * replays for another delivery. Absent when none, so every older key is unchanged. */
+    ...(delivery ? { delivery } : {}),
   })}`;
+}
+
+/** Nov 12 2026 (decision 24): the listener's delivery for one character, from the account
+ * (store.voiceDeliveryByAgent). undefined = none, and the request carries no `delivery`.
+ * The browser switch kadeVoiceSync = '0' sends none, exactly as before. */
+export function deliveryFor(
+  map: Record<string, string> | null | undefined,
+  agentId: string | null | undefined,
+): string | undefined {
+  if (!map || !agentId || !kadeSwitchOn('voiceSync')) {
+    return undefined;
+  }
+  const mode = map[agentId];
+  return mode === 'STABLE' || mode === 'BALANCED' || mode === 'CREATIVE' ? mode : undefined;
 }
 
 /** The words a reply's voice is made from, in the same order the server (streamAudio.js) and the
@@ -113,12 +132,13 @@ export async function storeVoiceAudio(
   speed: number,
   fillers: boolean,
   audio: Blob,
+  delivery?: string | null,
 ): Promise<boolean> {
   if (!text) {
     return false;
   }
   try {
-    await cache.put(voiceCacheKey(text, voice, speed, fillers), new Response(audio));
+    await cache.put(voiceCacheKey(text, voice, speed, fillers, delivery), new Response(audio));
     await trimVoiceCache(cache);
     return true;
   } catch {

@@ -43,6 +43,11 @@ jest.mock('../useSpeechSettingsInit', () => ({
   default: jest.fn(),
 }));
 
+jest.mock('../useListenerVoiceSync', () => ({
+  __esModule: true,
+  default: jest.fn(),
+}));
+
 jest.mock('~/utils/timestamps', () => ({
   cleanupTimestampedStorage: jest.fn(),
 }));

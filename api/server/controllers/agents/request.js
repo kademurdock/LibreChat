@@ -25,6 +25,9 @@ const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
 const { scrubMessageForTransmit } = require('~/server/utils/stripAiTells');
+/* Nov 12 2026 (phase 3 A2): saved replies in the final frame carry kade.readableText, what a person
+ * reads and a screen reader says. Frame only, never saved; KADE_READABLE_TEXT=0 sends no field. */
+const { withReadableText } = require('~/server/utils/kadeReadableText');
 
 // Agent replies bypass BaseClient's saveMessage meter and often have content
 // parts instead of a text field. Observe the final transmitted reply here.
@@ -829,7 +832,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: scrubMessageForTransmit({ ...response }),
+            responseMessage: withReadableText(scrubMessageForTransmit({ ...response })),
           };
           logAgentReplyTells(finalEvent.responseMessage, req);
 
@@ -895,7 +898,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: scrubMessageForTransmit({ ...response, unfinished: true }),
+            responseMessage: withReadableText(
+              scrubMessageForTransmit({ ...response, unfinished: true }),
+            ),
           };
 
           logger.debug(`[ResumableAgentController] Emitting ABORTED FINAL event`, {
@@ -1301,7 +1306,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         conversation,
         title: conversation.title,
         requestMessage: sanitizeMessageForTransmit(userMessage),
-        responseMessage: finalResponse,
+        responseMessage: withReadableText(finalResponse), // the saved copy below stays without it
       });
       res.end();
 
@@ -1333,7 +1338,7 @@ const _LegacyAgentController = async (req, res, next, initializeClient, addTitle
         conversation,
         title: conversation.title,
         requestMessage: sanitizeMessageForTransmit(userMessage),
-        responseMessage: finalResponse,
+        responseMessage: withReadableText(finalResponse), // the saved copy below stays without it
         error: { message: 'Request was aborted during completion' },
       });
       res.end();

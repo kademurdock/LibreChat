@@ -11,7 +11,13 @@ import { useAuthContext, useLocalize } from '~/hooks';
 import { useLiveAnnouncer } from '~/Providers';
 import { globalAudioId } from '~/common';
 import store from '~/store';
-import { generationRate, voiceCacheKey, voiceCacheText, storeVoiceAudio } from '~/utils/voicePace';
+import {
+  generationRate,
+  voiceCacheKey,
+  voiceCacheText,
+  storeVoiceAudio,
+  deliveryFor,
+} from '~/utils/voicePace';
 import { consumeSpeechAudio, speechAudioBlob, playOrReport } from '~/hooks/Audio/speech';
 import { useSpeechRequest } from '~/hooks/Audio/request';
 import { claimVoice } from '~/hooks/Audio/voiceFocus';
@@ -30,6 +36,7 @@ export default function StreamAudio({ index = 0 }) {
   const voiceSpeed = useRecoilValue(store.voiceSpeed);
   const speed = generationRate(voiceSpeed, pacePreference);
   const fillers = useRecoilValue(store.voiceFillers);
+  const deliveryByAgent = useRecoilValue(store.voiceDeliveryByAgent); // Nov 12 2026, decision 24
   const [portraitsOn] = useVoicePortraitPreference();
   const activeRunId = useRecoilValue(store.activeRunFamily(index));
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
@@ -143,7 +150,11 @@ export default function StreamAudio({ index = 0 }) {
         /* Nov 12 2026 (WEB-1): keyed on the words spoken. Agent replies have an empty `text`, and
          * one shared key made every later reply play the first reply's audio. */
         const spokenText = voiceCacheText(latestMessage);
-        const cacheKey = spokenText ? voiceCacheKey(spokenText, voice, speed, fillers) : '';
+        /* Nov 12 2026 (decision 24): her delivery for this character, set on any device. */
+        const delivery = deliveryFor(deliveryByAgent, messageCharacterId(latestMessage));
+        const cacheKey = spokenText
+          ? voiceCacheKey(spokenText, voice, speed, fillers, delivery)
+          : '';
         const cache = await caches.open('tts-responses');
         const cachedResponse = cacheKey ? await cache.match(cacheKey) : undefined;
         if (!speechRequest.isCurrent(controller)) return;
@@ -171,6 +182,7 @@ export default function StreamAudio({ index = 0 }) {
             // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
             speed,
             fillers, // Oct 16 2026: the listener's filler switch
+            ...(delivery ? { delivery } : {}),
             // Nov 11 2026: Inworld's mouth shapes for the face, asked only while one will be drawn.
             ...(portraitsOn && messageCharacterId(latestMessage) && faceTimingsAllowed()
               ? { timing: true }
@@ -218,7 +230,7 @@ export default function StreamAudio({ index = 0 }) {
             (msg) => msg.messageId === latestMessage?.messageId,
           );
           const savedText = voiceCacheText(targetMessage ?? latestMessage);
-          void storeVoiceAudio(cache, savedText, voice, speed, fillers, audioBlob);
+          void storeVoiceAudio(cache, savedText, voice, speed, fillers, audioBlob, delivery);
         }
 
         logger.log('Audio stream reading ended');
@@ -253,6 +265,7 @@ export default function StreamAudio({ index = 0 }) {
     voice,
     speed,
     fillers,
+    deliveryByAgent,
     portraitsOn,
     token,
     speechRequest,

@@ -12,6 +12,7 @@ import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
 import useSpeechSettingsInit from './useSpeechSettingsInit';
+import useListenerVoiceSync from './useListenerVoiceSync';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
 
@@ -29,6 +30,7 @@ export default function useAppStartup({
   });
 
   useSpeechSettingsInit(!!user);
+  useListenerVoiceSync(!!user); // Nov 12 2026 (decision 24): voice speed, fillers, delivery per account
   const { data: loadedServers, isLoading: serversLoading } = useMCPServersQuery({
     enabled: canUseMcp,
   });

@@ -4,7 +4,7 @@ import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { generationRate, voiceCacheKey, storeVoiceAudio } from '~/utils/voicePace';
+import { generationRate, voiceCacheKey, storeVoiceAudio, deliveryFor } from '~/utils/voicePace';
 import { speechAudioFile, speechAudioBlob } from '~/hooks/Audio/speech';
 import { claimVoice } from '~/hooks/Audio/voiceFocus';
 import {
@@ -20,12 +20,15 @@ const createFormData = (
   speed: number,
   fillers: boolean,
   timing: boolean,
+  delivery?: string,
 ) => {
   const formData = new FormData();
   formData.append('input', text);
   formData.append('voice', voice);
   formData.append('speed', String(speed)); // Kade D2d: agent speaking rate
   formData.append('fillers', String(fillers)); // Oct 16 2026: the listener's filler switch
+  // Nov 12 2026 (decision 24): her delivery for this character, set on any device.
+  if (delivery) formData.append('delivery', delivery);
   // Nov 11 2026: Inworld's mouth shapes ride inside the WAV for the face (timing-track.mjs).
   if (timing) formData.append('timing', 'true');
   return formData;
@@ -56,6 +59,7 @@ function useTextToSpeechExternal({
   const pacePreference = useRecoilValue(store.voicePacePreference);
   const speed = generationRate(voiceSpeed, pacePreference);
   const fillers = useRecoilValue(store.voiceFillers);
+  const delivery = deliveryFor(useRecoilValue(store.voiceDeliveryByAgent), characterId);
   const [portraitsOn] = useVoicePortraitPreference();
 
   const [downloadFile, setDownloadFile] = useState(false);
@@ -143,6 +147,7 @@ function useTextToSpeechExternal({
             Number(variables.get('speed') ?? 1),
             variables.get('fillers') !== 'false',
             audioBlob,
+            (variables.get('delivery') as string | null) ?? undefined,
           );
         }
 
@@ -170,7 +175,7 @@ function useTextToSpeechExternal({
     // Only while a face will be drawn for this message; the audio is the same either way.
     // A download is a file to keep, not a face to draw, so it never asks.
     const timing = !download && portraitsOn && !!characterId && faceTimingsAllowed();
-    const formData = createFormData(text, voice ?? '', speed, fillers, timing);
+    const formData = createFormData(text, voice ?? '', speed, fillers, timing, delivery);
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -184,7 +189,9 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(voiceCacheKey(text, voice, speed, fillers));
+    const cachedResponse = await caches.match(
+      voiceCacheKey(text, voice, speed, fillers, delivery),
+    );
     if (!cachedResponse) {
       return startMutation(text, download);
     }
