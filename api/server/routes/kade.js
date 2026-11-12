@@ -2600,19 +2600,30 @@ router.post('/agent-default/assign', async (req, res) => {
 });
 
 const { getUserVoicePrefs, setUserVoicePref } = require('~/models/kadeVoicePref');
+/* Nov 12 2026 (Kade's decision 24): the listener's own pace, fillers and delivery follow the account.
+ * GET keeps { prefs } exactly and adds a sibling `listener`; PUT writes it (POST with { listener } and no
+ * agentId does the same). Rules and the kill switch (KADE_LISTENER_PREFS=0) in kadeListenerPrefs.js. */
+const { createListenerPrefsHandlers } = require('~/server/services/kadeListenerPrefs');
+const listenerPrefs = createListenerPrefsHandlers(
+  {
+    getVoicePrefs: (userId) => getUserVoicePrefs(userId),
+    getListener: (userId) => require('~/models/kadeListenerPref').getListenerPref(userId),
+    updateListener: (userId, update) =>
+      require('~/models/kadeListenerPref').updateListenerPref(userId, update),
+  },
+  logger,
+);
 
-router.get('/voice-prefs', requireJwtAuth, async (req, res) => {
-  try {
-    return res.json({ prefs: await getUserVoicePrefs(req.user.id) });
-  } catch (e) {
-    logger.error('[kade/voice-prefs] get failed:', e);
-    return res.status(500).json({ error: 'Could not load voice preferences' });
-  }
-});
+router.get('/voice-prefs', requireJwtAuth, listenerPrefs.getPrefs);
+
+router.put('/voice-prefs', requireJwtAuth, (req, res) => listenerPrefs.putListener(req, res));
 
 router.post('/voice-prefs', requireJwtAuth, async (req, res) => {
   try {
     const { agentId, voice } = req.body || {};
+    if (!agentId && req.body && req.body.listener && typeof req.body.listener === 'object') {
+      return listenerPrefs.putListener(req, res, req.body.listener);
+    }
     if (!agentId) {
       return res.status(400).json({ error: 'agentId required' });
     }

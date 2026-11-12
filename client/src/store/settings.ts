@@ -95,6 +95,11 @@ const localStorageAtoms = {
    * breathe or laugh a little in what you HEAR (the text never changes); off = sent as
    * fillers:false on every chat and audition request. Reading lanes never get them. */
   voiceFillers: atomWithLocalStorage<boolean>('voiceFillers', true),
+  /** Nov 12 2026 (Kade's decision 24): the listener's delivery per character (Steady STABLE, Balanced
+   * BALANCED, Lively CREATIVE), as she set it on her phone. Comes from the account
+   * (useListenerVoiceSync); the website has no delivery control yet. Sent as `delivery` on this
+   * character's speech requests; no entry = the proxy's default, exactly as before. */
+  voiceDeliveryByAgent: atomWithLocalStorage<Record<string, string>>('voiceDeliveryByAgent', {}),
   cacheTTS: atomWithLocalStorage('cacheTTS', true),
 
   // Account settings
