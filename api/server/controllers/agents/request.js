@@ -294,6 +294,39 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     }
   };
 
+  /* TURN-4 (turn audit, Nov 12 2026). streamId IS the conversationId, so the next turn on this
+   * conversation takes over the same id (createJob silently replaces). Every emitDone / emitError /
+   * completeJob below acts on whoever owns the id NOW, so each one asks this first, AFTER its last
+   * real await (settleTask, the title event). Returns the newer job's createdAt, or null when the
+   * stream is still ours OR nobody owns it: absent is NOT replaced (Aug 23 rule, see below).
+   * In-memory store: only microtasks run between this check and completeJob's abort, so no new
+   * request can slip in. Redis store: the window shrinks to one round trip, it does not close.
+   * Fails open: a lookup error reads as "still ours", because silence is the worse failure. */
+  let jobCreatedAt = null;
+  const newerJobCreatedAt = async () => {
+    if (jobCreatedAt == null) {
+      return null;
+    }
+    try {
+      const currentJob = await GenerationJobManager.getJob(streamId);
+      return currentJob && currentJob.createdAt !== jobCreatedAt ? currentJob.createdAt : null;
+    } catch (error) {
+      logger.warn(
+        `[ResumableAgentController] Job ownership check failed for ${streamId}: ${error.message}`,
+      );
+      return null;
+    }
+  };
+
+  /* TURN-9: notes this turn took but did not get to say go back for the next turn. Runs before
+   * disposeClient; safe to call twice (the ids are cleared on the first call). */
+  const putBackNotes = () => {
+    const ids = client?._kadeTakenNudgeIds;
+    if (!ids || !ids.length) return;
+    client._kadeTakenNudgeIds = [];
+    require('~/server/services/kadeNudges').releaseChatNudges(ids).catch(() => {});
+  };
+
   try {
     // Continue/regenerate reuse message IDs intentionally; they need a new explicit requestId.
     if (req.body.requestId || (!isRegenerate && !isContinued && !editedContent)) {
@@ -346,7 +379,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     createdTaskJob = true;
-    const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+    jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     if (taskId) {
       await getTaskReceipts().bind(taskOwner, taskId, jobCreatedAt);
       await GenerationJobManager.updateMetadata(streamId, { taskId });
@@ -460,7 +493,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     if (job.abortController.signal.aborted) {
       await settleTask('stopped');
-      GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      // TURN-4: Stop-then-speak during tool loading. A newer turn may own this id by now;
+      // completeJob would abort ITS generation and mark it errored.
+      if (!(await newerJobCreatedAt())) {
+        GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
+      }
       await finishResumableRequest(req, userId);
       return;
     }
@@ -718,18 +755,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // construction: eventTransport is deliberately NOT torn down on abort
         // ("let the abort event fully transmit first"), emitDone/completeJob
         // both guard on missing runtime, and updateJob no-ops on a missing job.
-        const currentJob = await GenerationJobManager.getJob(streamId);
-        const jobWasReplaced = !!currentJob && currentJob.createdAt !== jobCreatedAt;
-
-        if (jobWasReplaced) {
-          await settleTask('stopped', {
-            userMessageId: userMessage?.messageId,
-            responseMessageId: response?.messageId,
-          });
+        //
+        // TURN-4 (Nov 12 2026): asked here AND again right before each emitDone
+        // below. The awaits in between (settleTask, the title event) are where
+        // a newer turn on this conversation can start; emitDone would hand it
+        // THIS turn's final event and completeJob would abort its generation.
+        const stepAside = async ({ settle, currentCreatedAt }) => {
+          putBackNotes(); // TURN-9: this reply is never shown
+          if (settle) {
+            await settleTask('stopped', {
+              userMessageId: userMessage?.messageId,
+              responseMessageId: response?.messageId,
+            });
+          }
           logger.debug(`[ResumableAgentController] Skipping FINAL emit - job was replaced`, {
             streamId,
             originalCreatedAt: jobCreatedAt,
-            currentCreatedAt: currentJob?.createdAt,
+            currentCreatedAt,
           });
           // Discard the stale title from this replaced stream: cancel it and
           // unblock its persistence wait without letting it save (the newer job
@@ -750,6 +792,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } else if (client) {
             disposeClient(client);
           }
+        };
+
+        const replacedAtTail = await newerJobCreatedAt();
+        if (replacedAtTail) {
+          await stepAside({ settle: true, currentCreatedAt: replacedAtTail });
           return;
         }
 
@@ -772,6 +819,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         if (!wasAbortedBeforeComplete) {
+          if (client?._kadeTurnFailed) putBackNotes(); // TURN-9: error part or recursion line
           await settleTask('completed', {
             userMessageId: userMessage?.messageId,
             responseMessageId: response?.messageId,
@@ -813,6 +861,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           })();
 
+          // TURN-4: last look. Nothing between here and completeJob's abort does real I/O
+          // on the in-memory store. The receipt above already says 'completed' and the reply is saved.
+          const replacedBeforeFinal = await newerJobCreatedAt();
+          if (replacedBeforeFinal) {
+            await stepAside({ settle: false, currentCreatedAt: replacedBeforeFinal });
+            return;
+          }
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
 
@@ -830,6 +885,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await finishResumableRequest(req, userId);
         } else {
+          putBackNotes(); // TURN-9: stopped
           await settleTask('stopped', {
             userMessageId: userMessage?.messageId,
             responseMessageId: response?.messageId,
@@ -850,6 +906,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversationId: conversation?.conversationId,
           });
 
+          const replacedBeforeAbortedFinal = await newerJobCreatedAt();
+          if (replacedBeforeAbortedFinal) {
+            await stepAside({ settle: false, currentCreatedAt: replacedBeforeAbortedFinal });
+            return;
+          }
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
           await finishResumableRequest(req, userId);
@@ -888,6 +949,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         }
       } catch (error) {
+        putBackNotes(); // TURN-9: failed or stopped before a reply
         // Any failure (user Stop, or a preflight/quota failure before the run is
         // even created) must cancel the title and unblock its waits: the title's
         // `_waitForRun` would otherwise never resolve, deferring client disposal
@@ -898,13 +960,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         acceptsTitleEvents = false;
         resolveConvoReady();
 
-        // Check if this was an abort (not a real error)
-        const wasAborted = job.abortController.signal.aborted || error.message?.includes('abort');
+        // Check if this was an abort (not a real error).
+        /* TURN-4: only the real stop signal counts. An internal timeout's AbortError used to
+         * read as a stop here, emit nothing, and leave the stream open until the 20-minute
+         * stale-job reaper. abortJob aborts this controller before anything can throw. */
+        const wasAborted = job.abortController.signal.aborted;
         await settleTask(wasAborted ? 'stopped' : 'failed');
+        const replacedAfterError = wasAborted ? null : await newerJobCreatedAt();
 
         if (wasAborted) {
           logger.debug(`[ResumableAgentController] Generation aborted for ${streamId}`);
           // abortJob already handled emitDone and completeJob
+        } else if (replacedAfterError) {
+          logger.error(
+            `[ResumableAgentController] Generation error for ${streamId} (job replaced, not emitted):`,
+            error,
+          );
         } else {
           logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
           await GenerationJobManager.emitError(
@@ -934,16 +1005,22 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     // Start generation and handle any unhandled errors
     startGeneration().catch(async (err) => {
+      putBackNotes();
       await settleTask('failed');
       logger.error(
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
-      GenerationJobManager.completeJob(streamId, friendlyTurnError(err.message));
+      // TURN-4: never close a newer turn's job from a stale turn's last-resort handler.
+      if (!(await newerJobCreatedAt())) {
+        GenerationJobManager.completeJob(streamId, friendlyTurnError(err.message));
+      }
       await finishResumableRequest(req, userId);
     });
   } catch (error) {
     await settleTask('failed');
     logger.error('[ResumableAgentController] Initialization error:', error);
+    // TURN-4: e.g. initializeClient rejecting after a Stop, with the next turn already on this id.
+    const supersededAtInit = createdTaskJob && !!(await newerJobCreatedAt());
     if (!res.headersSent) {
       res.status(error instanceof TaskConflict ? 409 : 503).json({
         error:
@@ -951,11 +1028,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             ? error.message
             : 'The request could not be started safely. Check Saved replies before sending again.',
       });
-    } else if (createdTaskJob) {
+    } else if (createdTaskJob && !supersededAtInit) {
       // JSON already sent, emit error to stream so client can receive it
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
-    if (createdTaskJob) GenerationJobManager.completeJob(streamId, error.message);
+    if (createdTaskJob && !supersededAtInit) GenerationJobManager.completeJob(streamId, error.message);
     await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);

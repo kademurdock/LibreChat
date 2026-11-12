@@ -122,6 +122,23 @@ function kadeStepLimit(resolved, stepBudget, maxRecursionLimit) {
   return Number.isFinite(maxRecursionLimit) && maxRecursionLimit > 0 ? Math.min(wanted, maxRecursionLimit) : wanted;
 }
 
+/** TURN-8 (turn audit, Nov 12 2026): start a turn read now and collect it later. Never rejects, so a
+ * read that fails while the turn waits on another one can never become an unhandled rejection. */
+function kadeStart(work) {
+  return Promise.resolve()
+    .then(work)
+    .then(
+      (value) => ({ ok: true, value }),
+      (error) => ({ ok: false, error }),
+    );
+}
+/** The started read's value, or its error thrown HERE, inside the caller's own try/catch. */
+async function kadeTake(started) {
+  const outcome = await started;
+  if (!outcome.ok) throw outcome.error;
+  return outcome.value;
+}
+
 /**
  * KADE turn audit TURN-1 (Nov 12 2026): how long a reply's FINAL event waits for the memory keeper.
  * The keeper starts beside the reply and usually outlasts it (Jev gate, then glm-5.3-flash, ~8 s
@@ -653,77 +670,55 @@ class AgentClient extends BaseClient {
      * cost model as conversation compacting. Truly per-turn context (nudges)
      * stays in the dynamic tail (`volatileTurnContext`), exactly what the
      * tail is for. */
+    /* TURN-8: these reads used to run one after another. They are independent, so they START
+     * together and each block below only COLLECTS its result, in the old order, with the old gates,
+     * catches and log lines: head and tail are byte-identical. Reads that never needed the memory
+     * gate start before useMemory; every memory-gated read still starts only after it answers. */
+    const kadeReadsStartedAt = Date.now();
+    const kadeReq = this.options.req;
+    const kadeAgentId = this.options.agent?.id;
+    const kadeRealAgent = Boolean(kadeAgentId) && !isEphemeralAgentId(kadeAgentId);
+    const early = {
+      canon: kadeStart(() => require('~/server/services/kadeCanon').getCanonBlock(kadeAgentId)),
+      care: kadeStart(() => {
+        const { getCareNoteBlock } = require('~/models/kadeCareNote');
+        const { ownsPrivateMemory } = require('@librechat/api');
+        return ownsPrivateMemory(kadeReq) ? getCareNoteBlock(kadeReq.user.id, kadeAgentId) : '';
+      }),
+      who: kadeStart(() => require('~/server/services/kadeCircle').getWhoBlock(kadeReq)),
+      configServers: kadeStart(() => resolveConfigServers(kadeReq)),
+      agentScoped: kadeStart(() =>
+        buildAgentScopedContext({
+          agentIds: allAgents.map(({ agentId }) => agentId),
+          attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+          sharedRunAttachmentIds,
+          req: kadeReq,
+          tokenCountFn: (text) => countTokens(text),
+        }),
+      ),
+    };
     const withoutKeys = await this.useMemory();
-    /** KADE Aug 15 2026 (Part 69, rung 1 — RELEVANT RECALL): when card recall
-     * is live for this character, the head carries only the PINNED CORE
-     * (shared cards + reminders + identity-critical keys — the facts that must
-     * never miss); everything else surfaces per-turn by meaning in the tail
-     * block below, beside the diary. Kill switch KADE_MEMORY_RAG: off means
-     * cardSplit stays null and this block behaves byte-identically to before.
-     * The pinned block is byte-stable between turns — cache religion holds. */
-    let cardSplit = null;
-    if (withoutKeys !== undefined) {
-      try {
+    const memoryOn = withoutKeys !== undefined;
+    const gated = {
+      split: kadeStart(() => {
+        if (!memoryOn) return null;
         const { cardRagActive, getMemorySplit } = require('~/server/services/kadeCardRecall');
-        if (cardRagActive(this.options.agent?.id)) {
-          cardSplit = await getMemorySplit(
-            this.options.req.user.id + '',
-            this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)
-              ? this.options.agent.id
-              : undefined,
-          );
-        }
-      } catch (splitError) {
-        logger.warn('[AgentClient] card split failed (full head rides):', splitError.message);
-        cardSplit = null;
-      }
-    }
-    let stableMemoryContext = cardSplit
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${cardSplit.pinnedBlock}`
-      : withoutKeys
-        ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
-        : undefined;
-    let volatileTurnContext;
-
-    /** KADE NUDGE ENGINE: pending 'chat'-channel nudges ride into this turn's
-     * context and get relayed naturally by the character (reminders the user
-     * asked for, birthday wishes, etc.). Marked delivered on pickup. Fail-soft:
-     * a nudge-store hiccup must never break a chat turn. One-shot per turn =
-     * genuinely volatile = stays in the dynamic tail.
-     *
-     * Sep 24 2026 (the approval flood, services/kadeNudgeTurn.js): the block
-     * used to say "deliver these near the START of your reply"; two librarian
-     * replies opened with an approval pile and skipped the catalog search they
-     * were asked for. The person's message comes first now, tools included.
-     * The notes ride only the agent the person is talking to, and a turn run
-     * for someone else or a hidden run (req.kadeHiddenRun) never takes them. */
-    let nudgeTurnContext;
-    try {
-      const { ownsNudgePickup, nudgePickupOptions, waitingNotesBlock } = require('~/server/services/kadeNudgeTurn');
-      if (ownsNudgePickup(this.options.req)) {
+        return cardRagActive(kadeAgentId)
+          ? getMemorySplit(kadeReq.user.id + '', kadeRealAgent ? kadeAgentId : undefined)
+          : null;
+      }),
+      /* Nudges stay after useMemory: a turn that fails there never takes them. */
+      nudges: kadeStart(async () => {
+        const { ownsNudgePickup, nudgePickupOptions, waitingNotesBlock } = require('~/server/services/kadeNudgeTurn');
+        if (!ownsNudgePickup(kadeReq)) return undefined;
         const { takePendingChatNudges } = require('~/server/services/kadeNudges');
-        nudgeTurnContext = waitingNotesBlock(
-          await takePendingChatNudges(this.options.req.user.id, 5, nudgePickupOptions(this.options.req, this.options.agent?.id)),
-        );
-      }
-    } catch (nudgeError) {
-      logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
-    }
-
-    /** KADE LIVING DIARY, retrieval half (Aug 7 2026 — her four design answers
-     * locked in MEMORY_TIERED_DIARY_DESIGN_2026-08-07.md): semantic lookup of
-     * the Tier-2 archive against what the user just said, top-3, similarity-
-     * gated, ~1.2K chars max. Retrieved entries CHANGE per turn = volatile =
-     * they ride the TAIL beside nudges, never the stable head — the prefix
-     * cache stays intact (Part 14 religion). Empty archive short-circuits
-     * before any network call; the whole lookup races a 2.5s timeout.
-     * Kill switch: KADE_DIARY=0. Fail-soft: a diary-less turn beats a broken
-     * or slow one. */
-    /* Gate: useMemory() returns undefined when the user's personalization
-     * toggle or access says no — then the diary stays closed too, read side
-     * included. */
-    if (withoutKeys !== undefined) {
-      try {
+        const taken = await takePendingChatNudges(kadeReq.user.id, 5, nudgePickupOptions(kadeReq, kadeAgentId));
+        /* TURN-9: kept so a turn that never says them can put them back (request.js). */
+        this._kadeTakenNudgeIds = (taken || []).map((nudge) => String(nudge._id));
+        return waitingNotesBlock(taken);
+      }),
+      recall: kadeStart(async () => {
+        if (!memoryOn) return null;
         /** Part 69: ONE lookup builds the whole recall tail — memory cards
          * (when rung 1 is on for this agent) AND diary entries share a single
          * query embed. With KADE_MEMORY_RAG off this is exactly the old
@@ -743,15 +738,117 @@ class AgentClient extends BaseClient {
         );
         const earlierUserMessage =
           userMessages.length >= 2 ? userMessages[userMessages.length - 2] : undefined;
-        const { block: recallBlock } = await getRecallTailBlock({
-          userId: this.options.req.user.id,
-          agentId: this.options.agent?.id,
-          userText: recallQuery.recallTurnText(this.options.req?.body?.text, latestUserText),
+        const { block } = await getRecallTailBlock({
+          userId: kadeReq.user.id,
+          agentId: kadeAgentId,
+          userText: recallQuery.recallTurnText(kadeReq?.body?.text, latestUserText),
           previousUserText:
             typeof earlierUserMessage?.text === 'string' ? earlierUserMessage.text : '',
           agentName: this.options.agent?.name,
-          req: this.options.req,
+          req: kadeReq,
         });
+        return block;
+      }),
+      summary: kadeStart(() => {
+        const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
+        return memoryOn ? getRelationshipSummaryBlock(kadeReq.user.id, kadeAgentId) : '';
+      }),
+      people: kadeStart(() => {
+        if (!memoryOn || !kadeRealAgent) return '';
+        const { getPeopleRecognitionBlock, peopleOffRecord } = require('@librechat/api');
+        const userTurns = orderedMessages
+          .filter((message) => message.isCreatedByUser === true || message.role === 'user')
+          .map((message) => (typeof message.text === 'string' ? message.text : ''));
+        const userText =
+          typeof kadeReq?.body?.text === 'string'
+            ? kadeReq.body.text
+            : [...orderedMessages]
+                .reverse()
+                .find((message) => message.isCreatedByUser === true || message.role === 'user')?.text || '';
+        return getPeopleRecognitionBlock({
+          userId: String(kadeReq.user.id),
+          agentId: kadeAgentId,
+          userText,
+          conversationId: this.conversationId,
+          offRecord: this.memoryOffRecord || peopleOffRecord([...userTurns, userText]),
+        });
+      }),
+      soul: kadeStart(() => {
+        if (!memoryOn || !kadeRealAgent) return { block: '', recalledIds: [] };
+        const { getSoulTailBlock } = require('~/server/services/kadeSoul');
+        const latestUserText =
+          typeof kadeReq?.body?.text === 'string'
+            ? kadeReq.body.text
+            : [...orderedMessages].reverse().find((message) => message.isCreatedByUser === true)?.text || '';
+        return getSoulTailBlock({
+          userId: String(kadeReq.user.id),
+          agentId: kadeAgentId,
+          req: kadeReq,
+          conversationId: this.conversationId,
+          userText: latestUserText,
+          offRecord: this.memoryOffRecord,
+        });
+      }),
+    };
+    /** KADE Aug 15 2026 (Part 69, rung 1 — RELEVANT RECALL): when card recall
+     * is live for this character, the head carries only the PINNED CORE
+     * (shared cards + reminders + identity-critical keys — the facts that must
+     * never miss); everything else surfaces per-turn by meaning in the tail
+     * block below, beside the diary. Kill switch KADE_MEMORY_RAG: off means
+     * cardSplit stays null and this block behaves byte-identically to before.
+     * The pinned block is byte-stable between turns — cache religion holds. */
+    let cardSplit = null;
+    if (memoryOn) {
+      try {
+        cardSplit = await kadeTake(gated.split);
+      } catch (splitError) {
+        logger.warn('[AgentClient] card split failed (full head rides):', splitError.message);
+        cardSplit = null;
+      }
+    }
+    let stableMemoryContext = cardSplit
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${cardSplit.pinnedBlock}`
+      : withoutKeys
+        ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
+        : undefined;
+    let volatileTurnContext;
+
+    /** KADE NUDGE ENGINE: pending 'chat'-channel nudges ride into this turn's
+     * context and get relayed naturally by the character (reminders the user
+     * asked for, birthday wishes, etc.). Marked delivered on pickup; a turn that is
+     * stopped, fails or is replaced puts them back (TURN-9, request.js). Fail-soft:
+     * a nudge-store hiccup must never break a chat turn. One-shot per turn =
+     * genuinely volatile = stays in the dynamic tail.
+     *
+     * Sep 24 2026 (the approval flood, services/kadeNudgeTurn.js): the block
+     * used to say "deliver these near the START of your reply"; two librarian
+     * replies opened with an approval pile and skipped the catalog search they
+     * were asked for. The person's message comes first now, tools included.
+     * The notes ride only the agent the person is talking to, and a turn run
+     * for someone else or a hidden run (req.kadeHiddenRun) never takes them. */
+    let nudgeTurnContext;
+    try {
+      nudgeTurnContext = await kadeTake(gated.nudges);
+    } catch (nudgeError) {
+      logger.warn('[AgentClient] pending-nudge pickup failed (non-fatal):', nudgeError.message);
+    }
+
+    /** KADE LIVING DIARY, retrieval half (Aug 7 2026 — her four design answers
+     * locked in MEMORY_TIERED_DIARY_DESIGN_2026-08-07.md): semantic lookup of
+     * the Tier-2 archive against what the user just said, top-3, similarity-
+     * gated, ~1.2K chars max. Retrieved entries CHANGE per turn = volatile =
+     * they ride the TAIL beside nudges, never the stable head — the prefix
+     * cache stays intact (Part 14 religion). Empty archive short-circuits
+     * before any network call; the whole lookup races a 2.5s timeout.
+     * Kill switch: KADE_DIARY=0. Fail-soft: a diary-less turn beats a broken
+     * or slow one. */
+    /* Gate: useMemory() returns undefined when the user's personalization
+     * toggle or access says no — then the diary stays closed too, read side
+     * included. */
+    if (memoryOn) {
+      try {
+        /* The lookup itself starts with the other gated reads above (gated.recall). */
+        const recallBlock = await kadeTake(gated.recall);
         if (recallBlock) {
           volatileTurnContext = volatileTurnContext
             ? `${volatileTurnContext}\n\n${recallBlock}`
@@ -768,11 +865,7 @@ class AgentClient extends BaseClient {
      * paragraph -> negligible tokens. Fail-soft: never breaks a chat turn.
      * Changes after sweeps, not per turn -> rides the STABLE head. */
     try {
-      const { getRelationshipSummaryBlock } = require('~/server/services/kadeMemorySummary');
-      const summaryBlock = withoutKeys === undefined ? '' : await getRelationshipSummaryBlock(
-        this.options.req.user.id,
-        this.options.agent?.id,
-      );
+      const summaryBlock = await kadeTake(gated.summary);
       if (summaryBlock) {
         stableMemoryContext = stableMemoryContext
           ? `${stableMemoryContext}\n\n${summaryBlock}`
@@ -782,22 +875,9 @@ class AgentClient extends BaseClient {
       logger.warn('[AgentClient] episodic-summary inject failed (non-fatal):', summaryError.message);
     }
 
-    if (withoutKeys !== undefined && this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)) {
+    if (memoryOn && kadeRealAgent) {
       try {
-        const { getPeopleRecognitionBlock, peopleOffRecord } = require('@librechat/api');
-        const userTurns = orderedMessages
-          .filter(message => message.isCreatedByUser === true || message.role === 'user')
-          .map(message => typeof message.text === 'string' ? message.text : '');
-        const userText = typeof this.options.req?.body?.text === 'string'
-          ? this.options.req.body.text
-          : [...orderedMessages].reverse().find(message => message.isCreatedByUser === true || message.role === 'user')?.text || '';
-        const peopleBlock = await getPeopleRecognitionBlock({
-          userId: String(this.options.req.user.id),
-          agentId: this.options.agent.id,
-          userText,
-          conversationId: this.conversationId,
-          offRecord: this.memoryOffRecord || peopleOffRecord([...userTurns, userText]),
-        });
+        const peopleBlock = await kadeTake(gated.people);
         if (peopleBlock) {
           volatileTurnContext = [volatileTurnContext, peopleBlock].filter(Boolean).join('\n\n');
         }
@@ -812,21 +892,9 @@ class AgentClient extends BaseClient {
      * rides the tail; the head stays byte-stable. Same gates as memory (see
      * services/kadeSoul.js). Kill: KADE_SOUL=0. */
     this._kadeSoulRecalled = [];
-    if (withoutKeys !== undefined && this.options.agent?.id && !isEphemeralAgentId(this.options.agent.id)) {
+    if (memoryOn && kadeRealAgent) {
       try {
-        const { getSoulTailBlock } = require('~/server/services/kadeSoul');
-        const latestUserText =
-          typeof this.options.req?.body?.text === 'string'
-            ? this.options.req.body.text
-            : [...orderedMessages].reverse().find(message => message.isCreatedByUser === true)?.text || '';
-        const { block: soulBlock, recalledIds } = await getSoulTailBlock({
-          userId: String(this.options.req.user.id),
-          agentId: this.options.agent.id,
-          req: this.options.req,
-          conversationId: this.conversationId,
-          userText: latestUserText,
-          offRecord: this.memoryOffRecord,
-        });
+        const { block: soulBlock, recalledIds } = await kadeTake(gated.soul);
         this._kadeSoulRecalled = recalledIds;
         if (soulBlock) {
           volatileTurnContext = [volatileTurnContext, soulBlock].filter(Boolean).join('\n\n');
@@ -871,8 +939,7 @@ class AgentClient extends BaseClient {
      * head above discards whenever card recall is on (it is on for every agent),
      * so it moved here. Empty canon injects nothing. Fail-soft. */
     try {
-      const { getCanonBlock } = require('~/server/services/kadeCanon');
-      const canonBlock = await getCanonBlock(this.options.agent?.id);
+      const canonBlock = await kadeTake(early.canon);
       if (canonBlock) {
         stableMemoryContext = stableMemoryContext
           ? `${stableMemoryContext}\n\n${canonBlock}`
@@ -886,11 +953,7 @@ class AgentClient extends BaseClient {
      * never visible in the person's memory panel (its own collection), read
      * only here and by the admin routes. Stable per relationship -> head. */
     try {
-      const { getCareNoteBlock } = require('~/models/kadeCareNote');
-      const { ownsPrivateMemory } = require('@librechat/api');
-      const careBlock = ownsPrivateMemory(this.options.req)
-        ? await getCareNoteBlock(this.options.req.user.id, this.options.agent?.id)
-        : '';
+      const careBlock = await kadeTake(early.care);
       if (careBlock) {
         stableMemoryContext = stableMemoryContext
           ? `${stableMemoryContext}\n\n${careBlock}`
@@ -903,13 +966,7 @@ class AgentClient extends BaseClient {
     const sharedRunContext = sharedRunContextParts.join('\n\n');
     const memoryAgentEnabled = isMemoryAgentEnabled(this.options.req.config?.memory);
 
-    const agentScopedContext = await buildAgentScopedContext({
-      agentIds: allAgents.map(({ agentId }) => agentId),
-      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
-      sharedRunAttachmentIds,
-      req: this.options.req,
-      tokenCountFn: (text) => countTokens(text),
-    });
+    const agentScopedContext = await kadeTake(early.agentScoped);
 
     /** Preserve prompt token counts for graph formatting and pruning. */
     this.indexTokenCountMap = indexTokenCountMap;
@@ -944,7 +1001,7 @@ class AgentClient extends BaseClient {
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
 
-    const configServers = await resolveConfigServers(this.options.req);
+    const configServers = await kadeTake(early.configServers);
 
     /** KADE Oct 29 2026 — WHO YOU ARE TALKING WITH. Kade's report: Kiana kept asking her
      * "want me to mention this to Kade?" during bug reports; nothing in any background said
@@ -954,20 +1011,43 @@ class AgentClient extends BaseClient {
      * head after the shared parts. Kill: KADE_WHO_LINE=0. */
     let kadeWhoBlock = '';
     try {
-      const { getWhoBlock } = require('~/server/services/kadeCircle');
-      kadeWhoBlock = await getWhoBlock(this.options.req);
+      kadeWhoBlock = await kadeTake(early.who);
     } catch (_e) {
       /* a turn without the who line beats a broken turn */
     }
+    logger.debug(`[AgentClient] context reads ${Date.now() - kadeReadsStartedAt} ms`);
 
     await Promise.all(
       allAgents.map(async ({ agent, agentId }) => {
         const agentRunContextParts = [sharedRunContext];
         const { ownsPrivateMemory } = require('@librechat/api');
         const privateContextAllowed = ownsPrivateMemory(this.options.req);
-        const currentConversation = privateContextAllowed
-          ? await db.getConvo(String(this.options.req.user.id), this.conversationId)
-          : undefined;
+        const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
+        const isBareProbe = String(agent.instructions || '').includes('KADE BARE PROBE');
+        /* TURN-8: this agent's head reads start together and are collected where they were read. */
+        const kadeTurnReq = this.options.req;
+        const reads = {
+          convo: kadeStart(() => {
+            if (!privateContextAllowed) return undefined;
+            /* request.js already read this conversation (attachConversationCreatedAt). Reuse it only
+             * when it is this client's conversation; anything else reads it as before. */
+            const seen = kadeTurnReq.resolvedConversation;
+            if (seen && String(seen.conversationId) === String(this.conversationId)) return seen;
+            return db.getConvo(String(kadeTurnReq.user.id), this.conversationId);
+          }),
+          world: kadeStart(() => (isBareProbe ? '' : getWorldBlock(agentId))),
+          life: kadeStart(() => {
+            const { getCharacterLifeBlock } = require('~/server/services/kadeCharacterDays');
+            return isBareProbe ? '' : getCharacterLifeBlock(agentId);
+          }),
+          anniversary: kadeStart(() =>
+            stableMemoryContext && memoryEligible && !isBareProbe && withoutKeys !== undefined
+              ? getAnniversaryLine(kadeTurnReq.user.id, agentId)
+              : '',
+          ),
+          body: kadeStart(() => (isBareProbe ? '' : bodyNoteFor(agentId))),
+        };
+        const currentConversation = await kadeTake(reads.convo);
         const workingProjectId = privateContextAllowed
           ? currentConversation?.chatProjectId || this.options.req.body.chatProjectId
           : undefined;
@@ -977,7 +1057,6 @@ class AgentClient extends BaseClient {
           agentRunContextParts.push(projectWork.context);
           agent.tools = [...(agent.tools || []).filter((t) => t.name !== 'project_documents'), projectWork.tool];
         }
-        const memoryEligible = agentId === this.options.agent.id || memoryAgentEnabled;
         /** KADE Aug 4 2026 — THE SHARED PLATFORM LAYER (her green light; plan doc
          * PLATFORM_PROMPT_LAYER_PLAN_2026-08-04 in her folder): ONE fork-side
          * constant carries the platform-wide mechanics every persona used to
@@ -1037,8 +1116,8 @@ class AgentClient extends BaseClient {
          * wardrobe. Receipts: the canary's hourly checks ran 4.4K prompt
          * tokens of mostly-note on a one-sentence answer (~$9.5/mo at
          * cache-missing hourly cadence); bare ≈ 500-700 tokens (~$1.2/mo),
-         * same model, same lane, same honest test. */
-        const isBareProbe = String(agent.instructions || '').includes('KADE BARE PROBE');
+         * same model, same lane, same honest test. (TURN-8: isBareProbe is read at
+         * the top of this agent's block, before its head reads start.) */
         if (!isBareProbe && !carriesPlatformNote(agent.instructions)) {
           headParts.push(KADE_PLATFORM_NOTE);
         }
@@ -1052,7 +1131,7 @@ class AgentClient extends BaseClient {
          * cache math and the kill switch (KADE_WORLD_PULSE=0). Fail-soft: an
          * empty string pushes nothing. */
         try {
-          const worldBlock = isBareProbe ? '' : await getWorldBlock(agentId);
+          const worldBlock = await kadeTake(reads.world);
           if (worldBlock) {
             headParts.push(worldBlock);
           }
@@ -1066,8 +1145,7 @@ class AgentClient extends BaseClient {
          * is one consistent someone; changes once a night, so the head caches.
          * Kill: KADE_CHARACTER_DAYS=0. */
         try {
-          const { getCharacterLifeBlock } = require('~/server/services/kadeCharacterDays');
-          const lifeBlock = isBareProbe ? '' : await getCharacterLifeBlock(agentId);
+          const lifeBlock = await kadeTake(reads.life);
           if (lifeBlock) {
             headParts.push(lifeBlock);
           }
@@ -1092,7 +1170,7 @@ class AgentClient extends BaseClient {
            * one scope-respecting, day-stable line when a memory card turns
            * exactly N months old today. See utils/kadeAnniversaries.js. */
           try {
-            const anniversaryLine = withoutKeys === undefined ? '' : await getAnniversaryLine(this.options.req.user.id, agentId);
+            const anniversaryLine = await kadeTake(reads.anniversary);
             if (anniversaryLine) {
               headParts.push(anniversaryLine);
             }
@@ -1106,7 +1184,7 @@ class AgentClient extends BaseClient {
          * like?" from the same words the screen reader speaks. Byte-stable per
          * agent until the body is saved again. Kill: KADE_BODY_NOTE=0. */
         try {
-          const bodyNote = isBareProbe ? '' : await bodyNoteFor(agentId);
+          const bodyNote = await kadeTake(reads.body);
           if (bodyNote) {
             headParts.push(bodyNote);
           }
@@ -2621,6 +2699,8 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId, name: err?.name, code: err?.code },
         );
       } else {
+        /* TURN-9: the reply is an error or the plain recursion line; waiting notes go back. */
+        this._kadeTurnFailed = true;
         logger.error(
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,

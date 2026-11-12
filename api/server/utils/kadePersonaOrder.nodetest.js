@@ -91,7 +91,9 @@ test('the guards that read agent.instructions still see the persona, not a rebui
    * persona. If the join ever moves above them they would silently stop
    * matching, and a bare probe would start carrying the whole wardrobe. */
   const join = CLIENT.indexOf('agent.instructions = headParts.filter(Boolean).join(');
-  const bareProbe = CLIENT.indexOf("includes('KADE BARE PROBE')", CLIENT.indexOf('const personaLast'));
+  /* TURN-8 (Nov 12 2026): isBareProbe is read at the top of each agent's block, before its head
+   * reads start, so look for it from the start of that block rather than from personaLast. */
+  const bareProbe = CLIENT.indexOf("includes('KADE BARE PROBE')", CLIENT.indexOf('allAgents.map(async ({ agent, agentId })'));
   /* Part 293: the guard is carriesPlatformNote now; the old 'PLATFORM (invisible'
    * check matched an opener the note had dropped, so it never fired. */
   const doubleGuard = CLIENT.indexOf('!carriesPlatformNote(agent.instructions)');

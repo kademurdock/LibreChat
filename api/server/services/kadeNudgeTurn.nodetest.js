@@ -81,7 +81,8 @@ test('a voice turn leaves the Library digest for chat, Kade on her own call incl
   const client = require('node:fs').readFileSync(require.resolve('../controllers/agents/client.js'), 'utf8');
   assert.match(
     client,
-    /takePendingChatNudges\(this\.options\.req\.user\.id, 5, nudgePickupOptions\(this\.options\.req, this\.options\.agent\?\.id\)\)/,
+    /* TURN-8 (Nov 12 2026): the pickup starts beside the other memory-gated reads. */
+    /takePendingChatNudges\(kadeReq\.user\.id, 5, nudgePickupOptions\(kadeReq, kadeAgentId\)\)/,
   );
 });
 
