@@ -120,7 +120,8 @@ export default function useStreamingCall() {
 
   // Decode + schedule serially so clips can never play out of order (the same
   // reserve-your-slot-synchronously lesson enqueueAudio learned on July 4).
-  const enqueueWav = useCallback((ab: ArrayBuffer, character: CallAudioIdentity | null, clipSeq = 0) => {
+  // n = the clip's number on this socket (heard-report.mjs).
+  const enqueueWav = useCallback((ab: ArrayBuffer, character: CallAudioIdentity | null, n = 0) => {
     const seq = flushSeqRef.current;
     const playbackLog = playbackLogRef.current;
     const presentation = presentationRef.current;
@@ -159,7 +160,7 @@ export default function useStreamingCall() {
               character,
               trackFits(carried, buf.duration) ? carried : null,
             ) ?? null);
-      noteClipScheduled(playbackLog, clipSeq, t, buf.duration);
+      noteClipScheduled(playbackLog, n, t, buf.duration);
       nextTimeRef.current = t + buf.duration;
       sourcesRef.current.add(src);
       src.onended = () => {

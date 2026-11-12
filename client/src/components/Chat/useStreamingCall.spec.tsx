@@ -339,7 +339,13 @@ test('after a clear or the Stop button, the call tells the bridge how far playba
     currentTime: 0,
     destination: {},
     decodeAudioData: jest.fn(async () => ({ duration: 1 }) as AudioBuffer),
-    createBufferSource: () => ({ buffer: null, connect: jest.fn(), start: jest.fn(), stop: jest.fn(), onended: null }),
+    createBufferSource: () => ({
+      buffer: null,
+      connect: jest.fn(),
+      start: jest.fn(),
+      stop: jest.fn(),
+      onended: null,
+    }),
   } as unknown as AudioContext & { currentTime: number };
   const { result, unmount } = renderHook(() => useStreamingCall());
   const call = result.current.start({ ...args(), ctx });

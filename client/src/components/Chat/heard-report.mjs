@@ -57,6 +57,9 @@ export function flushReport(log, nowSec) {
 /** The AudioContext time the listener is hearing now (output latency taken off when known). */
 export function heardClock(ctx) {
   if (!ctx || !Number.isFinite(ctx.currentTime)) return 0;
-  const lag = Number.isFinite(ctx.outputLatency) && ctx.outputLatency > 0 && ctx.outputLatency < 1 ? ctx.outputLatency : 0;
+  const lag =
+    Number.isFinite(ctx.outputLatency) && ctx.outputLatency > 0 && ctx.outputLatency < 1
+      ? ctx.outputLatency
+      : 0;
   return Math.max(0, ctx.currentTime - lag);
 }
