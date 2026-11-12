@@ -10,10 +10,19 @@ const Module = require('module');
 let agent;
 let resolve;
 let personalPick;
+let canUse = true;
+let agentLookupFails = false;
 const STUBS = {
   '@librechat/data-schemas': { logger: { warn() {}, error() {}, info() {} } },
   '~/server/middleware': { requireJwtAuth: (_req, _res, next) => next() },
-  '~/models': { getAgent: async () => agent, findUser: async () => null },
+  '~/models': {
+    getAgent: async () => {
+      if (agentLookupFails) throw new Error('db down');
+      return agent;
+    },
+    findUser: async () => null,
+  },
+  '~/server/services/kadeAgentAccess': { canUseAgent: async () => canUse },
   '~/models/kadeVoicePref': { getUserVoicePref: async () => personalPick },
   '~/models/kadeSpotter': { getSpotter: async () => null },
   '~/models/kadeSpotterAgent': { ensureSpotterAgent: async () => null },
@@ -77,4 +86,54 @@ test('with the resolver down, the fallback path keeps the same rule', async () =
   personalPick = null;
   got = await ticket();
   assert.deepStrictEqual([got.voiceId, got.rate], ['Builder', 1.2]);
+});
+
+/* Nov 12 2026 (audit SEC-7): the ticket is signed only for a character this person may use. */
+const answer = async (query = {}) => {
+  const out = { status: 200, body: null };
+  await handler(
+    { query: { agentId: 'agent_della', ...query }, user: { id: 'u1', kadeAccountType: 'adult' } },
+    {
+      status(n) {
+        out.status = n;
+        return this;
+      },
+      json(value) {
+        out.body = value;
+      },
+    },
+  );
+  return out;
+};
+
+test('SEC-7: a character this person may not use gets no ticket; a database error says busy', async () => {
+  agent = builderAgent;
+  resolve = () => ({ voice: 'Builder', source: 'builder', rate: 1.2 });
+  canUse = false;
+  try {
+    let r = await answer();
+    assert.strictEqual(r.status, 404);
+    assert.strictEqual(r.body.ticket, undefined);
+    r = await answer({ ring: '1' });
+    assert.strictEqual(r.status, 404, 'ring=1 does nothing while KADE_WEB_VOICE_RING_TICKETS is unset');
+    process.env.KADE_WEB_VOICE_RING_TICKETS = '1';
+    r = await answer({ ring: '1' });
+    assert.strictEqual(r.status, 200);
+    assert.strictEqual(JSON.parse(Buffer.from(r.body.ticket.split('.')[0], 'base64url').toString()).ringOnly, true);
+  } finally {
+    delete process.env.KADE_WEB_VOICE_RING_TICKETS;
+    canUse = true;
+  }
+  const own = await answer();
+  assert.strictEqual(own.status, 200);
+  assert.strictEqual(JSON.parse(Buffer.from(own.body.ticket.split('.')[0], 'base64url').toString()).ringOnly, undefined);
+  agent = null;
+  assert.strictEqual((await answer()).status, 404);
+  agent = builderAgent;
+  agentLookupFails = true;
+  try {
+    assert.strictEqual((await answer()).status, 503);
+  } finally {
+    agentLookupFails = false;
+  }
 });

@@ -21,6 +21,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 const { getUserVoicePref } = require('~/models/kadeVoicePref');
+const { canUseAgent } = require('~/server/services/kadeAgentAccess');
 
 const router = express.Router();
 
@@ -38,18 +39,33 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
     let agentName = null;
     let voiceId = null;
     let rate = null;
+    let ringOnly = false;
     if (agentId) {
+      /* Audit fix (Nov 12 2026, SEC-7): the bridge runs this call on the service seat, which may
+       * use any character, so this is the only place the caller's own access is checked. Fails
+       * closed. Answering a ring (?ring=1) may be minted for a character the person cannot open,
+       * marked ringOnly, but ONLY while KADE_WEB_VOICE_RING_TICKETS=1: set that after the bridge
+       * that refuses a ringOnly hello with no callRingId is live, never before. */
+      let a;
       try {
-        const a = await db.getAgent({ id: agentId });
-        if (a) {
-          agentName = a.name || null;
-          voiceId = (a.tts && a.tts.voiceId) || null;
-          const r = a.tts && Number(a.tts.speakingRate);
-          rate = Number.isFinite(r) && r > 0 ? r : null;
-        }
+        a = await db.getAgent({ id: agentId });
       } catch (err) {
         logger.warn('[kadeWebVoice] agent lookup failed: ' + err.message);
+        return res.status(503).json({ error: 'web voice is busy, try again' });
       }
+      if (!a) {
+        return res.status(404).json({ error: 'No such character.' });
+      }
+      if (!(await canUseAgent(req.user, a))) {
+        if (req.query.ring !== '1' || process.env.KADE_WEB_VOICE_RING_TICKETS !== '1') {
+          return res.status(404).json({ error: 'No such character.' });
+        }
+        ringOnly = true;
+      }
+      agentName = a.name || null;
+      voiceId = (a.tts && a.tts.voiceId) || null;
+      const r = a.tts && Number(a.tts.speakingRate);
+      rate = Number.isFinite(r) && r > 0 ? r : null;
       /* KADE July 17 2026: the UNIFIED RESOLVER (kadeVoiceResolver.js) now
        * decides the chain — personal pick -> builder -> name-match -> default,
        * live-catalog-validated — so this surface can never drift from the
@@ -132,6 +148,7 @@ router.get('/ticket', requireJwtAuth, async (req, res) => {
       accountType: require('../services/kadeAccountType').isChildLike(u) ? 'child' : null,
       agentId,
       agentName,
+      ...(ringOnly ? { ringOnly: true } : {}),
       voiceId,
       rate,
       exp: Date.now() + 120000,

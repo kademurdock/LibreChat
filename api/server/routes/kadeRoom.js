@@ -18,6 +18,7 @@ const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
 const db = require('~/models');
+const { canUseAgent, confidentialNoteFor } = require('~/server/services/kadeAgentAccess');
 const { roomHtml, hallHtml } = require('./kadeRoomPage');
 
 /*
@@ -162,7 +163,8 @@ router.post('/', requireJwtAuth, async (req, res) => {
     const snaps = [];
     for (const id of agentIds) {
       const a = await db.getAgent({ id });
-      if (!a) {
+      // SEC-7 (Nov 12 2026): same answer for "does not exist" and "not yours to use".
+      if (!a || !(await canUseAgent(req.user, a))) {
         return res.status(404).json({ message: `Could not find one of those characters (${id}).` });
       }
       snaps.push({
@@ -263,7 +265,7 @@ router.post('/:id/say', requireJwtAuth, async (req, res) => {
   }
 });
 
-function buildSystem(room, agentName, instructions, humanName, childMode) {
+function buildSystem(room, agentName, instructions, humanName, childMode, privateNote) {
   const others = (room.agents || [])
     .map((a) => a.name)
     .filter((n) => n !== agentName);
@@ -277,6 +279,8 @@ function buildSystem(room, agentName, instructions, humanName, childMode) {
     // July 27 2026: same invisible anti-tell style note the chat lane gets.
     KADE_STYLE_NOTE.trim(),
     '',
+    // SEC-7: personas are private here too (Part 215); empty for the admin or with the kill switch.
+    ...(privateNote ? [privateNote, ''] : []),
     ...(room.mode === 'porch'
       ? [
           '--- THE FRONT PORCH ---',
@@ -567,7 +571,7 @@ async function generateRoomTurn(req, opts) {
     }
 
     const humanName = firstName(req);
-    const system = buildSystem(room, speaker.name, agent.instructions, humanName, isChild(req));
+    const system = buildSystem(room, speaker.name, agent.instructions, humanName, isChild(req), confidentialNoteFor(req.user));
     const msgs = buildMessages(room, speaker.agentId);
 
     const deepThink = opts.deepThink === true;
@@ -878,7 +882,8 @@ router.post('/:id/cast', requireJwtAuth, async (req, res) => {
     const snaps = [];
     for (const id of toAdd) {
       const a = await db.getAgent({ id });
-      if (!a) {
+      // SEC-7 (Nov 12 2026): same answer for "does not exist" and "not yours to use".
+      if (!a || !(await canUseAgent(req.user, a))) {
         return res.status(404).json({ message: `Could not find one of those characters (${id}).` });
       }
       snaps.push({

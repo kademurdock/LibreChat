@@ -804,6 +804,9 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
       // (applyKadeAudience) — bot guests were the un-guarded lane.
       KADE_STYLE_NOTE.trim(),
       '',
+      // SEC-7: personas are private in the Clubhouse too (Part 215).
+      require('~/server/services/kadeAgentAccess').confidentialNoteFor(req.user),
+      '',
       'You have been listening politely. Below is a rough live transcription of what the room has been saying (it is messy, unattributed, and may mishear words — roll with it, never complain about transcription quality).',
       cuedBy + ' just pressed your talk button — it is YOUR turn to speak, out loud, to the whole room.',
       'Reply with ONE natural spoken contribution: under 60 words, no stage directions, no markdown, no lists. React to what was actually said when you can.',

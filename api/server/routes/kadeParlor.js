@@ -569,6 +569,9 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
       // July 27 2026: same invisible anti-tell style note the chat lane gets.
       KADE_STYLE_NOTE.trim(),
       '',
+      // SEC-7: personas are private at the table too (Part 215).
+      require('~/server/services/kadeAgentAccess').confidentialNoteFor(req.user),
+      '',
       'The player just said something to you at the table. Reply with ONE short spoken line — under 30 words, no stage directions, no markdown, no card claims beyond what the table log shows.',
     ].join('\n');
     const userMsg = ['Recent table log:', ...history, '', `Player says: ${text}`].join('\n');

@@ -39,6 +39,7 @@ const { userPriceFactor, isAdminRole } = require('~/server/services/kadeRealCost
 const paths = require('~/config/paths');
 const { parseFaces, decide } = require('./LiveFace/policy');
 const { liveFaceHtml } = require('./LiveFace/pages');
+const { canUseAgent, usableAgentIds } = require('~/server/services/kadeAgentAccess');
 
 const router = express.Router();
 
@@ -106,10 +107,14 @@ router.put('/sight', requireJwtAuth, express.json({ limit: '2kb' }), async (req,
 router.get('/live-face/config', requireJwtAuth, async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const all = await faces();
+  /* SEC-7 (Nov 12 2026): only the characters this person may use. This list was handing every
+   * faced character's id to every account. Fails closed to an empty list (painted faces). */
+  const mine = await usableAgentIds(req.user, Object.keys(all));
+  const agents = Object.keys(all).filter((id) => mine.has(id));
   const charged = isAdminRole(req.user && req.user.role) ? 0 : USD_PER_MINUTE * userPriceFactor(req.user);
   res.json({
-    enabled: configured() && Object.keys(all).length > 0,
-    agents: Object.keys(all),
+    enabled: configured() && agents.length > 0,
+    agents,
     usdPerMinute: Number(charged.toFixed(4)),
     realUsdPerMinute: USD_PER_MINUTE,
   });
@@ -132,6 +137,10 @@ router.post('/live-face/session', requireJwtAuth, express.json({ limit: '2kb' })
       return res
         .status(verdict.code === 'unconfigured' ? 503 : 403)
         .json({ error: verdict.reason, code: verdict.code });
+    }
+    /* SEC-7: a character the person cannot use answers exactly like one with no face. */
+    if (!(await canUseAgent(req.user, agentId))) {
+      return res.status(403).json({ error: 'This character has no live face yet.', code: 'no_face' });
     }
     const recent = await sessions.mintedSince(req.user.id, new Date(Date.now() - 3600 * 1000));
     if (recent >= MINTS_PER_HOUR) {
