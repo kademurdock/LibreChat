@@ -1,6 +1,11 @@
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 
+/* Nov 12 2026 craft review. These songs go straight to YuE2 with no desk and no checks, and YuE2 sings whatever is
+ * in parentheses and only what is written, so the character is told what a singer's sheet looks like: craft in the
+ * tool description, layout in the lyrics field. KADE_LYRIC_CRAFT_NOV12=0 puts the Nov 10 wording back. */
+const songCraftOn = process.env.KADE_LYRIC_CRAFT_NOV12 !== '0';
+
 /* Kept identical to kadeStudioSchema in packages/api/src/tools/registry/definitions.ts. */
 const kadeStudioSchema = {
   type: 'object',
@@ -14,11 +19,15 @@ const kadeStudioSchema = {
     title: { type: 'string', description: 'quote. The song title, up to 80 characters.' },
     direction: {
       type: 'string',
-      description: 'quote. The music in a sentence or two: genre, instruments, tempo, and the singing voice (for example "warm female lead vocal").',
+      description: songCraftOn
+        ? 'quote. The music in one or two short sentences: the language, the genre, the rhythmic feel, a few instruments and the lead singing voice chosen for this song.'
+        : 'quote. The music in a sentence or two: genre, instruments, tempo, and the singing voice (for example "warm female lead vocal").',
     },
     lyrics: {
       type: 'string',
-      description: 'quote. The exact words to sing, with [Verse] and [Chorus] tags on their own lines. Leave out only for an instrumental.',
+      description: songCraftOn
+        ? "quote. The exact words to sing, laid out as a singer's sheet: [Verse 1], [Chorus] and [Bridge] tags alone on their own lines; one sung phrase per line, short enough for one breath; every chorus written out in full each time it is sung; words in (parentheses) are sung as backing vocals, so put no direction or repeat note there; numbers written as words. Leave out only for an instrumental."
+        : 'quote. The exact words to sing, with [Verse] and [Chorus] tags on their own lines. Leave out only for an instrumental.',
     },
     instrumental: { type: 'boolean', description: 'quote. True for music with no singing.' },
     takes: { type: 'integer', minimum: 1, maximum: 4, description: 'quote. How many versions (takes) to make. Leave out for 1. Ask for more ONLY when they asked for more than one version in their own words: every take is charged, so 2 takes cost twice as much.' },
@@ -40,7 +49,11 @@ class KadeStudio extends Tool {
     super();
     this.name = 'kade_studio';
     this.description =
-      'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking. YOU write the words with them: ask what the song is about, write the lyrics, read them back, change what they ask. Then the song is made in the background; when it is ready a message from you says so here and it is in their Sound Booth library. ' +
+      'Make a real song with sung lyrics (YuE2, the Sound Booth) by talking. YOU write the words with them: ask what the song is about, write the lyrics, read them back, change what they ask. ' +
+      (songCraftOn
+        ? 'Write a song people can sing: a hook someone would say out loud, a chorus in plain words, verses in plain speech with end rhymes a listener can hear, and a second verse that says something the first did not. '
+        : '') +
+      'Then the song is made in the background; when it is ready a message from you says so here and it is in their Sound Booth library. ' +
       'ALWAYS quote first, say the price in your reply in plain words, and call start only in a LATER reply after their own message says yes. Never say a song has started unless start answered started. ' +
       'If you are talking by voice or on a phone call, a song cannot be started: say so at once, before writing any words, and ask them to ask again in the text chat. Use this for songs, not fal_studio, unless they ask for Lyria or MiniMax by name. Also answers "is my song ready" (status).';
     this.schema = kadeStudioSchema;

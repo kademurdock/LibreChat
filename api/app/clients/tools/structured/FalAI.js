@@ -806,8 +806,13 @@ class FalAI extends Tool {
       if (lyrics && lyrics.length > 3500) {
         return (
           `MiniMax Music caps lyrics at 3,500 characters and this song is ${lyrics.length}. ` +
-          'Trim it — the usual wins are writing repeated choruses as [Chorus] (repeat) instead of pasting them in full, or dropping a verse — ' +
-          "or switch engine to 'lyria3_pro', which handles longer lyric sheets. Tell the user which you're doing."
+          /* Nov 12 2026 craft review: the old hint advised writing "[Chorus] (repeat)", which an engine may sing as
+           * words. KADE_LYRIC_CRAFT_NOV12=0 puts the old hint back. */
+          (process.env.KADE_LYRIC_CRAFT_NOV12 === '0'
+            ? 'Trim it — the usual wins are writing repeated choruses as [Chorus] (repeat) instead of pasting them in full, or dropping a verse — ' +
+              "or switch engine to 'lyria3_pro', which handles longer lyric sheets. Tell the user which you're doing."
+            : 'Trim it: drop a verse or the bridge, or shorten the outro. Keep every chorus written out in full, because the engine may sing a repeat mark aloud. ' +
+              "Or switch engine to 'lyria3_pro', which handles longer lyric sheets. Tell the user which you're doing.")
         );
       }
       body = { prompt: style.slice(0, 2000) };

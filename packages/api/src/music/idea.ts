@@ -110,7 +110,7 @@ NEVER
 Neon, fluorescent light, mirrors, ghosts, shadows, whispers, echoes, heartbeats, the universe, storms as feelings, rain on glass, empty roads, a named weekday, a clock time, coffee, porch lights, kitchen tables, healing, a journey, finding yourself, a moral, a song about songwriting. No real artists, songs or brands.
 
 HOW TO WRITE IT DOWN
-One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no instrument list, no tempo, no running time, no lyrics, no quotation of a hook. If you are told to add a craft rule, end with one short sentence that fences the writer off from the lazy version of this exact song, in the manner of "Never say the word sorry." or "Told entirely through what is on the table." or "No one raises their voice." Otherwise end after the situation. No preamble, no sign-off, nothing else.`;
+One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no instrument list, no tempo, no running time, no lyrics, no quotation of a hook. If you are told to add a craft rule, end with one short sentence that fences the writer off from the lazy version of this exact song: a word the song may never say, one thing it must be told through, or one thing nobody in it does. Otherwise end after the situation. No preamble, no sign-off, nothing else.`;
 
 /* Part 293 (Sep 25 2026): Surprise me learns who is asking, like the writer.
  * The child account, the App Review seat and anyone unknown get every pitch
@@ -119,8 +119,20 @@ One line, 25 to 70 words: the genre tag, a colon, the situation. No title, no in
 export const SONG_IDEA_CLEAN_NOTE: string =
   'This idea is for someone who needs it clean: keep every pitch free of swearing, sex, drugs and gore, and keep all of its humor and edge.';
 
+/* Nov 12 2026 craft review: the craft-rule sentence used to show three sample rules in quotes, and
+ * this generator has already handed an example back word for word once. It now describes the kinds
+ * of rule instead. KADE_LYRIC_CRAFT_NOV12=0 puts the three samples back. */
+const CRAFT_RULE_NOW =
+  ': a word the song may never say, one thing it must be told through, or one thing nobody in it does. Otherwise end after the situation.';
+const CRAFT_RULE_WAS =
+  ', in the manner of "Never say the word sorry." or "Told entirely through what is on the table." or "No one raises their voice." Otherwise end after the situation.';
+
 export function songIdeaSystemFor(audience: 'explicit' | 'clean' | null | undefined): string {
-  return audience === 'clean' ? `${songIdeaSystem}\n\n${SONG_IDEA_CLEAN_NOTE}` : songIdeaSystem;
+  const system =
+    typeof process !== 'undefined' && process.env.KADE_LYRIC_CRAFT_NOV12 === '0'
+      ? songIdeaSystem.replace(CRAFT_RULE_NOW, CRAFT_RULE_WAS)
+      : songIdeaSystem;
+  return audience === 'clean' ? `${system}\n\n${SONG_IDEA_CLEAN_NOTE}` : system;
 }
 
 export function songIdeaRequest(sparks: SongSparks): string {

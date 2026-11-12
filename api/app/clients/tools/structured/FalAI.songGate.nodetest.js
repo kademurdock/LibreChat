@@ -186,6 +186,22 @@ test('the checks that came before still answer first (a missing style never reac
   assert.equal(colls.kadesongquotes, undefined);
 });
 
+/* Nov 12 2026 craft review: the too-long hint used to advise a repeat mark, which an engine may sing as words. */
+test('a MiniMax sheet that is too long is told to drop a section and keep every chorus written out, never to write a repeat mark', async () => {
+  const lyrics = '[Verse 1]\n' + 'La la la la la la la\n'.repeat(200);
+  const out = await song(turn('make it'), { engine: 'minimax', lyrics });
+  assert.match(out, /MiniMax Music caps lyrics at 3,500 characters/);
+  assert.match(out, /Trim it: drop a verse or the bridge, or shorten the outro\. Keep every chorus written out in full, because the engine may sing a repeat mark aloud\. Or switch engine to 'lyria3_pro'/);
+  assert.doesNotMatch(out, /\(repeat\)/);
+  assert.equal(usage.length, 0);
+  process.env.KADE_LYRIC_CRAFT_NOV12 = '0';
+  try {
+    assert.match(await song(turn('make it'), { engine: 'minimax', lyrics }), /writing repeated choruses as \[Chorus\] \(repeat\) instead of pasting them in full/, 'KADE_LYRIC_CRAFT_NOV12=0 puts the old hint back');
+  } finally {
+    delete process.env.KADE_LYRIC_CRAFT_NOV12;
+  }
+});
+
 test('card 1: KADE_SONG_YES_GATE=0 no longer skips the yes; nothing is spent on the first ask', async () => {
   process.env.KADE_SONG_YES_GATE = '0';
   process.env.KADE_SONG_ONCE_PER_TURN = '0';
