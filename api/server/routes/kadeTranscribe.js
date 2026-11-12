@@ -25,6 +25,80 @@ const router = express.Router();
 const MAX_UPLOAD = '150mb';
 const DG_URL = 'https://api.deepgram.com/v1/listen';
 
+/* Audit fix (Nov 12 2026): one upload holds up to 150 MB in memory until Deepgram answers, and
+ * nothing limited how many ran at once. The gate runs BEFORE the body is read and is sized by the
+ * declared Content-Length (raw-body refuses a body that does not match it):
+ *   - big uploads (over 8 MB, or no length at all): 2 per person, KADE_TRANSCRIBE_MAX_RUNNING (4)
+ *     for the server. Peak memory is about twice the body while it is joined, so 4 is ~1.2 GB.
+ *   - small posts (8 MB or less: Clubhouse ears, dictation, the command mic): their own count,
+ *     KADE_TRANSCRIBE_SMALL_PER_USER (12) and KADE_TRANSCRIBE_SMALL_MAX_RUNNING (32). The Clubhouse
+ *     engine posts one clip PER TALKER at the same moment under the anchor's account, so these
+ *     must never share the big-upload count, or a room goes deaf and dictation gets refused.
+ *   - /organize has its own count (2 per person, KADE_ORGANIZE_MAX_RUNNING 8).
+ * Every finished transcription is logged at Deepgram's price; voice memos stay free to the person
+ * (chargedUSD 0), the Clubhouse ears are charged as before. The refusal text is read aloud by the
+ * page and the apps, so each message says only what is true. */
+const DG_USD_PER_MINUTE = 0.0043;
+const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
+const SMALL_UPLOAD_BYTES = 8 * 1024 * 1024;
+function envCount(name, fallback) {
+  const n = Math.floor(Number(process.env[name]));
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
+function makeGate({ perUser, total, mineMessage, busyMessage }) {
+  const byUser = new Map();
+  let running = 0;
+  return function gate(req, res, next) {
+    const uid = String((req.user && req.user.id) || '');
+    const mine = byUser.get(uid) || 0;
+    if (!uid || mine >= perUser() || running >= total()) {
+      res.set('Retry-After', '15');
+      return res.status(429).json({ error: uid && mine >= perUser() ? mineMessage : busyMessage });
+    }
+    byUser.set(uid, mine + 1);
+    running += 1;
+    let freed = false;
+    const free = () => {
+      if (freed) return;
+      freed = true;
+      running -= 1;
+      const left = (byUser.get(uid) || 1) - 1;
+      if (left > 0) byUser.set(uid, left);
+      else byUser.delete(uid);
+    };
+    res.once('finish', free);
+    res.once('close', free);
+    return next();
+  };
+}
+const TRANSCRIBER_BUSY = 'The transcriber is busy right now. Please try again in a minute.';
+const bigUploadGate = makeGate({
+  perUser: () => 2,
+  total: () => envCount('KADE_TRANSCRIBE_MAX_RUNNING', 4),
+  mineMessage: 'Two of your transcriptions are already running. Try again when one finishes.',
+  busyMessage: TRANSCRIBER_BUSY,
+});
+const smallUploadGate = makeGate({
+  perUser: () => envCount('KADE_TRANSCRIBE_SMALL_PER_USER', 12),
+  total: () => envCount('KADE_TRANSCRIBE_SMALL_MAX_RUNNING', 32),
+  mineMessage: 'Too many recordings are being transcribed at once. Try again in a moment.',
+  busyMessage: TRANSCRIBER_BUSY,
+});
+const organizeGate = makeGate({
+  perUser: () => 2,
+  total: () => envCount('KADE_ORGANIZE_MAX_RUNNING', 8),
+  mineMessage: 'The organizer is already working on your text. Try again when it finishes.',
+  busyMessage: 'The organizer is busy right now. Please try again in a minute.',
+});
+function transcribeSlot(req, res, next) {
+  const header = String(req.get('content-length') || '');
+  const declared = /^\d+$/.test(header) ? Number(header) : NaN; // NaN (chunked) counts as big
+  if (declared > MAX_UPLOAD_BYTES) {
+    return res.status(413).json({ error: 'That file is too large. The limit is 150 megabytes.' });
+  }
+  return (declared <= SMALL_UPLOAD_BYTES ? smallUploadGate : bigUploadGate)(req, res, next);
+}
+
 // Kade July 20 2026: same keyterm mechanism voice-stream.js uses for phone/
 // web calls (Deepgram nova-3 + Flux, GA feature) -- biases recognition
 // toward each name/word's correct SPELLING. `keyterms` is a plain array of
@@ -111,6 +185,7 @@ async function transcribeBuffer(buf, contentType, keyterms) {
 router.post(
   '/',
   requireJwtAuth,
+  transcribeSlot,
   express.raw({ type: () => true, limit: MAX_UPLOAD }),
   async (req, res) => {
     try {
@@ -118,22 +193,23 @@ router.post(
       const out = await transcribeBuffer(req.body, req.get('content-type') || '', keyterms);
       logger.info(`[kadeTranscribe] ${req.user?.email || req.user?.id}: ${out.seconds}s transcribed`);
       // KADE July 24 2026 — Clubhouse bot guests listen through this lane in
-      // 15s cycles. Meter those minutes honestly (kadeusage 'clubhouse_ears',
-      // Deepgram nova-3 ~$0.0043/min) so the real cost of a seated guest is
-      // visible on the usage dashboard. Fail-soft: never breaks a transcript.
-      if (req.get('x-kade-club') === '1') {
-        try {
-          const { logKadeUsage } = require('~/models/kadeUsage');
-          logKadeUsage({
-            userId: String(req.user.id),
-            service: 'clubhouse_ears',
-            quantity: out.seconds,
-            unit: 'seconds',
-            costUSD: (out.seconds * 0.0043) / 60,
-            metadata: { kind: 'room_ears' },
-          });
-        } catch (_) {}
-      }
+      // 15s cycles ('clubhouse_ears', charged as before). Nov 12 2026: every other
+      // transcription is logged too ('transcribe', Deepgram nova-3 ~$0.0043/min) so the
+      // real cost shows on the usage dashboard; chargedUSD 0 keeps voice memos free to
+      // the person. Fail-soft: never breaks a transcript.
+      try {
+        const club = req.get('x-kade-club') === '1';
+        const { logKadeUsage } = require('~/models/kadeUsage');
+        logKadeUsage({
+          userId: String(req.user.id),
+          service: club ? 'clubhouse_ears' : 'transcribe',
+          quantity: out.seconds,
+          unit: 'seconds',
+          costUSD: (out.seconds * DG_USD_PER_MINUTE) / 60,
+          ...(club ? {} : { chargedUSD: 0 }),
+          metadata: { kind: club ? 'room_ears' : 'voice_memo' },
+        }).catch(() => {});
+      } catch (_) {}
       return res.json(out);
     } catch (e) {
       logger.warn('[kadeTranscribe] failed: ' + (e && e.message));
@@ -202,7 +278,7 @@ async function organizeText(text, style) {
   return result;
 }
 
-router.post("/organize", requireJwtAuth, express.json({ limit: "1mb" }), async (req, res) => {
+router.post("/organize", requireJwtAuth, organizeGate, express.json({ limit: "1mb" }), async (req, res) => {
   try {
     const style = req.body && req.body.style === "prose" ? "prose" : "notes";
     const out = await organizeText(req.body && req.body.text, style);
@@ -215,6 +291,7 @@ router.post("/organize", requireJwtAuth, express.json({ limit: "1mb" }), async (
 });
 
 router.organizeText = organizeText;
+router.transcribeSlot = transcribeSlot; // for the nodetest
 
 
 const PAGE_HTML = `<!doctype html>
