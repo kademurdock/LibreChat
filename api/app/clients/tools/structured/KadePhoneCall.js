@@ -100,6 +100,9 @@ class KadePhoneCall extends Tool {
     this.agentId = fields.agentId;
     this.agentName = fields.agentName || 'Kiana';
     this.isAdmin = fields.req?.user?.role === 'ADMIN';
+    /* SEC-3 (Nov 12 2026): check-ins are decided for the person really asking, who on a voice
+     * turn is not the service seat (services/kadeWellnessTarget.js wellnessActor). */
+    this.req = fields.req;
     // Whose agents a handed-off call may use: the person really on the line
     // on a phone turn (the tool itself runs on the service seat), else the user.
     this.callerId = String(fields.req?.kadeOnBehalfOf?.id || fields.userId || '');
@@ -287,23 +290,49 @@ class KadePhoneCall extends Tool {
 
   async _wellness(action, data) {
     const { who, time, days, topics, schedule_id } = data || {};
-    const uid = String(this.userId || '');
     const hdrs = { 'User-Agent': 'Mozilla/5.0' };
+    /* Audit fix SEC-3 (Nov 12 2026): the rules and the identity come from one place,
+     * services/kadeWellnessTarget.js. this.isAdmin is the SEAT's role and is true on every voice
+     * turn, so it is not used here: admin means the person asking is Kade. Kade's decision: a
+     * grown-up may still ring any registered relative; a child or teen sets up nothing, and the
+     * calling character must be one the person may use. */
+    const W = require('~/server/services/kadeWellnessTarget');
+    let actor = W.wellnessActor(this.req);
     try {
+      if (actor && !actor.admin) {
+        // Account type from the account itself, not from whatever the request carried.
+        const fresh = await require('~/models').getUserById(actor.id, 'email role kadeAccountType');
+        actor = fresh
+          ? W.actorFromUser({ id: actor.id, email: fresh.email, role: fresh.role, kadeAccountType: fresh.kadeAccountType })
+          : null;
+      }
+      if (!actor) return W.NOT_KNOWN;
+      const uid = actor.id;
+      const admin = actor.admin;
+      const ownSchedule = async (id) => {
+        const check = await axios.get(`${this.bridgeUrl}/wellness?secret=${encodeURIComponent(this.bridgeSecret)}&userId=${encodeURIComponent(uid)}`, { timeout: 15000, headers: hdrs });
+        return ((check.data && check.data.schedules) || []).find((w) => w.id === schedule_id) || null;
+      };
+      const NOT_THEIRS = 'That schedule id does not belong to this user (list_checkins shows theirs).';
+
       if (action === 'list_checkins') {
-        const qs = this.isAdmin ? '' : `&userId=${encodeURIComponent(uid)}`;
+        const qs = admin ? '' : `&userId=${encodeURIComponent(uid)}`;
         const r = await axios.get(`${this.bridgeUrl}/wellness?secret=${encodeURIComponent(this.bridgeSecret)}${qs}`, { timeout: 15000, headers: hdrs });
         const rows = (r.data && r.data.schedules) || [];
         if (!rows.length) {
           return 'No check-in schedules yet. Create one with schedule_checkin (who + time; days and topics optional).';
         }
         return rows
-          .map((w) => `id ${w.id}: ${w.targetName} — ${w.days === 'daily' ? 'every day' : (Array.isArray(w.days) ? w.days.join('/') : w.days)} at ${w.time} Central with ${w.agentName}${w.topics ? ` (topics: ${w.topics})` : ''} — ${w.enabled ? 'ACTIVE' : 'PAUSED'}${w.lastRun ? `, last ran ${w.lastRun}` : ', never run yet'}${this.isAdmin ? ` [set up by ${w.enrolledBy && w.enrolledBy.userName}]` : ''}`)
+          .map((w) => `id ${w.id}: ${w.targetName} — ${w.days === 'daily' ? 'every day' : (Array.isArray(w.days) ? w.days.join('/') : w.days)} at ${w.time} Central with ${w.agentName}${w.topics ? ` (topics: ${w.topics})` : ''} — ${w.enabled ? 'ACTIVE' : 'PAUSED'}${w.lastRun ? `, last ran ${w.lastRun}` : ', never run yet'}${admin ? ` [set up by ${w.enrolledBy && w.enrolledBy.userName}]` : ''}`)
           .join('\n');
       }
       if (action === 'schedule_checkin') {
         if (!who || !time) {
           return "schedule_checkin needs at least: who (a registered family member's name) and time ('HH:mm', 24-hour Central). Optional: days ('daily' or 'mon,wed,fri'), topics.";
+        }
+        const gate = await W.wellnessAllowed(actor, { agentId: this.agentId });
+        if (gate.error) {
+          return `Not scheduled, nothing was changed. ${gate.error} Tell the user that plainly; do not say a schedule was made.`;
         }
         const r = await axios.post(`${this.bridgeUrl}/wellness`, {
           secret: this.bridgeSecret,
@@ -324,15 +353,25 @@ class KadePhoneCall extends Tool {
       }
       if (action === 'test_checkin') {
         if (!schedule_id) return 'test_checkin needs schedule_id (from list_checkins).';
+        if (!admin) {
+          // SEC-3: a test call fires only the person's own schedule, and only from a grown-up.
+          const row = await ownSchedule(schedule_id);
+          if (!row) return NOT_THEIRS;
+          const gate = await W.wellnessAllowed(actor, { agentId: row.agentId });
+          if (gate.error) return `Not done, no call was placed. ${gate.error}`;
+        }
         const r = await axios.post(`${this.bridgeUrl}/wellness/fire`, { secret: this.bridgeSecret, id: schedule_id }, { timeout: 35000, headers: hdrs });
         return `${(r.data && r.data.note) || 'Test call dialing now.'} Tell the user the phone should ring within seconds; after they hang up, the written report lands as a nudge a minute or two later (check_result also works for the raw transcript).`;
       }
       if (action === 'pause_checkin' || action === 'cancel_checkin') {
         if (!schedule_id) return `${action} needs schedule_id (from list_checkins).`;
-        if (!this.isAdmin) {
-          const check = await axios.get(`${this.bridgeUrl}/wellness?secret=${encodeURIComponent(this.bridgeSecret)}&userId=${encodeURIComponent(uid)}`, { timeout: 15000, headers: hdrs });
-          if (!((check.data && check.data.schedules) || []).some((w) => w.id === schedule_id)) {
-            return 'That schedule id does not belong to this user (list_checkins shows theirs).';
+        if (!admin) {
+          const row = await ownSchedule(schedule_id);
+          if (!row) return NOT_THEIRS;
+          if (action === 'pause_checkin' && !row.enabled) {
+            // pause_checkin on a paused schedule RESUMES it: same rule as making one.
+            const gate = await W.wellnessAllowed(actor, { agentId: row.agentId });
+            if (gate.error) return `Not resumed, nothing was changed. ${gate.error}`;
           }
         }
         if (action === 'cancel_checkin') {

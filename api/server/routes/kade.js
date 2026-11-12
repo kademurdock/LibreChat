@@ -2377,16 +2377,33 @@ router.post('/wellness', requireJwtAuth, async (req, res) => {
     const b = req.body || {};
     const isAdmin = req.user.role === 'ADMIN';
     // Ownership: non-admins may only touch their own schedules.
+    let mine = null;
     if (b.id && !isAdmin) {
       const check = await fetch(
         `${BRIDGE_URL}/wellness?secret=${encodeURIComponent(process.env.BRIDGE_SECRET)}&userId=${encodeURIComponent(String(req.user.id))}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } },
       ).then((r) => r.json());
-      if (!(check.schedules || []).some((w) => w.id === b.id)) {
+      mine = (check.schedules || []).find((w) => w.id === b.id) || null;
+      if (!mine) {
         return res.status(403).json({ error: 'Not your schedule.' });
       }
     }
     const action = String(b.action || 'save');
+    /* Audit fix SEC-3 (Nov 12 2026): a child or teen account never creates, edits, resumes or fires
+     * a check-in, and the character that places the call must be one this person may use
+     * (services/kadeWellnessTarget.js). Kade's decision: grown-ups may still ring any registered
+     * relative. Pausing and deleting stay open to the owner. */
+    if (!isAdmin) {
+      const isSave = action !== 'toggle' && action !== 'fire' && action !== 'delete';
+      const willEnable = b.enabled !== undefined ? !!b.enabled : !(mine && mine.enabled);
+      if (isSave || action === 'fire' || (action === 'toggle' && willEnable)) {
+        const W = require('~/server/services/kadeWellnessTarget');
+        const gate = await W.wellnessAllowed(W.actorFromUser(req.user), {
+          agentId: isSave ? b.agentId || (mine && mine.agentId) : mine && mine.agentId,
+        });
+        if (gate.error) return res.status(gate.status).json({ error: gate.error });
+      }
+    }
     if (action === 'toggle') {
       const r = await fetch(`${BRIDGE_URL}/wellness/toggle`, {
         method: 'POST',
