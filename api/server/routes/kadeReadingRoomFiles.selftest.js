@@ -96,6 +96,7 @@ function presign({ mode = 'on', found = null, item = {} } = {}) {
   const calls = { twin: [], signed: 0, deleted: [] };
   const it = { _id: 'item', owner: 'fam-kade', state: 'pending', title: 'My tape', tracks: [], save: async () => {}, toObject() { return this; }, ...item };
   const c = {
+    takeUploadBytes: () => true, pinnedPart: () => 0,
     router: { post: (path, ...a) => { handlers[path] = a.at(-1); } }, express: { json: () => () => {} }, requireJwtAuth: () => {},
     ownAudio: async () => it, mimeFor: () => ({ mime: 'video/mp4', ext: 'mp4' }), MAX_TRACK_BYTES: 20 * 1024 ** 3, MULTIPART_ABOVE: 150 * 1024 ** 2, MULTIPART_PART_BYTES: 50 * 1024 ** 2,
     trackKey: () => 'media/item/file.mp4', createMultipart: async () => 'upload', signPart: async () => 'https://storage/part', signPut: async () => { calls.signed++; return 'https://storage/whole'; },
@@ -175,6 +176,7 @@ test('the push lane skips exactly-the-same files the pusher can open, and clears
   let handler;
   const visible = { _id: 'k', title: 'Dreams and Nightmares', path: 'Audio/Described Movies & TV/TV' };
   const c = {
+    takeUploadBytes: () => true, pinnedPart: () => 0,
     router: { post: (_p, ...a) => { handler = a.at(-1); } }, express: { json: () => () => {} }, requireJwtAuth: () => {},
     canPublish: () => true, cleanPath: (p) => String(p || ''), mimeFor: () => ({ kind: 'audio', ext: 'mp3', mime: 'audio/mpeg' }), MAX_TRACK_BYTES: 20 * 1024 ** 3,
     KadeBook, bareTitle: (t) => t, CATEGORIES: ['tv'], ARCHIVE_CATEGORY: () => 'tv', refineMediaFiling: () => ({}), trackKey: () => 'media-library/new/a.mp3',

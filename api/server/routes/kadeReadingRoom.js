@@ -1114,6 +1114,38 @@ router.post('/media/new', requireJwtAuth, express.json({ limit: '8kb' }), async 
   }
 });
 
+/* Audit fix SEC-11 (Nov 12 2026): storage one person may ask for in a day (declared bytes). Admin is
+ * exempt. Family members: KADE_LIBRARY_DAILY_UPLOAD_GB (default 50). Every other seat keeps its own
+ * uploads (see libraryHiddenFrom) on a small allowance: KADE_LIBRARY_DAILY_UPLOAD_GB_GUEST (default 2).
+ * Like the booth's caps, an in-memory cap on accidents and mischief, not accounting: a restart clears it. */
+let uploadDay = '';
+const uploadBytes = new Map();
+const UPLOAD_CAP_LINE = 'That is more than this account can add to storage today. Try again tomorrow, or ask Kade.';
+function takeUploadBytes(req, bytes) {
+  if (isAdmin(req)) return true;
+  const n = Number(bytes);
+  if (!req.user || !(n > 0)) return false;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+  if (uploadDay !== today) { uploadDay = today; uploadBytes.clear(); }
+  const family = require('@librechat/api').familyLibraryMember(req.user);
+  const set = Number(family ? process.env.KADE_LIBRARY_DAILY_UPLOAD_GB : process.env.KADE_LIBRARY_DAILY_UPLOAD_GB_GUEST);
+  const cap = (set > 0 ? set : family ? 50 : 2) * 1024 ** 3;
+  const uid = String(req.user.id);
+  const used = uploadBytes.get(uid) || 0;
+  if (used + n > cap) {
+    logger.warn(`[reading-room/media] user=${uid} over the daily storage allowance (${used}+${n} > ${cap})`);
+    return false;
+  }
+  uploadBytes.set(uid, used + n);
+  return true;
+}
+/** The exact length of part i, signed into its URL so a part cannot carry more than was declared.
+ * 0 = unpinned: the admin's push tool, or KADE_LIBRARY_PIN_PARTS=0. */
+function pinnedPart(req, bytes, i) {
+  if (isAdmin(req) || process.env.KADE_LIBRARY_PIN_PARTS === '0') return 0;
+  return Math.min(MULTIPART_PART_BYTES, bytes - (i - 1) * MULTIPART_PART_BYTES);
+}
+
 async function ownAudio(req, id) {
   if (!isId(id)) return null;
   const item = await KadeBook.findById(id);
@@ -1158,10 +1190,11 @@ router.post('/media/:id/track/presign', requireJwtAuth, express.json({ limit: '4
       });
     }
     const key = trackKey(item._id, m.ext);
+    if (!takeUploadBytes(req, bytes)) return res.status(429).json({ error: UPLOAD_CAP_LINE });
     if (b.multipart === true && bytes > MULTIPART_ABOVE) {
       const uploadId = await createMultipart(key, m.mime);
       const parts = [];
-      for (let i = 1; i <= Math.ceil(bytes / MULTIPART_PART_BYTES); i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i) });
+      for (let i = 1; i <= Math.ceil(bytes / MULTIPART_PART_BYTES); i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i, pinnedPart(req, bytes, i)) });
       return res.json({ ok: true, key, mime: m.mime, multipart: { uploadId, partBytes: MULTIPART_PART_BYTES, parts } });
     }
     const url = await signPut(key, m.mime, bytes);
@@ -1232,6 +1265,7 @@ router.post('/media/:id/track/upload', requireJwtAuth, (req, res, next) => {
     if (!m) return res.status(400).json({ error: 'That is not an audio or video file. MP3, M4A, M4B, AAC, WAV, OGG, FLAC, MP4, M4V, MOV or WebM all work.' });
     const mime = m.mime;
     if (item.shortcutOf) return res.status(400).json({ error: 'This is a shortcut to another item. Add parts on the original.' });
+    if (!takeUploadBytes(req, f.buffer.length)) return res.status(429).json({ error: UPLOAD_CAP_LINE });
     const key = trackKey(item._id, m.ext);
     await putBuffer(key, f.buffer, mime);
     item.tracks.push({
@@ -1322,11 +1356,11 @@ async function createMultipart(key, contentType) {
   const r = await client.send(new CreateMultipartUploadCommand({ Bucket: MEDIA_BUCKET(), Key: key, ContentType: contentType }));
   return r.UploadId;
 }
-async function signPart(key, uploadId, partNumber) {
+async function signPart(key, uploadId, partNumber, partBytes) {
   const client = s3();
   const { UploadPartCommand } = require('@aws-sdk/client-s3');
   const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-  return getSignedUrl(client, new UploadPartCommand({ Bucket: MEDIA_BUCKET(), Key: key, UploadId: uploadId, PartNumber: partNumber }), { expiresIn: 6 * 3600 });
+  return getSignedUrl(client, new UploadPartCommand({ Bucket: MEDIA_BUCKET(), Key: key, UploadId: uploadId, PartNumber: partNumber, ...(partBytes > 0 ? { ContentLength: partBytes } : {}) }), { expiresIn: 6 * 3600 });
 }
 async function completeMultipart(key, uploadId, parts) {
   const client = s3();
@@ -1359,6 +1393,9 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
         out.push({ originalPath, id: String(twin._id), skipped: 'already in the library', same: 'file', title: twin.title, path: libraryPath(twin) });
         continue;
       }
+      // after the already-there and same-file answers, so a skipped file costs nothing; a file with no
+      // declared size would get an unsized URL, so only the admin's push tool may send one
+      if (!takeUploadBytes(req, bytes)) { out.push({ originalPath, error: bytes ? 'over today\'s storage allowance' : 'the file size is missing' }); continue; }
       const folder = cleanPath(f.path || '');
       const top = folder.split('/')[1] || folder.split('/')[0] || '';
       const title = bareTitle(f.title || f.name || 'Untitled').slice(0, 200) || 'Untitled';
@@ -1388,7 +1425,7 @@ router.post('/archive/presign', requireJwtAuth, express.json({ limit: '512kb' })
         const uploadId = await createMultipart(key, m.mime);
         const partCount = Math.ceil(bytes / MULTIPART_PART_BYTES);
         const parts = [];
-        for (let i = 1; i <= partCount; i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i) });
+        for (let i = 1; i <= partCount; i++) parts.push({ partNumber: i, url: await signPart(key, uploadId, i, pinnedPart(req, bytes, i)) });
         out.push({ originalPath, id: String(doc._id), key, mime: m.mime, multipart: { uploadId, partBytes: MULTIPART_PART_BYTES, parts } });
       } else {
         out.push({ originalPath, id: String(doc._id), key, mime: m.mime, url: await signPut(key, m.mime, bytes) });
