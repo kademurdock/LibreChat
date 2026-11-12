@@ -214,3 +214,28 @@ test('KADE_TURN_TOOL_GUARD=0 turns the guard off: no caps, no quota stop, the to
     else process.env.KADE_TURN_TOOL_GUARD = prev;
   }
 });
+
+test('web_search repeat count (phase 4 pick 3): per person, never the service seat, never reused', async () => {
+  const cache = require('./kadeToolCache');
+  cache.reset();
+  const warnings = [];
+  const logger = { warn: (line) => warnings.push(line) };
+  const amberTurn = () => ({ user: { id: 'amber', role: 'USER' } });
+  const a1 = G.guardWebSearchTool(fakeSearchTool(ok), { req: amberTurn(), logger });
+  await a1._call({ query: 'Ozark radar' });
+  const holly = G.guardWebSearchTool(fakeSearchTool(ok), { req: { user: { id: 'holly' } }, logger });
+  await holly._call({ query: 'Ozark radar' });
+  assert.equal(cache.snapshot().repeat, 0, 'another person is not a repeat');
+  const a2 = G.guardWebSearchTool(fakeSearchTool(ok), { req: amberTurn(), logger });
+  assert.deepEqual(await a2._call({ query: 'Ozark radar' }), ok({ query: 'Ozark radar' }));
+  assert.equal(a2.calls, 1, 'the search still goes out: counted, not reused');
+  assert.equal(cache.snapshot().repeat, 1);
+  assert.equal(warnings.length, 1);
+  assert.doesNotMatch(warnings[0], /Ozark/, 'the log line carries no query text');
+  /* An unknown caller on the service seat is never counted. */
+  const seat = () => ({ user: { id: 'svc', role: 'ADMIN' }, kadeCallerNumber: '+15550100' });
+  await G.guardWebSearchTool(fakeSearchTool(ok), { req: seat(), logger })._call({ query: 'x' });
+  await G.guardWebSearchTool(fakeSearchTool(ok), { req: seat(), logger })._call({ query: 'x' });
+  assert.equal(cache.snapshot().repeat, 1);
+  cache.reset();
+});

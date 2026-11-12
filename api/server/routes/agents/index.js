@@ -22,6 +22,7 @@ const responses = require('./responses');
 const openai = require('./openai');
 const { v1 } = require('./v1');
 const chat = require('./chat');
+const { createKadeStreamResume } = require('./kadeStreamResume');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
 
@@ -159,6 +160,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   }
 
   const streamTelemetry = createSseStreamTelemetry({ req, res, streamId, isResume });
+  /* KADE Nov 12 2026 (phase 4 pick 4): event ids and exact resume by cursor (kadeStreamResume.js).
+   * Only for a client that sends kadeSeq=1; off with KADE_STREAM_LOG=0. */
+  const kadeResume = createKadeStreamResume({ req, manager: GenerationJobManager, logger });
 
   res.setHeader('Content-Encoding', 'identity');
   res.setHeader('Content-Type', 'text/event-stream');
@@ -173,8 +177,12 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
   const writeEvent = (event, options = {}) => {
     if (!res.writableEnded) {
+      const idLine = kadeResume.idLine(event);
+      if (idLine === null) {
+        return true; // KADE pick 4: this client already has it
+      }
       const eventName = options.eventName ?? 'message';
-      const payload = `event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
+      const payload = `${idLine}event: ${eventName}\ndata: ${JSON.stringify(event)}\n\n`;
       res.write(payload);
       streamTelemetry.recordWrite(payload, { final: options.final });
       heartbeat?.noteRealWrite();
@@ -188,6 +196,9 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   };
 
   const onDone = (event) => {
+    if (kadeResume.holdDone(event)) {
+      return; // KADE pick 4: a cursor replay is still being written; the final frame comes after it
+    }
     streamTelemetry.recordFinalEventEmitted();
     writeEvent(event, { final: true });
     res.end();
@@ -206,7 +217,20 @@ router.get('/chat/stream/:streamId', async (req, res) => {
     expectedTaskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
   };
 
-  if (isResume) {
+  if (kadeResume.cursor) {
+    const resumed = await kadeResume.subscribe({
+      streamId,
+      writeEvent,
+      onDone,
+      onError,
+      subscriptionOptions,
+      res,
+    });
+    if (resumed.ended) {
+      return;
+    }
+    result = resumed.result;
+  } else if (isResume) {
     const { subscription, resumeState, pendingEvents } =
       await GenerationJobManager.subscribeWithResume(
         streamId,

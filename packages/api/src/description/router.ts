@@ -83,6 +83,7 @@ import { clock, spokenLength } from './transcript';
 import { fishSpeedModel, settingsSchema, slowestRate, Halt, tiers } from './types';
 import { pcmSeconds, sampleRate, trimSilence } from './mix';
 import { clipSpeed, ranOn } from './timing';
+import { listenAheadOn, readyPrefix, startAdvice } from './ahead';
 
 type RunKind = 'fresh' | 'preview' | 'finish' | 'revoice' | 'correction' | 'redo' | 'rehearsal';
 /** How a rehearsal ended; every ending leaves the video ready to describe. */
@@ -2831,6 +2832,8 @@ export function createDescriptionRouter(hooks: Hooks): {
           }
         : {}),
       previewSeconds: previewSeconds(),
+      /* Phase 4 pick 2 (Nov 12 2026): the page offers listening while a job is made. */
+      listenAhead: listenAheadOn(),
       library: !!hooks.library,
       defaultLibraryPath,
       ...(await prefsView(hooks.actor(req).id, catalog)),
@@ -3955,6 +3958,61 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
   const retryable = (record: SectionRecord) =>
     !record.analysis && !!record.failure && (record.failureClass ?? 'transient') === 'transient';
+
+  /* ---------- listening while it is made (Nov 2026) ----------
+   * The unbroken run of finished sections of the current run, as signed links to their sound
+   * (the film's own sound with the descriptions mixed in). Only for runs that describe from the
+   * start in order; a re-voicing, a redo or a run that reuses old sections is not offered.
+   * KADE_DESCRIPTION_LISTEN_AHEAD=0 turns it off: the route answers 404 and the page hides it. */
+  route('get', '/jobs/:id/sections/ready', async (req, res) => {
+    if (!listenAheadOn())
+      throw new Problem('Listening while a video is being described is switched off.', 404);
+    const job = await owned(req);
+    const spans = job.spans ?? [];
+    const manifest = job.manifest ?? [];
+    const scope = inScope(spans, job.stopAfter);
+    const inOrder =
+      !job.revoice &&
+      !job.reuseUnchanged &&
+      !job.redo?.length &&
+      (!job.runKind || describing.includes(job.runKind));
+    const open = busy.includes(job.state) || ['failed', 'cancelled', 'done'].includes(job.state);
+    const ready = inOrder && open ? readyPrefix(manifest, scope) : [];
+    const asked = Number.parseInt(String(req.query.from ?? '0'), 10);
+    const from = Number.isFinite(asked) && asked > 0 ? asked : 0;
+    const expiresIn = 6 * 3600;
+    const retry = new Set(job.retry ?? []);
+    const sections = await Promise.all(
+      ready
+        .filter((index) => index >= from)
+        .map(async (index) => ({
+          index,
+          /** Film seconds this section covers. Its sound can run longer when a description pauses the film. */
+          seconds: lengths(spans, [index]),
+          /** Its look failed: the film's own sound is there, the descriptions are not. */
+          undescribed: retry.has(index),
+          url: await getSignedUrl(
+            storage(),
+            new GetObjectCommand({
+              Bucket: bucket(),
+              Key: sectionKey(job, manifest[index] as number, index, 'flac'),
+              ResponseContentType: 'audio/flac',
+            }),
+            { expiresIn },
+          ),
+        })),
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      state: job.state,
+      making: job.state === 'running',
+      sections,
+      next: ready.length ? ready[ready.length - 1] + 1 : (scope[0] ?? 0),
+      count: scope.length,
+      ...startAdvice(lengths(spans, ready), lengths(spans, scope), eta(job)),
+      expiresAt: new Date(Date.now() + expiresIn * 1000),
+    });
+  });
 
   type KeeperState = {
     keeper: RunKeeper;

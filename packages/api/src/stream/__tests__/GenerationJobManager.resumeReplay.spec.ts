@@ -216,3 +216,118 @@ describe('GenerationJobManager resume replay events', () => {
     expect(resumeState?.replayEvents).toEqual(expect.arrayContaining(events));
   });
 });
+
+describe('KADE cursor log', () => {
+  let manager: GenerationJobManagerClass | undefined;
+  const delta = (text: string) =>
+    ({
+      event: 'on_message_delta',
+      data: { id: 'step-1', delta: { content: [{ type: 'text', text }] } },
+    }) as ServerSentEvent;
+
+  afterEach(async () => {
+    delete process.env.KADE_STREAM_LOG;
+    delete process.env.KADE_STREAM_LOG_MAX;
+    await manager?.destroy();
+    manager = undefined;
+  });
+
+  test('replays exactly the events after a cursor, including ones emitted with nobody listening', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('One. ');
+    const b = delta('Two. ');
+    const c = delta('Three.');
+    const sub = await manager.subscribe(streamId, () => {});
+    await manager.emitChunk(streamId, a);
+    await manager.emitChunk(streamId, b);
+    sub?.unsubscribe();
+    await manager.emitChunk(streamId, c);
+
+    const idA = manager.kadeIdOf(a);
+    const idC = manager.kadeIdOf(c);
+    expect(idA?.seq).toBe(1);
+    expect(idC?.seq).toBe(3);
+    expect(manager.kadeReplayAfter(streamId, idA!.epoch, idA!.seq)).toEqual({ exact: true, events: [b, c] });
+    expect(manager.kadeReplayAfter(streamId, idC!.epoch, idC!.seq)).toEqual({ exact: true, events: [] });
+  });
+
+  test('a cursor from another job, or past the end, is not exact and says why', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-epoch-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('One.');
+    await manager.emitChunk(streamId, a);
+    const id = manager.kadeIdOf(a)!;
+    expect(manager.kadeReplayAfter(streamId, 'deadbeef', 1)).toEqual({ exact: false, reason: 'other-job', events: [] });
+    expect(manager.kadeReplayAfter(streamId, id.epoch, 99)).toEqual({ exact: false, reason: 'out-of-range', events: [] });
+  });
+
+  test('a trimmed log refuses a cursor from before the trim', async () => {
+    process.env.KADE_STREAM_LOG_MAX = '200';
+    manager = createInMemoryManager();
+    const streamId = `kade-log-trim-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const first = delta('0');
+    await manager.emitChunk(streamId, first);
+    for (let i = 1; i < 500; i++) {
+      await manager.emitChunk(streamId, delta(String(i)));
+    }
+    const id = manager.kadeIdOf(first)!;
+    expect(manager.kadeReplayAfter(streamId, id.epoch, id.seq)?.exact).toBe(false);
+    expect(manager.kadeReplayAfter(streamId, id.epoch, 500)).toEqual({ exact: true, events: [] });
+    expect(manager.kadeReplayAfter(streamId, id.epoch, 499)?.events).toHaveLength(1);
+  });
+
+  test('the same event object is never logged twice', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-once-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('One.');
+    await manager.emitChunk(streamId, a);
+    await manager.emitChunk(streamId, a);
+    expect(manager.kadeIdOf(a)?.seq).toBe(1);
+  });
+
+  test('KADE_STREAM_LOG=0 keeps no log', async () => {
+    process.env.KADE_STREAM_LOG = '0';
+    manager = createInMemoryManager();
+    const streamId = `kade-log-off-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('One.');
+    await manager.emitChunk(streamId, a);
+    expect(manager.kadeIdOf(a)).toBeUndefined();
+    expect(manager.kadeReplayAfter(streamId, 'deadbeef', 0)).toBeNull();
+  });
+
+  test('a turn that replaces the job on the same stream answers an old cursor with other-job', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-replaced-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('Old turn.');
+    await manager.emitChunk(streamId, a);
+    const old = manager.kadeIdOf(a)!;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const b = delta('New turn.');
+    await manager.emitChunk(streamId, b);
+    expect(manager.kadeIdOf(b)?.epoch).not.toBe(old.epoch);
+    expect(manager.kadeReplayAfter(streamId, old.epoch, old.seq)).toEqual({
+      exact: false,
+      reason: 'other-job',
+      events: [],
+    });
+  });
+
+  test('an event the manager refuses to send is never logged', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-refused-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const internal = { _internal: true, event: 'x', data: {} } as unknown as ServerSentEvent;
+    await manager.emitChunk(streamId, internal);
+    expect(manager.kadeIdOf(internal)).toBeUndefined();
+    const stale = delta('From another reply.');
+    await manager.emitChunk(streamId, stale, 'not-the-current-response');
+    expect(manager.kadeIdOf(stale)).toBeUndefined();
+  });
+});

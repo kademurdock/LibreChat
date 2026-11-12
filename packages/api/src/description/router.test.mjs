@@ -4765,3 +4765,64 @@ test('DESC-7: the render deadline grows with the part being described', () => {
     delete process.env.KADE_DESCRIPTION_RENDER_SCALED;
   }
 });
+
+test('listening while it is made: the finished sections in order, only to the owner, never for a re-voicing or a reuse run', async () => {
+  await Budgets.deleteMany({});
+  const owner = 'ahead-owner';
+  const id = await readyJob(owner, 'ahead-upload-00000001', 150);
+  /* Before anything is made: nothing to play, the whole scope still to come. */
+  const before = (await call('get', `/jobs/${id}/sections/ready`, owner).expect(200)).body;
+  assert.deepEqual(before.sections, []);
+  failSection = calls.analyze + 2;
+  try {
+    await call('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+    const stopped = await settle(id, ['failed', 'done'], owner);
+    assert.equal(stopped.state, 'failed');
+    assert.equal(stopped.done, 1);
+  } finally {
+    failSection = -1;
+  }
+  const ready = await call('get', `/jobs/${id}/sections/ready`, owner).expect(200);
+  assert.equal(ready.headers['cache-control'], 'no-store');
+  const first = ready.body;
+  assert.equal(first.state, 'failed');
+  assert.equal(first.making, false);
+  assert.equal(first.count, 2);
+  assert.equal(first.next, 1);
+  assert.deepEqual(first.sections.map((item) => item.index), [0]);
+  assert.ok(first.sections[0].seconds > 0);
+  assert.equal(first.sections[0].undescribed, false);
+  assert.ok(first.readySeconds > 0 && first.readySeconds < first.totalSeconds);
+  const sound = Buffer.from(await (await fetch(first.sections[0].url)).arrayBuffer());
+  assert.equal(sound.subarray(0, 4).toString('latin1'), 'fLaC');
+  /* ?from past what is ready answers nothing new. */
+  assert.deepEqual((await call('get', `/jobs/${id}/sections/ready?from=1`, owner).expect(200)).body.sections, []);
+  /* Another account never sees it. */
+  await call('get', `/jobs/${id}/sections/ready`, 'ahead-stranger').expect(404);
+  /* The switch: off means 404 for the owner too, and /config says so. */
+  process.env.KADE_DESCRIPTION_LISTEN_AHEAD = '0';
+  try {
+    await call('get', `/jobs/${id}/sections/ready`, owner).expect(404);
+    assert.equal((await call('get', '/config', owner).expect(200)).body.listenAhead, false);
+  } finally {
+    delete process.env.KADE_DESCRIPTION_LISTEN_AHEAD;
+  }
+  assert.equal((await call('get', '/config', owner).expect(200)).body.listenAhead, true);
+
+  /* Continue to the end: a finished job keeps offering every section, so a listener is never cut off. */
+  await call('post', `/jobs/${id}/resume`, owner).send({}).expect(202);
+  const done = await settle(id, ['done', 'failed'], owner);
+  assert.equal(done.state, 'done', done.error);
+  const finished = (await call('get', `/jobs/${id}/sections/ready?from=1`, owner).expect(200)).body;
+  assert.equal(finished.making, false);
+  assert.deepEqual(finished.sections.map((item) => item.index), [1]);
+  assert.equal(finished.waitSeconds, 0);
+
+  /* A re-voicing or a run that reuses unchanged sections is never offered. */
+  for (const flag of [{ revoice: true }, { reuseUnchanged: true }, { redo: [1] }]) {
+    await Jobs.updateOne({ _id: id }, { $set: flag });
+    assert.deepEqual((await call('get', `/jobs/${id}/sections/ready`, owner).expect(200)).body.sections, [], JSON.stringify(flag));
+    await Jobs.updateOne({ _id: id }, { $unset: Object.fromEntries(Object.keys(flag).map((key) => [key, 1])) });
+  }
+  await call('delete', `/jobs/${id}`, owner).expect(200);
+});

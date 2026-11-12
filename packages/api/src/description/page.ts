@@ -105,6 +105,11 @@ export function describedVideoPage(sharedHead: string): string {
 <div class="row"><button id="dv-cancel" type="button">Cancel processing</button><button id="dv-resume" class="primary" type="button" aria-describedby="dv-resume-price dv-resume-note" hidden>Continue where it stopped</button><button id="dv-allow-more" class="primary" type="button" aria-describedby="dv-over-quote" hidden>Allow more and continue</button><button id="dv-recheck" class="primary" type="button" aria-describedby="dv-recheck-help" hidden>Check again</button><button id="dv-abandon" type="button" aria-describedby="dv-abandon-help" hidden>Go back to the last finished version</button><button id="dv-rename" type="button">Rename</button><button id="dv-delete" class="danger" type="button" hidden>Delete this video and its files</button></div>
 <p id="dv-over-quote" hidden></p><p id="dv-resume-price" class="hint" hidden></p><p id="dv-resume-note" class="hint" hidden></p><p id="dv-abandon-help" class="hint" hidden></p>
 <p id="dv-recheck-help" class="hint" hidden>The check was interrupted before it finished. Checking again is free.</p>
+<div id="dv-ahead-box" hidden>
+<button id="dv-listen-ahead" type="button">Listen now, sound only, while the rest is made</button>
+<audio id="dv-ahead" controls preload="auto" aria-label="Finished sections, sound only"></audio>
+<p id="dv-ahead-status" class="hint"></p>
+</div>
 <label for="dv-progress-pref">Tell me about progress</label><select id="dv-progress-pref"><option value="section">After every section</option><option value="quarter" selected>Every quarter of the way</option><option value="end">Only when it finishes</option></select>
 </section>
 
@@ -272,7 +277,7 @@ export const descriptionBrowserScript: string = String.raw`
   var $=function(id){return document.getElementById('dv-'+id);};
   function working(j){return !!j&&BUSY.indexOf(j.state)>=0;}
   function ended(m){return m.paused||m.ended;}
-  function playing(){return !ended($('video'))||!ended($('audio'))||!ended($('sample'));}
+  function playing(){return !ended($('video'))||!ended($('audio'))||!ended($('sample'))||(!!ahead&&!!ahead.id&&!ended($('ahead')));}
   function media(){return $('play-as').value==='audio'?$('audio'):$('video');}
   function say(text,force){
     if(!text)return;var now=Date.now(),status=$('status');
@@ -651,7 +656,7 @@ export const descriptionBrowserScript: string = String.raw`
     var value=serverSpeed('playbackRate'),local=Number(stored(PLAYBACK_KEY,0));
     if(value===null&&local>=0.5&&local<=3)value=local;
     if(value===null||!setSpeed('playback-rate',value))return;
-    var rate=Number($('playback-rate').value);$('video').playbackRate=rate;$('audio').playbackRate=rate;
+    var rate=Number($('playback-rate').value);$('video').playbackRate=rate;$('audio').playbackRate=rate;if(ahead&&ahead.id)$('ahead').playbackRate=rate;
   }
   function fillForm(saved){
     setVoice(saved.voice);setSpeed('rate',saved.rate);setSpeed('max-rate',saved.maxRate);[['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
@@ -971,6 +976,7 @@ export const descriptionBrowserScript: string = String.raw`
   }
   function renderDraftNote(){var text=draftNotice();$('draft-note').hidden=!text;$('draft-note').textContent=text;return text;}
   function resetView(){
+    aheadStop();
     ++fileRequest;$('video').pause();$('audio').pause();$('results').hidden=true;$('skip').hidden=true;loadedFiles='';cues=[];captionCues=[];captionShown='';$('caption').textContent='';lastJump=null;viewVersion=0;versionsSig='';lastLatest=0;pendingSwitch=0;
     $('transcript').textContent='';script=null;edits={};editing='';scriptJob='';shortTouched={};warnedShort={};staleDrafts=[];$('edit-fields').hidden=true;$('stale').hidden=true;$('edit-review-list').hidden=true;$('edit-status').textContent='';
     estimates={};presetSig='';redoEstimate=null;cancelSeenAt=0;lastQuarter=-1;$('position-note').textContent='';$('new-version').hidden=true;
@@ -1007,6 +1013,7 @@ export const descriptionBrowserScript: string = String.raw`
     renderVersions();
     var url=new URL(location.href);url.searchParams.set('id',job.id);url.searchParams.delete('book');url.searchParams.delete('track');history.replaceState(null,'',url);
     $('job-section').hidden=false;if($('job-title').textContent!==job.name)$('job-title').textContent=job.name;
+    $('ahead-box').hidden=!(config&&config.listenAhead&&((job.done>0&&['running','failed','cancelled'].indexOf(job.state)>=0)||ahead.id===job.id));
     $('stage').textContent=stateLine(job);
     $('progress').value=job.progress||0;$('progress').hidden=!working(job);
     $('eta').textContent=job.etaSeconds&&working(job)?'About '+length(Math.max(60,Math.round(job.etaSeconds/60)*60))+' left.':'';
@@ -1613,7 +1620,74 @@ export const descriptionBrowserScript: string = String.raw`
     if(!filesAt||Date.now()-filesAt<LINK_AGE)return;event.preventDefault();
     files(false).then(function(){location.href=$(kind+'-download').href;}).catch(failure);
   });});
-  $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;store(PLAYBACK_KEY,rate);saveSpeeds({playbackRate:rate});};
+  $('playback-rate').onchange=function(){var rate=Number(this.value);$('video').playbackRate=rate;$('audio').playbackRate=rate;if(ahead.id)$('ahead').playbackRate=rate;store(PLAYBACK_KEY,rate);saveSpeeds({playbackRate:rate});};
+  /* Listening while it is made (Nov 2026). Plays the finished sections' sound in order. At the
+   * frontier it waits and says so once. It never speaks while the film is playing. */
+  var ahead={list:[],at:0,timer:0,waiting:false,id:'',count:0,making:false};
+  /* The page keeps one live region (dv-status): the line is shown here and spoken there, only while the sound is stopped. */
+  function aheadSay(text){$('ahead-status').textContent=text;if(text)say(text,true);}
+  /* One poll every 30 seconds while the job is still being made: a setTimeout chain, so the
+   * page's own timers drive it and nothing outlives the job it was started for. */
+  function aheadArm(){if(ahead.timer)clearTimeout(ahead.timer);ahead.timer=setTimeout(function(){ahead.timer=0;aheadPoll();},30000);}
+  function aheadStop(){
+    if(ahead.timer)clearTimeout(ahead.timer);
+    ahead={list:[],at:0,timer:0,waiting:false,id:'',count:0,making:false};
+    var el=$('ahead');
+    if(el){el.onended=null;el.onerror=null;el.pause();el.removeAttribute('src');}
+    aheadSay('');
+  }
+  async function aheadPoll(){
+    if(!job||!ahead.id||ahead.id!==job.id){if(ahead.timer)clearTimeout(ahead.timer);ahead.timer=0;return;}
+    var id=ahead.id;
+    var from=ahead.list.length?ahead.list[ahead.list.length-1].index+1:0;
+    var result;
+    try{result=await call('/jobs/'+id+'/sections/ready?from='+from);}catch(e){if(ahead.id===id)aheadArm();return;}
+    if(ahead.id!==id)return;
+    if(result.making)aheadArm();else if(ahead.timer){clearTimeout(ahead.timer);ahead.timer=0;}
+    result.sections.forEach(function(item){ahead.list.push(item);});
+    ahead.making=result.making;ahead.count=result.count;
+    if(ahead.waiting&&ahead.at<ahead.list.length)aheadPlay();
+    else if(ahead.waiting&&!result.making){
+      ahead.waiting=false;
+      aheadSay(result.state==='done'?'That was the last section. The whole described copy is ready in the main player.':'The run stopped here. Nothing more is ready.');
+    }
+    return result;
+  }
+  function aheadPlay(){
+    var item=ahead.list[ahead.at],el=$('ahead');
+    if(!item){
+      if(!ahead.waiting){
+        ahead.waiting=true;
+        aheadSay(ahead.making?'You have caught up. Section '+(ahead.at+1)+' of '+ahead.count+' is still being made. It will start by itself.':'Checking for the next section.');
+        if(!ahead.making)aheadPoll();
+      }
+      return;
+    }
+    ahead.waiting=false;
+    var go=function(){
+      if(ahead.list[ahead.at]!==item)return;
+      var rate=Number($('playback-rate').value)||1;
+      el.src=item.url;el.defaultPlaybackRate=rate;el.playbackRate=rate;
+      el.play().catch(function(){aheadSay('Press Play to go on.');});
+    };
+    if(item.undescribed){aheadSay('The next part has no description. You will hear the film sound only.');setTimeout(go,2500);}
+    else{aheadSay('');go();}
+  }
+  async function aheadStart(){
+    aheadStop();
+    $('video').pause();$('audio').pause();
+    ahead.id=job.id;
+    var result=await aheadPoll();
+    if(!result||!ahead.list.length){aheadStop();aheadSay('No section is finished yet. Try again in a few minutes.');return;}
+    $('ahead').onended=function(){ahead.at+=1;aheadPlay();};
+    $('ahead').onerror=function(){if(!ahead.id)return;aheadSay('That section could not be played. Moving to the next one.');ahead.at+=1;aheadPlay();};
+    if(result.waitSeconds>0){
+      aheadSay('Starting. The describing is about '+Math.ceil(result.waitSeconds/60)+' minutes short of keeping ahead of you, so it may pause to wait part way through.');
+      setTimeout(aheadPlay,4000);
+    }else aheadPlay();
+  }
+  $('listen-ahead').onclick=function(){aheadStart().catch(function(e){aheadSay(String(e.message||e));});};
+  ['video','audio'].forEach(function(name){$(name).addEventListener('play',function(){if(ahead.id)aheadStop();});});
   function setPlayAs(value,quiet,away){
     var audio=value==='audio',from=audio?$('video'):$('audio'),to=media(),at=from.currentTime;
     if(!ended(from))from.pause();$('video').hidden=audio;$('audio').hidden=!audio;$('caption').hidden=audio;

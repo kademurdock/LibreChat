@@ -22,6 +22,8 @@
  * No '~' requires, so node --test loads it.
  */
 
+const toolCache = require('./kadeToolCache');
+
 const WEB_SEARCH = 'web_search';
 const WIKIPEDIA = 'kade_wikipedia';
 
@@ -140,6 +142,24 @@ function guardWebSearchTool(tool, { req, env = process.env, logger } = {}) {
   tool._call = async (...args) => {
     const gate = beginCall(turnKey, WEB_SEARCH, env);
     if (!gate.ok) return [gate.text, undefined];
+    /* KADE Nov 12 2026 (phase 4 pick 3): count, do not reuse. Has this person run this same search
+     * in the last 15 minutes? Scoped to the person served (a phone caller, not the service seat);
+     * nobody known = not counted. The log line carries no query text. */
+    try {
+      const scope = toolCache.personScope(req);
+      const again =
+        scope &&
+        toolCache.noteRepeat({
+          tool: WEB_SEARCH,
+          args: args[0],
+          scope,
+          ttlMs: 15 * 60 * 1000,
+          env,
+        });
+      if (again) logger?.warn?.('[kadeToolCache] web_search repeated within 15 minutes (not reused yet)');
+    } catch (_) {
+      /* counting never blocks a search */
+    }
     const out = await original(...args);
     const artifact = Array.isArray(out) ? out[1] : undefined;
     const error = artifact && artifact[WEB_SEARCH] && artifact[WEB_SEARCH].error;
