@@ -28,7 +28,7 @@ test('shared items open only for family members; everyone keeps their own', asyn
     require: (name) => (name === '@librechat/api' ? { familyLibraryMember: member } : require(name)),
     isId: () => true,
     isAdmin: (req) => req.user.role === 'ADMIN',
-    isChild: async (req) => req.user.kadeAccountType === 'child',
+    isChild: async (req) => req.user.role !== 'ADMIN' && ['child', 'teen'].includes(req.user.kadeAccountType),
     KadeBook: { findById: (id) => ({ lean: async () => books[id] || null }) },
   };
   vm.runInNewContext(slice('function libraryHiddenFrom(req)', 'function listenClock') + slice('async function openBook(req, id)', 'function summary('), c);
@@ -43,6 +43,9 @@ test('shared items open only for family members; everyone keeps their own', asyn
   assert.equal(await open(family, 'family'), 'family');
   assert.equal(await open(family, 'private'), null);
   assert.equal(await open({ id: 'fam-kid', kadeAccountType: 'child' }, 'grown'), null);
+  assert.equal(await open({ id: 'fam-teen', kadeAccountType: 'teen' }, 'grown'), null);
+  assert.equal(await open({ id: 'fam-holly' }, 'grown'), 'grown');
+  assert.equal(await open({ id: 'fam-holly', kadeAccountType: 'adult' }, 'grown'), 'grown');
   assert.equal(await open({ id: 'kade', role: 'ADMIN' }, 'private'), 'private');
 });
 
@@ -53,7 +56,7 @@ test("a collection shows only items its reader could open on their own", async (
     router: { get: (_path, ...handlers) => { c.handler = handlers.at(-1); } },
     requireJwtAuth() {},
     openCollection: async () => collection,
-    isChild: async (req) => req.user.kadeAccountType === 'child',
+    isChild: async (req) => req.user.role !== 'ADMIN' && ['child', 'teen'].includes(req.user.kadeAccountType),
     isAdmin: (req) => req.user.role === 'ADMIN',
     libraryHiddenFrom: (req) => !member(req.user),
     KadeBook: { find: (query) => { filter = query; return { lean: async () => [] }; } },
@@ -292,4 +295,34 @@ test('the shelf tells a restricted reader about the family collection, but not t
   assert.match(page, /\$\('familyLibraryNotice'\)\.hidden = !\(shelfData\.familyLibrary === false && /, 'only a plain false shows the notice');
   assert.match(page, /if \(shelfData\.familyLibrary === false && !family\.classList\.contains\('locked'\)\)/, 'and only a plain false marks the Family shelves row');
   assert.match(page, /if \(shelfData && shelfData\.familyLibrary !== true\) \$\('familyBlurb'\)\.hidden = true;/, 'the review seat is told nothing about a family collection');
+});
+
+test('SEC-5 grown-ups-only: a child or a teen is a child; untyped keeps what it sees; the admin sees all', async () => {
+  const stored = { 'fam-old': {}, 'fam-typed-teen': { kadeAccountType: 'teen' }, 'fam-boss': { role: 'ADMIN' } };
+  let reads = 0;
+  const c = {
+    require: (name) => {
+      if (name === '~/models') {
+        return { getUserById: async (id) => { reads++; if (id === 'boom') throw new Error('db'); return stored[id] || null; } };
+      }
+      if (name === '~/server/services/kadeAccountType') return require('../services/kadeAccountType');
+      return require(name);
+    },
+    logger, WeakMap, Promise, String,
+  };
+  vm.runInNewContext(slice('const childAnswers = new WeakMap();', 'const isAdmin = (req)') + '\nthis.isChild = isChild;', c);
+  const child = (user) => c.isChild({ user });
+  assert.equal(await child(undefined), true);
+  assert.equal(await child({ id: 'k', kadeAccountType: 'child' }), true);
+  assert.equal(await child({ id: 't', kadeAccountType: 'teen' }), true);
+  assert.equal(await child({ id: 'fam-typed-teen' }), true, 'a teen type stored but not on the request');
+  assert.equal(await child({ id: 'fam-old' }), false, 'untyped keeps what it sees today (minimal rule)');
+  assert.equal(await child({ id: 'boom' }), true, 'an unreadable account is a child');
+  assert.equal(await child({ id: 'a', kadeAccountType: 'adult' }), false);
+  assert.equal(await child({ id: 'kade', role: 'ADMIN' }), false);
+  assert.equal(await child({ id: 'fam-boss' }), false);
+  reads = 0;
+  const req = { user: { id: 'fam-old' } };
+  await Promise.all([c.isChild(req), c.isChild(req)]);
+  assert.equal(reads, 1, 'one user read per request');
 });

@@ -353,15 +353,39 @@ const clampInt = (v, lo, hi, dflt) => {
   return Math.max(lo, Math.min(hi, n));
 };
 
-async function isChild(req) {
+/* Audit fix SEC-5 (Nov 12 2026): these routes used to treat only a stored 'child' as a child, so a
+ * teen opened grown-ups-only items here while kade_library (KadeLibrary.js) and library requests
+ * (kadeLibraryRequests.js) hid them. Kade's rule (the minimal variant): a child or a teen gets the
+ * child rules (kadeAccountType.isChildLike); an untyped account keeps what it sees today; the
+ * admin sees everything. The Arcade and Community share this function.
+ * The answer is kept per request: openBook and readerFor both ask, and a book is opened for every
+ * audio chunk, so an account whose type is not on the request costs one user read per request. */
+const childAnswers = new WeakMap();
+async function readIsChild(req) {
   try {
-    if (req.user && req.user.kadeAccountType) return req.user.kadeAccountType === 'child';
-    const { getUserById } = require('~/models');
-    const u = await getUserById(req.user.id, 'kadeAccountType');
-    return !!(u && u.kadeAccountType === 'child');
+    const user = req && req.user;
+    if (!user) return true;
+    if (user.role === 'ADMIN') return false;
+    let type = user.kadeAccountType;
+    if (type == null || type === '') {
+      const { getUserById } = require('~/models');
+      const stored = await getUserById(user.id, 'kadeAccountType role');
+      if (stored && stored.role === 'ADMIN') return false;
+      type = stored && stored.kadeAccountType;
+    }
+    return require('~/server/services/kadeAccountType').isChildLike({ kadeAccountType: type });
   } catch (_) {
     return true; // when in doubt, the quieter shelf
   }
+}
+function isChild(req) {
+  if (!req || typeof req !== 'object') return Promise.resolve(true);
+  let answer = childAnswers.get(req);
+  if (!answer) {
+    answer = readIsChild(req);
+    childAnswers.set(req, answer);
+  }
+  return answer;
 }
 const isAdmin = (req) => req.user && req.user.role === 'ADMIN';
 /** Who puts an upload straight into the family library, no approval step: the

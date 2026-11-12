@@ -37,8 +37,8 @@ function opener(rows) {
     require: (name) => (name === '@librechat/api' ? { familyLibraryMember: member } : require(name)),
     isId: (id) => /^[a-z0-9-]+$/i.test(String(id || '')),
     isAdmin: (req) => req.user.role === 'ADMIN',
-    isChild: async (req) => req.user.kadeAccountType === 'child',
-    readerFor: async (req) => ({ id: String(req.user.id), admin: req.user.role === 'ADMIN', child: req.user.kadeAccountType === 'child', hidden: !member(req.user) }),
+    isChild: async (req) => req.user.role !== 'ADMIN' && ['child', 'teen'].includes(req.user.kadeAccountType),
+    readerFor: async (req) => ({ id: String(req.user.id), admin: req.user.role === 'ADMIN', child: req.user.role !== 'ADMIN' && ['child', 'teen'].includes(req.user.kadeAccountType), hidden: !member(req.user) }),
     KadeBook,
     libraryFiles,
   };

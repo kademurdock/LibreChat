@@ -28,12 +28,11 @@ test('the helpers', () => {
   assert.equal(A.accountTypeOf({ kadeAccountType: 'nonsense' }), null);
 });
 
-/* Every child gate in the server now asks isChildLike. These files are left on purpose:
- * the Library (kadeReadingRoom.js: not changed by this card), signup tagging (AuthController.js:
+/* Every child gate in the server now asks isChildLike (the Library joined on Nov 12 2026, audit
+ * SEC-5). These files are left on purpose: signup tagging (AuthController.js:
  * a signup code only makes adult or child), the song audience (kadeSongAudience.js: a teen is
  * already not an adult there, so it gets clean songs) and a comment in the MOO. */
 const LEFT = new Set([
-  'server/routes/kadeReadingRoom.js',
   'server/controllers/AuthController.js',
   'server/utils/kadeSongAudience.js',
   'app/clients/tools/kademoo/life/index.js',

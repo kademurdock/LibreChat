@@ -68,7 +68,7 @@ function harness(book = item()) {
       name === '@librechat/api' ? { familyLibraryMember, readingJacket: (x) => x } : require(name),
     isId: (id) => /^[a-f\d]{24}$/.test(String(id)),
     isAdmin: (req) => req.user.role === 'ADMIN',
-    isChild: async (req) => req.user.kadeAccountType === 'child',
+    isChild: async (req) => req.user.role !== 'ADMIN' && ['child', 'teen'].includes(req.user.kadeAccountType),
     KadeBook: {
       findById: (id) => ({ lean: async () => (id === ID ? structuredClone(book) : null) }),
       updateMany: async () => {
