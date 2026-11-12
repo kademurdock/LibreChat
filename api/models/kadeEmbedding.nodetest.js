@@ -124,12 +124,16 @@ test('TURN-14: recall reads only the active vector and still finds staged, live 
     const wrong = { ...options, values: new Map([['a::seats', 'Changed value'], ['a::band', 'The band.']]) };
     assert.deepEqual((await cards.searchCardVectors('p14', 'a', vector, wrong)).map((h) => h.key), ['band']);
 
-    /* the rollback lane: back on the old model, row (a) is served from its kept `embedding` */
-    delete process.env.KADE_EMBED_MODEL;
-    process.env.KADE_EMBED_GEMINI_KEY = 'test-only';
+    /* switching the lane switches which vector is read: on another model only that model's row
+     * is found, served from its own `embedding` */
+    process.env.KADE_EMBED_MODEL = 'other/rollback-model';
+    const otherIdentity = helpers.memoryEmbeddingLane().identity;
+    await diary.KadeDiaryEntry.create({ userId: 'p14', agentId: 'a', text: 'Other lane row.', entryDate: '2026-10-13',
+      embedding: other, embedModel: otherIdentity, embeddingNext: vector, embedNextModel: identity,
+      embedNextHash: helpers.embeddingTextHash('Other lane row.') });
     const back = await diary.searchDiary({ userId: 'p14', agentId: 'a', query: 'row', queryVector: other, minScore: 0.5 });
-    assert.deepEqual(new Set(back.map((x) => x.text)), new Set(['Staged row.', 'Stale row.']));
-    delete process.env.KADE_EMBED_GEMINI_KEY;
+    assert.deepEqual(back.map((x) => x.text), ['Other lane row.']);
+    process.env.KADE_EMBED_MODEL = 'qwen/qwen3-embedding-8b';
   } finally {
     await mongoose.disconnect();
     await server.stop();
