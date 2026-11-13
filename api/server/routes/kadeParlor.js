@@ -3,7 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeGameState } = require('~/models/kadeGameState');
 const { getGame, catalog } = require('~/app/clients/tools/kadegames');
-const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripAiTells, KADE_STYLE_NOTE, selfLineFor } = require('~/server/utils/stripAiTells');
 const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 const {
   resolveSeatAgents,
@@ -566,6 +566,15 @@ router.post('/talk/:gameId', requireJwtAuth, async (req, res) => {
       'Your persona:',
       String(agent.instructions || '(no special persona — be yourself)').slice(0, 1400),
       '',
+      // Nov 13 2026: the house self-knowledge line, judged on the part of the persona sent.
+      ...[
+        selfLineFor(String(agent.instructions || '').slice(0, 1400), {
+          agentId: agent.id,
+          child: require('~/server/services/kadeAccountType').isChildLike(req.user),
+        }).trim(),
+      ]
+        .filter(Boolean)
+        .flatMap((l) => [l, '']),
       // July 27 2026: same invisible anti-tell style note the chat lane gets.
       KADE_STYLE_NOTE.trim(),
       '',

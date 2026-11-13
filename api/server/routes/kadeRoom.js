@@ -13,7 +13,7 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const { KadeRoom } = require('~/models/kadeRoom');
-const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripAiTells, KADE_STYLE_NOTE, selfLineFor } = require('~/server/utils/stripAiTells');
 const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 const { KadeUsage, logKadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
@@ -276,6 +276,10 @@ function buildSystem(room, agentName, instructions, humanName, childMode, privat
     'YOUR PERSONA:',
     instructions || '(no special persona — be yourself)',
     '',
+    // Nov 13 2026: the house self-knowledge line, when the persona does not carry it ('' else).
+    ...[selfLineFor(instructions, { child: childMode }).trim()]
+      .filter(Boolean)
+      .flatMap((l) => [l, '']),
     // July 27 2026: same invisible anti-tell style note the chat lane gets.
     KADE_STYLE_NOTE.trim(),
     '',

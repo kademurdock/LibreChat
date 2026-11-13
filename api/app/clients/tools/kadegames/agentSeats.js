@@ -1,6 +1,6 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
-const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripAiTells, KADE_STYLE_NOTE, selfLineFor } = require('~/server/utils/stripAiTells');
 
 /**
  * Agent-seated tables (July 23 2026 — GAMES_PLAN phase 4: "each agent gets
@@ -23,13 +23,18 @@ const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells')
 const FALLBACK_MODEL = process.env.KADE_GAME_SEAT_FALLBACK_MODEL || 'xiaomi/mimo-v2.6-flash';
 const SEAT_MAX_TOKENS = parseInt(process.env.KADE_GAME_SEAT_MAX_TOKENS || '90', 10);
 
-function buildSeatSystem({ agentName, instructions, gameName, humanName }) {
+function buildSeatSystem({ agentName, instructions, gameName, humanName, agentId }) {
+  /* Nov 13 2026: the house self-knowledge line, judged on the part of the persona sent. A seat
+   * turn does not know who is listening, so it is the plain line; the child note of the chat
+   * lane does not ride here either. */
+  const selfLine = selfLineFor(String(instructions || '').slice(0, 1600), { agentId }).trim();
   return [
     `You are ${agentName}, sitting at a ${gameName} table in the Kade-AI Game Parlor with ${humanName || 'a friend'} and others. Stay fully in character.`,
     '',
     'Your persona:',
     String(instructions || '(no special persona — be yourself)').slice(0, 1600),
     '',
+    ...(selfLine ? [selfLine, ''] : []),
     // July 27 2026: same invisible anti-tell style note the chat lane gets —
     // kept ABOVE the reply-format contract so MOVE:/SAY: stays the last word.
     KADE_STYLE_NOTE.trim(),
@@ -58,6 +63,7 @@ async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanNa
     instructions: agent.instructions,
     gameName,
     humanName,
+    agentId: agent.id,
   });
   const userMsg = [
     ...seatViewObj.lines,
@@ -125,4 +131,4 @@ async function personaSeatTurn({ agent, seatName, gameName, seatViewObj, humanNa
   return { token, banter, costUSD };
 }
 
-module.exports = { personaSeatTurn };
+module.exports = { personaSeatTurn, buildSeatSystem };
