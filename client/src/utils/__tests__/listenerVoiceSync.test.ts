@@ -2,8 +2,10 @@ import {
   afterPush,
   cleanDelivery,
   emptySyncState,
+  parseStoredVoiceValue,
   planListenerSync,
   readSyncState,
+  stateForAccount,
   validPace,
   writeSyncState,
 } from '../listenerVoiceSync';
@@ -116,6 +118,84 @@ describe('planListenerSync (decision 24)', () => {
     expect(readSyncState()).toEqual({ seen: { pace: 'a' }, pending: { fillers: true } });
     localStorage.setItem('kadeVoiceSyncState', '{nope');
     expect(readSyncState()).toEqual(emptySyncState());
+  });
+
+  /* Sweep 5.2 (Nov 13 2026): the state belongs to one account; another account never inherits it. */
+  it('a pending change left by another account is dropped, and that browser never seeds the new account', () => {
+    localStorage.clear();
+    writeSyncState({ seen: { pace: 'a1' }, pending: { pace: true } }, 'amber');
+    expect(readSyncState('amber')).toEqual({
+      seen: { pace: 'a1' },
+      pending: { pace: true },
+      uid: 'amber',
+    });
+    const other = readSyncState('holly');
+    expect(other).toEqual({ seen: {}, pending: {}, uid: 'holly', noSeed: true });
+    // The first account's speed is still in this browser's storage; the second account never had one.
+    const plan = planListenerSync(
+      { delivery: {} },
+      local({ pace: 1.4, paceSaved: true, fillers: false, fillersSaved: true }),
+      other,
+    );
+    expect(plan.push).toEqual({});
+    expect(plan.apply).toEqual({});
+    // The second account's own values still arrive, and its own change here is still sent.
+    expect(
+      planListenerSync({ pace: 0.9, paceAt: 'h1' }, local({ pace: 1.4, paceSaved: true }), other)
+        .apply,
+    ).toEqual({ pace: 0.9 });
+    expect(
+      planListenerSync({ delivery: {} }, local({ pace: 1.1, paceSaved: true }), {
+        ...other,
+        pending: { pace: true },
+      }).push,
+    ).toEqual({ pace: 1.1 });
+    // noSeed stays with the state through a write and a push.
+    writeSyncState(other, 'holly');
+    expect(readSyncState('holly').noSeed).toBe(true);
+    expect(afterPush(other, { pace: 1.1 }, { pace: 1.1, paceAt: 'h2' })).toEqual({
+      seen: { pace: 'h2' },
+      pending: { pace: false },
+      uid: 'holly',
+      noSeed: true,
+    });
+  });
+
+  it('a state from before the fix keeps its stamps but not its pending change', () => {
+    localStorage.clear();
+    writeSyncState({ seen: { pace: 'a1', fillers: 'a2' }, pending: { pace: true } });
+    expect(readSyncState('amber')).toEqual({
+      seen: { pace: 'a1', fillers: 'a2' },
+      pending: {},
+      uid: 'amber',
+    });
+    expect(readSyncState()).toEqual({
+      seen: { pace: 'a1', fillers: 'a2' },
+      pending: { pace: true },
+    });
+  });
+
+  it('the kadeVoiceSyncGuards undo switch uses the state as stored, whoever wrote it', () => {
+    localStorage.clear();
+    writeSyncState({ seen: {}, pending: { pace: true } }, 'amber');
+    localStorage.setItem('kadeVoiceSyncGuards', '0');
+    expect(readSyncState('holly').pending).toEqual({ pace: true });
+    expect(
+      stateForAccount({ seen: {}, pending: { pace: true }, uid: 'amber' }, 'holly').pending,
+    ).toEqual({ pace: true });
+    localStorage.removeItem('kadeVoiceSyncGuards');
+  });
+
+  it('parseStoredVoiceValue reads what another tab saved', () => {
+    expect(parseStoredVoiceValue('voicePacePreference', '1.2')).toEqual({ pace: 1.2 });
+    expect(parseStoredVoiceValue('voicePacePreference', 'null')).toEqual({ pace: null });
+    expect(parseStoredVoiceValue('voicePacePreference', null)).toEqual({ pace: null });
+    expect(parseStoredVoiceValue('voicePacePreference', '9')).toBeUndefined();
+    expect(parseStoredVoiceValue('voicePacePreference', '{nope')).toBeUndefined();
+    expect(parseStoredVoiceValue('voiceFillers', 'false')).toEqual({ fillers: false });
+    expect(parseStoredVoiceValue('voiceFillers', null)).toEqual({ fillers: true });
+    expect(parseStoredVoiceValue('voiceFillers', '"yes"')).toBeUndefined();
+    expect(parseStoredVoiceValue('voice', '"x"')).toBeUndefined();
   });
 
   it('validPace and cleanDelivery', () => {

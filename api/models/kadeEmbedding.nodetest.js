@@ -144,7 +144,7 @@ test('TURN-14: recall reads only the active vector and still finds staged, live 
 function diaryWith(provider) {
   const calls = [];
   const original = api.requestMemoryEmbedding;
-  api.requestMemoryEmbedding = async (lane, text, purpose) => { calls.push({ text, purpose }); return provider(calls.length, purpose); };
+  api.requestMemoryEmbedding = async (lane, text, purpose, timeoutMs) => { calls.push({ text, purpose, timeoutMs }); return provider(calls.length, purpose); };
   try { return { diary: model('kadeDiary.js'), calls }; } finally { api.requestMemoryEmbedding = original; }
 }
 const timeoutError = () => Object.assign(new Error('timeout of 3000ms exceeded'), { code: 'ECONNABORTED' });
@@ -157,9 +157,47 @@ test('Oct 16: a memory query that times out is asked once more; documents fail s
   const query = diaryWith((n) => { if (n === 1) throw timeoutError(); return vector; });
   assert.deepEqual(await query.diary.embedText('what concert did I see', { purpose: 'query' }), vector);
   assert.equal(query.calls.length, 2);
+  /* Nov 13 2026 (sweep 8.2): a document that times out is asked once more; KADE_EMBED_DOC_RETRY=0 undoes it. */
   const doc = diaryWith(() => { throw timeoutError(); });
   assert.equal(await doc.diary.embedText('A concert memory.'), null);
-  assert.equal(doc.calls.length, 1, 'a document is not retried');
+  assert.equal(doc.calls.length, 2, 'a document is asked once more, and only once');
+  assert.equal(doc.diary.readEmbedHealth().failed, 1, 'two failed requests are one failed embed');
+  assert.equal(doc.diary.readEmbedHealth().docRetries, 1);
+  assert.equal(doc.diary.readEmbedHealth().docRetryWon, 0);
+  const docSecond = diaryWith((n) => { if (n === 1) throw timeoutError(); return vector; });
+  assert.deepEqual(await docSecond.diary.embedText('A concert memory.'), vector);
+  assert.equal(docSecond.calls.length, 2);
+  assert.deepEqual(docSecond.calls.map((c) => c.timeoutMs), [undefined, 12000], 'the second request waits longer than the 8 s first one');
+  assert.deepEqual(docSecond.diary.readEmbedHealth().byPurpose.document, { ok: 1, failed: 0 });
+  assert.equal(docSecond.diary.readEmbedHealth().docRetryWon, 1);
+  process.env.KADE_EMBED_DOC_TIMEOUT_MS = '20000';
+  const docLong = diaryWith((n) => { if (n === 1) throw timeoutError(); return vector; });
+  await docLong.diary.embedText('A concert memory.');
+  assert.equal(docLong.calls[1].timeoutMs, 20000, 'the second wait is never shorter than the first');
+  delete process.env.KADE_EMBED_DOC_TIMEOUT_MS;
+  const docRefused = diaryWith(() => { throw Object.assign(new Error('Request failed with status code 429'), { response: { status: 429 } }); });
+  assert.equal(await docRefused.diary.embedText('A concert memory.'), null);
+  assert.equal(docRefused.calls.length, 1, 'a refused document is not asked again');
+  process.env.KADE_EMBED_DOC_RETRY = '0';
+  const docOff = diaryWith(() => { throw timeoutError(); });
+  assert.equal(await docOff.diary.embedText('A concert memory.'), null);
+  assert.equal(docOff.calls.length, 1, 'switch off: a document fails soft at once, as before');
+  delete process.env.KADE_EMBED_DOC_RETRY;
+
+  /* Sweep 8.2: memory-health turns amber above 10% failures since boot (three failures at least). */
+  const amber = doc.diary.embedHealthAmber;
+  const eh = (ok, failed, byPurpose) => ({ ok, failed, byPurpose, provider: 'compatible', model: 'qwen', lastError: 'timeout of 3000ms exceeded' });
+  assert.equal(amber(eh(34, 8, { document: { ok: 29, failed: 7 }, tools: { ok: 2, failed: 1 }, query: { ok: 3, failed: 0 } }), {}).severity, 'amber', 'the Nov 13 live reading (19%) now warns');
+  assert.match(amber(eh(34, 8, { document: { ok: 29, failed: 7 }, tools: { ok: 2, failed: 1 }, query: { ok: 3, failed: 0 } }), {}).detail, /8 of 42 .*19%.*tool queries 1 of 3, writes 7 of 36.*timeout of 3000ms/);
+  assert.equal(amber(eh(95, 5), {}), null, '5% is quiet');
+  assert.equal(amber(eh(90, 10), {}), null, 'exactly 10% is quiet');
+  assert.equal(amber(eh(89, 11), {}).lane, 'embedding');
+  assert.equal(amber(eh(8, 2), {}), null, 'two failures on a young process is not a warning yet');
+  assert.equal(amber(eh(2, 1), {}).severity, 'amber', 'over 25% still speaks at any count, as before');
+  assert.equal(amber(eh(0, 5), {}), null, 'all failed is the red rule in the route, not this one');
+  assert.equal(amber(eh(50, 0), {}), null);
+  assert.equal(amber(eh(34, 8), { KADE_EMBED_WARN_RATIO: '0.25' }), null, 'the old threshold by switch');
+  assert.equal(amber(eh(34, 8), { KADE_EMBED_WARN_RATIO: 'junk' }).severity, 'amber');
   const tools = diaryWith(() => { throw timeoutError(); });
   assert.equal(await tools.diary.embedText('what is the weather', { purpose: 'tools' }), null);
   assert.equal(tools.calls.length, 1, 'the tools query is raced on the turn path; no retry');

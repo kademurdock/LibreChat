@@ -68,7 +68,14 @@ router.use('/chat/tasks', createTaskRouter({ getMessages, getConvo }));
  * so the clients' own byte-silence watchdogs can end the turn: the web call screen's 75 s, the
  * web chat's 45 s, and the phones' 300 s request timeouts (iPhone timeoutInterval, Android
  * readTimeout). Without the cap a stuck turn sat on "thinking" until the 20-minute job reaper.
- * Keep the cap under the phones' 300 s and well above 45 s. */
+ * Keep the cap under the phones' 300 s and well above 45 s.
+ *
+ * Nov 13 2026 (sweep 4.0): the cap follows the JOB, not the connection. It used to start again on
+ * every new GET (and the resume sync write counted as an event), so a hung turn got a fresh 240 s
+ * of pings on each reconnect and the website sat on "thinking" until the 20-minute reaper. Now the
+ * quiet time is measured from the job's last emitted event (GenerationJobManager.kadeLastEventAt),
+ * so a reconnect to a hung job gets no fresh allowance and a replay or sync write is not activity.
+ * KADE_SSE_HEARTBEAT_FOLLOW_JOB=0 goes back to the per-connection clock. */
 const DEFAULT_SSE_HEARTBEAT_MS = 20000;
 const DEFAULT_SSE_HEARTBEAT_IDLE_CAP_MS = 240000;
 function envMs(name, fallback) {
@@ -85,28 +92,53 @@ function sseHeartbeatMs() {
 function sseHeartbeatIdleCapMs() {
   return envMs('KADE_SSE_HEARTBEAT_IDLE_CAP_MS', DEFAULT_SSE_HEARTBEAT_IDLE_CAP_MS);
 }
-/** Returns { noteRealWrite } (call it on every real event written), or null when off. */
-function startStreamHeartbeat(res) {
+function sseHeartbeatFollowsJob() {
+  return String(process.env.KADE_SSE_HEARTBEAT_FOLLOW_JOB ?? '').trim() !== '0';
+}
+/** Returns { noteRealWrite } (call it on every real event written), or null when off.
+ * `jobLastEventAt` (optional) returns the time of the job's last real event; when it gives a
+ * number the quiet-cap is measured from that and this connection's own writes do not count. */
+function startStreamHeartbeat(res, jobLastEventAt) {
   const every = sseHeartbeatMs();
   if (!every) {
     return null;
   }
   const idleCap = sseHeartbeatIdleCapMs();
+  const followJob = typeof jobLastEventAt === 'function' && sseHeartbeatFollowsJob();
   let lastRealWriteAt = Date.now();
+  let quiet = false;
+  const quietSince = () => {
+    if (followJob) {
+      let at;
+      try {
+        at = jobLastEventAt();
+      } catch {
+        at = undefined;
+      }
+      if (typeof at === 'number' && Number.isFinite(at)) {
+        return at;
+      }
+    }
+    return lastRealWriteAt;
+  };
   const heartbeat = setInterval(() => {
     if (res.writableEnded || res.destroyed) {
       clearInterval(heartbeat);
       return;
     }
-    if (idleCap && Date.now() - lastRealWriteAt >= idleCap) {
-      // Nothing real for the whole cap: the job is probably hung. Go quiet for good so the
-      // clients' silence watchdogs can end the turn; the job reaper still ends the response.
-      clearInterval(heartbeat);
-      logger.warn(
-        `[AgentStream] No events for ${Math.round(idleCap / 1000)}s - heartbeat stopped so clients can time out`,
-      );
+    if (idleCap && Date.now() - quietSince() >= idleCap) {
+      // Nothing real for the whole cap: the job is probably hung. Stay quiet so the clients'
+      // silence watchdogs can end the turn; the job reaper still ends the response. The pings
+      // only come back if the job emits a real event again (a long silent tool that finished).
+      if (!quiet) {
+        quiet = true;
+        logger.warn(
+          `[AgentStream] No events for ${Math.round(idleCap / 1000)}s - heartbeat stopped so clients can time out`,
+        );
+      }
       return;
     }
+    quiet = false;
     try {
       res.write(': ping\n\n');
       if (typeof res.flush === 'function') {
@@ -171,7 +203,11 @@ router.get('/chat/stream/:streamId', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
   streamTelemetry.recordHeadersFlushed();
-  const heartbeat = startStreamHeartbeat(res);
+  const heartbeat = startStreamHeartbeat(res, () =>
+    typeof GenerationJobManager.kadeLastEventAt === 'function'
+      ? GenerationJobManager.kadeLastEventAt(streamId)
+      : undefined,
+  );
 
   logger.debug(`[AgentStream] Client subscribed to ${streamId}, resume: ${isResume}`);
 

@@ -18,9 +18,16 @@
  * Delivery is read-only on the website (it has no delivery control yet); it is applied whenever the
  * account's delivery stamp changes.
  *
+ * Nov 13 2026 (sweep 5.2): the sync state remembers WHOSE it is (`uid`). A state left by another
+ * account on this browser is not used: its pending changes are dropped, and this browser's saved
+ * values are not seeded into the new account (`noSeed`), so one person's speed can never be sent
+ * to someone else's account on a shared computer. The hook also follows changes made in another
+ * tab (a `storage` listener). Undo both on one browser: localStorage kadeVoiceSyncGuards = '0'.
+ *
  * Undo on one browser: localStorage.setItem('kadeVoiceSync', '0'); the server switch is
  * KADE_LISTENER_PREFS=0.
  */
+import { kadeSwitchOn } from './kadeSwitch';
 
 export type DeliveryMode = 'STABLE' | 'BALANCED' | 'CREATIVE';
 
@@ -38,6 +45,10 @@ export interface ListenerSyncState {
   seen: { pace?: string; fillers?: string; delivery?: string };
   /** A change made here that the account has not taken yet. */
   pending: { pace?: boolean; fillers?: boolean };
+  /** The account this state belongs to (sweep 5.2). Absent in a state written before Nov 13. */
+  uid?: string;
+  /** Another account used this browser before: its saved values must not seed this account. */
+  noSeed?: boolean;
 }
 
 export interface LocalListenerValues {
@@ -62,28 +73,80 @@ export function emptySyncState(): ListenerSyncState {
   return { seen: {}, pending: {} };
 }
 
-export function readSyncState(): ListenerSyncState {
+/**
+ * The stored state as it applies to the account `uid` (sweep 5.2).
+ * - Same account: as stored.
+ * - Another account's state: nothing of it is used, and this browser's saved values are not
+ *   seeded into this account (they are the other person's choices).
+ * - A state from before Nov 13 (no uid): the stamps are kept, a pending change is dropped,
+ *   because nobody can say whose it was.
+ * Without a uid, or with the kadeVoiceSyncGuards switch off, the state is used as stored.
+ */
+export function stateForAccount(
+  state: ListenerSyncState,
+  uid: string | null | undefined,
+): ListenerSyncState {
+  if (!uid || !kadeSwitchOn('voiceSyncGuards')) {
+    return state;
+  }
+  if (state.uid === uid) {
+    return state;
+  }
+  if (state.uid) {
+    return { seen: {}, pending: {}, uid, noSeed: true };
+  }
+  return { seen: { ...state.seen }, pending: {}, uid };
+}
+
+export function readSyncState(uid?: string | null): ListenerSyncState {
   try {
     const raw = globalThis.localStorage?.getItem(LISTENER_SYNC_STATE_KEY);
     if (!raw) {
-      return emptySyncState();
+      return stateForAccount(emptySyncState(), uid);
     }
     const parsed = JSON.parse(raw) as Partial<ListenerSyncState>;
-    return {
-      seen: parsed && typeof parsed.seen === 'object' && parsed.seen ? parsed.seen : {},
-      pending: parsed && typeof parsed.pending === 'object' && parsed.pending ? parsed.pending : {},
-    };
+    return stateForAccount(
+      {
+        seen: parsed && typeof parsed.seen === 'object' && parsed.seen ? parsed.seen : {},
+        pending:
+          parsed && typeof parsed.pending === 'object' && parsed.pending ? parsed.pending : {},
+        ...(parsed && typeof parsed.uid === 'string' && parsed.uid ? { uid: parsed.uid } : {}),
+        ...(parsed && parsed.noSeed === true ? { noSeed: true } : {}),
+      },
+      uid,
+    );
   } catch {
-    return emptySyncState();
+    return stateForAccount(emptySyncState(), uid);
   }
 }
 
-export function writeSyncState(state: ListenerSyncState): void {
+export function writeSyncState(state: ListenerSyncState, uid?: string | null): void {
   try {
-    globalThis.localStorage?.setItem(LISTENER_SYNC_STATE_KEY, JSON.stringify(state));
+    const owned = uid && kadeSwitchOn('voiceSyncGuards') ? { ...state, uid } : state;
+    globalThis.localStorage?.setItem(LISTENER_SYNC_STATE_KEY, JSON.stringify(owned));
   } catch {
     /* storage blocked: the next sync starts fresh, which is safe */
   }
+}
+
+/** The value another tab just saved under one of the two voice keys, or undefined if unusable. */
+export function parseStoredVoiceValue(
+  key: string,
+  raw: string | null,
+): { pace: number | null } | { fillers: boolean } | undefined {
+  try {
+    if (key === 'voicePacePreference') {
+      const value = raw == null ? null : JSON.parse(raw);
+      return validPace(value) ? { pace: value } : undefined;
+    }
+    if (key === 'voiceFillers') {
+      const value = raw == null ? true : JSON.parse(raw);
+      return typeof value === 'boolean' ? { fillers: value } : undefined;
+    }
+  } catch {
+    /* not JSON: ignore */
+  }
+  return undefined;
 }
 
 /** True when this browser holds its own saved value under `key`. */
@@ -130,6 +193,8 @@ export function planListenerSync(
   if (!account || typeof account !== 'object') {
     return plan;
   }
+  /** Sweep 5.2: values another account left in this browser never seed this account. */
+  const maySeed = state.noSeed !== true;
 
   // Pace
   if (state.pending.pace) {
@@ -142,7 +207,13 @@ export function planListenerSync(
       }
       plan.seen.pace = account.paceAt;
     }
-  } else if (!account.paceAt && local.paceSaved && !state.seen.pace && validPace(local.pace)) {
+  } else if (
+    maySeed &&
+    !account.paceAt &&
+    local.paceSaved &&
+    !state.seen.pace &&
+    validPace(local.pace)
+  ) {
     plan.push.pace = local.pace;
   }
 
@@ -156,7 +227,7 @@ export function planListenerSync(
       }
       plan.seen.fillers = account.fillersAt;
     }
-  } else if (!account.fillersAt && local.fillersSaved && !state.seen.fillers) {
+  } else if (maySeed && !account.fillersAt && local.fillersSaved && !state.seen.fillers) {
     plan.push.fillers = local.fillers;
   }
 
@@ -175,7 +246,11 @@ export function afterPush(
   sent: { pace?: unknown; fillers?: unknown },
   account: AccountListenerPrefs | null | undefined,
 ): ListenerSyncState {
-  const next: ListenerSyncState = { seen: { ...state.seen }, pending: { ...state.pending } };
+  const next: ListenerSyncState = {
+    ...state,
+    seen: { ...state.seen },
+    pending: { ...state.pending },
+  };
   if ('pace' in sent && account?.paceAt) {
     next.seen.pace = account.paceAt;
     next.pending.pace = false;

@@ -4,6 +4,37 @@ const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/en
 const { getEnvProxyDispatcher } = require('@librechat/api');
 const { logKadeUsage } = require('~/models/kadeUsage');
 
+/* Nov 13 2026 (sweep 0.8): a search answer went into the prompt whole. With include_raw_content a
+ * result carries the entire page, with no limit, and every later step of the turn pays for it
+ * again. Each result's `content` and `raw_content` are now cut to KADE_TAVILY_RESULT_MAX_CHARS
+ * characters (default 6000; 0 = no cut, the old behaviour). The page reader is the tool for a
+ * whole page. */
+function tavilyResultMaxChars(env = process.env) {
+  const raw = env && env.KADE_TAVILY_RESULT_MAX_CHARS;
+  if (raw == null || String(raw).trim() === '') return 6000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 6000;
+}
+function capTavilyResults(json, max = tavilyResultMaxChars()) {
+  if (!(max > 0) || !json || !Array.isArray(json.results)) return json;
+  const cut = (value) =>
+    typeof value === 'string' && value.length > max
+      ? `${value.slice(0, max)} [cut at ${max} characters]`
+      : value;
+  return {
+    ...json,
+    results: json.results.map((r) =>
+      r && typeof r === 'object'
+        ? {
+            ...r,
+            ...('content' in r ? { content: cut(r.content) } : {}),
+            ...('raw_content' in r ? { raw_content: cut(r.raw_content) } : {}),
+          }
+        : r,
+    ),
+  };
+}
+
 const tavilySearchJsonSchema = {
   type: 'object',
   properties: {
@@ -149,8 +180,10 @@ class TavilySearchResults extends Tool {
       });
     }
 
-    return JSON.stringify(json);
+    return JSON.stringify(capTavilyResults(json));
   }
 }
 
 module.exports = TavilySearchResults;
+module.exports.capTavilyResults = capTavilyResults;
+module.exports.tavilyResultMaxChars = tavilyResultMaxChars;

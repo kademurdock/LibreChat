@@ -5,6 +5,7 @@ import { kadeSwitchOn } from '~/utils/kadeSwitch';
 import {
   afterPush,
   hasSavedValue,
+  parseStoredVoiceValue,
   planListenerSync,
   readSyncState,
   validPace,
@@ -25,12 +26,15 @@ type PutReply = { ok?: boolean; listener?: AccountListenerPrefs };
  * this browser's changes up. Rules: utils/listenerVoiceSync.ts. Undo on one browser:
  * localStorage kadeVoiceSync = '0'.
  */
-export default function useListenerVoiceSync(isAuthenticated: boolean) {
+export default function useListenerVoiceSync(isAuthenticated: boolean, userId?: string | null) {
   const [pace, setPace] = useRecoilState(store.voicePacePreference);
   const [fillers, setFillers] = useRecoilState(store.voiceFillers);
   const setDelivery = useSetRecoilState(store.voiceDeliveryByAgent);
 
   const on = isAuthenticated && kadeSwitchOn('voiceSync');
+  /* Nov 13 2026 (sweep 5.2): the sync state is read and written for THIS account only, so a
+   * change left pending by someone else on this browser is never sent to this account. */
+  const uid = userId || null;
   /** The values this hook last saw or applied; a different value in an atom is the listener's own change. */
   const known = useRef<{ pace: number | null; fillers: boolean } | null>(null);
   const current = useRef({ pace, fillers });
@@ -41,27 +45,30 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
    * changes reached the account cannot put her older value back with its stale stamp. */
   const pushesDone = useRef(0);
 
-  const push = useCallback(async (body: { pace?: number | null; fillers?: boolean }) => {
-    if (!Object.keys(body).length) {
-      return;
-    }
-    try {
-      const reply = (await request.put('/api/kade/voice-prefs', body)) as PutReply;
-      if (!reply?.ok || !reply.listener) {
+  const push = useCallback(
+    async (body: { pace?: number | null; fillers?: boolean }) => {
+      if (!Object.keys(body).length) {
         return;
       }
-      // Clear pending only for a value this browser still holds; a newer change sends itself.
-      const stillHeld: { pace?: unknown; fillers?: unknown } = {};
-      if ('pace' in body && body.pace === current.current.pace) stillHeld.pace = body.pace;
-      if ('fillers' in body && body.fillers === current.current.fillers) {
-        stillHeld.fillers = body.fillers;
+      try {
+        const reply = (await request.put('/api/kade/voice-prefs', body)) as PutReply;
+        if (!reply?.ok || !reply.listener) {
+          return;
+        }
+        // Clear pending only for a value this browser still holds; a newer change sends itself.
+        const stillHeld: { pace?: unknown; fillers?: unknown } = {};
+        if ('pace' in body && body.pace === current.current.pace) stillHeld.pace = body.pace;
+        if ('fillers' in body && body.fillers === current.current.fillers) {
+          stillHeld.fillers = body.fillers;
+        }
+        writeSyncState(afterPush(readSyncState(uid), stillHeld, reply.listener), uid);
+        pushesDone.current += 1;
+      } catch {
+        /* offline or the server switch is off: the change stays pending here and goes on the next sync */
       }
-      writeSyncState(afterPush(readSyncState(), stillHeld, reply.listener));
-      pushesDone.current += 1;
-    } catch {
-      /* offline or the server switch is off: the change stays pending here and goes on the next sync */
-    }
-  }, []);
+    },
+    [uid],
+  );
 
   const sync = useCallback(async () => {
     if (inFlight.current) {
@@ -90,10 +97,10 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
           paceSaved: hasSavedValue('voicePacePreference'),
           fillersSaved: hasSavedValue('voiceFillers'),
         },
-        readSyncState(),
+        readSyncState(uid),
       );
-      const state = readSyncState();
-      writeSyncState({ seen: plan.seen, pending: state.pending });
+      const state = readSyncState(uid);
+      writeSyncState({ ...state, seen: plan.seen, pending: state.pending }, uid);
       if ('pace' in plan.apply && validPace(plan.apply.pace)) {
         const value = plan.apply.pace ?? null;
         known.current = { ...(known.current ?? local), pace: value };
@@ -113,7 +120,7 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
     } finally {
       inFlight.current = false;
     }
-  }, [push, setPace, setFillers, setDelivery]);
+  }, [push, setPace, setFillers, setDelivery, uid]);
 
   // The account's values, once signed in, and again when the tab is shown after a while.
   useEffect(() => {
@@ -132,6 +139,38 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [on, sync]);
+
+  /* Nov 13 2026 (sweep 5.2): another tab changed the speed or the filler switch. Its value is
+   * already in localStorage and that tab sends it to the account; this tab only has to follow.
+   * `known` is set first, so the effect below does not take it for a change made here and push it. */
+  useEffect(() => {
+    if (!on || !kadeSwitchOn('voiceSyncGuards')) {
+      return;
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'voicePacePreference' && event.key !== 'voiceFillers') {
+        return;
+      }
+      if (event.storageArea != null && event.storageArea !== globalThis.localStorage) {
+        return;
+      }
+      const stored = parseStoredVoiceValue(event.key, event.newValue);
+      if (!stored) {
+        return;
+      }
+      if ('pace' in stored) {
+        if (stored.pace === current.current.pace) return;
+        known.current = { ...(known.current ?? current.current), pace: stored.pace };
+        setPace(stored.pace);
+      } else {
+        if (stored.fillers === current.current.fillers) return;
+        known.current = { ...(known.current ?? current.current), fillers: stored.fillers };
+        setFillers(stored.fillers);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [on, setPace, setFillers]);
 
   // The listener's own changes in this browser: saved here already by the atom, marked pending, sent up.
   useEffect(() => {
@@ -154,15 +193,19 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
     if (!Object.keys(body).length) {
       return;
     }
-    const state = readSyncState();
-    writeSyncState({
-      seen: state.seen,
-      pending: {
-        ...state.pending,
-        ...('pace' in body ? { pace: true } : {}),
-        ...('fillers' in body ? { fillers: true } : {}),
+    const state = readSyncState(uid);
+    writeSyncState(
+      {
+        ...state,
+        seen: state.seen,
+        pending: {
+          ...state.pending,
+          ...('pace' in body ? { pace: true } : {}),
+          ...('fillers' in body ? { fillers: true } : {}),
+        },
       },
-    });
+      uid,
+    );
     void push(body);
-  }, [on, pace, fillers, push]);
+  }, [on, pace, fillers, push, uid]);
 }

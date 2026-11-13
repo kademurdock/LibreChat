@@ -28,6 +28,88 @@ const kadeReadPageJsonSchema = {
   required: ['url'],
 };
 
+/* Nov 13 2026 (sweep 0.0) -- THE PAGE READER NEVER FETCHES A PRIVATE ADDRESS.
+ *
+ * The fallback fetch below runs from inside the website's own network. A page, a search result or
+ * a pasted message could tell a character to read http://<service>.railway.internal:port/... (or a
+ * public link that redirects there), and whatever answered was read back to the person. The check
+ * used to be "starts with http".
+ *
+ * Now, before anything is fetched and again on every redirect hop, the address is refused when it
+ * is loopback, private, link-local, a known inside name, *.internal / *.local, or resolves to one
+ * (the fork's own helpers: packages/api/src/auth/domain.ts isSSRFTarget and resolveHostnameSSRF).
+ * Redirects are followed by hand (maxRedirects 0, at most 5 hops) so each hop is checked, and the
+ * connection itself refuses a private address (createSSRFSafeAgents), which covers a name that
+ * changes its answer between the check and the connect. If the helpers cannot be loaded the
+ * fetch is refused, not allowed. KADE_READ_PAGE_SSRF=0 puts back the old unchecked fetch. */
+const MAX_REDIRECT_HOPS = 5;
+function ssrfGuardOn(env = process.env) {
+  return String((env && env.KADE_READ_PAGE_SSRF) ?? '').trim() !== '0';
+}
+function ssrfHelpers() {
+  try {
+    const api = require('@librechat/api');
+    if (typeof api.isSSRFTarget === 'function' && typeof api.resolveHostnameSSRF === 'function') {
+      return api;
+    }
+  } catch (_) {
+    /* fall through: refused below */
+  }
+  return null;
+}
+/** True when this address must not be fetched from the server. Fails closed. */
+async function isPrivateTarget(rawUrl) {
+  let u;
+  try {
+    u = new URL(String(rawUrl));
+  } catch (_) {
+    return true;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+  const host = u.hostname
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase()
+    .replace(/\.+$/, '');
+  if (!host) return true;
+  if (host === 'railway.internal' || host.endsWith('.railway.internal')) return true;
+  const helpers = ssrfHelpers();
+  if (!helpers) return true;
+  if (helpers.isSSRFTarget(host)) return true;
+  try {
+    return (await helpers.resolveHostnameSSRF(host)) === true;
+  } catch (_) {
+    return true;
+  }
+}
+const PRIVATE_REFUSAL =
+  "I can't read that address: it points inside a private network, not to a public web page.";
+class PrivateTargetError extends Error {}
+/** GET with every hop checked. Throws PrivateTargetError when a hop is private. */
+async function fetchPublicPage(url, options) {
+  const helpers = ssrfHelpers();
+  const agents =
+    helpers && typeof helpers.createSSRFSafeAgents === 'function'
+      ? helpers.createSSRFSafeAgents()
+      : {};
+  let current = String(url);
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    if (await isPrivateTarget(current)) {
+      throw new PrivateTargetError(PRIVATE_REFUSAL);
+    }
+    const r = await axios.get(current, {
+      ...options,
+      ...agents,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+    if (r.status < 300) return r;
+    const location = r.headers && (r.headers.location || r.headers.Location);
+    if (!location) throw new Error(`Request failed with status code ${r.status}`);
+    current = new URL(String(location), current).toString();
+  }
+  throw new Error('too many redirects');
+}
+
 function stripHtml(html) {
   let s = String(html || '');
   s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -68,6 +150,12 @@ class KadeReadPage extends Tool {
     const { url, max_chars } = data || {};
     if (!url || !/^https?:\/\//i.test(url)) return 'I need a full http(s) URL.';
     const cap = Math.min(40000, Math.max(2000, parseInt(max_chars, 10) || 12000));
+    const guarded = ssrfGuardOn();
+    /* Sweep 0.0: a private address is refused before anything is asked, the outside reader included. */
+    if (guarded && (await isPrivateTarget(url))) {
+      logger.warn('[KadeReadPage] refused a private address');
+      return PRIVATE_REFUSAL;
+    }
 
     // 1) Jina Reader — free tier, no key, handles JS-rendered pages.
     try {
@@ -92,7 +180,7 @@ class KadeReadPage extends Tool {
 
     // 2) Fallback: fetch the raw page ourselves and strip the tags.
     try {
-      const r = await axios.get(url, {
+      const fetchOptions = {
         timeout: 20000,
         responseType: 'text',
         headers: {
@@ -101,8 +189,10 @@ class KadeReadPage extends Tool {
           Accept: 'text/html,application/xhtml+xml',
         },
         maxContentLength: 5 * 1024 * 1024,
-        maxRedirects: 5,
-      });
+      };
+      const r = guarded
+        ? await fetchPublicPage(url, fetchOptions)
+        : await axios.get(url, { ...fetchOptions, maxRedirects: 5 });
       const titleMatch = String(r.data).match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       let text = stripHtml(r.data);
       if (!text || text.length < 100) return `I fetched ${url} but couldn't find readable text on it — it may be an app-style page or behind a login.`;
@@ -110,6 +200,10 @@ class KadeReadPage extends Tool {
       const title = titleMatch ? stripHtml(titleMatch[1]) : '';
       return (title ? `PAGE TITLE: ${title}\n\n` : '') + text;
     } catch (err) {
+      if (err instanceof PrivateTargetError) {
+        logger.warn('[KadeReadPage] refused a redirect to a private address');
+        return PRIVATE_REFUSAL;
+      }
       logger.warn(`[KadeReadPage] direct fetch failed for ${url}: ${err.message}`);
       return `I couldn't read that page (${err.message}). It may be blocking readers or require a login.`;
     }
@@ -117,3 +211,5 @@ class KadeReadPage extends Tool {
 }
 
 module.exports = KadeReadPage;
+module.exports.isPrivateTarget = isPrivateTarget;
+module.exports.PRIVATE_REFUSAL = PRIVATE_REFUSAL;

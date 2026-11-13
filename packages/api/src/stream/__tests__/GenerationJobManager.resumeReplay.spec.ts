@@ -228,6 +228,7 @@ describe('KADE cursor log', () => {
   afterEach(async () => {
     delete process.env.KADE_STREAM_LOG;
     delete process.env.KADE_STREAM_LOG_MAX;
+    delete process.env.KADE_STREAM_LOG_EAGER;
     await manager?.destroy();
     manager = undefined;
   });
@@ -317,6 +318,59 @@ describe('KADE cursor log', () => {
       reason: 'other-job',
       events: [],
     });
+  });
+
+  /* Sweep 4.1 (Nov 13 2026): the epoch is made with the job, not on its first event. */
+  test('a new turn with no event yet still answers an old cursor with other-job', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-log-early-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    const a = delta('Old turn.');
+    await manager.emitChunk(streamId, a);
+    const old = manager.kadeIdOf(a)!;
+    await manager.createJob(streamId, 'user-1', streamId); // the new turn: nothing emitted yet
+    expect(manager.kadeReplayAfter(streamId, old.epoch, old.seq)).toEqual({
+      exact: false,
+      reason: 'other-job',
+      events: [],
+    });
+    const b = delta('New turn.');
+    await manager.emitChunk(streamId, b);
+    expect(manager.kadeIdOf(b)?.seq).toBe(1);
+    expect(manager.kadeIdOf(b)?.epoch).not.toBe(old.epoch);
+  });
+
+  test('KADE_STREAM_LOG_EAGER=0 makes the log on the first event, as before', async () => {
+    process.env.KADE_STREAM_LOG_EAGER = '0';
+    manager = createInMemoryManager();
+    const streamId = `kade-log-lazy-${Date.now()}`;
+    await manager.createJob(streamId, 'user-1', streamId);
+    expect(manager.kadeReplayAfter(streamId, 'deadbeef', 1)).toBeNull();
+    await manager.emitChunk(streamId, delta('One.'));
+    expect(manager.kadeReplayAfter(streamId, 'deadbeef', 1)?.reason).toBe('other-job');
+  });
+
+  /* Sweep 4.0 (Nov 13 2026): the heartbeat's quiet-cap follows the job's last real event. */
+  test('kadeLastEventAt starts at creation and moves only when the job emits', async () => {
+    manager = createInMemoryManager();
+    const streamId = `kade-last-event-${Date.now()}`;
+    expect(manager.kadeLastEventAt(streamId)).toBeUndefined();
+    const nowSpy = jest.spyOn(Date, 'now');
+    try {
+      nowSpy.mockReturnValue(1_000_000);
+      await manager.createJob(streamId, 'user-1', streamId);
+      expect(manager.kadeLastEventAt(streamId)).toBe(1_000_000);
+      nowSpy.mockReturnValue(1_050_000);
+      const sub = await manager.subscribe(streamId, () => {});
+      await manager.subscribeWithResume(streamId, () => {}, () => {}, () => {});
+      expect(manager.kadeLastEventAt(streamId)).toBe(1_000_000); // listeners coming and going are not activity
+      nowSpy.mockReturnValue(1_090_000);
+      await manager.emitChunk(streamId, delta('One.'));
+      expect(manager.kadeLastEventAt(streamId)).toBe(1_090_000);
+      sub?.unsubscribe();
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   test('an event the manager refuses to send is never logged', async () => {
