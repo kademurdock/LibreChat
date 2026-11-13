@@ -6,7 +6,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { KadeClubRoom } = require('~/models/kadeClubRoom');
 const { loungeHtml, engineHtml } = require('./Clubhouse/pages');
-const { stripAiTells, KADE_STYLE_NOTE } = require('~/server/utils/stripAiTells');
+const { stripAiTells, KADE_STYLE_NOTE, selfLineFor } = require('~/server/utils/stripAiTells');
 const { stripSteeringTags } = require('~/server/utils/steeringStrip');
 
 /**
@@ -800,6 +800,15 @@ router.post('/bot-turn', requireJwtAuth, express.json({ limit: '64kb' }), async 
       'Your persona:',
       String(agent.instructions || '(no special persona — be yourself)').slice(0, 1400),
       '',
+      // Nov 13 2026: the house self-knowledge line, judged on the part of the persona sent.
+      ...[
+        selfLineFor(String(agent.instructions || '').slice(0, 1400), {
+          agentId: agent.id,
+          child: require('~/server/services/kadeAccountType').isChildLike(req.user),
+        }).trim(),
+      ]
+        .filter(Boolean)
+        .flatMap((l) => [l, '']),
       // July 27 2026: same invisible anti-tell style note every CHAT reply gets
       // (applyKadeAudience) — bot guests were the un-guarded lane.
       KADE_STYLE_NOTE.trim(),

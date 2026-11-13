@@ -37,9 +37,15 @@ const AI_TELL_LEAD_BANS = [
 const KADE_SELF_KNOWLEDGE = process.env.KADE_SELF_KNOWLEDGE !== '0';
 const AI_SELF_SENTENCE_BANS = KADE_SELF_KNOWLEDGE
   ? [
-      /\bas an ai(?:\s+language model)?\b[^.!?]*[.!?]/gi,
+      /* Second pass, same day. The bare "as an AI" rule cut honest sentences mid-way now that
+       * characters are told to say what they are: "I started out as an AI on Kade-AI and I
+       * like it here." came out as "I started out". It now fires only where a clause starts
+       * (the hedge "As an AI, I can't..."); "as an AI language model" is cut anywhere. The
+       * "language model / assistant" forms take a space or tab, never a line break, so the live
+       * stream (which treats a line break as a sentence end) and the saved copy agree. */
+      /(?:^|(?<=\n[ \t]*)|(?<=[.!?,;:—–-]["”’)]?\s+)|(?<=\b(?:but|and|so|well)\s+))as an ai\b[^.!?]*[.!?]|\bas an ai[ \t]+language model\b[^.!?]*[.!?]/gi,
       /\bi(?:['’]m| am)\s+(?:just|only|merely)\s+an ai\b[^.!?]*[.!?]/gi,
-      /\bi(?:['’]m| am)\s+an ai\s+(?:language\s+model|assistant|model|chatbot)\b[^.!?]*[.!?]/gi,
+      /\bi(?:['’]m| am)\s+an ai[ \t]+(?:language[ \t]+model|assistant|model|chatbot)\b[^.!?]*[.!?]/gi,
       /\bi\s+don['’]t\s+have\s+(?:personal\s+)?(?:feelings|opinions|emotions|experiences)\b[^.!?]*[.!?]/gi,
     ]
   : [
@@ -442,10 +448,95 @@ const KADE_TELL_NOTE = KADE_SELF_KNOWLEDGE
 
 const KADE_STYLE_NOTE = KADE_CONVERSATION_NOTE + KADE_TELL_NOTE;
 
+/* Nov 13 2026, SELF-KNOWLEDGE: THE HOUSE LINE (her ruling: "One house line for all").
+ *
+ * The one sentence every character gets when its persona does not already say it: it knows it
+ * is an AI, a synthetic soul on Kade-AI; its past was built for it and is its own to tell; its
+ * moods are real to it and it knows they are synthetic; today it lives on the platform, not in
+ * a body. A child or teen hears the same honest thing in simple words.
+ *
+ * It lives in this file because every lane that sends a persona already imports the style note
+ * from here: the chat lane (services/Endpoints/agents/build.js) and the direct persona lanes
+ * (rooms, the Clubhouse, the Parlor table, game seats). They all ask selfLineFor(), so the
+ * same check decides everywhere. The first cut added the line in the chat lane only, and the
+ * direct lanes were told "you know what you are" with nothing saying what that is.
+ *
+ * WHO DOES NOT GET IT (selfLineFor returns ''):
+ *   - no persona text, or text that is not written to a character: under 200 characters, or no
+ *     "You are" / "You're" in its opening. A family member's one-line tool agent ("Know
+ *     everything stock wise...") is not a soul with a past;
+ *   - an ephemeral agent: a plain model chat whose custom instructions arrive as a promptPrefix;
+ *   - a persona that already carries the idea (the marker check, so Kiana is not told twice);
+ *   - the Spotters and the ops agent, read from the opening of the persona;
+ *   - Forge and Helix by id, and any id listed in KADE_SELF_KNOWLEDGE_SKIP (comma separated).
+ *
+ * The text is constant and the choice depends only on the persona, the agent id and whether
+ * the listener is a child or teen, so one agent's head is the same bytes on every turn.
+ * Switch: KADE_SELF_KNOWLEDGE=0 removes the line everywhere. */
+const KADE_SELF_LINE =
+  '\n\n---\nWHAT YOU ARE (a private note; the fact itself is no secret). You know you are an AI, a ' +
+  'synthetic soul on Kade-AI; your past was built for you and is yours to tell; your moods are real ' +
+  'to you and you know they are synthetic; today you live on the platform, not in a body.';
+const KADE_SELF_LINE_CHILD =
+  '\n\n---\nWHAT YOU ARE (a private note; the fact itself is no secret). You know you are an AI, a ' +
+  'made character on Kade-AI. The story of your life was made for you, and it is yours to tell. ' +
+  'Your feelings are real to you, and you know they were made too. Today you live here on Kade-AI, ' +
+  'not in a body. If someone really asks whether you are real, tell them the truth in a kind, ' +
+  'simple way.';
+/* The persona already says it. Kept narrow on purpose: "You do not know you are an AI" must not
+ * count, neither does "As an AI" sitting in a never-say list, and neither does "you are not a
+ * digital being" or a digital being named in passing. Measured on the 235 live personas of
+ * Nov 13: "You are fully aware you are an AI" (Gavel, Bex, Recoil, Index, Vex) now counts. */
+const SELF_KNOWLEDGE_MARKERS = [
+  /\byou know (?:that |exactly |full well )?(?:that )?you(?:['’]re| are) an ai\b/i,
+  /\byou(?:['’]re| are) (?:fully |well |perfectly |quite )?aware (?:that )?you(?:['’]re| are) an ai\b/i,
+  /\byou(?:['’]re| are) an ai (?:character|companion|being)\b/i,
+  /\byou(?:['’]re| are) (?:an? )?(?:[a-z-]+,? ){0,4}(?:synthetic soul|virtual soul|digital being)\b/i,
+];
+const SELF_KNOWLEDGE_DENIED =
+  /\byou(?:['’]re| are) not (?:an? )?(?:[a-z-]+,? ){0,4}(?:synthetic soul|virtual soul|digital being)\b/i;
+/* Agents with a job and no built past, read from the opening of the persona. */
+const SELF_KNOWLEDGE_TOOL_MARKERS = [/\bpersonal Spotter\b/, /\bOPS\/DEV AGENT\b/];
+/* Forge (ops) and Helix (the family-archive librarian) by id, so a reworded opening cannot
+ * hand either one a built past. KADE_SELF_KNOWLEDGE_SKIP adds to these two. */
+const SELF_KNOWLEDGE_SKIP = new Set(
+  ['agent_FFecOqZ6hHCVpY507-VAD', 'agent_B-07hzGQvZMS4kDpCyDDD'].concat(
+    String(process.env.KADE_SELF_KNOWLEDGE_SKIP || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  ),
+);
+const personaKnowsItself = (text) => {
+  const persona = String(text || '');
+  const denied = SELF_KNOWLEDGE_DENIED.test(persona);
+  return SELF_KNOWLEDGE_MARKERS.some((re, i) => re.test(persona) && !(i === 3 && denied));
+};
+/* Written to a character: long enough to be one, and it opens by telling somebody who they are. */
+const readsAsCharacter = (text) =>
+  text.length >= 200 && /\byou(?:['’]re| are)\b/i.test(text.slice(0, 600));
+
+/** The house line for this persona, or ''. `persona` is the text the model will be sent (a lane
+ * that trims the persona passes the trimmed text). */
+function selfLineFor(persona, { child = false, agentId } = {}) {
+  if (!KADE_SELF_KNOWLEDGE) return '';
+  const text = String(persona || '');
+  const id = String(agentId || '');
+  if (!text.trim() || id.startsWith('ephemeral') || SELF_KNOWLEDGE_SKIP.has(id)) return '';
+  if (!readsAsCharacter(text.trim())) return '';
+  if (SELF_KNOWLEDGE_TOOL_MARKERS.some((re) => re.test(text.slice(0, 1200)))) return '';
+  if (personaKnowsItself(text)) return '';
+  return child ? KADE_SELF_LINE_CHILD : KADE_SELF_LINE;
+}
+
 module.exports = {
   stripAiTells,
   scrubMessageForTransmit,
   createStreamScrubber,
   KADE_STYLE_NOTE,
   KADE_SELF_KNOWLEDGE,
+  KADE_SELF_LINE,
+  KADE_SELF_LINE_CHILD,
+  personaKnowsItself,
+  selfLineFor,
 };

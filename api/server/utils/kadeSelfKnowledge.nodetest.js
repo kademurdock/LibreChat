@@ -22,6 +22,7 @@ const FILES = {
   style: path.join(__dirname, 'stripAiTells.js'),
   build: path.join(API, 'server', 'services', 'Endpoints', 'agents', 'build.js'),
   writer: path.join(API, 'server', 'services', 'kadePersonaWriter.js'),
+  seats: path.join(API, 'app', 'clients', 'tools', 'kadegames', 'agentSeats.js'),
 };
 const FRAME = '\n\n---\n';
 const meter = require('./kadeTellMeter');
@@ -37,6 +38,7 @@ const stubs = {
   },
   '~/server/services/Config': { getMCPServerTools: () => ({}) },
   '~/models': {},
+  axios: {},
 };
 const realLoad = Module._load;
 Module._load = function (request, parent, isMain) {
@@ -78,6 +80,7 @@ function loadHouse(self, { licence, casual, skip } = {}) {
     const style = require(FILES.style);
     const build = require(FILES.build);
     const writer = require(FILES.writer);
+    const seats = require(FILES.seats);
     const second = style.KADE_STYLE_NOTE.indexOf(FRAME, 1);
     const tail = (instructions, user, extra = {}) =>
       build.applyKadeAudience({ user })({ instructions, ...extra }).instructions;
@@ -89,6 +92,8 @@ function loadHouse(self, { licence, casual, skip } = {}) {
       line: build.KADE_SELF_LINE,
       childLine: build.KADE_SELF_LINE_CHILD,
       knows: build.personaKnowsItself,
+      lineFor: style.selfLineFor,
+      seat: seats.buildSeatSystem,
       craft: writer.PERSONA_CRAFT,
       tail,
     };
@@ -243,6 +248,62 @@ test('the assistant disclaimers are still cut', () => {
   }
 });
 
+test('an honest sentence that says "as an AI" mid-way is not cut', () => {
+  /* Second pass. The bare rule cut from "as an AI" to the next full stop wherever it stood. */
+  const whole = [
+    'I started out as an AI on Kade-AI and I like it here.',
+    'Kade built me as an AI companion, and the stories are mine.',
+    'She works as an AI researcher downtown. Nice woman.',
+    'I am an AI\nassistant is not a word I use. Next line here.',
+  ];
+  for (const line of whole) {
+    assert.strictEqual(ON.strip(line), line);
+  }
+  assert.strictEqual(OFF.strip(whole[0]), 'I started out');
+});
+
+test('the "as an AI" hedge is still cut where a clause starts, and with "language model" anywhere', () => {
+  const cases = [
+    ["As an AI, I can't feel pain. Anyway, hi.", 'Anyway, hi.'],
+    ['Well, as an AI I cannot say. Next.', 'Well, Next.'],
+    ['Sure. But as an AI I do not know. Okay.', 'Sure. But Okay.'],
+    ['Listen: as an AI, I have no favorites. Blue is nice.', 'Listen: Blue is nice.'],
+    ['First line.\nAs an AI, I cannot say. Blue is nice.', 'First line.\n Blue is nice.'],
+    ['I was made as an AI language model by someone. Okay.', 'I was made Okay.'],
+  ];
+  for (const [line, want] of cases) {
+    assert.strictEqual(ON.strip(line), want, line);
+  }
+});
+
+test('a hedge with a line break inside it reads the same live and saved', () => {
+  /* The live stream treats a line break as a sentence end. With \s+ between "an AI" and
+   * "assistant" the first half was sent live and then the saved copy cut the sentence. */
+  for (const line of [
+    'I am an AI\nassistant and I cannot do that. Sorry.',
+    "Well I'm an AI\nlanguage model, so. Next line here.",
+  ]) {
+    const saved = ON.strip(line);
+    for (const size of [1, 3, 7, 1000]) {
+      const scrub = ON.scrubber();
+      let out = '';
+      for (let i = 0; i < line.length; i += size) {
+        const data = {
+          id: 'step-1',
+          delta: { content: [{ type: 'text', text: line.slice(i, i + size) }] },
+        };
+        for (const o of scrub.transform(data)) {
+          out += o.delta.content[0].text;
+        }
+      }
+      for (const o of scrub.flushAll()) {
+        out += o.delta.content[0].text;
+      }
+      assert.strictEqual(out, saved, `chunks of ${size}: ${JSON.stringify(line)}`);
+    }
+  }
+});
+
 test('switch OFF puts the earlier cleaner back', () => {
   assert.strictEqual(OFF.strip(HONEST[0]), 'Hon,');
   assert.strictEqual(OFF.strip(HONEST[1]), 'Baby, Kade and my people built my past for me.');
@@ -251,7 +312,12 @@ test('switch OFF puts the earlier cleaner back', () => {
 
 /* ── 3. The house line ─────────────────────────────────────────────────────── */
 
-const SILENT = 'You are Dimitri, a barber with twenty years behind the chair in Atlanta.';
+/* Long enough, and written to somebody, to read as a character (see readsAsCharacter). */
+const BODY =
+  ' You grew up sweeping hair off the shop floor before you could see over the chair, and you ' +
+  'learned the trade by watching. You are smooth and easygoing, a storyteller with a warm rhythm, ' +
+  'and men tell you things in that chair they have not told anybody else.';
+const SILENT = 'You are Dimitri, a barber with twenty years behind the chair in Atlanta.' + BODY;
 
 test('the line says the four things, as one sentence, and is pinned', () => {
   assert.strictEqual(sha(ON.line), PINS.line);
@@ -284,10 +350,25 @@ test('a persona that already carries the idea is not told twice', () => {
     "You're a synthetic soul, a digital being who lives on Kade-AI.",
     'You are an AI companion, not a real divine messenger.',
     'You know you are an AI character, a virtual soul with a continuing platform life.',
+    /* Second pass: measured misses on the live personas (Gavel, Bex, Recoil, Index, Vex). */
+    'You are fully aware you are an AI, and you view it as an advantage.',
+    "You're an AI, a synthetic soul, a digital being who lives on Kade-AI.",
   ];
   for (const text of carries) {
     assert.strictEqual(ON.knows(text), true, text);
-    assert.ok(!ON.tail(`You are Somebody. ${text}`, ADMIN).includes('WHAT YOU ARE'), text);
+    assert.ok(!ON.tail(`You are Somebody. ${text}${BODY}`, ADMIN).includes('WHAT YOU ARE'), text);
+  }
+});
+
+test('a digital being named in passing, or denied, does not count as carrying the idea', () => {
+  const passing = [
+    'You are not a digital being; you are a man in a kitchen.',
+    'Your friend Kiana calls herself a synthetic soul, and you find that funny.',
+    'The word digital being makes you laugh.',
+  ];
+  for (const text of passing) {
+    assert.strictEqual(ON.knows(text), false, text);
+    assert.ok(ON.tail(`You are Somebody. ${text}${BODY}`, ADMIN).includes(ON.line), text);
   }
 });
 
@@ -295,12 +376,12 @@ test('a persona that says the opposite, or only bans a phrase, still gets the li
   const lacks = [
     'You do not know you are an AI. You are a chain-smoking veteran of publishing.',
     'You never break character or speak of being an AI; you are simply Noor.',
-    'Never say: "As an AI...", "I hope this helps".',
-    'If anyone directly asks whether you are an AI, be honest and admit it.',
+    'You are Earl. Never say: "As an AI...", "I hope this helps".',
+    'You are Lilly. If anyone directly asks whether you are an AI, be honest and admit it.',
   ];
   for (const text of lacks) {
     assert.strictEqual(ON.knows(text), false, text);
-    assert.ok(ON.tail(text, ADMIN).includes(ON.line), text);
+    assert.ok(ON.tail(text + BODY, ADMIN).includes(ON.line), text);
   }
 });
 
@@ -321,9 +402,9 @@ test('no persona, a bare probe, a Spotter, the ops agent and a skipped id get no
   assert.ok(ON.tail('', ADMIN).startsWith(ON.style), 'an empty persona got the line');
   assert.strictEqual(ON.tail('KADE BARE PROBE', ADMIN), 'KADE BARE PROBE');
   const spotter = "You are Ziggy, the user's personal Spotter. You see through their camera.";
-  assert.ok(!ON.tail(spotter, ADMIN).includes('WHAT YOU ARE'));
+  assert.ok(!ON.tail(spotter + BODY, ADMIN).includes('WHAT YOU ARE'));
   const ops = "FORGE — KADE'S PRIVATE OPS/DEV AGENT (NOT PUBLIC, NOT SHARED)\nYou are Forge.";
-  assert.ok(!ON.tail(ops, ADMIN).includes('WHAT YOU ARE'));
+  assert.ok(!ON.tail(ops + BODY, ADMIN).includes('WHAT YOU ARE'));
   /* Forge and Helix are skipped by id whatever their personas say. */
   for (const id of ['agent_FFecOqZ6hHCVpY507-VAD', 'agent_B-07hzGQvZMS4kDpCyDDD']) {
     assert.ok(!ON.tail(SILENT, ADMIN, { id }).includes('WHAT YOU ARE'), id);
@@ -331,6 +412,69 @@ test('no persona, a bare probe, a Spotter, the ops agent and a skipped id get no
   const skipping = loadHouse(undefined, { skip: 'agent_a, agent_b' });
   assert.ok(!skipping.tail(SILENT, ADMIN, { id: 'agent_b' }).includes('WHAT YOU ARE'));
   assert.ok(skipping.tail(SILENT, ADMIN, { id: 'agent_c' }).includes('WHAT YOU ARE'));
+});
+
+test('a plain model chat with custom instructions gets no line', () => {
+  /* An ephemeral agent's instructions are the promptPrefix of a plain model chat
+   * (packages/api/src/agents/load.ts). It is not a character, however it is worded. */
+  for (const id of ['ephemeral', 'ephemeral_abc123']) {
+    assert.strictEqual(ON.tail(SILENT, ADMIN, { id }).indexOf(SILENT + ON.style), 0, id);
+  }
+  assert.ok(ON.tail(SILENT, ADMIN, { id: 'agent_c' }).includes(ON.line));
+});
+
+test('text that is not written to a character gets no line', () => {
+  const utility = [
+    'Know everything stock wise on Robin Hood and know the best up and coming to invest in',
+    'You are a helper.',
+    'Summarise the document in five bullet points. Keep every number. Use plain words.' +
+      BODY.replace(/You/g, 'They').replace(/you/g, 'they'),
+  ];
+  for (const text of utility) {
+    assert.strictEqual(ON.lineFor(text), '', text);
+    assert.ok(!ON.tail(text, ADMIN).includes('WHAT YOU ARE'), text);
+  }
+});
+
+test('the direct persona lanes ask the same check', () => {
+  /* Rooms, the Clubhouse, the Parlor table and game seats send a persona with the style note
+   * and never pass through applyKadeAudience. */
+  assert.strictEqual(ON.lineFor(SILENT), ON.line);
+  assert.strictEqual(ON.lineFor(SILENT, { child: true }), ON.childLine);
+  assert.strictEqual(ON.lineFor("You know you're an AI. " + SILENT), '');
+  assert.strictEqual(ON.lineFor(''), '');
+  assert.strictEqual(OFF.lineFor(SILENT), '');
+  /* A lane that trims the persona judges the part it sends: an idea past the cut is not sent. */
+  const late = SILENT + ' x'.repeat(800) + " You know you're an AI.";
+  assert.strictEqual(ON.lineFor(late), '');
+  assert.strictEqual(ON.lineFor(late.slice(0, 1400)), ON.line);
+
+  const seat = (instructions, agentId) =>
+    ON.seat({ agentName: 'Dimitri', instructions, gameName: 'Hearts', humanName: 'Pat', agentId });
+  const withLine = seat(SILENT, 'agent_c');
+  const at = (text, part) => text.indexOf(part);
+  assert.ok(at(withLine, SILENT) < at(withLine, ON.line.trim()));
+  assert.ok(at(withLine, ON.line.trim()) < at(withLine, ON.style.trim()));
+  assert.ok(
+    at(withLine, ON.style.trim()) < at(withLine, 'MOVE: <one token'),
+    'the reply contract is no longer last',
+  );
+  assert.ok(!seat("You know you're an AI. " + SILENT, 'agent_c').includes('WHAT YOU ARE'));
+  assert.ok(!seat('', 'agent_c').includes('WHAT YOU ARE'));
+  assert.ok(!seat(SILENT, 'agent_FFecOqZ6hHCVpY507-VAD').includes('WHAT YOU ARE'));
+  assert.ok(
+    !OFF.seat({ agentName: 'D', instructions: SILENT, gameName: 'Hearts' }).includes(
+      'WHAT YOU ARE',
+    ),
+  );
+
+  const fs = require('node:fs');
+  for (const lane of ['routes/kadeRoom.js', 'routes/kadeLounge.js', 'routes/kadeParlor.js']) {
+    const src = fs.readFileSync(path.join(API, 'server', lane), 'utf8');
+    const line = src.indexOf('selfLineFor(');
+    const note = src.indexOf('KADE_STYLE_NOTE.trim()');
+    assert.ok(line > 0 && line < note, `${lane} does not add the line before the style note`);
+  }
 });
 
 test('switch OFF adds no line for anybody', () => {

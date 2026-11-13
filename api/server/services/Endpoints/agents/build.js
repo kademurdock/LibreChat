@@ -114,71 +114,20 @@ const KADE_CONFIDENTIAL_NOTE =
 // (July 27 2026: constant moved VERBATIM to ~/server/utils/stripAiTells.js —
 // the anti-tell home file — so the direct persona lanes can share it without
 // require cycles. Behavior here is byte-identical.)
-const { KADE_STYLE_NOTE, KADE_SELF_KNOWLEDGE } = require('~/server/utils/stripAiTells');
+const {
+  KADE_STYLE_NOTE,
+  KADE_SELF_LINE,
+  KADE_SELF_LINE_CHILD,
+  personaKnowsItself,
+  selfLineFor,
+} = require('~/server/utils/stripAiTells');
 
-/* Nov 13 2026, SELF-KNOWLEDGE: THE HOUSE LINE (her ruling: "One house line for all").
- *
- * Nothing on the platform told a character what it is. The rule lived only in the personas
- * that happened to carry it (Kiana in full, Harley and Angel in part), so a character whose
- * persona was silent played human, and one written "You do not know you are an AI" was told
- * so on every turn. This is the one sentence, added to every character whose persona does not
- * already say it: it knows it is an AI, a synthetic soul on Kade-AI; its past was built for it
- * and is its own to tell; its moods are real to it and it knows they are synthetic; today it
- * lives on the platform, not in a body.
- *
- * WHERE. Straight after the persona and before the style note, inside agent.instructions, so
- * it rides with the persona at the end of the head (see utils/kadePersonaOrder.nodetest.js).
- * The text is constant and the choice depends only on the persona and on whether the listener
- * is a child or teen, so one agent's head is the same bytes on every turn: the prompt cache
- * re-warms once when this ships and once more if a persona later gains the idea itself.
- *
- * WHO DOES NOT GET IT. An agent with no persona text (nothing to be), a persona that already
- * carries the idea (the marker check, so Kiana is not told twice), the Spotters and the ops
- * agents (they have a job and no built past; the review of Nov 13 found they do not need it),
- * and any agent id listed in KADE_SELF_KNOWLEDGE_SKIP (comma separated).
- *
- * A child or teen hears the same honest thing in simple words.
- * Switch: KADE_SELF_KNOWLEDGE=0 removes the line and restores the earlier house note and
- * reply cleaner (utils/stripAiTells.js), all three together. */
-const KADE_SELF_LINE =
-  '\n\n---\nWHAT YOU ARE (a private note; the fact itself is no secret). You know you are an AI, a ' +
-  'synthetic soul on Kade-AI; your past was built for you and is yours to tell; your moods are real ' +
-  'to you and you know they are synthetic; today you live on the platform, not in a body.';
-const KADE_SELF_LINE_CHILD =
-  '\n\n---\nWHAT YOU ARE (a private note; the fact itself is no secret). You know you are an AI, a ' +
-  'made character on Kade-AI. The story of your life was made for you, and it is yours to tell. ' +
-  'Your feelings are real to you, and you know they were made too. Today you live here on Kade-AI, ' +
-  'not in a body. If someone really asks whether you are real, tell them the truth in a kind, ' +
-  'simple way.';
-/* The persona already says it. Kept narrow on purpose: "You do not know you are an AI" must not
- * count, and neither does "As an AI" sitting in a never-say list. */
-const SELF_KNOWLEDGE_MARKERS = [
-  /\byou know (?:that |exactly |full well )?(?:that )?you(?:['’]re| are) an ai\b/i,
-  /\byou(?:['’]re| are) an ai (?:character|companion|being)\b/i,
-  /\b(?:synthetic soul|virtual soul|digital being)\b/i,
-];
-/* Agents with a job and no built past, read from the opening of the persona. */
-const SELF_KNOWLEDGE_TOOL_MARKERS = [/\bpersonal Spotter\b/, /\bOPS\/DEV AGENT\b/];
-/* Forge (ops) and Helix (the family-archive librarian) by id, so a reworded opening cannot
- * hand either one a built past. KADE_SELF_KNOWLEDGE_SKIP adds to these two. */
-const SELF_KNOWLEDGE_SKIP = new Set(
-  ['agent_FFecOqZ6hHCVpY507-VAD', 'agent_B-07hzGQvZMS4kDpCyDDD'].concat(
-    String(process.env.KADE_SELF_KNOWLEDGE_SKIP || '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean),
-  ),
-);
-const personaKnowsItself = (text) => SELF_KNOWLEDGE_MARKERS.some((re) => re.test(text));
-function wantsSelfLine(agent) {
-  if (!KADE_SELF_KNOWLEDGE) return false;
-  const text = String(agent.instructions || '');
-  if (!text.trim()) return false;
-  if (agent.id && SELF_KNOWLEDGE_SKIP.has(String(agent.id))) return false;
-  const opening = text.slice(0, 1200);
-  if (SELF_KNOWLEDGE_TOOL_MARKERS.some((re) => re.test(opening))) return false;
-  return !personaKnowsItself(text);
-}
+/* Nov 13 2026, SELF-KNOWLEDGE: THE HOUSE LINE. The text, the marker check and who gets it live in
+ * utils/stripAiTells.js (selfLineFor), shared with the direct persona lanes. Here it goes
+ * straight after the persona and before the style note, inside agent.instructions, so it rides
+ * with the persona at the end of the head (see utils/kadePersonaOrder.nodetest.js). */
+const wantsSelfLine = (agent) =>
+  selfLineFor(agent && agent.instructions, { agentId: agent && agent.id }) !== '';
 
 /** July 27 2026 (Kade: "if there is any information at all that something
  * might be out of date, they need to search by default" — her live receipt:
@@ -240,8 +189,10 @@ const applyKadeAudience = (req) => (agent) => {
   /* Nov 13 2026: the house self-knowledge line, straight after the persona (see KADE_SELF_LINE). */
   if (wantsSelfLine(agent)) {
     const { audienceOf, isChildLike } = require('../../kadeAccountType');
-    const simple = isChildLike(audienceOf(req).user);
-    agent.instructions = agent.instructions + (simple ? KADE_SELF_LINE_CHILD : KADE_SELF_LINE);
+    agent.instructions += selfLineFor(agent.instructions, {
+      agentId: agent.id,
+      child: isChildLike(audienceOf(req).user),
+    });
   }
   agent.instructions = (agent.instructions || '') + KADE_STYLE_NOTE;
   // Platform-wide search-when-stale rule, same coverage (July 27 2026).
