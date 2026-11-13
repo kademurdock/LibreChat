@@ -37,6 +37,9 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
   current.current = { pace, fillers };
   const lastFetch = useRef(0);
   const inFlight = useRef(false);
+  /* Lead review, Nov 13 2026: counts finished pushes, so a GET that was out while one of her own
+   * changes reached the account cannot put her older value back with its stale stamp. */
+  const pushesDone = useRef(0);
 
   const push = useCallback(async (body: { pace?: number | null; fillers?: boolean }) => {
     if (!Object.keys(body).length) {
@@ -54,6 +57,7 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
         stillHeld.fillers = body.fillers;
       }
       writeSyncState(afterPush(readSyncState(), stillHeld, reply.listener));
+      pushesDone.current += 1;
     } catch {
       /* offline or the server switch is off: the change stays pending here and goes on the next sync */
     }
@@ -65,10 +69,15 @@ export default function useListenerVoiceSync(isAuthenticated: boolean) {
     }
     inFlight.current = true;
     lastFetch.current = Date.now();
+    const pushesBefore = pushesDone.current;
     try {
       const reply = (await request.get('/api/kade/voice-prefs')) as {
         listener?: AccountListenerPrefs;
       };
+      if (pushesDone.current !== pushesBefore) {
+        lastFetch.current = 0; // stale: one of her changes landed while this read was out; read again next time
+        return;
+      }
       if (!reply || !reply.listener) {
         return; // older server, or KADE_LISTENER_PREFS=0: this browser keeps its own settings
       }

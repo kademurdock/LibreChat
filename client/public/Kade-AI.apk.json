@@ -1,7 +1,7 @@
 {
-  "versionCode": 125,
-  "versionName": "2.18.0",
-  "notes": "Public beta 2.18.0: the Library player gets a Status line that says Playing or Paused and your place, Start from the beginning, five and ten minute jumps in films and long tapes, and Back 10 and Forward 10 seconds on the lock screen. The Library's first screen lists up to two more things you are in the middle of, and Springfield and the Ozarks sits near the top. A voice direction is no longer carried onto later lines by mistake. Checked by 2,752 automated tests and on an Android emulator, not yet on a real phone with TalkBack. About 78 MB.",
+  "versionCode": 126,
+  "versionName": "2.19.0",
+  "notes": "Public beta 2.19.0: TalkBack no longer cuts Library recordings and family stories in and out; they get quieter and keep playing. The character's voice gets quieter under TalkBack instead of being talked over, and unplugged headphones and phone calls pause it. Every screen says its name as it opens, a chat keeps reading when you connect a keyboard or fold the phone, and Stop goes first. Your voice speed, fillers and voice style follow your account. Checked by 2,808 automated tests, not yet on a real phone with TalkBack. About 78 MB.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "0dc5fd72e55f52ac164ad5e310b09934e54de9e67ccf5cde6410864bd0db54b0"
+  "sha256": "68dea00105119e7648514017f7bcf22e1bb06fc4c2721c60300da3d2d49c0bbb"
 }
