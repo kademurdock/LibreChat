@@ -703,6 +703,57 @@ describe('initializeCustom – native Anthropic provider', () => {
   });
 });
 
+describe('initializeCustom – kade_background (sweep, Nov 13 2026)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.KADE_SEND_BACKGROUND;
+    delete process.env.KADE_SEND_LIVE;
+  });
+
+  const addParamsOf = () =>
+    (mockGetOpenAIConfig.mock.calls[0][1] as { addParams?: Record<string, unknown> }).addParams;
+
+  it('adds kade_background: true only on a run the server marked as background', async () => {
+    const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+    (params.req as unknown as Record<string, unknown>).kadeBackground = true;
+    await initializeCustom(params);
+    expect(addParamsOf()).toEqual({ kade_background: true });
+  });
+
+  it('keeps configured addParams and the live mark beside it', async () => {
+    const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+    mockGetCustomEndpointConfig.mockReturnValue({
+      apiKey: 'sk-test-key',
+      baseURL: 'https://gateway.example.com/v1',
+      models: {},
+      addParams: { provider: { zdr: true } },
+    });
+    (params.req as unknown as Record<string, unknown>).kadeBackground = true;
+    (params.req.body as Record<string, unknown>).kadeLive = true;
+    await initializeCustom(params);
+    expect(addParamsOf()).toEqual({ provider: { zdr: true }, kade_live: true, kade_background: true });
+  });
+
+  it('sends nothing new on an ordinary turn, for a mark in the request body, a non-boolean, or with the switch off', async () => {
+    for (const [mark, body, env] of [
+      [undefined, undefined, undefined],
+      [undefined, true, undefined],
+      ['true', undefined, undefined],
+      [true, undefined, '0'],
+    ] as const) {
+      jest.clearAllMocks();
+      if (env) process.env.KADE_SEND_BACKGROUND = env;
+      else delete process.env.KADE_SEND_BACKGROUND;
+      const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+      if (mark !== undefined) (params.req as unknown as Record<string, unknown>).kadeBackground = mark;
+      if (body !== undefined) (params.req.body as Record<string, unknown>).kadeBackground = body;
+      await initializeCustom(params);
+      expect(addParamsOf()).toBeUndefined();
+    }
+    delete process.env.KADE_SEND_BACKGROUND;
+  });
+});
+
 describe('initializeCustom – kade_live (gateway audit GW-6, Nov 12 2026)', () => {
   beforeEach(() => {
     jest.clearAllMocks();

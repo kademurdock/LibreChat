@@ -341,14 +341,23 @@ export async function initializeCustom({
     const liveAsked =
       process.env.KADE_SEND_LIVE !== '0' &&
       (req.body as Record<string, unknown> | undefined)?.kadeLive === true;
+    /** KADE Nov 13 2026 (sweep): a background run (a character's day, a reach-out draft, a task:
+     *  services/kadeHiddenRun.js sets req.kadeBackground) has nobody waiting, so the gateway is told
+     *  with kade_background: true and sends a MiMo Pro run to the cheap host, not the fast one. The
+     *  gateway takes the mark off before any host sees it. Absent on every other turn, so those
+     *  bodies are byte-identical. Kill switch: KADE_SEND_BACKGROUND=0. */
+    const backgroundRun =
+      process.env.KADE_SEND_BACKGROUND !== '0' &&
+      (req as unknown as { kadeBackground?: unknown }).kadeBackground === true;
     const finalClientOptions = {
       modelOptions,
       ...clientOptions,
-      ...(liveAsked
+      ...(liveAsked || backgroundRun
         ? {
             addParams: {
               ...((clientOptions.addParams as Record<string, unknown> | undefined) ?? {}),
-              kade_live: true,
+              ...(liveAsked ? { kade_live: true } : {}),
+              ...(backgroundRun ? { kade_background: true } : {}),
             },
           }
         : {}),
