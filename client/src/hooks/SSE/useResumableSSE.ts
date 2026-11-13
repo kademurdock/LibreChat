@@ -42,6 +42,7 @@ import {
 } from '~/data-provider';
 import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { useLiveAnnouncer } from '~/Providers/AnnouncerContext';
 import useLocalize from '~/hooks/useLocalize';
 import useUsageHandler from './useUsageHandler';
 import { kadeSwitchOn } from '~/utils/kadeSwitch';
@@ -71,6 +72,28 @@ const STREAM_IDLE_MS = 45000;
 /** Clean 2xx closes in a row, with nothing new in between, before the hook gives up.
  *  `open` resets reconnectAttemptRef, so MAX_RETRIES alone never bounds this loop. */
 const MAX_EMPTY_CLOSES = 3;
+/** Nov 13 2026 (sweep 4.0 / 5.1): a hung reply looped for 20 minutes. The 45 s idle watch
+ *  reconnected, `open` reset the retry counter, the sync event is not progress, and nothing
+ *  counted the idle reconnects. Now: this many idle reconnects in a row that brought nothing new
+ *  are allowed; the next 45 s of silence ends the wait with an error that is shown and announced.
+ *  Any real (non-sync) event starts the count again, so a long silent tool that then answers is
+ *  safe. Per browser: localStorage kadeIdleReconnectMax = a number (0 = never give up, the old
+ *  behaviour). */
+const MAX_IDLE_RECONNECTS = 2;
+export const STREAM_IDLE_GAVE_UP_TEXT =
+  'The reply stopped responding, so this page stopped waiting for it. If it finishes it will be saved in this chat: reload the page to check, or send your message again.';
+const maxIdleReconnects = (): number => {
+  try {
+    const raw = globalThis.localStorage?.getItem('kadeIdleReconnectMax');
+    if (raw == null || raw.trim() === '') {
+      return MAX_IDLE_RECONNECTS;
+    }
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 && n <= 50 ? n : MAX_IDLE_RECONNECTS;
+  } catch {
+    return MAX_IDLE_RECONNECTS;
+  }
+};
 const requestIds = new WeakMap<TSubmission, string>();
 const getRequestId = (submission: TSubmission): string => {
   const existing = submission.requestId ?? requestIds.get(submission);
@@ -516,6 +539,9 @@ export default function useResumableSSE(
   const sseRef = useRef<SSE | null>(null);
   const reconnectAttemptRef = useRef(0);
   const emptyCloseRef = useRef(0);
+  /** Idle (45 s of no bytes) reconnects in a row that brought no real event. */
+  const idleReconnectRef = useRef(0);
+  const { announcePolite } = useLiveAnnouncer();
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
   const optimisticStreamIdsRef = useRef(new Set<string>());
@@ -620,6 +646,8 @@ export default function useResumableSSE(
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
       /** Set once onError exists; the watchdog is declared before it. */
       let reconnectAfterDrop: () => void = () => undefined;
+      /** True when the idle watch has given up on a hung reply (sweep 4.0 / 5.1). */
+      let idleGaveUp = false;
       const stopIdleWatch = () => {
         if (idleTimer != null) {
           clearTimeout(idleTimer);
@@ -634,6 +662,19 @@ export default function useResumableSSE(
         idleTimer = setTimeout(() => {
           idleTimer = null;
           if (settled || sseRef.current !== sse) {
+            return;
+          }
+          idleReconnectRef.current += 1;
+          const idleLimit = maxIdleReconnects();
+          if (idleLimit > 0 && idleReconnectRef.current > idleLimit) {
+            console.error(
+              `[ResumableSSE] No bytes for 45s again after ${idleLimit} idle reconnects with nothing new - giving up`,
+            );
+            idleReconnectRef.current = 0;
+            idleGaveUp = true;
+            // Sends onError down its "max reconnect attempts" branch (error shown, UI reset).
+            reconnectAttemptRef.current = MAX_RETRIES;
+            reconnectAfterDrop();
             return;
           }
           console.warn('[ResumableSSE] No bytes for 45s - reconnecting');
@@ -664,6 +705,7 @@ export default function useResumableSSE(
 
           if (data.sync == null) {
             emptyCloseRef.current = 0;
+            idleReconnectRef.current = 0;
           }
 
           if (data.final != null) {
@@ -1189,7 +1231,19 @@ export default function useResumableSSE(
         } else {
           console.error('[ResumableSSE] Max reconnect attempts reached');
           sse.close();
-          errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+          if (idleGaveUp) {
+            /* A hung reply: say why in the chat and in the live region, so a screen-reader user
+             * hears that the wait is over instead of silence. */
+            errorHandler({
+              data: { text: STREAM_IDLE_GAVE_UP_TEXT } as unknown as Parameters<
+                typeof errorHandler
+              >[0]['data'],
+              submission: currentSubmission as EventSubmission,
+            });
+            announcePolite({ message: STREAM_IDLE_GAVE_UP_TEXT });
+          } else {
+            errorHandler({ data: undefined, submission: currentSubmission as EventSubmission });
+          }
           /** Terminal: clear the in-flight live estimate like the other
            *  stop-reconnecting paths so the gauge doesn't show stale tokens */
           resetLive({ ...currentSubmission, userMessage });
@@ -1516,6 +1570,7 @@ export default function useResumableSSE(
       }
       setStreamId(null);
       reconnectAttemptRef.current = 0;
+      idleReconnectRef.current = 0;
       submissionRef.current = null;
       return;
     }
@@ -1599,6 +1654,7 @@ export default function useResumableSSE(
       }
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;
+      idleReconnectRef.current = 0;
       if (sseRef.current) {
         sseRef.current.close();
         sseRef.current = null;

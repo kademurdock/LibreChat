@@ -90,7 +90,31 @@ test('kade messages route: own rows, after filter, readableText added', async ()
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(seen.filter.user, 'u1');
   assert.strictEqual(seen.filter.conversationId, 'c-1');
-  assert.ok(seen.filter.createdAt.$gt instanceof Date);
+  /* Sweep 4.5 (Nov 13 2026): rows changed after the cursor come back too, not only new rows. */
+  assert.strictEqual(seen.filter.createdAt, undefined);
+  assert.strictEqual(seen.filter.$or.length, 2);
+  assert.ok(seen.filter.$or[0].updatedAt.$gt instanceof Date);
+  assert.ok(seen.filter.$or[1].createdAt.$gt instanceof Date);
+  assert.strictEqual(seen.filter.$or[0].updatedAt.$gt.toISOString(), '2026-11-12T00:00:00.000Z');
+
+  // KADE_MESSAGES_AFTER=created is the old filter; a bad date adds no filter at all.
+  process.env.KADE_MESSAGES_AFTER = 'created';
+  try {
+    await handler(
+      { params: { conversationId: 'c-1' }, query: { after: '2026-11-12T00:00:00Z' }, user: { id: 'u1' } },
+      fakeRes(),
+    );
+    assert.ok(seen.filter.createdAt.$gt instanceof Date);
+    assert.strictEqual(seen.filter.$or, undefined);
+  } finally {
+    delete process.env.KADE_MESSAGES_AFTER;
+  }
+  await handler(
+    { params: { conversationId: 'c-1' }, query: { after: 'not a date' }, user: { id: 'u1' } },
+    fakeRes(),
+  );
+  assert.strictEqual(seen.filter.createdAt, undefined);
+  assert.strictEqual(seen.filter.$or, undefined);
   assert.strictEqual(seen.select, '-_id -__v -user');
   assert.strictEqual(res.body.messages[0].kade.readableText, 'Hello there.');
   assert.strictEqual(res.body.messages[0].text, '%%%warm%%% Hello **there**.');

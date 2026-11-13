@@ -125,6 +125,22 @@ test('no rows, or a cap of zero, does nothing', async () => {
   assert.equal((await repairEmbedLoop({ rows: rows(3), cap: 0, embed: never, save: never })).scanned, 0);
 });
 
+/* Sweep 8.2 (Nov 13 2026): an entry saved while the embed lane timed out has no vector. Both
+ * repair passes (the nightly one and the admin backfill) must pick such rows up. */
+test('an entry with no vector is in the repair backlog, and both passes read that backlog', () => {
+  assert.match(
+    SRC,
+    /\$or: \[\{ embedding: null \}, \{ embedding: \{ \$size: 0 \} \}, \{ embedModel: \{ \$ne: model \} \}\]/,
+  );
+  const nightly = extract('nightlyDiaryEmbedRepair');
+  assert.match(nightly, /diaryEmbedBacklog\(model, lane\.dimensions, cap, \{\s*newestFirst: true,?\s*\}\)/);
+  assert.match(nightly, /: \{ embedding: vec, embedModel: model \}/);
+  assert.match(extract('backfillDiaryEmbeddings'), /diaryEmbedBacklog\(model, lane\.dimensions, dry \? 0 : limit\)/);
+  /* Cards mend on every turn: a row whose vector is missing fails indexedCardEmbedding and is embedded again. */
+  const cards = fs.readFileSync(path.join(__dirname, 'kadeCardVector.js'), 'utf8');
+  assert.match(cards, /!row \|\|\s+!indexedCardEmbedding\(row, model, [^\n]+, value\)\s+\) \{\s+work\.push/);
+});
+
 test('the shipped file wires the switch, the cap and the sweep', () => {
   assert.match(SRC, /KADE_DIARY_NIGHTLY_EMBED === '0'\) return \{ ran: false, reason: 'disabled' \}/);
   assert.match(SRC, /KADE_DIARY_NIGHTLY_EMBED_MAX/);

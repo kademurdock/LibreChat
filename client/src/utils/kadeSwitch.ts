@@ -24,6 +24,10 @@ export const KADE_SWITCHES = {
   toolLabels: 'kadeToolLabels',
   /** Decision 24: voice speed, fillers and delivery follow the account. */
   voiceSync: 'kadeVoiceSync',
+  /** Sweep 5.0 (Nov 13 2026): a reply voice that is cancelled or hangs falls back, never silent. */
+  voiceFallback: 'kadeVoiceFallback',
+  /** Sweep 5.2 (Nov 13 2026): voice settings follow other tabs, and never cross accounts. */
+  voiceSyncGuards: 'kadeVoiceSyncGuards',
 } as const;
 
 export type KadeSwitch = keyof typeof KADE_SWITCHES;

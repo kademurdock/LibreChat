@@ -235,6 +235,8 @@ const embedHealth = {
   },
   secondTries: 0 /* memory queries that needed their second request */,
   secondTryWon: 0 /* ...and were answered by it */,
+  docRetries: 0 /* Nov 13 2026: document embeds that timed out and were asked once more */,
+  docRetryWon: 0 /* ...and were answered by that second request */,
 };
 /* Nov 10 2026: the live log showed the memory query timing out at exactly 3000 ms on more than half
  * of the turns (33 first-try timeouts and 61 failures in 56 turns, Nov 8 to 10) while the tool query,
@@ -399,10 +401,82 @@ function requestQueryEmbedding(lane, text) {
   });
 }
 
+/* Nov 13 2026 (sweep 8.2) -- A DOCUMENT EMBED GETS A SECOND, LONGER TRY.
+ *
+ * Since the 05:42Z boot, 7 of 36 document embeds had timed out (memory queries: 0 of 3). A
+ * document embed is a write: a logbook entry, a card vector, a repair. Nothing the person is
+ * waiting to hear depends on it, so it is not on the reply's clock, and an entry saved without
+ * its vector cannot be found by meaning until a later repair pass reaches it. So a document embed
+ * that TIMES OUT is asked once more, with a longer wait (KADE_EMBED_DOC_RETRY_TIMEOUT_MS, default
+ * 12000, never shorter than the first try). A refusal (402, 429, a bad key) is still final at
+ * once, and at most two requests are ever made (about a thousandth of a cent each).
+ * KADE_EMBED_DOC_RETRY=0 puts back the single try. */
+function docRetryOn() {
+  return String(process.env.KADE_EMBED_DOC_RETRY ?? '').trim() !== '0';
+}
+function docRetryTimeoutMs() {
+  const set = Number(process.env.KADE_EMBED_DOC_RETRY_TIMEOUT_MS);
+  const wait = Number.isFinite(set) && set >= 500 && set <= 60000 ? set : 12000;
+  return Math.max(wait, memoryEmbeddingTimeoutMs('document'));
+}
+function requestDocumentEmbedding(lane, text) {
+  return requestMemoryEmbedding(lane, text, 'document').catch((e) => {
+    if (!docRetryOn() || !embedTimedOut(e)) throw e;
+    embedHealth.docRetries += 1;
+    logger.warn(
+      `[kadeDiary] document embedding timed out (${lane.provider}/${lane.model}); asking once more with a longer wait`,
+    );
+    return requestMemoryEmbedding(lane, text, 'document', docRetryTimeoutMs()).then((vec) => {
+      embedHealth.docRetryWon += 1;
+      return vec;
+    });
+  });
+}
+
+/* Nov 13 2026 (sweep 8.2): memory-health said nothing while one embed in five was failing (the
+ * amber line only spoke above 25%). It now speaks above KADE_EMBED_WARN_RATIO (default 0.10) of
+ * the calls since this process started, once at least three have failed, so one early failure
+ * on a fresh process is not a warning. The old over-25% rule still speaks at any count.
+ * KADE_EMBED_WARN_RATIO=0.25 is the old threshold. Returns the amber warning, or null. */
+function embedWarnRatio(env = process.env) {
+  const raw = env && env.KADE_EMBED_WARN_RATIO;
+  const set = raw == null || String(raw).trim() === '' ? NaN : Number(raw);
+  return Number.isFinite(set) && set > 0 && set < 1 ? set : 0.1;
+}
+function embedHealthAmber(eh, env = process.env) {
+  if (!eh || !(eh.failed > 0) || !(eh.ok > 0)) return null;
+  const total = eh.ok + eh.failed;
+  const share = eh.failed / total;
+  const ratio = embedWarnRatio(env);
+  if (!(share > 0.25) && !(share > ratio && eh.failed >= 3)) return null;
+  const by = eh.byPurpose || {};
+  const part = (name, label) =>
+    by[name] && by[name].failed > 0
+      ? `${label} ${by[name].failed} of ${by[name].ok + by[name].failed}`
+      : '';
+  const who = [
+    part('query', 'memory queries'),
+    part('tools', 'tool queries'),
+    part('document', 'writes'),
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return {
+    lane: 'embedding',
+    severity: 'amber',
+    detail:
+      `${eh.failed} of ${total} embedding calls have failed since this process started (${Math.round(share * 100)}%, ${eh.provider}/${eh.model}) — recall is intermittently blind` +
+      (who ? ` (${who})` : '') +
+      `. Last error: ${eh.lastError || 'unknown'}`,
+  };
+}
+
 /** Embed one string. Returns float array or null (never throws).
  * Oct 16 2026: a memory query that times out is asked once more (the lane's
  * timeouts come and go); documents, backfills and tool queries fail soft at once.
- * Nov 10 2026: the query's two tries overlap (requestQueryEmbedding above). */
+ * Nov 10 2026: the query's two tries overlap (requestQueryEmbedding above).
+ * Nov 13 2026: a document that times out is asked once more with a longer wait
+ * (requestDocumentEmbedding above); the tools query still fails soft at once. */
 async function embedText(text, { purpose = 'document' } = {}) {
   const lane = embedLane();
   if (!lane || !text) {
@@ -410,10 +484,14 @@ async function embedText(text, { purpose = 'document' } = {}) {
   }
   const stopLoopWatch = watchLoop();
   try {
-    const vec =
-      purpose === 'query'
-        ? await requestQueryEmbedding(lane, String(text))
-        : await requestMemoryEmbedding(lane, String(text), purpose);
+    let vec;
+    if (purpose === 'query') {
+      vec = await requestQueryEmbedding(lane, String(text));
+    } else if (purpose === 'document') {
+      vec = await requestDocumentEmbedding(lane, String(text));
+    } else {
+      vec = await requestMemoryEmbedding(lane, String(text), purpose);
+    }
     stopLoopWatch();
     embedHealth.ok += 1;
     noteEmbed(purpose, true);
@@ -1090,6 +1168,7 @@ module.exports = {
   embedPurpose,
   currentEmbedModel,
   readEmbedHealth,
+  embedHealthAmber,
   stripLeadingDateStamp,
   logDiaryEntry,
   editDiaryEntry,

@@ -20,6 +20,12 @@ import {
 } from '~/utils/voicePace';
 import { consumeSpeechAudio, speechAudioBlob, playOrReport } from '~/hooks/Audio/speech';
 import { useSpeechRequest } from '~/hooks/Audio/request';
+import {
+  voiceFallbackOn,
+  withAnswerTimeout,
+  speechFetchTimeoutMs,
+  sameChatGotItsAddress,
+} from '~/hooks/Audio/speechFetch';
 import { claimVoice } from '~/hooks/Audio/voiceFocus';
 import { watchVoiceAudio, stopWatchingVoiceAudio } from '../character/voice-playback.mjs';
 import { messageCharacterId } from '../character/voice-message-motion.mjs';
@@ -159,36 +165,50 @@ export default function StreamAudio({ index = 0 }) {
         const cachedResponse = cacheKey ? await cache.match(cacheKey) : undefined;
         if (!speechRequest.isCurrent(controller)) return;
 
-        setAudioRunId(activeRunId);
+        /* Nov 13 2026 (sweep 5.0): the run is claimed when a clip is really shown (or the request
+         * has failed and said so), not before the request. A request cancelled in between used
+         * to leave the run claimed with no clip: no retry, and the screen reader was told the
+         * voice had it. kadeVoiceFallback = '0' claims up front again. */
+        const claimOnClip = voiceFallbackOn();
+        if (!claimOnClip) {
+          setAudioRunId(activeRunId);
+        }
         if (cachedResponse) {
           logger.log('Audio found in cache');
           const audioBlob = await speechAudioBlob(await cachedResponse.blob());
           if (!speechRequest.isCurrent(controller)) return;
           const blobUrl = URL.createObjectURL(audioBlob);
+          setAudioRunId(activeRunId);
           showClip(blobUrl);
           setIsFetching(false);
           return;
         }
 
         logger.log('Fetching audio...', navigator.userAgent);
-        const response = await fetch('/api/files/speech/tts', {
-          method: 'POST',
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            messageId: latestMessage?.messageId,
-            runId: activeRunId,
-            voice,
-            // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
-            speed,
-            fillers, // Oct 16 2026: the listener's filler switch
-            ...(delivery ? { delivery } : {}),
-            // Nov 11 2026: Inworld's mouth shapes for the face, asked only while one will be drawn.
-            ...(portraitsOn && messageCharacterId(latestMessage) && faceTimingsAllowed()
-              ? { timing: true }
-              : {}),
+        /* Sweep 5.0: a speech host that accepts the request and never answers used to hold the
+         * reply for ever (the 15 s read timeout only starts once headers arrive). The timeout
+         * lands in the catch below, which says the voice failed and gives the reply's text. */
+        const response = await withAnswerTimeout(
+          fetch('/api/files/speech/tts', {
+            method: 'POST',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              messageId: latestMessage?.messageId,
+              runId: activeRunId,
+              voice,
+              // Kade D2d: active agent's speaking rate (undefined drops out of JSON)
+              speed,
+              fillers, // Oct 16 2026: the listener's filler switch
+              ...(delivery ? { delivery } : {}),
+              // Nov 11 2026: Inworld's mouth shapes for the face, asked only while one will be drawn.
+              ...(portraitsOn && messageCharacterId(latestMessage) && faceTimingsAllowed()
+                ? { timing: true }
+                : {}),
+            }),
           }),
-        });
+          speechFetchTimeoutMs(),
+        );
 
         if (!response.ok) {
           throw new Error('Failed to fetch audio');
@@ -208,6 +228,7 @@ export default function StreamAudio({ index = 0 }) {
               return null;
             const mediaSource = new MediaSourceAppender(type);
             streamed = true;
+            setAudioRunId(activeRunId);
             showClip(mediaSource.mediaSourceUrl);
             return {
               append: (data) => mediaSource.addData(data),
@@ -223,6 +244,7 @@ export default function StreamAudio({ index = 0 }) {
         }
         /* Voice first, cache second: saving must never delay or stop the reply. */
         if (audioBlob && !streamed) {
+          setAudioRunId(activeRunId);
           showClip(URL.createObjectURL(audioBlob));
         }
         if (audioBlob && cacheTTS) {
@@ -242,6 +264,8 @@ export default function StreamAudio({ index = 0 }) {
         setIsFetching(false);
         setGlobalAudioURL(null);
         announceVoiceLost('com_ui_read_aloud_failed', latestMessage);
+        // Said first, then dropped: frees the socket of a request that never answered.
+        controller.abort();
       } finally {
         if (speechRequest.finish(controller)) setIsFetching(false);
       }
@@ -358,7 +382,16 @@ export default function StreamAudio({ index = 0 }) {
     };
   }, [audioRef, globalAudioURL, latestMessage?.sender]);
 
+  /* Sweep 5.0 (Nov 13 2026): the first reply of a new chat changes the address from /c/new to
+   * /c/<id>. That is the same chat, so its reply voice is left alone; pausing it here cleared the
+   * run and the reply was neither spoken nor announced. */
+  const lastParamRef = useRef(paramId);
   useEffect(() => {
+    const previous = lastParamRef.current;
+    lastParamRef.current = paramId;
+    if (sameChatGotItsAddress(previous, paramId, latestMessage?.conversationId)) {
+      return;
+    }
     pauseGlobalAudio();
     // We only want the effect to run when the paramId changes
     // eslint-disable-next-line react-hooks/exhaustive-deps

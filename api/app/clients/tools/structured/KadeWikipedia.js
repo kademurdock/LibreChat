@@ -50,7 +50,7 @@ class KadeWikipedia extends Tool {
     /* KADE Nov 12 2026 (phase 4 pick 3): the same topic asked again within 6 hours, by any of this
      * person's characters, reuses the answer. Never shared between people
      * (util/kadeToolCache.js cachedForPerson). The turn gate above still counts every call. */
-    return toolCache.cachedForPerson(
+    const answer = await toolCache.cachedForPerson(
       this.req,
       {
         tool: 'kade_wikipedia',
@@ -65,6 +65,13 @@ class KadeWikipedia extends Tool {
       },
       () => this._lookup(query, full_intro, turnKey),
     );
+    /* Nov 13 2026 (sweep 4.6): an identical lookup already in flight for this person is shared, and
+     * _lookup marks only the turn that started it. Mark this turn too when the shared answer is the
+     * quota sentence, so every turn that got it stops asking (marking twice is harmless). */
+    if (answer === turnGuard.UNAVAILABLE[turnGuard.WIKIPEDIA] && turnGuard.guardOn()) {
+      turnGuard.markUnavailable(turnKey, turnGuard.WIKIPEDIA);
+    }
+    return answer;
   }
 
   async _lookup(query, full_intro, turnKey) {

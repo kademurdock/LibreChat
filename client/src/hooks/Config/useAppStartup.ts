@@ -30,7 +30,7 @@ export default function useAppStartup({
   });
 
   useSpeechSettingsInit(!!user);
-  useListenerVoiceSync(!!user); // Nov 12 2026 (decision 24): voice speed, fillers, delivery per account
+  useListenerVoiceSync(!!user, user?.id); // Nov 12 2026 (decision 24): voice speed, fillers, delivery per account
   const { data: loadedServers, isLoading: serversLoading } = useMCPServersQuery({
     enabled: canUseMcp,
   });

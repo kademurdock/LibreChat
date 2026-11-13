@@ -74,6 +74,15 @@ export interface StreamingStartArgs {
   handlers: StreamingHandlers;
 }
 
+/** Sweep 4.3 (Nov 13 2026): a refusal that is already a plain sentence a screen reader can say. */
+class PlainCallError extends Error {}
+/** The plain reason for a refused call ticket, or '' for a status with no special wording. */
+export function ticketRefusalReason(status: number): string {
+  if (status === 404) return 'This character is not available for calls any more.';
+  if (status === 503) return 'Voice is busy, try again in a moment.';
+  return '';
+}
+
 const TARGET_RATE = 16000;
 const SEND_CHUNK_MS = 100;
 
@@ -460,7 +469,13 @@ export default function useStreamingCall() {
           headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           credentials: 'include',
         });
-        if (!resp.ok) throw new Error(`ticket ${resp.status}`);
+        if (!resp.ok) {
+          /* Sweep 4.3 (Nov 13 2026): say the reason, not a status number. The 404 and 503 come from
+           * the SEC-7 check in kadeWebVoice.js (character gone or not shared; lookup failed). */
+          const plain = ticketRefusalReason(resp.status);
+          if (plain) throw new PlainCallError(plain);
+          throw new Error(`ticket ${resp.status}`);
+        }
         const j = await resp.json();
         if (!ownsSession()) return;
         ticket = j.ticket;
@@ -469,6 +484,7 @@ export default function useStreamingCall() {
       } catch (err: any) {
         if (!ownsSession()) return;
         activeRef.current = false;
+        if (err instanceof PlainCallError) throw new Error(err.message); // already a plain sentence
         throw new Error(`Could not start the streaming call (${err?.message || 'ticket error'}).`);
       }
 
