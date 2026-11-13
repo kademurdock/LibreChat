@@ -34,6 +34,7 @@ const UNTRUSTED_TOOL_NAMES = new Set([
   'traversaal_search',
   'azure-ai-search',
   'kade_read_page',
+  'kade_lookup',
   'kade_research',
   'kade_wikipedia',
   'kade_news',

@@ -17,6 +17,7 @@ const LABELS = Object.freeze({
   web_search: 'web search',
   file_search: 'your files',
   kade_read_page: 'reading a page',
+  kade_lookup: 'looking it up on the web',
   kade_research: 'deep research',
   kade_memory_search: 'memory',
   kade_living_memory: 'memory',

@@ -55,6 +55,7 @@ const {
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
+  KadeLookup,
   KadeAdventure,
   KadeGames,
   KadeFeedback,
@@ -243,6 +244,7 @@ const loadTools = async ({
     kade_approvals: KadeApprovals,
     kade_council: KadeCouncil,
     kade_read_page: KadeReadPage,
+    kade_lookup: KadeLookup,
     kade_adventure: KadeAdventure,
     kade_games: KadeGames,
     kade_feedback: KadeFeedback,
@@ -526,6 +528,12 @@ const loadTools = async ({
       userId: user,
       agentName: agent?.name,
     },
+    /** THE LOOKUP BROWSER (Nov 13 2026, card 23 step two): `req` carries who is asking (adult
+     * accounts only, never a background run); the acting id pays the worker's few cents. */
+    kade_lookup: {
+      req: options.req,
+      userId: kadeActingUserId,
+    },
     /* Part 91.4 — needs req for the tenant id and fileStrategy for storage,
      * exactly like the image tools two lines down. Without fileStrategy it
      * would have no way to save and would refuse honestly, which is a worse
@@ -634,14 +642,30 @@ const loadTools = async ({
         );
         /* KADE Oct 20 2026: a provider quota answer (Tavily 432, 429...) ends web search for the
          * rest of the turn, and a turn makes at most 6 searches (kadeTurnToolGuard). */
-        return require('./kadeTurnToolGuard').guardWebSearchTool(
-          createSearchTool({
-            ...result.authResult,
-            onSearchResults,
-            onGetHighlights,
-            logger,
-          }),
-          { req: options.req, logger },
+        /* KADE Nov 13 2026 (kadeSearchAnswers): innermost, a Tavily quota answer or failure is
+         * asked of Brave instead (only with BRAVE_SEARCH_API_KEY set); outermost, the top one or
+         * two result pages are read by the tool-less reader and a short answer leads the result
+         * (KADE_SEARCH_AUTOREAD=0 turns that off). The guard sits between, so its caps and its
+         * quota stop see what the engines finally answered. */
+        const kadeSearchAnswers = require('./kadeSearchAnswers');
+        const kadeSearchUsage = {
+          userId: kadeActingUserId,
+          logUsage: (row) => require('~/models/kadeUsage').logKadeUsage(row),
+        };
+        return kadeSearchAnswers.withAutoRead(
+          require('./kadeTurnToolGuard').guardWebSearchTool(
+            kadeSearchAnswers.withBraveFallback(
+              createSearchTool({
+                ...result.authResult,
+                onSearchResults,
+                onGetHighlights,
+                logger,
+              }),
+              { logger, ...kadeSearchUsage },
+            ),
+            { req: options.req, logger },
+          ),
+          { req: options.req, logger, ...kadeSearchUsage },
         );
       };
       continue;
@@ -701,6 +725,12 @@ const loadTools = async ({
         };
       }
       requestedTools[tool] = requestedTools[toolKey];
+      continue;
+    }
+
+    /* KADE Nov 13 2026: with no lookup browser set up (KADE_LOOKUP_BROWSER_URL and
+     * KADE_LOOKUP_BROWSER_SECRET), or with KADE_ERRAND_WEB=0, the lookup tool does not exist. */
+    if (tool === 'kade_lookup' && !require('../../../../server/services/kadeLookupWorker').lookupConfig()) {
       continue;
     }
 

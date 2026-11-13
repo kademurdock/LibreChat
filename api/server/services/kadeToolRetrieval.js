@@ -131,6 +131,10 @@ const ALIASES = {
   kade_read_page: [
     /(https?:\/\/|www\.|\.com\b|\.org\b|\.net\b|\b(read|open|summari[sz]e) (this|that|the|me the|me this) (page|article|link|site|story)\b)/i,
   ],
+  /* Nov 13 2026: the lookup browser. The asks that mean "go to the page and find it". */
+  kade_lookup: [
+    /\b(?:(?:look|check|find) (?:it|that|this|them) up on (?:the|their|that|his|her|its) (?:web ?site|site|web ?page|page)|(?:check|look at|look on|go to|open up) (?:the|their|that|his|her|its) (?:web ?site|site|web ?page)|on (?:their|his|her|its) (?:web ?site|site)\b|(?:click|press|follow|open) (?:the|that|on the|on that) (?:link|button|next page|show more|tab)|what does (?:the|their) (?:web ?site|site|page) say)\b/i,
+  ],
   kade_media: [
     /(youtube|youtu\.be|\b(this|that|the) (video|clip|song file|recording|track)\b|describe (this|that|the) (video|clip)|what'?s in (this|that) video|listen to this)/i,
   ],
@@ -274,6 +278,7 @@ const INFO_TOOLS = {
   kade_wikipedia: 'kade_wikipedia gets background on people, places, things and history',
   kade_research: 'kade_research runs a deep multi-source dig and writes it up',
   kade_read_page: 'kade_read_page opens a link or site the person named',
+  kade_lookup: 'kade_lookup finds one thing on a public web page with a real browser (hours, a phone number, a price)',
   kade_lyrics: 'kade_lyrics finds the words to a song',
   kade_location: 'kade_location knows where the person is, for anything local',
 };

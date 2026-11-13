@@ -267,6 +267,14 @@
     "authConfig": []
   },
   {
+    "name": "Look it up on a web page",
+    "pluginKey": "kade_lookup",
+    "description": "Opens a public web page in a real browser and finds one thing on it for you: store or office hours, a phone number, a price, what is behind a \"show more\" or on the next page. It only reads. It can't sign in, fill in forms, buy anything or download files, and a site that asks for a human check can't be read. Adult accounts only. Try: \"look up the pharmacy's Sunday hours on their website.\"",
+    "icon": "",
+    "isAuthRequired": "false",
+    "authConfig": []
+  },
+  {
     "name": "Adventure save files",
     "pluginKey": "kade_adventure",
     "description": "Gives story games a save file — so a text adventure or RPG can save, load, and pick up where you left off days later, even in a new conversation. Only useful for games. Try: \"continue my dungeon adventure from last time.\"",

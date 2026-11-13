@@ -172,6 +172,9 @@ const KINDS = {
   kade_news: { '*': 'general' },
   kade_lyrics: { '*': 'general' },
   kade_read_page: { '*': 'general' },
+  /* Nov 13 2026: a read of a public page, like the page reader. The tool itself is for adult
+   * accounts only, so an unpaired caller (nobody known) is refused inside it. */
+  kade_lookup: { '*': 'general' },
   kade_help: { '*': 'general' },
   kade_media: { '*': 'general' },
   kade_location: { '*': 'general' },
