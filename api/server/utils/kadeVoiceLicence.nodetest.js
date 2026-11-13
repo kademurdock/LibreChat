@@ -84,6 +84,11 @@ function setEnv(name, value) {
  * the environment back. */
 function loadHouse(licence, casual) {
   const before = [process.env.KADE_VOICE_LICENCE, process.env.KADE_CASUAL_HOUSE];
+  /* Nov 13 2026: these pins are the texts as they ran before the self-knowledge clause, so
+   * every load here runs with KADE_SELF_KNOWLEDGE=0. The reworded clause and that switch are
+   * pinned in kadeSelfKnowledge.nodetest.js. */
+  const selfBefore = process.env.KADE_SELF_KNOWLEDGE;
+  setEnv('KADE_SELF_KNOWLEDGE', '0');
   setEnv('KADE_VOICE_LICENCE', licence);
   setEnv('KADE_CASUAL_HOUSE', casual);
   try {
@@ -119,6 +124,7 @@ function loadHouse(licence, casual) {
   } finally {
     setEnv('KADE_VOICE_LICENCE', before[0]);
     setEnv('KADE_CASUAL_HOUSE', before[1]);
+    setEnv('KADE_SELF_KNOWLEDGE', selfBefore);
   }
 }
 

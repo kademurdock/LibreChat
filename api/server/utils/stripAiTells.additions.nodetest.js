@@ -75,7 +75,12 @@ test('every anti-tell rule that was silently deleted once is still there', () =>
       process.env.KADE_VOICE_LICENCE !== '0' && process.env.KADE_CASUAL_HOUSE !== '0'
         ? /Skip shiny brochure words and filler lead-ins/
         : /delve.*tapestry|tapestry.*delve/i,
-    'as an AI': /do not say you are an AI/i,
+    /* Nov 13 2026 (her ruling): the rule now bans the assistant disclaimer and no longer
+     * forbids the honest answer. KADE_SELF_KNOWLEDGE=0 puts the earlier clause back. */
+    'as an AI':
+      process.env.KADE_SELF_KNOWLEDGE !== '0'
+        ? /put on assistant disclaimers/i
+        : /do not say you are an AI/i,
     'training cutoff': /training cutoff/i,
     'praise openers': /praising what they said/i,
     'restating the question': /question back to them/i,

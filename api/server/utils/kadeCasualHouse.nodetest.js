@@ -61,6 +61,10 @@ function loadHouse(value) {
   const before = process.env.KADE_CASUAL_HOUSE;
   const licenceBefore = process.env.KADE_VOICE_LICENCE;
   process.env.KADE_VOICE_LICENCE = '0';
+  /* Nov 13 2026: and before the self-knowledge clause, so KADE_SELF_KNOWLEDGE=0 too. The
+   * reworded clause and that switch are pinned in kadeSelfKnowledge.nodetest.js. */
+  const selfBefore = process.env.KADE_SELF_KNOWLEDGE;
+  process.env.KADE_SELF_KNOWLEDGE = '0';
   if (value === undefined) {
     delete process.env.KADE_CASUAL_HOUSE;
   } else {
@@ -98,6 +102,11 @@ function loadHouse(value) {
       delete process.env.KADE_VOICE_LICENCE;
     } else {
       process.env.KADE_VOICE_LICENCE = licenceBefore;
+    }
+    if (selfBefore === undefined) {
+      delete process.env.KADE_SELF_KNOWLEDGE;
+    } else {
+      process.env.KADE_SELF_KNOWLEDGE = selfBefore;
     }
   }
 }
