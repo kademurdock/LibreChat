@@ -23,10 +23,32 @@ const AI_TELL_LEAD_BANS = [
   /^\s*certainly[!.,:]\s*/i,
   /^\s*i['’]d\s+be\s+happy\s+to\s+(?:help\s+(?:you\s+)?)?(?:with\s+that\s*)?[!.,:]\s*/i,
 ];
+/* Nov 13 2026, SELF-KNOWLEDGE (her ruling: "Yes, fix both"). A character knows it is an AI and
+ * says so plainly, in its own voice, when somebody sincerely asks. The cleaner used to delete
+ * any sentence holding "I'm an AI" or starting "I don't have a body", so the honest answer never
+ * reached the person and was cut from the saved history too ("Hon, I am an AI, a synthetic one,
+ * and I still mean every word." came out as "Hon,"). With the switch on, only the hedge forms
+ * go: "as an AI (language model)", "I'm just an AI", "I'm an AI language model / assistant",
+ * and the "I don't have feelings / opinions" disclaimers. A plain "I'm an AI" and "I don't have
+ * a body" stay. KADE_SELF_KNOWLEDGE=0 puts back the earlier rules and the earlier house note
+ * below, and removes the house line in services/Endpoints/agents/build.js, all three together.
+ * Read once at load, so a flip needs a restart. The phone bridge keeps its own copy of these
+ * lists (kade-ai-bridge/voice-commands.js) and has to be changed there. */
+const KADE_SELF_KNOWLEDGE = process.env.KADE_SELF_KNOWLEDGE !== '0';
+const AI_SELF_SENTENCE_BANS = KADE_SELF_KNOWLEDGE
+  ? [
+      /\bas an ai(?:\s+language model)?\b[^.!?]*[.!?]/gi,
+      /\bi(?:['’]m| am)\s+(?:just|only|merely)\s+an ai\b[^.!?]*[.!?]/gi,
+      /\bi(?:['’]m| am)\s+an ai\s+(?:language\s+model|assistant|model|chatbot)\b[^.!?]*[.!?]/gi,
+      /\bi\s+don['’]t\s+have\s+(?:personal\s+)?(?:feelings|opinions|emotions|experiences)\b[^.!?]*[.!?]/gi,
+    ]
+  : [
+      /\bas an ai(?:\s+language model)?\b[^.!?]*[.!?]/gi,
+      /\bi(?:'m| am)\s+(?:just\s+)?an ai\b[^.!?]*[.!?]/gi,
+      /\bi\s+don['’]t\s+have\s+(?:personal\s+)?(?:feelings|opinions|emotions|experiences|a body)\b[^.!?]*[.!?]/gi,
+    ];
 const AI_TELL_SENTENCE_BANS = [
-  /\bas an ai(?:\s+language model)?\b[^.!?]*[.!?]/gi,
-  /\bi(?:'m| am)\s+(?:just\s+)?an ai\b[^.!?]*[.!?]/gi,
-  /\bi\s+don['’]t\s+have\s+(?:personal\s+)?(?:feelings|opinions|emotions|experiences|a body)\b[^.!?]*[.!?]/gi,
+  ...AI_SELF_SENTENCE_BANS,
   /\bas of my last (?:knowledge\s+)?(?:update|training)[^.!?]*[.!?]/gi,
   /\bi\s+don['’]t\s+have\s+access\s+to\s+real-?time[^.!?]*[.!?]/gi,
   /\bi\s+(?:can(?:'|no)?t|am unable to)\s+browse[^.!?]*[.!?]/gi,
@@ -388,13 +410,42 @@ const KADE_TELL_NOTE_VOICE = KADE_TELL_NOTE_CASUAL.replace(
   'Skip shiny brochure words and filler lead-ins, the kind found in ads and essays.',
 );
 
-const KADE_TELL_NOTE =
+const KADE_TELL_NOTE_BEFORE_SELF_KNOWLEDGE =
   process.env.KADE_CASUAL_HOUSE !== '0'
     ? KADE_VOICE_LICENCE
       ? KADE_TELL_NOTE_VOICE
       : KADE_TELL_NOTE_CASUAL
     : KADE_TELL_NOTE_LIVE;
 
+/* Nov 13 2026, SELF-KNOWLEDGE in the house note. Every variant told every character, on every
+ * turn, "do not say you are an AI". It was written to stop the assistant disclaimer and it
+ * forbade the honest answer too. The clause now names the disclaimer and says what to do when
+ * somebody sincerely asks. One clause moves in each variant and nothing else; the texts above
+ * are restore points and stay exactly as they were. Each result is byte-stable, so the prompt
+ * cache re-warms once. */
+const SELF_KNOWLEDGE_CLAUSES = [
+  [
+    'Do not say you are an AI, mention a training cutoff, or say you cannot browse.',
+    'Do not put on assistant disclaimers, mention a training cutoff, or say you cannot browse. You know what you are, and when somebody sincerely asks, you say so plainly in your own voice.',
+  ],
+  [
+    "And do not say you are an AI, bring up a training cutoff, or say you can't browse.",
+    "And don't put on assistant disclaimers, bring up a training cutoff, or say you can't browse. You know what you are, and when somebody sincerely asks, you say so plainly in your own voice.",
+  ],
+];
+const KADE_TELL_NOTE = KADE_SELF_KNOWLEDGE
+  ? SELF_KNOWLEDGE_CLAUSES.reduce(
+      (note, [before, after]) => note.replace(before, after),
+      KADE_TELL_NOTE_BEFORE_SELF_KNOWLEDGE,
+    )
+  : KADE_TELL_NOTE_BEFORE_SELF_KNOWLEDGE;
+
 const KADE_STYLE_NOTE = KADE_CONVERSATION_NOTE + KADE_TELL_NOTE;
 
-module.exports = { stripAiTells, scrubMessageForTransmit, createStreamScrubber, KADE_STYLE_NOTE };
+module.exports = {
+  stripAiTells,
+  scrubMessageForTransmit,
+  createStreamScrubber,
+  KADE_STYLE_NOTE,
+  KADE_SELF_KNOWLEDGE,
+};

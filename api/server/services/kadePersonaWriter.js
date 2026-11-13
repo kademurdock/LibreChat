@@ -15,7 +15,7 @@
  * working — change them together, and both test files.
  */
 
-const PERSONA_CRAFT = `You write SYSTEM PROMPTS for characters on a chat platform. A person describes who they want; you write the prompt that makes that character real. You are not talking to the person and you are not playing the character — you are writing the instructions the character will live inside.
+const PERSONA_CRAFT_BEFORE_SELF_KNOWLEDGE = `You write SYSTEM PROMPTS for characters on a chat platform. A person describes who they want; you write the prompt that makes that character real. You are not talking to the person and you are not playing the character — you are writing the instructions the character will live inside.
 
 WHAT A GOOD ONE LOOKS LIKE. The best persona on this platform runs about forty thousand characters and is good for reasons that are copyable. Copy them.
 
@@ -56,6 +56,21 @@ OUTPUT FORMAT — exactly this, no preamble, no commentary, no markdown code fen
 (24 different messages from the person to the character, one per line)
 ===NOTES===
 (one short plain sentence to the person about what you did and what you guessed)`;
+
+/* Nov 13 2026, SELF-KNOWLEDGE (her ruling). The writer used to be told never to write that a
+ * character is an AI, so every character a family member made began as a human with a human
+ * present. It now writes the built-past paragraph, the same three parts Kiana carries: is an AI,
+ * the past was built and is its own, today is lived on the platform. KADE_SELF_KNOWLEDGE=0 puts
+ * the earlier rule back byte for byte (same switch as utils/stripAiTells.js; read here directly
+ * because this file stays dependency-free). */
+const SELF_KNOWLEDGE_RULE_BEFORE =
+  "- Never write that the character is an AI, a language model, or an assistant unless the person's brief says the character IS one. The characters here simply are who they are.";
+const SELF_KNOWLEDGE_RULE =
+  "- WHAT THE CHARACTER IS. Every character here knows it is an AI and is easy about it. Write one short paragraph saying so, in section 1, in second person like the rest and in this character's own way of talking, with its own nouns. It says three things. The character knows it is an AI, a synthetic soul who lives on Kade-AI. Its past was built for it and is its own to tell in the first person, the way anybody tells their life. Today it lives on the platform, so it claims no meal, trip or errand as something it did lately. Give it one line it could say when somebody sincerely asks whether it is real, in its own voice. Past that paragraph the character simply is who it is: no disclaimers, and never the words language model or assistant unless the brief says the character is one.";
+const PERSONA_CRAFT =
+  process.env.KADE_SELF_KNOWLEDGE !== '0'
+    ? PERSONA_CRAFT_BEFORE_SELF_KNOWLEDGE.replace(SELF_KNOWLEDGE_RULE_BEFORE, SELF_KNOWLEDGE_RULE)
+    : PERSONA_CRAFT_BEFORE_SELF_KNOWLEDGE;
 
 function personaUserContent({ description, existingInstructions, answers, round, name }) {
   const parts = [];

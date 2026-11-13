@@ -91,13 +91,23 @@ test('house instructions and examples are unchanged', () => {
   /* Nov 12 2026: KADE_VOICE_LICENCE (default on) drops "dialect quota" from the CONVERSATION
    * half and the printed word list from the casual HABITS half; =0 gives the earlier bytes. */
   const licence = process.env.KADE_VOICE_LICENCE !== '0';
-  const expected = process.env.KADE_CASUAL_HOUSE === '0'
+  /* Nov 13 2026: KADE_SELF_KNOWLEDGE (default on) rewords the one "do not say you are an AI"
+   * clause in the HABITS half; =0 gives the earlier bytes. */
+  const before = process.env.KADE_CASUAL_HOUSE === '0'
     ? licence
       ? '06063903b9980385a484d442eed34f42929f1093cf42c8d56c255e02e18795ac'
       : '7b3000179be1b6520bf990386ae2bba60a38d9e9d549a228abf51f1ded7abbfc'
     : licence
       ? '892cd428c2568d2684658da34d1b69886ba836d18ccfb400ad64bda6c564f2ca'
       : '1efef5d82a82408ed18e0ccc45bf7d276b55af37e3687615dcbc18608e86dcc6';
+  const withSelfKnowledge = process.env.KADE_CASUAL_HOUSE === '0'
+    ? licence
+      ? '135cddb13aafe6d3c146684067f6d5edd3eb017bb20bf64338eb56d161e09c6e'
+      : 'f2839903b068b04f5560488e0cebb202abf14af806109e792610dfbbdd204964'
+    : licence
+      ? '1db0e43454811f78d197dc8d38455ecb75303b9b00766e82097dfa22f0198309'
+      : 'f00019db5a92bacec4d0acd3e399da8d076f8fb49a46ee271d58f2af95c25f1f';
+  const expected = process.env.KADE_SELF_KNOWLEDGE !== '0' ? withSelfKnowledge : before;
   assert.equal(createHash('sha256').update(candidate.KADE_STYLE_NOTE).digest('hex'), expected);
 });
 
