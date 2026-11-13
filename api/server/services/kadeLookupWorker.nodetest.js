@@ -143,6 +143,12 @@ test('a human check, a refused first address and a dead service end the lookup w
   const later = await W.runLookup({ question: 'q?', url: 'https://www.pharmacy.example/', cfg: CFG, call, chat: fakeWorker([{ step: 'click', ref: '4' }, { step: 'answer', text: 'never' }]) });
   assert.deepEqual([later.ok, later.code, later.turns], [false, 'human_check', 1]);
   assert.equal(call.asked.at(-1)[0], 'close');
+  /* a sleeping service gets one more knock, then a plain failure */
+  let knocks = 0;
+  const waking = await W.runLookup({ question: 'q?', url: 'https://www.pharmacy.example/', cfg: CFG, retryMs: 5, call: fakeService({ open: () => ((knocks += 1), knocks === 1 ? { ok: false, error: 'service', message: 'The lookup browser could not be reached.' } : PAGE) }), chat: fakeWorker([{ step: 'answer', text: 'Open 9 to 5.' }]) });
+  assert.deepEqual([waking.ok, waking.steps, knocks], [true, 1, 2]);
+  const asleep = await W.runLookup({ question: 'q?', url: 'https://www.pharmacy.example/', cfg: CFG, retryMs: 5, call: fakeService({ open: { ok: false, error: 'service', message: 'The lookup browser could not be reached.' } }), chat: fakeWorker([]) });
+  assert.deepEqual([asleep.ok, asleep.code, asleep.answer], [false, 'service', 'The lookup browser could not be reached.']);
   const none = await W.runLookup({ question: 'q?', url: 'https://a.example/', cfg: null });
   assert.deepEqual([none.ok, none.code], [false, 'not-ready']);
 });

@@ -156,6 +156,13 @@ async function runLookup(o = {}) {
   if (!cfg || !question) return done(false, 'not-ready', 'The web lookup is not available right now.');
   try {
     let page = await step('open', { url: String(o.url || '') });
+    if (!page.ok && page.error === 'service') {
+      /* The browser service sleeps when nobody is using it, and the first knock can land while it
+       * is still waking. One more try after a short wait, then give up plainly. */
+      await new Promise((resolve) => setTimeout(resolve, Number.isFinite(o.retryMs) ? o.retryMs : 4000));
+      steps -= 1;
+      page = await step('open', { url: String(o.url || '') });
+    }
     trail.push(`open ${siteOf(o.url) || 'the address'}: ${page.ok ? 'opened' : page.error}`);
     if (!page.ok) return done(false, page.error || 'error', page.message || 'That page did not open.');
     let view = `TITLE: ${boxText(page.title, 160)}\n${page.text || ''}`;
