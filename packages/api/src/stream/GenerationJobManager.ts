@@ -153,6 +153,8 @@ interface RuntimeJobState {
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void>;
   /** KADE phase 4 pick 4: the events of this job, numbered, for an exact resume by cursor. */
   kadeLog?: KadeStreamLog;
+  /** KADE sweep 4.0: when this job last emitted a real event (or was created). */
+  kadeLastEventAt?: number;
 }
 
 /**
@@ -169,6 +171,17 @@ interface KadeStreamLog {
 }
 
 const kadeStreamLogOn = (): boolean => String(process.env.KADE_STREAM_LOG ?? '').trim() !== '0';
+/** KADE Nov 13 2026 (sweep 4.1): the log and its epoch exist from the moment the job does, so a
+ * cursor from an older turn is always seen as 'other-job', even before the new turn's first event.
+ * KADE_STREAM_LOG_EAGER=0 goes back to making the log on the first event. */
+const kadeStreamLogEager = (): boolean =>
+  String(process.env.KADE_STREAM_LOG_EAGER ?? '').trim() !== '0';
+const newKadeStreamLog = (): KadeStreamLog => ({
+  epoch: randomBytes(4).toString('hex'),
+  next: 1,
+  floor: 0,
+  entries: [],
+});
 const kadeStreamLogMax = (): number => {
   const n = parseInt(process.env.KADE_STREAM_LOG_MAX ?? '', 10);
   return Number.isFinite(n) && n >= 200 ? Math.min(n, 50000) : 8000;
@@ -363,7 +376,11 @@ class GenerationJobManagerClass {
       syncSent: false,
       earlyEventBuffer: [],
       hasSubscriber: false,
+      kadeLastEventAt: Date.now(),
     };
+    if (!this._isRedis && kadeStreamLogOn() && kadeStreamLogEager()) {
+      runtime.kadeLog = newKadeStreamLog(); // KADE sweep 4.1: the epoch is born with the job
+    }
     this.runtimeState.set(streamId, runtime);
     this.runningJobs.add(streamId);
     this.syncRunningJobMetrics();
@@ -1098,12 +1115,7 @@ class GenerationJobManagerClass {
     if (this.kadeSeqs.has(event as object)) return; // already logged
     let log = runtime.kadeLog;
     if (!log) {
-      log = runtime.kadeLog = {
-        epoch: randomBytes(4).toString('hex'),
-        next: 1,
-        floor: 0,
-        entries: [],
-      };
+      log = runtime.kadeLog = newKadeStreamLog();
     }
     const seq = log.next++;
     log.entries.push({ seq, event });
@@ -1114,6 +1126,15 @@ class GenerationJobManagerClass {
       log.floor = log.entries[drop - 1].seq;
       log.entries.splice(0, drop);
     }
+  }
+
+  /**
+   * KADE Nov 13 2026 (sweep 4.0): when this job last emitted a real event, or was created.
+   * The stream route's heartbeat measures its quiet-cap from this, so the cap follows the job
+   * and not each new connection. undefined = no such job on this instance.
+   */
+  kadeLastEventAt(streamId: string): number | undefined {
+    return this.runtimeState.get(streamId)?.kadeLastEventAt;
   }
 
   /** KADE: the id written on the wire for this event, if it was logged. */
@@ -1181,6 +1202,7 @@ class GenerationJobManagerClass {
     // (a hung generation), not on age (a long but live stream). Parity with
     // RedisJobStore refreshing the running TTL on each appendChunk.
     this.jobStore.recordActivity?.(streamId);
+    runtime.kadeLastEventAt = Date.now(); // KADE sweep 4.0: the heartbeat's quiet-cap follows this
 
     await this.trackUserMessage(streamId, event);
     await this.trackTitleEvent(streamId, event);

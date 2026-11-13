@@ -27,6 +27,14 @@ jest.mock('~/components/Chat/character/voice-playback.mjs', () => ({
   watchVoiceAudio: jest.fn(() => jest.fn()),
 }));
 
+/* Nov 13 2026: without this the suite could not load at all (the Nov 11 face-timings import
+ * reaches an ES module that jest does not transform). */
+jest.mock('~/components/Chat/character/timing-track.mjs', () => ({
+  faceTimingsAllowed: () => false,
+  readTimingTrack: () => null,
+  trackFits: () => false,
+}));
+
 jest.mock('sse.js', () => ({
   SSE: jest.fn().mockImplementation(() => {
     const listeners: Record<string, SSEEventListener> = {};
@@ -2000,6 +2008,81 @@ describe('useResumableSSE - 404 error path', () => {
       }
       expect(mockSSEInstances).toHaveLength(4);
       expect(mockErrorHandler).toHaveBeenCalled();
+      unmount();
+    });
+
+    /* Sweep 4.0 / 5.1 (Nov 13 2026): a hung reply used to reconnect for 20 minutes. */
+    it('gives up after two idle reconnects that brought nothing new, and says so aloud', async () => {
+      jest.useFakeTimers();
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'hung-reply' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      for (let i = 0; i < 2; i++) {
+        await advanceRetryTimer(45000); // silence
+        await advanceRetryTimer(1000); // reconnect delay
+        expect(mockSSEInstances).toHaveLength(2 + i);
+        await act(async () => {
+          const sse = getLastSSE();
+          sse._emit('open'); // resets the retry counter, as on the live site
+          sse._emit('message', { data: JSON.stringify({ sync: true, resumeState: null }) });
+        });
+        expect(mockErrorHandler).not.toHaveBeenCalled();
+      }
+      await advanceRetryTimer(45000); // a third silence: no more reconnects
+      await advanceRetryTimer(60000);
+      expect(mockSSEInstances).toHaveLength(3);
+      expect(mockErrorHandler).toHaveBeenCalledTimes(1);
+      expect(mockErrorHandler.mock.calls[0][0].data.text).toMatch(/stopped responding/);
+      // Announced through the live region (no provider in this test, so the context default warns).
+      expect(warn).toHaveBeenCalledWith('Announcement failed, LiveAnnouncer context is missing');
+      expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
+      warn.mockRestore();
+      unmount();
+    });
+
+    it('a real event between idle reconnects starts the count again', async () => {
+      jest.useFakeTimers();
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'slow-tool' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      for (let i = 0; i < 5; i++) {
+        await advanceRetryTimer(45000);
+        await advanceRetryTimer(1000);
+        await act(async () => {
+          const sse = getLastSSE();
+          sse._emit('open');
+          // Something real arrived: the reply is alive, only slow.
+          sse._emit('message', { data: JSON.stringify({ event: 'on_run_step', data: {} }) });
+        });
+      }
+      expect(mockSSEInstances).toHaveLength(6);
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      unmount();
+    });
+
+    it('localStorage kadeIdleReconnectMax = 0 never gives up on idle, as before', async () => {
+      jest.useFakeTimers();
+      localStorage.setItem('kadeIdleReconnectMax', '0');
+      // One submission object for the whole test: a new one each render would restart the stream.
+      const submission = { ...buildSubmission(), requestId: 'idle-forever' } as TSubmission;
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+      await flushMicrotasks();
+      for (let i = 0; i < 5; i++) {
+        await advanceRetryTimer(45000);
+        await advanceRetryTimer(1000);
+        await act(async () => {
+          getLastSSE()._emit('open');
+        });
+      }
+      expect(mockSSEInstances).toHaveLength(6);
+      expect(mockErrorHandler).not.toHaveBeenCalled();
+      localStorage.removeItem('kadeIdleReconnectMax');
       unmount();
     });
 
