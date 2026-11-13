@@ -580,13 +580,13 @@ router.get('/memory-health', async (req, res) => {
                 'Cards are still being written and still ride the pinned head, but nothing is being MATCHED to what the person just said. ' +
                 `Last error: ${eh.lastError || 'unknown'}`,
             });
-          } else if (eh.failed > 0 && eh.ok > 0 && eh.failed / (eh.ok + eh.failed) > 0.25) {
-            w.push({
-              lane: 'embedding',
-              severity: 'amber',
-              detail:
-                `${eh.failed} of ${eh.ok + eh.failed} embedding calls have failed (${eh.provider}/${eh.model}) — recall is intermittently blind. Last error: ${eh.lastError || 'unknown'}`,
-            });
+          } else {
+            /* Nov 13 2026 (sweep 8.2): amber above 10% of calls since boot, not 25%
+             * (kadeDiary.embedHealthAmber; KADE_EMBED_WARN_RATIO=0.25 is the old rule). */
+            const amber = require('~/models/kadeDiary').embedHealthAmber(eh);
+            if (amber) {
+              w.push(amber);
+            }
           }
         } catch (_e) {
           /* fail-soft: a broken health read must never break the monitor */
