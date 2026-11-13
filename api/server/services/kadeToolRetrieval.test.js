@@ -527,3 +527,88 @@ test('Nov 10: the first memo made for a request marks when its turn began, once'
   assert.strictEqual(req._kadeTurnStartedAt, stamp, 'a later memo (recall) does not move it');
   assert.doesNotThrow(() => R.memoEmbed(null, async () => [1]));
 });
+
+/* Nov 13 2026 (the lookup browser's live trial): asked for "your web lookup browser" by name, the
+ * tool was not on hand. It now comes along for what only a browser can do and when it is asked
+ * for, and still stays off ordinary turns. */
+test('Nov 13: the lookup browser rides when asked for, for a click, or when the reader came back empty', () => {
+  const all = Object.keys(R.ALIASES);
+  for (const ask of [
+    /* the trial's own words */
+    "use your web lookup browser to get tonight's forecast from the weather service page",
+    'look this up on this page for me https://www.thelibrary.org/locations',
+    'use kade_lookup on that address',
+    /* asking for the browser plainly */
+    'can you open that in a real browser and tell me what it says',
+    'use the browser for this one',
+    'try your browser on it',
+    'go look at their site and tell me the Sunday hours',
+    'go check the website and see if they are open',
+    'go and look on the page for the phone number',
+    'check this site for me',
+    'browse their menu and tell me what the soup is',
+    'browse to the county assessor page',
+    /* the reader came back with nothing, or a script-only page */
+    'the page came back empty when you read it',
+    "the reader couldn't get anything off that page",
+    'the page reader did not show the hours',
+    'that site needs javascript to show anything',
+    'it came back blank when you opened it',
+    /* things only a browser does */
+    'click the Republic Branch link and read me the hours',
+    'click on the "Hours and Location" tab',
+    'there is a show more button under the reviews',
+    'what is on the next page of results',
+    "use the site's own search to find the red fern book",
+    'search their catalog for Where the Red Fern Grows',
+    'type it into their site search box',
+    /* the everyday asks it already rode on */
+    'what are the pharmacy opening hours',
+    'check their website for the price',
+  ]) {
+    assert.ok(R.keywordHits(ask, all).has('kade_lookup'), ask);
+  }
+});
+
+test('Nov 13: the lookup browser does not ride on ordinary turns, a bare address or a plain fact', async () => {
+  const all = Object.keys(R.ALIASES);
+  for (const chat of [
+    'how are you doing tonight',
+    'my browser keeps crashing on me',
+    'I was browsing for shoes all day',
+    'what is the capital of Montana',
+    'who wrote Where the Red Fern Grows',
+    "what's the weather doing in Springfield",
+    'read this https://example.com/story',
+    'summarize this article for me https://example.com/a',
+    'tell me a dad joke',
+    'I need to go look for my keys',
+    'go check on the baby',
+    'go see a doctor about it',
+    'the fridge was empty when I got home',
+    'my mind went blank',
+    'I pressed the button on the remote',
+    'push the elevator button',
+    'show more love to your sister',
+    'I turned the page and it was blank',
+    'remind me to search the house for my glasses',
+    'she works at the lookup desk',
+    'look it up for me',
+    'yeah go ahead and look it up',
+  ]) {
+    assert.ok(!R.keywordHits(chat, all).has('kade_lookup'), chat);
+  }
+  /* a page address with a plain "read this" is the page reader's, not the browser's */
+  assert.ok(R.keywordHits('read this https://example.com/story', all).has('kade_read_page'));
+  /* and through the whole selection: chit-chat leaves it off, the ask brings it */
+  R._resetForTests();
+  const names = [...KIANA, 'kade_lookup'];
+  const embed = fakeEmbed(names);
+  const quiet = await select({ tools: T(names), text: 'love you too, night', agentId: 'a', conversationId: 'c-lk-1', embed });
+  assert.ok(!quiet.keep.has('kade_lookup'));
+  const fact = await select({ tools: T(names), text: 'how tall is Mount Everest', agentId: 'a', conversationId: 'c-lk-2', embed });
+  assert.ok(!fact.keep.has('kade_lookup'), 'an ordinary fact is the search, not the browser');
+  const asked = await select({ tools: T(names), text: 'use your web lookup browser on the library page', agentId: 'a', conversationId: 'c-lk-3', embed });
+  assert.ok(asked.keep.has('kade_lookup'));
+  assert.match(asked.reason, /kw=\[[^\]]*kade_lookup/);
+});

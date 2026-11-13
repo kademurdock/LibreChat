@@ -1600,7 +1600,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_lookup: {
     name: 'kade_lookup',
     description:
-      'Look one thing up on a public web page with a real browser: store or office hours, a phone number, a price, what a page says after "show more" or on the next page. Give the page address and the question; you get back a short answer read off the page. Use it when a search result or the page reader did not show the answer. It only reads: it cannot sign in, fill in forms, buy anything or download files, and a site that asks for a human check cannot be read. It takes up to a minute, so tell the person you are looking. Say where the answer came from.',
+      'Look one thing up on a public web page with a real browser that can click. Give the page address and the question; you get back a short answer read off the page. Use it when the answer needs a browser: the page needs a click (a "show more", a tab, a link to the right branch or item, the next page of results), the page reader came back empty, cut off or with only a script-built shell, or the person asks you to go look at, check or browse a site, or asks for the browser by name. For an ordinary fact, or a page that reads fine, use web search or the page reader instead: they are faster. It only reads web pages: it cannot sign in, fill in forms, buy anything, download files or read a PDF, and a site that asks for a human check cannot be read. It can take up to a minute, so tell the person you are looking. Say where the answer came from.',
     schema: kadeLookupSchema,
     toolType: 'builtin',
   },

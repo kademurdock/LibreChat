@@ -588,7 +588,7 @@ test('the reader: tool-less, zero-retention, cheap host first, thinking off; the
   assert.equal(sent[0].url, 'https://openrouter.ai/api/v1/chat/completions');
   assert.equal(sent[0].init.headers.Authorization, 'Bearer ok');
   assert.equal(body.model, 'xiaomi/mimo-v2.6-flash');
-  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
+  assert.deepEqual(body.provider, { zdr: true, data_collection: 'deny', order: ['Cohere', 'Makora', 'DeepInfra'], allow_fallbacks: true });
   assert.deepEqual(body.reasoning, { enabled: false, effort: 'none' });
   assert.equal('tools' in body, false, 'there is nothing for a page to call');
   assert.equal('tool_choice' in body, false);

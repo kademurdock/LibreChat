@@ -73,15 +73,21 @@ class KadeLookup extends Tool {
     this.env = fields.env || process.env;
     this.req = fields.req;
     this.userId = fields.userId;
-    this.run = fields.run || runLookup; /* tests hand in stand-ins */
-    this.call = fields.call;
+    /* Tests hand in stand-ins. NEVER name one of these `call`, `invoke` or `_call`: those are the
+     * methods the chat engine runs a tool by, and a field of that name replaces the method
+     * ("this.call is not a function", the Nov 13 live trial). */
+    this.runLookupFn = fields.runLookupFn || runLookup;
+    this.serviceCallFn = fields.serviceCallFn;
     this.logUsage = fields.logUsage;
     this.description =
-      'Look one thing up on a public web page with a real browser: store or office hours, a phone number, a price, ' +
-      'what a page says after "show more" or on the next page. Give the page address and the question; you get back a ' +
-      'short answer read off the page. Use it when a search result or the page reader did not show the answer. ' +
-      'It only reads: it cannot sign in, fill in forms, buy anything or download files, and a site that asks for a ' +
-      'human check cannot be read. It takes up to a minute, so tell the person you are looking. Say where the answer came from.';
+      'Look one thing up on a public web page with a real browser that can click. Give the page address and the ' +
+      'question; you get back a short answer read off the page. Use it when the answer needs a browser: the page ' +
+      'needs a click (a "show more", a tab, a link to the right branch or item, the next page of results), the page ' +
+      'reader came back empty, cut off or with only a script-built shell, or the person asks you to go look at, ' +
+      'check or browse a site, or asks for the browser by name. For an ordinary fact, or a page that reads fine, ' +
+      'use web search or the page reader instead: they are faster. It only reads web pages: it cannot sign in, fill ' +
+      'in forms, buy anything, download files or read a PDF, and a site that asks for a human check cannot be read. ' +
+      'It can take up to a minute, so tell the person you are looking. Say where the answer came from.';
     this.schema = schemaFor(this.env);
   }
 
@@ -103,7 +109,7 @@ class KadeLookup extends Tool {
     const cfg = lookupConfig(this.env);
     if (!cfg) return 'Not started: the web lookup is not available right now.';
     const action = directOn(this.env) && typeof input.action === 'string' ? input.action : 'ask';
-    const call = this.call || ((verb, body) => serviceCall(cfg, verb, body));
+    const call = this.serviceCallFn || ((verb, body) => serviceCall(cfg, verb, body));
 
     if (action !== 'ask') {
       if (!DIRECT_VERBS.includes(action)) return 'Could not do that: I know ask, open, read, find, click, images and close.';
@@ -137,7 +143,7 @@ class KadeLookup extends Tool {
     const started = Date.now();
     /* a spoken turn has somebody listening to the silence: a shorter limit */
     const spoken = !!(this.req && (this.req.kadeVoicePass || this.req.kadeAppVoice || audienceOf(this.req).voice));
-    const r = await this.run({ question, url, cfg, call: this.call, env: this.env, deadlineMs: spoken ? Math.min(cfg.deadlineMs, cfg.voiceDeadlineMs) : cfg.deadlineMs });
+    const r = await this.runLookupFn({ question, url, cfg, call: this.serviceCallFn, env: this.env, deadlineMs: spoken ? Math.min(cfg.deadlineMs, cfg.voiceDeadlineMs) : cfg.deadlineMs });
     try {
       logger.info(`[kade_lookup] ${r.code}: ${r.steps} steps, ${r.turns} worker turns, ${Date.now() - started} ms`);
       if (r.costUSD > 0 && this.userId) {

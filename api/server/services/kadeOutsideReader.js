@@ -18,9 +18,22 @@
  *   - the caller marks the answer as outside text (services/kadeUntrustedTools.js), so it never
  *     reaches memory and cannot make a payment, a call or a message happen (kadeLedger SEC-12).
  *
- * Model: MiMo Flash, thinking off, straight to OpenRouter with her zero-retention rule and
- * DeepInfra first (the cheap host; never the fast one). KADE_OUTSIDE_READER_MODEL changes the
- * model. No '~' requires and no library, so node --test loads it. Never throws.
+ * Model: MiMo Flash, thinking off, straight to OpenRouter with her zero-retention rule.
+ * KADE_OUTSIDE_READER_MODEL changes the model.
+ *
+ * Hosts (Nov 13 2026): the order used to be DeepInfra alone. That day DeepInfra's Flash was
+ * down (2 percent up over the day on OpenRouter's own board), so every call waited about ten
+ * seconds on it before OpenRouter fell back to another host: the "12 seconds a worker turn" of
+ * the lookup trial. Measured the same day on the same page sizes: 12.8 s with DeepInfra first
+ * (served by Cohere after the wait), 0.95 s with Cohere first, 0.89 s with Makora first, thinking
+ * off (0 reasoning tokens) on all three. The order is now a list of Flash hosts that are on OpenRouter's
+ * zero-retention list and take a JSON reply, with DeepInfra last:
+ * KADE_OUTSIDE_READER_PROVIDER_ORDER changes it for every caller, and a caller may hand in its
+ * own (the lookup worker: KADE_LOOKUP_PROVIDER_ORDER). `zdr: true` and `data_collection: deny`
+ * are fixed in code, so a host that is not zero-retention is never used whatever the list says.
+ * All of these are Flash at Flash prices (14 to 18 cents a million tokens in); none is the
+ * costly fast Pro host.
+ * No '~' requires and no library, so node --test loads it. Never throws.
  */
 
 const DEFAULT_MODEL = 'xiaomi/mimo-v2.6-flash';
@@ -30,6 +43,29 @@ const IN_USD_PER_M = 0.14;
 const OUT_USD_PER_M = 0.28;
 
 const readerModel = (env = process.env) => String((env && env.KADE_OUTSIDE_READER_MODEL) || '').trim() || DEFAULT_MODEL;
+
+/* Flash hosts on OpenRouter's zero-retention list that take response_format (checked Nov 13
+ * 2026): Cohere $0.14/$0.28, Makora $0.18/$0.36, DeepInfra $0.14/$0.28 (down that day). */
+const DEFAULT_PROVIDER_ORDER = ['Cohere', 'Makora', 'DeepInfra'];
+
+/** A host list from a setting: "Cohere, Makora". Odd names are dropped; nothing usable = null. */
+function parseProviderOrder(value) {
+  const seen = new Set();
+  const out = [];
+  for (const part of String(value == null ? '' : value).split(',')) {
+    const name = part.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,39}$/.test(name) || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push(name);
+    if (out.length >= 6) break;
+  }
+  return out.length ? out : null;
+}
+
+/** The host order for one call: the caller's own list, else the setting, else the default. */
+function readerProviderOrder(env = process.env, own) {
+  return parseProviderOrder(Array.isArray(own) ? own.join(',') : own) || parseProviderOrder(env && env.KADE_OUTSIDE_READER_PROVIDER_ORDER) || DEFAULT_PROVIDER_ORDER.slice();
+}
 
 /** The cost a reply reports (OpenRouter usage.cost), else an estimate from its token counts. */
 function costOf(usage) {
@@ -44,8 +80,8 @@ function costOf(usage) {
 /**
  * One tool-less completion on the cheap host.
  * @param {{ system: string, user: string, maxTokens?: number, timeoutMs?: number, json?: boolean,
- *   env?: object, fetchImpl?: Function, signal?: AbortSignal }} o
- * @returns {Promise<{ ok: boolean, text: string, costUSD: number, why?: string }>}
+ *   env?: object, fetchImpl?: Function, signal?: AbortSignal, providerOrder?: string[] | string }} o
+ * @returns {Promise<{ ok: boolean, text: string, costUSD: number, why?: string, provider?: string }>}
  */
 async function readerChat(o = {}) {
   const env = o.env || process.env;
@@ -64,9 +100,11 @@ async function readerChat(o = {}) {
     usage: { include: true },
     ...(/^xiaomi\/mimo-/i.test(model) ? { reasoning: { enabled: false, effort: 'none' } } : {}),
     ...(o.json ? { response_format: { type: 'json_object' } } : {}),
-    /* Her zero-retention rule, and the cheap host first: nobody is waiting on this at the fast
-     * host's price. No tools, no tool_choice: there is nothing for a page to call. */
-    provider: { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true },
+    /* Her zero-retention rule is fixed here, whatever the host list says: a host that keeps
+     * data is never used. Cheap Flash hosts in order, and OpenRouter may fall back to another
+     * zero-retention host when those are down. No tools, no tool_choice: there is nothing for a
+     * page to call. */
+    provider: { zdr: true, data_collection: 'deny', order: readerProviderOrder(env, o.providerOrder), allow_fallbacks: true },
   };
   const timeout = AbortSignal.timeout(Math.min(60000, Math.max(1000, Number(o.timeoutMs) || 12000)));
   const signal = o.signal ? AbortSignal.any([o.signal, timeout]) : timeout;
@@ -80,7 +118,12 @@ async function readerChat(o = {}) {
     if (!res || !res.ok) return { ok: false, text: '', costUSD: 0, why: `status-${res ? res.status : 0}` };
     const data = await res.json();
     const text = data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : '';
-    return { ok: typeof text === 'string' && text.trim().length > 0, text: typeof text === 'string' ? text.trim() : '', costUSD: costOf(data && data.usage) };
+    return {
+      ok: typeof text === 'string' && text.trim().length > 0,
+      text: typeof text === 'string' ? text.trim() : '',
+      costUSD: costOf(data && data.usage),
+      ...(data && typeof data.provider === 'string' ? { provider: data.provider.slice(0, 40) } : {}),
+    };
   } catch (err) {
     return { ok: false, text: '', costUSD: 0, why: err && err.name === 'TimeoutError' ? 'timeout' : 'error' };
   }
@@ -163,4 +206,4 @@ async function answerFromPages(o = {}) {
   return { answer, sites, costUSD: r.costUSD || 0, ...(answer ? {} : { why: 'not-found' }) };
 }
 
-module.exports = { readerChat, answerFromPages, cleanAnswer, boxText, siteOf, costOf, readerModel, ANSWER_SYSTEM, DEFAULT_MODEL, MAX_ANSWER };
+module.exports = { readerChat, answerFromPages, cleanAnswer, boxText, siteOf, costOf, readerModel, readerProviderOrder, parseProviderOrder, ANSWER_SYSTEM, DEFAULT_MODEL, DEFAULT_PROVIDER_ORDER, MAX_ANSWER };
