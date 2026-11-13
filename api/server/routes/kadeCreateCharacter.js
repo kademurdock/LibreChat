@@ -395,6 +395,12 @@ function takeSlot(desk, userId, cap) {
 const easel = { day: '', counts: new Map() };
 /* One easel for both portrait doors (/api/kade/builder/avatar here, /api/kade/avatar-generate in kade.js). */
 const takePortraitSlot = (userId) => takeSlot(easel, userId, GEN_DAILY_CAP);
+/* Nov 13 2026 (sweep 4.2): the administrator is not held to the daily portrait cap in either door.
+ * It is her own spend, and the live-face build cap already leaves her out. An exempt request takes
+ * no slot (slot stays null, which the release code already allows).
+ * KADE_AVATAR_CAP_ADMIN=1 puts the administrator back under the cap. */
+const portraitCapExempt = (user, env = process.env) =>
+  !!user && user.role === 'ADMIN' && String((env && env.KADE_AVATAR_CAP_ADMIN) ?? '').trim() !== '1';
 const FLUX_ENDPOINT = '/v1/flux-2-pro';
 
 function httpsReq(url, { method = 'GET', headers = {}, body = null } = {}) {
@@ -452,8 +458,10 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
     const prompt = String((req.body && req.body.prompt) || '').slice(0, 2400);
     if (prompt.length < 8) return res.status(400).json({ error: 'A short description is needed first.' });
 
-    slot = takePortraitSlot(req.user.id);
-    if (!slot) {
+    if (!portraitCapExempt(req.user)) {
+      slot = takePortraitSlot(req.user.id);
+    }
+    if (!slot && !portraitCapExempt(req.user)) {
       return res.status(429).json({ error: `That's ${GEN_DAILY_CAP} portraits today — the easel reopens tomorrow.` });
     }
 
@@ -487,7 +495,7 @@ router.post('/avatar', express.json({ limit: '32kb' }), async (req, res) => {
          * the persona writer below, which is why that one logs and does not
          * deduct separately. */
         logKadeUsage({ userId: req.user.id, service: 'flux', quantity: 1, unit: 'image', costUSD: cost, metadata: { via: 'character-builder' } }).catch(() => {});
-        return res.json({ ok: true, image_b64: img.buf.toString('base64'), remainingToday: slot.left() });
+        return res.json({ ok: true, image_b64: img.buf.toString('base64'), remainingToday: slot ? slot.left() : GEN_DAILY_CAP });
       }
       if (['Error', 'Content Moderated', 'Request Moderated', 'Task not found'].includes(pd.status)) {
         return res.status(502).json({ error: 'The picture engine declined that one. Adjust the description and try again.' });
@@ -909,4 +917,4 @@ const createCharacterPage = (req, res) => {
   res.set('Content-Type', 'text/html; charset=utf-8').send(pageHtml);
 };
 
-module.exports = { router, createCharacterPage, MODEL_MENU, QUIZ, compose, takeSlot, takePortraitSlot, GEN_DAILY_CAP };
+module.exports = { router, createCharacterPage, MODEL_MENU, QUIZ, compose, takeSlot, takePortraitSlot, portraitCapExempt, GEN_DAILY_CAP };

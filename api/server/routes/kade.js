@@ -1851,9 +1851,13 @@ router.post('/avatar-generate', requireJwtAuth, async (req, res) => {
     if (Date.now() - last < 12000) {
       return res.status(429).json({ error: 'Hold on a few seconds between generations.' });
     }
-    const { takePortraitSlot, GEN_DAILY_CAP } = require('./kadeCreateCharacter');
-    slot = takePortraitSlot(uid);
-    if (!slot) {
+    const { takePortraitSlot, portraitCapExempt, GEN_DAILY_CAP } = require('./kadeCreateCharacter');
+    /* Sweep 4.2 (Nov 13 2026): the administrator takes no slot (KADE_AVATAR_CAP_ADMIN=1 undoes it). */
+    const capExempt = portraitCapExempt(req.user);
+    if (!capExempt) {
+      slot = takePortraitSlot(uid);
+    }
+    if (!slot && !capExempt) {
       return res.status(429).json({ error: `That's ${GEN_DAILY_CAP} portraits today — the easel reopens tomorrow.` });
     }
     _avatarGenLast.set(uid, Date.now());
