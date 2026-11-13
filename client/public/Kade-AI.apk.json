@@ -1,7 +1,7 @@
 {
-  "versionCode": 126,
-  "versionName": "2.19.0",
-  "notes": "Public beta 2.19.0: TalkBack no longer cuts Library recordings and family stories in and out; they get quieter and keep playing. The character's voice gets quieter under TalkBack instead of being talked over, and unplugged headphones and phone calls pause it. Every screen says its name as it opens, a chat keeps reading when you connect a keyboard or fold the phone, and Stop goes first. Your voice speed, fillers and voice style follow your account. Checked by 2,808 automated tests, not yet on a real phone with TalkBack. About 78 MB.",
+  "versionCode": 127,
+  "versionName": "2.19.1",
+  "notes": "Public beta 2.19.1: fixes after 2.19.0. The phone now sends proof that you are signed in when it links itself to your account for rings and check-ins. After a long phone call, a paused reply lets go of the sound, so music or a podcast in another app can come back. Headphones pulled out while you wait for a reply pause it instead of letting it play from the loudspeaker, and TalkBack says the reply was paused. Signing in to a different account on the same phone no longer copies the last person's voice settings into it. Checked by 2,831 automated tests and lint, not yet on a real phone with TalkBack. About 78 MB.",
   "url": "https://kademurdock.com/Kade-AI.apk",
-  "sha256": "68dea00105119e7648514017f7bcf22e1bb06fc4c2721c60300da3d2d49c0bbb"
+  "sha256": "1889b99365355a730d79f7eac8e05d7d22d83911aea0c11dde69cbfa7cde2607"
 }
