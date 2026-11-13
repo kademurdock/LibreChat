@@ -885,6 +885,27 @@ export const kadeReadPageSchema: ExtendedJsonSchema = {
   required: ['url'],
 };
 
+/* Nov 13 2026: the lookup browser (api/app/clients/tools/structured/KadeLookup.js). Without an
+ * entry here the model is never shown the tool (the production path offers definitions only).
+ * The tool is taken off the list before this is read when it is not set up, when the account is
+ * not typed adult, and on background runs (services/kadeLookupWorker.js lookupOffered). */
+export const kadeLookupSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    url: {
+      type: 'string',
+      description:
+        'Full http(s) address of the public page to look at (from a search result, or one the person gave).',
+    },
+    question: {
+      type: 'string',
+      description:
+        'The one thing to find on that page, in the person\'s own words. Example: "What are the Sunday hours?"',
+    },
+  },
+  required: ['url', 'question'],
+};
+
 export const kadeAdventureSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -1574,6 +1595,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Fetch a webpage and return ONLY its readable content — article text with ads, menus, pop-ups, and link clutter stripped out. Free, no key, no cost. Use whenever a user shares a link they want read aloud, summarized, or discussed. Many users listen by voice or screen reader — present the content cleanly, in reading order. Use the ACTUAL returned text; never guess what a page says.',
     schema: kadeReadPageSchema,
+    toolType: 'builtin',
+  },
+  kade_lookup: {
+    name: 'kade_lookup',
+    description:
+      'Look one thing up on a public web page with a real browser: store or office hours, a phone number, a price, what a page says after "show more" or on the next page. Give the page address and the question; you get back a short answer read off the page. Use it when a search result or the page reader did not show the answer. It only reads: it cannot sign in, fill in forms, buy anything or download files, and a site that asks for a human check cannot be read. It takes up to a minute, so tell the person you are looking. Say where the answer came from.',
+    schema: kadeLookupSchema,
     toolType: 'builtin',
   },
   kade_adventure: {

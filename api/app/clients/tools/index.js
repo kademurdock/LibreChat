@@ -31,6 +31,7 @@ const KadeRecall = require('./structured/KadeRecall');
 const KadeApprovals = require('./structured/KadeApprovals');
 const KadeCouncil = require('./structured/KadeCouncil');
 const KadeReadPage = require('./structured/KadeReadPage');
+const KadeLookup = require('./structured/KadeLookup');
 const KadeAdventure = require('./structured/KadeAdventure');
 const KadeGames = require('./structured/KadeGames');
 const KadeFeedback = require('./structured/KadeFeedback');
@@ -83,6 +84,7 @@ module.exports = {
   KadeApprovals,
   KadeCouncil,
   KadeReadPage,
+  KadeLookup,
   KadeAdventure,
   KadeGames,
   KadeFeedback,

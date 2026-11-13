@@ -21,6 +21,12 @@
  *                             checked or drawn.
  *   x-kade-steps: N           a bigger step budget for background work, in tool
  *                             rounds (1..80), still under the yaml maximum.
+ *
+ * Nov 13 2026 (sweep): every hidden run is also marked req.kadeBackground = true. Nobody is
+ * waiting on a character's day, a reach-out draft, a task or any other server-built turn, so the
+ * model request carries kade_background: true (packages/api endpoints/custom/initialize.ts) and
+ * the gateway sends a MiMo Pro run to the cheap host instead of the fast one. The gateway takes
+ * the mark off before any host sees it. KADE_SEND_BACKGROUND=0 stops the mark being sent.
  */
 'use strict';
 
@@ -46,6 +52,7 @@ function markHiddenRun(req, _res, next) {
       return next();
     }
     req.kadeHiddenRun = true;
+    req.kadeBackground = true;
     if (req.get('x-kade-platform-paid') === '1') {
       req.kadePlatformPaid = true;
       if (req.user && String(req.user.id) !== ownerId()) {

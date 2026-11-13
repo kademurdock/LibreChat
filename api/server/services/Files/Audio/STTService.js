@@ -312,6 +312,14 @@ class STTService {
         throw new Error('Invalid response from the STT API');
       }
 
+      /* Nov 13 2026 (sweep): the voice proxy answers a recording with no words in it with
+       * { text: '', reason: 'no_speech', message }. That is an answer, not a failure: hand the
+       * plain message on so the person hears "I didn't catch any words" instead of an error. */
+      const quiet = noSpeechAnswer(response.data);
+      if (quiet) {
+        return quiet;
+      }
+
       if (!response.data || !response.data.text) {
         throw new Error('Missing data in response from the STT API');
       }
@@ -346,6 +354,10 @@ class STTService {
       const [provider, sttSchema] = await this.getProviderSchema(req);
       const language = req.body?.language || '';
       const text = await this.sttRequest(provider, sttSchema, { audioBuffer, audioFile, language });
+      if (text && typeof text === 'object') {
+        /* nothing was said: an empty transcript with the plain reason, never a 500 */
+        return res.json({ text: '', reason: text.reason, message: text.message });
+      }
       res.json({ text });
     } catch (error) {
       logAxiosError({ message: 'An error occurred while processing the audio:', error });
@@ -359,6 +371,20 @@ class STTService {
       }
     }
   }
+}
+
+const NO_SPEECH_MESSAGE = "I didn't catch any words in that recording.";
+
+/**
+ * The proxy's "nothing was said" answer, or null for anything else.
+ * @param {unknown} data the STT response body
+ * @returns {{ text: '', reason: 'no_speech', message: string } | null}
+ */
+function noSpeechAnswer(data) {
+  if (!data || typeof data !== 'object' || data.reason !== 'no_speech') return null;
+  if (typeof data.text === 'string' && data.text.trim()) return null;
+  const said = typeof data.message === 'string' ? data.message.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+  return { text: '', reason: 'no_speech', message: said || NO_SPEECH_MESSAGE };
 }
 
 /**
@@ -382,4 +408,11 @@ async function speechToText(req, res) {
   await sttService.processSpeechToText(req, res);
 }
 
-module.exports = { STTService, speechToText, getFileExtensionFromMime, MIME_TO_EXTENSION_MAP };
+module.exports = {
+  STTService,
+  speechToText,
+  getFileExtensionFromMime,
+  MIME_TO_EXTENSION_MAP,
+  noSpeechAnswer,
+  NO_SPEECH_MESSAGE,
+};
