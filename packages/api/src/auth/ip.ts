@@ -138,8 +138,7 @@ export function isPrivateIP(ip: string): boolean {
   if (
     normalized === '::1' ||
     normalized === '::' ||
-    normalized.startsWith('fc') || // fc00::/7 — exactly prefixes 'fc' and 'fd'
-    normalized.startsWith('fd') ||
+    (normalized.includes(':') && (normalized.startsWith('fc') || normalized.startsWith('fd'))) || // fc00::/7 — exactly prefixes 'fc' and 'fd'
     isIPv6LinkLocal(normalized) // fe80::/10 — spans 0xfe80–0xfebf; bitwise check required
   ) {
     return true;

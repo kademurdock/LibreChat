@@ -13,7 +13,7 @@ const PRIVATE_NAMES = new Set(['localhost', 'mongo', 'rag_api']);
 const isPrivateIp = (h) =>
   /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(h) ||
   h === '::1' ||
-  /^f[cd]/.test(h) ||
+  /^f[cd][0-9a-f]{0,2}:/.test(h) ||
   /^fe[89ab]/.test(h);
 function helpers(dns = {}) {
   return {
