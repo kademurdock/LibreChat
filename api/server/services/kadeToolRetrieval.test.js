@@ -562,6 +562,15 @@ test('Nov 13: the lookup browser rides when asked for, for a click, or when the 
     "use the site's own search to find the red fern book",
     'search their catalog for Where the Red Fern Grows',
     'type it into their site search box',
+    /* found by review */
+    'click show more and read me the rest',
+    'you have to click "Hours" first',
+    'use the web lookup on it',
+    'do a web lookup on that page',
+    'the page reader returned nothing',
+    'it says enable javascript',
+    'the page was cut off',
+    'go look at the page and tell me the price',
     /* the everyday asks it already rode on */
     'what are the pharmacy opening hours',
     'check their website for the price',
@@ -595,6 +604,24 @@ test('Nov 13: the lookup browser does not ride on ordinary turns, a bare address
     'she works at the lookup desk',
     'look it up for me',
     'yeah go ahead and look it up',
+    /* found by review: everyday talk that the first cut of these phrases caught */
+    'press the power button',
+    'hit the snooze button',
+    'I hit the save button and lost it all',
+    'go look at the stars',
+    'go look at it',
+    'go see a doctor about my page',
+    'clear your browser history',
+    'it is in the browser settings',
+    'use a browser like Firefox',
+    'I use the browser a lot',
+    'is your browser working',
+    'the page was blank in my notebook',
+    'the site was empty when we got to the campsite',
+    'my screen reader could not read the button',
+    'my screen reader could not read the page',
+    'see more details later',
+    'show more details',
   ]) {
     assert.ok(!R.keywordHits(chat, all).has('kade_lookup'), chat);
   }

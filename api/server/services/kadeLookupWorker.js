@@ -31,18 +31,22 @@
  * Model: the outside reader's (MiMo Flash, thinking off, zero retention). Hosts: the outside
  * reader's order (cheap zero-retention Flash hosts), or this lane's own with
  * KADE_LOOKUP_PROVIDER_ORDER="Cohere,Makora". A host that keeps data is never used: that is
- * fixed in the reader. A full lookup (8 turns of a 9,000 character page) is about half a cent.
+ * fixed in the reader. A typical lookup is a few hundredths of a cent; the most one can cost
+ * (8 turns of a 9,000 character page at the dearer host) is about two thirds of a cent.
+ * A worker turn that has not answered in 10 seconds is dropped and asked once more with the
+ * next host first, so one stalled host cannot eat the minute.
  * Switches: KADE_ERRAND_WEB=0 turns the whole lookup off. KADE_LOOKUP_BROWSER_URL and
  * KADE_LOOKUP_BROWSER_SECRET must both be set or there is no tool at all.
  * No '~' requires and no library, so node --test loads it. Never throws.
  */
 
-const { readerChat, siteOf, boxText, parseProviderOrder } = require('./kadeOutsideReader');
+const { readerChat, siteOf, boxText, parseProviderOrder, readerProviderOrder } = require('./kadeOutsideReader');
 const { audienceOf, isExplicitAdult } = require('./kadeAccountType');
 
 const MAX_TURNS = 8;
 const MAX_STEPS = 12;
 const MAX_ANSWER = 900;
+const TURN_TIMEOUT_MS = 10000;
 
 /** Where the lookup browser is, or null when it is not set up or is switched off. */
 function lookupConfig(env = process.env) {
@@ -145,20 +149,26 @@ const WORKER_SYSTEM =
   'You may add "note":"..." (under 200 characters) to any step to remember something for your next turn; nothing else is remembered. ' +
   'Never sign in, never buy, never fill in a form, never solve a human check. ' +
   'Be quick. When what you have seen answers the whole QUESTION, give the answer at once; do not look again to make sure. ' +
-  'When part of it is still missing and the page has more lines or a likely link, use find or read for the missing part first. ' +
-  'Never guess: if part of the answer is not on the page, say so in the answer.';
+  'When part of it is still missing and the page has more lines or a likely link, look for the missing part once or twice, ' +
+  'then answer with what you have. Never guess: say plainly which part the page does not show.';
 
 const systemFor = (cfg) =>
   WORKER_SYSTEM.replace('TYPE_LINE', cfg.type ? '{"step":"type","ref":"9","words":"..."} to put words from the QUESTION into a search box and press Enter.\n' : '');
 
 /* An address that is a file, not a page: the lookup browser reads pages only. The service checks
  * the same (and the type the site really sends); this copy answers before anything is opened. */
-const FILE_PATH = /\.(?:pdf|zip|rar|7z|gz|tgz|tar|exe|msi|dmg|pkg|apk|ipa|deb|rpm|iso|bin|jar|docx?|xlsx?|pptx?|csv|mp3|mp4|mov|avi|mkv|wav|flac|epub|mobi|torrent|jpe?g|png|gif|webp|bmp|tiff?)$/i;
-const NOT_A_PAGE = 'That address is a file, not a web page, and the lookup browser only reads pages. Use the page reader (kade_read_page) for it instead.';
+const FILE_PATH = /\.(?:pdf|zip|rar|7z|gz|tgz|tar|exe|msi|dmg|pkg|apk|ipa|deb|rpm|iso|docx?|xlsx?|pptx?|mp3|mp4|mov|avi|mkv|wav|flac|epub|mobi|torrent)$/i;
+const NOT_A_PAGE = 'That address is a file, not a web page, and the lookup browser only reads pages. For a PDF or a document, use the page reader (kade_read_page) instead.';
+/* A name that is not plainly a public site (a bare number address, localhost, a home or inside
+ * name) is never answered here: the service refuses it by its own rules, and nobody is pointed
+ * at another tool for it. */
+const INSIDE_HOST = /^(?:\[.*\]|[0-9.]+|[0-9a-fx.:]+|localhost|[^.]+|.*\.(?:internal|local|localhost|lan|home|corp|intranet|test|invalid))\.?$/i;
 function isFileAddress(url) {
   let path = '';
   try {
-    path = new URL(String(url)).pathname;
+    const u = new URL(String(url));
+    if (!/^https?:$/.test(u.protocol) || INSIDE_HOST.test(u.hostname) || u.username || u.password) return false;
+    path = u.pathname;
   } catch (_) {
     return false;
   }
@@ -282,8 +292,16 @@ async function runLookup(o = {}) {
         (note ? `YOUR NOTE: ${note}\n` : '') +
         `TURNS LEFT: ${cfg.turns - turns}\n\n` +
         `PAGE (outside text):\n${boxText(view, 9000)}`;
-      const r = await chat({ system: systemFor(cfg), user, maxTokens: 300, timeoutMs: Math.max(1000, Math.min(30000, left())), json: true, env: o.env, providerOrder: cfg.providerOrder });
+      /* Healthy hosts answer in about a second. One that has not answered in 10 is dropped, and
+       * the turn is asked once more with the next host first (never a third time). */
+      const ask = (providerOrder) => chat({ system: systemFor(cfg), user, maxTokens: 300, timeoutMs: Math.max(1000, Math.min(TURN_TIMEOUT_MS, left())), json: true, env: o.env, providerOrder });
+      let r = await ask(cfg.providerOrder);
       costUSD += (r && r.costUSD) || 0;
+      if ((!r || !r.ok) && left() > 3000) {
+        const order = readerProviderOrder(o.env, cfg.providerOrder);
+        r = await ask(order.length > 1 ? [...order.slice(1), order[0]] : order);
+        costUSD += (r && r.costUSD) || 0;
+      }
       const s = r && r.ok ? parseStep(r.text) : null;
       if (!s) {
         wasted += 1;
@@ -306,7 +324,7 @@ async function runLookup(o = {}) {
       if (kind === 'find') {
         const words = boxText(s.words, 80);
         res = await step('find', { text: words });
-        trail.push(`find "${wordsOf(words).slice(0, 5).join(' ')}": ${res.ok ? `${res.matches} lines` : res.error}`);
+        trail.push(`find "${wordsOf(words).slice(0, 5).join(' ')}": ${res.ok ? `${res.matches} lines${res.allWords === false && res.matches ? ' with some of the words' : ''}` : res.error}`);
       } else if (kind === 'read') {
         res = await step('read', { offset: Math.max(0, Math.floor(Number(s.offset) || 0)) });
         trail.push(`read from line ${Math.max(0, Math.floor(Number(s.offset) || 0))}: ${res.ok ? 'ok' : res.error}`);
@@ -347,4 +365,4 @@ async function runLookup(o = {}) {
   }
 }
 
-module.exports = { isFileAddress, NOT_A_PAGE, lookupOffered, rememberRefused, refusedList, isRefusedHost, forgetRefused, lookupConfig, serviceCall, runLookup, parseStep, typedAllowed, cleanWorkerAnswer, systemFor, MAX_TURNS, MAX_STEPS };
+module.exports = { isFileAddress, NOT_A_PAGE, TURN_TIMEOUT_MS, lookupOffered, rememberRefused, refusedList, isRefusedHost, forgetRefused, lookupConfig, serviceCall, runLookup, parseStep, typedAllowed, cleanWorkerAnswer, systemFor, MAX_TURNS, MAX_STEPS };

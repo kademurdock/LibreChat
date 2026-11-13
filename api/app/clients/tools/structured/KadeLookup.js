@@ -153,6 +153,13 @@ class KadeLookup extends Tool {
     } catch (_) {
       /* logging never blocks an answer */
     }
+    /* An address that turned out to be a file was never looked at: it does not use up one of
+     * this reply's two lookups. */
+    if (r.code === 'not_a_page') {
+      const key = this.req && typeof this.req === 'object' ? this.req : this;
+      const made = turns.get(key) || 0;
+      if (made > 0) turns.set(key, made - 1);
+    }
     if (!r.ok) return `Could not look that up: ${r.answer}`;
     return (
       `OK: ${r.answer}\n` +

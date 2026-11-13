@@ -27,7 +27,7 @@
  * the lookup trial. Measured the same day on the same page sizes: 12.8 s with DeepInfra first
  * (served by Cohere after the wait), 0.95 s with Cohere first, 0.89 s with Makora first, thinking
  * off (0 reasoning tokens) on all three. The order is now a list of Flash hosts that are on OpenRouter's
- * zero-retention list and take a JSON reply, with DeepInfra last:
+ * zero-retention list and take a JSON reply (Cohere, then Makora):
  * KADE_OUTSIDE_READER_PROVIDER_ORDER changes it for every caller, and a caller may hand in its
  * own (the lookup worker: KADE_LOOKUP_PROVIDER_ORDER). `zdr: true` and `data_collection: deny`
  * are fixed in code, so a host that is not zero-retention is never used whatever the list says.
@@ -38,15 +38,18 @@
 
 const DEFAULT_MODEL = 'xiaomi/mimo-v2.6-flash';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-/* Flash on DeepInfra, dollars per million tokens (in, out): used only when the reply names no cost. */
+/* Flash, dollars per million tokens (in, out) at the cheaper hosts: used only when the reply names no cost. */
 const IN_USD_PER_M = 0.14;
 const OUT_USD_PER_M = 0.28;
 
 const readerModel = (env = process.env) => String((env && env.KADE_OUTSIDE_READER_MODEL) || '').trim() || DEFAULT_MODEL;
 
 /* Flash hosts on OpenRouter's zero-retention list that take response_format (checked Nov 13
- * 2026): Cohere $0.14/$0.28, Makora $0.18/$0.36, DeepInfra $0.14/$0.28 (down that day). */
-const DEFAULT_PROVIDER_ORDER = ['Cohere', 'Makora', 'DeepInfra'];
+ * 2026): Cohere $0.14/$0.28, Makora $0.18/$0.36. DeepInfra ($0.14/$0.28) is on that list too but
+ * was down that day, and a host named here is tried before OpenRouter's own choice, so it is
+ * left off: when both of these fail, OpenRouter picks among the other zero-retention hosts and
+ * skips ones that are down. Put it back with the switch once it is well. */
+const DEFAULT_PROVIDER_ORDER = ['Cohere', 'Makora'];
 
 /** A host list from a setting: "Cohere, Makora". Odd names are dropped; nothing usable = null. */
 function parseProviderOrder(value) {
