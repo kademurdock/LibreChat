@@ -21,7 +21,13 @@ const { audienceOf, isExplicitAdult } = require('../../../../server/services/kad
  * The tool is not built at all unless KADE_LOOKUP_BROWSER_URL and KADE_LOOKUP_BROWSER_SECRET are
  * set (handleTools.js), and KADE_ERRAND_WEB=0 takes it away again.
  * KADE_LOOKUP_DIRECT=1 also lets a character work the page itself, step by step (open, read,
- * find, click, close): for testing, since those steps ride the character's own model.
+ * find, click, close): for testing only, and only on the administrator's own seat, since those
+ * steps put raw page text in the character's own prompt on its own (costly) model. Every step
+ * obeys the same rules as a lookup (never a background run), and there is no typing that way.
+ * Never set it on the live site for anyone else's use.
+ *
+ * Time: a lookup stops itself after a minute (KADE_LOOKUP_DEADLINE_MS), 25 seconds on a spoken
+ * turn (KADE_LOOKUP_VOICE_DEADLINE_MS), with the plain "ran out of time" answer.
  */
 
 const DIRECT_VERBS = ['open', 'read', 'find', 'click', 'images', 'close'];
@@ -29,11 +35,16 @@ const PER_TURN = 2;
 const turns = new WeakMap();
 
 const directOn = (env = process.env) => String((env && env.KADE_LOOKUP_DIRECT) || '').trim() === '1';
+/** Step-by-step use is the administrator's own seat only (never a phone turn on the service seat). */
+const isAdminSeat = (req) => {
+  const who = audienceOf(req);
+  return !who.voice && !!who.user && String(who.user.role || '').toUpperCase() === 'ADMIN';
+};
 
 function schemaFor(env = process.env) {
   const cfg = lookupConfig(env);
   const direct = directOn(env);
-  const verbs = direct ? [...DIRECT_VERBS, ...(cfg && cfg.type ? ['type'] : [])] : [];
+  const verbs = direct && cfg ? DIRECT_VERBS : [];
   return {
     type: 'object',
     properties: {
@@ -43,8 +54,8 @@ function schemaFor(env = process.env) {
         ? {
             action: { type: 'string', enum: ['ask', ...verbs], description: "'ask' (default) looks the answer up for you. The others work the page one step at a time." },
             lookup: { type: 'string', description: 'For step-by-step use: the lookup id that open gave back.' },
-            ref: { type: 'string', description: 'For click or type: the number in braces of the thing on the page.' },
-            text: { type: 'string', description: 'For find: the words to look for. For type: the search words.' },
+            ref: { type: 'string', description: 'For click: the number in braces of the thing on the page.' },
+            text: { type: 'string', description: 'For find: the words to look for.' },
             offset: { type: 'integer', description: 'For read: the line to read on from.' },
           }
         : {}),
@@ -95,12 +106,13 @@ class KadeLookup extends Tool {
     const call = this.call || ((verb, body) => serviceCall(cfg, verb, body));
 
     if (action !== 'ask') {
-      if (!DIRECT_VERBS.includes(action) && !(action === 'type' && cfg.type)) return 'Could not do that: I know ask, open, read, find, click, images and close.';
+      if (!DIRECT_VERBS.includes(action)) return 'Could not do that: I know ask, open, read, find, click, images and close.';
+      if (this.req && this.req.kadeHiddenRun === true) return 'Not started: a web lookup only runs when a person asks for it.';
+      if (!isExplicitAdult(audienceOf(this.req).user)) return 'Not started: the web lookup is for adult accounts.';
+      if (!isAdminSeat(this.req)) return 'Not started: working a page step by step is for testing on the administrator seat. Ask with a page address and a question instead.';
       if (action === 'open') {
         const no = this.refusal();
         if (no) return no;
-      } else if (!isExplicitAdult(audienceOf(this.req).user)) {
-        return 'Not started: the web lookup is for adult accounts.';
       }
       const r = await call(action, { url: input.url, lookup: input.lookup, ref: input.ref, text: input.text, offset: input.offset });
       if (!r.ok) return `Could not do that: ${r.message || r.error || 'the lookup browser had a problem'}`;
@@ -123,7 +135,9 @@ class KadeLookup extends Tool {
     const no = this.refusal();
     if (no) return no;
     const started = Date.now();
-    const r = await this.run({ question, url, cfg, call: this.call, env: this.env });
+    /* a spoken turn has somebody listening to the silence: a shorter limit */
+    const spoken = !!(this.req && (this.req.kadeVoicePass || this.req.kadeAppVoice || audienceOf(this.req).voice));
+    const r = await this.run({ question, url, cfg, call: this.call, env: this.env, deadlineMs: spoken ? Math.min(cfg.deadlineMs, cfg.voiceDeadlineMs) : cfg.deadlineMs });
     try {
       logger.info(`[kade_lookup] ${r.code}: ${r.steps} steps, ${r.turns} worker turns, ${Date.now() - started} ms`);
       if (r.costUSD > 0 && this.userId) {

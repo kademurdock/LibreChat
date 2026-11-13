@@ -645,8 +645,10 @@ const loadTools = async ({
         /* KADE Nov 13 2026 (kadeSearchAnswers): innermost, a Tavily quota answer or failure is
          * asked of Brave instead (only with BRAVE_SEARCH_API_KEY set); outermost, the top one or
          * two result pages are read by the tool-less reader and a short answer leads the result
-         * (KADE_SEARCH_AUTOREAD=0 turns that off). The guard sits between, so its caps and its
-         * quota stop see what the engines finally answered. */
+         * (opt-in: only with KADE_SEARCH_AUTOREAD=1; never on a background run; one short read on
+         * a spoken turn). The guard sits between, so its caps and its quota stop see what the
+         * engines finally answered. KADE_TAVILY_EXTRACT=0 stops the library's five-page Tavily
+         * extract, whose text it throws away. With none of those set, this is the same tool as before. */
         const kadeSearchAnswers = require('./kadeSearchAnswers');
         const kadeSearchUsage = {
           userId: kadeActingUserId,
@@ -655,13 +657,17 @@ const loadTools = async ({
         return kadeSearchAnswers.withAutoRead(
           require('./kadeTurnToolGuard').guardWebSearchTool(
             kadeSearchAnswers.withBraveFallback(
-              createSearchTool({
-                ...result.authResult,
-                onSearchResults,
-                onGetHighlights,
-                logger,
-              }),
-              { logger, ...kadeSearchUsage },
+              kadeSearchAnswers.withAttribution(
+                createSearchTool(
+                  kadeSearchAnswers.searchToolConfig({
+                    ...result.authResult,
+                    onSearchResults,
+                    onGetHighlights,
+                    logger,
+                  }),
+                ),
+              ),
+              { req: options.req, safeSearch: result.authResult?.safeSearch, logger, ...kadeSearchUsage },
             ),
             { req: options.req, logger },
           ),
@@ -729,8 +735,9 @@ const loadTools = async ({
     }
 
     /* KADE Nov 13 2026: with no lookup browser set up (KADE_LOOKUP_BROWSER_URL and
-     * KADE_LOOKUP_BROWSER_SECRET), or with KADE_ERRAND_WEB=0, the lookup tool does not exist. */
-    if (tool === 'kade_lookup' && !require('../../../../server/services/kadeLookupWorker').lookupConfig()) {
+     * KADE_LOOKUP_BROWSER_SECRET), or with KADE_ERRAND_WEB=0, the lookup tool does not exist. Nor
+     * does it for an account that is not typed adult, or on a background run (lookupOffered). */
+    if (tool === 'kade_lookup' && !require('../../../../server/services/kadeLookupWorker').lookupOffered(options.req)) {
       continue;
     }
 

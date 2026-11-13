@@ -31,6 +31,38 @@ describe('definitions.ts', () => {
       expect(mockGetOrFetchMCPServerTools).not.toHaveBeenCalled();
     });
 
+    /* Nov 13 2026: the lookup browser tool was built and tested but had no registry entry, so the
+     * production (definitions-only) path silently never showed it to a model. */
+    it('offers kade_lookup to an event-driven turn with a page address and a question', async () => {
+      const result = await loadToolDefinitions(
+        { userId: 'adult-user', agentId: 'agent', tools: ['kade_lookup'] },
+        {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: (name) => name === 'kade_lookup',
+        },
+      );
+      expect(result.toolDefinitions).toHaveLength(1);
+      const lookup = result.toolDefinitions[0];
+      expect(lookup.name).toBe('kade_lookup');
+      expect(lookup.description).toMatch(/^Look one thing up on a public web page/);
+      expect(Object.keys(lookup.parameters?.properties ?? {})).toEqual(['url', 'question']);
+      expect(lookup.parameters?.required).toEqual(['url', 'question']);
+      expect(getToolDefinition('kade_lookup')?.toolType).toBe('builtin');
+    });
+
+    it('does not offer kade_lookup when the tool list it is handed does not hold it', async () => {
+      /* the list is cut before it gets here (services/kadeLookupWorker.js lookupOffered) when the
+       * lookup browser is not set up, the account is not typed adult, or the run is a background one */
+      const result = await loadToolDefinitions(
+        { userId: 'teen-user', agentId: 'agent', tools: ['kade_read_page'] },
+        {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: (name) => name === 'kade_lookup' || name === 'kade_read_page',
+        },
+      );
+      expect(result.toolDefinitions.map((d) => d.name)).toEqual(['kade_read_page']);
+    });
+
     it.each([undefined, Providers.GOOGLE])(
       'exposes narration and its recovery controls through production studio loading (%s)',
       async (provider) => {

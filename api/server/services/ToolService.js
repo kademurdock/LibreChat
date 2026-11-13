@@ -562,6 +562,10 @@ async function loadToolDefinitionsWrapper({ req, res, agent, streamId = null, to
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   const filteredTools = agent.tools?.filter((tool) => {
+    /* KADE Nov 13 2026: no lookup browser set up, a non-adult account or a background run = no tool. */
+    if (tool === 'kade_lookup') {
+      return require('./kadeLookupWorker').lookupOffered(req);
+    }
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
     }
@@ -1116,6 +1120,9 @@ async function loadAgentTools({
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
+    if (tool === 'kade_lookup') {
+      return require('./kadeLookupWorker').lookupOffered(req);
+    }
     if (tool === Tools.file_search) {
       return checkCapability(AgentCapabilities.file_search);
     } else if (tool === Tools.execute_code) {

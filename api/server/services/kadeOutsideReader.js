@@ -127,7 +127,8 @@ function cleanAnswer(raw, sites) {
   const allowed = new Set((sites || []).filter(Boolean));
   t = t.replace(/\bhttps?:\/\/[^\s)\]}>"']+/gi, (m) => (allowed.has(siteOf(m)) ? m : ''));
   t = t.replace(/\bwww\.[^\s)\]}>"']+/gi, (m) => (allowed.has(siteOf(`https://${m}`)) ? m : ''));
-  t = t.replace(/[*_`#]+/g, '').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  /* markdown marks only: an underscore or a # inside an address or "Suite #200" is not markdown */
+  t = t.replace(/[*`]+/g, '').replace(/(^|\s)#{1,6}\s+/g, '$1').replace(/(^|\s)_{1,2}(?=\S)|(?<=\S)_{1,2}(?=\s|$)/g, '$1').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
   if (t.length > MAX_ANSWER) {
     const head = t.slice(0, MAX_ANSWER);
     const stop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('? '), head.lastIndexOf('! '));

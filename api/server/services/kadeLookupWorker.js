@@ -20,7 +20,11 @@
  *   - each worker turn is given the question, a short code-built trail and the latest page
  *     text only: no chat, no memory, no names;
  *   - at most 8 worker turns and 12 browser steps (the service itself stops at 15 steps and
- *     3 minutes), and the window is always closed at the end;
+ *     3 minutes), a wall-clock limit of its own (60 seconds, KADE_LOOKUP_DEADLINE_MS, 10 to 180
+ *     seconds; 25 seconds on a spoken turn, KADE_LOOKUP_VOICE_DEADLINE_MS), and the window is
+ *     always closed at the end;
+ *   - a site that asked for a human check is remembered here for six hours (the browser service
+ *     forgets when it sleeps): it is not opened again, and the list rides with every open;
  *   - the answer is cut short, web addresses that are not a site it visited are removed, and
  *     the caller marks it as outside text.
  *
@@ -31,6 +35,7 @@
  */
 
 const { readerChat, siteOf, boxText } = require('./kadeOutsideReader');
+const { audienceOf, isExplicitAdult } = require('./kadeAccountType');
 
 const MAX_TURNS = 8;
 const MAX_STEPS = 12;
@@ -47,7 +52,55 @@ function lookupConfig(env = process.env) {
     secret,
     type: String((env && env.KADE_LOOKUP_TYPE) || '').trim() === '1',
     turns: Math.min(MAX_TURNS, Math.max(1, Number(env && env.KADE_LOOKUP_WORKER_TURNS) || MAX_TURNS)),
+    deadlineMs: Math.min(180000, Math.max(10000, Number(env && env.KADE_LOOKUP_DEADLINE_MS) || 60000)),
+    voiceDeadlineMs: Math.min(60000, Math.max(10000, Number(env && env.KADE_LOOKUP_VOICE_DEADLINE_MS) || 25000)),
   };
+}
+
+/**
+ * Is the lookup tool there at all for this request? Set up and switched on, an account Kade has
+ * typed 'adult' (a phone turn: the named person), and a person is there (never a background run).
+ * Asked wherever the tool list is chosen or built, so nobody is shown a tool that can only refuse.
+ */
+function lookupOffered(req, env = process.env) {
+  if (!lookupConfig(env)) return false;
+  if (!req || typeof req !== 'object' || req.kadeHiddenRun === true) return false;
+  return isExplicitAdult(audienceOf(req).user);
+}
+
+/* Sites that asked for a human check, remembered here because the browser service sleeps and
+ * forgets. host -> until (ms). In this process only: a restart of the site forgets too. */
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+const refusedHosts = new Map();
+
+function rememberRefused(host, until, now = Date.now()) {
+  const h = String(host || '').toLowerCase().replace(/^www\./, '');
+  const t = Math.min(Number(until) || 0, now + SIX_HOURS);
+  if (!h || !/^[a-z0-9.-]{1,253}$/.test(h) || !(t > now)) return;
+  refusedHosts.set(h, t);
+  if (refusedHosts.size > 500) refusedHosts.delete(refusedHosts.keys().next().value);
+}
+
+/** The unexpired list, as the service's open takes it. */
+function refusedList(now = Date.now()) {
+  const out = [];
+  for (const [host, until] of refusedHosts) {
+    if (until > now) out.push({ host, until: new Date(until).toISOString() });
+    else refusedHosts.delete(host);
+  }
+  return out.slice(-200);
+}
+
+function isRefusedHost(url, now = Date.now()) {
+  const h = siteOf(url);
+  if (!h) return false;
+  for (const [host, until] of refusedHosts) if (until > now && (h === host || h.endsWith(`.${host}`))) return true;
+  return false;
+}
+
+/** Tests only. */
+function forgetRefused() {
+  refusedHosts.clear();
 }
 
 /**
@@ -117,21 +170,35 @@ function cleanWorkerAnswer(raw, sites) {
   let t = String(raw || '').replace(/\s+/g, ' ').trim();
   t = t.replace(/\bhttps?:\/\/[^\s)\]}>"']+/gi, (m) => (allowed.has(siteOf(m)) ? m : ''));
   t = t.replace(/\bwww\.[^\s)\]}>"']+/gi, (m) => (allowed.has(siteOf(`https://${m}`)) ? m : ''));
-  t = t.replace(/\{\d+\}\s*|\{\d+ ([^{}]*)\}/g, '$1').replace(/[*_`#]+/g, '').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  /* markdown marks only: an underscore or a # inside an address or "Suite #200" stays */
+  t = t.replace(/\{\d+\}\s*|\{\d+ ([^{}]*)\}/g, '$1').replace(/[*`]+/g, '').replace(/(^|\s)#{1,6}\s+/g, '$1').replace(/\s+([.,;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
   if (t.length > MAX_ANSWER) t = `${t.slice(0, MAX_ANSWER).trim()}...`;
   return t.length >= 4 ? t : '';
 }
 
 /**
  * Work one page until the question is answered or the limits run out.
- * @param {{ question: string, url: string, cfg: object, call?: Function, chat?: Function, env?: object }} o
- *   call(verb, body) -> service JSON; chat = readerChat-shaped. Tests hand in stand-ins.
+ * @param {{ question: string, url: string, cfg: object, call?: Function, chat?: Function, env?: object, deadlineMs?: number }} o
+ *   call(verb, body, { timeoutMs }) -> service JSON; chat = readerChat-shaped. Tests hand in
+ *   stand-ins. deadlineMs: this lookup's own wall-clock limit (default cfg.deadlineMs).
  * @returns {Promise<{ ok: boolean, code: string, answer: string, sites: string[], trail: string[], steps: number, turns: number, costUSD: number }>}
  */
 async function runLookup(o = {}) {
   const cfg = o.cfg;
   const question = String(o.question || '').replace(/\s+/g, ' ').trim().slice(0, 400);
-  const call = o.call || ((verb, body) => serviceCall(cfg, verb, body));
+  /* The clock: every wait below is cut to the time left, so "up to a minute" is true. */
+  const until = Date.now() + Math.min(180000, Math.max(1000, Number(o.deadlineMs) || (cfg && cfg.deadlineMs) || 60000));
+  const left = () => until - Date.now();
+  const raw = o.call || ((verb, body, opts) => serviceCall(cfg, verb, body, opts));
+  /* a stand-in or a hung service that does not honour its timeout is still left behind on time */
+  const call = (verb, body, ms) => {
+    const timeoutMs = Math.max(1000, Math.min(45000, ms != null ? ms : left()));
+    let timer;
+    const late = new Promise((resolve) => {
+      timer = setTimeout(() => resolve({ ok: false, error: 'service', message: 'The lookup browser took too long.' }), timeoutMs + 250);
+    });
+    return Promise.race([Promise.resolve().then(() => raw(verb, body, { timeoutMs })), late]).finally(() => clearTimeout(timer));
+  };
   const chat = o.chat || readerChat;
   const trail = [];
   const sites = [];
@@ -154,21 +221,27 @@ async function runLookup(o = {}) {
   };
 
   if (!cfg || !question) return done(false, 'not-ready', 'The web lookup is not available right now.');
+  /* a site that asked for a human check in the last six hours is not knocked on again */
+  if (isRefusedHost(o.url)) return done(false, 'human_check', "This site wants a human check; I can't do that.");
+  const noteRefusal = (r) => {
+    if (r && r.error === 'human_check') rememberRefused(r.host || siteOf(o.url), r.retryAfter ? Date.parse(r.retryAfter) : Date.now() + SIX_HOURS);
+  };
   try {
-    let page = await step('open', { url: String(o.url || '') });
-    if (!page.ok && page.error === 'service') {
+    let page = await step('open', { url: String(o.url || ''), refused: refusedList() });
+    if (!page.ok && page.error === 'service' && left() > 10000) {
       /* The browser service sleeps when nobody is using it, and the first knock can land while it
        * is still waking. One more try after a short wait, then give up plainly. */
       await new Promise((resolve) => setTimeout(resolve, Number.isFinite(o.retryMs) ? o.retryMs : 4000));
       steps -= 1;
-      page = await step('open', { url: String(o.url || '') });
+      page = await step('open', { url: String(o.url || ''), refused: refusedList() });
     }
+    noteRefusal(page);
     trail.push(`open ${siteOf(o.url) || 'the address'}: ${page.ok ? 'opened' : page.error}`);
     if (!page.ok) return done(false, page.error || 'error', page.message || 'That page did not open.');
     let view = `TITLE: ${boxText(page.title, 160)}\n${page.text || ''}`;
     let wasted = 0;
 
-    while (turns < cfg.turns && steps < MAX_STEPS) {
+    while (turns < cfg.turns && steps < MAX_STEPS && left() > 1500) {
       turns += 1;
       const user =
         `QUESTION: ${question}\n` +
@@ -176,7 +249,7 @@ async function runLookup(o = {}) {
         (note ? `YOUR NOTE: ${note}\n` : '') +
         `TURNS LEFT: ${cfg.turns - turns}\n\n` +
         `PAGE (outside text):\n${boxText(view, 9000)}`;
-      const r = await chat({ system: systemFor(cfg), user, maxTokens: 300, timeoutMs: 30000, json: true, env: o.env });
+      const r = await chat({ system: systemFor(cfg), user, maxTokens: 300, timeoutMs: Math.max(1000, Math.min(30000, left())), json: true, env: o.env });
       costUSD += (r && r.costUSD) || 0;
       const s = r && r.ok ? parseStep(r.text) : null;
       if (!s) {
@@ -226,17 +299,19 @@ async function runLookup(o = {}) {
       }
       /* A human check or a used-up limit ends the lookup; any other refusal is told to the
        * worker, who may try something else. */
+      noteRefusal(res);
       if (!res.ok && (res.error === 'human_check' || res.error === 'limit' || res.error === 'no_lookup' || res.error === 'service' || res.ended)) {
         return done(false, res.error, res.message || 'The lookup stopped.');
       }
       view = res.ok ? `${res.title ? `TITLE: ${boxText(res.title, 160)}\n` : ''}${res.text || ''}` : `THAT STEP WAS REFUSED: ${boxText(res.message, 200)}\n(The page is unchanged. Use find or read to see it again.)`;
     }
-    return done(false, 'limit', 'The lookup ran out of steps before it found the answer.');
+    return done(false, 'limit', 'The lookup ran out of time or steps before it found the answer.');
   } catch (_) {
     return done(false, 'error', 'The lookup had a problem.');
   } finally {
-    if (lookup) await Promise.resolve(call('close', { lookup })).catch(() => {});
+    /* closing never adds more than a few seconds, whatever the service is doing */
+    if (lookup) await Promise.resolve(call('close', { lookup }, 5000)).catch(() => {});
   }
 }
 
-module.exports = { lookupConfig, serviceCall, runLookup, parseStep, typedAllowed, cleanWorkerAnswer, systemFor, MAX_TURNS, MAX_STEPS };
+module.exports = { lookupOffered, rememberRefused, refusedList, isRefusedHost, forgetRefused, lookupConfig, serviceCall, runLookup, parseStep, typedAllowed, cleanWorkerAnswer, systemFor, MAX_TURNS, MAX_STEPS };

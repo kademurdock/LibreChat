@@ -25,6 +25,7 @@ function fakeSearchTool(answer) {
   return tool;
 }
 const failed = (error) => () => ['', { web_search: { organic: [], error } }];
+const ok = (q) => [`results for ${q.query}`, { web_search: { organic: [{ link: 'https://x.example/1' }] } }];
 const LONG = (word) => `${word} `.repeat(80);
 const tavilyOk = (organic) => () => ['=== Web Results, Turn 0 ===\n# Search 0: "Hours"', { web_search: { turn: 0, organic, topStories: [] } }];
 
@@ -51,6 +52,8 @@ function fakeFetch(handler) {
 }
 
 beforeEach(() => S.resetEngineState());
+/* the automatic read is opt-in: these are the settings that switch it on */
+const ON = { KADE_SEARCH_AUTOREAD: '1' };
 
 /* ------------------------------------------------------------------ the second engine */
 
@@ -148,15 +151,68 @@ test('an ordinary Tavily failure also goes to Brave, but Tavily is tried again n
   assert.equal((await thrower._call({ query: 'c' }))[1].web_search.kadeEngine, 'brave');
 });
 
+test('a passing Tavily 429 does not rest Tavily, and a refused-as-bad request is not asked of Brave', async () => {
+  const fetchImpl = fakeFetch(() => ({ status: 200, body: braveJson }));
+  const busy = fakeSearchTool(failed('Tavily API request failed: Request failed with status code 429'));
+  const tool = S.withBraveFallback(busy, { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl });
+  assert.equal((await tool._call({ query: 'a' }))[1].web_search.kadeEngine, 'brave', 'this search is still answered');
+  await tool._call({ query: 'b' });
+  assert.equal(busy.calls, 2, 'Tavily was asked again: one 429 does not send everybody to Brave for 15 minutes');
+  for (const code of [400, 401, 403, 404, 422]) {
+    const calls = fetchImpl.calls.length;
+    const bad = S.withBraveFallback(fakeSearchTool(failed('Tavily API request failed: Request failed with status code ' + code)), { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl });
+    assert.match((await bad._call({ query: 'a' }))[1].web_search.error, new RegExp('status code ' + code));
+    assert.equal(fetchImpl.calls.length, calls, 'no billed Brave search for a ' + code);
+  }
+});
+
+test('Brave failing while Tavily rests: Tavily is asked after all, and the rest ends when it answers', async () => {
+  let tavilyUp = false;
+  const inner = fakeSearchTool((q) => (tavilyUp ? ok(q) : failed(TAVILY_432)()));
+  let braveUp = true;
+  const fetchImpl = fakeFetch(() => (braveUp ? { status: 200, body: braveJson } : { status: 500, body: {} }));
+  const tool = S.withBraveFallback(inner, { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl });
+  await tool._call({ query: 'a' }); // Tavily 432: rests, Brave answers
+  braveUp = false;
+  tavilyUp = true;
+  const out = await tool._call({ query: 'b' });
+  assert.deepEqual(out, ok({ query: 'b' }), 'Tavily answered while resting');
+  const calls = fetchImpl.calls.length;
+  await tool._call({ query: 'c' });
+  assert.equal(fetchImpl.calls.length, calls, 'the rest is over: Brave is not asked');
+});
+
+test('Brave: the configured safe-search level is kept, a child or teen account gets strict, and a 429 gets one more try', async () => {
+  assert.deepEqual([S.braveSafeSearch(0), S.braveSafeSearch(1), S.braveSafeSearch(2), S.braveSafeSearch(undefined)], ['off', 'moderate', 'strict', 'moderate']);
+  assert.equal(S.braveSafeSearch(0, { user: { id: 'k', kadeAccountType: 'teen' } }), 'strict');
+  assert.equal(S.braveSafeSearch(1, { user: { id: 'k', kadeAccountType: 'child' } }), 'strict');
+  assert.equal(S.braveSafeSearch(1, { user: { id: 'seat', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'k', kadeAccountType: 'teen' } }), 'strict', 'the caller on the line, not the service seat');
+  assert.equal(S.braveSafeSearch(1, { user: { id: 'a', kadeAccountType: 'adult' } }), 'moderate');
+  const fetchImpl = fakeFetch(() => ({ status: 200, body: braveJson }));
+  await S.withBraveFallback(fakeSearchTool(failed(TAVILY_432)), { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl, safeSearch: 1, req: { user: { id: 'k', kadeAccountType: 'teen' } } })._call({ query: 'a' });
+  assert.equal(new URL(fetchImpl.calls[0].url).searchParams.get('safesearch'), 'strict');
+  S.resetEngineState();
+  await S.withBraveFallback(fakeSearchTool(failed(TAVILY_432)), { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl, safeSearch: 2 })._call({ query: 'a' });
+  assert.equal(new URL(fetchImpl.calls[1].url).searchParams.get('safesearch'), 'strict');
+  /* two searches side by side can trip Brave's one-a-second rule: one more try, then it is a quota answer */
+  let n = 0;
+  const flaky = fakeFetch(() => ((n += 1), n === 1 ? { status: 429, body: {} } : { status: 200, body: braveJson }));
+  const r = await S.braveSearch({ query: 'x', env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl: flaky, retryMs: 5 });
+  assert.deepEqual([r.ok, flaky.calls.length], [true, 2]);
+  const dead = fakeFetch(() => ({ status: 429, body: {} }));
+  const q = await S.braveSearch({ query: 'x', env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl: dead, retryMs: 5 });
+  assert.deepEqual([q.ok, dead.calls.length], [false, 2]);
+});
+
 test('both engines out: the turn guard ends search for the turn, and nothing more is sent anywhere', async () => {
   const fetchImpl = fakeFetch(() => ({ status: 429, body: {} }));
   const req = {};
   const inner = fakeSearchTool(failed(TAVILY_432));
-  const tool = G.guardWebSearchTool(S.withBraveFallback(inner, { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl }), { req });
+  const tool = G.guardWebSearchTool(S.withBraveFallback(inner, { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl, retryMs: 1 }), { req });
   assert.deepEqual(await tool._call({ query: 'a' }), [G.UNAVAILABLE.web_search, undefined]);
   assert.deepEqual(await tool._call({ query: 'b' }), [G.UNAVAILABLE.web_search, undefined]);
   assert.equal(inner.calls, 1);
-  assert.equal(fetchImpl.calls.length, 1);
+  assert.equal(fetchImpl.calls.length, 2, 'Brave was tried twice (its one retry), then nothing more');
 });
 
 test('Tavily out, Brave fine: the guard does not end search, and its cap still counts', async () => {
@@ -186,10 +242,13 @@ const twoPages = [
   { link: 'https://third.example.net/x', title: 'Third', content: LONG('never read') },
 ];
 
-test('settings: on by default, 2 pages, 6,000 characters, 8 seconds; the switch and the bounds hold', () => {
-  assert.deepEqual(S.autoReadConfig({}), { on: true, pages: 2, chars: 6000, ms: 8000, perTurn: 3 });
-  assert.equal(S.autoReadConfig({ KADE_SEARCH_AUTOREAD: '0' }).on, false);
+test('settings: OFF unless KADE_SEARCH_AUTOREAD=1; 2 pages, 6,000 characters, 8 seconds, 3 seconds on a spoken turn', () => {
+  assert.deepEqual(S.autoReadConfig({}), { on: false, voiceMs: 3000, reader: false, pages: 2, chars: 6000, ms: 8000, perTurn: 3 });
+  for (const v of ['0', '', 'true', 'yes', '2', ' on ']) assert.equal(S.autoReadConfig({ KADE_SEARCH_AUTOREAD: v }).on, false, JSON.stringify(v));
   assert.equal(S.autoReadConfig({ KADE_SEARCH_AUTOREAD: '1' }).on, true);
+  assert.equal(S.autoReadConfig({ KADE_SEARCH_AUTOREAD: ' 1 ' }).on, true);
+  assert.deepEqual([S.autoReadConfig({ KADE_SEARCH_AUTOREAD_VOICE_MS: '99999' }).voiceMs, S.autoReadConfig({ KADE_SEARCH_AUTOREAD_VOICE_MS: '10' }).voiceMs], [8000, 1000]);
+  assert.equal(S.autoReadConfig({ KADE_SEARCH_AUTOREAD_READER: '1' }).reader, true);
   const wild = S.autoReadConfig({ KADE_SEARCH_AUTOREAD_PAGES: '9', KADE_SEARCH_AUTOREAD_CHARS: '999999', KADE_SEARCH_AUTOREAD_MS: '999999', KADE_SEARCH_AUTOREAD_TURN_CAP: '0' });
   assert.deepEqual([wild.pages, wild.chars, wild.ms, wild.perTurn], [2, 12000, 30000, 1], 'never more than 2 pages');
   assert.deepEqual(S.autoReadConfig({ KADE_SEARCH_AUTOREAD_PAGES: 'x', KADE_SEARCH_AUTOREAD_MS: '' }).pages, 2);
@@ -210,7 +269,7 @@ test('after a search the top two pages are read and a short answer with its sour
   const fetched = [];
   const tool = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), {
     req: {},
-    env: {},
+    env: ON,
     userId: 'u1',
     logUsage: async (row) => usage.push(row),
     readPage: async (url) => (fetched.push(url), ''),
@@ -242,7 +301,7 @@ test('a page the search did not fetch is read through the page reader, within th
   const fetched = [];
   const asked = [];
   const tool = S.withAutoRead(fakeSearchTool(tavilyOk([{ link: 'https://a.example/one', title: 'One' }, { link: 'https://b.example/two', title: 'Two', content: 'short' }])), {
-    env: { KADE_SEARCH_AUTOREAD_CHARS: '3000' },
+    env: { ...ON, KADE_SEARCH_AUTOREAD_CHARS: '3000' },
     readPage: async (url, max) => (fetched.push([url, max]), url.includes('a.example') ? LONG('Fetched words.') : Promise.reject(new Error('down'))),
     answer: async (o) => (asked.push(o), { answer: 'Fetched words say so (a.example).', sites: ['a.example'], costUSD: 0 }),
   });
@@ -280,20 +339,32 @@ test('fetching a result page: the guarded fetch first, the page reader second, a
   assert.match(opts[0][1].headers['User-Agent'], /KadeAI-Reader/, 'it says who it is');
   /* a page built by scripts (almost no text) or a failed fetch: the page reader gets one try */
   called = [];
-  const thin = await S.defaultReadPage('https://app.example/x', 3000, { load: () => reader(async () => ({ status: 200, headers: {}, data: '<html><body><div id="root"></div></body></html>' }), called) });
+  const scripts = async () => ({ status: 200, headers: {}, data: '<html><body><div id="root"></div></body></html>' });
+  /* by default the address is told to nobody else: a page that yields too little is just not read */
+  assert.equal(await S.defaultReadPage('https://app.example/x', 3000, { load: () => reader(scripts, called) }), '');
+  assert.deepEqual(called, [], 'the outside reader service was not asked');
+  /* with KADE_SEARCH_AUTOREAD_READER=1 the page reader gets one try */
+  const thin = await S.defaultReadPage('https://app.example/x', 3000, { reader: true, load: () => reader(scripts, called) });
   assert.equal(thin.startsWith('PAGE TITLE: From the reader'), true);
   assert.deepEqual(called, [{ url: 'https://app.example/x', max_chars: 3000 }]);
   called = [];
-  const refusedFetch = await S.defaultReadPage('https://blocked.example/x', 3000, { load: () => reader(async () => { throw new Error('Request failed with status code 403'); }, called) });
+  /* the read's own clock stops the fetch, and a stopped read asks nobody */
+  const stop = new AbortController();
+  let sawSignal = null;
+  stop.abort();
+  assert.equal(await S.defaultReadPage('https://slow.example/x', 3000, { reader: true, signal: stop.signal, load: () => reader(async (_u, o) => { sawSignal = o.signal; throw new Error('canceled'); }, called) }), '');
+  assert.equal(sawSignal, stop.signal, 'the fetch is given the signal');
+  assert.deepEqual(called, []);
+  const refusedFetch = await S.defaultReadPage('https://blocked.example/x', 3000, { reader: true, load: () => reader(async () => { throw new Error('Request failed with status code 403'); }, called) });
   assert.equal(refusedFetch.startsWith('PAGE TITLE'), true);
   assert.equal(called.length, 1);
   /* a file is not read as a page */
   called = [];
-  await S.defaultReadPage('https://a.example/file', 3000, { load: () => reader(async () => ({ status: 200, headers: { 'content-type': 'application/pdf' }, data: LONG('%PDF binary') }), called) });
+  await S.defaultReadPage('https://a.example/file', 3000, { reader: true, load: () => reader(async () => ({ status: 200, headers: { 'content-type': 'application/pdf' }, data: LONG('%PDF binary') }), called) });
   assert.equal(called.length, 1, 'not text: left to the page reader, which says so');
   /* a private address (first hop or a redirect) is never retried through anything */
   called = [];
-  const priv = await S.defaultReadPage('https://redirects-inside.example/x', 3000, { load: () => reader(async () => { throw new PrivateTargetError('private'); }, called) });
+  const priv = await S.defaultReadPage('https://redirects-inside.example/x', 3000, { reader: true, load: () => reader(async () => { throw new PrivateTargetError('private'); }, called) });
   assert.equal(priv, '');
   assert.deepEqual(called, []);
   /* the page reader's own refusals are "nothing to read", never page text */
@@ -302,16 +373,28 @@ test('fetching a result page: the guarded fetch first, the page reader second, a
       return "I couldn't read that page (timeout). It may be blocking readers or require a login.";
     }
   }
-  assert.equal(await S.defaultReadPage('https://a.example/x', 3000, { load: () => Refuser }), '');
+  assert.equal(await S.defaultReadPage('https://a.example/x', 3000, { reader: true, load: () => Refuser }), '');
 });
 
-test('KADE_SEARCH_AUTOREAD=0: the tool is not wrapped and nothing is read', async () => {
-  const tool = fakeSearchTool(tavilyOk(twoPages));
-  const before = tool._call;
-  assert.equal(S.withAutoRead(tool, { env: { KADE_SEARCH_AUTOREAD: '0' }, answer: async () => assert.fail('never') }), tool);
-  assert.equal(tool._call, before);
+test('opt-in: with nothing set (or =0) the tool is not wrapped at all, so search is exactly as before', async () => {
+  for (const env of [{}, { KADE_SEARCH_AUTOREAD: '0' }, { KADE_SEARCH_AUTOREAD: 'true' }, { OPENROUTER_KEY: 'k' }]) {
+    const tool = fakeSearchTool(tavilyOk(twoPages));
+    const before = tool._call;
+    assert.equal(S.withAutoRead(tool, { env, answer: async () => assert.fail('never'), readPage: async () => assert.fail('never') }), tool);
+    assert.equal(tool._call, before, JSON.stringify(env));
+    assert.equal(tool.__kadeAutoRead, undefined);
+    assert.deepEqual(await tool._call({ query: 'q' }), tavilyOk(twoPages)());
+  }
+  /* switched on but the reader has no key: nothing could ever be answered, so nothing is fetched */
+  const noKey = fakeSearchTool(tavilyOk(twoPages));
+  const before = noKey._call;
+  assert.equal(S.withAutoRead(noKey, { env: { KADE_SEARCH_AUTOREAD: '1' }, readPage: async () => assert.fail('never') }), noKey);
+  assert.equal(noKey._call, before);
+  /* with the key it is put on */
+  const keyed = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: { KADE_SEARCH_AUTOREAD: '1', OPENROUTER_KEY: 'k' } });
+  assert.equal(keyed.__kadeAutoRead, true);
   /* switched off after the tool was built: still nothing is read */
-  const env = {};
+  const env = { ...ON };
   let asked = 0;
   const live = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env, answer: async () => ((asked += 1), { answer: 'An answer here.', sites: ['x.example'], costUSD: 0 }) });
   env.KADE_SEARCH_AUTOREAD = '0';
@@ -319,10 +402,104 @@ test('KADE_SEARCH_AUTOREAD=0: the tool is not wrapped and nothing is read', asyn
   assert.equal(asked, 0);
 });
 
+test('a background run is never read for and never charged', async () => {
+  const usage = [];
+  const never = async () => assert.fail('a hidden run must not be read for');
+  const tool = fakeSearchTool(tavilyOk(twoPages));
+  const before = tool._call;
+  const hidden = { kadeHiddenRun: true };
+  assert.equal(S.withAutoRead(tool, { req: hidden, env: ON, userId: 'u1', logUsage: async (r) => usage.push(r), answer: never, readPage: never }), tool);
+  assert.equal(tool._call, before, 'not even wrapped');
+  /* marked hidden after the tool was built: the plain result goes back */
+  const req = {};
+  const late = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req, env: ON, userId: 'u1', logUsage: async (r) => usage.push(r), answer: never, readPage: never });
+  req.kadeHiddenRun = true;
+  assert.deepEqual(await late._call({ query: 'q' }), tavilyOk(twoPages)());
+  assert.deepEqual(usage, []);
+});
+
+test('a spoken turn (a phone call, the app voice lane): one read a turn, and 3 seconds at most', async () => {
+  for (const mark of [{ kadeVoicePass: 'phone' }, { kadeAppVoice: { userId: 'u1' } }]) {
+    const req = { ...mark };
+    const asked = [];
+    const quick = async (o) => (asked.push(o), { answer: 'An answer here.', sites: ['a.example'], costUSD: 0 });
+    const first = await S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req, env: ON, answer: quick })._call({ query: 'one' });
+    assert.equal(first[0].startsWith('=== Short answer'), true);
+    assert.ok(asked[0].timeoutMs <= 3000, 'the reader is given 3 seconds, not 8: ' + asked[0].timeoutMs);
+    const second = await S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req, env: ON, answer: quick })._call({ query: 'two' });
+    assert.equal(second[0].startsWith('=== Web Results'), true, 'the second search of a spoken turn is not read for');
+    assert.equal(asked.length, 1);
+  }
+  /* the wait itself is cut: a reader that takes 6 seconds is left behind after about 1 (the floor) */
+  const t0 = Date.now();
+  const slow = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), {
+    req: { kadeVoicePass: 'phone' },
+    env: { ...ON, KADE_SEARCH_AUTOREAD_VOICE_MS: '1000' },
+    answer: () => new Promise((resolve) => setTimeout(() => resolve({ answer: 'Too late.', sites: ['a.example'], costUSD: 0 }), 6000).unref()),
+  });
+  const out = await slow._call({ query: 'q' });
+  const took = Date.now() - t0;
+  assert.ok(took >= 900 && took < 2500, 'took ' + took + ' ms');
+  assert.equal(out[0].startsWith('=== Web Results'), true);
+});
+
+test('a read that lands after the wait is still booked: it was paid for', async () => {
+  const usage = [];
+  const tool = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), {
+    env: { ...ON, KADE_SEARCH_AUTOREAD_MS: '2000' },
+    userId: 'u1',
+    logUsage: async (row) => usage.push(row),
+    answer: () => new Promise((resolve) => setTimeout(() => resolve({ answer: 'Late but paid.', sites: ['a.example'], costUSD: 0.0006 }), 2400)),
+  });
+  const out = await tool._call({ query: 'q' });
+  assert.equal(out[0].startsWith('=== Web Results'), true, 'too late to use');
+  assert.deepEqual(usage, []);
+  await new Promise((r) => setTimeout(r, 700));
+  assert.deepEqual(usage, [{ userId: 'u1', service: 'search_read', quantity: 1, unit: 'reads', costUSD: 0.0006, metadata: { pages: 2 } }]);
+});
+
+test('the wasted Tavily extract: KADE_TAVILY_EXTRACT=0 points it at a closed door; unset, nothing changes', () => {
+  const base = { searchProvider: 'tavily', scraperProvider: 'tavily', tavilyApiKey: 'k', tavilyScraperOptions: { extractDepth: 'basic' }, logger: { error() {}, warn() {}, info() {}, debug() {} } };
+  assert.equal(S.searchToolConfig(base, {}), base, 'unset: the very same settings object');
+  assert.equal(S.searchToolConfig(base, { KADE_TAVILY_EXTRACT: '1' }), base);
+  const off = S.searchToolConfig(base, { KADE_TAVILY_EXTRACT: '0' });
+  assert.equal(off.tavilyExtractUrl, 'http://127.0.0.1:9/kade-no-extract');
+  assert.deepEqual(off.tavilyScraperOptions, { extractDepth: 'basic', apiUrl: 'http://127.0.0.1:9/kade-no-extract', timeout: 1500 });
+  assert.equal(off.tavilyApiKey, 'k');
+  assert.equal(off.searchProvider, 'tavily');
+  /* another scraper is not ours to switch */
+  const fire = { ...base, scraperProvider: 'firecrawl' };
+  assert.equal(S.searchToolConfig(fire, { KADE_TAVILY_EXTRACT: '0' }), fire);
+  /* the expected "could not scrape" lines are dropped, everything else is still logged */
+  const seen = [];
+  const quiet = S.searchToolConfig({ ...base, logger: { error: (...a) => seen.push(a[0]), warn: (...a) => seen.push(a[0]), info() {}, debug() {} } }, { KADE_TAVILY_EXTRACT: '0' }).logger;
+  quiet.error('Error scraping https://a.example/x: connect ECONNREFUSED');
+  quiet.error('Error in search:', new Error('x'));
+  quiet.warn('No reranker selected. Using default ranking.');
+  assert.deepEqual(seen, ['Error in search:', 'No reranker selected. Using default ranking.']);
+});
+
+test('with the extract off each result still names its site, in the artifact and in the text', async () => {
+  const text = '=== Web Results, Turn 0 ===\n\n# Search 0: "Hours"\n\nAnchor: x\nURL: https://www.silverdollarcity.com/hours\nSummary: Open ten to six.\n\n\n# Search 1: "Guide"\n\nAnchor: y\nURL: https://example.org/branson\nSummary: A guide.\nSource: Example\n\n';
+  const out = S.fillAttribution([text, { web_search: { organic: [{ link: 'https://www.silverdollarcity.com/hours' }, { link: 'https://example.org/branson', attribution: 'Example' }, { link: 'not a url' }] } }]);
+  assert.deepEqual(out[1].web_search.organic.map((r) => r.attribution), ['silverdollarcity.com', 'Example', undefined]);
+  assert.match(out[0], /URL: https:\/\/www\.silverdollarcity\.com\/hours\nSummary: Open ten to six\.\nSource: silverdollarcity\.com\n/);
+  assert.equal((out[0].match(/Source: /g) || []).length, 2, 'a result that had its name is left alone');
+  /* odd shapes pass through */
+  assert.deepEqual(S.fillAttribution(['x', undefined]), ['x', undefined]);
+  assert.equal(S.fillAttribution('plain'), 'plain');
+  /* the wrapper is only put on when the extract is off */
+  const tool = fakeSearchTool(() => [text, { web_search: { organic: [{ link: 'https://www.silverdollarcity.com/hours' }] } }]);
+  const before = tool._call;
+  assert.equal(S.withAttribution(tool, { env: {} })._call, before);
+  const wrapped = S.withAttribution(tool, { env: { KADE_TAVILY_EXTRACT: '0' } });
+  assert.equal((await wrapped._call({ query: 'q' }))[1].web_search.organic[0].attribution, 'silverdollarcity.com');
+});
+
 test('the time cap: a slow read is dropped and the plain results go back on time', async () => {
   let aborted = false;
   const tool = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), {
-    env: { KADE_SEARCH_AUTOREAD_MS: '2000' },
+    env: { ...ON, KADE_SEARCH_AUTOREAD_MS: '2000' },
     answer: (o) =>
       new Promise((resolve) => {
         o.signal.addEventListener('abort', () => {
@@ -341,19 +518,19 @@ test('the time cap: a slow read is dropped and the plain results go back on time
 
 test('nothing found, a failed search, a capped search and a broken reader all give the plain result back', async () => {
   const plain = '=== Web Results, Turn 0 ===\n# Search 0: "Hours"';
-  const notFound = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: {}, answer: async () => ({ answer: null, sites: ['a.example'], costUSD: 0.0002, why: 'not-found' }) });
+  const notFound = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: ON, answer: async () => ({ answer: null, sites: ['a.example'], costUSD: 0.0002, why: 'not-found' }) });
   assert.equal((await notFound._call({ query: 'q' }))[0], plain);
-  const broken = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: {}, answer: async () => { throw new Error('reader down'); } });
+  const broken = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: ON, answer: async () => { throw new Error('reader down'); } });
   assert.equal((await broken._call({ query: 'q' }))[0], plain);
   let asked = 0;
   const count = async () => ((asked += 1), { answer: 'An answer here.', sites: ['a.example'], costUSD: 0 });
-  const failedSearch = S.withAutoRead(fakeSearchTool(failed('Request failed with status code 500')), { env: {}, answer: count });
+  const failedSearch = S.withAutoRead(fakeSearchTool(failed('Request failed with status code 500')), { env: ON, answer: count });
   assert.equal((await failedSearch._call({ query: 'q' }))[1].web_search.error, 'Request failed with status code 500');
-  const capped = S.withAutoRead(fakeSearchTool(() => [G.UNAVAILABLE.web_search, undefined]), { env: {}, answer: count });
+  const capped = S.withAutoRead(fakeSearchTool(() => [G.UNAVAILABLE.web_search, undefined]), { env: ON, answer: count });
   assert.deepEqual(await capped._call({ query: 'q' }), [G.UNAVAILABLE.web_search, undefined]);
-  const noPages = S.withAutoRead(fakeSearchTool(tavilyOk([{ link: 'https://www.youtube.com/watch?v=1' }])), { env: {}, answer: count });
+  const noPages = S.withAutoRead(fakeSearchTool(tavilyOk([{ link: 'https://www.youtube.com/watch?v=1' }])), { env: ON, answer: count });
   assert.equal((await noPages._call({ query: 'q' }))[0], plain);
-  const noQuery = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: {}, answer: count });
+  const noQuery = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { env: ON, answer: count });
   assert.equal((await noQuery._call({}))[0], plain);
   assert.equal(asked, 0);
 });
@@ -363,13 +540,13 @@ test('at most 3 automatic reads a turn, counted on the request across rebuilt to
   let asked = 0;
   const answer = async () => ((asked += 1), { answer: 'An answer here.', sites: ['a.example'], costUSD: 0 });
   for (let i = 0; i < 5; i += 1) {
-    const tool = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req, env: {}, answer });
+    const tool = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req, env: ON, answer });
     const out = await tool._call({ query: `q${i}` });
     assert.equal(out[0].startsWith('=== Short answer'), i < 3, `search ${i}`);
   }
   assert.equal(asked, 3);
   /* the next turn starts fresh */
-  const next = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req: {}, env: {}, answer });
+  const next = S.withAutoRead(fakeSearchTool(tavilyOk(twoPages)), { req: {}, env: ON, answer });
   assert.equal((await next._call({ query: 'q' }))[0].startsWith('=== Short answer'), true);
 });
 
@@ -379,7 +556,7 @@ test('the whole stack as handleTools builds it: Tavily out, Brave answers, the p
   const fetched = [];
   const tool = S.withAutoRead(
     G.guardWebSearchTool(S.withBraveFallback(fakeSearchTool(failed(TAVILY_432)), { env: { BRAVE_SEARCH_API_KEY: 'k' }, fetchImpl }), { req }),
-    { req, env: {}, readPage: async (url) => (fetched.push(url), LONG('Open ten to six.')), answer: async (o) => ({ answer: `Read ${o.pages.length} pages.`, sites: o.pages.map((p) => new URL(p.url).hostname.replace(/^www\./, '')), costUSD: 0 }) },
+    { req, env: ON, readPage: async (url) => (fetched.push(url), LONG('Open ten to six.')), answer: async (o) => ({ answer: `Read ${o.pages.length} pages.`, sites: o.pages.map((p) => new URL(p.url).hostname.replace(/^www\./, '')), costUSD: 0 }) },
   );
   const out = await tool._call({ query: 'silver dollar city hours' });
   assert.deepEqual(fetched, ['https://www.silverdollarcity.com/hours', 'https://example.org/branson'], 'Brave gives no page text, so the reader fetches the top two');
@@ -431,7 +608,7 @@ test('the reader: NOT FOUND, no key, a refusal and a timeout are all "no answer"
   assert.equal((await R.answerFromPages({ question: 'q', pages: page, chat: says('') })).answer, null);
   assert.deepEqual(await R.answerFromPages({ question: 'q', pages: [], chat: says('x') }), { answer: null, sites: [], costUSD: 0, why: 'nothing-to-read' });
   assert.deepEqual(await R.answerFromPages({ question: '', pages: page, chat: says('x') }), { answer: null, sites: [], costUSD: 0, why: 'nothing-to-read' });
-  assert.deepEqual(await R.readerChat({ system: 's', user: 'u', env: {} }), { ok: false, text: '', costUSD: 0, why: 'no-key' });
+  assert.deepEqual(await R.readerChat({ system: 's', user: 'u', env: ON }), { ok: false, text: '', costUSD: 0, why: 'no-key' });
   const refused = await R.readerChat({ system: 's', user: 'u', env: { OPENROUTER_KEY: 'k' }, fetchImpl: async () => ({ ok: false, status: 402 }) });
   assert.deepEqual(refused, { ok: false, text: '', costUSD: 0, why: 'status-402' });
   const slow = await R.readerChat({ system: 's', user: 'u', timeoutMs: 1000, env: { OPENROUTER_KEY: 'k' }, fetchImpl: (_u, init) => new Promise((_res, rej) => init.signal.addEventListener('abort', () => rej(init.signal.reason))) });
@@ -445,6 +622,8 @@ test('the reader\'s answer: cut short, markdown gone, and no web address that wa
   const long = R.cleanAnswer(`${'A sentence that goes on. '.repeat(60)}`, sites);
   assert.ok(long.length <= R.MAX_ANSWER && long.endsWith('.'));
   assert.equal(R.cleanAnswer('ok', sites), null);
+  /* an underscore or a # that is part of an address or a suite number is kept; markdown marks go */
+  assert.equal(R.cleanAnswer('See https://www.silverdollarcity.com/store_hours#sunday or write info_desk at Suite #200. __Bold__ and _soft_ and # Heading', sites), 'See https://www.silverdollarcity.com/store_hours#sunday or write info_desk at Suite #200. Bold and soft and Heading');
   assert.equal(R.cleanAnswer(null, sites), null);
   assert.equal(R.costOf({ prompt_tokens: 1_000_000, completion_tokens: 1_000_000 }), 0.42);
   assert.equal(R.costOf({ cost: 0.001, is_byok: true, cost_details: { upstream_inference_cost: 0.002 } }), 0.003);

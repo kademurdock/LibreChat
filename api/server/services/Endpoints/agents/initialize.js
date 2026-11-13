@@ -123,7 +123,12 @@ function createToolLoader(
     // tool set at load time — automatic and future-proof (no per-agent
     // assignment; new agents get it for free). Deduped so an agent that already
     // lists it doesn't double up. The tool never fires without the user's OK.
-    const _tools = Array.isArray(tools) ? tools : [];
+    /* KADE Nov 13 2026: the lookup browser tool is on a character's list only when it can be
+     * used on this turn: set up and switched on, an account typed adult, a person there (never a
+     * background run). Taken off here, before the list is narrowed, noted or handed to the model. */
+    const _tools = (Array.isArray(tools) ? tools : []).filter(
+      (t) => t !== 'kade_lookup' || require('~/server/services/kadeLookupWorker').lookupOffered(req),
+    );
     // KADE 2026-07-09: some OpenRouter models have NO provider that accepts a
     // `tools` param AT ALL — sending any tool (including the auto-injected
     // kade_feedback) makes OpenRouter 404 ("No endpoints found that support

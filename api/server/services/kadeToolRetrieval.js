@@ -281,7 +281,6 @@ const INFO_TOOLS = {
   kade_wikipedia: 'kade_wikipedia gets background on people, places, things and history',
   kade_research: 'kade_research runs a deep multi-source dig and writes it up',
   kade_read_page: 'kade_read_page opens a link or site the person named',
-  kade_lookup: 'kade_lookup finds one thing on a public web page with a real browser (hours, a phone number, a price)',
   kade_lyrics: 'kade_lyrics finds the words to a song',
   kade_location: 'kade_location knows where the person is, for anything local',
 };
