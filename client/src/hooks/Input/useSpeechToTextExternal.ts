@@ -31,9 +31,16 @@ const useSpeechToTextExternal = (
 
   const { mutate: processAudio, isLoading: isProcessing } = useSpeechToTextMutation({
     onSuccess: (data) => {
-      const extractedText = data.text;
+      const extractedText = data.text ?? '';
       setText(extractedText);
       setIsRequestBeingMade(false);
+      /* KADE Nov 13 2026 (sweep): a recording with no words in it comes back as an empty
+       * transcript with a plain message. Say it (the toast is announced to a screen reader)
+       * instead of leaving the box silently empty. */
+      const quiet = (data as { reason?: string; message?: string }) ?? {};
+      if (!extractedText && quiet.reason === 'no_speech' && typeof quiet.message === 'string') {
+        showToast({ message: quiet.message, status: 'info' });
+      }
 
       if (autoSendText > -1 && speechToText && extractedText.length > 0) {
         setTimeout(() => {
