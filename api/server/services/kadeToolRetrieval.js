@@ -131,8 +131,11 @@ const ALIASES = {
   kade_read_page: [
     /(https?:\/\/|www\.|\.com\b|\.org\b|\.net\b|\b(read|open|summari[sz]e) (this|that|the|me the|me this) (page|article|link|site|story)\b)/i,
   ],
-  /* Nov 13 2026: the lookup browser. The asks that mean "go to the page and find it". */
+  /* Nov 13 2026: the lookup browser. The asks that mean "go to the page and find it", and the
+   * everyday things it is for (card 23: hours, phone numbers, prices), so it is on hand when a
+   * search result alone does not say. Only characters whose record lists the tool ever get it. */
   kade_lookup: [
+    /\b(?:(?:what|which) (?:time|hours|days) (?:do|does|is|are) [^.?!]{1,40}\b(?:open|close)|(?:opening|closing|store|office|business|holiday|sunday|saturday|weekend) hours|hours (?:of operation|for|at|on|today|tomorrow)|(?:are|is) (?:they|it|the \w+) (?:open|closed) (?:today|tomorrow|now|on|right now)|phone number for|number for (?:the|their|my)|how much (?:is|are|does) [^.?!]{1,40}\b(?:at|cost|charge)|(?:do|does) (?:they|it) have [^.?!]{1,40}\bin stock)\b/i,
     /\b(?:(?:look|check|find) (?:it|that|this|them) up on (?:the|their|that|his|her|its) (?:web ?site|site|web ?page|page)|(?:check|look at|look on|go to|open up) (?:the|their|that|his|her|its) (?:web ?site|site|web ?page)|on (?:their|his|her|its) (?:web ?site|site)\b|(?:click|press|follow|open) (?:the|that|on the|on that) (?:link|button|next page|show more|tab)|what does (?:the|their) (?:web ?site|site|page) say)\b/i,
   ],
   kade_media: [
