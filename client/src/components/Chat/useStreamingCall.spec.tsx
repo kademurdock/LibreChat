@@ -150,6 +150,22 @@ beforeEach(() => {
   });
 });
 
+/* Sweep 4.3 (Nov 13 2026): a refused ticket says a plain reason, not "ticket 404". */
+test.each([
+  [404, 'This character is not available for calls any more.'],
+  [503, 'Voice is busy, try again in a moment.'],
+  [500, 'Could not start the streaming call (ticket 500).'],
+])('a ticket refused with %i is reported as: %s', async (status, sentence) => {
+  fetchMock.mockImplementationOnce(() =>
+    Promise.resolve({ ok: false, status, json: async () => ({ error: 'No such character.' }) }),
+  );
+  const { result, unmount } = renderHook(() => useStreamingCall());
+  await expect(result.current.start(args())).rejects.toThrow(sentence);
+  expect(result.current.isActive()).toBe(false);
+  expect(Socket.instances).toHaveLength(0);
+  unmount();
+});
+
 test('a stale ticket failure cannot stop a newer connected session', async () => {
   const stale = deferred<Response>();
   fetchMock.mockImplementationOnce(() => stale.promise);

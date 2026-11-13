@@ -130,6 +130,32 @@ function loadWikipedia(get) {
   }
 }
 
+/* Sweep 4.6 (Nov 13 2026): two turns of one person share one in-flight lookup; a quota answer
+ * must mark both turns, not only the one that started the request. */
+test('Wikipedia: a shared lookup that hits the quota marks every turn that shared it', async () => {
+  let hits = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const KadeWikipedia = loadWikipedia(async () => {
+    hits += 1;
+    await gate;
+    throw Object.assign(new Error('Request failed with status code 429'), { response: { status: 429 } });
+  });
+  const user = { id: 'sweep-46-person' };
+  const turnA = { user };
+  const turnB = { user };
+  const a = new KadeWikipedia({ req: turnA })._call({ query: 'Table Rock Lake' });
+  const b = new KadeWikipedia({ req: turnB })._call({ query: 'Table Rock Lake' });
+  release();
+  assert.equal(await a, G.UNAVAILABLE.kade_wikipedia);
+  assert.equal(await b, G.UNAVAILABLE.kade_wikipedia);
+  const afterShared = hits;
+  // Different topics, so nothing is shared or cached: both turns must be stopped by their own mark.
+  assert.equal(await new KadeWikipedia({ req: turnA })._call({ query: 'Bull Shoals' }), G.UNAVAILABLE.kade_wikipedia);
+  assert.equal(await new KadeWikipedia({ req: turnB })._call({ query: 'Lake Taneycomo' }), G.UNAVAILABLE.kade_wikipedia);
+  assert.equal(hits, afterShared, 'neither turn reached Wikipedia again');
+});
+
 test('Wikipedia: a 429 is final for the turn, and a turn makes at most 8 lookups', async () => {
   let hits = 0;
   const KadeWikipedia = loadWikipedia(async () => {

@@ -5,8 +5,10 @@
  * kade.readableText on each row that has text. ?after=<ISO time> returns only rows created after it,
  * so a phone that already holds the transcript reads the new tail, not the whole chat (AND-6, IOS-20).
  *
- * Limits: `after` filters on createdAt, so a row that changes later (a reply that gains a memory receipt)
- * is not returned again. Only the caller's own rows are read. Branches are not resolved (version 1 shows
+ * Nov 13 2026 (sweep 4.5): `after` now also matches rows CHANGED after it (updatedAt), not only rows
+ * created after it. A reply saved partial on a disconnect and finished later, or one that gains a
+ * memory receipt, comes back in the next tail read; apps upsert by messageId. No app sends `after`
+ * yet. KADE_MESSAGES_AFTER=created goes back to createdAt only. Only the caller's own rows are read. Branches are not resolved (version 1 shows
  * the flat history, as both apps do today). */
 const { withReadableText } = require('../utils/kadeReadableText');
 
@@ -22,7 +24,16 @@ function createKadeMessagesHandler({ getMessages, logger = console }) {
       const filter = { conversationId, user: req.user.id };
       const after = req.query && req.query.after ? new Date(String(req.query.after)) : null;
       if (after && !Number.isNaN(after.getTime())) {
-        filter.createdAt = { $gt: after };
+        const createdOnly =
+          String(process.env.KADE_MESSAGES_AFTER ?? '')
+            .trim()
+            .toLowerCase() === 'created';
+        if (createdOnly) {
+          filter.createdAt = { $gt: after };
+        } else {
+          // createdAt stays in the match for any old row that has no updatedAt.
+          filter.$or = [{ updatedAt: { $gt: after } }, { createdAt: { $gt: after } }];
+        }
       }
       const rows = await getMessages(filter, '-_id -__v -user');
       res.setHeader('Cache-Control', 'no-store');
