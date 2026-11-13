@@ -213,3 +213,8 @@ class KadeReadPage extends Tool {
 module.exports = KadeReadPage;
 module.exports.isPrivateTarget = isPrivateTarget;
 module.exports.PRIVATE_REFUSAL = PRIVATE_REFUSAL;
+/* Nov 13 2026: the search's automatic read (tools/util/kadeSearchAnswers.js) fetches a result page
+ * with the same every-hop guard and the same tag stripping. */
+module.exports.fetchPublicPage = fetchPublicPage;
+module.exports.stripHtml = stripHtml;
+module.exports.PrivateTargetError = PrivateTargetError;

@@ -15,9 +15,12 @@
  *    to answer it had to decide to open a page, and often did not. Now, after a search, the top
  *    one or two result pages are read by the outside reader (services/kadeOutsideReader.js: MiMo
  *    Flash, no tools, the cheap host) and a short answer with its sources named is put at the top
- *    of the search result. The pages are the ones the search already fetched (Tavily's extract);
- *    a page it did not fetch is read through the page reader (kade_read_page, with its
- *    private-address guard). Bounds, all in code:
+ *    of the search result. Each page is fetched with the page reader's own guarded fetch
+ *    (kade_read_page: private addresses refused on every hop), and only if that finds too little,
+ *    by the page reader itself. (The library does fetch the top pages through Tavily's extract,
+ *    but it strips that text before anything leaves it, so it cannot be reused here. If a later
+ *    version hands the text over, pickPages already takes it and nothing is fetched twice.)
+ *    Bounds, all in code:
  *      - 2 pages a search at most (KADE_SEARCH_AUTOREAD_PAGES, 1 or 2);
  *      - 6,000 characters a page (KADE_SEARCH_AUTOREAD_CHARS, 1,000 to 12,000);
  *      - 8 seconds for the whole read (KADE_SEARCH_AUTOREAD_MS, 2,000 to 30,000); late = the
@@ -254,11 +257,38 @@ function pickPages(data, max) {
   return picked;
 }
 
-/** The page reader (kade_read_page), loaded only when a page really has to be fetched. */
-async function defaultReadPage(url, maxChars) {
-  const KadeReadPage = require('../structured/KadeReadPage');
+/**
+ * Fetch one result page as text, loaded only when a page really has to be fetched.
+ * First the page reader's own guarded fetch (kade_read_page: every redirect hop checked, private
+ * addresses refused, fails closed): quick, and nobody else sees the address. Only when that
+ * finds too little (a page built by scripts, a site that turns a plain fetch away) the page
+ * reader itself, which asks the outside reader service. A private address is never retried.
+ * @param {string} url
+ * @param {number} maxChars
+ * @param {{ load?: Function }} [deps] tests hand in the page reader module
+ */
+async function defaultReadPage(url, maxChars, deps = {}) {
+  const KadeReadPage = deps.load ? deps.load() : require('../structured/KadeReadPage');
+  if (typeof KadeReadPage.fetchPublicPage === 'function' && typeof KadeReadPage.stripHtml === 'function') {
+    try {
+      const r = await KadeReadPage.fetchPublicPage(url, {
+        timeout: 5000,
+        responseType: 'text',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KadeAI-Reader/1.0)', Accept: 'text/html,application/xhtml+xml' },
+        maxContentLength: 3 * 1024 * 1024,
+      });
+      const type = String((r && r.headers && (r.headers['content-type'] || r.headers['Content-Type'])) || '');
+      if (!type || /html|text\/plain/i.test(type)) {
+        const text = KadeReadPage.stripHtml(r.data);
+        if (text && text.length >= 400) return text.slice(0, maxChars);
+      }
+    } catch (err) {
+      if (KadeReadPage.PrivateTargetError && err instanceof KadeReadPage.PrivateTargetError) return '';
+      /* a refusal, a timeout or an odd page: the page reader gets one try below */
+    }
+  }
   const text = await new KadeReadPage()._call({ url, max_chars: Math.max(2000, maxChars) });
-  return typeof text === 'string' && !/^I (?:couldn't|can't|fetched|need)\b/.test(text) ? text : '';
+  return typeof text === 'string' && !/^I (?:couldn't|can't|fetched|need)\b/.test(text) ? text.slice(0, maxChars) : '';
 }
 
 const reads = new WeakMap(); // the request -> automatic reads made this turn
@@ -358,4 +388,5 @@ module.exports = {
   pickPages,
   answerHeader,
   withAutoRead,
+  defaultReadPage,
 };

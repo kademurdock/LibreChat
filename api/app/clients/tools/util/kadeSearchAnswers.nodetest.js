@@ -253,6 +253,58 @@ test('a page the search did not fetch is read through the page reader, within th
   assert.match(out[0], /^=== Short answer/);
 });
 
+test('fetching a result page: the guarded fetch first, the page reader second, a private address never', async () => {
+  class PrivateTargetError extends Error {}
+  const strip = (html) => String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const reader = (fetchPublicPage, called) => {
+    class FakeReader {
+      async _call(data) {
+        called.push(data);
+        return `PAGE TITLE: From the reader\n\n${LONG('Reader words.')}`;
+      }
+    }
+    FakeReader.fetchPublicPage = fetchPublicPage;
+    FakeReader.stripHtml = strip;
+    FakeReader.PrivateTargetError = PrivateTargetError;
+    return FakeReader;
+  };
+  /* an ordinary page: fetched directly, cut to size, the reader service never asked */
+  let called = [];
+  const opts = [];
+  const direct = await S.defaultReadPage('https://a.example/x', 1000, { load: () => reader(async (url, o) => (opts.push([url, o]), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' }, data: `<html><body><p>${LONG('Direct words.')}</p></body></html>` }), called) });
+  assert.equal(direct.startsWith('Direct words.'), true);
+  assert.equal(direct.length, 1000);
+  assert.deepEqual(called, []);
+  assert.equal(opts[0][0], 'https://a.example/x');
+  assert.equal(opts[0][1].timeout, 5000);
+  assert.match(opts[0][1].headers['User-Agent'], /KadeAI-Reader/, 'it says who it is');
+  /* a page built by scripts (almost no text) or a failed fetch: the page reader gets one try */
+  called = [];
+  const thin = await S.defaultReadPage('https://app.example/x', 3000, { load: () => reader(async () => ({ status: 200, headers: {}, data: '<html><body><div id="root"></div></body></html>' }), called) });
+  assert.equal(thin.startsWith('PAGE TITLE: From the reader'), true);
+  assert.deepEqual(called, [{ url: 'https://app.example/x', max_chars: 3000 }]);
+  called = [];
+  const refusedFetch = await S.defaultReadPage('https://blocked.example/x', 3000, { load: () => reader(async () => { throw new Error('Request failed with status code 403'); }, called) });
+  assert.equal(refusedFetch.startsWith('PAGE TITLE'), true);
+  assert.equal(called.length, 1);
+  /* a file is not read as a page */
+  called = [];
+  await S.defaultReadPage('https://a.example/file', 3000, { load: () => reader(async () => ({ status: 200, headers: { 'content-type': 'application/pdf' }, data: LONG('%PDF binary') }), called) });
+  assert.equal(called.length, 1, 'not text: left to the page reader, which says so');
+  /* a private address (first hop or a redirect) is never retried through anything */
+  called = [];
+  const priv = await S.defaultReadPage('https://redirects-inside.example/x', 3000, { load: () => reader(async () => { throw new PrivateTargetError('private'); }, called) });
+  assert.equal(priv, '');
+  assert.deepEqual(called, []);
+  /* the page reader's own refusals are "nothing to read", never page text */
+  class Refuser {
+    async _call() {
+      return "I couldn't read that page (timeout). It may be blocking readers or require a login.";
+    }
+  }
+  assert.equal(await S.defaultReadPage('https://a.example/x', 3000, { load: () => Refuser }), '');
+});
+
 test('KADE_SEARCH_AUTOREAD=0: the tool is not wrapped and nothing is read', async () => {
   const tool = fakeSearchTool(tavilyOk(twoPages));
   const before = tool._call;
