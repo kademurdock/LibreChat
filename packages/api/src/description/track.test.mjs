@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
-import { buildTrack, trackSecondsPerByte, trackWarning } from './track.ts';
+import { buildTrack, trackSecondsPerByte, trackSteps, trackWarning } from './track.ts';
 
 const SyncPrint = createRequire(import.meta.url)(
   '../../../../api/server/services/kadeSyncprint/syncprint.js',
@@ -367,4 +367,20 @@ test('a line at a section join keeps clear of the next section’s start', () =>
   const night = byId(track, '1:0');
   assert.ok(night.startSec >= 30.25 - 1e-9, 'and after one starts');
   assert.equal(night.fit, 'full');
+});
+
+test('built step by step, it pauses between sections and gives the same track', () => {
+  const records = [
+    record(0, 0, 30, look([cue(8, 15, 'A red kite rises over the hill.')])),
+    record(1, 30, 60, look([cue(5, 12, 'The kite lands softly in the grass.')])),
+  ];
+  const steps = trackSteps(input(records));
+  let pauses = 0;
+  let step = steps.next();
+  while (!step.done) {
+    pauses++;
+    step = steps.next();
+  }
+  assert.equal(pauses, 1, 'one pause between the two sections');
+  assert.deepEqual(step.value, buildTrack(input(records)));
 });

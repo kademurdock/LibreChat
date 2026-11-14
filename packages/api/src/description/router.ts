@@ -80,7 +80,7 @@ import { rehearsalProviders } from './rehearsal';
 import { creditLines, creditWhere, logoChoice, logos } from './credit';
 import type { Credit, CreditLogo } from './credit';
 import { MediaError, decodeVoice, dropDescriptionText, probe, stretch, syncSound } from './media';
-import { buildTrack, trackFormat, trackVersion } from './track';
+import { trackFormat, trackSteps, trackVersion } from './track';
 import type { Track, TrackCredit } from './track';
 import { clock, spokenLength } from './transcript';
 import { fishSpeedModel, settingsSchema, slowestRate, Halt, tiers } from './types';
@@ -4227,7 +4227,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const firstLook = await readJson<{ state?: Continuity }>(
       `${folder(job)}/first-look-${copy.firstLook || 1}.json`,
     ).catch(() => undefined);
-    const track = buildTrack({
+    /* Section by section, letting chats and calls run in between (a long film is ~0.7 s of work). */
+    const steps = trackSteps({
       job: job._id,
       copyVersion: copy.version,
       title: plainName(job.name),
@@ -4240,6 +4241,12 @@ export function createDescriptionRouter(hooks: Hooks): {
       print: { format: print.format, bytes: print.bytes, sha256: print.sha256 },
       credit: trackCredit(job, copy),
     });
+    let step = steps.next();
+    while (!step.done) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      step = steps.next();
+    }
+    const track = step.value;
     await putText(key, JSON.stringify(track)).catch((error: Error) =>
       warn(syncLine('track-not-kept', { id: job._id, plan, error: scrub(error.message) })),
     );

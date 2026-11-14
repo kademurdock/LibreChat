@@ -102,6 +102,19 @@ const bytes = (text: string): number => Buffer.byteLength(text, 'utf8');
  * Lines of importance 1 stay in: the phone decides whether to say them.
  */
 export function buildTrack(input: TrackInput): Track {
+  const steps = trackSteps(input);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * `buildTrack` one section at a time: it pauses after each section, so a caller on the server's
+ * main thread can let other work run between sections (a two-hour film is about 80 sections and
+ * 0.7 s of planning in all). The finished track is its return value.
+ */
+export function* trackSteps(input: TrackInput): Generator<void, Track, void> {
   const { plan, settings } = input;
   const offset = plan.range?.start ?? 0;
   const count = plan.sections.length;
@@ -118,7 +131,8 @@ export function buildTrack(input: TrackInput): Track {
   /** Seconds between the end of the last line placed in the previous section and its end. */
   let tail = Infinity;
   let previous = -1;
-  for (const record of records) {
+  for (const [position, record] of records.entries()) {
+    if (position > 0) yield;
     const i = record.index;
     const start = record.start;
     const seconds = record.end - record.start;
