@@ -204,3 +204,60 @@ test('REVIEW: a call cut off by a restart is reported as that; a call id not on 
   const c = loadTool({ result: { found: false } });
   assert.equal(await new c.Tool(fields())._call({ action: 'check_result' }), 'No outbound calls found for this user yet.');
 });
+
+/* Verification round, Nov 14 2026: check_result asked about the last call place_call made, for six hours,
+ * even when the person's newest call was a test check-in, whose own reply says "check_result also works for
+ * the raw transcript". Kiana then read the store call back as the check-in. The check-in's call id (the
+ * bridge's /wellness/fire answers it) is now the one check_result asks about. */
+test('VERIFY 13: after a test check-in, check_result asks about the check-in, not the chat call before it', async () => {
+  const posts = [];
+  let schedules = [{ id: 'w1', agentId: 'agent_kiana', enabled: true, enrolledBy: { userId: 'u-kade' } }];
+  const stubs = {
+    axios: {
+      post: async (url, body) => {
+        posts.push({ url, body });
+        if (url.endsWith('/outbound-call')) return { data: { to: '+14175550100', callSid: 'CA_store_call', timeLimitMin: 15, callsLeftToday: 3, reportBack: true } };
+        if (url.endsWith('/wellness/fire')) return { data: { ok: true, callSid: 'CA_checkin', note: 'Test call dialing now. The summary will arrive after it ends.' } };
+        return { data: { found: true, status: 'in-progress', to: 'x', startedSecondsAgo: 5, reportBack: false } };
+      },
+      get: async () => ({ data: { schedules } }), // the asker's own schedules (?userId=)
+    },
+    '@librechat/agents/langchain/tools': { Tool: class {} },
+    '@librechat/data-schemas': { logger: { warn() {}, info() {} } },
+    '~/server/services/kadeRealCost': require('../../../../server/services/kadeRealCost'),
+    '~/server/services/kadeWellnessTarget': {
+      wellnessActor: () => ({ id: 'u-kade', admin: true }),
+      actorFromUser: (u) => u,
+      wellnessAllowed: async () => ({ ok: true }),
+      NOT_KNOWN: 'not known',
+    },
+  };
+  // A fresh copy of the tool each time: it keeps who placed or checked what in module-level maps.
+  const freshTool = () => {
+    const module = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(require.resolve('./KadePhoneCall'), 'utf8'), {
+      module,
+      require: (name) => {
+        if (!(name in stubs)) throw new Error('unexpected require ' + name);
+        return stubs[name];
+      },
+      process: { env: { BRIDGE_SECRET: 'test-only', BRIDGE_URL: 'https://bridge.invalid' } },
+    });
+    return new module.exports(fields());
+  };
+  const lastAsk = () => posts.filter((p) => p.url.endsWith('/outbound/result')).pop().body;
+  const tool = freshTool();
+  await tool._call({ to_number: '4175550100', purpose: 'ask if you have any deals on hemp products', business: true });
+  const fired = await tool._call({ action: 'test_checkin', schedule_id: 'w1' });
+  assert.match(fired, /check_result also works for the raw transcript/);
+  await tool._call({ action: 'check_result' });
+  assert.equal(lastAsk().callSid, 'CA_checkin', 'the check-in just placed (before: the store call)');
+  // Kade firing a schedule someone else set up: that call is on their account, so check_result asks for
+  // her newest call, as before this branch, and never reads the store call back as the check-in.
+  schedules = [];
+  const tool2 = freshTool();
+  await tool2._call({ to_number: '4175550100', purpose: 'ask if you are open', business: true });
+  await tool2._call({ action: 'test_checkin', schedule_id: 'w-someone-else' });
+  await tool2._call({ action: 'check_result' });
+  assert.equal(lastAsk().callSid, undefined, 'no call id pinned');
+});

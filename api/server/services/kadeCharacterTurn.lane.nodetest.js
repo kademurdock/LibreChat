@@ -158,3 +158,47 @@ test('an urgent push says so to the bridge (quiet hours do not hold a call repor
     else process.env.BRIDGE_SECRET = savedSecret;
   }
 });
+
+/* Verification round, Nov 14 2026: a call placed from a temporary chat sends that chat's id, but a post never
+ * goes into a temporary chat, so the report went into the newest saved chat with that character from the last
+ * 3 days (maybe about something else entirely), and the tap opened that chat. A call report whose chat is
+ * temporary or gone now starts a new chat named for the call. The database is a stand-in here. */
+test('VERIFY 16: a call report from a temporary or deleted chat starts a new chat named for the call, never an older one', async () => {
+  const TEMP = '11111111-2222-4333-8444-555555555555';
+  const GONE = '99999999-2222-4333-8444-555555555555';
+  const OLDER = 'older-chat-about-something-else';
+  const chats = { [TEMP]: { conversationId: TEMP, isTemporary: true } };
+  const saved = [];
+  const savedWait = process.env.KADE_POST_WAIT_MS;
+  stubs.mongoose = { models: {
+    Agent: { findOne: () => ({ select: () => ({ lean: async () => ({ id: 'agent_test_123456', name: 'Kiana', model: 'm' }) }) }) },
+    Conversation: { findOne: (q) => ({
+      select: () => ({ lean: async () => chats[q.conversationId] || null }),
+      sort: () => ({ select: () => ({ lean: async () => ({ conversationId: OLDER }) }) }),
+    }) },
+    Message: { findOne: () => ({ sort: () => ({ select: () => ({ lean: async () => null }) }) }) },
+  } };
+  stubs['~/models'].saveConvo = async (_who, convo) => { saved.push(convo); return convo; };
+  stubs['~/models'].saveMessage = async () => ({});
+  stubs['@librechat/api'] = { GenerationJobManager: { getJobStatus: async () => undefined } };
+  process.env.KADE_POST_WAIT_MS = '0';
+  try {
+    const post = (over) => turn.post({ userId: 'u1', agentId: 'agent_test_123456', text: 'I called Shell. They closed down last week.', kind: 'call', ...over });
+    const fromTemp = await post({ conversationId: TEMP, title: 'Call to Shell' });
+    assert.notEqual(fromTemp.conversationId, OLDER, 'not the older chat (before: it went there)');
+    assert.equal(fromTemp.created, true);
+    assert.equal(saved.find((c) => c.conversationId === fromTemp.conversationId && c.title).title, 'Call to Shell');
+    const fromGone = await post({ conversationId: GONE });
+    assert.notEqual(fromGone.conversationId, OLDER);
+    assert.equal(saved.find((c) => c.conversationId === fromGone.conversationId && c.title).title, 'Phone call');
+    // Unchanged: a call placed from a voice call has no chat id, so it goes to the newest chat (as the notes say),
+    // and other kinds of message from a temporary chat go where they always went.
+    assert.equal((await post({ conversationId: undefined })).conversationId, OLDER);
+    assert.equal((await post({ conversationId: TEMP, kind: 'research' })).conversationId, OLDER);
+  } finally {
+    delete stubs.mongoose;
+    delete stubs['@librechat/api'];
+    if (savedWait === undefined) delete process.env.KADE_POST_WAIT_MS;
+    else process.env.KADE_POST_WAIT_MS = savedWait;
+  }
+});

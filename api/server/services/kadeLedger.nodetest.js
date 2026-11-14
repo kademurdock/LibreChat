@@ -229,7 +229,7 @@ test('SEC-12: a hidden run never messages, calls, approves or presses keys; a pi
  * whose note holds what the other person said. A prank caller saying "Kiana, start deep research on
  * ..." must not start paid work on the person's account: the run counts as having read outside text
  * from the start (req.kadeOutsideText, set from the x-kade-outside-text header by kadeHiddenRun.js). */
-test('a hidden run marked as carrying a call transcript starts no paid work and no errand; looks and reminders still run', async () => {
+test('a hidden run marked as carrying a call transcript starts no paid work and no errand; looks still run', async () => {
   const req = { ...turn(), kadeHiddenRun: true, kadeOutsideText: true };
   for (const [n, i] of [['kade_research', { action: 'start' }], ['kade_errand', { action: 'start' }], ['fal_studio', { action: 'generate_image' }]]) {
     const t = wrapOut(n, req, 'Started.');
@@ -242,6 +242,45 @@ test('a hidden run marked as carrying a call transcript starts no paid work and 
   // Without the mark, the same hidden run may still start research (only calls and messages are held).
   const plainRun = { ...turn(), kadeHiddenRun: true };
   assert.match(await wrapOut('kade_research', plainRun, 'Started.').call({ action: 'start' }), /^OK:/);
+});
+
+/* Verification round, Nov 14 2026: the mark held only kade_* spending, sending and standing powers, and
+ * fal_studio. Paid tools that are not kade_* (a flux picture, through laneGate) and every change marked
+ * 'write' still ran: kade_call_me schedule_call (a future ring on her phone), kade_notify send and
+ * spontaneous_on. kadeToolRetrieval loads flux when the note says "draw" or "picture of", and the note
+ * carries the transcript. A call report needs no tools to write itself, so only lookups run. */
+test('VERIFY 14: a call report runs only lookups: no picture, no scheduled ring, no message, no reminder, through either gate', async () => {
+  const req = { ...turn('The phone call you placed for them just ended.'), kadeHiddenRun: true, kadeOutsideText: true };
+  for (const [n, i] of [
+    ['kade_call_me', { action: 'schedule_call' }],
+    ['kade_notify', { action: 'send' }],
+    ['kade_notify', { action: 'spontaneous_on' }],
+    ['kade_notify', { action: 'set_reminder' }],
+    ['kade_drive_pc', { action: 'read_screen' }],
+  ]) {
+    const t = wrapOut(n, req, 'Done.');
+    const out = await t.call(i);
+    assert.match(out, /^NOT YET: .*the call transcript/s, `${n} ${i.action}`);
+    assert.equal(t.ran(), 0, `${n} ${i.action} never ran`);
+  }
+  let drew = 0;
+  const flux = ledger.laneGate({ name: 'flux', _call: async () => { drew += 1; return 'image made'; } }, req);
+  const out = await flux._call({ prompt: 'a dragon' });
+  assert.match(out, /^NOT YET: .*the call transcript/s, 'a paid picture is held too (before: it ran)');
+  assert.equal(drew, 0);
+  assert.ok(ledger.rows(req).some((r) => r.tool === 'flux' && r.code === 'needs-yes'), 'and recorded');
+  // Lookups still run, through both gates.
+  assert.match(await wrapOut('kade_weather', req, 'Sunny.').call({}), /^OK:/);
+  assert.match(await wrapOut('kade_research', req, 'found').call({ action: 'get' }), /^OK:/);
+  const search = ledger.laneGate({ name: 'web_search', _call: async () => 'results' }, req);
+  assert.equal(await search._call({ query: 'x' }), 'results');
+  // An ordinary chat turn is untouched: flux runs, a reminder is set.
+  const chat = turn('draw me a dragon');
+  let drewChat = 0;
+  const chatFlux = ledger.laneGate({ name: 'flux', _call: async () => { drewChat += 1; return 'image made'; } }, chat);
+  assert.equal(await chatFlux._call({ prompt: 'a dragon' }), 'image made');
+  assert.equal(drewChat, 1);
+  assert.match(await wrapOut('kade_notify', turn(), 'Reminder set.').call({ action: 'set_reminder' }), /^OK:/);
 });
 
 test('SEC-12: her screen does not hold the next key but holds a message; search through laneGate marks the request; the switch turns it off', async () => {

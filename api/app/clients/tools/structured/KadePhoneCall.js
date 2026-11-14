@@ -462,14 +462,28 @@ class KadePhoneCall extends Tool {
       }
       if (action === 'test_checkin') {
         if (!schedule_id) return 'test_checkin needs schedule_id (from list_checkins).';
+        let mine = false;
         if (!admin) {
           // SEC-3: a test call fires only the person's own schedule, and only from a grown-up.
           const row = await ownSchedule(schedule_id);
           if (!row) return NOT_THEIRS;
           const gate = await W.wellnessAllowed(actor, { agentId: row.agentId });
           if (gate.error) return `Not done, no call was placed. ${gate.error}`;
+          mine = true;
+        } else {
+          // Kade may fire anyone's schedule; the call is on the account that set it up.
+          mine = !!(await ownSchedule(schedule_id).catch(() => null));
         }
         const r = await axios.post(`${this.bridgeUrl}/wellness/fire`, { secret: this.bridgeSecret, id: schedule_id }, { timeout: 35000, headers: hdrs });
+        /* Verification round, Nov 14 2026: check_result asks the bridge about the newest call this tool
+         * placed, so that is this check-in now (before, a store call placed earlier was read back as the
+         * check-in). The bridge files a check-in under the account that set the schedule up, so the id is
+         * kept only for the asker's own schedule; otherwise check_result asks for their newest call, as
+         * before this branch. A check-in reports through its own summary, not the chat call report. */
+        const firedSid = r.data && typeof r.data.callSid === 'string' && r.data.callSid ? r.data.callSid : null;
+        if (firedSid && mine) _lastPlacedSid.set(this.actingUserId, { sid: firedSid, at: Date.now() });
+        else _lastPlacedSid.delete(this.actingUserId);
+        _lastReportBack.set(this.actingUserId, false);
         return `${(r.data && r.data.note) || 'Test call dialing now.'} Tell the user the phone should ring within seconds; after they hang up, the written report lands as a nudge a minute or two later (check_result also works for the raw transcript).`;
       }
       if (action === 'pause_checkin' || action === 'cancel_checkin') {

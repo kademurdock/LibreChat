@@ -229,13 +229,18 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
 }
 
 /** Pick the conversation a post belongs in, creating one when there is none. */
-async function pickConversation({ userId, agent, conversationId, title }) {
+async function pickConversation({ userId, agent, conversationId, title, kind }) {
   const Conversation = require('mongoose').models.Conversation;
   if (conversationId) {
     const own = await Conversation.findOne({ conversationId: String(conversationId), user: String(userId) })
       .select('conversationId isTemporary')
       .lean();
     if (own && !own.isTemporary) return { conversationId: own.conversationId, created: false };
+    /* Verification round, Nov 14 2026: a phone-call report knows the chat the call was asked for in.
+     * When that chat was temporary (never posted into) or has been deleted, the report went into the
+     * newest saved chat with the character from the last few days, maybe about something else entirely,
+     * and the tap opened that chat. It gets a new chat named for the call instead ("Call to Shell"). */
+    if (kind === 'call') return newConversation({ userId, agent, title: title || 'Phone call' });
   }
   const since = new Date(Date.now() - REUSE_DAYS * 86400000);
   const recent = await Conversation.findOne({
@@ -248,6 +253,10 @@ async function pickConversation({ userId, agent, conversationId, title }) {
     .select('conversationId')
     .lean();
   if (recent) return { conversationId: recent.conversationId, created: false };
+  return newConversation({ userId, agent, title });
+}
+
+async function newConversation({ userId, agent, title }) {
   const fresh = uuidv4();
   await db().saveConvo(
     { userId: String(userId), isTemporary: false },
@@ -350,7 +359,7 @@ async function waitForQuietConversation(conversationId, maxMs, { stepMs = 500, s
 async function post({ userId, agentId, text, conversationId, title, kind = 'post', noWait = false }) {
   const agent = await step('agent', agentBasics(agentId));
   if (!agent) throw new Error('no such character');
-  const picked = await step('pick-conversation', pickConversation({ userId, agent, conversationId, title }));
+  const picked = await step('pick-conversation', pickConversation({ userId, agent, conversationId, title, kind }));
   /* TURN-2: not through step(): its timer REJECTS, and a slow wait must never lose the post.
    * noWait: the caller is itself running inside this conversation's live turn (Forge deciding an
    * approval from her words), so that turn cannot finish until this returns; waiting for it would
