@@ -1,4 +1,13 @@
-import type { Continuity, Cue, Interval, Person, Plan, SectionRecord, Settings, Word } from './types';
+import type {
+  Continuity,
+  Cue,
+  Interval,
+  Person,
+  Plan,
+  SectionRecord,
+  Settings,
+  Word,
+} from './types';
 import type { Arranged } from './timing';
 import { arrange, gaps, mergeIntervals, readingLate, snapToCuts } from './timing';
 import { creditShortText, dropRereadCards, gateCues, splitCardReadings } from './ledger';
@@ -184,8 +193,7 @@ export function buildTrack(input: TrackInput): Track {
       tail = Math.min(tail, seconds - (item.placement.at + item.placement.duration));
     const open = gaps(blocked, seconds);
     /** A line's last sensible moment as `arrange` reads it in no-pause mode. */
-    const lastMoment = (cue: Cue) =>
-      Math.min(seconds, cue.until + (cue.reading ? readingLate : 0));
+    const lastMoment = (cue: Cue) => Math.min(seconds, cue.until + (cue.reading ? readingLate : 0));
     gated.forEach((cue, n) => {
       const item = placed.get(n);
       let from: number;
@@ -194,10 +202,7 @@ export function buildTrack(input: TrackInput): Track {
         const at = item.placement.at;
         const gap = open.find((span) => span.start - 1e-6 <= at && at < span.end + 1e-6);
         from = at;
-        to = Math.max(
-          Math.min(gap?.end ?? seconds, lastMoment(cue)),
-          at + item.placement.duration,
-        );
+        to = Math.max(Math.min(gap?.end ?? seconds, lastMoment(cue)), at + item.placement.duration);
       } else {
         const until = lastMoment(cue);
         const touching = open.find((span) => span.end > cue.at && span.start < until);
@@ -221,8 +226,7 @@ export function buildTrack(input: TrackInput): Track {
   }
   const order = new Map(cues.map((cue, n) => [cue, n]));
   cues.sort(
-    (a, b) =>
-      a.startSec - b.startSec || a.at - b.at || (order.get(a) ?? 0) - (order.get(b) ?? 0),
+    (a, b) => a.startSec - b.startSec || a.at - b.at || (order.get(a) ?? 0) - (order.get(b) ?? 0),
   );
   /** Stretches that meet across a section join are one stretch. */
   const joined: Interval[] = [];

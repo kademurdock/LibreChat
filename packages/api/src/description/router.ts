@@ -909,7 +909,8 @@ type SyncGone = 'source' | 'silent' | 'tries';
 const goneText: Record<SyncGone, string> = {
   source:
     'The original video is no longer on the server, so a follow-along track cannot be made. Describe it again to get one.',
-  silent: 'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.',
+  silent:
+    'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.',
   tries:
     'A follow-along track could not be made for this video after three tries. Describe it again to get one.',
 };
@@ -1859,6 +1860,10 @@ export function createDescriptionRouter(hooks: Hooks): {
    * none yet; POST /jobs/:id/track asks for one, free. gone: none can be made (the original is
    * gone, the video has no sound, or three tries failed). No word without a finished copy.
    */
+  /** The name a fingerprint in progress is kept under in `controllers`, so a shutdown stops it. */
+  const syncName = (job: string, plan: string) => `sync:${job}:${plan}`;
+  /** A fingerprint of this plan is being made right now on this server. */
+  const printing = (job: string, plan: string): boolean => controllers.has(syncName(job, plan));
   const followWord = (job: Job): FollowWord | undefined => {
     if (job.state === 'deleting') return undefined;
     const copy = latestCopy(job);
@@ -1866,7 +1871,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     const plan = planKey(copy.range);
     if (job.sync?.[plan]) return 'ready';
     if ((job.syncTries ?? 0) >= syncTriesMax) return 'gone';
-    return job.syncWanted?.includes(plan) ? 'making' : 'possible';
+    return job.syncWanted?.includes(plan) || printing(job._id, plan) ? 'making' : 'possible';
   };
   const followEntry = (job: Job): { follow?: FollowWord } => {
     if (!viewer.getStore()?.follow) return {};
@@ -4288,7 +4293,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       res.status(409).json(trackGone(copy, (await unmakeable(job, plan)) ?? 'tries'));
       return;
     }
-    if (job.syncWanted?.includes(plan)) {
+    if (job.syncWanted?.includes(plan) || printing(job._id, plan)) {
       res.status(202).json(trackMaking(copy));
       return;
     }
@@ -4317,7 +4322,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       res.status(409).json(trackGone(copy, (await unmakeable(job, plan)) ?? 'tries'));
       return;
     }
-    if (!job.syncWanted?.includes(plan)) {
+    /* One made at describe time may still be on its way: it answers for itself. */
+    if (!job.syncWanted?.includes(plan) && !printing(job._id, plan)) {
       const why = await unmakeable(job, plan);
       if (why) {
         await giveUp(job, plan, why);
@@ -4347,9 +4353,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     from: 'describe' | 'request',
     outer?: AbortSignal,
   ): Promise<boolean> {
-    const name = `sync:${job._id}:${plan}`;
+    const name = syncName(job._id, plan);
     const controller = new AbortController();
-    controllers.get(name)?.abort(new Cancelled('A newer fingerprint replaced this one.'));
     controllers.set(name, controller);
     const signal = outer ? AbortSignal.any([controller.signal, outer]) : controller.signal;
     const started = Date.now();
@@ -6006,6 +6011,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       await settle({ $pull: { syncWanted: plan }, $unset: { syncing: 1 } });
       return;
     }
+    /* The one made at describe time is still running here: it settles the ask itself. */
+    if (printing(job._id, plan)) {
+      await settle({ $unset: { syncing: 1 } });
+      return;
+    }
     const name = `sync-pass:${job._id}`;
     const controller = new AbortController();
     controllers.set(name, controller);
@@ -6046,8 +6056,11 @@ export function createDescriptionRouter(hooks: Hooks): {
       /* `fingerprint` removes the folder from here on. */
       const folderOfSound = directory;
       directory = undefined;
-      if (!(await fingerprint(job, plan, sound, folderOfSound, 'request', signal)))
-        await settle({ $inc: { syncTries: 1 } });
+      if (await fingerprint(job, plan, sound, folderOfSound, 'request', signal)) return;
+      /* A shutdown is not a failed try: the next idle check lane asks again. */
+      await settle(
+        controller.signal.aborted ? { $unset: { syncing: 1 } } : { $inc: { syncTries: 1 } },
+      );
     } catch (error) {
       if (controller.signal.aborted) {
         await settle({ $unset: { syncing: 1 } }).catch(() => {});

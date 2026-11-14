@@ -8,7 +8,9 @@ import test from 'node:test';
 import { createRequire } from 'node:module';
 import { buildTrack, trackSecondsPerByte, trackWarning } from './track.ts';
 
-const SyncPrint = createRequire(import.meta.url)('../../../../api/server/services/kadeSyncprint/syncprint.js');
+const SyncPrint = createRequire(import.meta.url)(
+  '../../../../api/server/services/kadeSyncprint/syncprint.js',
+);
 
 const settings = {
   voice: 'Voice 1',
@@ -55,7 +57,12 @@ const plan = (extra = {}) => ({
 const words = [
   { start: 5, end: 6, word: 'Hello', speaker: 0 },
   { start: 6.1, end: 6.8, word: 'there.', speaker: 0 },
-  ...Array.from({ length: 10 }, (_, i) => ({ start: 20 + i * 0.5, end: 20.45 + i * 0.5, word: 'word', speaker: 1 })),
+  ...Array.from({ length: 10 }, (_, i) => ({
+    start: 20 + i * 0.5,
+    end: 20.45 + i * 0.5,
+    word: 'word',
+    speaker: 1,
+  })),
 ];
 const print = { format: 1, bytes: 6850, sha256: 'a'.repeat(64) };
 const cue = (at, until, text, extra = {}) => ({
@@ -77,7 +84,10 @@ const input = (records, extra = {}) => ({
   records,
   filmSeconds: 60,
   print,
-  credit: { start: 'Audio description by Kade-AI.', end: 'Described by Kade-AI. More at kademurdock dot com.' },
+  credit: {
+    start: 'Audio description by Kade-AI.',
+    end: 'Described by Kade-AI. More at kademurdock dot com.',
+  },
   ...extra,
 });
 const byId = (track, id) => track.cues.find((item) => item.id === id);
@@ -95,7 +105,12 @@ test('the track has the contract fields, in order, with windows in the quiet', (
           cue(26, 29, 'Birds call.', { importance: 1 }),
         ]),
       ),
-      record(1, 30, 60, look([cue(5, 12, 'The kite lands softly in the grass.', { importance: 3 })])),
+      record(
+        1,
+        30,
+        60,
+        look([cue(5, 12, 'The kite lands softly in the grass.', { importance: 3 })]),
+      ),
     ]),
   );
   assert.deepEqual(Object.keys(track), [
@@ -185,7 +200,9 @@ test('the track has the contract fields, in order, with windows in the quiet', (
 });
 
 test('syncprint’s own planner reads the track as it is', () => {
-  const track = buildTrack(input([record(0, 0, 30, look([cue(8, 15, 'A red kite rises over the hill.')]))]));
+  const track = buildTrack(
+    input([record(0, 0, 30, look([cue(8, 15, 'A red kite rises over the hill.')]))]),
+  );
   const opts = { secPerChar: track.plannedAt.secPerChar };
   const now = SyncPrint.planCues(track.cues, { status: 'locked', filmSec: 8.2 }, opts);
   assert.equal(now.action, 'speak');
@@ -223,8 +240,16 @@ test('a part of a film adds the part’s start to every time; covers says which 
 test('a pause-mode copy is planned without pauses: a line that needs a freeze is shortened or marked none', () => {
   /* Talk everywhere but 9.0 to 10.6 s: room for the short text at the fastest speed only. */
   const busy = [
-    ...Array.from({ length: 16 }, (_, i) => ({ start: i * 0.55, end: i * 0.55 + 0.5, word: 'talk' })),
-    ...Array.from({ length: 30 }, (_, i) => ({ start: 10.82 + i * 0.6, end: 11.3 + i * 0.6, word: 'talk' })),
+    ...Array.from({ length: 16 }, (_, i) => ({
+      start: i * 0.55,
+      end: i * 0.55 + 0.5,
+      word: 'talk',
+    })),
+    ...Array.from({ length: 30 }, (_, i) => ({
+      start: 10.82 + i * 0.6,
+      end: 11.3 + i * 0.6,
+      word: 'talk',
+    })),
   ];
   const track = buildTrack(
     input(
@@ -234,10 +259,15 @@ test('a pause-mode copy is planned without pauses: a line that needs a freeze is
           0,
           30,
           look([
-            cue(9.1, 10.4, 'The tall man in the long grey coat slowly opens the heavy wooden door.', {
-              shortText: 'He opens the door.',
-              importance: 3,
-            }),
+            cue(
+              9.1,
+              10.4,
+              'The tall man in the long grey coat slowly opens the heavy wooden door.',
+              {
+                shortText: 'He opens the door.',
+                importance: 3,
+              },
+            ),
             cue(9.2, 10.2, 'A small brown dog runs across the wet garden path behind him.', {
               shortText: 'A dog runs.',
               importance: 2,
@@ -276,13 +306,25 @@ test('a lone credit card is read whole or by its first role, and may run 2.5 s p
 });
 
 test('names stay gated: a name the listener has not heard yet is not said', () => {
-  const people = [{ id: 'P1', label: 'a woman in red', name: 'Maria', look: 'red coat', nameFrom: 'said' }];
+  const people = [
+    { id: 'P1', label: 'a woman in red', name: 'Maria', look: 'red coat', nameFrom: 'said' },
+  ];
   const named = [...words, { start: 40, end: 40.6, word: 'Maria!', speaker: 0 }];
   const track = buildTrack(
     input(
       [
-        record(0, 0, 30, look([cue(8, 15, 'Maria waves at the kite.', { who: ['P1'] })], { people })),
-        record(1, 30, 60, look([cue(15, 22, 'Maria catches the kite.', { who: ['P1'] })], { people })),
+        record(
+          0,
+          0,
+          30,
+          look([cue(8, 15, 'Maria waves at the kite.', { who: ['P1'] })], { people }),
+        ),
+        record(
+          1,
+          30,
+          60,
+          look([cue(15, 22, 'Maria catches the kite.', { who: ['P1'] })], { people }),
+        ),
       ],
       { words: named },
     ),
@@ -307,7 +349,9 @@ test('a failed look still gives its quiet; a preview covers its sections; no cre
     [25.17, 30],
   ]);
   assert.equal('credit' in track, false);
-  const ends = buildTrack(input([record(0, 0, 30, null)], { credit: { start: 'Audio description by Kade-AI.' } }));
+  const ends = buildTrack(
+    input([record(0, 0, 30, null)], { credit: { start: 'Audio description by Kade-AI.' } }),
+  );
   assert.deepEqual(ends.credit, { start: 'Audio description by Kade-AI.' });
 });
 

@@ -20,7 +20,11 @@ function run() {
   try {
     raw = fs.readFileSync(workerData.file);
   } catch (e) {
-    say({ ok: false, error: e && e.code === 'ENOENT' ? 'the sound file was gone' : 'the sound file could not be read' });
+    say({
+      ok: false,
+      error:
+        e && e.code === 'ENOENT' ? 'the sound file was gone' : 'the sound file could not be read',
+    });
     return;
   }
   /* Two bytes a sample. A view needs an even offset; a copy is made only when it is not. */
@@ -33,7 +37,10 @@ function run() {
     samples = new Int16Array(even.buffer);
   }
   if (length < 8000 * 2) {
-    say({ ok: false, error: `the sound is too short to fingerprint (${(length / 8000).toFixed(2)} s)` });
+    say({
+      ok: false,
+      error: `the sound is too short to fingerprint (${(length / 8000).toFixed(2)} s)`,
+    });
     return;
   }
   const SyncPrint = require('./syncprint');

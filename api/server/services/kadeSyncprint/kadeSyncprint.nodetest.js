@@ -41,8 +41,14 @@ test('the vendored syncprint.js matches its checksum file', () => {
   const listed = fs.readFileSync(path.join(__dirname, 'syncprint.js.sha256'), 'utf8');
   const found = /^([0-9a-f]{64}) {2}syncprint\.js\n?$/.exec(listed);
   assert.ok(found, 'the checksum file is "<sha256>  syncprint.js"');
-  const actual = createHash('sha256').update(fs.readFileSync(path.join(__dirname, 'syncprint.js'))).digest('hex');
-  assert.equal(actual, found[1], 'syncprint.js changed without its checksum: copy the library again with its checksum');
+  const actual = createHash('sha256')
+    .update(fs.readFileSync(path.join(__dirname, 'syncprint.js')))
+    .digest('hex');
+  assert.equal(
+    actual,
+    found[1],
+    'syncprint.js changed without its checksum: copy the library again with its checksum',
+  );
   assert.equal(SyncPrint.FORMAT_VERSION, 1);
   assert.equal(SyncPrint.PARAMS.sampleRate, 8000, 'the describer writes 8 kHz sound for it');
   assert.equal(SyncPrint.error, null);
@@ -88,12 +94,24 @@ test('the main thread keeps answering while a long film is fingerprinted', async
 
 test('a time limit, a stop, a missing file and too little sound each end it plainly', async () => {
   const file = write('limit.s16', film(600, 5));
-  await assert.rejects(fingerprintFile(file, { timeoutMs: 5 }), (e) => e.code === 'KADE_SYNC_TIMEOUT');
+  await assert.rejects(
+    fingerprintFile(file, { timeoutMs: 5 }),
+    (e) => e.code === 'KADE_SYNC_TIMEOUT',
+  );
   const stop = new AbortController();
   const stopped = fingerprintFile(file, { signal: stop.signal });
   stop.abort();
   await assert.rejects(stopped, (e) => e.code === 'KADE_SYNC_STOPPED');
-  await assert.rejects(fingerprintFile(file, { signal: stop.signal }), (e) => e.code === 'KADE_SYNC_STOPPED');
-  await assert.rejects(fingerprintFile(path.join(root, 'nothing.s16')), (e) => e.code === 'KADE_SYNC_FAILED' && /gone/.test(e.message));
-  await assert.rejects(fingerprintFile(write('short.s16', film(1))), (e) => e.code === 'KADE_SYNC_FAILED' && /too short/.test(e.message));
+  await assert.rejects(
+    fingerprintFile(file, { signal: stop.signal }),
+    (e) => e.code === 'KADE_SYNC_STOPPED',
+  );
+  await assert.rejects(
+    fingerprintFile(path.join(root, 'nothing.s16')),
+    (e) => e.code === 'KADE_SYNC_FAILED' && /gone/.test(e.message),
+  );
+  await assert.rejects(
+    fingerprintFile(write('short.s16', film(1))),
+    (e) => e.code === 'KADE_SYNC_FAILED' && /too short/.test(e.message),
+  );
 });

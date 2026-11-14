@@ -11,7 +11,8 @@
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 
-const TIMEOUT_MS = () => Math.max(1000, Number(process.env.KADE_DESCRIPTION_SYNC_TIMEOUT_MS) || 600000);
+const TIMEOUT_MS = () =>
+  Math.max(1000, Number(process.env.KADE_DESCRIPTION_SYNC_TIMEOUT_MS) || 600000);
 const HEAP_MB = () => Math.max(128, Number(process.env.KADE_DESCRIPTION_SYNC_HEAP_MB) || 512);
 const failure = (message, code) => Object.assign(new Error(message), { code });
 
@@ -23,13 +24,16 @@ const failure = (message, code) => Object.assign(new Error(message), { code });
  */
 function fingerprintFile(file, options = {}) {
   const signal = options.signal;
-  const limit = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : TIMEOUT_MS();
+  const limit =
+    Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : TIMEOUT_MS();
   return new Promise((resolve, reject) => {
-    if (signal && signal.aborted) return reject(failure('The fingerprint was stopped.', 'KADE_SYNC_STOPPED'));
+    if (signal && signal.aborted)
+      return reject(failure('The fingerprint was stopped.', 'KADE_SYNC_STOPPED'));
     let settled = false;
     let timer = null;
     let worker = null;
-    const onAbort = () => done(reject, failure('The fingerprint was stopped.', 'KADE_SYNC_STOPPED'));
+    const onAbort = () =>
+      done(reject, failure('The fingerprint was stopped.', 'KADE_SYNC_STOPPED'));
     const done = (fn, value) => {
       if (settled) return;
       settled = true;
@@ -44,10 +48,22 @@ function fingerprintFile(file, options = {}) {
         resourceLimits: { maxOldGenerationSizeMb: HEAP_MB() },
       });
     } catch (e) {
-      return done(reject, Object.assign(failure('The fingerprint worker could not start.', 'KADE_SYNC_FAILED'), { cause: e }));
+      return done(
+        reject,
+        Object.assign(failure('The fingerprint worker could not start.', 'KADE_SYNC_FAILED'), {
+          cause: e,
+        }),
+      );
     }
     timer = setTimeout(
-      () => done(reject, failure(`The fingerprint took longer than ${Math.round(limit / 1000)} s.`, 'KADE_SYNC_TIMEOUT')),
+      () =>
+        done(
+          reject,
+          failure(
+            `The fingerprint took longer than ${Math.round(limit / 1000)} s.`,
+            'KADE_SYNC_TIMEOUT',
+          ),
+        ),
       limit,
     );
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
@@ -61,21 +77,34 @@ function fingerprintFile(file, options = {}) {
             format: m.format,
             version: m.version,
           })
-        : done(reject, failure(String((m && m.error) || 'The fingerprint failed.').slice(0, 300), 'KADE_SYNC_FAILED')),
+        : done(
+            reject,
+            failure(
+              String((m && m.error) || 'The fingerprint failed.').slice(0, 300),
+              'KADE_SYNC_FAILED',
+            ),
+          ),
     );
     worker.once('error', (e) =>
       done(
         reject,
         Object.assign(
           failure(
-            e && e.code === 'ERR_WORKER_OUT_OF_MEMORY' ? 'The fingerprint ran out of memory.' : 'The fingerprint worker failed.',
+            e && e.code === 'ERR_WORKER_OUT_OF_MEMORY'
+              ? 'The fingerprint ran out of memory.'
+              : 'The fingerprint worker failed.',
             'KADE_SYNC_FAILED',
           ),
           { cause: e },
         ),
       ),
     );
-    worker.once('exit', () => done(reject, failure('The fingerprint worker stopped before it finished.', 'KADE_SYNC_FAILED')));
+    worker.once('exit', () =>
+      done(
+        reject,
+        failure('The fingerprint worker stopped before it finished.', 'KADE_SYNC_FAILED'),
+      ),
+    );
   });
 }
 
