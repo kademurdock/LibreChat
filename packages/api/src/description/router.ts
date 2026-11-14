@@ -4347,11 +4347,18 @@ export function createDescriptionRouter(hooks: Hooks): {
       if (trackStamp(other) < stamp) await erasePrefix(other);
   }
   const printLinkSeconds = 6 * 3600;
+  /**
+   * The ready answer. `finishedAt` (Nov 14 2026, agreed with the phone) is the finishing time of
+   * the copy this track was built from, exactly as `copies[].finishedAt` shows it (a Date's JSON),
+   * or null when the copy has none. Describe the rest finishes a copy again under the same version,
+   * so a phone keeps a track by version and this time, and fetches again when the copy's differs.
+   */
   async function trackReady(job: Job, copy: FinishedCopy, plan: string, print: SyncRecord) {
     const track = await trackFor(job, copy, plan, print);
     return {
       follow: 'ready' as const,
       version: copy.version,
+      finishedAt: copy.finishedAt ? new Date(copy.finishedAt).toJSON() : null,
       track,
       printUrl: await getSignedUrl(
         storage(),

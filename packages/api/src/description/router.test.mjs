@@ -5002,9 +5002,19 @@ test('follow along: a run makes its fingerprint; only the owner gets the track a
     assert.ok(track.quiet.length >= 1);
     assert.ok(objects.has(await trackObject(owner, id, 1)), 'kept beside the copy, named for its finishing time');
     assert.equal(trackFiles(id).length, 1);
+    /* Nov 14 2026 contract: the ready answer names its copy's finishing time, as the job shows it. */
+    const shown = (await fcall('get', `/jobs/${id}`, owner).expect(200)).body.copies.find((item) => item.version === 1);
+    assert.equal(typeof shown.finishedAt, 'string');
+    assert.equal(answer.finishedAt, shown.finishedAt, 'finishedAt is exactly what copies[].finishedAt shows');
+    assert.equal(
+      `/test/described-video/${owner}/${id}/copies/1/track-${Date.parse(answer.finishedAt)}.json`,
+      await trackObject(owner, id, 1),
+      'and it is the copy the track was built from',
+    );
     const reads = storageLog.length;
     const again = (await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body;
     assert.deepEqual(again.track, track, 'POST answers at once when the fingerprint is there');
+    assert.equal(again.finishedAt, answer.finishedAt, 'POST names the same finishing time');
     assert.equal(
       storageLog.slice(reads).some((entry) => entry.method === 'GET' && entry.key.includes('/sections/')),
       false,
@@ -5016,6 +5026,13 @@ test('follow along: a run makes its fingerprint; only the owner gets the track a
     await fcall('post', `/jobs/${id}/track`, 'follow-stranger').expect(404);
     const kept = (await fcall('post', `/jobs/${id}/keep`, owner).expect(200)).body;
     assert.equal(kept.follow, 'ready', 'every answer about the job carries the word');
+    /* A copy kept with no finishing time (only some very old ones): finishedAt is null, never missing. */
+    await Jobs.updateOne({ _id: id }, { $unset: { 'copies.0.finishedAt': 1 } });
+    assert.equal('finishedAt' in (await fcall('get', `/jobs/${id}`, owner).expect(200)).body.copies[0], false);
+    const untimed = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(untimed.finishedAt, null);
+    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/1/track.json`));
+    assert.equal((await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body.finishedAt, null);
     await fcall('delete', `/jobs/${id}`, owner).expect(200);
     assert.deepEqual(keysOf(id), [], 'the fingerprint and the track go with the video');
   });
@@ -5264,7 +5281,7 @@ test('follow along: a fingerprint file that vanished from storage is noticed and
 
 /* ---------- Follow along: the Nov 14 2026 review ---------- */
 
-test('follow along: Describe the rest gets a track for the whole copy; a rename or a credit change builds it again', async () => {
+test('follow along: Describe the rest gets a track for the whole copy, with its new finishedAt; a rename or a credit change builds it again', async () => {
   await withFollow('1', async () => {
     const owner = 'follow-finish';
     const id = await readyJob(owner, 'follow-finish-upload-01', 150);
@@ -5279,6 +5296,12 @@ test('follow along: Describe the rest gets a track for the whole copy; a rename 
     assert.ok(first.track.covers.endSec < 140, `the preview's track covers ${first.track.covers.endSec} s`);
     const previewKey = await trackObject(owner, id, 1);
     assert.ok(objects.has(previewKey));
+    /* Nov 14 2026 contract: the answer names the finishing time of the copy its track was built from. */
+    const previewCopies = preview.copies.filter((item) => item.version === 1);
+    assert.equal(previewCopies.length, 1);
+    assert.equal(typeof first.finishedAt, 'string');
+    assert.equal(first.finishedAt, previewCopies[0].finishedAt, "the preview's finishing time, as the job shows it");
+    assert.equal(previewKey.endsWith(`/track-${Date.parse(first.finishedAt)}.json`), true);
 
     await fcall('post', `/jobs/${id}/finish`, owner).send({}).expect(202);
     const finished = await followSettle(id, ['done', 'failed'], owner);
@@ -5297,8 +5320,16 @@ test('follow along: Describe the rest gets a track for the whole copy; a rename 
     const wholeKey = await trackObject(owner, id, 1);
     assert.notEqual(wholeKey, previewKey);
     assert.deepEqual(trackFiles(id), [wholeKey], "the preview's track is erased");
+    /* The same version, finished again: a new finishedAt, so a phone that kept the preview's track fetches again. */
+    const wholeCopies = finished.copies.filter((item) => item.version === 1);
+    assert.equal(wholeCopies.length, 1);
+    assert.equal(whole.finishedAt, wholeCopies[0].finishedAt, 'the new finishing time, as the job shows it');
+    assert.notEqual(whole.finishedAt, first.finishedAt);
+    assert.ok(Date.parse(whole.finishedAt) > Date.parse(first.finishedAt));
+    assert.equal(wholeKey.endsWith(`/track-${Date.parse(whole.finishedAt)}.json`), true, 'the new track goes with it');
     const posted = (await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body;
     assert.deepEqual(posted.track, whole.track, 'and the whole one is reused');
+    assert.equal(posted.finishedAt, whole.finishedAt, 'POST names the same finishing time');
 
     await fcall('post', `/jobs/${id}/rename`, owner).send({ name: 'Napoleon' }).expect(200);
     const renamed = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;

@@ -49,7 +49,7 @@ How fingerprints are made:
 
 Routes (both 404 while the switch keeps this person out, then the usual owner check):
 
-- `GET /jobs/:id/track[?version=N]`: 200 `{follow: "ready", version, track, printUrl, expiresAt}` (a signed link to the fingerprint, six hours); 202 `{follow: "making", version, retryAfterSeconds, message}`; or 409 `{error, follow: "possible" | "gone", version}` with a plain sentence. No version: the latest copy that is not a rehearsal; a rehearsal copy is refused.
+- `GET /jobs/:id/track[?version=N]`: 200 `{follow: "ready", version, finishedAt, track, printUrl, expiresAt}` (a signed link to the fingerprint, six hours). `finishedAt` is the finishing time of the copy the track was built from, the same ISO string that copy's `copies[].finishedAt` shows, or null when it has none: after Describe the rest the version stays the same and this changes, so a phone keeps a track by version and `finishedAt`, and fetches again when they differ. 202 `{follow: "making", version, retryAfterSeconds, message}`; or 409 `{error, follow: "possible" | "gone", version}` with a plain sentence. No version: the latest copy that is not a rehearsal; a rehearsal copy is refused.
 - `POST /jobs/:id/track` (`?version=N` or `{version}`): the same answer at once when the fingerprint is saved, else asks for one (202 making) or says why it cannot be made (409 gone).
 - `GET /config` has `followAlong` (true or false). Each job has `follow`: `ready`, `possible`, `making` or `gone` for its latest finished copy (none without one), only for someone who may follow along.
 
