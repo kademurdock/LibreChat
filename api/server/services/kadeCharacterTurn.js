@@ -120,13 +120,40 @@ async function readStream(res, timeoutMs) {
 }
 
 /**
+ * Nov 14 2026: once the site has started a turn, an error carries the throwaway chat's id, so a caller that
+ * counts money (services/kadeReachOut.js) can read what the turn really cost even when it failed after it
+ * was written (a post that broke, a read that timed out while the turn ran on).
+ */
+function withTurnId(error, conversationId) {
+  if (error && typeof error === 'object' && conversationId && !error.composeConversationId) {
+    try {
+      error.composeConversationId = String(conversationId);
+    } catch (_) {
+      /* a frozen error object: the caller keeps the amount it set aside */
+    }
+  }
+  return error;
+}
+
+/** Nov 14 2026: the turn provably never started (switched off, no such person, the site refused it with a 4xx), so a
+ *  caller that set money aside for it gives all of it back (services/kadeReachOut.js). Unknown cases are not tagged. */
+function notStarted(error) {
+  try {
+    error.composeStarted = false;
+  } catch (_) {
+    /* a frozen error: the caller keeps what it set aside */
+  }
+  return error;
+}
+
+/**
  * Run one hidden turn of `agentId` for `userId` and return what it said.
  * @returns {Promise<{ text: string, toolCalls: number }>}
  */
 async function compose({ userId, agentId, note, platformPaid = false, steps, timezone, timeoutMs = 240000, onStart }) {
-  if (!enabled()) throw new Error('character turns are switched off');
+  if (!enabled()) throw notStarted(new Error('character turns are switched off'));
   const user = await db().getUserById(String(userId), '_id username email provider role name');
-  if (!user) throw new Error('no such person');
+  if (!user) throw notStarted(new Error('no such person'));
   const token = await db().generateToken(user, 15 * 60 * 1000);
   /* Nov 14 2026: a turn with no step budget of its own is one message the character sends (a friend text, a
    * research or errand write-up, a reach-out), so it is marked for the speak-first writing lane: the gateway
@@ -161,7 +188,9 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
   }
   if (!start.ok) {
     const t = await start.text().catch(() => '');
-    throw new Error(`the site would not start the turn (${start.status}): ${t.slice(0, 160)}`);
+    const refused = new Error(`the site would not start the turn (${start.status}): ${t.slice(0, 160)}`);
+    /* A 4xx is a refusal before any work; a 5xx may have come after the job began, so it stays unknown. */
+    throw start.status >= 400 && start.status < 500 ? notStarted(refused) : refused;
   }
   const { streamId, conversationId: tempConvo } = await start.json();
   if (!streamId) throw new Error('the site returned no stream');
@@ -170,6 +199,7 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
       await onStart({ streamId, conversationId: tempConvo || streamId });
     } catch (_) {}
   }
+  const turnId = tempConvo || streamId;
   let result;
   try {
     await new Promise((r) => setTimeout(r, 300));
@@ -180,6 +210,8 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
     if (!stream.ok) throw new Error(`could not follow the turn (${stream.status})`);
     result = await readStream(stream, timeoutMs);
     logger.info(`[kadeCharacterTurn] step compose-read ${String(result.text || '').length} chars`);
+  } catch (e) {
+    throw withTurnId(e, turnId);
   } finally {
     const convoId = tempConvo || streamId;
     db()
@@ -188,7 +220,8 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
   }
   const text = String(result.text || '').trim();
   if (!text) {
-    throw new Error(result.siteError ? `no reply (the site said: ${result.siteError.slice(0, 200)})` : 'no reply');
+    const why = result.siteError ? `no reply (the site said: ${result.siteError.slice(0, 200)})` : 'no reply';
+    throw withTurnId(new Error(why), turnId);
   }
   return { text, toolCalls: result.toolCalls, composeConversationId: tempConvo || streamId };
 }
@@ -457,7 +490,12 @@ async function speakFirst({
   if (typeof beforePost === 'function' && !(await beforePost(composed))) {
     return { posted: false, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId };
   }
-  const placed = await post({ userId, agentId, text: composed.text, conversationId, title, kind });
+  let placed;
+  try {
+    placed = await post({ userId, agentId, text: composed.text, conversationId, title, kind });
+  } catch (e) {
+    throw withTurnId(e, composed.composeConversationId);
+  }
   logger.info(
     `[kadeCharacterTurn] posted ${kind} agent=${agentId} user=${String(userId).slice(0, 8)} convo=${placed.conversationId.slice(0, 8)} ` +
       `created=${placed.created} tools=${composed.toolCalls}`,
@@ -483,4 +521,15 @@ async function speakFirst({
   return { ...placed, posted: true, text: composed.text, toolCalls: composed.toolCalls, composeConversationId: composed.composeConversationId, pushed };
 }
 
-module.exports = { compose, post, notifyPost, speakFirst, pushPreview, finalText, liveTurnWaitMs, waitForQuietConversation };
+module.exports = {
+  compose,
+  post,
+  notifyPost,
+  speakFirst,
+  pushPreview,
+  finalText,
+  liveTurnWaitMs,
+  waitForQuietConversation,
+  withTurnId,
+  notStarted,
+};

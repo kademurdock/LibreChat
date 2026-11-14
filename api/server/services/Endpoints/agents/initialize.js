@@ -641,6 +641,11 @@ const initializeClient = async ({ req, res, signal, endpointOption }) => {
     },
   );
 
+  /* KADE Nov 14 2026 (re-check review): the primary character's options now carry the speak-first lane mark when
+   * this is a character's own message; every agent loaded below (a consulted librarian, a subagent, a handoff)
+   * stays on MiMo (services/kadeHiddenRun.js primaryOnlyLane). */
+  require('~/server/services/kadeHiddenRun').primaryOnlyLane(req);
+
   /** Price emitted usage with the primary agent's resolved endpoint config so
    *  custom-endpoint agents reflect configured rates (mirrors the AgentClient
    *  spending path, which reads the same config). */

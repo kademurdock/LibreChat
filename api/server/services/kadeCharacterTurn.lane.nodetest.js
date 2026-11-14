@@ -44,3 +44,67 @@ test('a one-message turn (no step budget) carries the speak-first mark; a task w
   assert.equal(starts[1]['x-kade-claude-lane'], undefined, 'a background task stays unmarked until Kade decides');
   assert.equal(starts[1]['x-kade-steps'], '30');
 });
+
+/* Nov 14 2026: once the site has started a turn, an error carries the throwaway chat's id, so reach-out can
+ * count what a turn that was written and then failed really cost (services/kadeReachOut.js). */
+test('a turn that started and then gave no reply throws with its throwaway chat id', async () => {
+  const saved = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).endsWith('/api/agents/chat')) {
+      return { ok: true, status: 200, json: async () => ({ streamId: 's9', conversationId: 'c9' }) };
+    }
+    const final = `data: ${JSON.stringify({ final: true, responseMessage: { text: '' } })}\n`;
+    return { ok: true, status: 200, body: (async function* () { yield new TextEncoder().encode(final); })() };
+  };
+  try {
+    await assert.rejects(
+      turn.compose({ userId: 'u1', agentId: 'agent_test_123456', note: 'text them about the horses' }),
+      (e) => /no reply/.test(e.message) && e.composeConversationId === 'c9',
+    );
+  } finally {
+    global.fetch = saved;
+  }
+});
+
+test('a turn the site would not start carries no id (nothing was spent)', async () => {
+  const saved = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 500, text: async () => 'down' });
+  try {
+    await assert.rejects(
+      turn.compose({ userId: 'u1', agentId: 'agent_test_123456', note: 'text them about the horses' }),
+      (e) => /would not start/.test(e.message) && e.composeConversationId === undefined,
+    );
+  } finally {
+    global.fetch = saved;
+  }
+});
+
+test('withTurnId: tags an error once, never overwrites, and leaves anything else alone', () => {
+  const e = turn.withTurnId(new Error('x'), 'c1');
+  assert.equal(e.composeConversationId, 'c1');
+  assert.equal(turn.withTurnId(e, 'c2').composeConversationId, 'c1');
+  assert.equal(turn.withTurnId(new Error('y'), '').composeConversationId, undefined);
+  assert.equal(turn.withTurnId('a string', 'c1'), 'a string');
+  const frozen = Object.freeze(new Error('z'));
+  assert.equal(turn.withTurnId(frozen, 'c1'), frozen);
+});
+
+test('a turn the site refused (4xx) or that is switched off is tagged never started; a 5xx stays unknown', async () => {
+  const saved = global.fetch;
+  try {
+    global.fetch = async () => ({ ok: false, status: 403, text: async () => 'no access' });
+    await assert.rejects(
+      turn.compose({ userId: 'u1', agentId: 'agent_test_123456', note: 'text them about the horses' }),
+      (e) => /would not start the turn \(403\)/.test(e.message) && e.composeStarted === false,
+    );
+    global.fetch = async () => ({ ok: false, status: 502, text: async () => 'bad gateway' });
+    await assert.rejects(
+      turn.compose({ userId: 'u1', agentId: 'agent_test_123456', note: 'text them about the horses' }),
+      (e) => /\(502\)/.test(e.message) && e.composeStarted === undefined,
+    );
+  } finally {
+    global.fetch = saved;
+  }
+  const e = turn.notStarted(new Error('x'));
+  assert.equal(e.composeStarted, false);
+});
