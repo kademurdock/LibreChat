@@ -170,6 +170,14 @@ export type Keeper = {
   restore: (index: number, directory: string) => Promise<SectionFiles>;
   /** Stores the part cut from the source, so later runs of the same part skip the re-encode. */
   keepWorking?: (file: string) => Promise<void>;
+  /**
+   * Follow along (Nov 2026). When present, a fresh plan's sound pass also writes the soundtrack
+   * as 8 kHz mono 16-bit raw sound (media.ts `Soundtrack.sync`); the file is handed here, then
+   * deleted, so this must take what it needs before it returns, and must not throw. `file` is ''
+   * when that extra output failed and the pass ran again without it (`problem` says why): a
+   * fingerprint never costs the copy. Never called for a plan that is reused.
+   */
+  keepSync?: (file: string, problem?: string) => Promise<void>;
 };
 export const localKeeper = (): Keeper => ({
   saved: { records: [] },
@@ -671,6 +679,37 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   if (working.file !== request.source && within(directory, request.source))
     await rm(request.source, { force: true });
   const source = working.file;
+  /**
+   * The plan's sound pass. A keeper that keeps follow-along fingerprints (`Keeper.keepSync`) also
+   * gets the follow-along sound, which is deleted once handed over. When that extra output makes
+   * the pass fail, the pass runs once more without it and the keeper is told: a fingerprint never
+   * costs the copy, and without the hook the pass is exactly as before.
+   */
+  const measureSound = async (media: Media, scan: boolean): Promise<Soundtrack> => {
+    const keepSync = keeper.keepSync;
+    if (!keepSync) return soundtrack(source, directory, signal, media, { scan });
+    const handOver = async (file: string, problem?: string) => {
+      try {
+        await keepSync(file, problem);
+      } catch {
+        /* the keeper reports its own failures; the copy goes on */
+      }
+    };
+    const file = join(directory, 'sync.s16');
+    let sound: Soundtrack;
+    try {
+      sound = await soundtrack(source, directory, signal, media, { scan, sync: file });
+    } catch (error) {
+      await rm(file, { force: true });
+      if (signal.aborted) throw error;
+      await handOver('', error instanceof Error ? error.message : 'the sound pass failed');
+      return soundtrack(source, directory, signal, media, { scan });
+    }
+    const { sync, ...measured } = sound;
+    if (sync) await handOver(sync);
+    await rm(file, { force: true });
+    return measured;
+  };
   const chapters = workingChapters(request.chapters ?? [], settings.range, working.media.seconds);
   const reusable = !!keeper.saved.plan && sameRange(keeper.saved.plan.range, settings.range);
   if (keeper.saved.plan && !reusable) log('The saved plan was for another part of the video.');
@@ -697,9 +736,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     let sound: Soundtrack | null = null;
     let language: string | undefined;
     try {
-      sound = media.audio
-        ? await soundtrack(source, directory, signal, media, { scan: !beside })
-        : null;
+      sound = media.audio ? await measureSound(media, !beside) : null;
       await progress('Finding the dialogue', 3);
       words = sound
         ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {

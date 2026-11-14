@@ -795,7 +795,32 @@ export type Soundtrack = {
   cuts?: number[];
   stills?: Interval[];
   oneSided?: 'left' | 'right';
+  /**
+   * Follow along (Nov 2026): the file the sound pass also wrote, when asked (`soundtrack` option
+   * `sync`): the plain stereo mix folded to mono at `syncRate`, raw signed 16-bit little-endian,
+   * on the picture's clock. A TV plays the mix, so it is never the centre-heavy dialogue copy.
+   */
+  sync?: string;
 };
+
+/** Samples a second in the follow-along sound: syncprint reads 8 kHz mono. */
+export const syncRate: number = 8000;
+/** The stereo mix folded to mono at `syncRate`, the chain both follow-along passes end with. */
+const syncChain = (media: Media): string[] => [
+  'aformat=channel_layouts=stereo',
+  ...oneSidedPan(media),
+  'pan=mono|c0=0.5*c0+0.5*c1',
+  `aresample=${syncRate}`,
+];
+/** How the follow-along sound is written: raw signed 16-bit little-endian, no header. */
+const syncOutput = (file: string): string[] => [
+  '-c:a',
+  'pcm_s16le',
+  ...outputThreads(true),
+  '-f',
+  's16le',
+  resolve(file),
+];
 
 async function soundPass(
   source: string,
@@ -803,6 +828,7 @@ async function soundPass(
   signal: AbortSignal,
   media: Media,
   tools: Capabilities,
+  sync?: string,
 ): Promise<Soundtrack & { levels: number[] }> {
   if (media.audioIndex === null) return { dialogue: '', program: -70, peak: -70, levels: [] };
   const dialogue = join(directory, 'dialogue.m4a');
@@ -811,8 +837,9 @@ async function soundPass(
   const speech = media.centre
     ? ['pan=mono|c0=FC+0.3*FL+0.3*FR']
     : [...stereo, 'pan=mono|c0=0.5*c0+0.5*c1'];
+  /* Without `sync` the graph and the arguments are exactly what they were before Nov 2026. */
   const graph = [
-    `[0:a:${media.audioIndex}]${soundTimes(media, 0)},asplit=2[a0][a1]`,
+    `[0:a:${media.audioIndex}]${soundTimes(media, 0)},asplit=${sync ? 3 : 2}[a0][a1]${sync ? '[a2]' : ''}`,
     `[a0]${[
       soundFill(48000),
       ...stereo,
@@ -821,6 +848,7 @@ async function soundPass(
       `ametadata=mode=print:key=lavfi.r128.M:file=${momentaryFile}`,
     ].join(',')}[m]`,
     `[a1]${[soundFill(48000), ...speech, 'aresample=16000'].join(',')}[s]`,
+    ...(sync ? [`[a2]${[soundFill(48000), ...syncChain(media)].join(',')}[p]`] : []),
   ];
   const { log } = await execute(
     ffmpeg(),
@@ -851,6 +879,7 @@ async function soundPass(
       '-movflags',
       '+faststart',
       resolve(dialogue),
+      ...(sync ? ['-map', '[p]', ...syncOutput(sync)] : []),
     ],
     signal,
     undefined,
@@ -871,7 +900,63 @@ async function soundPass(
     ...(Number.isFinite(lra) ? { lra } : {}),
     momentary,
     levels: channelLevels(log),
+    ...(sync ? { sync } : {}),
   };
+}
+
+/**
+ * Follow along, on request (Nov 2026): one sound-only pass over a video kept from before the
+ * fingerprint was made at describe time. It writes only the follow-along sound (`Soundtrack.sync`):
+ * the same chain on the same clock as the sound pass, and for a part the same cut `normalize`
+ * makes (`range`, source seconds), so the sound's second 0 is the part's start. `oneSided` is the
+ * plan's own fix for a capture with sound on one side. Returns the seconds written, or null when
+ * the video has no sound.
+ */
+export async function syncSound(
+  source: string,
+  file: string,
+  signal: AbortSignal,
+  options: { range?: Interval; oneSided?: 'left' | 'right'; media?: Media } = {},
+): Promise<number | null> {
+  const info = { ...(await mediaOf(source, options.media, signal)) };
+  if (info.audioIndex === null) return null;
+  if (options.oneSided) info.oneSided = options.oneSided;
+  const start = options.range ? Math.max(0, options.range.start) : 0;
+  const length = options.range ? options.range.end - start : undefined;
+  if (length !== undefined && !(length >= 0.2))
+    throw new MediaError('too-short', `range ${start}-${options.range?.end}`);
+  const chain = [
+    soundClock(info, start, 48000),
+    ...(length !== undefined ? [`atrim=end=${length.toFixed(6)}`] : []),
+    ...syncChain(info),
+  ];
+  await execute(
+    ffmpeg(),
+    [
+      ...quiet,
+      ...sourceOnly,
+      ...inputThreads(),
+      '-copyts',
+      ...seekTo(info, start),
+      '-i',
+      resolve(source),
+      '-filter_complex',
+      `[0:a:${info.audioIndex}]${chain.join(',')}[p]`,
+      '-map',
+      '[p]',
+      ...syncOutput(file),
+    ],
+    signal,
+    undefined,
+    undefined,
+    {
+      timeoutMs: workLimit(
+        Number.isFinite(info.seconds) ? info : { ...info, seconds: 0 },
+        length ?? (Number.isFinite(info.seconds) ? info.seconds : 0),
+      ),
+    },
+  );
+  return (await stat(file)).size / 2 / syncRate;
 }
 
 /**
@@ -964,24 +1049,40 @@ export async function scanPicture(
  * captures with sound on one channel only (measured again with that channel on both sides), and a
  * separate picture scan for scene cuts and still stretches (scanPicture runs it alone, which also
  * works when there is no sound). `scan: false` leaves the picture scan to the caller, which can
- * run it alongside.
+ * run it alongside. `sync` (Follow along, Nov 2026) is a file path: the same pass also writes the
+ * follow-along sound there (`Soundtrack.sync`); a capture with sound on one side writes it again
+ * with that side on both, as it measures again.
  */
 export async function soundtrack(
   source: string,
   directory: string,
   signal: AbortSignal,
   media?: Media,
-  options: { scan?: boolean } = {},
+  options: { scan?: boolean; sync?: string } = {},
 ): Promise<Soundtrack> {
   const info = await mediaOf(source, media, signal);
   const tools = await capabilities();
-  const { levels, ...result } = await soundPass(source, directory, signal, info, tools);
+  const { levels, ...result } = await soundPass(
+    source,
+    directory,
+    signal,
+    info,
+    tools,
+    options.sync,
+  );
   const events =
     options.scan === false ? {} : await pictureScan(source, directory, signal, info, tools);
   const live =
     info.oneSided || info.centre || (info.channels ?? 2) !== 2 ? undefined : liveChannel(levels);
   if (!live) return { ...result, ...events, ...(info.oneSided ? { oneSided: info.oneSided } : {}) };
-  const again = await soundPass(source, directory, signal, { ...info, oneSided: live }, tools);
+  const again = await soundPass(
+    source,
+    directory,
+    signal,
+    { ...info, oneSided: live },
+    tools,
+    options.sync,
+  );
   const { levels: _unused, ...measured } = again;
   return { ...measured, ...events, oneSided: live };
 }

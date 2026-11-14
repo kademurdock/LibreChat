@@ -14,6 +14,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { userPriceFactor, payerTier } = require('~/server/services/kadeRealCost');
+const { fingerprintFile } = require('~/server/services/kadeSyncprint');
 const { SHARED_HEAD } = require('./kadePages');
 
 const MEDIA_PREFIX = () => process.env.KADE_MEDIA_PREFIX || 'media-library';
@@ -341,6 +342,10 @@ const { router, close } = createDescriptionRouter({
    * logo 3 to open and logo 4 to close: KADE_DESCRIPTION_LOGO_START and KADE_DESCRIPTION_LOGO_END
    * (1-5 or none; KADE_DESCRIPTION_LOGO sets both when unset); KADE_DESCRIPTION_CREDIT=end|off. */
   creditLogos: resolvePath(__dirname, '..', 'assets', 'kade-ai-logo'),
+  /* Nov 14 2026 (Tellavision "Follow along", step 0): a film's fingerprint, made on a worker
+   * thread with a time limit from the sound pass's 8 kHz mono copy. Nothing happens unless
+   * KADE_DESCRIPTION_FOLLOW is admin (the administrator) or on (everyone); unset, empty or 0 is off. */
+  sync: (file, options) => fingerprintFile(file, options),
 });
 /* A redeploy stops the process: running work is marked to continue from its saved sections. */
 registerShutdownTask('described video', close);
