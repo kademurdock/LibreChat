@@ -59,6 +59,10 @@
  *                               conversation" wrapper still on (Nov 10 2026;
  *                               the words are worked out in kadeRecallQuery.js,
  *                               the same function memory recall uses)
+ *   KADE_CLAUDE_STABLE_TOOLS=1  a verified-adult turn (the turns the gateway
+ *                               sends to Claude) skips the narrowing and gets
+ *                               the whole set in name order (Nov 14 2026; see
+ *                               THE STABLE SET near the end of this file)
  *
  * Proof lives outside the fork: the reframe's `tools-fingerprint` line
  * (count + bytes of the tools array on every upstream call).
@@ -1023,6 +1027,133 @@ function memoEmbed(req, embed, samePurpose) {
   };
 }
 
+/* ── Nov 14 2026: THE STABLE SET (KADE_CLAUDE_STABLE_TOOLS) ─────────────────
+ *
+ * Character chat for verified adults now goes to Claude through the gateway
+ * (reframe-proxy claude-route.js, KADE_CLAUDE_CHAT=1). Anthropic renders a
+ * request as tools, then system, then messages, and reuses a cached prefix only
+ * when it is byte-identical: ANY change to the tool definitions throws the whole
+ * cache away. The narrowing above picks a different set from turn to turn, so
+ * Claude wrote the whole prompt again instead of reading it. Measured live
+ * Nov 14 2026 (04:02 to 04:50Z): Kade's conversation with Kiana went from 10
+ * tools to 32 between two turns, a miss at $0.43; another account's went from 8
+ * to 9 (kade_research came along), $0.31. Four of six turns missed. A write is
+ * $8 a million tokens at one hour, a read $0.20.
+ *
+ * With KADE_CLAUDE_STABLE_TOOLS=1, a turn whose agent head carries the website's
+ * verified-adult note (Endpoints/agents/build.js; the gateway sends exactly those
+ * turns to Claude) skips the relevance narrowing: every tool the loader loaded
+ * rides, on every turn, sorted by name, with the tool text that goes with the
+ * whole set (web_search's block stays in the head, no no-web note). Tools taken
+ * away for any other reason are taken away BEFORE this point and stay away: the
+ * lookup browser's gate (set up, an adult-typed account, a person there), the
+ * review seat's funding tool, the capability and permission checks, a toolless
+ * model. Background runs (nobody waiting, never sent to Claude), the morning
+ * brief and every account that is not a verified adult keep the narrowing
+ * exactly as before. Off unless exactly "1"; read per call. */
+
+/** Is the stable set switched on? Only by exactly "1". */
+function stableToolsOn(env = process.env) {
+  return String((env && env.KADE_CLAUDE_STABLE_TOOLS) ?? '') === '1';
+}
+
+/**
+ * Does the stable set apply to this turn? `adultHead`: this agent's head carries the
+ * verified-adult note on this request (build.js carriesAdultNote).
+ */
+function stableApplies(req, adultHead, env = process.env) {
+  if (!stableToolsOn(env) || adultHead !== true) return false;
+  if (!req || typeof req !== 'object') return false;
+  /* A background run: nobody is waiting, and the gateway never sends one to Claude. */
+  if (req.kadeHiddenRun === true || req.kadeBackground === true) return false;
+  /* The morning brief composes from its own short list. */
+  if (req.body && req.body.kadeToolPolicy) return false;
+  return true;
+}
+
+/** A tool's or a definition's name, '' when it has none. */
+function nameOf(t) {
+  return t && typeof t.name === 'string' ? t.name : '';
+}
+
+/** Code-unit order (never the locale's), so the same names always come out the same way. */
+function byName(a, b) {
+  const x = nameOf(a);
+  const y = nameOf(b);
+  if (x === y) return 0;
+  return x < y ? -1 : 1;
+}
+
+/** A copy of a tool-text map with its keys in name order (the text is joined in key order). */
+function inNameOrder(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return map;
+  const out = {};
+  for (const key of Object.keys(map).sort()) out[key] = map[key];
+  return out;
+}
+
+/**
+ * The stable set's selection: every loaded tool, nothing deferred. It also does the two things the
+ * narrowing does on the way that memory recall leans on: it notes the last words seen in this
+ * conversation, and it starts this turn's memory embed early, through the same per-request memo and
+ * with the same string, so recall finds it started and the reply waits no longer than before. No
+ * tools embed, no Jev, no sticky set, no pending-search flag.
+ * @returns {{keep:Set<string>, dropped:string[], reason:string}}
+ */
+function selectStable(p) {
+  const keep = new Set(((p && p.tools) || []).map(nameOf).filter(Boolean));
+  try {
+    const text = recallQuery.turnWords(p && p.text);
+    if (text) {
+      const previous = previousWords(p.conversationId, text);
+      if (typeof p.embed === 'function') {
+        const query = recallQuery.earlyMemoryQuery(recallQuery.memoryQuery(text), previous);
+        Promise.resolve()
+          .then(() => p.embed(query))
+          .catch(() => null);
+      }
+    }
+  } catch (_) {
+    /* recall starts its own embed; the set is the same either way */
+  }
+  return { keep, dropped: [], reason: 'stable' };
+}
+
+/**
+ * Apply the stable set to a loadAgentTools result IN PLACE: nothing is taken away, the tools and
+ * the definitions are sorted by name, and the tool-text maps are rebuilt in name order. Returns the
+ * names in the order they now ride.
+ */
+function applyStable(result) {
+  if (!result || typeof result !== 'object') return [];
+  if (Array.isArray(result.tools) && result.tools.length > 1) {
+    result.tools = [...result.tools].sort(byName);
+  }
+  if (Array.isArray(result.toolDefinitions) && result.toolDefinitions.length > 1) {
+    result.toolDefinitions = [...result.toolDefinitions].sort(byName);
+  }
+  if (result.toolContextMap) result.toolContextMap = inNameOrder(result.toolContextMap);
+  if (result.dynamicToolContextMap) {
+    result.dynamicToolContextMap = inNameOrder(result.dynamicToolContextMap);
+  }
+  if (Array.isArray(result.toolDefinitions) && result.toolDefinitions.length > 0) {
+    return result.toolDefinitions.map(nameOf).filter(Boolean);
+  }
+  return (Array.isArray(result.tools) ? result.tools : []).map(nameOf).filter(Boolean);
+}
+
+/** The one log line for a turn the stable set applied to: the agent, how many tools, and a short
+ *  fingerprint of the names in order (equal on every turn when the set is stable). Never words. */
+function stableLogLine(agentId, names) {
+  const list = Array.isArray(names) ? names : [];
+  const set = require('crypto')
+    .createHash('sha1')
+    .update(list.join('\n'))
+    .digest('hex')
+    .slice(0, 8);
+  return `[kadeStableTools] agent=${agentId} tools=${list.length} set=${set}`;
+}
+
 function _resetForTests() {
   sticky.clear();
   descVecs.clear();
@@ -1048,6 +1179,11 @@ module.exports = {
   DEFAULT_CORE,
   DEFERRABLE,
   KEYWORD_ONLY,
+  stableToolsOn,
+  stableApplies,
+  selectStable,
+  applyStable,
+  stableLogLine,
   _seam: seam,
   _resetForTests,
 };

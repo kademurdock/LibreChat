@@ -1364,3 +1364,438 @@ describe('initializeClient — library consultation', () => {
     ]);
   });
 });
+
+/* KADE Nov 14 2026 — THE STABLE TOOL SET (KADE_CLAUDE_STABLE_TOOLS). A turn whose head carries the
+ * verified-adult note goes to Claude, and any change to the tools throws Claude's whole prompt cache
+ * away. With the switch at exactly "1", such a turn gets every tool the loader loaded, sorted by
+ * name, every turn; every other account and lane narrows exactly as before, and what the loader
+ * takes away for other reasons stays away. The unit half is services/kadeStableTools.nodetest.js. */
+describe('initializeClient — stable tool set (KADE_CLAUDE_STABLE_TOOLS)', () => {
+  const { loadAgentTools } = require('~/server/services/ToolService');
+  const { applyKadeAudience } = require('./build');
+  const rag = require('~/server/services/kadeToolRetrieval');
+
+  /** Kiana's own list as saved Nov 13 2026 (agent_6llV0eMu4fmIaj8f2x1Sb), and the lookup browser
+   *  she was given later that day. */
+  const KIANA_TOOLS = [
+    'context',
+    'flux',
+    'kade_phone_call',
+    'kade_notify',
+    'kade_weather',
+    'kade_wikipedia',
+    'kade_joke',
+    'kade_news',
+    'kade_read_page',
+    'kade_adventure',
+    'kade_games',
+    'kade_feedback',
+    'kade_code',
+    'kade_help',
+    'kade_transcribe',
+    'kade_location',
+    'kade_memory_search',
+    'kade_research',
+    'kade_drive_pc',
+    'kade_living_memory',
+    'kade_errand',
+    'kade_council',
+    'kade_make_file',
+    'file_search',
+    'web_search',
+    'kade_lookup',
+  ];
+  /** Today's narrowing for these words, from the code before this change (no embed lane in tests,
+   *  so the keywords decide). The same for every account that may have the tools. */
+  const TODAY = {
+    'tell me a joke': [
+      'kade_notify',
+      'kade_weather',
+      'kade_joke',
+      'kade_feedback',
+      'kade_help',
+      'kade_memory_search',
+    ],
+    'call my mom and tell her I will be late': [
+      'kade_phone_call',
+      'kade_notify',
+      'kade_weather',
+      'kade_feedback',
+      'kade_help',
+      'kade_memory_search',
+      'kade_message',
+    ],
+  };
+  const ENV = [
+    'KADE_CLAUDE_STABLE_TOOLS',
+    'KADE_LOOKUP_BROWSER_URL',
+    'KADE_LOOKUP_BROWSER_SECRET',
+    'KADE_ERRAND_WEB',
+    'KADE_APP_REVIEW_USER_IDS',
+    'KADE_NO_TOOLS_MODELS',
+    'KADE_ADULT_NOTE',
+  ];
+  let mongoServer;
+  let saved;
+  let infoSpy;
+  let personId;
+  let conversations = 0;
+
+  const ACCOUNTS = {
+    adult: () => ({ id: personId, role: 'USER', kadeAccountType: 'adult' }),
+    /* Kade's own seat: the admin, no type recorded. Gets the adult note; is not adult-TYPED. */
+    admin: () => ({ id: personId, role: 'ADMIN' }),
+    child: () => ({ id: personId, role: 'USER', kadeAccountType: 'child' }),
+    teen: () => ({ id: personId, role: 'USER', kadeAccountType: 'teen' }),
+    untyped: () => ({ id: personId, role: 'USER' }),
+  };
+
+  beforeAll(async () => {
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri());
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongoServer.stop();
+  });
+
+  beforeEach(async () => {
+    await mongoose.connection.dropDatabase();
+    jest.clearAllMocks();
+    saved = Object.fromEntries(ENV.map((name) => [name, process.env[name]]));
+    for (const name of ENV) {
+      delete process.env[name];
+    }
+    /* The lookup browser is set up (a made-up address and secret). */
+    process.env.KADE_LOOKUP_BROWSER_URL = 'https://lookup.example.test';
+    process.env.KADE_LOOKUP_BROWSER_SECRET = 'made-up-secret-for-tests-0123456789';
+    const person = await User.create({
+      email: 'stable@example.com',
+      name: 'Stable',
+      username: 'stable',
+      role: 'USER',
+    });
+    personId = person._id.toString();
+    rag._resetForTests();
+    mockValidateAgentModel.mockResolvedValue({ isValid: true });
+    /* ToolService stands in: a definition for every name it is asked for except the context marker,
+     * in the order asked (the record's order), with web_search's text when it is there. */
+    loadAgentTools.mockImplementation(async ({ agent }) => {
+      const names = agent.tools.filter((name) => name !== 'context');
+      return {
+        toolDefinitions: names.map((name) => ({
+          name,
+          description: `${name} does ${name} things`,
+          parameters: { type: 'object', properties: {} },
+        })),
+        toolRegistry: new Map(names.map((name) => [name, { name }])),
+        toolContextMap: names.includes('web_search') ? { web_search: 'web_search head block' } : {},
+        dynamicToolContextMap: names.includes('web_search')
+          ? { web_search: 'web_search runtime text' }
+          : {},
+      };
+    });
+    infoSpy = jest.spyOn(logger, 'info');
+  });
+
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+    loadAgentTools.mockReset();
+    infoSpy.mockRestore();
+  });
+
+  const setSwitch = (value) => {
+    if (value === undefined) {
+      delete process.env.KADE_CLAUDE_STABLE_TOOLS;
+    } else {
+      process.env.KADE_CLAUDE_STABLE_TOOLS = value;
+    }
+  };
+
+  /** One turn: the agent gets its audience notes as build.js gives them, the client is set up, and
+   *  the primary agent's own loader runs. Returns what that turn hands the run. */
+  const turn = async ({
+    user,
+    text,
+    tools = KIANA_TOOLS,
+    conversationId,
+    extra = {},
+    body = {},
+    instructions = 'You are Kiana.',
+  }) => {
+    const req = {
+      user,
+      body: {
+        conversationId: conversationId || `conv_stable_${++conversations}`,
+        parentMessageId: 'msg_parent',
+        text,
+        files: [],
+        ...body,
+      },
+      config: { endpoints: {} },
+      _resumableStreamId: null,
+      ...extra,
+    };
+    const agent = applyKadeAudience(req)({
+      id: PRIMARY_ID,
+      name: 'Kiana',
+      provider: 'openai',
+      model: 'gpt-4',
+      tools: [...tools],
+      instructions,
+    });
+    let primary;
+    mockInitializeAgent.mockImplementation(async (params) => {
+      primary = primary || params;
+      return {
+        id: PRIMARY_ID,
+        name: 'Kiana',
+        endpoint: 'agents',
+        edges: [],
+        model: 'gpt-4',
+        instructions: agent.instructions,
+        toolDefinitions: [],
+        toolRegistry: new Map(),
+        userMCPAuthMap: null,
+        tool_resources: {},
+        resendFiles: true,
+        maxContextTokens: 4096,
+      };
+    });
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: {
+        agent: Promise.resolve(agent),
+        model_parameters: { model: 'gpt-4' },
+        endpoint: 'agents',
+      },
+    });
+    loadAgentTools.mockClear();
+    infoSpy.mockClear();
+    const loaded = await primary.loadTools({
+      req,
+      res: {},
+      tools: agent.tools,
+      model: 'gpt-4',
+      agentId: PRIMARY_ID,
+      provider: 'openai',
+    });
+    const lines = infoSpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => /^\[kade(ToolRag|StableTools)\]/.test(line));
+    const asked = loadAgentTools.mock.calls[0][0].agent.tools;
+    return {
+      req,
+      loaded,
+      asked,
+      names: (loaded?.toolDefinitions || []).map((definition) => definition.name),
+      note: req._kadeToolRagNote,
+      lines,
+      /** Everything this turn hands the run, for byte-for-byte comparisons (timings taken out). */
+      snapshot: JSON.stringify({
+        asked,
+        definitions: loaded?.toolDefinitions,
+        toolContextMap: loaded?.toolContextMap,
+        dynamicToolContextMap: loaded?.dynamicToolContextMap,
+        note: req._kadeToolRagNote ?? null,
+        lines: lines.map((line) => line.replace(/ \d+ms\b/, ' <ms>')),
+      }),
+    };
+  };
+
+  const everyAccount = () => [
+    ...Object.entries(ACCOUNTS).map(([kind, make]) => ({ kind, user: make() })),
+    /* a call from a number that names nobody known: the service seat, nobody's notes */
+    { kind: 'unknown caller', user: ACCOUNTS.admin(), extra: { kadeOnBehalfOfUnresolved: true } },
+  ];
+
+  it('with the switch anything but exactly "1", every kind of account narrows exactly as today', async () => {
+    for (const account of everyAccount()) {
+      for (const text of Object.keys(TODAY)) {
+        const snapshots = new Set();
+        for (const value of [undefined, '', '0', 'true', ' 1', '1 ']) {
+          setSwitch(value);
+          rag._resetForTests();
+          const result = await turn({
+            user: account.user,
+            text,
+            conversationId: `conv_off_${account.kind}`,
+            extra: account.extra,
+          });
+          expect(result.names).toEqual(TODAY[text]);
+          expect(result.lines).toHaveLength(1);
+          expect(result.lines[0]).toMatch(/^\[kadeToolRag\] agent=agent_primary kept=/);
+          /* web_search was left off, so its text went with it and the no-web note rides the tail */
+          expect(result.loaded.toolContextMap).toEqual({});
+          expect(result.note).toBe(rag.noWebNote(new Set(TODAY[text])));
+          snapshots.add(result.snapshot);
+        }
+        /* byte for byte the same, whatever the switch says when it is not exactly "1" */
+        expect(snapshots.size).toBe(1);
+      }
+    }
+  });
+
+  it('switched on, a verified adult gets the same whole set in the same order on turns of different wording', async () => {
+    setSwitch('1');
+    const voiceAdult = {
+      user: ACCOUNTS.admin(),
+      extra: { kadeOnBehalfOf: { id: personId, name: 'Stable', kadeAccountType: 'adult' } },
+    };
+    for (const [kind, account, count] of [
+      ['adult-typed account', { user: ACCOUNTS.adult() }, 35],
+      [
+        'the admin, no type recorded (no lookup tool: not adult-TYPED)',
+        { user: ACCOUNTS.admin() },
+        34,
+      ],
+      ['a call naming an adult-typed person', voiceAdult, 35],
+    ]) {
+      const conversationId = `conv_on_${kind}`;
+      const one = await turn({ ...account, text: 'tell me a joke', conversationId });
+      /* a later turn: other words, and the record's list in another order (an edit in the builder) */
+      const two = await turn({
+        ...account,
+        text: "What's going on in the news tonight? And remind me to call Mom at six.",
+        tools: [...KIANA_TOOLS].reverse(),
+        conversationId,
+      });
+      const three = await turn({ ...account, text: 'ugh, long day. night night', conversationId });
+      for (const later of [two, three]) {
+        expect(later.names).toEqual(one.names);
+        expect(JSON.stringify(later.loaded.toolDefinitions)).toBe(
+          JSON.stringify(one.loaded.toolDefinitions),
+        );
+        expect(later.lines).toEqual(one.lines);
+      }
+      /* the whole loaded set, in name order: keyword-only tools and web_search included */
+      expect(one.names).toEqual(one.asked.filter((name) => name !== 'context').sort());
+      expect(one.names).toHaveLength(count);
+      expect(one.names).toEqual(
+        expect.arrayContaining([
+          'web_search',
+          'kade_studio',
+          'kade_known',
+          'kade_recall',
+          'kade_phone_pairing',
+          'kade_research',
+        ]),
+      );
+      expect(one.names.includes('kade_lookup')).toBe(count === 35);
+      /* the tool text that goes with the whole set: web_search's block in the head, no no-web note */
+      expect(one.loaded.toolContextMap).toEqual({ web_search: 'web_search head block' });
+      expect(one.loaded.dynamicToolContextMap).toEqual({ web_search: 'web_search runtime text' });
+      expect([one.note, two.note, three.note]).toEqual([undefined, undefined, undefined]);
+      /* one line a turn: the agent, the count and the set's fingerprint, none of the words */
+      expect(one.lines).toEqual([
+        expect.stringMatching(
+          new RegExp(`^\\[kadeStableTools\\] agent=agent_primary tools=${count} set=[0-9a-f]{8}$`),
+        ),
+      ]);
+    }
+  });
+
+  it('switched on, a child, a teen, an untyped account, an unknown caller and a probe still narrow as before', async () => {
+    const probe = {
+      kind: 'health probe (admin)',
+      user: ACCOUNTS.admin(),
+      instructions: 'KADE BARE PROBE: answer OK.',
+    };
+    const others = everyAccount().filter((account) => !['adult', 'admin'].includes(account.kind));
+    for (const account of [...others, probe]) {
+      for (const text of Object.keys(TODAY)) {
+        const run = async (value) => {
+          setSwitch(value);
+          rag._resetForTests();
+          return turn({
+            user: account.user,
+            text,
+            conversationId: `conv_narrow_${account.kind}`,
+            extra: account.extra,
+            instructions: account.instructions,
+          });
+        };
+        const off = await run(undefined);
+        const on = await run('1');
+        expect(on.snapshot).toBe(off.snapshot);
+        expect(on.names).toEqual(TODAY[text]);
+        expect(on.lines[0]).toMatch(/^\[kadeToolRag\]/);
+      }
+    }
+  });
+
+  it('switched on, what the loader takes away for other reasons stays away', async () => {
+    setSwitch('1');
+    const stableLine = /^\[kadeStableTools\] agent=agent_primary tools=\d+ set=/;
+    const withoutLookup = async () => {
+      const result = await turn({ user: ACCOUNTS.adult(), text: 'tell me a joke' });
+      expect(result.lines).toEqual([expect.stringMatching(stableLine)]);
+      expect(result.asked).not.toContain('kade_lookup');
+      expect(result.names).not.toContain('kade_lookup');
+      expect(result.names).toHaveLength(34);
+    };
+    /* the lookup browser switched off, then not set up at all */
+    process.env.KADE_ERRAND_WEB = '0';
+    await withoutLookup();
+    delete process.env.KADE_ERRAND_WEB;
+    delete process.env.KADE_LOOKUP_BROWSER_URL;
+    await withoutLookup();
+    process.env.KADE_LOOKUP_BROWSER_URL = 'https://lookup.example.test';
+
+    /* the App Review seat never gets the funding tool */
+    process.env.KADE_APP_REVIEW_USER_IDS = personId;
+    const review = await turn({ user: ACCOUNTS.adult(), text: 'tell me a joke' });
+    expect(review.lines).toEqual([expect.stringMatching(stableLine)]);
+    expect(review.asked).not.toContain('kade_funding_balance');
+    expect(review.names).not.toContain('kade_funding_balance');
+    delete process.env.KADE_APP_REVIEW_USER_IDS;
+
+    /* a model with no tools host gets no tools at all */
+    process.env.KADE_NO_TOOLS_MODELS = 'gpt-4';
+    const toolless = await turn({ user: ACCOUNTS.adult(), text: 'tell me a joke' });
+    expect(toolless.asked).toEqual([]);
+    expect(toolless.names).toEqual([]);
+    expect(toolless.lines).toEqual([]);
+    delete process.env.KADE_NO_TOOLS_MODELS;
+
+    /* the adult note switched off: no verified-adult head, so the narrowing */
+    process.env.KADE_ADULT_NOTE = '0';
+    const noNote = await turn({ user: ACCOUNTS.adult(), text: 'tell me a joke' });
+    expect(noNote.names).toEqual(TODAY['tell me a joke']);
+    expect(noNote.lines[0]).toMatch(/^\[kadeToolRag\]/);
+  });
+
+  it('switched on, a background run still loses kade_lookup and keeps the narrowing; so does the morning brief', async () => {
+    setSwitch('1');
+    const background = await turn({
+      user: ACCOUNTS.adult(),
+      text: 'tell me a joke',
+      extra: { kadeHiddenRun: true, kadeBackground: true },
+    });
+    expect(background.asked).not.toContain('kade_lookup');
+    expect(background.names).not.toContain('kade_lookup');
+    expect(background.names).toEqual(TODAY['tell me a joke']);
+    expect(background.lines[0]).toMatch(/^\[kadeToolRag\]/);
+    /* the same account with a person there gets the lookup browser and the whole set */
+    const person = await turn({ user: ACCOUNTS.adult(), text: 'tell me a joke' });
+    expect(person.names).toContain('kade_lookup');
+    expect(person.lines[0]).toMatch(/^\[kadeStableTools\]/);
+
+    const brief = await turn({
+      user: ACCOUNTS.adult(),
+      text: 'Write my morning brief: the weather and the news.',
+      body: { kadeToolPolicy: 'morning-brief' },
+    });
+    expect(brief.asked.every((name) => ['kade_weather', 'kade_news'].includes(name))).toBe(true);
+    expect(brief.lines[0]).toMatch(/^\[kadeToolRag\]/);
+  });
+});
