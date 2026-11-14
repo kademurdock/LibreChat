@@ -14,7 +14,7 @@ const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage } = require('~/models/kadeUsage');
 const { userPriceFactor, payerTier } = require('~/server/services/kadeRealCost');
-const { fingerprintFile } = require('~/server/services/kadeSyncprint');
+const { fingerprintFile } = require('../services/kadeSyncprint');
 const { SHARED_HEAD } = require('./kadePages');
 
 const MEDIA_PREFIX = () => process.env.KADE_MEDIA_PREFIX || 'media-library';

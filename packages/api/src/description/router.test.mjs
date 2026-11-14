@@ -2746,6 +2746,7 @@ test('the LibreChat wrapper: library facts and privacy, one idempotent save with
   const wrapper = loadWrapper();
   try {
     const { hooks } = wrapper.state;
+    assert.equal(typeof hooks.sync, 'function', 'Follow along: the wrapper hands the router its worker-thread fingerprint');
     const { KadeBook, KadeBookText } = wrapper.model;
     const owner = new mongoose.Types.ObjectId();
     assert.equal(hooks.actor({ user: { id: 'u1', role: 'ADMIN', kadeAccountType: 'child' } }).child, true);
