@@ -137,7 +137,7 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   if (!key) {
     return null;
   }
-  const { contentKind, mediaModel, mediaProvider, plainAnswer, readReply, videoRates } = require('~/server/services/kadeMediaRoute');
+  const { contentKind, mediaModel, mediaProvider, plainAnswer, readReply, videoRates, flexFor, flexRates, servedTier, askFlexFirst, limits } = require('~/server/services/kadeMediaRoute');
   const kind = contentKind(content);
   /* Nov 13 2026: no zero-retention MiMo host hears a video's soundtrack any more (Novita stopped
    * serving MiMo), so a MiMo gallery sends its videos to the video model (kadeMediaRoute
@@ -146,63 +146,78 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
    * really sent to: how it thinks, its route, the price of its reply and its usage row. */
   const model = mediaModel(DESCRIBE_MODEL, kind, process.env);
   const { reasoning, room } = plainAnswer(model);
-  const r = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    /* July 13 2026 money audit: request usage so gallery descriptions stop
-     * being the one billable call that never hit kadeusage. */
-    /* Part 121.3 — WHY reasoning is switched off and the budget is generous.
-     * A run of gallery descriptions came back truncated at 15-41 characters
-     * ("You will hear a soft-spoken woman in"), and one returned its own
-     * instructions back ('Start with:** "You will hear" ('). max_tokens counts
-     * REASONING plus output on a thinking model, so a reasoning pass ate the
-     * whole budget and left ten tokens of visible text. The description is how
-     * a blind user knows what a clip contains without playing it, so it is not
-     * a place to be stingy. */
-    {
-      model,
-      max_tokens: maxTokens + room,
-      reasoning,
-      /* Oct 16 2026: people's own pictures and videos go only to hosts that
-       * keep no copy and train on nothing (her zero-retention rule). */
-      /* Pictures DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200
-       * with a content_filter refusal ("considered high risk"); the check below keeps that from
-       * ever being read to someone as a description. A video never goes to DeepInfra, which
-       * drops a video's soundtrack and looks at a fixed handful of frames: it goes to the video
-       * model on Google Vertex, never Google AI Studio (kadeMediaRoute). */
-      provider: mediaProvider(model, kind, process.env),
-      messages: [{ role: 'user', content }],
-      usage: { include: true },
-    },
-    { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 90000 },
+  /* Nov 14 2026: a gallery video is described in the background, so it asks Google Vertex's flex
+   * tier first, at half the price with zero retention kept, and once more on the standard tier
+   * when flex fails (kadeMediaRoute `askFlexFirst`; a flex try gets two minutes more for Google's
+   * queue). Pictures and words are routed as before: a picture can start from a person's own photo. */
+  const flex = kind === 'video' && flexFor(model, process.env);
+  const ask = async (tier) => {
+    const r = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      /* July 13 2026 money audit: request usage so gallery descriptions stop
+       * being the one billable call that never hit kadeusage. */
+      /* Part 121.3 — WHY reasoning is switched off and the budget is generous.
+       * A run of gallery descriptions came back truncated at 15-41 characters
+       * ("You will hear a soft-spoken woman in"), and one returned its own
+       * instructions back ('Start with:** "You will hear" ('). max_tokens counts
+       * REASONING plus output on a thinking model, so a reasoning pass ate the
+       * whole budget and left ten tokens of visible text. The description is how
+       * a blind user knows what a clip contains without playing it, so it is not
+       * a place to be stingy. */
+      {
+        model,
+        max_tokens: maxTokens + room,
+        reasoning,
+        /* Oct 16 2026: people's own pictures and videos go only to hosts that
+         * keep no copy and train on nothing (her zero-retention rule). */
+        /* Pictures DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200
+         * with a content_filter refusal ("considered high risk"); the check below keeps that from
+         * ever being read to someone as a description. A video never goes to DeepInfra, which
+         * drops a video's soundtrack and looks at a fixed handful of frames: it goes to the video
+         * model on Google Vertex, never Google AI Studio (kadeMediaRoute). */
+        provider: mediaProvider(model, kind, process.env, { flex: tier === 'flex' }),
+        messages: [{ role: 'user', content }],
+        usage: { include: true },
+      },
+      { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 90000 + (tier === 'flex' ? limits.flexQueueMs : 0) },
+    );
+    if (usageOwner) {
+      try {
+        /* Part 295: OpenRouter's fee plus, with her Google key inside OpenRouter, what Google charged. */
+        /* A reply naming no real cost (BYOK without Google's figure) is priced from its tokens at
+         * the describer's env-tunable rates, as kadeDescribe does. Those rates are DESCRIBE_MODEL's:
+         * a video the video model answered is priced at that model's (kadeMediaRoute `videoRates`),
+         * and a reply served on Vertex's flex tier at the flex price (`flexRates`). Every reply is
+         * counted, a flex reply that was no use included. */
+        const usage = r.data?.usage || {};
+        const rates =
+          servedTier(r.data, tier) === 'flex'
+            ? flexRates(process.env)
+            : model === DESCRIBE_MODEL
+              ? {
+                  in: Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || DESCRIBE_IN_USD_PER_M),
+                  out: Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || DESCRIBE_OUT_USD_PER_M),
+                }
+              : videoRates(process.env);
+        const cost =
+          require('~/server/services/kadeRealCost').openRouterCost(usage) ??
+          ((Number(usage.prompt_tokens) || 0) * rates.in + (Number(usage.completion_tokens) || 0) * rates.out) / 1e6;
+        const { logKadeUsage } = require('~/models/kadeUsage');
+        logKadeUsage({
+          userId: String(usageOwner),
+          service: 'describe',
+          quantity: 1,
+          unit: 'items',
+          costUSD: cost,
+          metadata: { source: 'gallery_auto_description', model },
+        });
+      } catch { /* logging must never break a description */ }
+    }
+    return r;
+  };
+  const { response: r } = await askFlexFirst(flex, ask, (reason) =>
+    logger.warn(`[kadeAsset] the flex try failed (${reason}); asking again on the standard tier`),
   );
-  if (usageOwner) {
-    try {
-      /* Part 295: OpenRouter's fee plus, with her Google key inside OpenRouter, what Google charged. */
-      /* A reply naming no real cost (BYOK without Google's figure) is priced from its tokens at
-       * the describer's env-tunable rates, as kadeDescribe does. Those rates are DESCRIBE_MODEL's:
-       * a video the video model answered is priced at that model's (kadeMediaRoute `videoRates`). */
-      const usage = r.data?.usage || {};
-      const rates =
-        model === DESCRIBE_MODEL
-          ? {
-              in: Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || DESCRIBE_IN_USD_PER_M),
-              out: Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || DESCRIBE_OUT_USD_PER_M),
-            }
-          : videoRates(process.env);
-      const cost =
-        require('~/server/services/kadeRealCost').openRouterCost(usage) ??
-        ((Number(usage.prompt_tokens) || 0) * rates.in + (Number(usage.completion_tokens) || 0) * rates.out) / 1e6;
-      const { logKadeUsage } = require('~/models/kadeUsage');
-      logKadeUsage({
-        userId: String(usageOwner),
-        service: 'describe',
-        quantity: 1,
-        unit: 'items',
-        costUSD: cost,
-        metadata: { source: 'gallery_auto_description', model },
-      });
-    } catch { /* logging must never break a description */ }
-  }
   // A refused or filtered reply is not a description, nor is a video answered by a host that
   // cannot hear it; the caller's fallback runs instead.
   return readReply(r.data, model, kind, process.env).text;

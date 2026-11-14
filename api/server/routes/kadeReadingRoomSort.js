@@ -42,9 +42,16 @@ const BATCH = () => Math.max(1, parseInt(process.env.KADE_LIBRARY_SORT_BATCH, 10
 const INTERVAL_MIN = () => Math.max(2, parseInt(process.env.KADE_LIBRARY_SORT_INTERVAL_MIN, 10) || 10);
 const IN_USD_PER_M = () => Number(process.env.KADE_LIBRARY_SORT_IN_USD_PER_M || (ON_FLASH() ? 0.14 : 0.435));
 const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_SORT_OUT_USD_PER_M || (ON_FLASH() ? 0.28 : 0.87));
-/* Her zero-retention rule. DeepInfra first: the Oct 16 speed test had it
- * answering MiMo far sooner than Xiaomi, and Xiaomi keeps prompts. */
-const PROVIDER = () => ({ zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true });
+/* Nov 14 2026, Kade's rule: "I always want retention if it's gonna get me a
+ * better price" for anything not tied to a person. Only book titles, authors
+ * and synopses go here, so zero retention is dropped. GMICloud first: $0.326
+ * and $0.653 per million tokens, 16% under DeepInfra's $0.387 and $0.783
+ * (OpenRouter's endpoint list that day; its price shows a 25% discount that may
+ * end). It keeps prompts and never trains. It is slow (about a 6 s wait, 26
+ * tokens a second), but nobody waits on the sorter. DeepInfra next, then any
+ * other host; `data_collection: 'deny'` still keeps out every host that trains
+ * on what it is sent. MiMo Pro stays: Flash missed adult flags (Oct 16 2026). */
+const PROVIDER = () => ({ data_collection: 'deny', order: ['GMICloud', 'DeepInfra'], allow_fallbacks: true });
 
 async function spentToday() {
   try {

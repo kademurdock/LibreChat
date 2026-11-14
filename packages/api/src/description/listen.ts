@@ -7,13 +7,26 @@ import { userAgent } from './providers';
  * said a line twice is told apart from a slow read. Oct 18 2026, Napoleon: Kade's Fish voice said
  * a credit card three times in one take and every length limit let it through.
  *
- * MiMo Flash on OpenRouter, the listener Kade asked for (not Google, not Deepgram), on the
- * zero-retention hosts that really hear audio (Makora, Novita; DeepInfra and Venice answer without
- * hearing it). About $0.00001 a take, under two seconds. Any failure answers null and the engine
- * falls back to length alone. KADE_VOICE_LISTEN=0 turns it off; KADE_VOICE_LISTEN_HOSTS (comma
- * list) and KADE_VOICE_LISTEN_MODEL override the hosts and the model.
+ * MiMo Flash on OpenRouter, the listener Kade asked for (not Google, not Deepgram), on hosts that
+ * really hear audio (DeepInfra and Venice answer without hearing it). About $0.00001 a take. Any
+ * failure answers null and the engine falls back to length alone. KADE_VOICE_LISTEN=0 turns it
+ * off; KADE_VOICE_LISTEN_HOSTS (comma list, asked in that order) and KADE_VOICE_LISTEN_MODEL
+ * override the hosts and the model.
+ *
+ * Nov 14 2026: Novita no longer serves MiMo, and Makora's price rose to $0.18 and $0.36 per million
+ * tokens, over the $0.14 and $0.28 cap. By OpenRouter's endpoint list that day no host could take
+ * the call (not tried live), so every take fell back to length alone, with nothing in the log.
+ * The take is the platform's own narration voice reading a description the engine wrote, so under
+ * Kade's rule it may go to a host that keeps it: `zdr` is dropped, and `data_collection: 'deny'`
+ * still keeps out every host that trains on what it is sent (OpenRouter applies `data_collection`
+ * to training and `zdr` to keeping). Makora first: it keeps nothing and waited 0.5 s. Then Xiaomi,
+ * at $0.14 and $0.28: it keeps prompts 30 days and never trains, and it is slow (a 3.9 s wait,
+ * 14.5 s at the slow end, against the 15 s limit). The cap is Makora's price. `log` hears which
+ * host answered, or why none did, for the server log (engine.ts passes the job's log).
  */
 const listenRate = 16000;
+const listenHosts = 'Makora,Xiaomi';
+const listenPrice = { prompt: 0.18, completion: 0.36 };
 const prompt =
   'Transcribe every word spoken in this audio exactly as heard. If a word or phrase is said more than once, write it each time it is said. Reply with the words only.';
 
@@ -45,17 +58,34 @@ export function speechWav(pcm: Float32Array): Buffer {
 }
 
 type Reply = {
+  provider?: string;
   choices?: { finish_reason?: string; message?: { content?: string } }[];
   usage?: { prompt_tokens?: number };
 };
 
+/** Why a listen failed, in a few words for the log: the status and OpenRouter's own short reason. */
+function listenFailure(error: unknown): string {
+  if (!axios.isAxiosError(error)) return 'an error';
+  const status = error.response?.status;
+  if (!status) return error.code || 'no answer';
+  const said = (error.response?.data as { error?: { message?: unknown } } | undefined)?.error
+    ?.message;
+  return typeof said === 'string' && said.trim()
+    ? `HTTP ${status}: ${said.trim().slice(0, 60)}`
+    : `HTTP ${status}`;
+}
+
 /** The words in one take, or null when nobody could listen. */
-export async function listen(pcm: Float32Array, signal: AbortSignal): Promise<string | null> {
+export async function listen(
+  pcm: Float32Array,
+  signal: AbortSignal,
+  log: (message: string) => void = () => {},
+): Promise<string | null> {
   if (process.env.KADE_VOICE_LISTEN === '0') return null;
   const key = process.env.OPENROUTER_KEY;
   const seconds = pcm.length / sampleRate;
   if (!key || seconds < 0.2 || seconds > 120) return null;
-  const hosts = (process.env.KADE_VOICE_LISTEN_HOSTS || 'Makora,Novita')
+  const hosts = (process.env.KADE_VOICE_LISTEN_HOSTS || listenHosts)
     .split(',')
     .map((host) => host.trim())
     .filter(Boolean);
@@ -79,12 +109,13 @@ export async function listen(pcm: Float32Array, signal: AbortSignal): Promise<st
         reasoning: { enabled: false },
         temperature: 0,
         max_tokens: 400,
+        /* `order` asks the hosts in the order given; `only` keeps every other host out. */
         provider: {
+          order: hosts,
           only: hosts,
           allow_fallbacks: true,
-          zdr: true,
           data_collection: 'deny',
-          max_price: { prompt: 0.14, completion: 0.28 },
+          max_price: { ...listenPrice },
         },
       },
       {
@@ -106,10 +137,18 @@ export async function listen(pcm: Float32Array, signal: AbortSignal): Promise<st
      * against 57 for a one-second take heard on Makora and Novita (about 6 more a second).
      */
     const heard = (data.usage?.prompt_tokens ?? 0) >= 48 + 3 * seconds;
-    if (!text || !heard || choice?.finish_reason === 'content_filter') return null;
+    const host = data.provider || 'a host that gave no name';
+    if (!text || !heard || choice?.finish_reason === 'content_filter') {
+      log(
+        `listen: ${host} answered without the words (${!heard ? `${data.usage?.prompt_tokens ?? 'no'} prompt tokens` : choice?.finish_reason || 'empty'}); length decides`,
+      );
+      return null;
+    }
+    log(`listen: ${host} heard the take (${data.usage?.prompt_tokens} prompt tokens)`);
     return text;
   } catch (error) {
     if (signal.aborted) throw error;
+    log(`listen: no host heard the take (${listenFailure(error)}); length decides`);
     return null;
   }
 }

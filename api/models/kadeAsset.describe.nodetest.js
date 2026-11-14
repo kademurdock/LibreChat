@@ -14,8 +14,8 @@ const source = fs.readFileSync(path.join(__dirname, 'kadeAsset.js'), 'utf8');
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
 
-function fixture(env = {}, { realCost = null, choice = { message: { content: 'A described scene.' } }, provider } = {}) {
-  const calls = { post: [], usage: [], updates: [] };
+function fixture(env = {}, { realCost = null, choice = { message: { content: 'A described scene.' } }, provider, answer } = {}) {
+  const calls = { post: [], usage: [], updates: [], warnings: [] };
   const modelModule = { exports: {} };
   const stubs = {
     mongoose: new mongoose.Mongoose(),
@@ -23,6 +23,8 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
       get: async () => ({ data: Buffer.from('media'), headers: {} }),
       post: async (...args) => {
         calls.post.push(args);
+        /* `answer(n)` scripts each reply (n counts from 1); it may throw as axios does. */
+        if (answer) return { data: answer(calls.post.length) };
         return {
           data: {
             ...(provider ? { provider } : {}),
@@ -32,7 +34,7 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
         };
       },
     },
-    '@librechat/data-schemas': { logger: { info() {}, warn() {} } },
+    '@librechat/data-schemas': { logger: { info() {}, warn: (line) => calls.warnings.push(line) } },
     '@librechat/api': { saveURLToS3: async () => null },
     '~/server/services/kadeRealCost': { openRouterCost: () => realCost },
     '~/models/kadeUsage': { logKadeUsage: (row) => calls.usage.push(row) },
@@ -60,7 +62,14 @@ function fixture(env = {}, { realCost = null, choice = { message: { content: 'A 
     assert.equal(calls.post.length, modelCalls, 'model calls');
     const [url, body] = calls.post[0];
     assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
-    return { body, bodies: calls.post.map(([, sent]) => sent), usage: calls.usage, updates: calls.updates };
+    return {
+      body,
+      bodies: calls.post.map(([, sent]) => sent),
+      configs: calls.post.map(([, , config]) => config),
+      usage: calls.usage,
+      updates: calls.updates,
+      warnings: calls.warnings,
+    };
   };
   return { describe };
 }
@@ -163,17 +172,81 @@ test('a video answered by a host that cannot hear its soundtrack is never saved;
   assert.ok(JSON.stringify(heard.updates).includes('A described scene.'));
 });
 
-/* Nov 13 2026: Novita stopped serving MiMo, so by default a gallery video goes to the video model. */
-test('by default a gallery video goes to the video model on Google Vertex, and its usage row names that model', async () => {
-  const { body, usage } = await fixture({}, { provider: 'Google' }).describe('video');
+/* Nov 14 2026: what a gallery video sends on Google Vertex's flex tier, and on the standard tier. */
+const FLEX = {
+  zdr: true,
+  data_collection: 'deny',
+  only: ['google-vertex/global/flex'],
+  ignore: ['google-ai-studio'],
+  allow_fallbacks: false,
+};
+const STANDARD = { zdr: true, data_collection: 'deny', ignore: ['google-ai-studio'] };
+const described = { provider: 'Google', choices: [{ finish_reason: 'stop', message: { content: 'A described scene.' } }], usage: { prompt_tokens: 1e6, completion_tokens: 1e6 } };
+const httpError = (status) =>
+  Object.assign(new Error(`Request failed with status code ${status}`), { isAxiosError: true, response: { status, data: {} } });
+
+/* Nov 13 2026: Novita stopped serving MiMo, so by default a gallery video goes to the video model.
+ * Nov 14 2026: on Vertex's flex tier first, half the price, zero retention kept. */
+test('by default a gallery video goes to the video model on Google Vertex flex, and its usage row names that model', async () => {
+  const { body, configs, usage } = await fixture({}, { provider: 'Google' }).describe('video');
   assert.equal(body.model, 'google/gemini-3.8-flash');
   assert.deepEqual(plain(body.reasoning), { effort: 'minimal', exclude: true });
   assert.equal(body.max_tokens, 2260);
-  assert.deepEqual(plain(body.provider), { zdr: true, data_collection: 'deny', ignore: ['google-ai-studio'] });
+  assert.deepEqual(plain(body.provider), FLEX);
+  assert.equal(configs[0].timeout, 210000, 'two minutes more for Google\'s queue');
   assert.equal(body.messages[0].content[1].type, 'video_url');
   assert.equal(usage[0].metadata.model, 'google/gemini-3.8-flash');
-  /* 1M tokens in and 1M out at the video model's rates, not MiMo's. */
+  /* 1M tokens in and 1M out at the video model's flex rates, not MiMo's. */
+  near(usage[0].costUSD, 0.375 + 1.875);
+});
+
+test('a gallery video that flex turns away is asked once more on the standard tier, and its description is kept', async () => {
+  const { bodies, configs, usage, updates, warnings } = await fixture({}, {
+    answer: (n) => {
+      if (n === 1) throw httpError(503);
+      return described;
+    },
+  }).describe('video', {}, { modelCalls: 2 });
+  assert.deepEqual(plain(bodies[0].provider), FLEX);
+  assert.deepEqual(plain(bodies[1].provider), STANDARD);
+  assert.equal(configs[1].timeout, 90000);
+  assert.equal(bodies[1].messages[0].content[1].type, 'video_url', 'the same video, not the prompt fallback');
+  assert.ok(JSON.stringify(updates).includes('A described scene.'));
+  /* The flex try never answered, so only the standard reply is booked, at the standard video rates. */
+  assert.equal(usage.length, 1);
   near(usage[0].costUSD, 0.825 + 4.125);
+  assert.deepEqual(warnings, ['[kadeAsset] the flex try failed (HTTP 503); asking again on the standard tier']);
+});
+
+test('a flex reply cut off at its limit is booked and asked again on standard', async () => {
+  const cut = { provider: 'Google', choices: [{ finish_reason: 'length', message: { content: 'A described sc' } }], usage: { prompt_tokens: 1e6, completion_tokens: 1e6 } };
+  const { bodies, usage, updates } = await fixture({}, { answer: (n) => (n === 1 ? cut : described) }).describe('video', {}, { modelCalls: 2 });
+  assert.deepEqual(plain(bodies[1].provider), STANDARD);
+  assert.ok(JSON.stringify(updates).includes('A described scene.'));
+  assert.equal(usage.length, 2, 'both replies are paid for');
+  near(usage[0].costUSD, 0.375 + 1.875);
+  near(usage[1].costUSD, 0.825 + 4.125);
+});
+
+test('a bad request on flex goes to the prompt fallback, never to a second video request', async () => {
+  const { bodies } = await fixture({}, {
+    answer: (n) => {
+      if (n === 1) throw httpError(400);
+      return described;
+    },
+  }).describe('video', {}, { modelCalls: 2 });
+  assert.equal(bodies[1].messages[0].content.length, 1);
+  assert.match(bodies[1].messages[0].content[0].text, /Likely shows:/);
+});
+
+test('a gallery picture never asks flex, even on a Google model; KADE_VIDEO_TIER=standard keeps videos on standard', async () => {
+  const picture = await fixture({ KADE_ASSET_DESCRIBE_MODEL: 'google/gemini-3.8-flash' }, { provider: 'Google' }).describe('image');
+  assert.deepEqual(plain(picture.body.provider), STANDARD);
+  assert.equal(picture.configs[0].timeout, 90000);
+  const video = await fixture({ KADE_VIDEO_TIER: 'standard' }, { provider: 'Google' }).describe('video');
+  assert.deepEqual(plain(video.body.provider), STANDARD);
+  assert.equal(video.configs[0].timeout, 90000);
+  near(video.usage[0].costUSD, 0.825 + 4.125);
 });
 
 test('a gallery picture still goes to MiMo Pro with reasoning off and the normal limit', async () => {

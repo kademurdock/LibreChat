@@ -25,8 +25,9 @@ const scenes = JSON.stringify({
 });
 
 /** Loads the describer with axios answering from `reply(body, n)` (n counts from 1). */
-function load(reply, env = {}) {
+function load(reply, env = {}, usage = { logKadeUsage() {}, KadeUsage: {} }) {
   const calls = [];
+  const warnings = [];
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./kadeReadingRoomDescribe'), 'utf8'), {
     module,
@@ -56,14 +57,14 @@ function load(reply, env = {}) {
           },
         };
       }
-      if (id === '@librechat/data-schemas') return { logger: { warn() {}, info() {} } };
-      if (id === '~/models/kadeUsage') return { logKadeUsage() {}, KadeUsage: {} };
+      if (id === '@librechat/data-schemas') return { logger: { warn: (line) => warnings.push(line), info() {} } };
+      if (id === '~/models/kadeUsage') return usage;
       if (id === '~/server/services/kadeRealCost') return require('../services/kadeRealCost');
       if (id === '~/server/services/kadeMediaRoute') return require('../services/kadeMediaRoute');
       throw Error(`Unexpected dependency: ${id}`);
     },
   });
-  return { internals: module.exports._internals, calls };
+  return { internals: module.exports._internals, library: module.exports, calls, warnings };
 }
 const answer = (
   provider,
@@ -74,6 +75,19 @@ const answer = (
   choices: [choice],
   usage: { cost, prompt_tokens: 3582, completion_tokens: 400 },
 });
+/* Nov 14 2026: what a Google segment sends on Vertex's flex tier, and on the standard tier. */
+const FLEX = {
+  zdr: true,
+  data_collection: 'deny',
+  only: ['google-vertex/global/flex'],
+  ignore: ['google-ai-studio'],
+  allow_fallbacks: false,
+};
+const STANDARD = { zdr: true, data_collection: 'deny', ignore: ['google-ai-studio'] };
+const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+/** An HTTP failure as axios throws it. */
+const httpError = (status) =>
+  Object.assign(new Error(`Request failed with status code ${status}`), { isAxiosError: true, response: { status, data: {} } });
 
 test('a Library segment goes only to Novita with zero retention, as plain JSON, and its scenes are kept', async () => {
   const { internals, calls } = load(() => answer('Novita'));
@@ -166,11 +180,14 @@ test('KADE_VIDEO_HOSTS overrides the hearing hosts; a Google model never reaches
     KADE_LIBRARY_VISION_MODEL: 'google/gemini-3.8-flash',
   });
   await google.internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
-  assert.deepEqual(plain(google.calls[0].body.provider), {
-    zdr: true,
-    data_collection: 'deny',
-    ignore: ['google-ai-studio'],
+  /* Nov 14 2026: Vertex's flex tier first (half the price, zero retention kept). */
+  assert.deepEqual(plain(google.calls[0].body.provider), FLEX);
+  const standard = load(() => answer('Google'), {
+    KADE_LIBRARY_VISION_MODEL: 'google/gemini-3.8-flash',
+    KADE_VIDEO_TIER: 'standard',
   });
+  await standard.internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.deepEqual(plain(standard.calls[0].body.provider), STANDARD);
 });
 
 test('MiMo segments default to five minutes and each look may take ten; the env setting still wins', async () => {
@@ -206,19 +223,17 @@ test('MiMo segments default to five minutes and each look may take ten; the env 
   assert.equal(library({ KADE_DESCRIBE_SEGMENT_SECONDS: '600' }).estimate(1800).segments, 3);
 });
 
-/* Nov 13 2026: Novita stopped serving MiMo, so by default a Library segment goes to the video model. */
-test('by default a Library segment goes to the video model on Google Vertex: zero retention, 8,000 thinking tokens, a seven-minute deadline', async () => {
+/* Nov 13 2026: Novita stopped serving MiMo, so by default a Library segment goes to the video model.
+ * Nov 14 2026: on Vertex's flex tier first, with two minutes more for Google's queue. */
+test('by default a Library segment goes to the video model on Google Vertex flex: zero retention, 8,000 thinking tokens, a nine-minute deadline', async () => {
   const { internals, calls } = load(() => answer('Google'), { KADE_VIDEO_MODEL: '' });
   const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
   assert.ok(result.text.includes('furniture store'), JSON.stringify(result));
+  assert.equal(calls.length, 1);
   assert.equal(calls[0].body.model, 'google/gemini-3.8-flash');
-  assert.deepEqual(plain(calls[0].body.provider), {
-    zdr: true,
-    data_collection: 'deny',
-    ignore: ['google-ai-studio'],
-  });
+  assert.deepEqual(plain(calls[0].body.provider), FLEX);
   assert.deepEqual(plain(calls[0].body.reasoning), { max_tokens: 8000 });
-  assert.equal(calls[0].config.timeout, 420000);
+  assert.equal(calls[0].config.timeout, 540000);
 });
 
 test('a decline from Google of a Library segment is asked once and never becomes a scene', async () => {
@@ -228,4 +243,161 @@ test('a decline from Google of a Library segment is asked once and never becomes
   assert.equal(calls.length, 1);
   assert.equal(result.refused, true);
   assert.equal(result.text, '');
+});
+
+/* Nov 14 2026: a flex try that fails is asked once more on the standard tier. OpenRouter never
+ * moves a flex request to standard by itself (flex is pinned with no fallback). */
+test('a Library segment that flex turns away (429) is asked once more on the standard tier, and its scenes are kept', async () => {
+  const { internals, calls, warnings } = load(
+    (_body, n) => {
+      if (n === 1) throw httpError(429);
+      return answer('Google');
+    },
+    { KADE_VIDEO_MODEL: '' },
+  );
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(plain(calls[0].body.provider), FLEX);
+  assert.equal(calls[0].config.timeout, 540000);
+  assert.deepEqual(plain(calls[1].body.provider), STANDARD);
+  assert.equal(calls[1].config.timeout, 420000);
+  assert.equal(internals.parseScenes(result.text).scenes[0].text, 'A sofa on sale.');
+  assert.equal(result.costUSD, 0.002);
+  assert.deepEqual(warnings, [
+    '[library/describe] the flex try failed (HTTP 429); asking again on the standard tier',
+  ]);
+});
+
+test('server errors, a missing flex endpoint, a timeout and an error inside the reply each get one standard try', async () => {
+  const timeout = Object.assign(new Error('timeout of 540000ms exceeded'), { isAxiosError: true, code: 'ECONNABORTED' });
+  for (const failure of [httpError(503), httpError(500), httpError(404), timeout, { error: { code: 502, message: 'Provider returned error' } }]) {
+    const { internals, calls } = load(
+      (_body, n) => {
+        if (n > 1) return answer('Google');
+        if (failure instanceof Error) throw failure;
+        return failure;
+      },
+      { KADE_VIDEO_MODEL: '' },
+    );
+    const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+    assert.equal(calls.length, 2, failure.message || JSON.stringify(failure));
+    assert.deepEqual(plain(calls[1].body.provider), STANDARD);
+    assert.ok(result.text.includes('furniture store'));
+  }
+});
+
+test('a flex reply cut off at its token limit is paid for and asked again on standard; both costs count', async () => {
+  const cut = { finish_reason: 'length', native_finish_reason: 'MAX_TOKENS', message: { content: '{"summary": "A furn' } };
+  const { internals, calls, warnings } = load(
+    (_body, n) => (n === 1 ? answer('Google', cut, 0.01) : answer('Google')),
+    { KADE_VIDEO_MODEL: '' },
+  );
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(plain(calls[1].body.provider), STANDARD);
+  assert.equal(internals.parseScenes(result.text).summary, 'A furniture store ad.');
+  near(result.costUSD, 0.012);
+  assert.match(warnings[0], /the flex try failed \(cut off\)/);
+});
+
+test('a bad request or no credit on flex is not asked again on standard, and a decline stands', async () => {
+  for (const status of [400, 402]) {
+    const { internals, calls } = load(() => { throw httpError(status); }, { KADE_VIDEO_MODEL: '' });
+    const failure = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.').catch((e) => e);
+    assert.equal(failure.response.status, status);
+    assert.equal(calls.length, 1, String(status));
+  }
+  const declined = { finish_reason: 'stop', native_finish_reason: 'SAFETY', message: { content: 'I cannot.' } };
+  const { internals, calls } = load(() => answer('Google', declined, 0.00004), { KADE_VIDEO_MODEL: '' });
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 1, 'Google declines the same clip on standard too');
+  assert.equal(result.refused, true);
+});
+
+test('when the standard try fails too, the flex reply already paid for rides on the failure', async () => {
+  const cut = { finish_reason: 'length', message: { content: '{"sum' } };
+  const { internals, calls } = load(
+    (_body, n) => {
+      if (n === 1) return answer('Google', cut, 0.01);
+      throw httpError(500);
+    },
+    { KADE_VIDEO_MODEL: '' },
+  );
+  const failure = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.').catch((e) => e);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(plain(calls[1].body.provider), STANDARD);
+  assert.equal(failure.response.status, 500);
+  /* describeTrack adds it to what the job spent before, for the server log. */
+  near(failure.costUSD, 0.01);
+});
+
+test('the estimate is priced at the flex tier; KADE_VIDEO_TIER=standard and a MiMo library keep their own prices', () => {
+  const stubs = {
+    '~/server/services/kadeMediaRoute': require('../services/kadeMediaRoute'),
+    '~/server/services/kadeRealCost': require('../services/kadeRealCost'),
+    '~/models/kadeUsage': { logKadeUsage() {}, KadeUsage: {} },
+    '@librechat/data-schemas': { logger: { warn() {}, info() {} } },
+  };
+  const library = (env) => {
+    const module = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(require.resolve('./kadeReadingRoomDescribe'), 'utf8'), {
+      module,
+      process: { env },
+      require: (id) => stubs[id] || require(id),
+    });
+    return module.exports;
+  };
+  /* Ten minutes: two segments, 60,000 tokens in, and 2,440 of words plus 16,000 of thinking out.
+   * On flex at $0.375 and $1.875 a million: $0.0571. On standard at $0.825 and $4.125: $0.1256. */
+  assert.equal(library({}).estimate(600).usd, 0.0571);
+  assert.equal(library({ KADE_VIDEO_TIER: 'standard' }).estimate(600).usd, 0.1256);
+  assert.equal(
+    library({ KADE_VIDEO_FLEX_IN_USD_PER_M: '0.75', KADE_VIDEO_FLEX_OUT_USD_PER_M: '3.75' }).estimate(600).usd,
+    0.1142,
+  );
+  /* A MiMo library has no flex tier: 240,000 tokens in, 2,440 out, at MiMo Pro's $0.435 and $0.87. */
+  assert.equal(library({ KADE_VIDEO_MODEL: 'mimo' }).estimate(600).usd, 0.1065);
+});
+
+test('the $2 daily cap: a run on flex is booked at what flex cost, and a day already at $2 starts nothing', async () => {
+  const rows = [];
+  let spent = 0;
+  const usage = {
+    logKadeUsage: (row) => rows.push(row),
+    KadeUsage: { aggregate: async () => [{ usd: spent }] },
+  };
+  /* A reply that names no cost (as a BYOK reply without Google's figure does). */
+  const unpriced = {
+    provider: 'Google',
+    choices: [{ finish_reason: 'stop', message: { content: scenes } }],
+    usage: { prompt_tokens: 30000, completion_tokens: 4000 },
+  };
+  const { library, calls } = load(() => unpriced, { KADE_VIDEO_MODEL: '' }, usage);
+  const run = (bookId) =>
+    new Promise((resolve) => {
+      library.enqueue({
+        bookId,
+        t: 0,
+        userId: 'u1',
+        signedUrl: 'https://example.invalid/track',
+        mime: 'video/mp4',
+        title: 'Ad',
+        category: 'commercial',
+        /* Answered after the queue has logged the run's usage row. */
+        onDone: async (err, result) => setImmediate(() => resolve({ err, result })),
+      });
+    });
+  const first = await run('b1');
+  assert.equal(first.err, null);
+  assert.equal(calls.length, 2, 'two five-minute segments');
+  /* Each segment: 30,000 tokens in and 4,000 out at $0.375 and $1.875 a million is $0.01875. */
+  near(first.result.costUSD, 0.0375);
+  assert.equal(rows.length, 1);
+  near(rows[0].costUSD, 0.0375);
+  assert.equal(rows[0].metadata.source, 'library');
+  spent = 2;
+  const second = await run('b2');
+  assert.match(second.err.message, /Today's description allowance \(\$2\.00\) is used up/);
+  assert.equal(calls.length, 2, 'no model call once the day is spent');
+  assert.equal(rows.length, 1);
 });

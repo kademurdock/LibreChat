@@ -128,9 +128,14 @@ export type Providers = {
   expected?: (look: Look) => number;
   /**
    * The words heard in one narration take that ran long (production: listen.ts `listen`), or null
-   * when nobody could listen. Absent (test providers): length alone decides.
+   * when nobody could listen. Absent (test providers): length alone decides. `log` is the job's
+   * server log, so it can say which host listened, or why none could.
    */
-  listen?: (pcm: Float32Array, signal: AbortSignal) => Promise<string | null>;
+  listen?: (
+    pcm: Float32Array,
+    signal: AbortSignal,
+    log?: (message: string) => void,
+  ) => Promise<string | null>;
 };
 export const productionProviders: Providers = {
   transcribe,
@@ -1262,7 +1267,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       : secondsPerByte / clipNative;
     const check = paceCheck(text, said, pace);
     if (!check.suspect) return 'clean';
-    const heard = providers.listen ? await providers.listen(pcm, signal) : null;
+    const heard = providers.listen ? await providers.listen(pcm, signal, log) : null;
     const verdict =
       heard !== null
         ? repeatsWords(text, heard)

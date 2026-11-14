@@ -5617,3 +5617,25 @@ test('DESC-12: at the default width a run keeps one look ahead; at 3 the looks o
     }
   }
 });
+
+/* Nov 14 2026: the repeat check had failed silently. The engine now hands the listener the job's
+ * log, so the server log says which host heard a long take, or why none could. */
+test('the listener is handed the job log, so the server log says which host heard a long take', async () => {
+  const f = await fixture('voice-listener-log');
+  const twice = await toneFile(f.dir, 'twice.wav', 660, 7);
+  const backend = providers(f.voice, [], [cue]);
+  let takes = 0;
+  backend.synthesize = async (_text, _voice, _session, file) => {
+    takes++;
+    await copyFile(takes === 1 ? twice : f.voice, file);
+  };
+  backend.listen = async (pcm, _signal, log) => {
+    log('listen: Makora heard the take (61 prompt tokens)');
+    return pcm.length / sampleRate > 5 ? `${cue.text} ${cue.text}` : cue.text;
+  };
+  const log = [];
+  const result = await run(f, [], [], { providers: backend, log });
+  assert.equal(result.report.descriptions.length, 1);
+  assert.ok(log.includes('listen: Makora heard the take (61 prompt tokens)'), log.join('\n'));
+  assert.ok(log.some((line) => /^Voice take 1 of 3 repeated itself: 7\.0 s/.test(line)), log.join('\n'));
+});

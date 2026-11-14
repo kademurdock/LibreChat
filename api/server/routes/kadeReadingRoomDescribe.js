@@ -25,7 +25,10 @@
  * and the real cost is logged to kadeusage as `describe`.
  * (Those were Flash Lite's figures. Nov 13 2026: segments go to
  * google/gemini-3.8-flash on Google Vertex, about 91 tokens a second of video
- * plus each segment's thinking; see VIDEO_MODEL and `estimate` below.)
+ * plus each segment's thinking; see VIDEO_MODEL and `estimate` below.
+ * Nov 14 2026: on Vertex's flex tier first, at half the price, with zero
+ * retention kept, and once more on the standard tier when flex fails; see
+ * `askModel`.)
  *
  * One job at a time per server (the queue is in memory), `KADE_DESCRIBE_MAX_MINUTES`
  * caps a single track (default 180), `KADE_DESCRIBE_DAILY_USD` caps the day
@@ -40,7 +43,7 @@ const { execFile } = require('child_process');
 const { logger } = require('@librechat/data-schemas');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { openRouterCost } = require('~/server/services/kadeRealCost');
-const { limits, mediaModel, mediaProvider, pause, readReply, refusalTries, videoRates } = require('~/server/services/kadeMediaRoute');
+const { limits, mediaModel, mediaProvider, pause, readReply, refusalTries, videoRates, flexFor, flexRates, servedTier, askFlexFirst } = require('~/server/services/kadeMediaRoute');
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
@@ -57,13 +60,22 @@ const MODEL = () => process.env.KADE_LIBRARY_VISION_MODEL || 'xiaomi/mimo-v2.6-p
 const VIDEO_MODEL = () => mediaModel(MODEL(), 'video', process.env);
 const onMimo = () => VIDEO_MODEL().startsWith('xiaomi/mimo-');
 const onGoogle = () => VIDEO_MODEL().startsWith('google/');
-/* USD per million tokens, for the estimate and for a reply that names no cost. The KADE_LIBRARY_
- * rates are the library's own model's (MiMo Pro's by default); a segment that goes to the video
- * model instead is priced at that model's (kadeMediaRoute `videoRates`). */
-const RATES = () =>
-  VIDEO_MODEL() === MODEL()
+/**
+ * Nov 14 2026: nobody waits on the Library, so a Google segment asks Vertex's flex tier first:
+ * half the price, zero retention kept (kadeMediaRoute `FLEX_ENDPOINT`). KADE_VIDEO_TIER=standard
+ * puts it back on the standard tier.
+ */
+const onFlex = () => flexFor(VIDEO_MODEL(), process.env);
+/* USD per million tokens, for the estimate and for a reply that names no cost, on the tier that
+ * served it. The KADE_LIBRARY_ rates are the library's own model's (MiMo Pro's by default); a
+ * segment that goes to the video model instead is priced at that model's (kadeMediaRoute
+ * `videoRates`), and one served on Vertex's flex tier at the flex price (`flexRates`). */
+const RATES = (tier = 'standard') => {
+  if (tier === 'flex') return flexRates(process.env);
+  return VIDEO_MODEL() === MODEL()
     ? { in: Number(process.env.KADE_LIBRARY_IN_USD_PER_M || 0.435), out: Number(process.env.KADE_LIBRARY_OUT_USD_PER_M || 0.87) }
     : videoRates(process.env);
+};
 /* Prompt tokens a second of video, for the estimate only; the provider's actual receipt is booked.
  * Google counted 91 a second on Nov 13 2026 (a 15 s clip: 990 video tokens, one picture of 66 a
  * second, and 375 for its sound), so 100. The 400 for other models is the older, roomier guess. */
@@ -95,6 +107,7 @@ const SEGMENT_SECONDS = () => Math.max(60, parseInt(process.env.KADE_DESCRIBE_SE
  * thinking. Google Vertex writes about 140 tokens a second (providers.ts `planFor`), so a reply of
  * all 24,000 tokens takes about three minutes; the engine gives a look on this route 300 s, and
  * 420 s to its largest (48,000 tokens). 420 s here, since a look that times out fails the job.
+ * A flex try gets two minutes more for Google's queue (kadeMediaRoute `limits.flexQueueMs`).
  */
 const REQUEST_MS = () => (onGoogle() ? 420000 : 600000);
 const MAX_MINUTES = () => Math.max(1, parseFloat(process.env.KADE_DESCRIBE_MAX_MINUTES) || 180);
@@ -121,7 +134,12 @@ async function probeDuration(file) {
   }
 }
 
-/** What a run would cost, before anyone presses the button, on the model it will really run on. */
+/**
+ * What a run would cost, before anyone presses the button, on the model it will really run on, at
+ * the price of the tier it asks first: Vertex's flex tier for a Google model (`onFlex`). A segment
+ * that flex turns away is asked again on the standard tier at twice the price; the usage row and
+ * the daily cap count what was really spent either way.
+ */
 function estimate(seconds) {
   const s = Math.max(1, seconds || 0);
   const segments = Math.ceil(s / SEGMENT_SECONDS());
@@ -130,7 +148,7 @@ function estimate(seconds) {
    * at nearly five times MiMo's rate, so its estimate counts the whole budget and all the words. */
   const words = 40 + s * 4;
   const outTokens = onGoogle() ? words + segments * GOOGLE_THINKING_TOKENS : Math.min(6000, words);
-  const rates = RATES();
+  const rates = RATES(onFlex() ? 'flex' : 'standard');
   const usd = (inTokens * rates.in + outTokens * rates.out) / 1e6;
   return { seconds: s, segments, usd: Math.round(usd * 10000) / 10000, model: VIDEO_MODEL() };
 }
@@ -169,25 +187,44 @@ const thinking = () => {
  * already says. json_object, not json_schema: Novita refused a strict schema. `refused` (a declined
  * or filtered reply) and `unheard` (a host that cannot hear it answered) come back with no text;
  * their cost is still counted.
+ *
+ * Nov 14 2026: a Google look asks Vertex's flex tier first (`onFlex`, kadeMediaRoute
+ * `askFlexFirst`). When flex fails (busy or rate limited, a server error, no flex endpoint, out of
+ * time, an error inside its reply, or a reply cut off at its token limit), the look is asked once
+ * more on the standard tier. Every reply's cost is counted at the price of the tier that served it,
+ * a flex reply that was no use included, so the usage row and the daily cap see all of it. A cost
+ * already spent rides on a failure (`costUSD`), for the server log.
  */
 async function askModel(fileBuf, mime, prompt) {
   const key = process.env.OPENROUTER_KEY;
   if (!key) throw new Error('OPENROUTER_KEY not configured');
   const model = VIDEO_MODEL();
   const dataUrl = `data:${mime};base64,${fileBuf.toString('base64')}`;
-  const r = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    { model, max_tokens: 24000, ...thinking(), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' }, provider: mediaProvider(model, 'video', process.env) },
-    /* A background job: time for the upload, the look and its thinking (`REQUEST_MS`). */
-    { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: REQUEST_MS() },
-  );
+  let costUSD = 0;
+  const ask = async (tier) => {
+    const r = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      { model, max_tokens: 24000, ...thinking(), messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'video_url', video_url: { url: dataUrl } }] }], usage: { include: true }, response_format: { type: 'json_object' }, provider: mediaProvider(model, 'video', process.env, { flex: tier === 'flex' }) },
+      /* A background job: time for the upload, the look and its thinking (`REQUEST_MS`), and on
+       * flex for Google's queue too. */
+      { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: REQUEST_MS() + (tier === 'flex' ? limits.flexQueueMs : 0) },
+    );
+    const usage = r.data?.usage || {};
+    const rates = RATES(servedTier(r.data, tier));
+    const est = ((Number(usage.prompt_tokens) || 0) * rates.in + (Number(usage.completion_tokens) || 0) * rates.out) / 1e6;
+    /* Part 295: OpenRouter's fee plus, with her Google key in OpenRouter (BYOK), Google's charge. */
+    costUSD += openRouterCost(usage) ?? est;
+    return r;
+  };
+  let r;
+  try {
+    ({ response: r } = await askFlexFirst(onFlex(), ask, (reason) => logger.warn(`[library/describe] the flex try failed (${reason}); asking again on the standard tier`)));
+  } catch (e) {
+    e.costUSD = (e.costUSD || 0) + costUSD;
+    throw e;
+  }
   const { text, refused, unheard } = readReply(r.data, model, 'video', process.env);
-  const usage = r.data?.usage || {};
-  const rates = RATES();
-  const est = ((Number(usage.prompt_tokens) || 0) * rates.in + (Number(usage.completion_tokens) || 0) * rates.out) / 1e6;
-  /* Part 295: OpenRouter's fee plus, with her Google key in OpenRouter (BYOK), Google's charge. */
-  const costUSD = openRouterCost(usage) ?? est;
-  return { text: text || '', costUSD, tokens: usage.prompt_tokens || 0, refused, unheard, provider: r.data?.provider || '' };
+  return { text: text || '', costUSD, tokens: r.data?.usage?.prompt_tokens || 0, refused, unheard, provider: r.data?.provider || '' };
 }
 
 /**
