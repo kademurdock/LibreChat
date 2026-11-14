@@ -4314,7 +4314,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     );
     if (saved)
       await keptTrack(job, copy, key).catch((error: Error) =>
-        warn(syncLine('track-not-kept', { id: job._id, plan, error: scrub(error.message) })),
+        warn(syncLine('track-check-failed', { id: job._id, plan, error: scrub(error.message) })),
       );
     return track;
   }
