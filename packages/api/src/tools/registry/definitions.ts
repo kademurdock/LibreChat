@@ -508,7 +508,21 @@ export const kadePhoneCallSchema: ExtendedJsonSchema = {
     purpose: {
       type: 'string',
       description:
-        'Required for place_call. Short plain-language reason for the call, phrased to complete the sentence "I\'m calling because ..." — it is read aloud to whoever answers and guides the whole call. Make it specific; include any facts the phone agent needs (names, order numbers, questions to ask).',
+        'Required for place_call. What you are calling about. It is said out loud right after the greeting, so keep it to ONE short sentence with the main question first. ' +
+        "For a business or a stranger, say what you will ask them, e.g. 'ask if you have any deals on hemp products right now' (never \"Kade wants to know ...\": they do not know who that is, and the greeting already says who you are calling for). " +
+        'For family it can complete the sentence "I\'m calling because ...", e.g. \'Kade wants to know if you are coming Sunday\'. Put extra facts and follow-up questions in details.',
+    },
+    business: {
+      type: 'boolean',
+      description:
+        'For place_call. true when the call is to a store, restaurant, gas station, office, clinic, or anyone else who does not personally know the user. ' +
+        'The call then opens with "Hi, this is <you>, an A I assistant calling for <the user\'s first name>, one of our users. This call may be recorded." and you stay brief and professional. ' +
+        'false only for friends and family who know the user and you. If unsure, true.',
+    },
+    details: {
+      type: 'string',
+      description:
+        'For place_call, optional: extra facts and follow-up questions the call needs (products, order numbers, what to ask next). Not spoken in the greeting; you use it during the call.',
     },
     callee_name: {
       type: 'string',
@@ -1427,7 +1441,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   kade_phone_call: {
     name: 'kade_phone_call',
     description:
-      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user — and afterwards fetch the transcript with ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, checking the result and reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned. ALSO manages FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — this agent makes the call, chats warmly, and a rich summary of how the person seemed comes back to the user as a nudge afterwards. Before switching a schedule on: state the rough cost (about 5-10 cents per call; a daily schedule is a few dollars a month) and get an explicit yes; for a first-ever setup offer test_checkin so the user hears one themselves first. Check-ins run 08:00-21:00 Central only. DELEGATION: call_as lets KIANA (and only Kiana — she is the host) have another character place a call in that character's own voice and persona; other characters must route such requests through Kiana.",
+      "Place a REAL outbound phone call from the Kade-AI phone line (+1 833-530-0313) to a person or business, on behalf of the current user. When the call ends you normally message the user yourself with how it went (written from the transcript, with a tap on their phone; the tool's reply after dialing confirms it), so tell them it is dialing and that you'll message them when it's done. Never ask them to message you back or check in for the result. Set business=true for any store, restaurant, office or anyone who does not personally know the user: the call then opens by saying it is an A I assistant calling for the user's first name. If they ask about a call before your message arrives, use ONE action='check_result' call — it waits for the call to finish (up to ~1 min) and returns the transcript. Never call check_result more than once per turn; never dial the same call twice. Costs real money (~1.5 cents/minute, billed to the user's tab), hard-capped at 15 minutes and 10 calls per user per day. ONLY call when the user explicitly asks, ALWAYS confirm the exact number and reason first. When confirming, also tell the user casually that the call will identify them by first name as the requester and that its cost is added to their Feed the Server page. Never call emergency services, never harass anyone, never redial the same number repeatedly. If the user asked you to find something out, reporting back IS part of the job. NEVER claim a call was placed or invent a call result — only report what this tool actually returned. ALSO manages FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — this agent makes the call, chats warmly, and a rich summary of how the person seemed comes back to the user as a nudge afterwards. Before switching a schedule on: state the rough cost (about 5-10 cents per call; a daily schedule is a few dollars a month) and get an explicit yes; for a first-ever setup offer test_checkin so the user hears one themselves first. Check-ins run 08:00-21:00 Central only. DELEGATION: call_as lets KIANA (and only Kiana — she is the host) have another character place a call in that character's own voice and persona; other characters must route such requests through Kiana.",
     schema: kadePhoneCallSchema,
     toolType: 'builtin',
   },

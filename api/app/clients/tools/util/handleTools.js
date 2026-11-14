@@ -374,6 +374,9 @@ const loadTools = async ({
       userName: kadeActingUserName,
       agentId: agent?.id || agent?.agent_id,
       agentName: agent?.name,
+      /* Nov 14 2026: where the character's own report of the call lands when it ends (the bridge
+       * posts it through /api/kade/soul/speak, like kade_research's finished report). */
+      conversationId: options.req?.body?.conversationId,
     },
     kade_transcribe: {
       userId: kadeActingUserId,
