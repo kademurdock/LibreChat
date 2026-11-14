@@ -46,7 +46,7 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
-const { applyKadeAudience } = require('./build');
+const { applyKadeAudience, carriesAdultNote } = require('./build');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -270,6 +270,22 @@ function createToolLoader(
             Array.isArray(tool_resources?.file_search?.file_ids) &&
             tool_resources.file_search.file_ids.length > 0;
           const t0 = Date.now();
+          /* KADE Nov 14 2026 — THE STABLE SET (KADE_CLAUDE_STABLE_TOOLS=1). A turn whose head
+           * carries the verified-adult note (build.js) goes to Claude, whose prompt cache is thrown
+           * away by any change to the tools. Such a turn gets every tool loaded above, sorted by
+           * name, every turn: no relevance narrowing. Everything the loader took away before this
+           * point (the lookup gate, the review seat, capabilities, a toolless model) stays away.
+           * Background runs, the morning brief and every other account narrow as before. */
+          if (rag.stableApplies(req, carriesAdultNote(req, agentId))) {
+            rag.selectStable({
+              tools: ragPool,
+              text: req?.body?.text,
+              conversationId: req?.body?.conversationId || null,
+              embed: rag.memoEmbed(req, embedText, embedPurpose),
+            });
+            logger.info(rag.stableLogLine(agentId, rag.applyStable(loaded)));
+            return loaded;
+          }
           const sel = await rag.selectTools({
             tools: ragPool,
             text: req?.body?.text,
