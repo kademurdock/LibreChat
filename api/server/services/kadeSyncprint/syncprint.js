@@ -22,14 +22,25 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '1.1.0';
+  var VERSION = '1.1.1';
   var FORMAT_VERSION = 1;
   var MAGIC = [0x53, 0x59, 0x50, 0x52]; // "SYPR"
   var HEADER_BYTES = 48;
   var EPS_POWER = 1e-9; // added before the logarithm; digital silence stays flat
   var MAX_CLIP_SEC = 600;
   var MAX_WINDOW_SEC = 60; // the search near an expected position never looks further than this
+  var MAX_HASHES = 2097152; // the largest hash space a print may have (it sets the size of the matcher's table)
   var GAIN_KEEP = 8; // the tracker keeps this many room-level readings
+  var HIST_STEPS = 4096; // steps in the vote histogram that picks the offsets worth checking
+  var RATE_MAX_DIFF = 0.08; // a TV airing may run up to 8 percent fast or slow
+  var SKIP_SEC = 0.5; // a jump bigger than this, plus what that rate could drift since the last fix, is a skip
+  var RATE_GAP_SEC = 120; // after this long without a fix, the rate's evidence starts afresh
+  var RATE_KEEP = 12; // the tracker learns the playing rate from up to this many fixes ...
+  var RATE_SPAN_SEC = 300; // ... from the last five minutes ...
+  var RATE_MIN_SPAN_SEC = 20; // ... once there are three or more and they span this long
+  var RATE_MIN_GAP_SEC = 4; // a fix this soon after the last tells next to nothing about the rate: it takes the last one's place
+  var RATE_MIN_DIFF = 0.003; // a rate is used only when it differs from 1 by this much
+  var FIX_SEC = 0.02; // a fix is never surer than about 20 ms
 
   // ------------------------------------------------------------------
   // Parameters. Every value here was chosen by measurement on the tuning
@@ -74,6 +85,7 @@
     wideFloor: 2.0, // the clip's spectrum points that vote in the wide pass stand this far above average
     wideSigma: 3.0, // an offset is checked when its votes stand this many deviations above chance
     wideCandidates: 100,
+    wideMax: 8192, // at most this many points vote in the wide pass: the strongest
     seedVotes: 2, // a time offset needs this many votes in one bin to be checked
     minVotes: 2, // votes needed (three neighbouring bins summed)
     minScore: 7.0, // score needed when nothing is known about the position
@@ -82,6 +94,7 @@
     ambiguousRatio: 0.7, // a second place this close to the winner makes the answer ambiguous
     fullScore: 20.0, // score at which confidence reaches 1
     windowSec: 3.0, // how near the expected time counts as near
+    calibrate: 32, // scores at this many offsets show a clip's chance level (0: off)
     quietDropDb: 25, // the film is "quiet" when this far below its usual loud level
     silenceDb: 10 // a missed clip this far below the film's expected loudness, as heard in this room, is "silence"
   };
@@ -156,8 +169,10 @@
     if (!(p.spread >= 1 && p.spread <= 255)) return 'spread';
     if (!(p.decay > 0.5 && p.decay < 1)) return 'decay';
     if (!(p.floor >= 0 && p.floor < 50)) return 'floor';
+    // the matcher's table has one entry per possible hash: 2,097,152 entries take
+    // 8 MB (16 MB while it is built); the defaults use 403,200
     var hashes = (p.binHi - p.binLo + 1) * (2 * p.dfMax + 1) * (p.dtMax - p.dtMin + 1);
-    if (hashes > 16777216) return 'hash space too large';
+    if (hashes > MAX_HASHES) return 'hash space too large';
     return '';
   }
 
@@ -175,12 +190,15 @@
     if (!isInt(p.candidates, 1, 100000) || !isInt(p.wideCandidates, 1, 100000)) return 'candidates';
     if (!isInt(p.seedVotes, 1, 1000000) || !(p.minVotes >= 0)) return 'votes';
     if (!(p.wideFloor >= 0 && p.wideSigma >= 0)) return 'wide';
+    if (!isInt(p.wideMax, 1, 8192)) return 'wideMax';
+    if (!(p.clampHi > p.wideFloor)) return 'wideFloor';
     if (!(p.minClipSec > 0 && p.minClipSec <= MAX_CLIP_SEC)) return 'minClipSec';
     if (!isInt(p.minPeaks, 1, 1000000)) return 'minPeaks';
     if (!(p.ambiguousRatio > 0)) return 'ambiguousRatio';
     if (!(p.fullScore > p.minScore && p.fullScore > p.nearMinScore)) return 'fullScore';
     if (!(p.windowSec > 0 && p.windowSec <= MAX_WINDOW_SEC)) return 'windowSec';
     if (!(p.quietDropDb >= 0 && p.silenceDb >= 0)) return 'quiet';
+    if (!isInt(p.calibrate, 0, 4096)) return 'calibrate';
     return '';
   }
 
@@ -853,6 +871,7 @@
     this.durationSec = pr.durationSamples / p.sampleRate;
     this.secPerFrame = p.hop / p.sampleRate;
     this.perLevel = p.levelFrames * p.hop / p.sampleRate;
+    this.sameFrames = Math.round(0.5 * p.sampleRate / p.hop); // half a second: candidates this close are one place
     this.nb = p.binHi - p.binLo + 1;
     this.rt = pr.peakFrame;
     this.rf = pr.peakBin;
@@ -873,7 +892,7 @@
     this.landmarks = index.total;
     this.votes = null;
     this.cand = new Int32Array(16384);
-    this.hist = new Int32Array(256);
+    this.hist = new Int32Array(HIST_STEPS);
     // for the wide pass: the film's peak frames, bin by bin
     var nbins = this.nb, rfb = pr.peakBin;
     var bs = new Uint32Array(nbins + 1);
@@ -887,6 +906,8 @@
     this.binTimes = bt;
     this.wt = new Uint16Array(8192);
     this.wf = new Uint16Array(8192);
+    this.wv = new Float32Array(8192);
+    this.wideHist = new Int32Array(64);
     // the film's usual loud level (the 80th percentile of its loudness values), for
     // telling quiet passages apart; the values are whole numbers 0..255, so count them
     var lv = pr.levels, n = lv.length, hist = new Uint32Array(256), want, acc = 0;
@@ -982,38 +1003,57 @@
   };
 
   // From the offsets that gathered votes, takes about K of the best (three
-  // neighbouring bins summed) and checks each against the clip's spectrum.
-  // cand lists the offsets that reached minV votes in one bin. When cand is
-  // null (the list overflowed, or the wide pass), every offset in votes[1 ..
-  // size - 2] is looked at instead.
+  // neighbouring bins summed, at least minS) and checks each against the clip's
+  // spectrum. cand lists the offsets that reached minV votes in one bin. When
+  // cand is null (the list overflowed, or the wide pass), every offset in
+  // votes[1 .. size - 2] is looked at instead. The sums are counted in a 4096-step
+  // histogram, scaled down when they are bigger, so that long clips with many
+  // votes everywhere still check about K offsets and not thousands.
   Matcher.prototype.harvest = function (res, votes, size, cand, nc, K, minV, minS, off, list) {
-    var hist = this.hist, i, d, v, s;
-    var TOP = 255, hiD = size - 2;
-    zeroFill(hist, TOP + 1);
+    var hist = this.hist, i, d, v, s, sh = 0, maxS = 0;
+    var TOP = HIST_STEPS - 1, hiD = size - 2;
     if (cand !== null) {
       for (i = 0; i < nc; i++) {
         d = cand[i];
         v = votes[d];
         if (votes[d - 1] > v || votes[d + 1] > v) { cand[i] = -1; continue; } // not the top of its bump
         s = votes[d - 1] + v + votes[d + 1];
-        hist[s > TOP ? TOP : s]++;
+        if (s > maxS) maxS = s;
       }
     } else {
       for (d = 1; d <= hiD; d++) {
         v = votes[d];
         if (v < minV || votes[d - 1] > v || votes[d + 1] > v) continue;
         s = votes[d - 1] + v + votes[d + 1];
-        hist[s > TOP ? TOP : s]++;
+        if (s > maxS) maxS = s;
       }
     }
-    var cut = TOP, total = hist[TOP];
-    while (cut > minS && total + hist[cut - 1] <= K) { cut--; total += hist[cut]; }
+    if (maxS < minS) return;
+    while ((maxS >> sh) > TOP) sh++;
+    zeroFill(hist, TOP + 1);
     if (cand !== null) {
       for (i = 0; i < nc; i++) {
         d = cand[i];
         if (d < 0) continue;
         s = votes[d - 1] + votes[d] + votes[d + 1];
-        if (s < cut) continue;
+        if (s >= minS) hist[s >> sh]++;
+      }
+    } else {
+      for (d = 1; d <= hiD; d++) {
+        v = votes[d];
+        if (v < minV || votes[d - 1] > v || votes[d + 1] > v) continue;
+        s = votes[d - 1] + v + votes[d + 1];
+        if (s >= minS) hist[s >> sh]++;
+      }
+    }
+    var cut = TOP, total = hist[TOP];
+    while (cut > 0 && total + hist[cut - 1] <= K) { cut--; total += hist[cut]; }
+    if (cand !== null) {
+      for (i = 0; i < nc; i++) {
+        d = cand[i];
+        if (d < 0) continue;
+        s = votes[d - 1] + votes[d] + votes[d + 1];
+        if (s < minS || (s >> sh) < cut) continue;
         this.consider(res, d - off, s, false, list);
       }
     } else {
@@ -1021,7 +1061,7 @@
         v = votes[d];
         if (v < minV || votes[d - 1] > v || votes[d + 1] > v) continue;
         s = votes[d - 1] + v + votes[d + 1];
-        if (s < cut) continue;
+        if (s < minS || (s >> sh) < cut) continue;
         this.consider(res, d - off, s, false, list);
       }
     }
@@ -1109,7 +1149,7 @@
     if (cfg.wide > 0 && topZ < cfg.wideBelow) {
       var map = res.map, nb = this.nb, bs = this.binStart, bt = this.binTimes;
       var wfl = cfg.wideFloor, base, f, t, v, nw = 0, sumVotes = 0, e4;
-      var wt = this.wt, wf = this.wf, capW = wt.length;
+      var wt = this.wt, wf = this.wf, wv = this.wv, capW = wt.length;
       for (t = 0; t < qFrames && nw < capW; t++) {
         base = t * nb;
         for (f = 0; f < nb; f++) {
@@ -1120,10 +1160,11 @@
           if (t > 0 && map[base - nb + f] > v) continue;
           if (t < qFrames - 1 && map[base + nb + f] >= v) continue;
           if (nw >= capW) break;
-          wt[nw] = t; wf[nw] = f; nw++;
-          sumVotes += bs[f + 1] - bs[f];
+          wt[nw] = t; wf[nw] = f; wv[nw] = v; nw++;
         }
       }
+      if (nw > cfg.wideMax) nw = this.strongest(nw, cfg.wideMax, wfl, cfg.clampHi);
+      for (i = 0; i < nw; i++) sumVotes += bs[wf[i] + 1] - bs[wf[i]];
       out.widePeaks = nw;
       // a bin is worth checking when it stands well above the level chance alone gives
       var lam = sumVotes / size;
@@ -1149,7 +1190,8 @@
     }
     if (list.length === 0) return this.quiet(out, expectSec, clipSec, gainDb);
 
-    // 5. decide
+    // 5. decide, after measuring each score against this clip's own chance level
+    if (cfg.calibrate > 0) this.calibrate(res, list);
     for (k = 0; k < list.length; k++) {
       c = list[k];
       c.ok = (c.votes >= cfg.minVotes && c.z >= cfg.minScore) || (c.near && c.z >= cfg.nearMinScore);
@@ -1172,12 +1214,16 @@
     out.runnerUp = second ? second.z : 0;
     out.filmSec = (best.d + best.shift) * this.secPerFrame;
     if (!best.ok) { out.filmSec = null; return this.quiet(out, expectSec, clipSec, gainDb); }
-    var rival = false;
+    // a rival is another place in the film that scores about as well; a candidate
+    // within half a second of the winner is the same place a little off (the
+    // shoulder of the same peak, wide when the sound holds a steady tone)
+    var rival = false, same = this.sameFrames;
     for (k = 0; k < list.length; k++) {
-      if (list[k] !== best && list[k].ok && list[k].z >= cfg.ambiguousRatio * best.z) {
-        if (!(best.near && !list[k].near)) rival = true;
-        out.ambiguous = true;
-      }
+      c = list[k];
+      if (c === best || !c.ok || c.z < cfg.ambiguousRatio * best.z) continue;
+      if (c.d - best.d < same && best.d - c.d < same) continue;
+      if (!(best.near && !c.near)) rival = true;
+      out.ambiguous = true;
     }
     if (rival) { out.reason = 'ambiguous'; out.filmSec = null; return this.quiet(out, expectSec, clipSec, gainDb); }
     var floorScore = best.near ? cfg.nearMinScore : cfg.minScore;
@@ -1193,12 +1239,79 @@
     return out;
   };
 
-  // A clip that was not found: was it silence? It is when it is far quieter than
-  // this film sounds in this room (gainDb, the tracker's reading) at the expected
-  // place, or than the film's usual loud level when no place is expected.
+  // Keeps the strongest `keep` of the wide search's nw points (values lo..hi), in
+  // their time order, and returns how many were kept. The cost of the wide search
+  // grows with the number of points, so a noisy clip stays quick.
+  Matcher.prototype.strongest = function (nw, keep, lo, hi) {
+    var wt = this.wt, wf = this.wf, wv = this.wv, h = this.wideHist, B = h.length;
+    var span = hi - lo, i, b, cnt = 0, kept = 0, cut;
+    zeroFill(h, B);
+    for (i = 0; i < nw; i++) {
+      b = Math.floor((wv[i] - lo) / span * B);
+      h[b < 0 ? 0 : (b >= B ? B - 1 : b)]++;
+    }
+    for (b = B - 1; b > 0; b--) {
+      cnt += h[b];
+      if (cnt >= keep) break;
+    }
+    cut = lo + b * span / B;
+    for (i = 0; i < nw && kept < keep; i++) {
+      if (wv[i] < cut) continue;
+      wt[kept] = wt[i]; wf[kept] = wf[i]; wv[kept] = wv[i];
+      kept++;
+    }
+    return kept;
+  };
+
+  // A clip with a strong rhythm or long steady tones scores high against almost
+  // any stretch of film, because its points do not vary independently. Scores at
+  // offsets spread evenly over the film (away from the best candidates) show this
+  // clip's chance level; every candidate is then measured against it. A clip that
+  // behaves as the score assumes (chance mean 0 or less, spread 1 or less) keeps
+  // its scores unchanged.
+  Matcher.prototype.calibrate = function (res, list) {
+    var R = this.cfg.calibrate, frames = this.frames, qF = res.frames;
+    var span = frames - qF, j, k, d, z, n = 0, s = 0, s2 = 0, skip;
+    if (span < 2 * R) return;
+    // the three best candidates may be the match itself: stay a clip's length away
+    var top = [-1e9, -1e9, -1e9], topD = [0, 0, 0];
+    for (j = 0; j < list.length; j++) {
+      z = list[j].z;
+      if (z > top[2]) {
+        k = 2;
+        while (k > 0 && z > top[k - 1]) { top[k] = top[k - 1]; topD[k] = topD[k - 1]; k--; }
+        top[k] = z; topD[k] = list[j].d;
+      }
+    }
+    for (k = 0; k < R; k++) {
+      d = Math.floor((k + 0.5) * span / R);
+      skip = false;
+      for (j = 0; j < 3; j++) {
+        if (top[j] > -1e9 && d > topD[j] - qF && d < topD[j] + qF) skip = true;
+      }
+      if (skip) continue;
+      z = this.score(res, d);
+      if (z <= -1000) continue;
+      n++; s += z; s2 += z * z;
+    }
+    if (n < R / 2) return;
+    var mu = s / n, sd = s2 / n - mu * mu;
+    sd = sd > 0 ? Math.sqrt(sd) : 0;
+    if (mu < 0) mu = 0;
+    if (sd < 1) sd = 1;
+    if (mu === 0 && sd === 1) return;
+    for (j = 0; j < list.length; j++) list[j].z = (list[j].z - mu) / sd;
+  };
+
+  // A clip that was not found: was it silence? It is when it is far quieter
+  // (silenceDb) than this film would sound here, in this room (gainDb, the
+  // tracker's reading): than the film's own loudness at the expected place, or,
+  // when no place is expected, than the quietest the film ever is outside its own
+  // quiet stretches (quietDropDb under its usual loud level). So a passage that is
+  // merely quiet, and still playing, is not called silence.
   Matcher.prototype.quiet = function (out, expectSec, clipSec, gainDb) {
     if (gainDb === null || out.level === null) return out;
-    var ref = expectSec !== null ? this.levelAt(expectSec, clipSec) : this.loudDb;
+    var ref = expectSec !== null ? this.levelAt(expectSec, clipSec) : this.loudDb - this.cfg.quietDropDb;
     if (ref !== null && out.level < ref + gainDb - this.cfg.silenceDb) out.reason = 'silence';
     return out;
   };
@@ -1253,6 +1366,8 @@
     this.lastBackJumpFilmSec = null;
     this.hurried = false;
     this.gains = []; // how loud the film sounds in this room, from the last few accepted matches
+    this.rate = 1; // film seconds per clock second (a TV airing may run a little fast or slow)
+    this.fixLog = []; // recent fixes since the last skip, for learning the rate
   };
 
   // The room level: the middle of the last few readings, or null before the first.
@@ -1267,35 +1382,160 @@
     return n & 1 ? s[(n - 1) >> 1] : (s[n / 2 - 1] + s[n / 2]) / 2;
   };
 
-  Tracker.prototype.est = function (t) {
+  // How much of the smoothing correction has been applied by clock time t.
+  Tracker.prototype.applied = function (t) {
     var applied = 0, c = this.corr;
     if (c !== 0 && t > this.corrMono) {
       applied = (t - this.corrMono) * this.o.slewPerSec;
       if (c > 0) { if (applied > c) applied = c; }
       else { if (applied > -c) applied = -c; applied = -applied; }
     }
-    return this.aFilm + (t - this.aMono) + applied;
+    return applied;
   };
 
-  Tracker.prototype.setAnchor = function (film, mono, now, smooth) {
+  // Where the film is at clock time t.
+  Tracker.prototype.est = function (t) {
+    return this.aFilm + this.rate * (t - this.aMono) + this.applied(t);
+  };
+
+  // Moves the anchor to clock time now without changing any estimate.
+  Tracker.prototype.rebase = function (now) {
+    var a = this.applied(now);
+    this.aFilm = this.aFilm + this.rate * (now - this.aMono) + a;
+    this.aMono = now;
+    this.corr -= a;
+    this.corrMono = now;
+  };
+
+  // A straight line through the fixes log[0 .. n - 1] (n is 3 or more): its slope
+  // s, what it leaves unexplained (rss, a sum of squares) and its spread r. Null
+  // when the fixes all share one clock time.
+  function fitLine(log, n) {
+    var i, mx = 0, my = 0, sxx = 0, sxy = 0, dx, s, rss = 0, e;
+    for (i = 0; i < n; i++) { mx += log[i].m; my += log[i].f; }
+    mx /= n; my /= n;
+    for (i = 0; i < n; i++) {
+      dx = log[i].m - mx;
+      sxx += dx * dx;
+      sxy += dx * (log[i].f - my);
+    }
+    if (!(sxx > 0)) return null;
+    s = sxy / sxx;
+    for (i = 0; i < n; i++) {
+      e = log[i].f - (my + s * (log[i].m - mx));
+      rss += e * e;
+    }
+    return { s: s, sxx: sxx, rss: rss, r: Math.sqrt(rss / (n - 2)) };
+  }
+
+  // How well the fixes fit the film running at rate rho with one step somewhere
+  // between two of them (a pause, a stall or a small skip): the least sum of
+  // squares over every place the step could fall, each side with its own offset.
+  // Measured from the first fix, so that large clock values lose no precision.
+  function stepFit(log, n, rho) {
+    var i, y, sa = 0, qa = 0, sb, qb, tot = 0, totQ = 0, rss, best = Infinity;
+    var m0 = log[0].m, f0 = log[0].f;
+    for (i = 0; i < n; i++) {
+      y = (log[i].f - f0) - rho * (log[i].m - m0);
+      tot += y; totQ += y * y;
+    }
+    for (i = 1; i < n; i++) {
+      y = (log[i - 1].f - f0) - rho * (log[i - 1].m - m0);
+      sa += y; qa += y * y;
+      sb = tot - sa; qb = totQ - qa;
+      rss = (qa - sa * sa / i) + (qb - sb * sb / (n - i));
+      if (rss < best) best = rss;
+    }
+    return best;
+  }
+
+  // Adds a reading to the rate's evidence: up to RATE_KEEP of them, from the last
+  // RATE_SPAN_SEC. A reading less than RATE_MIN_GAP_SEC after the last takes its place.
+  Tracker.prototype.logFix = function (film, mono) {
+    var log = this.fixLog;
+    if (log.length && mono - log[log.length - 1].m < RATE_MIN_GAP_SEC) log.pop();
+    log.push({ m: mono, f: film });
+    while (log.length > RATE_KEEP || mono - log[0].m > RATE_SPAN_SEC) log.shift();
+  };
+
+  // A TV airing may run a little fast or slow (broadcasters compress time by a
+  // few percent). The tracker learns the rate from its own fixes since the last
+  // skip: a straight line through them. But a pause, a stream that stalls, or a
+  // small skip between two fixes bends that line too, and with few fixes a step
+  // looks just like a rate. So a line through three or more fixes is used (or
+  // refines the rate in use) only when it clearly shows a rate (0.3 percent or
+  // more, three times its own uncertainty, never beyond 8 percent either way),
+  // no single step at real speed explains the fixes about as well, and no step
+  // at the rate in use explains them better. Otherwise the rate in use is kept
+  // while it explains the fixes, allowing for one step anywhere; when it does
+  // not, the rate goes back to 1. Fixes that lie on no line at all start the
+  // evidence afresh. It adds this fix to the evidence, and may change this.rate,
+  // keeping the estimate at clock time now.
+  Tracker.prototype.learnRate = function (film, mono, now) {
+    var log = this.fixLog, n, line, margin, se, d, clear, cur, rate;
+    this.logFix(film, mono);
+    n = log.length;
+    if (n < 3 || log[n - 1].m - log[0].m < RATE_MIN_SPAN_SEC) return;
+    line = fitLine(log, n);
+    if (line === null) return;
+    // the fixes do not lie on a line (more than one step, or a fix far off):
+    // keep the rate, and start the evidence afresh from the newest fix
+    if (line.r > 0.15) { log.splice(0, n - 1); return; }
+    // a step must fit clearly worse than the line: by nine times the square of
+    // a fix's error (at least 20 ms), so that chance alone does not decide
+    margin = 9 * Math.max(FIX_SEC * FIX_SEC, line.rss / (n - 2));
+    se = (line.r > FIX_SEC ? line.r : FIX_SEC) / Math.sqrt(line.sxx);
+    d = line.s - 1;
+    // the fixes clearly show a rate, and no single step at real speed explains them
+    clear = (d >= RATE_MIN_DIFF || d <= -RATE_MIN_DIFF) && (d > 3 * se || -d > 3 * se) &&
+      d >= -RATE_MAX_DIFF && d <= RATE_MAX_DIFF && stepFit(log, n, 1) > line.rss + margin;
+    cur = stepFit(log, n, this.rate); // the rate in use, with one step somewhere
+    if (clear && line.rss <= cur) rate = line.s; // a line fits at least as well: take it (this also refines a learned rate)
+    else if (cur <= line.rss + margin) return; // the rate in use, perhaps with one pause or skip, still explains the fixes
+    else rate = 1;
+    if (rate === this.rate) return;
+    if (this.hasEst) this.rebase(now);
+    this.rate = rate;
+  };
+
+  // A match of a clip from a film running at another rate lands, on average, half
+  // the clip's length times (rate - 1) late: it lines up the whole clip at once.
+  Tracker.prototype.unbias = function (rawFilm, clipSec) {
+    return rawFilm - (this.rate - 1) * clipSec / 2;
+  };
+
+  // rawFilm: the match's film second for the clip that started at clock time mono.
+  // confirmed: the doubtful match this one agrees with, if any ({ raw, mono }): two
+  // readings from separate sound, both evidence for the rate.
+  Tracker.prototype.setAnchor = function (rawFilm, mono, now, smooth, clipSec, confirmed) {
     var prev = this.hasEst ? this.est(now) : null;
+    // The rate's evidence starts afresh after a skip or a pause: a jump bigger than
+    // any drift could explain since the last fix, or a fix after a long gap.
+    var drift = prev === null ? 0 : this.unbias(rawFilm, clipSec) + this.rate * (now - mono) - prev;
+    var since = this.lastFixMono === null ? 0 : now - this.lastFixMono;
+    var fresh = prev === null || since > RATE_GAP_SEC || (drift > 0 ? drift : -drift) > SKIP_SEC + RATE_MAX_DIFF * since;
+    // learn first (from the raw fixes, whose constant lag does not change the slope),
+    // so that this fix is carried forward to now at the rate it teaches
+    if (fresh) this.fixLog.length = 0;
+    if (confirmed) this.logFix(confirmed.raw, confirmed.mono);
+    this.learnRate(rawFilm, mono, now);
+    var film = this.unbias(rawFilm, clipSec);
+    var target = film + this.rate * (now - mono); // this fix, carried forward to now
+    var delta = prev === null ? 0 : target - prev;
     if (smooth && prev !== null) {
       // keep the present estimate and let the difference slew in
       this.aFilm = prev; this.aMono = now;
-      this.corr = (film + (now - mono)) - prev;
+      this.corr = delta;
       this.corrMono = now;
     } else {
       this.aFilm = film; this.aMono = mono; this.corr = 0; this.corrMono = now;
-      if (prev !== null) {
-        var delta = (film + (now - mono)) - prev;
-        if (delta > this.o.smallSec || delta < -this.o.smallSec) {
-          this.jumpCount++;
-          this.justJumped = true;
-          this.lastJumpSec = delta;
-          if (delta < 0) {
-            this.lastBackJumpMono = now;
-            this.lastBackJumpFilmSec = film + (now - mono);
-          }
+      if (prev !== null && (delta > this.o.smallSec || delta < -this.o.smallSec)) {
+        this.jumpCount++;
+        this.justJumped = true;
+        this.lastJumpSec = delta;
+        if (delta < 0) {
+          this.lastBackJumpMono = now;
+          this.lastBackJumpFilmSec = target;
         }
       }
     }
@@ -1319,25 +1559,35 @@
     if (now < clipStartMono) now = clipStartMono;
     this.lastListenEnd = clipStartMono + clipSec;
     this.hurried = false;
-    var film = result.filmSec, conf = isNum(result.confidence) ? result.confidence : 0;
+    var raw = result.filmSec, conf = isNum(result.confidence) ? result.confidence : 0;
+    var film = this.unbias(raw, clipSec);
     var pend = this.pending;
     if (pend && clipStartMono - pend.mono > o.pendingMaxAgeSec) { pend = null; this.pending = null; }
-    var agreesPending = pend !== null && Math.abs(film - (pend.film + (clipStartMono - pend.mono))) <= o.agreeSec;
+    // A second opinion counts only when it comes from new sound. A clip that shares
+    // sound with the doubtful one may simply find the same thing in it again, so it
+    // can neither confirm that match nor, unless it is sure, move the lock. Two
+    // matches agree when they are within agreeSec, plus what the largest rate the
+    // tracker allows could drift between them (the rate may not be learned yet).
+    var newSound = pend === null || clipStartMono >= pend.end - 1e-6;
+    var gap = pend === null ? 0 : clipStartMono - pend.mono;
+    var samePlace = pend !== null && Math.abs(film - (pend.film + this.rate * gap)) <= o.agreeSec + RATE_MAX_DIFF * (gap > 0 ? gap : -gap);
+    var agreesPending = samePlace && newSound;
     var e = this.hasEst ? film - this.est(clipStartMono) : null;
     var small = e !== null && e <= o.smallSec && e >= -o.smallSec;
     var took = false;
     if (this.status === 'locked') {
-      if (small) { this.setAnchor(film, clipStartMono, now, true); took = true; }
-      else if (conf >= o.jumpConfidence || agreesPending) { this.setAnchor(film, clipStartMono, now, false); took = true; }
+      if (small) { this.setAnchor(raw, clipStartMono, now, true, clipSec); took = true; }
+      else if (conf >= o.jumpConfidence || agreesPending) { this.setAnchor(raw, clipStartMono, now, false, clipSec, agreesPending ? pend : null); took = true; }
       else {
         // one weaker match says the film is elsewhere: stop describing until a second opinion
-        this.pending = { film: film, mono: clipStartMono };
+        this.pending = { film: film, raw: raw, mono: clipStartMono, end: clipStartMono + clipSec };
         this.status = 'holding';
       }
     } else {
-      if (small && this.status === 'holding') { this.setAnchor(film, clipStartMono, now, true); took = true; }
-      else if (conf >= o.lockConfidence || agreesPending) { this.setAnchor(film, clipStartMono, now, false); took = true; }
-      else this.pending = { film: film, mono: clipStartMono };
+      if (small && this.status === 'holding') { this.setAnchor(raw, clipStartMono, now, true, clipSec); took = true; }
+      else if (agreesPending || conf >= (newSound ? o.lockConfidence : o.jumpConfidence)) { this.setAnchor(raw, clipStartMono, now, false, clipSec, agreesPending ? pend : null); took = true; }
+      else if (!samePlace) this.pending = { film: film, raw: raw, mono: clipStartMono, end: clipStartMono + clipSec };
+      // (a clip that only repeats the doubtful match leaves it waiting, as it was)
     }
     if (took && isNum(result.gainDb)) {
       this.gains.push(result.gainDb);
@@ -1389,7 +1639,8 @@
       lastBackJumpMono: this.lastBackJumpMono,
       lastBackJumpFilmSec: this.lastBackJumpFilmSec,
       misses: this.misses,
-      doubt: this.pending !== null
+      doubt: this.pending !== null,
+      rate: this.rate
     };
   };
 
@@ -1399,8 +1650,11 @@
     var since = this.lastListenEnd === null ? 1e9 : now - this.lastListenEnd;
     var wait, clip;
     if (st === 'searching') {
-      wait = o.searchWaitSec; clip = o.searchClipSec;
+      clip = o.searchClipSec;
       if (this.misses >= 3) clip = o.lostClipSec; // nothing yet: try longer clips
+      // clips one after another: each search studies fresh sound, not most of the
+      // last clip again (which would keep the processor busy without end)
+      wait = o.searchWaitSec + clip;
     } else if (st === 'locked') {
       if (this.misses > 0 || this.pending !== null) { wait = 0; clip = o.recheckClipSec; }
       else {
@@ -1414,6 +1668,9 @@
     } else {
       wait = o.lostWaitSec; clip = o.lostClipSec;
     }
+    // a doubtful match waits for a second opinion, which must come from new sound:
+    // the next clip starts where the last one ended
+    if (this.pending !== null && (st === 'holding' || st === 'lost') && wait < clip) wait = clip;
     wait = this.hurried ? 0 : wait - since;
     return { waitSec: wait > 0 ? wait : 0, clipSec: clip };
   };
