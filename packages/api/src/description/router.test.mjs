@@ -5179,3 +5179,53 @@ test('follow along: a failed fingerprint never costs the copy; three failed trie
     }
   });
 });
+
+test('follow along: on one server, a fingerprint still being made reads as making and is not asked for twice', async () => {
+  await withFollow('1', async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    let entered = 0;
+    /* One router for the routes and the work, as on the website. */
+    const single = createDescriptionRouter({
+      ...hooks,
+      sync: async (file, options) => {
+        entered++;
+        await gate;
+        return kadeSyncprint.fingerprintFile(file, options);
+      },
+    });
+    const singleApp = express();
+    singleApp.use(express.json());
+    singleApp.use(single.router);
+    const scall = (method, path, owner) => request(singleApp)[method](path).set('x-user', owner);
+    const owner = 'follow-inflight';
+    try {
+      const id = await readyJob(owner, 'follow-inflight-upload-01', 30);
+      await scall('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+      const deadline = Date.now() + 5 * 60000;
+      let job;
+      while (Date.now() < deadline) {
+        await single.tick();
+        job = (await scall('get', `/jobs/${id}`, owner).expect(200)).body;
+        if (['done', 'failed'].includes(job.state)) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert.equal(job.state, 'done', job.error);
+      assert.equal(entered, 1, 'the fingerprint is on its way');
+      assert.equal(job.follow, 'making', 'the copy is ready before its fingerprint');
+      const asked = await scall('post', `/jobs/${id}/track`, owner).expect(202);
+      assert.equal(asked.body.follow, 'making');
+      assert.equal((await Jobs.findById(id).lean()).syncWanted, undefined, 'nothing more is queued');
+      assert.equal((await scall('get', `/jobs/${id}/track`, owner).expect(202)).body.follow, 'making');
+      release();
+      await waitFor(async () => {
+        assert.equal((await scall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'ready');
+      });
+      assert.equal((await scall('get', `/jobs/${id}/track`, owner).expect(200)).body.follow, 'ready');
+      await scall('delete', `/jobs/${id}`, owner).expect(200);
+    } finally {
+      release();
+      await single.close();
+    }
+  });
+});
