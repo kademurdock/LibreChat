@@ -72,7 +72,7 @@ import {
   libraryPathSchema,
   defaultLibraryPath,
 } from './revision';
-import { describeVideo, productionProviders } from './engine';
+import { describeVideo, productionProviders, silentLoudness } from './engine';
 import { importYouTube, worthRetrying, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
@@ -386,11 +386,14 @@ type Job = {
    * that task holds this video until then (or waits after a failure). `syncTries`: by plan name,
    * that task's failed tries in a row (storage, database or disk-space trouble is not one); at
    * three, or when the original is gone or has no sound, no more are made for that plan.
+   * `syncGone` (Nov 14 2026 integration review): by plan name, why no more are made, as found
+   * when that was decided, so every answer gives that reason.
    */
   sync?: Record<string, SyncRecord>;
   syncWanted?: string[];
   syncing?: Date;
   syncTries?: Record<string, number>;
+  syncGone?: Record<string, SyncGone>;
 };
 type Lock = { _id: string; worker: string; until: Date };
 /** One day's allowance: cents held by open runs and spent by closed ones. */
@@ -513,6 +516,8 @@ const jobSchema = new mongoose.Schema<Job>(
     syncing: Date,
     /* By plan name: { plan: 2, "plan-0-60000": 1 }. */
     syncTries: mongoose.Schema.Types.Mixed,
+    /* By plan name, why no more fingerprints are made: { plan: "silent" }. */
+    syncGone: mongoose.Schema.Types.Mixed,
   },
   { timestamps: true },
 );
@@ -918,14 +923,19 @@ type SyncGone = 'source' | 'silent' | 'tries';
 /*
  * Nov 14 2026 review: the third sentence no longer says to describe the video again. Describing
  * again reuses the saved plan, so it costs money and makes no new fingerprint.
+ * Nov 14 2026 integration review: nor does the first. Describing again is refused once the
+ * original is gone (requireSource); the video added again is a new job, with its own fingerprint.
  */
 const goneText: Record<SyncGone, string> = {
   source:
-    'The original video is no longer on the server, so a follow-along track cannot be made. Describe it again to get one.',
+    'The original video is no longer on the server, so a follow-along track cannot be made for this copy. To get one, add the video again and describe it.',
   silent:
     'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.',
   tries: 'A follow-along track could not be made for this video after three tries.',
 };
+/** A reason kept on a job (`Job.syncGone`), when it is one. */
+const goneReason = (value: unknown): SyncGone | undefined =>
+  value === 'source' || value === 'silent' || value === 'tries' ? value : undefined;
 /** One fingerprint line for the server log: "[described-video] sync made id=… plan=plan …". */
 const syncLine = (outcome: string, fields: Record<string, LogValue>): string =>
   [
@@ -4196,27 +4206,45 @@ export function createDescriptionRouter(hooks: Hooks): {
     warn(syncLine('missing', { id: job._id, plan }));
     return undefined;
   }
-  /** Why no fingerprint can ever be made for this plan, when that is so. */
+  /**
+   * Why no fingerprint can ever be made for this plan, when that is so. A soundtrack that is there
+   * but measured as silent (Nov 14 2026 integration review: `silentLoudness`, the rule `levelsFor`
+   * mixes by) has nothing a phone could hear, just like no soundtrack at all.
+   */
   async function unmakeable(job: Job, plan: string): Promise<SyncGone | undefined> {
     const stored = await readJson<{ plan: Plan }>(`${folder(job)}/${plan}.json`).catch(
       () => undefined,
     );
     if (stored?.plan?.audio === false) return 'silent';
+    if (Number(stored?.plan?.loudness?.program) <= silentLoudness) return 'silent';
     const kept = await exists(job.sourceKey || job.key).catch(() => true);
     return kept ? undefined : 'source';
   }
-  /** No more fingerprints for this plan: its tries are used up, and nothing waits. */
-  async function giveUp(job: Pick<Job, '_id'>, plan: string, why: SyncGone): Promise<void> {
+  /** Why this plan was given up: as found then (`syncGone`), else as it is now. */
+  const goneWhy = async (job: Job, plan: string): Promise<SyncGone> =>
+    goneReason(job.syncGone?.[plan]) ?? (await unmakeable(job, plan)) ?? 'tries';
+  /**
+   * No more fingerprints for this plan: its tries are used up, nothing waits, and why is kept
+   * (`syncGone`), so every answer gives that reason. `keepHold` leaves alone a hold the check lane
+   * has on the video (`syncing`), for work that is not the lane's own pass. `fields` go on the
+   * log line.
+   */
+  async function giveUp(
+    job: Pick<Job, '_id'>,
+    plan: string,
+    why: SyncGone,
+    options: { keepHold?: boolean; fields?: Record<string, LogValue> } = {},
+  ): Promise<void> {
     await Jobs.updateOne(
       { _id: job._id, state: { $ne: 'deleting' } },
       {
-        $set: { [`syncTries.${plan}`]: syncTriesMax },
+        $set: { [`syncTries.${plan}`]: syncTriesMax, [`syncGone.${plan}`]: why },
         $pull: { syncWanted: plan },
-        $unset: { syncing: 1 },
+        ...(options.keepHold ? {} : { $unset: { syncing: 1 } }),
       },
       { timestamps: false },
     );
-    warn(syncLine('gone', { id: job._id, plan, why }));
+    warn(syncLine('gone', { id: job._id, plan, why, ...options.fields }));
   }
   /**
    * One failed try at a plan's fingerprint on request: the video waits an hour (`syncing`, set
@@ -4398,7 +4426,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       return;
     }
     if (triesOf(job, plan) >= syncTriesMax) {
-      res.status(409).json(trackGone(copy, (await unmakeable(job, plan)) ?? 'tries'));
+      res.status(409).json(trackGone(copy, await goneWhy(job, plan)));
       return;
     }
     if (job.syncWanted?.includes(plan) || printing(job._id, plan)) {
@@ -4427,7 +4455,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       return;
     }
     if (triesOf(job, plan) >= syncTriesMax) {
-      res.status(409).json(trackGone(copy, (await unmakeable(job, plan)) ?? 'tries'));
+      res.status(409).json(trackGone(copy, await goneWhy(job, plan)));
       return;
     }
     /*
@@ -4456,7 +4484,8 @@ export function createDescriptionRouter(hooks: Hooks): {
    * Makes, saves and records one fingerprint from the raw follow-along sound in `directory`, which
    * it then removes. Never throws: a failure is one "sync failed" line and the job goes on.
    * A shutdown stops the worker (its controller is aborted with every other). The outcome says
-   * whether storage or database trouble stopped it (`passing`, never counted as a try).
+   * whether storage or database trouble stopped it (`passing`, never counted as a try), and
+   * `silent` when the fingerprint found no sound at all, which ends that plan.
    */
   async function fingerprint(
     job: Pick<Job, '_id' | 'key'>,
@@ -4465,7 +4494,7 @@ export function createDescriptionRouter(hooks: Hooks): {
     directory: string,
     from: 'describe' | 'request',
     outer?: AbortSignal,
-  ): Promise<'made' | 'dropped' | 'failed' | 'passing'> {
+  ): Promise<'made' | 'dropped' | 'failed' | 'passing' | 'silent'> {
     const name = syncName(job._id, plan);
     const controller = new AbortController();
     controllers.set(name, controller);
@@ -4475,6 +4504,18 @@ export function createDescriptionRouter(hooks: Hooks): {
       if (!hooks.sync) throw new Error('No fingerprint maker is set up.');
       const made = await hooks.sync(file, { signal });
       signal.throwIfAborted();
+      /*
+       * Nov 14 2026 integration review: a fingerprint with no peaks is never found, so a phone
+       * would listen for ten minutes and give up without the reason. It is not saved, and the
+       * plan is given up as silent: the same sound would give the same empty fingerprint.
+       */
+      if (made.peaks === 0) {
+        await giveUp(job, plan, 'silent', {
+          keepHold: from === 'describe',
+          fields: { from, peaks: 0 },
+        });
+        return 'silent';
+      }
       const body = Buffer.from(made.bytes.buffer, made.bytes.byteOffset, made.bytes.byteLength);
       const key = syncKey(job, plan);
       await storage().send(
@@ -4503,7 +4544,11 @@ export function createDescriptionRouter(hooks: Hooks): {
         {
           $set: { [`sync.${plan}`]: record },
           $pull: { syncWanted: plan },
-          $unset: { [`syncTries.${plan}`]: 1, ...(from === 'request' ? { syncing: 1 } : {}) },
+          $unset: {
+            [`syncTries.${plan}`]: 1,
+            [`syncGone.${plan}`]: 1,
+            ...(from === 'request' ? { syncing: 1 } : {}),
+          },
         },
         { timestamps: false },
       );
@@ -4546,7 +4591,13 @@ export function createDescriptionRouter(hooks: Hooks): {
    * The keeper's `keepSync`: takes the follow-along sound out of the run's folder (a rename in the
    * same temporary disk) and fingerprints it in the background, so the run never waits for it.
    */
-  async function takeSync(job: Job, plan: string, file: string, problem?: string): Promise<void> {
+  async function takeSync(
+    job: Job,
+    plan: string,
+    file: string,
+    problem?: string,
+    heard?: { program: number },
+  ): Promise<void> {
     /* No sound to keep: the engine says why, worded for what really failed (Nov 14 2026 review). */
     if (!file) {
       warn(
@@ -4556,6 +4607,28 @@ export function createDescriptionRouter(hooks: Hooks): {
           from: 'describe',
           why: scrub(problem || 'the sound pass wrote no follow-along sound'),
         }),
+      );
+      return;
+    }
+    /*
+     * Nov 14 2026 integration review: a soundtrack that is there but measured as silent (a screen
+     * recording, a muted phone clip) has nothing a phone could hear. Its fingerprint would never
+     * be found, so none is made. The plan is given up at once: the word is gone, and the routes
+     * say the video has no sound, as unmakeable does for such a plan later.
+     */
+    if (heard && heard.program <= silentLoudness) {
+      await giveUp(job, plan, 'silent', {
+        keepHold: true,
+        fields: { from: 'describe', loudness: heard.program },
+      }).catch((error: unknown) =>
+        warn(
+          syncLine('failed', {
+            id: job._id,
+            plan,
+            from: 'describe',
+            error: scrub(error instanceof Error ? error.message : String(error)),
+          }),
+        ),
       );
       return;
     }
@@ -4774,8 +4847,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       /* Follow along: only while the switch is on, and never for a rehearsal's plan. */
       ...(followOn() && !rehearsal
         ? {
-            keepSync: (file: string, problem?: string) =>
-              takeSync(job, planKey(range), file, problem),
+            keepSync: (file: string, problem?: string, heard?: { program: number }) =>
+              takeSync(job, planKey(range), file, problem, heard),
           }
         : {}),
     };
@@ -6189,7 +6262,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       const folderOfSound = directory;
       directory = undefined;
       const outcome = await fingerprint(job, plan, sound, folderOfSound, 'request', signal);
-      if (outcome === 'made' || outcome === 'dropped') return;
+      if (outcome === 'made' || outcome === 'dropped' || outcome === 'silent') return;
       /* A shutdown is not a failed try: the next idle check lane asks again. */
       if (controller.signal.aborted) await settle({ $unset: { syncing: 1 } });
       else if (outcome === 'passing') await later(syncPause);

@@ -4914,9 +4914,11 @@ const printed = (id) =>
     assert.ok(job.sync?.plan, 'the fingerprint is saved');
     return job;
   });
+/* Nov 14 2026 integration review: describing again is refused once the original is gone, so the sentence says what works. */
 const goneSource =
-  'The original video is no longer on the server, so a follow-along track cannot be made. Describe it again to get one.';
+  'The original video is no longer on the server, so a follow-along track cannot be made for this copy. To get one, add the video again and describe it.';
 const goneTries = 'A follow-along track could not be made for this video after three tries.';
+const goneSilent = 'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.';
 /** Where a copy's track is kept: copies/<version>/track-<finished ms>.json (Nov 14 2026 review). */
 async function trackObject(owner, id, version) {
   const copy = (await Jobs.findById(id).lean()).copies.find((item) => item.version === version);
@@ -4937,7 +4939,7 @@ test('follow along: switched off (unset, empty, 0), the describer is exactly as 
     const run = requests.slice(before).find((item) => item.session === `video:${id}`);
     assert.equal(run.keeper.keepSync, undefined, 'the engine is not asked for the follow-along sound');
     const stored = await Jobs.findById(id).lean();
-    for (const field of ['sync', 'syncWanted', 'syncing', 'syncTries'])
+    for (const field of ['sync', 'syncWanted', 'syncing', 'syncTries', 'syncGone'])
       assert.equal(field in stored, false, `no ${field} on the job`);
     assert.equal(followCalls, calls, 'no fingerprint worker started');
     assert.deepEqual([...keysOf(id).filter((key) => key.includes('/sync/')), ...trackFiles(id)], []);
@@ -5145,6 +5147,7 @@ test('follow along: an original that is gone, or a video with no sound, is said 
     const from = logLines.length;
     const refused = await fcall('post', `/jobs/${gone}/track`, owner).expect(409);
     assert.equal(refused.body.error, goneSource);
+    assert.doesNotMatch(refused.body.error, /describe it again/i, 'describing again is refused when the original is gone');
     assert.equal(refused.body.follow, 'gone');
     assert.deepEqual((await Jobs.findById(gone).lean()).syncTries, { plan: 3 });
     assert.equal((await fcall('get', `/jobs/${gone}`, owner).expect(200)).body.follow, 'gone');
@@ -5155,7 +5158,7 @@ test('follow along: an original that is gone, or a video with no sound, is said 
     const saved = JSON.parse(objects.get(planFile).toString('utf8'));
     objects.set(planFile, Buffer.from(JSON.stringify({ ...saved, plan: { ...saved.plan, audio: false } })));
     const quiet = await fcall('post', `/jobs/${silent}/track`, owner).expect(409);
-    assert.match(quiet.body.error, /no sound, so a phone cannot follow it/);
+    assert.equal(quiet.body.error, goneSilent);
     assert.equal((await fcall('get', `/jobs/${silent}`, owner).expect(200)).body.follow, 'gone');
     for (const id of [gone, silent]) await fcall('delete', `/jobs/${id}`, owner).expect(200);
   });
@@ -5541,6 +5544,152 @@ test('follow along: the on-request pass runs beside the check lane, so a new upl
     } finally {
       release();
       await beside.close();
+    }
+  });
+});
+
+/* ---------- Follow along: the Nov 14 2026 integration review ---------- */
+
+/** A video whose soundtrack is there but silent (anullsrc), like a screen recording or a muted phone clip. */
+async function silentVideo(seconds) {
+  const key = `silent:${seconds}`;
+  if (videos.has(key)) return videos.get(key);
+  const file = join(root, `source-${videos.size}.mp4`);
+  await command(
+    ffmpegPath,
+    [
+      '-nostdin', '-v', 'error', '-y',
+      '-f', 'lavfi', '-i', `testsrc2=size=160x120:rate=30:duration=${seconds}`,
+      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+      '-t', String(seconds),
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
+      file,
+    ],
+    new AbortController().signal,
+  );
+  videos.set(key, file);
+  return file;
+}
+/** A finished copy of a 30-second silent video, described with the switch as it is. */
+async function silentCopy(owner, requestId) {
+  const bytes = await readFile(await silentVideo(30));
+  const id = await upload(owner, requestId, bytes.length);
+  objects.set(`/test/${(await Jobs.findById(id).lean()).key}`, bytes);
+  await Jobs.updateOne({ _id: id }, { $set: { state: 'ready', seconds: 30 }, $unset: { uploadId: 1, parts: 1 } });
+  await fcall('post', `/jobs/${id}/start`, owner).send(settings).expect(202);
+  const done = await followSettle(id, ['done', 'failed'], owner);
+  assert.equal(done.state, 'done', done.error);
+  return id;
+}
+/** The first fingerprint outcome logged for a job: made, gone, failed or skipped. */
+const syncOutcome = (from, id) =>
+  waitFor(() => {
+    const found = logLines.slice(from).find((line) => /^sync (made|gone|failed|skipped) /.test(line) && line.includes(` id=${id} `));
+    assert.ok(found, 'the fingerprint has an outcome');
+    return found;
+  });
+
+test('follow along: a soundtrack that is there but silent gets no fingerprint, and every answer says it has no sound', async () => {
+  const owner = 'follow-silent';
+  let older;
+  await withFollow(undefined, async () => {
+    older = await silentCopy(owner, 'follow-silent-upload-01');
+  });
+  await withFollow('1', async () => {
+    /* At describe time. Before the review the worker fingerprinted it: 0 peaks, saved, and the word was ready. */
+    const from = logLines.length;
+    const id = await silentCopy(owner, 'follow-silent-upload-02');
+    const { plan } = JSON.parse(objects.get(`/test/described-video/${owner}/${id}/plan.json`).toString('utf8'));
+    assert.equal(plan.audio, true, 'the video has a soundtrack');
+    assert.ok(plan.loudness.program <= -69, `and it measures as silent: ${plan.loudness.program} LUFS`);
+    assert.equal(
+      await syncOutcome(from, id),
+      `sync gone id=${id} plan=plan why=silent from=describe loudness=${plan.loudness.program}`,
+      'no fingerprint is made of a silent soundtrack',
+    );
+    const stored = await Jobs.findById(id).lean();
+    assert.equal(stored.sync, undefined, 'nothing is saved');
+    assert.deepEqual(stored.syncTries, { plan: 3 }, 'and none is ever made for this plan');
+    assert.deepEqual(stored.syncGone, { plan: 'silent' });
+    assert.deepEqual(keysOf(id).filter((key) => key.includes('/sync/')), []);
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'gone');
+    for (const method of ['get', 'post']) {
+      const answer = await fcall(method, `/jobs/${id}/track`, owner).expect(409);
+      assert.deepEqual(answer.body, { error: goneSilent, follow: 'gone', version: 1 }, `${method}: the real reason`);
+    }
+
+    /* A silent copy from before: the first ask is refused at once, by the plan's own loudness, with no pass. */
+    assert.equal((await fcall('get', `/jobs/${older}`, owner).expect(200)).body.follow, 'possible');
+    const asked = logLines.length;
+    const refused = await fcall('post', `/jobs/${older}/track`, owner).expect(409);
+    assert.deepEqual(refused.body, { error: goneSilent, follow: 'gone', version: 1 });
+    assert.ok(logLines.slice(asked).some((line) => line === `sync gone id=${older} plan=plan why=silent`));
+    const ended = await Jobs.findById(older).lean();
+    assert.equal(ended.syncWanted?.length ?? 0, 0, 'nothing waits for the check lane');
+    assert.deepEqual(ended.syncTries, { plan: 3 });
+    assert.equal((await fcall('get', `/jobs/${older}`, owner).expect(200)).body.follow, 'gone');
+    assert.equal((await fcall('get', `/jobs/${older}/track`, owner).expect(409)).body.error, goneSilent);
+    for (const item of [id, older]) await fcall('delete', `/jobs/${item}`, owner).expect(200);
+  });
+});
+
+test('follow along: a fingerprint that finds no sound at all is never kept, at describe time or on request', async () => {
+  const owner = 'follow-no-peaks';
+  let older;
+  await withFollow(undefined, async () => {
+    older = await followCopy(owner, 'follow-no-peaks-upload-01');
+  });
+  await withFollow('1', async () => {
+    /* The soundtrack measures as sound (a 220 Hz tone), but the sound handed to the worker is all zeros. */
+    const single = createDescriptionRouter({
+      ...hooks,
+      sync: async (file, options) => {
+        await writeFile(file, Buffer.alloc((await readFile(file)).length));
+        return kadeSyncprint.fingerprintFile(file, options);
+      },
+    });
+    const singleApp = express();
+    singleApp.use(express.json());
+    singleApp.use(single.router);
+    const scall = (method, path) => request(singleApp)[method](path).set('x-user', owner);
+    try {
+      const id = await readyJob(owner, 'follow-no-peaks-upload-02', 30);
+      const from = logLines.length;
+      await scall('post', `/jobs/${id}/start`).send(settings).expect(202);
+      const done = await waitFor(async () => {
+        await single.tick();
+        const job = (await scall('get', `/jobs/${id}`).expect(200)).body;
+        assert.ok(['done', 'failed'].includes(job.state), job.state);
+        return job;
+      }, 5 * 60000);
+      assert.equal(done.state, 'done', done.error);
+      assert.equal(await syncOutcome(from, id), `sync gone id=${id} plan=plan why=silent from=describe peaks=0`);
+      assert.equal((await Jobs.findById(id).lean()).sync, undefined, 'the empty fingerprint is not saved');
+      assert.deepEqual(keysOf(id).filter((key) => key.includes('/sync/')), []);
+      assert.equal((await scall('get', `/jobs/${id}`).expect(200)).body.follow, 'gone');
+      for (const method of ['get', 'post']) {
+        const answer = await scall(method, `/jobs/${id}/track`).expect(409);
+        assert.deepEqual(answer.body, { error: goneSilent, follow: 'gone', version: 1 }, `${method}: the reason found`);
+      }
+
+      /* On request: the pass makes the sound and the fingerprint finds nothing; it ends there, not after three tries. */
+      assert.equal((await scall('post', `/jobs/${older}/track`).expect(202)).body.follow, 'making');
+      const asked = logLines.length;
+      const ended = await waitFor(async () => {
+        await single.tick();
+        const job = await Jobs.findById(older).lean();
+        assert.equal(job.syncTries?.plan, 3);
+        return job;
+      }, 120000);
+      assert.ok(logLines.slice(asked).some((line) => line === `sync gone id=${older} plan=plan why=silent from=request peaks=0`));
+      assert.equal(ended.sync, undefined);
+      assert.deepEqual(ended.syncWanted, []);
+      assert.equal(ended.syncing, undefined, 'the check lane lets go of it');
+      assert.equal(logLines.slice(asked).some((line) => line.startsWith(`sync made id=${older}`)), false);
+      assert.deepEqual((await scall('get', `/jobs/${older}/track`).expect(409)).body, { error: goneSilent, follow: 'gone', version: 1 });
+      for (const item of [id, older]) await scall('delete', `/jobs/${item}`).expect(200);
+    } finally {
+      await single.close();
     }
   });
 });

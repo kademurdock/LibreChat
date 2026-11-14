@@ -5625,9 +5625,9 @@ test('follow along: the keeper is handed the film as 8 kHz mono 16-bit sound, de
   const f = await fixture('follow-sync', 9);
   const { keeper, kept } = keeperFor(undefined);
   const handed = [];
-  keeper.keepSync = async (file, problem) => {
+  keeper.keepSync = async (file, problem, heard) => {
     const sound = await readFile(file);
-    handed.push({ file, problem, sound });
+    handed.push({ file, problem, sound, heard });
   };
   const backend = providers(f.voice, [], [cue]);
   let during;
@@ -5638,6 +5638,9 @@ test('follow along: the keeper is handed the film as 8 kHz mono 16-bit sound, de
   const result = await run(f, [], [], { keeper, providers: backend });
   assert.equal(handed.length, 1, 'one fresh plan, one hand-over');
   assert.equal(handed[0].problem, undefined);
+  /* Nov 14 2026 integration review: the soundtrack's loudness comes with it, as the plan keeps it. */
+  assert.deepEqual(handed[0].heard, { program: kept.plans.at(-1).loudness.program });
+  assert.ok(handed[0].heard.program > -69, `the tone is sound a phone can hear: ${handed[0].heard.program} LUFS`);
   assert.match(handed[0].file, /sync\.s16$/);
   const samples = new Int16Array(handed[0].sound.buffer, handed[0].sound.byteOffset, handed[0].sound.length / 2);
   assert.ok(Math.abs(samples.length / 8000 - 9) < 0.02, `${samples.length} samples at 8 kHz for 9 s`);

@@ -177,9 +177,11 @@ export type Keeper = {
    * deleted, so this must take what it needs before it returns, and must not throw. `file` is ''
    * when there is no such sound, and `problem` says why: the pass failed and ran again without
    * it (a fingerprint never costs the copy), or the pass failed outright and the run stops. Never
-   * called for a plan that is reused.
+   * called for a plan that is reused. With the file comes `heard` (Nov 14 2026 integration
+   * review): the soundtrack's integrated loudness, as the plan keeps it (`Plan.loudness.program`),
+   * so a soundtrack that is there but silent (`silentLoudness`) is known before the plan is kept.
    */
-  keepSync?: (file: string, problem?: string) => Promise<void>;
+  keepSync?: (file: string, problem?: string, heard?: { program: number }) => Promise<void>;
 };
 export const localKeeper = (): Keeper => ({
   saved: { records: [] },
@@ -264,6 +266,13 @@ const presets: Record<Settings['volume'], Preset> = {
 };
 
 /**
+ * Integrated loudness (LUFS) at or below which a soundtrack counts as silent: ebur128 reports -70
+ * when every block is under its absolute gate. `levelsFor` mixes such a film as one with no sound,
+ * and follow along makes no fingerprint of it, since a phone would hear nothing to find.
+ */
+export const silentLoudness: number = -69;
+
+/**
  * Evens out the finished copy: the soundtrack is brought toward -20 LUFS (never more than 6 dB
  * into the peak limiter), and the narrator is set against the dialogue. Without a dialogue
  * measurement it falls back to the programme level lowered for a wide loudness range (EBU TR 084
@@ -272,7 +281,7 @@ const presets: Record<Settings['volume'], Preset> = {
 export function levelsFor(plan: Plan, choice: Settings['volume']): Levels {
   const preset = presets[choice];
   const { program, peak, dialogue, lra } = plan.loudness;
-  if (!plan.audio || program <= -69)
+  if (!plan.audio || program <= silentLoudness)
     return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
   const gain = Math.min(12, 5 - peak, Math.max(-12, -20 - program));
   let anchor = program + preset.lift;
@@ -700,9 +709,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   const measureSound = async (media: Media, scan: boolean): Promise<Soundtrack> => {
     const keepSync = keeper.keepSync;
     if (!keepSync) return soundtrack(source, directory, signal, media, { scan });
-    const handOver = async (file: string, problem?: string) => {
+    const handOver = async (file: string, problem?: string, heard?: { program: number }) => {
       try {
-        await keepSync(file, problem);
+        await keepSync(file, problem, heard);
       } catch {
         /* the keeper reports its own failures; the copy goes on */
       }
@@ -734,7 +743,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       return measured;
     }
     const { sync, ...measured } = sound;
-    if (sync) await handOver(sync);
+    if (sync) await handOver(sync, undefined, { program: measured.program });
     await remove();
     return measured;
   };
