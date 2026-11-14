@@ -9,7 +9,8 @@
  *                                       a real message into a person's conversation and a push
  *                                       opens it. Body: { userId | email, agentId, note,
  *                                       conversationId?, title?, kind?, platformPaid?, requested?,
- *                                       steps?, push? }. See services/kadeCharacterTurn.js.
+ *                                       steps?, push?, urgent?, outsideText? }. See
+ *                                       services/kadeCharacterTurn.js.
  *
  * The page never shows a character's private take on the person (Kade's decision,
  * Oct 16 2026); that stays with the character.
@@ -88,6 +89,11 @@ router.post('/speak', express.json({ limit: '64kb' }), async (req, res) => {
       requested: b.requested === true,
       steps: Number.isFinite(Number(b.steps)) ? Math.min(80, Math.max(0, Number(b.steps))) : undefined,
       push: b.push !== false,
+      /* Nov 14 2026 (phone-call reports, bridge call-report.js): the person asked for this minutes
+       * ago and is waiting, so the push skips quiet hours; and the note carries what someone else said
+       * on the phone, which is outside text (services/kadeLedger.js). Only this machine door sets them. */
+      urgent: b.urgent === true,
+      outsideText: b.outsideText === true,
     });
     await reachDone(out, null);
     return res.json({ ok: true, ...out });

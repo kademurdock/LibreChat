@@ -150,7 +150,7 @@ function notStarted(error) {
  * Run one hidden turn of `agentId` for `userId` and return what it said.
  * @returns {Promise<{ text: string, toolCalls: number }>}
  */
-async function compose({ userId, agentId, note, platformPaid = false, steps, timezone, timeoutMs = 240000, onStart }) {
+async function compose({ userId, agentId, note, platformPaid = false, steps, timezone, timeoutMs = 240000, onStart, claudeLane = true, outsideText = false }) {
   if (!enabled()) throw notStarted(new Error('character turns are switched off'));
   const user = await db().getUserById(String(userId), '_id username email provider role name');
   if (!user) throw notStarted(new Error('no such person'));
@@ -158,12 +158,14 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
   /* Nov 14 2026: a turn with no step budget of its own is one message the character sends (a friend text, a
    * research or errand write-up, a reach-out), so it is marked for the speak-first writing lane: the gateway
    * may write it with Claude for a verified adult, MiMo underneath (services/kadeHiddenRun.js). A background job
-   * (kadeTasks.js asks for many rounds with `steps`) stays unmarked, on MiMo, until Kade decides. */
+   * (kadeTasks.js asks for many rounds with `steps`) stays unmarked, on MiMo, until Kade decides.
+   * claudeLane:false keeps a one-message turn off that lane (a phone-call report, see speakFirst).
+   * outsideText: the note carries someone else's words, so the turn may not spend, send or call. */
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     'User-Agent': UA,
-    ...hiddenRunHeaders({ platformPaid, steps, oneMessage: !steps }),
+    ...hiddenRunHeaders({ platformPaid, steps, oneMessage: !steps && claudeLane !== false, outsideText: outsideText === true }),
   };
   const body = {
     endpoint: 'agents',
@@ -419,8 +421,9 @@ function pushPreview(text) {
   return stop > 60 ? cut.slice(0, stop + 1) : `${cut.replace(/\s+\S*$/, '')}…`;
 }
 
-/** Push that opens the conversation. `requested` = the person asked for this work. */
-async function notifyPost({ userId, agentId, agentName, text, conversationId, requested = false }) {
+/** Push that opens the conversation. `requested` = the person asked for this work. `urgent` = they are
+ *  waiting for it right now, so the bridge's quiet hours do not hold it for the morning. */
+async function notifyPost({ userId, agentId, agentName, text, conversationId, requested = false, urgent = false }) {
   const bridgeUrl = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
   const secret = process.env.BRIDGE_SECRET || '';
   if (!secret) return { ok: false, blocked: 'no bridge secret' };
@@ -437,6 +440,7 @@ async function notifyPost({ userId, agentId, agentName, text, conversationId, re
         body: pushPreview(text) || 'Sent you a message.',
         userId: String(userId),
         requested: requested === true,
+        ...(urgent === true ? { urgent: true } : {}),
         route: 'conversation',
         conversationId,
       }),
@@ -471,7 +475,19 @@ async function speakFirst({
   onStart,
   beforePost,
   onPosted,
+  /* Nov 14 2026 (phone-call reports, bridge call-report.js): urgent = the person is waiting for this
+   * now (the push skips quiet hours); outsideText = the note holds someone else's words (a call
+   * transcript), so the turn may not spend, send or call (services/kadeLedger.js). */
+  urgent = false,
+  outsideText = false,
 }) {
+  /* Review, Nov 14 2026: a phone-call report carries what the other person on the call said (a store
+   * clerk, or a family member who may be a child). The privacy page names Claude for check-ins,
+   * reach-outs and research or errand write-ups, not for call write-ups, and each one would cost
+   * about 20 cents there instead of 1 to 2 on MiMo. So call reports stay off the speak-first Claude
+   * lane unless KADE_CLAUDE_CALL_REPORTS=1, which should be set only together with the privacy
+   * page's Anthropic bullet naming phone-call write-ups (and what the other person said in them). */
+  const claudeLane = kind !== 'call' || process.env.KADE_CLAUDE_CALL_REPORTS === '1';
   const framed =
     `[PLATFORM NOTE, not something they typed: ${String(note).trim()}\n` +
     'Write only the message you are sending them now, in your own voice. They will read or hear it later in your conversation with them, ' +
@@ -485,6 +501,8 @@ async function speakFirst({
     steps,
     timezone,
     onStart,
+    claudeLane,
+    outsideText: outsideText === true || kind === 'call',
     ...(timeoutMs ? { timeoutMs } : {}),
   });
   if (typeof beforePost === 'function' && !(await beforePost(composed))) {
@@ -513,7 +531,7 @@ async function speakFirst({
     /* Oct 17 2026: the push once never reached the bridge and held the whole call open; a
      * hard 25-second ceiling, and the outcome is logged either way. */
     pushed = await Promise.race([
-      notifyPost({ userId, agentId, agentName: placed.agentName, text: pushText || composed.text, conversationId: placed.conversationId, requested }),
+      notifyPost({ userId, agentId, agentName: placed.agentName, text: pushText || composed.text, conversationId: placed.conversationId, requested, urgent }),
       new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'push timed out after 25 s' }), 25000)),
     ]);
     logger.info(`[kadeCharacterTurn] push ${kind} convo=${placed.conversationId.slice(0, 8)} -> ${JSON.stringify(pushed).slice(0, 160)}`);

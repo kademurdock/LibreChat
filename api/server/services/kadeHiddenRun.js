@@ -101,6 +101,13 @@ function markHiddenRun(req, _res, next) {
     if (req.get('x-kade-claude-lane') === 'speak-first' && !excludedFromClaude(req)) {
       req.kadeClaudeLane = 'speak-first';
     }
+    /* Nov 14 2026 (review of the phone-call reports): the platform note of this run carries someone
+     * else's words (a call transcript: what a store clerk or a stranger said on the phone). The
+     * ledger treats the whole run as having read outside text, so nothing said on the call can make
+     * the character spend (research, pictures, errands), send or call (services/kadeLedger.js). */
+    if (req.get('x-kade-outside-text') === '1') {
+      req.kadeOutsideText = true;
+    }
   } catch (_) {
     /* a hidden-run hiccup leaves the turn an ordinary turn */
   }
@@ -123,13 +130,15 @@ function primaryOnlyLane(req) {
 }
 
 /** Headers for a loopback call that should run hidden. `oneMessage`: the run is a single message
- *  a character sends on its own (the speak-first writing lane). */
-function hiddenRunHeaders({ platformPaid = false, steps, oneMessage = false } = {}) {
+ *  a character sends on its own (the speak-first writing lane). `outsideText`: its note carries
+ *  someone else's words (honoured only with the key, like the rest). */
+function hiddenRunHeaders({ platformPaid = false, steps, oneMessage = false, outsideText = false } = {}) {
   return {
     'x-kade-hidden-run': KEY,
     ...(platformPaid ? { 'x-kade-platform-paid': '1' } : {}),
     ...(steps ? { 'x-kade-steps': String(steps) } : {}),
     ...(oneMessage === true ? { 'x-kade-claude-lane': 'speak-first' } : {}),
+    ...(outsideText === true ? { 'x-kade-outside-text': '1' } : {}),
   };
 }
 

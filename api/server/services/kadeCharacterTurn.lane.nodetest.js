@@ -108,3 +108,53 @@ test('a turn the site refused (4xx) or that is switched off is tagged never star
   const e = turn.notStarted(new Error('x'));
   assert.equal(e.composeStarted, false);
 });
+
+/* Nov 14 2026 (review of the phone-call reports, bridge call-report.js). A call report carries what the other
+ * person on the phone said: it stays off the speak-first Claude lane unless KADE_CLAUDE_CALL_REPORTS=1 (the privacy
+ * page names Claude for check-ins, reach-outs and research or errand write-ups, not call write-ups, and it would
+ * cost about 20 cents instead of 1 to 2), and its run is marked as carrying outside text. beforePost returning
+ * false stops speakFirst before it writes anything, so only the turn's headers are read here. */
+test('a phone-call report: no Claude lane unless switched on, always marked as outside text; other kinds unchanged', async () => {
+  const saved = process.env.KADE_CLAUDE_CALL_REPORTS;
+  const stop = async () => false;
+  try {
+    delete process.env.KADE_CLAUDE_CALL_REPORTS;
+    starts.length = 0;
+    await turn.speakFirst({ userId: 'u1', agentId: 'agent_test_123456', note: 'the call ended', kind: 'call', requested: true, beforePost: stop });
+    assert.equal(starts[0]['x-kade-claude-lane'], undefined, 'a call report is written on MiMo');
+    assert.equal(starts[0]['x-kade-outside-text'], '1');
+    await turn.speakFirst({ userId: 'u1', agentId: 'agent_test_123456', note: 'research done', kind: 'research', requested: true, beforePost: stop });
+    assert.equal(starts[1]['x-kade-claude-lane'], 'speak-first', 'research write-ups keep the lane Kade turned on');
+    assert.equal(starts[1]['x-kade-outside-text'], undefined);
+    process.env.KADE_CLAUDE_CALL_REPORTS = '1';
+    await turn.speakFirst({ userId: 'u1', agentId: 'agent_test_123456', note: 'the call ended', kind: 'call', requested: true, beforePost: stop });
+    assert.equal(starts[2]['x-kade-claude-lane'], 'speak-first', 'the switch puts call reports on the lane');
+    assert.equal(starts[2]['x-kade-outside-text'], '1');
+  } finally {
+    if (saved === undefined) delete process.env.KADE_CLAUDE_CALL_REPORTS;
+    else process.env.KADE_CLAUDE_CALL_REPORTS = saved;
+  }
+});
+
+test('an urgent push says so to the bridge (quiet hours do not hold a call report); an ordinary one does not', async () => {
+  const savedFetch = global.fetch;
+  const savedSecret = process.env.BRIDGE_SECRET;
+  const bodies = [];
+  try {
+    process.env.BRIDGE_SECRET = 'test-only';
+    global.fetch = async (url, options = {}) => {
+      bodies.push({ url: String(url), body: JSON.parse(options.body || '{}') });
+      return { ok: true, json: async () => ({ ok: true, sent: 1 }) };
+    };
+    await turn.notifyPost({ userId: 'u1', agentId: 'agent_test_123456', agentName: 'Kiana', text: 'I called Shell.', conversationId: 'c1', requested: true, urgent: true });
+    await turn.notifyPost({ userId: 'u1', agentId: 'agent_test_123456', agentName: 'Kiana', text: 'Research is done.', conversationId: 'c1', requested: true });
+    assert.ok(bodies[0].url.endsWith('/notify'));
+    assert.equal(bodies[0].body.urgent, true);
+    assert.equal(bodies[0].body.requested, true);
+    assert.equal('urgent' in bodies[1].body, false);
+  } finally {
+    global.fetch = savedFetch;
+    if (savedSecret === undefined) delete process.env.BRIDGE_SECRET;
+    else process.env.BRIDGE_SECRET = savedSecret;
+  }
+});

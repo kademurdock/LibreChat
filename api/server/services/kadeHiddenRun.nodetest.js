@@ -134,3 +134,22 @@ test('primaryOnlyLane takes the speak-first mark off once, and touches nothing e
   assert.equal(primaryOnlyLane(null), false);
   assert.equal(primaryOnlyLane({ kadeClaudeLane: 'lyric-desk' }), false);
 });
+
+/* Nov 14 2026 (review of the phone-call reports): a run whose note carries a call transcript is marked as
+ * having read outside text (services/kadeLedger.js holds paid work, messages and calls for it). Only with
+ * the process's own key, like every other mark here. */
+test('the outside-text mark counts only with the key, and only when asked for', () => {
+  const marked = reqWith(hiddenRunHeaders({ oneMessage: true, outsideText: true }));
+  markHiddenRun(marked, {}, () => {});
+  assert.equal(marked.kadeOutsideText, true);
+  assert.equal(marked.kadeHiddenRun, true);
+  const plain = reqWith(hiddenRunHeaders({ oneMessage: true }));
+  markHiddenRun(plain, {}, () => {});
+  assert.equal(plain.kadeOutsideText, undefined);
+  for (const headers of [{ 'x-kade-outside-text': '1' }, { 'x-kade-hidden-run': 'guess', 'x-kade-outside-text': '1' }]) {
+    const forged = reqWith(headers);
+    markHiddenRun(forged, {}, () => {});
+    assert.equal(forged.kadeOutsideText, undefined);
+  }
+  assert.equal(hiddenRunHeaders({ outsideText: 'yes' })['x-kade-outside-text'], undefined, 'true only');
+});

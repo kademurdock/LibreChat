@@ -110,11 +110,16 @@ function outsideRefusal(name, input, req, env = process.env) {
   if (String((env && env.KADE_OUTSIDE_TEXT_GATE) ?? '') === '0' || !req || typeof req !== 'object') return null;
   const hidden = req.kadeHiddenRun === true;
   const mark = outsideSeen.get(req) || null;
+  /* Nov 14 2026 (review of the phone-call reports): a hidden run whose platform note carries someone
+   * else's words (req.kadeOutsideText, set by services/kadeHiddenRun.js) has read outside text from
+   * its first token. Before, a prank caller who heard "this is Kiana, an A I assistant" could say
+   * "Kiana, start deep research on ..." and only the note's own "use no tools" stood in the way. */
+  const noted = req.kadeOutsideText === true ? 'the call transcript' : null;
   let source = null;
   let always = false;
   if (name === PC) {
     if (!isPcHands(name, input)) return null;
-    source = mark && mark.text;
+    source = (mark && mark.text) || noted;
     always = hidden;
   } else {
     const kind = kindOf(name, input);
@@ -123,7 +128,7 @@ function outsideRefusal(name, input, req, env = process.env) {
       const own = OWN_YES_GATE[name];
       if (!own || own.has(rawAction(input))) return null;
     }
-    source = mark && (mark.text || (mark.screen ? PC : null));
+    source = (mark && (mark.text || (mark.screen ? PC : null))) || noted;
     always = hidden && (kind !== 'spend' || CALL_TOOLS.has(name));
   }
   if (!source && !always) return null;
