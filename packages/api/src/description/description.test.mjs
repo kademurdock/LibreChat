@@ -5617,3 +5617,78 @@ test('DESC-12: at the default width a run keeps one look ahead; at 3 the looks o
     }
   }
 });
+
+/* ---------- Follow along (Nov 2026, Tellavision): the sound pass's follow-along output ---------- */
+
+test('follow along: the keeper is handed the film as 8 kHz mono 16-bit sound, deleted once handed over', async () => {
+  const f = await fixture('follow-sync', 9);
+  const { keeper, kept } = keeperFor(undefined);
+  const handed = [];
+  keeper.keepSync = async (file, problem) => {
+    const sound = await readFile(file);
+    handed.push({ file, problem, sound });
+  };
+  const backend = providers(f.voice, [], [cue]);
+  let during;
+  backend.transcribe = async () => {
+    during = await readdir(f.work);
+    return [];
+  };
+  const result = await run(f, [], [], { keeper, providers: backend });
+  assert.equal(handed.length, 1, 'one fresh plan, one hand-over');
+  assert.equal(handed[0].problem, undefined);
+  assert.match(handed[0].file, /sync\.s16$/);
+  const samples = new Int16Array(handed[0].sound.buffer, handed[0].sound.byteOffset, handed[0].sound.length / 2);
+  assert.ok(Math.abs(samples.length / 8000 - 9) < 0.02, `${samples.length} samples at 8 kHz for 9 s`);
+  /* The film's own 220 Hz tone: zero crossings at twice 220 a second, nothing doubled or halved. */
+  let crossings = 0;
+  for (let i = 8001; i < 16000; i++) if ((samples[i - 1] < 0) !== (samples[i] < 0)) crossings++;
+  assert.ok(Math.abs(crossings - 440) <= 6, `${crossings} zero crossings in one second`);
+  assert.equal(during.includes('sync.s16'), false, 'deleted before the dialogue is timed');
+  assert.ok(result.video);
+  assert.equal(kept.plans.length >= 1, true);
+});
+
+test('follow along: without the keeper hook nothing extra is written; a reused plan is never handed over', async () => {
+  const f = await fixture('follow-off', 9);
+  const { keeper } = keeperFor(undefined);
+  const backend = providers(f.voice, [], [cue]);
+  let during;
+  backend.transcribe = async () => {
+    during = await readdir(f.work);
+    return [];
+  };
+  await run(f, [], [], { keeper, providers: backend });
+  assert.deepEqual(
+    during.filter((name) => /sync|\.s16$/.test(name)),
+    [],
+    'the sound pass is the one from before',
+  );
+  const again = await fixture('follow-reused', 9);
+  const reused = keeperFor(savedPlan(9, []));
+  const handed = [];
+  reused.keeper.keepSync = async (file) => handed.push(file);
+  await run(again, [], [cue], { keeper: reused.keeper });
+  assert.deepEqual(handed, [], 'no sound pass, so no fingerprint');
+});
+
+test('follow along: when the extra output fails the pass runs again without it, and a failing keeper never costs the copy', async () => {
+  const f = await fixture('follow-fail', 9);
+  await mkdir(join(f.work, 'sync.s16'), { recursive: true });
+  const { keeper, kept } = keeperFor(undefined);
+  const handed = [];
+  keeper.keepSync = async (file, problem) => handed.push({ file, problem });
+  const result = await run(f, [], [cue], { keeper });
+  assert.equal(handed.length, 1);
+  assert.equal(handed[0].file, '', 'the keeper is told there is no sound to keep');
+  assert.ok(handed[0].problem, 'and why');
+  assert.ok(result.video, 'the copy is made');
+  assert.equal(kept.plans.at(-1).loudness.program < 0, true, 'the soundtrack was still measured');
+  const g = await fixture('follow-throws', 9);
+  const throwing = keeperFor(undefined);
+  throwing.keeper.keepSync = async () => {
+    throw new Error('storage is down');
+  };
+  const made = await run(g, [], [cue], { keeper: throwing.keeper });
+  assert.ok(made.video, 'a keeper that throws is ignored');
+});

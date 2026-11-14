@@ -696,18 +696,19 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       }
     };
     const file = join(directory, 'sync.s16');
+    const remove = () => rm(file, { force: true, recursive: true }).catch(() => undefined);
     let sound: Soundtrack;
     try {
       sound = await soundtrack(source, directory, signal, media, { scan, sync: file });
     } catch (error) {
-      await rm(file, { force: true });
+      await remove();
       if (signal.aborted) throw error;
       await handOver('', error instanceof Error ? error.message : 'the sound pass failed');
       return soundtrack(source, directory, signal, media, { scan });
     }
     const { sync, ...measured } = sound;
     if (sync) await handOver(sync);
-    await rm(file, { force: true });
+    await remove();
     return measured;
   };
   const chapters = workingChapters(request.chapters ?? [], settings.range, working.media.seconds);

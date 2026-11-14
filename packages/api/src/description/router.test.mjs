@@ -4826,3 +4826,346 @@ test('listening while it is made: the finished sections in order, only to the ow
   }
   await call('delete', `/jobs/${id}`, owner).expect(200);
 });
+
+/* ---------- Follow along (Nov 2026, Tellavision): fingerprints, tracks and the switch ---------- */
+const kadeSyncprint = createRequire(import.meta.url)(
+  fileURLToPath(new URL('../../../../api/server/services/kadeSyncprint/index.js', import.meta.url)),
+);
+const SyncPrintLibrary = createRequire(import.meta.url)(
+  fileURLToPath(new URL('../../../../api/server/services/kadeSyncprint/syncprint.js', import.meta.url)),
+);
+let followFails = false;
+let followCalls = 0;
+let follow;
+/** A router pair like the website's: the wrapper's real worker-thread fingerprint as `sync`. */
+function followRouters() {
+  if (follow) return follow;
+  const sync = async (file, options) => {
+    followCalls++;
+    if (followFails) throw new Error('The fingerprint worker failed at F:\\secret\\path\\sound.s16.');
+    return kadeSyncprint.fingerprintFile(file, options);
+  };
+  const service = createDescriptionRouter({
+    ...hooks,
+    get wallet() { return walletMode ? billing : undefined; },
+    sync,
+    usage: async () => {
+      throw new Error('Route tests make no paid calls.');
+    },
+  });
+  void service.close();
+  const followWorker = createDescriptionRouter({ ...hooks, sync });
+  const followApp = express();
+  followApp.use(express.json());
+  followApp.use(service.router);
+  follow = { service, worker: followWorker, app: followApp };
+  return follow;
+}
+after(async () => {
+  await follow?.worker.close();
+});
+const fcall = (method, path, owner = 'owner') => request(followRouters().app)[method](path).set('x-user', owner);
+async function followSettle(id, states, owner, role) {
+  const deadline = Date.now() + 5 * 60000;
+  while (Date.now() < deadline) {
+    await followRouters().worker.tick();
+    const asked = fcall('get', `/jobs/${id}`, owner);
+    const job = (await (role ? asked.set('x-role', role) : asked).expect(200)).body;
+    if (states.includes(job.state)) return job;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('The job did not settle.');
+}
+async function waitFor(check, ms = 30000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    try {
+      return await check();
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+async function withFollow(value, body) {
+  const before = process.env.KADE_DESCRIPTION_FOLLOW;
+  if (value === undefined) delete process.env.KADE_DESCRIPTION_FOLLOW;
+  else process.env.KADE_DESCRIPTION_FOLLOW = value;
+  try {
+    return await body();
+  } finally {
+    if (before === undefined) delete process.env.KADE_DESCRIPTION_FOLLOW;
+    else process.env.KADE_DESCRIPTION_FOLLOW = before;
+  }
+}
+/** A finished copy, described with the switch as it is. */
+async function followCopy(owner, requestId, role) {
+  const id = await readyJob(owner, requestId, 30);
+  const start = fcall('post', `/jobs/${id}/start`, owner);
+  await (role ? start.set('x-role', role) : start).send(settings).expect(202);
+  const done = await followSettle(id, ['done', 'failed'], owner, role);
+  assert.equal(done.state, 'done', done.error);
+  return id;
+}
+const printed = (id) =>
+  waitFor(async () => {
+    const job = await Jobs.findById(id).lean();
+    assert.ok(job.sync?.plan, 'the fingerprint is saved');
+    return job;
+  });
+const goneSource =
+  'The original video is no longer on the server, so a follow-along track cannot be made. Describe it again to get one.';
+
+test('follow along: switched off (unset, empty, 0), the describer is exactly as before', async () => {
+  for (const value of [undefined, '', '0', 'off', ' 0 '])
+    await withFollow(value, async () => {
+      const config = (await fcall('get', '/config', 'follow-off').expect(200)).body;
+      assert.equal(config.followAlong, false, `KADE_DESCRIPTION_FOLLOW=${JSON.stringify(value)}`);
+    });
+  await withFollow(undefined, async () => {
+    const calls = followCalls;
+    const before = requests.length;
+    const id = await followCopy('follow-off', 'follow-off-upload-01');
+    const run = requests.slice(before).find((item) => item.session === `video:${id}`);
+    assert.equal(run.keeper.keepSync, undefined, 'the engine is not asked for the follow-along sound');
+    const stored = await Jobs.findById(id).lean();
+    for (const field of ['sync', 'syncWanted', 'syncing', 'syncTries'])
+      assert.equal(field in stored, false, `no ${field} on the job`);
+    assert.equal(followCalls, calls, 'no fingerprint worker started');
+    assert.deepEqual(keysOf(id).filter((key) => key.includes('/sync/') || key.endsWith('track.json')), []);
+    const job = (await fcall('get', `/jobs/${id}`, 'follow-off').expect(200)).body;
+    assert.equal('follow' in job, false, 'no follow word on the job');
+    const list = (await fcall('get', '/jobs', 'follow-off').expect(200)).body.jobs;
+    assert.equal(list.some((item) => 'follow' in item), false);
+    const off = await fcall('get', `/jobs/${id}/track`, 'follow-off').expect(404);
+    assert.equal(off.body.error, 'Follow along is not available.');
+    await fcall('post', `/jobs/${id}/track`, 'follow-off').expect(404);
+    await fcall('delete', `/jobs/${id}`, 'follow-off').expect(200);
+  });
+});
+
+test('follow along: a run makes its fingerprint; only the owner gets the track and a six-hour link', async () => {
+  await withFollow('1', async () => {
+    const owner = 'follow-owner';
+    assert.equal((await fcall('get', '/config', owner).set('x-role', 'user').expect(200)).body.followAlong, true);
+    const from = logLines.length;
+    const id = await followCopy(owner, 'follow-owner-upload-01');
+    const record = (await printed(id)).sync.plan;
+    assert.equal(record.plan, 'plan');
+    assert.equal(record.format, 1);
+    assert.ok(Math.abs(record.seconds - 30) < 0.1, `${record.seconds} s`);
+    const object = objects.get(`/test/described-video/${owner}/${id}/sync/plan.sypr`);
+    assert.ok(object, 'saved in the job’s own folder');
+    assert.equal(object.subarray(0, 4).toString('latin1'), 'SYPR');
+    assert.equal(object.length, record.bytes);
+    assert.equal(createHash('sha256').update(object).digest('hex'), record.sha256);
+    assert.ok(SyncPrintLibrary.decode(new Uint8Array(object)), 'a phone can read it');
+    const made = new RegExp(`^sync made id=${id} plan=plan from=describe bytes=\\d+ seconds=30`);
+    assert.ok(logLines.slice(from).some((line) => made.test(line)), 'one log line says it was made');
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'ready');
+    const listed = (await fcall('get', '/jobs', owner).expect(200)).body.jobs.find((item) => item.id === id);
+    assert.equal(listed.follow, 'ready');
+
+    const answer = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(answer.follow, 'ready');
+    assert.equal(answer.version, 1);
+    assert.match(answer.printUrl, new RegExp(`/test/described-video/${owner}/${id}/sync/plan\\.sypr\\?`));
+    assert.ok(new Date(answer.expiresAt).getTime() - Date.now() > 5.9 * 3600e3, 'the link lasts six hours');
+    const { track } = answer;
+    assert.equal(track.format, 'kade-follow-track');
+    assert.equal(track.version, 1);
+    assert.equal(track.job, id);
+    assert.equal(track.copyVersion, 1);
+    assert.equal(track.title, 'episode');
+    assert.equal(track.language, 'en');
+    assert.equal(track.filmSeconds, 30);
+    assert.equal(track.covers.startSec, 0);
+    assert.ok(Math.abs(track.covers.endSec - 30) < 0.1, `the plan's own end, ${track.covers.endSec} s`);
+    assert.deepEqual(track.print, { format: 1, bytes: record.bytes, sha256: record.sha256 });
+    assert.deepEqual(track.plannedAt, { secPerChar: 0.0417, rate: 1.5, maxRate: 2.25 });
+    assert.equal('credit' in track, false, 'these tests run with KADE_DESCRIPTION_CREDIT=off');
+    assert.ok(track.cues.length >= 1);
+    for (const item of track.cues) {
+      assert.match(item.id, /^\d+:\d+$/);
+      assert.ok(item.endSec >= item.startSec);
+      assert.ok(['full', 'short', 'none'].includes(item.fit));
+    }
+    assert.match(track.cues[0].text, /^Section cue \d+\.$/);
+    assert.ok(track.quiet.length >= 1);
+    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/1/track.json`), 'kept beside the copy');
+    const reads = storageLog.length;
+    const again = (await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.deepEqual(again.track, track, 'POST answers at once when the fingerprint is there');
+    assert.equal(
+      storageLog.slice(reads).some((entry) => entry.method === 'GET' && entry.key.includes('/sections/')),
+      false,
+      'the saved track is reused',
+    );
+
+    const stranger = await fcall('get', `/jobs/${id}/track`, 'follow-stranger').expect(404);
+    assert.equal(stranger.body.error, 'Video job not found.');
+    await fcall('post', `/jobs/${id}/track`, 'follow-stranger').expect(404);
+    const kept = (await fcall('post', `/jobs/${id}/keep`, owner).expect(200)).body;
+    assert.equal(kept.follow, 'ready', 'every answer about the job carries the word');
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+    assert.deepEqual(keysOf(id), [], 'the fingerprint and the track go with the video');
+  });
+});
+
+test('follow along: admin lets only the administrator in; the fingerprint is ready when everyone is let in', async () => {
+  let id;
+  await withFollow('admin', async () => {
+    assert.equal((await fcall('get', '/config', 'follow-admin').expect(200)).body.followAlong, true);
+    const member = (await fcall('get', '/config', 'follow-member').set('x-role', 'user').expect(200)).body;
+    assert.equal(member.followAlong, false);
+    id = await followCopy('follow-member', 'follow-member-upload-01', 'user');
+    await printed(id);
+    const job = (await fcall('get', `/jobs/${id}`, 'follow-member').set('x-role', 'user').expect(200)).body;
+    assert.equal('follow' in job, false, 'no word for someone who cannot follow along');
+    await fcall('get', `/jobs/${id}/track`, 'follow-member').set('x-role', 'user').expect(404);
+    await fcall('post', `/jobs/${id}/track`, 'follow-member').set('x-role', 'user').expect(404);
+    const admin = await fcall('get', `/jobs/${id}/track`, 'follow-admin').expect(404);
+    assert.equal(admin.body.error, 'Video job not found.', 'the administrator never gets someone else’s track');
+  });
+  await withFollow('on', async () => {
+    const job = (await fcall('get', `/jobs/${id}`, 'follow-member').set('x-role', 'user').expect(200)).body;
+    assert.equal(job.follow, 'ready');
+    const answer = (await fcall('get', `/jobs/${id}/track`, 'follow-member').set('x-role', 'user').expect(200)).body;
+    assert.equal(answer.follow, 'ready');
+    await fcall('delete', `/jobs/${id}`, 'follow-member').set('x-role', 'user').expect(200);
+  });
+});
+
+test('follow along: each version has its own track from its plan’s one fingerprint; a rehearsal has none', async () => {
+  await withFollow('1', async () => {
+    const owner = 'follow-versions';
+    const id = await followCopy(owner, 'follow-versions-upload-01');
+    await printed(id);
+    const calls = followCalls;
+    await fcall('post', `/jobs/${id}/revoice`, owner).send({ ...settings, rate: 2, maxRate: 3 }).expect(202);
+    const revoiced = await followSettle(id, ['done', 'failed'], owner);
+    assert.equal(revoiced.version, 2);
+    assert.equal(followCalls, calls, 'the plan is reused, so no new fingerprint');
+    const latest = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(latest.version, 2);
+    assert.equal(latest.track.copyVersion, 2);
+    assert.deepEqual(latest.track.plannedAt, { secPerChar: 0.0313, rate: 2, maxRate: 3 });
+    const first = (await fcall('get', `/jobs/${id}/track?version=1`, owner).expect(200)).body;
+    assert.equal(first.version, 1);
+    assert.equal(first.track.plannedAt.rate, 1.5);
+    assert.equal(first.track.print.sha256, latest.track.print.sha256);
+    const posted = (await fcall('post', `/jobs/${id}/track`, owner).send({ version: 1 }).expect(200)).body;
+    assert.equal(posted.version, 1);
+    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/1/track.json`));
+    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/2/track.json`));
+    const missing = await fcall('get', `/jobs/${id}/track?version=9`, owner).expect(404);
+    assert.equal(missing.body.error, 'That finished version is not available.');
+    await Jobs.updateOne({ _id: id }, { $push: { copies: { version: 7, rehearsal: true, finishedAt: new Date() } } });
+    const rehearsal = await fcall('get', `/jobs/${id}/track?version=7`, owner).expect(409);
+    assert.match(rehearsal.body.error, /rehearsal copy has a test tone/);
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
+
+test('follow along: a copy from before is fingerprinted on request, free, when the check lane is idle', async () => {
+  const owner = 'follow-older';
+  let id;
+  await withFollow(undefined, async () => {
+    id = await followCopy(owner, 'follow-older-upload-01');
+  });
+  await withFollow('1', async () => {
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'possible');
+    const notYet = await fcall('get', `/jobs/${id}/track`, owner).expect(409);
+    assert.equal(notYet.body.follow, 'possible');
+    assert.match(notYet.body.error, /Ask for one; it is free/);
+    const from = logLines.length;
+    const asked = await fcall('post', `/jobs/${id}/track`, owner).expect(202);
+    assert.equal(asked.body.follow, 'making');
+    assert.equal(asked.body.version, 1);
+    assert.deepEqual((await Jobs.findById(id).lean()).syncWanted, ['plan']);
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'making');
+    assert.equal((await fcall('get', `/jobs/${id}/track`, owner).expect(202)).body.follow, 'making');
+    await fcall('post', `/jobs/${id}/track`, owner).expect(202);
+    assert.deepEqual((await Jobs.findById(id).lean()).syncWanted, ['plan'], 'asked twice, wanted once');
+    await followRouters().worker.tick();
+    const stored = await printed(id);
+    assert.deepEqual(stored.syncWanted, []);
+    assert.equal(stored.syncing, undefined);
+    assert.equal(stored.syncTries, undefined);
+    assert.ok(Math.abs(stored.sync.plan.seconds - 30) < 0.1);
+    assert.ok(logLines.slice(from).some((line) => line.startsWith(`sync made id=${id} plan=plan from=request`)));
+    const answer = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(answer.follow, 'ready');
+    assert.equal(answer.track.print.sha256, stored.sync.plan.sha256);
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
+
+test('follow along: an original that is gone, or a video with no sound, is said plainly and never asked again', async () => {
+  const owner = 'follow-gone';
+  let gone;
+  let silent;
+  await withFollow(undefined, async () => {
+    gone = await followCopy(owner, 'follow-gone-upload-01');
+    silent = await followCopy(owner, 'follow-gone-upload-02');
+  });
+  await withFollow('1', async () => {
+    objects.delete(`/test/${(await Jobs.findById(gone).lean()).key}`);
+    const from = logLines.length;
+    const refused = await fcall('post', `/jobs/${gone}/track`, owner).expect(409);
+    assert.equal(refused.body.error, goneSource);
+    assert.equal(refused.body.follow, 'gone');
+    assert.equal((await Jobs.findById(gone).lean()).syncTries, 3);
+    assert.equal((await fcall('get', `/jobs/${gone}`, owner).expect(200)).body.follow, 'gone');
+    assert.equal((await fcall('get', `/jobs/${gone}/track`, owner).expect(409)).body.error, goneSource);
+    assert.ok(logLines.slice(from).some((line) => line === `sync gone id=${gone} plan=plan why=source`));
+
+    const planFile = `/test/described-video/${owner}/${silent}/plan.json`;
+    const saved = JSON.parse(objects.get(planFile).toString('utf8'));
+    objects.set(planFile, Buffer.from(JSON.stringify({ ...saved, plan: { ...saved.plan, audio: false } })));
+    const quiet = await fcall('post', `/jobs/${silent}/track`, owner).expect(409);
+    assert.match(quiet.body.error, /no sound, so a phone cannot follow it/);
+    assert.equal((await fcall('get', `/jobs/${silent}`, owner).expect(200)).body.follow, 'gone');
+    for (const id of [gone, silent]) await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
+
+test('follow along: a failed fingerprint never costs the copy; three failed tries on request end it', async () => {
+  await withFollow('1', async () => {
+    followFails = true;
+    const owner = 'follow-fails';
+    try {
+      const from = logLines.length;
+      const id = await followCopy(owner, 'follow-fails-upload-01');
+      const line = await waitFor(() => {
+        const found = logLines.slice(from).find((item) => item.startsWith(`sync failed id=${id}`));
+        assert.ok(found);
+        return found;
+      });
+      assert.match(line, /^sync failed id=\w+ plan=plan from=describe error=/);
+      assert.doesNotMatch(line, /secret/, 'no server path reaches the log');
+      assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'possible');
+      await fcall('post', `/jobs/${id}/track`, owner).expect(202);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
+        await followRouters().worker.tick();
+        const stored = await Jobs.findById(id).lean();
+        assert.equal(stored.syncTries, attempt, `try ${attempt}`);
+        assert.ok(attempt === 3 || stored.syncing > new Date(), 'a failure waits an hour before the next try');
+      }
+      assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'gone');
+      const refused = await fcall('get', `/jobs/${id}/track`, owner).expect(409);
+      assert.equal(
+        refused.body.error,
+        'A follow-along track could not be made for this video after three tries. Describe it again to get one.',
+      );
+      const calls = followCalls;
+      await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
+      await followRouters().worker.tick();
+      assert.equal(followCalls, calls, 'nothing more is tried');
+      await fcall('delete', `/jobs/${id}`, owner).expect(200);
+    } finally {
+      followFails = false;
+    }
+  });
+});

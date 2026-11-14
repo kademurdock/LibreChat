@@ -1245,3 +1245,100 @@ test('DESC-13: thinned look clips are off by default, drop repeats when switched
     delete process.env.KADE_DESCRIPTION_THIN_FRAMES;
   }
 });
+
+/* ---------- Follow along (Nov 2026, Tellavision): the follow-along sound ---------- */
+
+/** Raw signed 16-bit little-endian samples. */
+const s16 = (buffer) => new Int16Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + (buffer.length & ~1)));
+/** 8 kHz samples held to 48 kHz, so the burst finder above reads them. */
+const at48 = (samples) => {
+  const out = new Float32Array(samples.length * 6);
+  for (let i = 0; i < out.length; i++) out[i] = samples[(i / 6) | 0] / 32768;
+  return out;
+};
+const rms = (samples) => Math.sqrt(samples.reduce((sum, v) => sum + v * v, 0) / Math.max(1, samples.length));
+const correlation = (a, b, shift = 0) => {
+  let xy = 0;
+  let xx = 0;
+  let yy = 0;
+  for (let i = 0; i < a.length && i + shift < b.length; i++) {
+    xy += a[i] * b[i + shift];
+    xx += a[i] * a[i];
+    yy += b[i + shift] * b[i + shift];
+  }
+  return xy / Math.sqrt(xx * yy);
+};
+
+test('follow along: the sound pass writes the mix as 8 kHz mono 16-bit sound on the picture clock, only when asked', async () => {
+  const { readdir } = await import('node:fs/promises');
+  const ts = await lateTs();
+  const info = await media.probe(ts, signal);
+  const plainDir = await folder('follow-plain');
+  const plain = await media.soundtrack(ts, plainDir, signal, info, { scan: false });
+  assert.equal(plain.sync, undefined);
+  assert.deepEqual(await readdir(plainDir), ['dialogue.m4a'], 'nothing more is written unless asked');
+  const dir = await folder('follow-asked');
+  const file = join(dir, 'sync.s16');
+  const asked = await media.soundtrack(ts, dir, signal, info, { scan: false, sync: file });
+  assert.equal(asked.sync, file);
+  assert.equal(media.syncRate, 8000);
+  const samples = s16(await readFile(file));
+  assert.ok(
+    Math.abs(samples.length / 8000 - info.seconds) < 0.05,
+    `${samples.length} samples is ${samples.length / 8000} s of a ${info.seconds} s film`,
+  );
+  near(bursts(at48(samples)), [1.5, 6.5], 0.03, 'its sound starts 0.8 s late and is still on the picture clock');
+  assert.equal(asked.program, plain.program, 'the other measurements do not change');
+  assert.equal(asked.peak, plain.peak);
+  assert.deepEqual(asked.momentary, plain.momentary);
+  near(bursts(await plainPcm(asked.dialogue)), [1.5, 6.5], 0.03, 'and the dialogue copy is still made');
+});
+
+test('follow along: a capture with one dead channel gets its live channel on both sides', async () => {
+  const both = await make('both.mkv', [...lavfi(picture('320x240', 30, 8)), ...lavfi(sound(8)), ...h264, '-c:a', 'flac']);
+  const left = await make('left.mkv', [...lavfi(picture('320x240', 30, 8)), ...lavfi(sound(8, 0, 220, false)), ...h264, '-c:a', 'flac']);
+  const bothDir = await folder('follow-sided-both');
+  await media.soundtrack(both, bothDir, signal, undefined, { scan: false, sync: join(bothDir, 'sync.s16') });
+  const leftDir = await folder('follow-sided-left');
+  const measured = await media.soundtrack(left, leftDir, signal, undefined, { scan: false, sync: join(leftDir, 'sync.s16') });
+  assert.equal(measured.oneSided, 'left');
+  const full = rms(s16(await readFile(join(bothDir, 'sync.s16'))));
+  const fixed = rms(s16(await readFile(join(leftDir, 'sync.s16'))));
+  assert.ok(Math.abs(20 * Math.log10(fixed / full)) < 0.5, `the live channel is not halved: ${fixed} vs ${full}`);
+});
+
+test('follow along: the on-request pass makes the same sound, and a part starts at its own second 0', async () => {
+  const ts = await lateTs();
+  const info = await media.probe(ts, signal);
+  const describeDir = await folder('follow-request-describe');
+  await media.soundtrack(ts, describeDir, signal, info, { scan: false, sync: join(describeDir, 'sync.s16') });
+  const whole = s16(await readFile(join(describeDir, 'sync.s16')));
+  const requestDir = await folder('follow-request-whole');
+  const seconds = await media.syncSound(ts, join(requestDir, 'sync.s16'), signal);
+  const again = s16(await readFile(join(requestDir, 'sync.s16')));
+  assert.equal(again.length, whole.length, 'the same length');
+  assert.equal(seconds, again.length / 8000);
+  assert.ok(again.every((value, i) => Math.abs(value - whole[i]) <= 1), 'the same samples');
+
+  /* A part: the describe run cuts it (normalize with a range) and measures the cut. */
+  const range = { start: 5, end: 9 };
+  const partDir = await folder('follow-request-part');
+  const cut = await media.normalize(ts, partDir, signal, range);
+  await media.soundtrack(cut.file, partDir, signal, cut.media, { scan: false, sync: join(partDir, 'sync.s16') });
+  const described = s16(await readFile(join(partDir, 'sync.s16')));
+  const askedDir = await folder('follow-request-asked');
+  await media.syncSound(ts, join(askedDir, 'sync.s16'), signal, { range });
+  const asked = s16(await readFile(join(askedDir, 'sync.s16')));
+  assert.ok(Math.abs(asked.length - described.length) <= 80, `${asked.length} vs ${described.length} samples`);
+  near(bursts(at48(described)), [1.5], 0.03, 'the cut part: the burst at 6.5 s is 1.5 s in');
+  near(bursts(at48(asked)), [1.5], 0.03, 'the on-request part: the same');
+  assert.ok(correlation(asked, described) > 0.99, 'the same sound, sample for sample');
+  assert.ok(correlation(asked, whole, 5 * 8000) > 0.99, 'its second 0 is the film’s second 5');
+
+  const silent = await make('follow-silent.mp4', [...lavfi(picture('320x240', 30, 2)), ...h264]);
+  assert.equal(await media.syncSound(silent, join(askedDir, 'none.s16'), signal), null, 'no sound, nothing to follow');
+  await assert.rejects(
+    media.syncSound(ts, join(askedDir, 'tiny.s16'), signal, { range: { start: 3, end: 3.1 } }),
+    (error) => error instanceof media.MediaError && error.kind === 'too-short',
+  );
+});
