@@ -954,6 +954,32 @@ class BaseClient {
     } catch (e) {
       scrubbed = message;
     }
+    /* KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): a reply with a
+     * model-written "Tool: <name>, ..." line in it (the model copying how an earlier tool result
+     * was shown to it, not a real call) is saved without that line. The gateway cuts it out of the
+     * live stream; this is the net under it for the saved copy, and scrubMessageForTransmit does
+     * the same for the final frame. Each text part is cut from its own echo line to the end of
+     * that part, so the answer after a real tool call stays. The cut is for good, so only the
+     * platform's tool names and kade_ names count; a reply is never cut down to no words, and a
+     * message the person wrote is never touched. metadata.kadeToolEcho on the saved message says
+     * which tool and how many characters went (never the words), so a wrong cut can be found.
+     * KADE_REPLY_TOOL_ECHO=0 switches it off. */
+    try {
+      const kadeHistoryTools = require('~/server/services/kadeHistoryTools');
+      const echo = kadeHistoryTools.cutReplyEcho(scrubbed);
+      if (echo.name) {
+        scrubbed = echo.message;
+        logger.info(
+          '[kadeHistoryTools] cut an echoed tool line from the saved reply (' +
+            kadeHistoryTools.loggableName(echo.name) +
+            ', ' +
+            echo.chars +
+            ' characters)',
+        );
+      }
+    } catch (_e) {
+      /* the reply is saved as it was */
+    }
     /* THE TELL METER (Sep 21 2026). Kade: "help Kiana sound more like Kiana
      * and less like an AI text book with no personality and lots of tells."
      *

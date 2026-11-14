@@ -139,6 +139,23 @@ function stripAiTells(text) {
 }
 
 /**
+ * KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): a reply with a model-written
+ * "Tool: <name>, ..." line in it goes out in the final frame, and into an abort-path save,
+ * without that line, the same as BaseClient.saveMessageToDatabase saves it: each text part from
+ * its own echo line to the end of that part, the platform's tool names and kade_ names only, never
+ * down to no words, never a message the person wrote, and metadata.kadeToolEcho says what went
+ * (never the words). KADE_REPLY_TOOL_ECHO=0 switches it off. Fail-soft: any error returns the
+ * input.
+ */
+function cutToolEcho(message) {
+  try {
+    return require('../services/kadeHistoryTools').cutReplyEcho(message).message;
+  } catch {
+    return message;
+  }
+}
+
+/**
  * Scrub a message object's text + text content parts for transmission in a
  * final SSE event (or an abort-path save), the same way
  * BaseClient.saveMessageToDatabase scrubs the persisted copy — so what stays
@@ -157,7 +174,7 @@ function scrubMessageForTransmit(message) {
           : part,
       );
     }
-    return out;
+    return cutToolEcho(out);
   } catch {
     return message;
   }

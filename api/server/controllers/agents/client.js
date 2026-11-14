@@ -206,6 +206,32 @@ function kadeKeeperFinalWaitMs() {
 }
 
 /**
+ * KADE Nov 13 2026 (the tool echo): chat history as the model should read it. An earlier
+ * reply's call to a tool that is not attached this turn used to reach the model as the text
+ * "Tool: <name>, <whole output>" at the end of the character's own words, and the model learned
+ * to end a reply with such a line of its own. Those calls are now left out before the history
+ * is formatted, and a reply already saved with such a line has the line left out of what the
+ * model reads. Nothing saved is changed and the person's own messages are never touched.
+ * The memory keeper's window gets the same history, so an unattached tool's output no longer
+ * rides inside the character's own words, where the keeper's untrusted-tool strip cannot see
+ * it; only the reply's own call writes the log line (`log`), so a turn logs it once.
+ * Everything about it, and the off switch KADE_HISTORY_TOOL_DROP=0, lives in
+ * services/kadeHistoryTools.js. Never throws: on any failure the history goes to the formatter
+ * as before.
+ */
+function kadeHistoryForModel(payload, toolSet, log) {
+  try {
+    const cleaned = require('~/server/services/kadeHistoryTools').prepareHistory(payload, toolSet);
+    if (log && cleaned.line) {
+      logger.info(cleaned.line);
+    }
+    return cleaned.payload;
+  } catch (_) {
+    return payload;
+  }
+}
+
+/**
  * The voice/phone lane's replayed-transcript envelope, as written by
  * inworld-tts-proxy's `composeTextWithHistory`. Matched by its own opening and
  * closing sentences so ordinary prose that happens to mention the phrase is
@@ -2500,7 +2526,7 @@ class AgentClient extends BaseClient {
         summary: initialSummary,
         boundaryTokenAdjustment,
       } = formatAgentMessages(
-        payload,
+        kadeHistoryForModel(payload, toolSet, true),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -2594,7 +2620,7 @@ class AgentClient extends BaseClient {
       const memoryMessages =
         this.processMemory && this.memoryPayload
           ? formatAgentMessages(
-              memoryEvidence,
+              kadeHistoryForModel(memoryEvidence, toolSet, false),
               undefined,
               toolSet,
               skillPrimeResult?.skills,

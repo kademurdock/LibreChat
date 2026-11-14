@@ -1012,6 +1012,70 @@ describe('BaseClient', () => {
       );
     });
 
+    /* KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): the saved reply loses a
+     * model-written "Tool: <name>, ..." line, in whichever text part it stands, only for the
+     * platform's tool names and kade_ names, and the saved metadata says what went (never the
+     * words), so a wrong cut can be found. */
+    test('saveMessageToDatabase saves a reply without a model-written tool line and notes the cut', async () => {
+      saveMessage.mockReset();
+      saveConvo.mockReset();
+      saveMessage.mockImplementation(async (_reqCtx, msgData) => msgData);
+      saveConvo.mockResolvedValue({ conversationId: 'conv-1' });
+      const echo = 'Tool: kade_research, === Deep Research Context ===\nSomeone asked: made up';
+      const looksLikeOne =
+        'Here is the real answer.\nTool: lookup_mcp_x, a line that only looks like one';
+      const reply = {
+        messageId: 'msg-2',
+        conversationId: 'conv-1',
+        parentMessageId: 'msg-1',
+        isCreatedByUser: false,
+        text: '',
+        metadata: { usage: { output_tokens: 9 } },
+        content: [
+          { type: 'text', text: `Let me look into it.\n${echo}`, tool_call_ids: ['c1'] },
+          {
+            type: 'tool_call',
+            tool_call: { id: 'c1', name: 'kade_research', args: '{}', output: 'the real result' },
+          },
+          { type: 'text', text: looksLikeOne },
+        ],
+      };
+
+      await TestClient.saveMessageToDatabase(reply, { endpoint: 'agents' }, null);
+
+      expect(saveMessage).toHaveBeenCalledTimes(1);
+      const saved = saveMessage.mock.calls[0][1];
+      expect(saved.content[0]).toEqual({
+        type: 'text',
+        text: 'Let me look into it.',
+        tool_call_ids: ['c1'],
+      });
+      expect(saved.content[1]).toBe(reply.content[1]);
+      /* a name that is neither the platform's nor a kade_ name is not cut for good */
+      expect(saved.content[2].text).toBe(looksLikeOne);
+      expect(saved.metadata).toEqual({
+        usage: { output_tokens: 9 },
+        kadeToolEcho: { tool: 'kade_research', chars: echo.length + 1, parts: 1 },
+      });
+      expect(JSON.stringify(saved.metadata)).not.toContain('Deep Research');
+      expect(reply.content[0].text).toContain(echo);
+      expect(reply.metadata).toEqual({ usage: { output_tokens: 9 } });
+
+      /* the person's own message is saved as it was typed */
+      saveMessage.mockClear();
+      const typed = {
+        messageId: 'msg-3',
+        conversationId: 'conv-1',
+        isCreatedByUser: true,
+        text: `My notes.\n${echo}`,
+      };
+      await TestClient.saveMessageToDatabase(typed, { endpoint: 'agents' }, null);
+      expect(saveMessage.mock.calls[0][1].text).toBe(typed.text);
+      expect(saveMessage.mock.calls[0][1].metadata).toBeUndefined();
+      saveMessage.mockReset();
+      saveConvo.mockReset();
+    });
+
     test('userMessagePromise is awaited before saving response message', async () => {
       // Mock the saveMessageToDatabase method
       TestClient.saveMessageToDatabase = jest.fn().mockImplementation(() => {

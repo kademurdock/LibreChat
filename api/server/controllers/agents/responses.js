@@ -621,7 +621,24 @@ const createResponse = async (req, res) => {
     const allMessages = [...previousMessages, ...inputMessages];
 
     const toolSet = buildToolSet(primaryConfig);
-    const formatted = formatAgentMessages(allMessages, {}, toolSet);
+    /* KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): past calls to tools that are
+     * not attached this turn are left out before the history is formatted, and an echoed
+     * "Tool: <name>, ..." line in an earlier assistant message is left out of what the model reads.
+     * The person's own messages are never touched. KADE_HISTORY_TOOL_DROP=0 switches it off. */
+    let kadeHistory = allMessages;
+    try {
+      const cleaned = require('~/server/services/kadeHistoryTools').prepareHistory(
+        allMessages,
+        toolSet,
+      );
+      kadeHistory = cleaned.payload;
+      if (cleaned.line) {
+        logger.info(cleaned.line);
+      }
+    } catch (_) {
+      /* the history goes to the formatter as before */
+    }
+    const formatted = formatAgentMessages(kadeHistory, {}, toolSet);
     const formattedMessages = formatted.messages;
     const initialSummary = formatted.summary;
     let indexTokenCountMap = formatted.indexTokenCountMap;

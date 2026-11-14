@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes, parseTextParts } = require('librechat-data-provider');
 const {
   isEnabled,
   sendEvent,
@@ -99,6 +99,41 @@ async function spendCollectedUsage({
 }
 
 /**
+ * KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): a stopped reply is saved, and
+ * sent in its final frame, without a model-written "Tool: <name>, ..." line, the same as a reply
+ * that finished (BaseClient.saveMessageToDatabase). The text parts are cut there; the plain
+ * `text` field of a stopped reply is those parts joined (parseTextParts, in
+ * GenerationJobManager.abortJob), so once a part is cut the field is joined again from the cut
+ * parts. The tokens were counted before this, on what the model really wrote. Fail-soft: on any
+ * error the reply goes on as it was (scrubMessageForTransmit still cuts the parts).
+ * @param {object} message the stopped reply
+ * @returns {object}
+ */
+function cutStoppedReplyEcho(message) {
+  let cut;
+  try {
+    cut = require('~/server/services/kadeHistoryTools').cutReplyEcho(message);
+  } catch (_e) {
+    return message;
+  }
+  if (!cut || !cut.name) {
+    return message;
+  }
+  try {
+    if (
+      Array.isArray(cut.message.content) &&
+      typeof message.text === 'string' &&
+      message.text !== ''
+    ) {
+      return { ...cut.message, text: parseTextParts(cut.message.content) };
+    }
+  } catch (_e) {
+    /* the parts are cut; the text field stays as it was */
+  }
+  return cut.message;
+}
+
+/**
  * Abort an active message generation.
  * Uses GenerationJobManager for all agent requests.
  * Since streamId === conversationId, we can directly abort by conversationId.
@@ -193,13 +228,16 @@ async function abortMessage(req, res) {
     );
   }
 
+  /* KADE Nov 13 2026: the tool echo leaves the text field too, in the saved copy and the frame. */
+  const stoppedMessage = cutStoppedReplyEcho(responseMessage);
+
   await db.saveMessage(
     {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
       interfaceConfig: req?.config?.interfaceConfig,
     },
-    { ...scrubMessageForTransmit(responseMessage), user: userId },
+    { ...scrubMessageForTransmit(stoppedMessage), user: userId },
     { context: 'api/server/middleware/abortMiddleware.js' },
   );
 
@@ -220,7 +258,7 @@ async function abortMessage(req, res) {
           isCreatedByUser: true,
         })
       : null,
-    responseMessage: scrubMessageForTransmit(responseMessage),
+    responseMessage: scrubMessageForTransmit(stoppedMessage),
   };
 
   logger.debug(

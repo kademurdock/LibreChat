@@ -39,11 +39,13 @@ jest.mock('@librechat/api', () => ({
   },
   recordCollectedUsage: mockRecordCollectedUsage,
   sanitizeMessageForTransmit: jest.fn((msg) => msg),
+  buildAbortedResponseMetadata: jest.fn(() => undefined),
 }));
 
 jest.mock('librechat-data-provider', () => ({
   isAssistantsEndpoint: jest.fn().mockReturnValue(false),
   ErrorTypes: { INVALID_REQUEST: 'INVALID_REQUEST', NO_SYSTEM_MESSAGES: 'NO_SYSTEM_MESSAGES' },
+  parseTextParts: jest.requireActual('librechat-data-provider').parseTextParts,
 }));
 
 jest.mock('~/app/clients/prompts', () => ({
@@ -304,6 +306,112 @@ describe('abortMiddleware - legacy abort ownership', () => {
     await handleAbort()(buildStopRequest(), res);
 
     expect(GenerationJobManager.abortJob).toHaveBeenCalledWith('convo-123');
+  });
+});
+
+/* KADE Nov 13 2026 (the tool echo, services/kadeHistoryTools.js): a stopped reply was saved with
+ * its plain text field uncut, a model-written "Tool: <name>, ..." line and all. The field is the
+ * text parts joined (parseTextParts, in GenerationJobManager.abortJob), so it is joined again
+ * from the cut parts. */
+describe('abortMiddleware - a stopped reply with a model-written tool line', () => {
+  const { parseTextParts } = jest.requireActual('librechat-data-provider');
+  const ECHO = 'Tool: kade_research, === Deep Research Context ===\nSomeone asked: made up';
+  const buildStopRequest = () => ({
+    body: { abortKey: 'convo-123:user-123', endpoint: 'agents' },
+    user: { id: 'user-123' },
+  });
+  const buildStopResponse = () => {
+    const res = { headersSent: false, setHeader: jest.fn(), send: jest.fn() };
+    res.status = jest.fn().mockReturnValue(res);
+    return res;
+  };
+  const stopWith = (content) => {
+    GenerationJobManager.getJob.mockResolvedValue({
+      createdAt: 1,
+      metadata: { userId: 'user-123' },
+    });
+    GenerationJobManager.abortJob.mockResolvedValue({
+      success: true,
+      jobData: {
+        responseMessageId: 'resp-1',
+        conversationId: 'convo-123',
+        userMessage: { messageId: 'user-msg-1' },
+        model: 'made-up-model',
+        endpoint: 'agents',
+        sender: 'Kiana',
+      },
+      content,
+      text: parseTextParts(content),
+      collectedUsage: [{ input_tokens: 10, output_tokens: 5, model: 'made-up-model' }],
+    });
+  };
+  const withEcho = () => [
+    { type: 'text', text: `Let me look into it.\n${ECHO}`, tool_call_ids: ['c1'] },
+    {
+      type: 'tool_call',
+      tool_call: { id: 'c1', name: 'kade_research', args: '{}', output: 'the real result' },
+    },
+    { type: 'text', text: 'Here is the real answer.' },
+  ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('saves the text field and the parts without the line, notes the cut, and sends the same', async () => {
+    const content = withEcho();
+    stopWith(content);
+    const res = buildStopResponse();
+
+    await handleAbort()(buildStopRequest(), res);
+
+    expect(db.saveMessage).toHaveBeenCalledTimes(1);
+    const saved = db.saveMessage.mock.calls[0][1];
+    expect(saved.content[0].text).toBe('Let me look into it.');
+    expect(saved.content[0].tool_call_ids).toEqual(['c1']);
+    expect(saved.content[2].text).toBe('Here is the real answer.');
+    expect(saved.text).toBe('Let me look into it. Here is the real answer.');
+    expect(saved.metadata).toEqual({
+      kadeToolEcho: { tool: 'kade_research', chars: ECHO.length + 1, parts: 1 },
+    });
+    expect(JSON.stringify(saved)).not.toContain('Deep Research');
+    expect(content[0].text).toContain(ECHO);
+
+    const frame = JSON.parse(res.send.mock.calls[0][0]);
+    expect(frame.responseMessage.text).toBe(saved.text);
+    expect(frame.responseMessage.content).toEqual(saved.content);
+  });
+
+  it('a stopped reply with no such line is saved as before', async () => {
+    const content = [{ type: 'text', text: 'Tool: hammer, nails. Here is the real answer.' }];
+    stopWith(content);
+
+    await handleAbort()(buildStopRequest(), buildStopResponse());
+
+    const saved = db.saveMessage.mock.calls[0][1];
+    expect(saved.text).toBe('Tool: hammer, nails. Here is the real answer.');
+    expect(saved.content).toEqual(content);
+    expect(saved.metadata).toBeUndefined();
+  });
+
+  it('is fail-soft: when the cut throws, the reply is saved as it was', async () => {
+    const kadeHistoryTools = require('~/server/services/kadeHistoryTools');
+    const spy = jest.spyOn(kadeHistoryTools, 'cutReplyEcho').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    try {
+      const content = withEcho();
+      stopWith(content);
+
+      await handleAbort()(buildStopRequest(), buildStopResponse());
+
+      expect(db.saveMessage).toHaveBeenCalledTimes(1);
+      const saved = db.saveMessage.mock.calls[0][1];
+      expect(saved.text).toBe(parseTextParts(content));
+      expect(saved.content[0].text).toBe(content[0].text);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
