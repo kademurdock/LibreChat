@@ -600,7 +600,10 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
      * Mimo". The gateway writes a verified adult's persona with Claude Opus on her Claude credit and falls back to
      * this MiMo call on any trouble; children, teens and untyped accounts stay on MiMo (utils/kadeClaudeLane.js,
      * reframe-proxy claude-route.js). The person pays what MiMo would have cost: the gateway hands back MiMo-priced
-     * usage. Required here, not at the top, so any trouble loading it only leaves the call unmarked. */
+     * usage. Required here, not at the top, so any trouble loading it only leaves the call unmarked.
+     * The wait below is shared (Nov 14 review): Claude gets 140 s of it, writing at most this call's own
+     * max_tokens plus room to think, and MiMo the rest; a round Claude cannot finish in time rests the lane on
+     * the gateway for 15 minutes, so the next rounds go straight to MiMo with the whole wait. */
     let claudeHeaders = {};
     try {
       const claudeLane = require('../utils/kadeClaudeLane');

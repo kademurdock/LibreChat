@@ -82,6 +82,25 @@ test('a test seat listed in KADE_CLAUDE_EXCLUDE_USERS is marked background, and 
   }
 });
 
+/* Nov 14 review: a test seat's own message (the battery's friend texts) never carries the speak-first mark. */
+test('a test seat\'s one-message run is not marked for the speak-first lane; everyone else\'s still is', () => {
+  const saved = process.env.KADE_CLAUDE_EXCLUDE_USERS;
+  try {
+    process.env.KADE_CLAUDE_EXCLUDE_USERS = 'u1';
+    const seat = reqWith(hiddenRunHeaders({ platformPaid: true, oneMessage: true }));
+    markHiddenRun(seat, {}, () => {});
+    assert.equal(seat.kadeHiddenRun, true);
+    assert.equal(seat.kadeBackground, true);
+    assert.equal(seat.kadeClaudeLane, undefined);
+    const person = { user: { id: 'someone-else' }, get: (name) => hiddenRunHeaders({ oneMessage: true })[String(name).toLowerCase()] };
+    markHiddenRun(person, {}, () => {});
+    assert.equal(person.kadeClaudeLane, 'speak-first');
+  } finally {
+    if (saved === undefined) delete process.env.KADE_CLAUDE_EXCLUDE_USERS;
+    else process.env.KADE_CLAUDE_EXCLUDE_USERS = saved;
+  }
+});
+
 test('with KADE_CLAUDE_EXCLUDE_USERS unset or empty, nobody is marked', () => {
   const saved = process.env.KADE_CLAUDE_EXCLUDE_USERS;
   try {

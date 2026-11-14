@@ -36,7 +36,8 @@
  *                             request carries kade_claude_lane: 'speak-first' (endpoints/custom/
  *                             initialize.ts), and the gateway may write it with Claude for a verified
  *                             adult (reframe-proxy claude-route.js), falling back to MiMo. Any other
- *                             value is ignored. KADE_SEND_CLAUDE_LANE=0 stops the mark being sent.
+ *                             value is ignored, and so is the mark on a test seat (KADE_CLAUDE_EXCLUDE_
+ *                             USERS, below). KADE_SEND_CLAUDE_LANE=0 stops the mark being sent.
  */
 'use strict';
 
@@ -95,7 +96,9 @@ function markHiddenRun(req, _res, next) {
     if (Number.isFinite(steps) && steps > 0) {
       req.kadeStepBudget = Math.min(80, steps);
     }
-    if (req.get('x-kade-claude-lane') === 'speak-first') {
+    /* Nov 14 review: a test seat's message is never marked for the lane, as its chat turns stay off Claude
+     * (excludedFromClaude above). */
+    if (req.get('x-kade-claude-lane') === 'speak-first' && !excludedFromClaude(req)) {
       req.kadeClaudeLane = 'speak-first';
     }
   } catch (_) {

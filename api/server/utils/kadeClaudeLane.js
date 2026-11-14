@@ -20,9 +20,14 @@
  * Claude falls back to it. Headers never reach a model host. Fails closed: any trouble reading the account means no
  * adult mark. KADE_SEND_CLAUDE_LANE=0 sends neither header.
  *
+ * Nov 14 review: the test seats (KADE_CLAUDE_EXCLUDE_USERS, the daily battery's vischeck seat and evalclean, typed
+ * adult) are never marked adult here, so a probe of the booth, the character builder or the Spotter on those seats
+ * stays where it always went, as their chat turns do (services/kadeHiddenRun.js excludedFromClaude).
+ *
  * No '~' requires at the top, so node --test loads this file (the account read is required lazily).
  */
 const { audienceOf, isChildLike } = require('../services/kadeAccountType');
+const { excludedFromClaude } = require('../services/kadeHiddenRun');
 
 const LANES = Object.freeze(['lyric-desk', 'booth-edit', 'persona-writer', 'spotter-draft']);
 
@@ -43,10 +48,13 @@ async function loadStoredAccount(id) {
  * the request's user carries no account type, the stored one is read, as kadeSongAudience does. Never throws.
  * @returns {Promise<boolean>}
  */
-async function claudeAdult(req, { loadUser = loadStoredAccount } = {}) {
+async function claudeAdult(req, { loadUser = loadStoredAccount, env = process.env } = {}) {
   try {
+    // A test seat, signed in or named as the person on a voice turn, is never marked (KADE_CLAUDE_EXCLUDE_USERS).
+    if (excludedFromClaude(req, env)) return false;
     const { user } = audienceOf(req);
     if (!user) return false;
+    if (excludedFromClaude({ user }, env)) return false;
     if (user.kadeAccountType || user.role === 'ADMIN') return isVerifiedAdult(user);
     const id = user.id || user._id;
     if (!id) return false;

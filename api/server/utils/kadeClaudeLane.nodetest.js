@@ -50,6 +50,31 @@ test('claudeAdult reads the person a chat turn would be written for, and the sto
   assert.equal(await lane.claudeAdult(undefined), false);
 });
 
+test('Nov 14 review: a test seat (KADE_CLAUDE_EXCLUDE_USERS) is never marked adult, signed in or on the line', async () => {
+  const env = { KADE_CLAUDE_EXCLUDE_USERS: ' vischeckSeat , evalclean ' };
+  const typedAdult = (id) => ({ user: { id, kadeAccountType: 'adult' } });
+  assert.equal(await lane.claudeAdult(typedAdult('vischeckSeat'), { env }), false, 'the battery\'s seat is typed adult, and stays off Claude');
+  assert.equal(await lane.claudeAdult({ user: { _id: 'evalclean', kadeAccountType: 'adult' } }, { env }), false, 'an _id counts too');
+  assert.equal(await lane.claudeAdult(typedAdult('realPerson'), { env }), true, 'everyone else as before');
+  assert.equal(await lane.claudeAdult({ user: { id: 'svc', role: 'ADMIN' }, kadeOnBehalfOf: { id: 'evalclean', kadeAccountType: 'adult' } }, { env }), false,
+    'a voice turn for a test seat');
+  let read = 0;
+  assert.equal(await lane.claudeAdult({ user: { id: 'vischeckSeat', role: 'USER' } }, { env, loadUser: async () => { read += 1; return { kadeAccountType: 'adult' }; } }), false);
+  assert.equal(read, 0, 'no account read for a listed seat');
+  for (const empty of [{}, { KADE_CLAUDE_EXCLUDE_USERS: '' }, { KADE_CLAUDE_EXCLUDE_USERS: ' , ' }]) {
+    assert.equal(await lane.claudeAdult(typedAdult('vischeckSeat'), { env: empty }), true, `nobody is listed: ${JSON.stringify(empty)}`);
+  }
+  // The live list is read from the process by default, as the chat turns read it.
+  const saved = process.env.KADE_CLAUDE_EXCLUDE_USERS;
+  try {
+    process.env.KADE_CLAUDE_EXCLUDE_USERS = 'vischeckSeat';
+    assert.equal(await lane.claudeAdult(typedAdult('vischeckSeat')), false);
+  } finally {
+    if (saved === undefined) delete process.env.KADE_CLAUDE_EXCLUDE_USERS;
+    else process.env.KADE_CLAUDE_EXCLUDE_USERS = saved;
+  }
+});
+
 test('the headers: the lane always, the adult mark only when it is exactly true, nothing with the switch off', () => {
   assert.deepEqual(lane.LANES, ['lyric-desk', 'booth-edit', 'persona-writer', 'spotter-draft']);
   for (const l of lane.LANES) {
