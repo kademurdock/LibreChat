@@ -87,7 +87,7 @@ async function askKiana({ userId, onBehalfOf, callAs, publicIds, agentId = KIANA
   const { Tool, seen } = loadTool({ publicIds });
   const req = { user: { id: userId, name: 'Someone' }, ...(onBehalfOf ? { kadeOnBehalfOf: { id: onBehalfOf } } : {}) };
   const tool = new Tool({ userId, req, agentId, agentName: agentId === KIANA ? 'Kiana' : 'Harley' });
-  const reply = await tool._call({ to_number: '4175550100', purpose: 'say hi', call_as: callAs });
+  const reply = await tool._call({ to_number: '4175550100', purpose: 'say hi', call_as: callAs, business: false }); // Nov 14 2026: business is required now
   return { reply, seen, placedAs: seen.posts[0] && seen.posts[0].body.agentId };
 }
 

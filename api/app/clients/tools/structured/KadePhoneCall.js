@@ -9,6 +9,11 @@ const _lastPlaced = new Map(); // userId -> ts of last successful place_call
 const _lastChecked = new Map(); // userId -> ts of last check_result
 // Nov 14 2026: did the bridge say it will report this user's last call back by itself?
 const _lastReportBack = new Map(); // userId -> boolean
+/* Nov 14 2026 review: the call this chat placed last, so check_result asks the bridge about THAT
+ * call. Without an id the bridge answers with the newest call it has on record, which after a
+ * bridge restart was an older call, reported as this one. */
+const _lastPlacedSid = new Map(); // userId -> { sid, at }
+const LAST_SID_MS = 6 * 3600 * 1000;
 
 /* Nov 14 2026 (Kade's test call: "I don't think I like how it's like, message me back later and
  * I'll tell you what they said. It should be like, they message you when they're done with the
@@ -47,8 +52,8 @@ const phoneCallJsonSchema = {
     business: {
       type: 'boolean',
       description:
-        'For place_call. true when the call is to a store, restaurant, gas station, office, clinic, or anyone else who does not personally know the user. ' +
-        "The call then opens with \"Hi, this is <you>, an A I assistant calling for <the user's first name>, one of our users. This call may be recorded.\" and you stay brief and professional. " +
+        'Required for place_call. true when the call is to a store, restaurant, gas station, office, clinic, or anyone else who does not personally know the user. ' +
+        "The call then opens with \"Hi, this is <you>, an A I assistant calling on behalf of a customer, <the user's full name>. This call may be recorded.\" and you stay brief and professional. " +
         'false only for friends and family who know the user and you. If unsure, true.',
     },
     details: {
@@ -160,13 +165,13 @@ class KadePhoneCall extends Tool {
       `An AI voice agent speaks on the call following the purpose you provide. Costs real money (~${this.priceNote.perMinute} cents/minute, billed to the user's tab), ` +
       'hard-capped at 15 minutes and 10 calls per user per day. ONLY use when the user explicitly asks for a call, and ALWAYS confirm the exact ' +
       'number and reason with them first. When confirming, ALSO tell the user (casually, not as a warning): the call will identify them by ' +
-      "first name as the person who requested it, and the call's cost is added to their Feed the Server page.";
+      "name as the person who requested it (a store or other business hears their full name), and the call's cost is added to their Feed the Server page.";
     this.description_for_model =
       this.description +
       ' After placing the call you get a confirmation only — the conversation happens live on the phone. ' +
       /* Nov 14 2026: the character reports back by itself now (bridge call-report.js). */
       "When the call ends you normally message the user yourself with how it went (the tool's reply after dialing confirms it), so tell them it is dialing and that you'll message them when it's done. Never ask them to message you back or check in for the result. " +
-      "Set business=true for any store, restaurant, office or anyone who does not personally know the user: the call then says it is an A I assistant calling for the user's first name. " +
+      "Always say business: true for any store, restaurant, office or anyone who does not personally know the user (the call then says it is an A I assistant calling on behalf of a customer, the user's full name), false for family and friends who know the user. A call without it is not placed. " +
       "If they ask about a call before your message arrives, call action='check_result' ONCE — it WAITS for the call to finish (up to ~1 minute) and returns the transcript. NEVER call check_result more than once in a turn, and never place the same call twice. " +
       'If it says the call is still in progress, tell the user it is still going, and END your reply. NEVER invent a call result — only report what the transcript actually says. ' +
       'FAMILY WELLNESS CHECK-INS (schedule_checkin / list_checkins / pause_checkin / cancel_checkin / test_checkin): recurring companion calls to REGISTERED family only — you (this agent) make the call, chat warmly, and afterwards a detailed summary of how they seemed and what they said is delivered to the user as a nudge. ' +
@@ -182,7 +187,7 @@ class KadePhoneCall extends Tool {
     }
     const { action, to_number, purpose, callee_name, call_sid, details } = data || {};
     /* Nov 14 2026: a business or a stranger (true), family who know the user (false), or not said
-     * (the bridge decides by its registry: unregistered numbers count as strangers). */
+     * (review, the same day: then place_call is refused until the model says which). */
     const business =
       data && (data.business === true || data.business === 'true')
         ? true
@@ -201,16 +206,35 @@ class KadePhoneCall extends Tool {
         );
       }
       _lastChecked.set(uid, Date.now());
+      // Nov 14 2026 review: ask about the call this chat placed, unless the model named another one.
+      const lastSid = _lastPlacedSid.get(uid);
+      const sid = call_sid || (lastSid && Date.now() - lastSid.at < LAST_SID_MS ? lastSid.sid : undefined);
       try {
         // waitSec: the BRIDGE waits for the call to wrap (up to ~50s) so one
         // check usually returns the finished transcript — the model must not poll.
         const r = await axios.post(
           `${this.bridgeUrl}/outbound/result`,
-          { secret: this.bridgeSecret, userId: uid, callSid: call_sid || undefined, waitSec: 50 },
+          { secret: this.bridgeSecret, userId: uid, callSid: sid || undefined, waitSec: 50 },
           { timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0' } },
         );
         const d = r.data || {};
-        if (!d.found) return 'No outbound calls found for this user yet.';
+        if (!d.found) {
+          return sid
+            ? 'That call is not on record. It may have been cut off when the phone system restarted. Tell the user that plainly, and never guess what was said.'
+            : 'No outbound calls found for this user yet.';
+        }
+        if (d.status === 'interrupted') {
+          const heard = (d.transcript || [])
+            .map((t) => `${t.role === 'assistant' ? 'Agent' : 'Callee'}: ${t.content}`)
+            .join('\n');
+          return (
+            `Call ${d.callSid} to ${d.calleeName || 'that number'} was cut off: the phone system restarted on our side during or right after it.\n` +
+            `What was saved:\n${heard || '(nothing)'}\n\n` +
+            (d.reportedToChat
+              ? 'You have ALREADY messaged them about this call (or that message is being written right now). Do not repeat it; answer what they asked, from what was saved above only.'
+              : 'Tell the user plainly that the call was cut off by a restart on our side, and report only what was saved above. Never guess the rest.')
+          );
+        }
         if (d.status === 'in-progress') {
           return (
             `The call to ${d.calleeName || d.to} is still in progress after waiting (started ${d.startedSecondsAgo}s ago). ` +
@@ -269,6 +293,19 @@ class KadePhoneCall extends Tool {
         return `Couldn't look up "${callAs}" right now — try again in a moment.`;
       }
     }
+    /* Nov 14 2026 review: the greeting a stranger needs ("an A I assistant calling on behalf of a
+     * customer ...") depended on the model sending business:true. Left out, the bridge decided by its
+     * registry, and Kade's own number (registered, with Kiana as its character) got the friend
+     * greeting again on a "call this gas station" test: no A I notice, no recording notice, her own
+     * memories on the call. So the model has to say which it is. Nothing is dialed until it does.
+     * "Not started:" reads as a failure to the ledger (kadeLedger.js), so the reply cannot claim a call. */
+    if (business === undefined) {
+      return (
+        'Not started: no call was placed and nothing was charged. Say business: true for a store, office or anyone ' +
+        'who does not personally know the user, or business: false for family and friends who know them (if unsure, true), ' +
+        'then place the same call again.'
+      );
+    }
     const uidPlace = this.actingUserId;
     if (Date.now() - (_lastPlaced.get(uidPlace) || 0) < 30000) {
       return (
@@ -292,7 +329,7 @@ class KadePhoneCall extends Tool {
           /* Nov 14 2026: a business call opens "<name>, an A I assistant calling for <first name>,
            * one of our users. This call may be recorded." disclose is the older bridge's word for
            * the same greeting, so either bridge gets it right. */
-          ...(business === undefined ? {} : { business }),
+          business, // always said by now (the refusal above)
           ...(business === true ? { disclose: true } : {}),
           // A number nobody registered, asked for from a chat, is a store or a stranger unless
           // the character said business:false (the bridge's own briefings keep their old rules).
@@ -310,8 +347,9 @@ class KadePhoneCall extends Tool {
       const d = r.data || {};
       _lastPlaced.set(uidPlace, Date.now());
       _lastReportBack.set(uidPlace, d.reportBack === true);
+      if (typeof d.callSid === 'string' && d.callSid) _lastPlacedSid.set(uidPlace, { sid: d.callSid, at: Date.now() });
       return (
-        `Call placed to ${d.to}${callAgentId !== this.agentId ? ` — ${callAgentName} is making this call in their own voice` : ''} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
+        `Call placed to ${d.to}${d.callSid ? ` (call id ${d.callSid})` : ''}${callAgentId !== this.agentId ? ` — ${callAgentName} is making this call in their own voice` : ''} — it is dialing now, capped at ${d.timeLimitMin} minutes. ` +
         `The user has ${d.callsLeftToday} outbound call(s) left today. The cost will appear on their Feed-the-Server tab after the call ends. ` +
         (d.reportBack === true
           ? SAYS_IT_WILL_MESSAGE

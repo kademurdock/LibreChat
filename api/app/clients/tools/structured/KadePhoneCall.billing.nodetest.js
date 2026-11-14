@@ -43,7 +43,7 @@ const KADE_SEAT = { id: 'u-kade', role: 'ADMIN', name: 'Kade' };
 async function place(fields) {
   const { Tool, posts } = loadTool();
   const tool = new Tool({ agentId: 'agent_harley', agentName: 'Harley', ...fields });
-  await tool._call({ to_number: '4175550100', purpose: 'say hi' });
+  await tool._call({ to_number: '4175550100', purpose: 'say hi', business: false }); // Nov 14 2026: business is required now
   const placed = posts.find((p) => p.url.endsWith('/outbound-call'));
   await tool._call({ action: 'check_result' });
   const checked = posts.find((p) => p.url.endsWith('/outbound/result'));

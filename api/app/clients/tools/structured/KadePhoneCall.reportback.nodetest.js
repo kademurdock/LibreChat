@@ -24,7 +24,7 @@ function loadTool(replies = {}) {
       post: async (url, body) => {
         posts.push({ url, body });
         if (url.endsWith('/outbound/result')) return { data: replies.result || { found: false } };
-        return { data: { to: '+14175550100', timeLimitMin: 15, callsLeftToday: 3, ...(replies.placed || {}) } };
+        return { data: { to: '+14175550100', callSid: 'CA' + 'f'.repeat(32), timeLimitMin: 15, callsLeftToday: 3, ...(replies.placed || {}) } };
       },
     },
     '@librechat/agents/langchain/tools': { Tool: class {} },
@@ -74,29 +74,38 @@ test('HER TEST CALL: "call this gas station" goes out as a business call that re
 
 test('an older bridge that does not report back keeps the old wording (no false promise)', async () => {
   const { Tool } = loadTool({ placed: {} });
-  const out = await new Tool(fields())._call({ to_number: '4175550100', purpose: 'say hi' });
+  const out = await new Tool(fields())._call({ to_number: '4175550100', purpose: 'say hi', business: false });
   assert.match(out, /when they next check in/);
   assert.equal(/you will message them/.test(out), false);
 });
 
-test('family calls send no business flag unless the character says so; "false" means a person who knows the user', async () => {
+/* Review, Nov 14 2026: on her own number (registered, with Kiana as its character) a left-out business flag
+ * let the registry pick the friend greeting again: no A I notice, no recording notice, her memories on the
+ * call. The model now has to say which it is; nothing is dialed until it does. */
+test('REVIEW: place_call without business is not placed; the model is told to say true or false and call again', async () => {
   const a = loadTool({ placed: { reportBack: true } });
-  await new a.Tool(fields())._call({ to_number: '4175550100', purpose: 'Kade wants to know if you are coming Sunday' });
-  const plain = a.posts.find((p) => p.url.endsWith('/outbound-call')).body;
-  assert.equal('business' in plain, false, 'the registry decides: a registered family number gets the family greeting');
-  assert.equal('disclose' in plain, false);
-  assert.equal('context' in plain, false);
-  assert.equal(plain.unregisteredIsBusiness, true);
+  const out = await new a.Tool(fields())._call({ to_number: '4175550100', purpose: 'ask if you have any deals on hemp products' });
+  assert.equal(a.posts.length, 0, 'nothing was sent to the bridge');
+  assert.match(out, /^Not started: no call was placed and nothing was charged\./);
+  assert.match(out, /business: true for a store/);
+  assert.match(out, /business: false for family/);
+  // The ledger (kadeLedger.js FAIL_START) reads "Not started" as a failure, so no reply can claim a call.
+  assert.match(out, /^\s*not started\b/i);
+});
+
+test('family calls say business false: no stranger greeting, no disclose', async () => {
   const b = loadTool({ placed: { reportBack: true } });
-  await new b.Tool(fields())._call({ to_number: '4175550100', purpose: 'say hi', business: 'false' });
+  await new b.Tool(fields())._call({ to_number: '4175550100', purpose: 'Kade wants to know if you are coming Sunday', business: 'false' });
   const fam = b.posts.find((p) => p.url.endsWith('/outbound-call')).body;
   assert.equal(fam.business, false);
   assert.equal('disclose' in fam, false);
+  assert.equal('context' in fam, false);
+  assert.equal(fam.unregisteredIsBusiness, true);
 });
 
 test("a chat with no saved conversation yet ('new') sends no conversationId; the bridge then picks the newest one", async () => {
   const { Tool, posts } = loadTool({ placed: { reportBack: true } });
-  await new Tool(fields({ conversationId: 'new' }))._call({ to_number: '4175550100', purpose: 'say hi' });
+  await new Tool(fields({ conversationId: 'new' }))._call({ to_number: '4175550100', purpose: 'say hi', business: false });
   const body = posts.find((p) => p.url.endsWith('/outbound-call')).body;
   assert.equal(body.conversationId, undefined);
 });
@@ -105,7 +114,7 @@ test('Kiana hands a call to Lilly: Kiana is the one who reports back', async () 
   const { Tool, posts } = loadTool({ placed: { reportBack: true } });
   const tool = new Tool(fields({ agentId: 'agent_6llV0eMu4fmIaj8f2x1Sb' }));
   tool._findCallAgent = async () => ({ id: 'agent_lilly', name: 'Lilly' });
-  await tool._call({ to_number: '4175550100', purpose: 'say hi', call_as: 'Lilly' });
+  await tool._call({ to_number: '4175550100', purpose: 'say hi', call_as: 'Lilly', business: false });
   const body = posts.find((p) => p.url.endsWith('/outbound-call')).body;
   assert.equal(body.agentId, 'agent_lilly');
   assert.equal(body.reportAgentId, 'agent_6llV0eMu4fmIaj8f2x1Sb');
@@ -131,7 +140,7 @@ test('check_result after the character already reported: answer, do not repeat t
 test('the guard after a quick second check keeps the report-back promise when the call reports back', async () => {
   const { Tool } = loadTool({ placed: { reportBack: true }, result: { found: true, status: 'in-progress', to: 'x', startedSecondsAgo: 5, reportBack: true } });
   const tool = new Tool(fields());
-  await tool._call({ to_number: '4175550100', purpose: 'say hi' });
+  await tool._call({ to_number: '4175550100', purpose: 'say hi', business: false });
   await tool._call({ action: 'check_result' });
   const again = await tool._call({ action: 'check_result' });
   assert.match(again, /STOP: you just checked/);
@@ -150,4 +159,48 @@ test('the schema the model is given (registry) and the class schema both carry b
   assert.match(block, /details: \{\s*type: 'string'/);
   assert.match(ts, /When the call ends you normally message the user yourself/);
   assert.equal(/afterwards fetch the transcript with ONE action='check_result'/.test(ts), false, 'the old "fetch it afterwards" instruction is gone');
+  // Review: Kade's Part 66 wording (a business hears "on behalf of a customer" and the full name), in both places.
+  const registryText = ts.slice(ts.indexOf('kade_phone_call: {'), ts.indexOf('kade_phone_call: {') + 4000);
+  for (const text of [block, registryText, own.business.description, new Tool(fields()).description_for_model]) {
+    assert.equal(/one of our users|calling for <the user/.test(text), false);
+  }
+  assert.match(block, /calling on behalf of a customer, <the user\\'s full name>/);
+  assert.match(registryText, /calling on behalf of a customer, the user's full name/);
+  assert.match(own.business.description, /calling on behalf of a customer, <the user's full name>/);
+  assert.match(new Tool(fields()).description, /identify them by name as the person who requested it \(a store or other business hears their full name\)/);
+  assert.match(registryText, /identify them by name as the requester \(a store or other business hears their full name\)/);
+});
+
+/* Review, Nov 14 2026: after a bridge restart the newest call record was an OLDER call, and check_result
+ * reported it as this one. The tool now says which call it means. */
+test('REVIEW: the reply after dialing names the call, and check_result asks about that call', async () => {
+  const { Tool, posts } = loadTool({ placed: { reportBack: true }, result: { found: true, status: 'in-progress', to: 'x', startedSecondsAgo: 5, reportBack: true } });
+  const tool = new Tool(fields());
+  const out = await tool._call({ to_number: '4175550100', purpose: 'ask if you are open', business: true });
+  assert.match(out, /\(call id CAf{32}\)/);
+  await tool._call({ action: 'check_result' });
+  const asked = posts.find((p) => p.url.endsWith('/outbound/result')).body;
+  assert.equal(asked.callSid, 'CA' + 'f'.repeat(32));
+  // A call id the model names wins.
+  const other = loadTool({ result: { found: false } });
+  await new other.Tool(fields())._call({ action: 'check_result', call_sid: 'CA' + '1'.repeat(32) });
+  assert.equal(other.posts[0].body.callSid, 'CA' + '1'.repeat(32));
+});
+
+test('REVIEW: a call cut off by a restart is reported as that; a call id not on record is never swapped for another call', async () => {
+  const a = loadTool({ result: {
+    found: true, status: 'interrupted', callSid: 'CA9', calleeName: 'Shell', reportBack: true, reportedToChat: false,
+    transcript: [{ role: 'user', content: 'We closed down last week.' }],
+  } });
+  const out = await new a.Tool(fields())._call({ action: 'check_result', call_sid: 'CA9' });
+  assert.match(out, /was cut off: the phone system restarted on our side/);
+  assert.match(out, /Callee: We closed down last week\./);
+  assert.match(out, /Never guess the rest/);
+  const told = loadTool({ result: { found: true, status: 'interrupted', callSid: 'CA9', reportBack: true, reportedToChat: true, transcript: [] } });
+  assert.match(await new told.Tool(fields())._call({ action: 'check_result', call_sid: 'CA9' }), /ALREADY messaged them about this call/);
+  const b = loadTool({ result: { found: false } });
+  const gone = await new b.Tool(fields())._call({ action: 'check_result', call_sid: 'CA8' });
+  assert.match(gone, /^That call is not on record/);
+  const c = loadTool({ result: { found: false } });
+  assert.equal(await new c.Tool(fields())._call({ action: 'check_result' }), 'No outbound calls found for this user yet.');
 });
