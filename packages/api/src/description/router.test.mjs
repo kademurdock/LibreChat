@@ -5229,3 +5229,22 @@ test('follow along: on one server, a fingerprint still being made reads as makin
     }
   });
 });
+
+test('follow along: a fingerprint file that vanished from storage is noticed and made again on request', async () => {
+  await withFollow('1', async () => {
+    const owner = 'follow-vanished';
+    const id = await followCopy(owner, 'follow-vanished-upload-01');
+    await printed(id);
+    objects.delete(`/test/described-video/${owner}/${id}/sync/plan.sypr`);
+    const from = logLines.length;
+    const lost = await fcall('get', `/jobs/${id}/track`, owner).expect(409);
+    assert.equal(lost.body.follow, 'possible', 'no link is handed out to a file that is not there');
+    assert.equal((await Jobs.findById(id).lean()).sync?.plan, undefined);
+    assert.ok(logLines.slice(from).some((line) => line === `sync missing id=${id} plan=plan`));
+    assert.equal((await fcall('post', `/jobs/${id}/track`, owner).expect(202)).body.follow, 'making');
+    await followRouters().worker.tick();
+    await printed(id);
+    assert.equal((await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body.follow, 'ready');
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
