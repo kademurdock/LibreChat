@@ -45,9 +45,31 @@ function keyMatches(value) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/**
+ * Nov 14 2026: TEST SEATS NEVER REACH CLAUDE. The daily character battery (the bridge's
+ * battery.js, on the vischeck seat at 07:00Z) and the evalclean seat are typed adult, so since
+ * Claude came on (gateway KADE_CLAUDE_CHAT=1) every probe went to Claude Opus and wrote a fresh
+ * prompt cache: about $0.23 a probe, $1.67 in the first two minutes of the Nov 14 run. Their turns
+ * are now marked background (req.kadeBackground), which is all the gateway needs to keep them on
+ * MiMo's cheap host; nothing else about the turn changes (req.kadeHiddenRun stays unset, so memory,
+ * nudges and the soul state behave exactly as before). KADE_CLAUDE_EXCLUDE_USERS is a comma list of
+ * account ids; empty or unset means nobody.
+ */
+function excludedFromClaude(req, env = process.env) {
+  const list = String((env && env.KADE_CLAUDE_EXCLUDE_USERS) || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const id = req && req.user && (req.user.id || req.user._id);
+  return list.length > 0 && id != null && list.includes(String(id));
+}
+
 /** Express middleware for the agent chat router. */
 function markHiddenRun(req, _res, next) {
   try {
+    if (excludedFromClaude(req)) {
+      req.kadeBackground = true;
+    }
     if (!keyMatches(req.get && req.get('x-kade-hidden-run'))) {
       return next();
     }
@@ -78,4 +100,4 @@ function hiddenRunHeaders({ platformPaid = false, steps } = {}) {
   };
 }
 
-module.exports = { markHiddenRun, hiddenRunHeaders, ownerId };
+module.exports = { markHiddenRun, hiddenRunHeaders, ownerId, excludedFromClaude };
