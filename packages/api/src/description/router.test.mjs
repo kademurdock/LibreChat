@@ -5041,11 +5041,16 @@ test('follow along: each version has its own track from its plan’s one fingerp
     const owner = 'follow-versions';
     const id = await followCopy(owner, 'follow-versions-upload-01');
     await printed(id);
-    const calls = followCalls;
+    const before = logLines.length;
     await fcall('post', `/jobs/${id}/revoice`, owner).send({ ...settings, rate: 2, maxRate: 3 }).expect(202);
     const revoiced = await followSettle(id, ['done', 'failed'], owner);
     assert.equal(revoiced.version, 2);
-    assert.equal(followCalls, calls, 'the plan is reused, so no new fingerprint');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(
+      logLines.slice(before).some((line) => line.startsWith(`sync made id=${id}`)),
+      false,
+      'the plan is reused, so no new fingerprint',
+    );
     const latest = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
     assert.equal(latest.version, 2);
     assert.equal(latest.track.copyVersion, 2);
@@ -5159,10 +5164,15 @@ test('follow along: a failed fingerprint never costs the copy; three failed trie
         refused.body.error,
         'A follow-along track could not be made for this video after three tries. Describe it again to get one.',
       );
-      const calls = followCalls;
+      const before = logLines.length;
       await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
       await followRouters().worker.tick();
-      assert.equal(followCalls, calls, 'nothing more is tried');
+      assert.equal(
+        logLines.slice(before).some((line) => line.startsWith(`sync failed id=${id}`)),
+        false,
+        'nothing more is tried',
+      );
+      assert.equal((await Jobs.findById(id).lean()).syncTries, 3);
       await fcall('delete', `/jobs/${id}`, owner).expect(200);
     } finally {
       followFails = false;
