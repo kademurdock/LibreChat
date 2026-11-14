@@ -8,12 +8,27 @@
  * Vision model: KADE_VISION_MODEL (default xiaomi/mimo-v2.6-pro) via
  * OpenRouter — the SAME proven path the gallery auto-describer uses (handles
  * images AND video inline as base64; verified live July 2 2026).
+ * Nov 13 2026: a VIDEO from a MiMo lane goes to the video model instead
+ * (KADE_VIDEO_MODEL, default google/gemini-3.8-flash on Google Vertex), because
+ * no zero-retention MiMo host hears a video's soundtrack any more
+ * (kadeMediaRoute). Pictures and documents stay on KADE_VISION_MODEL.
  */
 const crypto = require('crypto');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { openRouterCost } = require('./kadeRealCost');
-const { contentKind, limits, mediaProvider, pause, readReply } = require('./kadeMediaRoute');
+const {
+  alwaysThinks,
+  contentKind,
+  limits,
+  mediaModel,
+  mediaProvider,
+  pause,
+  plainAnswer,
+  readReply,
+  refusalTries,
+  videoRates,
+} = require('./kadeMediaRoute');
 
 const DESCRIBE_MODEL = process.env.KADE_VISION_MODEL || 'xiaomi/mimo-v2.6-pro';
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
@@ -139,11 +154,31 @@ function visionReasoning(model) {
 }
 
 /**
- * One describer call. Oct 16 2026: only zero-retention hosts (kadeMediaRoute) — a video only to the
- * hosts that hear its soundtrack, pictures and text DeepInfra first. A refusal (Novita's filter
- * sometimes refuses a harmless request) is asked again, up to three tries 20 s apart, and is never
- * returned as text; a video
- * answered by a host that cannot hear it is not used. Every call's cost is counted, used or not.
+ * How one request is asked to think, and `room`, the output tokens added to max_tokens for that
+ * thinking. Nov 13 2026: a video goes to a model that cannot switch its thinking off (the video
+ * model, google/gemini-3.8-flash, answers "Reasoning is mandatory" to a reasoning-off request). It
+ * is asked for the least thinking it does, with room for it, whatever KADE_VISION_REASONING says:
+ * that knob was set for the lane's own model, and a thinking pass with no room eats the 1,000
+ * tokens a video description gets (kadeMediaRoute `plainAnswer`). Pictures, documents and text are
+ * asked exactly as before.
+ */
+function thinkingFor(model, kind) {
+  if (kind === 'video' && alwaysThinks(model)) {
+    return plainAnswer(model);
+  }
+  return { reasoning: visionReasoning(model), room: 0 };
+}
+
+/**
+ * One describer call. Oct 16 2026: only zero-retention hosts (kadeMediaRoute) — pictures and text
+ * DeepInfra first, a video only where its soundtrack is heard. Nov 13 2026: for a MiMo lane that is
+ * the video model on Google Vertex (`mediaModel`), and `model` below, the model this one request is
+ * really sent to, decides everything about it: its route, how it thinks, the room for its thinking,
+ * how its reply is read, how often a refusal is asked again, the price of a reply that names no
+ * cost, and the model the result reports. A refusal is never returned as text. MiMo is asked again,
+ * up to three tries 20 s apart, because Novita's filter sometimes refuses a harmless request; any
+ * other model is asked once (Google declines the same clip again). A video answered by a host that
+ * cannot hear it is not used. Every call's cost is counted, used or not.
  * The scanned-PDF `file` part is still turned into text by OpenRouter's Mistral OCR plugin, which
  * zero retention does not cover (OpenRouter: ZDR "only applies to provider routing").
  */
@@ -153,47 +188,53 @@ async function orChat(content, maxTokens = 900) {
     throw new Error('OPENROUTER_KEY not configured');
   }
   const kind = contentKind(content);
+  const model = mediaModel(DESCRIBE_MODEL, kind, process.env);
+  const { reasoning, room } = thinkingFor(model, kind);
+  /* KADE_DESCRIBE_IN_USD_PER_M and _OUT_ are the lane's own model's rates (MiMo's, on Railway). */
+  const rates =
+    model === DESCRIBE_MODEL ? { in: IN_USD_PER_M, out: OUT_USD_PER_M } : videoRates(process.env);
+  const tries = refusalTries(model);
   let costUSD = 0;
-  for (let attempt = 1; attempt <= limits.refusalTries; attempt++) {
+  for (let attempt = 1; attempt <= tries; attempt++) {
     if (attempt > 1) {
       await pause(limits.refusalMs);
     }
     const r = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: DESCRIBE_MODEL,
-        max_tokens: maxTokens,
+        model,
+        max_tokens: maxTokens + room,
         messages: [{ role: 'user', content }],
         usage: { include: true },
-        provider: mediaProvider(DESCRIBE_MODEL, kind),
-        ...(visionReasoning(DESCRIBE_MODEL) ? { reasoning: visionReasoning(DESCRIBE_MODEL) } : {}),
+        provider: mediaProvider(model, kind, process.env),
+        ...(reasoning ? { reasoning } : {}),
       },
       { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 120000 },
     );
     const usage = r.data?.usage || {};
     const estUSD =
-      ((Number(usage.prompt_tokens) || 0) * IN_USD_PER_M +
-        (Number(usage.completion_tokens) || 0) * OUT_USD_PER_M) /
+      ((Number(usage.prompt_tokens) || 0) * rates.in +
+        (Number(usage.completion_tokens) || 0) * rates.out) /
       1e6;
     // Prefer OpenRouter's real reported cost (with a BYOK key, its fee plus what Google charged,
-    // Part 295); fall back to the env-tunable estimate.
+    // Part 295); fall back to the estimate at the answering model's rates.
     const reported = openRouterCost(usage);
     costUSD += reported != null ? reported : estUSD;
-    const reply = readReply(r.data, DESCRIBE_MODEL, kind);
+    const reply = readReply(r.data, model, kind, process.env);
     if (reply.unheard) {
       logger.warn(
         `[kadeDescribe] ${r.data?.provider} answered a video it cannot hear the soundtrack of; not used`,
       );
-      return { text: null, costUSD };
+      return { text: null, costUSD, model };
     }
     if (!reply.refused) {
-      return { text: reply.text, costUSD };
+      return { text: reply.text, costUSD, model };
     }
     logger.warn(
-      `[kadeDescribe] ${r.data?.provider || 'the host'} refused (content_filter), try ${attempt} of ${limits.refusalTries}`,
+      `[kadeDescribe] ${r.data?.provider || 'the host'} refused (content_filter), try ${attempt} of ${tries}`,
     );
   }
-  return { text: null, costUSD };
+  return { text: null, costUSD, model };
 }
 
 const IMAGE_INSTRUCTION =
@@ -347,6 +388,8 @@ async function runDescribe(item) {
   let readText = null;
   let docText = null;
   let cost = 0;
+  /* The model that wrote the description, for the usage row: a video's is the video model. */
+  let model = DESCRIBE_MODEL;
 
   if (item.buf && mime.startsWith('image/')) {
     kind = 'image';
@@ -355,9 +398,10 @@ async function runDescribe(item) {
     cost += costUSD;
   } else if (item.buf && mime.startsWith('video/')) {
     kind = 'video';
-    const { text, costUSD } = await describeMediaBuffer({ buf: item.buf, mime, kind: 'video' });
-    description = text;
-    cost += costUSD;
+    const look = await describeMediaBuffer({ buf: item.buf, mime, kind: 'video' });
+    description = look.text;
+    cost += look.costUSD;
+    model = look.model;
   } else if (item.buf && (mime === 'application/pdf' || /\.pdf$/i.test(name || ''))) {
     kind = 'document';
     try {
@@ -446,7 +490,7 @@ async function runDescribe(item) {
     readText: readText || null,
     dates,
     costUSD: Math.round(cost * 100000) / 100000,
-    model: DESCRIBE_MODEL,
+    model,
   };
 }
 

@@ -32,7 +32,9 @@ function load(reply, env = {}) {
     module,
     Buffer,
     setImmediate,
-    process: { env: { OPENROUTER_KEY: 'fake-local-test', ...env } },
+    /* Nov 13 2026: the older tests in this file cover the MiMo path, which KADE_VIDEO_MODEL=mimo
+     * keeps; pass KADE_VIDEO_MODEL: '' to test the default. */
+    process: { env: { OPENROUTER_KEY: 'fake-local-test', KADE_VIDEO_MODEL: 'mimo', ...env } },
     require(id) {
       if (['fs/promises', 'fs', 'os', 'path'].includes(id)) return require(id);
       if (id === 'child_process')
@@ -156,16 +158,10 @@ test('an answer from a host that cannot hear the soundtrack is never used, and n
 });
 
 test('KADE_VIDEO_HOSTS overrides the hearing hosts; a Google model never reaches AI Studio', async () => {
-  const saved = process.env.KADE_VIDEO_HOSTS;
-  process.env.KADE_VIDEO_HOSTS = 'Novita,GMICloud';
-  try {
-    const { internals, calls } = load(() => answer('GMICloud'));
-    await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
-    assert.deepEqual(plain(calls[0].body.provider.only), ['Novita', 'GMICloud']);
-  } finally {
-    if (saved === undefined) delete process.env.KADE_VIDEO_HOSTS;
-    else process.env.KADE_VIDEO_HOSTS = saved;
-  }
+  /* Nov 13 2026: the lane hands its own env to the route, so the setting travels in it. */
+  const { internals, calls } = load(() => answer('GMICloud'), { KADE_VIDEO_HOSTS: 'Novita,GMICloud' });
+  await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.deepEqual(plain(calls[0].body.provider.only), ['Novita', 'GMICloud']);
   const google = load(() => answer('Google'), {
     KADE_LIBRARY_VISION_MODEL: 'google/gemini-3.8-flash',
   });
@@ -199,9 +195,37 @@ test('MiMo segments default to five minutes and each look may take ten; the env 
     return module.exports;
   };
   assert.equal(library({}).estimate(1800).segments, 6);
+  /* Nov 13 2026: Google segments are five minutes too (they were fifteen), so a look's timeline
+   * stays short; the soundtrack and the frames cost the same either way. */
   assert.equal(
     library({ KADE_LIBRARY_VISION_MODEL: 'google/gemini-3.8-flash' }).estimate(1800).segments,
-    2,
+    6,
   );
+  assert.equal(library({}).estimate(1800).model, 'google/gemini-3.8-flash');
+  assert.equal(library({ KADE_VIDEO_MODEL: 'mimo' }).estimate(1800).model, 'xiaomi/mimo-v2.6-pro');
   assert.equal(library({ KADE_DESCRIBE_SEGMENT_SECONDS: '600' }).estimate(1800).segments, 3);
+});
+
+/* Nov 13 2026: Novita stopped serving MiMo, so by default a Library segment goes to the video model. */
+test('by default a Library segment goes to the video model on Google Vertex: zero retention, 8,000 thinking tokens, a seven-minute deadline', async () => {
+  const { internals, calls } = load(() => answer('Google'), { KADE_VIDEO_MODEL: '' });
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.ok(result.text.includes('furniture store'), JSON.stringify(result));
+  assert.equal(calls[0].body.model, 'google/gemini-3.8-flash');
+  assert.deepEqual(plain(calls[0].body.provider), {
+    zdr: true,
+    data_collection: 'deny',
+    ignore: ['google-ai-studio'],
+  });
+  assert.deepEqual(plain(calls[0].body.reasoning), { max_tokens: 8000 });
+  assert.equal(calls[0].config.timeout, 420000);
+});
+
+test('a decline from Google of a Library segment is asked once and never becomes a scene', async () => {
+  const declined = { finish_reason: 'stop', native_finish_reason: 'SAFETY', message: { content: 'I cannot.' } };
+  const { internals, calls } = load(() => answer('Google', declined, 0.00004), { KADE_VIDEO_MODEL: '' });
+  const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 1);
+  assert.equal(result.refused, true);
+  assert.equal(result.text, '');
 });

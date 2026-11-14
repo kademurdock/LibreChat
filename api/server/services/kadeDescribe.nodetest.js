@@ -24,20 +24,22 @@ const HEARING_VIDEO = {
   only: ['Novita'],
   allow_fallbacks: true,
 };
+/* The MiMo video path, which KADE_VIDEO_MODEL=mimo keeps (Nov 13 2026: off by default). */
+const MIMO_VIDEO = { KADE_VIDEO_MODEL: 'mimo' };
 const refusal = {
   finish_reason: 'content_filter',
   message: { content: 'The request was rejected because it was considered high risk' },
 };
 
 /** Loads kadeDescribe.js with axios answering from `reply(body, n)` (n counts from 1). */
-function load(reply) {
+function load(reply, env = {}) {
   const calls = [];
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./kadeDescribe'), 'utf8'), {
     module,
     Buffer,
     setInterval: () => ({ unref() {} }),
-    process: { env: { OPENROUTER_KEY: 'fake-local-test' } },
+    process: { env: { OPENROUTER_KEY: 'fake-local-test', ...env } },
     require(id) {
       if (id === 'crypto') return require('crypto');
       if (id === 'axios') {
@@ -73,8 +75,8 @@ test('a shared photo goes only to zero-retention hosts, DeepInfra first, never X
   assert.equal(calls[0].body.messages[0].content[1].type, 'image_url');
 });
 
-test('a shared video goes only to Novita, the zero-retention host that hears its soundtrack', async () => {
-  const { describe, calls } = load(() => answer('A woman sings on a porch.', 'Novita'));
+test('KADE_VIDEO_MODEL=mimo: a shared video goes only to Novita, the zero-retention host that heard its soundtrack', async () => {
+  const { describe, calls } = load(() => answer('A woman sings on a porch.', 'Novita'), MIMO_VIDEO);
   const result = await describe.runDescribe({ buf: Buffer.from('mp4'), mime: 'video/mp4' });
   assert.equal(result.kind, 'video');
   assert.equal(result.description, 'A woman sings on a porch.');
@@ -82,8 +84,8 @@ test('a shared video goes only to Novita, the zero-retention host that hears its
   assert.equal(calls[0].body.messages[0].content[1].type, 'video_url');
 });
 
-test('a video answered by a host that cannot hear it is not used, and not asked again', async () => {
-  const { describe, calls } = load(() => answer('Upbeat chiptune plays.', 'DeepInfra'));
+test('KADE_VIDEO_MODEL=mimo: a video answered by a host that cannot hear it is not used, and not asked again', async () => {
+  const { describe, calls } = load(() => answer('Upbeat chiptune plays.', 'DeepInfra'), MIMO_VIDEO);
   await assert.rejects(
     describe.runDescribe({ buf: Buffer.from('mp4'), mime: 'video/mp4' }),
     /came back empty/,
@@ -128,4 +130,41 @@ test('a shared text document is summarized on zero-retention hosts too', async (
   assert.equal(result.description, 'A note about a picnic.');
   assert.deepEqual(plain(calls[0].body.provider), ZERO_RETENTION);
   assert.equal(calls[0].body.messages[0].content.length, 1, 'text only');
+});
+
+/* Nov 13 2026: Novita stopped serving MiMo, so by default a shared video goes to the video model
+ * (google/gemini-3.8-flash on Google Vertex), which hears its soundtrack with zero retention. */
+test('by default a shared video goes to the video model on Google Vertex, never AI Studio, with room for its thinking', async () => {
+  const { describe, calls } = load(() => answer('A woman sings on a porch.', 'Google'));
+  const result = await describe.runDescribe({ buf: Buffer.from('mp4'), mime: 'video/mp4' });
+  assert.equal(result.description, 'A woman sings on a porch.');
+  assert.equal(result.model, 'google/gemini-3.8-flash');
+  assert.equal(calls[0].body.model, 'google/gemini-3.8-flash');
+  assert.deepEqual(plain(calls[0].body.provider), {
+    zdr: true,
+    data_collection: 'deny',
+    ignore: ['google-ai-studio'],
+  });
+  /* It cannot switch thinking off, so it gets the least thinking and 2,000 tokens of room. */
+  assert.deepEqual(plain(calls[0].body.reasoning), { effort: 'minimal', exclude: true });
+  assert.equal(calls[0].body.max_tokens, 3000);
+  assert.equal(calls[0].body.messages[0].content[1].type, 'video_url');
+});
+
+test('a decline from Google is asked once and is never the description', async () => {
+  const declined = {
+    provider: 'Google',
+    choices: [{ finish_reason: 'stop', native_finish_reason: 'SAFETY', message: { content: 'I cannot help.' } }],
+    usage: { cost: 0.0002, prompt_tokens: 1000, completion_tokens: 10 },
+  };
+  const { describe, calls } = load(() => declined);
+  await assert.rejects(describe.runDescribe({ buf: Buffer.from('mp4'), mime: 'video/mp4' }), /came back empty/);
+  assert.equal(calls.length, 1);
+});
+
+test('a shared photo still goes to MiMo on zero-retention hosts, DeepInfra first', async () => {
+  const { describe, calls } = load(() => answer('A red barn.'));
+  await describe.runDescribe({ buf: Buffer.from('png'), mime: 'image/png' });
+  assert.equal(calls[0].body.model, 'xiaomi/mimo-v2.6-pro');
+  assert.deepEqual(plain(calls[0].body.provider), ZERO_RETENTION);
 });

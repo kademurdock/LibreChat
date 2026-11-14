@@ -113,12 +113,10 @@ async function mirrorAsset(doc) {
  * ($0.435/$0.87 per million in/out against Flash's $0.14/$0.28). Railway's
  * KADE_ASSET_DESCRIBE_MODEL picks the model; this is only the default. */
 const DESCRIBE_MODEL = process.env.KADE_ASSET_DESCRIBE_MODEL || 'xiaomi/mimo-v2.6-pro';
-/* Only Gemini's Pro models cannot switch reasoning off: for those, think
- * briefly, hide the thinking, and leave room for it so the words are not cut
- * short. This used to match any "-pro" slug, which on MiMo Pro would turn on a
- * reasoning pass that thinks ~2,400 tokens and truncates the description. MiMo
- * Pro switches reasoning off like Flash and keeps the normal token limit. */
-const describeIsGeminiPro = /(?:^|\/)gemini-[^/]*-pro(?:-|$)/i.test(DESCRIBE_MODEL);
+/* How a request thinks is decided by kadeMediaRoute `plainAnswer`, for the model it is really
+ * sent to (for a video, the video model, `mediaModel`): MiMo switches thinking off and keeps the
+ * normal token limit; a Gemini that cannot switch it off thinks as little as it can and gets
+ * room for that, so the words are not cut short (the old ~2,400-token truncation). */
 /* Rates for a reply that names no cost: Flash's on MiMo Flash, Pro's otherwise. */
 const describeIsMimoFlash = /mimo-v2\.6-flash/i.test(DESCRIBE_MODEL);
 const DESCRIBE_IN_USD_PER_M = describeIsMimoFlash ? 0.14 : 0.435;
@@ -139,7 +137,15 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
   if (!key) {
     return null;
   }
-  const { contentKind, mediaProvider, readReply } = require('~/server/services/kadeMediaRoute');
+  const { contentKind, mediaModel, mediaProvider, plainAnswer, readReply, videoRates } = require('~/server/services/kadeMediaRoute');
+  const kind = contentKind(content);
+  /* Nov 13 2026: no zero-retention MiMo host hears a video's soundtrack any more (Novita stopped
+   * serving MiMo), so a MiMo gallery sends its videos to the video model (kadeMediaRoute
+   * `mediaModel`, KADE_VIDEO_MODEL, by default google/gemini-3.8-flash on Google Vertex). Pictures
+   * and words keep DESCRIBE_MODEL. Everything below is about `model`, the model this one request is
+   * really sent to: how it thinks, its route, the price of its reply and its usage row. */
+  const model = mediaModel(DESCRIBE_MODEL, kind, process.env);
+  const { reasoning, room } = plainAnswer(model);
   const r = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     /* July 13 2026 money audit: request usage so gallery descriptions stop
@@ -153,16 +159,17 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
      * a blind user knows what a clip contains without playing it, so it is not
      * a place to be stingy. */
     {
-      model: DESCRIBE_MODEL,
-      max_tokens: describeIsGeminiPro ? maxTokens + 2000 : maxTokens,
-      reasoning: describeIsGeminiPro ? { effort: 'low', exclude: true } : { enabled: false },
+      model,
+      max_tokens: maxTokens + room,
+      reasoning,
       /* Oct 16 2026: people's own pictures and videos go only to hosts that
        * keep no copy and train on nothing (her zero-retention rule). */
       /* Pictures DeepInfra first: Novita, Pro's other zero-retention host, sometimes answers 200
        * with a content_filter refusal ("considered high risk"); the check below keeps that from
-       * ever being read to someone as a description. A video goes only to Novita: DeepInfra
-       * drops a video's soundtrack and looks at a fixed handful of frames (kadeMediaRoute). */
-      provider: mediaProvider(DESCRIBE_MODEL, contentKind(content)),
+       * ever being read to someone as a description. A video never goes to DeepInfra, which
+       * drops a video's soundtrack and looks at a fixed handful of frames: it goes to the video
+       * model on Google Vertex, never Google AI Studio (kadeMediaRoute). */
+      provider: mediaProvider(model, kind, process.env),
       messages: [{ role: 'user', content }],
       usage: { include: true },
     },
@@ -172,13 +179,19 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
     try {
       /* Part 295: OpenRouter's fee plus, with her Google key inside OpenRouter, what Google charged. */
       /* A reply naming no real cost (BYOK without Google's figure) is priced from its tokens at
-       * the describer's env-tunable rates, as kadeDescribe does. */
+       * the describer's env-tunable rates, as kadeDescribe does. Those rates are DESCRIBE_MODEL's:
+       * a video the video model answered is priced at that model's (kadeMediaRoute `videoRates`). */
       const usage = r.data?.usage || {};
+      const rates =
+        model === DESCRIBE_MODEL
+          ? {
+              in: Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || DESCRIBE_IN_USD_PER_M),
+              out: Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || DESCRIBE_OUT_USD_PER_M),
+            }
+          : videoRates(process.env);
       const cost =
         require('~/server/services/kadeRealCost').openRouterCost(usage) ??
-        ((Number(usage.prompt_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_IN_USD_PER_M || DESCRIBE_IN_USD_PER_M) +
-          (Number(usage.completion_tokens) || 0) * Number(process.env.KADE_ASSET_DESCRIBE_OUT_USD_PER_M || DESCRIBE_OUT_USD_PER_M)) /
-          1e6;
+        ((Number(usage.prompt_tokens) || 0) * rates.in + (Number(usage.completion_tokens) || 0) * rates.out) / 1e6;
       const { logKadeUsage } = require('~/models/kadeUsage');
       logKadeUsage({
         userId: String(usageOwner),
@@ -186,13 +199,13 @@ async function openRouterChat(content, maxTokens = 260, usageOwner = null) {
         quantity: 1,
         unit: 'items',
         costUSD: cost,
-        metadata: { source: 'gallery_auto_description', model: DESCRIBE_MODEL },
+        metadata: { source: 'gallery_auto_description', model },
       });
     } catch { /* logging must never break a description */ }
   }
   // A refused or filtered reply is not a description, nor is a video answered by a host that
   // cannot hear it; the caller's fallback runs instead.
-  return readReply(r.data, DESCRIBE_MODEL, contentKind(content)).text;
+  return readReply(r.data, model, kind, process.env).text;
 }
 
 const DESCRIBE_INSTRUCTION =

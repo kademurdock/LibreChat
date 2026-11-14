@@ -81,8 +81,8 @@ test('MiMo Pro is the default and describes a picture with reasoning off, the no
   assert.equal(usage[0].metadata.model, 'xiaomi/mimo-v2.6-pro');
 });
 
-test('a video goes to MiMo Pro as a video part, only to the zero-retention host that hears it', async () => {
-  const { body } = await fixture().describe('video');
+test('KADE_VIDEO_MODEL=mimo: a video goes to MiMo Pro as a video part, only to the zero-retention host that heard it', async () => {
+  const { body } = await fixture({ KADE_VIDEO_MODEL: 'mimo' }).describe('video');
   assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
   assert.equal(body.max_tokens, 260);
   assert.deepEqual(plain(body.reasoning), { enabled: false });
@@ -123,10 +123,11 @@ for (const model of ['google/gemini-3.1-pro-preview', 'google/gemini-2.5-pro']) 
   });
 }
 
-test('Gemini Flash is not a Pro either', async () => {
+test('Gemini Flash cannot switch thinking off, so it gets the least thinking and room for it', async () => {
+  /* Live Nov 13 2026: reasoning off answers HTTP 400 "Reasoning is mandatory for this endpoint". */
   const { body } = await fixture({ KADE_ASSET_DESCRIBE_MODEL: 'google/gemini-3.8-flash' }).describe('image');
-  assert.deepEqual(plain(body.reasoning), { enabled: false });
-  assert.equal(body.max_tokens, 260);
+  assert.deepEqual(plain(body.reasoning), { effort: 'minimal', exclude: true });
+  assert.equal(body.max_tokens, 2260);
 });
 
 test('a reply naming no cost is priced at the running model rates', async () => {
@@ -152,12 +153,32 @@ test('a content_filter refusal is never saved as the description', async () => {
 
 test('a video answered by a host that cannot hear its soundtrack is never saved; the prompt fallback runs', async () => {
   /* Two calls: the video's answer was thrown away, and the second is the text-only fallback. */
-  const deaf = await fixture({}, { provider: 'DeepInfra' }).describe('video', {}, { modelCalls: 2 });
+  const deaf = await fixture({ KADE_VIDEO_MODEL: 'mimo' }, { provider: 'DeepInfra' }).describe('video', {}, { modelCalls: 2 });
   assert.equal(deaf.bodies[0].messages[0].content[1].type, 'video_url');
   assert.equal(deaf.bodies[1].messages[0].content.length, 1);
   assert.match(deaf.bodies[1].messages[0].content[0].text, /Likely shows:/);
   /* The fallback sends only the prompt's words, so any zero-retention host may answer it. */
   assert.deepEqual(plain(deaf.bodies[1].provider), ZERO_RETENTION);
-  const heard = await fixture({}, { provider: 'Novita' }).describe('video');
+  const heard = await fixture({ KADE_VIDEO_MODEL: 'mimo' }, { provider: 'Novita' }).describe('video');
   assert.ok(JSON.stringify(heard.updates).includes('A described scene.'));
+});
+
+/* Nov 13 2026: Novita stopped serving MiMo, so by default a gallery video goes to the video model. */
+test('by default a gallery video goes to the video model on Google Vertex, and its usage row names that model', async () => {
+  const { body, usage } = await fixture({}, { provider: 'Google' }).describe('video');
+  assert.equal(body.model, 'google/gemini-3.8-flash');
+  assert.deepEqual(plain(body.reasoning), { effort: 'minimal', exclude: true });
+  assert.equal(body.max_tokens, 2260);
+  assert.deepEqual(plain(body.provider), { zdr: true, data_collection: 'deny', ignore: ['google-ai-studio'] });
+  assert.equal(body.messages[0].content[1].type, 'video_url');
+  assert.equal(usage[0].metadata.model, 'google/gemini-3.8-flash');
+  /* 1M tokens in and 1M out at the video model's rates, not MiMo's. */
+  near(usage[0].costUSD, 0.825 + 4.125);
+});
+
+test('a gallery picture still goes to MiMo Pro with reasoning off and the normal limit', async () => {
+  const { body } = await fixture().describe('image');
+  assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
+  assert.deepEqual(plain(body.reasoning), { enabled: false });
+  assert.equal(body.max_tokens, 260);
 });
