@@ -27,6 +27,16 @@
  * model request carries kade_background: true (packages/api endpoints/custom/initialize.ts) and
  * the gateway sends a MiMo Pro run to the cheap host instead of the fast one. The gateway takes
  * the mark off before any host sees it. KADE_SEND_BACKGROUND=0 stops the mark being sent.
+ *
+ * Nov 14 2026 (her words: "Change the lyric desk etc to it too, whatever benefits from better writing
+ * than Mimo"). One more header, honoured only with the key:
+ *   x-kade-claude-lane: speak-first   the run is ONE message a character sends on its own (a friend
+ *                             text, a research or errand write-up, a reach-out), not a background
+ *                             task's many rounds. req.kadeClaudeLane is set, the model
+ *                             request carries kade_claude_lane: 'speak-first' (endpoints/custom/
+ *                             initialize.ts), and the gateway may write it with Claude for a verified
+ *                             adult (reframe-proxy claude-route.js), falling back to MiMo. Any other
+ *                             value is ignored. KADE_SEND_CLAUDE_LANE=0 stops the mark being sent.
  */
 'use strict';
 
@@ -63,18 +73,23 @@ function markHiddenRun(req, _res, next) {
     if (Number.isFinite(steps) && steps > 0) {
       req.kadeStepBudget = Math.min(80, steps);
     }
+    if (req.get('x-kade-claude-lane') === 'speak-first') {
+      req.kadeClaudeLane = 'speak-first';
+    }
   } catch (_) {
     /* a hidden-run hiccup leaves the turn an ordinary turn */
   }
   return next();
 }
 
-/** Headers for a loopback call that should run hidden. */
-function hiddenRunHeaders({ platformPaid = false, steps } = {}) {
+/** Headers for a loopback call that should run hidden. `oneMessage`: the run is a single message
+ *  a character sends on its own (the speak-first writing lane). */
+function hiddenRunHeaders({ platformPaid = false, steps, oneMessage = false } = {}) {
   return {
     'x-kade-hidden-run': KEY,
     ...(platformPaid ? { 'x-kade-platform-paid': '1' } : {}),
     ...(steps ? { 'x-kade-steps': String(steps) } : {}),
+    ...(oneMessage === true ? { 'x-kade-claude-lane': 'speak-first' } : {}),
   };
 }
 

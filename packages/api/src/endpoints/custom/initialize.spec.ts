@@ -754,6 +754,46 @@ describe('initializeCustom – kade_background (sweep, Nov 13 2026)', () => {
   });
 });
 
+describe('initializeCustom – kade_claude_lane (writing lanes, Nov 14 2026)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    delete process.env.KADE_SEND_CLAUDE_LANE;
+    delete process.env.KADE_SEND_BACKGROUND;
+    delete process.env.KADE_SEND_LIVE;
+  });
+
+  const addParamsOf = () =>
+    (mockGetOpenAIConfig.mock.calls[0][1] as { addParams?: Record<string, unknown> }).addParams;
+
+  it('adds kade_claude_lane beside kade_background on a one-message hidden run', async () => {
+    const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+    (params.req as unknown as Record<string, unknown>).kadeBackground = true;
+    (params.req as unknown as Record<string, unknown>).kadeClaudeLane = 'speak-first';
+    await initializeCustom(params);
+    expect(addParamsOf()).toEqual({ kade_background: true, kade_claude_lane: 'speak-first' });
+  });
+
+  it('sends nothing new for a task, any other lane name, a mark in the request body, or with the switch off', async () => {
+    for (const [lane, body, env] of [
+      [undefined, undefined, undefined],
+      ['lyric-desk', undefined, undefined],
+      [undefined, 'speak-first', undefined],
+      ['speak-first', undefined, '0'],
+    ] as const) {
+      jest.clearAllMocks();
+      if (env) process.env.KADE_SEND_CLAUDE_LANE = env;
+      else delete process.env.KADE_SEND_CLAUDE_LANE;
+      const params = createParams({ baseURL: 'https://gateway.example.com/v1' });
+      (params.req as unknown as Record<string, unknown>).kadeBackground = true;
+      if (lane !== undefined) (params.req as unknown as Record<string, unknown>).kadeClaudeLane = lane;
+      if (body !== undefined) (params.req.body as Record<string, unknown>).kadeClaudeLane = body;
+      await initializeCustom(params);
+      expect(addParamsOf()).toEqual({ kade_background: true });
+    }
+    delete process.env.KADE_SEND_CLAUDE_LANE;
+  });
+});
+
 describe('initializeCustom – kade_live (gateway audit GW-6, Nov 12 2026)', () => {
   beforeEach(() => {
     jest.clearAllMocks();

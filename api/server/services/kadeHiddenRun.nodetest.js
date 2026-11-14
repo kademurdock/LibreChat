@@ -27,3 +27,32 @@ test('an ordinary turn, or a forged header, is not marked', () => {
     assert.equal(req.kadeBackground, undefined);
   }
 });
+
+/* Nov 14 2026, her words: "Change the lyric desk etc to it too, whatever benefits from better writing than Mimo".
+ * A hidden run that is ONE message a character sends (no step budget of its own) is marked for the speak-first
+ * writing lane; a background task's many rounds are not; and the mark counts only with the process's own key. */
+test('a one-message run is marked for the speak-first lane; a task with a step budget is not', () => {
+  const one = reqWith(hiddenRunHeaders({ platformPaid: true, oneMessage: true }));
+  markHiddenRun(one, {}, () => {});
+  assert.equal(one.kadeClaudeLane, 'speak-first');
+  assert.equal(one.kadeBackground, true);
+  for (const opts of [{}, { steps: 30 }, { oneMessage: 'yes' }]) {
+    const req = reqWith(hiddenRunHeaders(opts));
+    markHiddenRun(req, {}, () => {});
+    assert.equal(req.kadeHiddenRun, true);
+    assert.equal(req.kadeClaudeLane, undefined, JSON.stringify(opts));
+  }
+  assert.deepEqual(Object.keys(hiddenRunHeaders({})), ['x-kade-hidden-run'], 'nothing new on an unmarked run');
+});
+
+test('the speak-first mark is ignored without the key, and any other lane name is ignored', () => {
+  for (const headers of [{ 'x-kade-claude-lane': 'speak-first' }, { 'x-kade-hidden-run': 'guess', 'x-kade-claude-lane': 'speak-first' }]) {
+    const req = reqWith(headers);
+    markHiddenRun(req, {}, () => {});
+    assert.equal(req.kadeClaudeLane, undefined);
+  }
+  const other = reqWith({ ...hiddenRunHeaders({}), 'x-kade-claude-lane': 'lyric-desk' });
+  markHiddenRun(other, {}, () => {});
+  assert.equal(other.kadeHiddenRun, true);
+  assert.equal(other.kadeClaudeLane, undefined);
+});

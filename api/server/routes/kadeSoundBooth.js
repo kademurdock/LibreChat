@@ -115,6 +115,9 @@ const { requireJwtAuth } = require('~/server/middleware');
 const { logKadeUsage, KadeUsage } = require('~/models/kadeUsage');
 const { getAgent } = require('~/models');
 const { songAudience, hasExplicitWords, explicitSungLines } = require('~/server/utils/kadeSongAudience');
+/* Nov 14 2026: tells the gateway which writing lane a desk call is and whether the person is a verified adult
+ * (utils/kadeClaudeLane.js; the gateway's claude-route.js decides where the call goes). */
+const claudeLane = require('../utils/kadeClaudeLane');
 const { logKadeAsset, KadeAsset } = require('~/models/kadeAsset');
 const { KadeSoundBoothProject } = require('~/models/kadeSoundBoothProject');
 const { splitSpeakScript, saySplit, previewExcerpt } = require('./kadeSoundBoothSplit');
@@ -1044,7 +1047,7 @@ function stripFence(s) {
   return t;
 }
 
-async function callModel({ system, user, maxTokens = 8192, model = MODEL, temperature = 0.7, top_p, reasoning, kade_think_max_effort, thinkMs, timeoutMs = 90000 }) {
+async function callModel({ system, user, maxTokens = 8192, model = MODEL, temperature = 0.7, top_p, reasoning, kade_think_max_effort, thinkMs, timeoutMs = 90000, adult = false }) {
   const gatewayUrl =
     process.env.KADE_LLM_GATEWAY_URL ||
     'https://reframe-proxy-production.up.railway.app/chat/completions';
@@ -1087,6 +1090,7 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
           'User-Agent': UA,
+          ...deskLaneHeaders(model, adult),
         },
         timeout: timeoutMs,
         ...(streamed ? { responseType: 'stream', signal } : {}),
@@ -1109,6 +1113,23 @@ async function callModel({ system, user, maxTokens = 8192, model = MODEL, temper
   const out = reply?.choices?.[0]?.message?.content;
   const usage = reply?.usage || {};
   return { text: String(out || ''), refusal: reply?.choices?.[0]?.message?.refusal, usage, finishReason: reply?.choices?.[0]?.finish_reason, ...writingCost(usage, model, system.length + user.length, String(out || '').length) };
+}
+/* Nov 14 2026, her words: "Change the lyric desk etc to it too, whatever benefits from better writing than Mimo".
+ * Every desk call names its writing lane for the gateway: the song writer's calls (lyricWritingModel: drafts, the
+ * producer's audit, rewrites, Surprise me) are lyric-desk, which already writes with Claude and now goes on Kade's
+ * Claude credit instead of OpenRouter's; the booth's own edit passes (MODEL: the carry rewrite, Seed's cut-to-fit)
+ * are booth-edit. `adult` (claudeAdultFor) adds the verified-adult mark; without it, and for a child, a teen or an
+ * untyped account, the call goes exactly where it always went. Headers only: the body is untouched.
+ * KADE_SEND_CLAUDE_LANE=0 sends no mark at all. Both read the helper through `typeof`, so a test that runs callModel
+ * on its own, without the module's head, still runs. */
+function deskLaneHeaders(model, adult) {
+  const lane = model === lyricWritingModel ? 'lyric-desk' : model === MODEL ? 'booth-edit' : null;
+  const helper = typeof claudeLane === 'object' && claudeLane ? claudeLane : null;
+  return lane && helper && typeof helper.claudeLaneHeaders === 'function' ? helper.claudeLaneHeaders(lane, adult === true) : {};
+}
+async function claudeAdultFor(req) {
+  const helper = typeof claudeLane === 'object' && claudeLane ? claudeLane : null;
+  return helper && typeof helper.claudeAdult === 'function' ? helper.claudeAdult(req) : false;
 }
 /* Oct 27 2026: a call that may think is told when to stop (writing.ts BOOTH_THINK_SECONDS; the
  * gateway's THE THINK DEADLINE does the cut and has the writer write from its notes). The mark
@@ -2283,7 +2304,8 @@ async function scriptHandler(req, res) {
     }
 
     const started = Date.now();
-    const writingSettings = musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true || b.deepWrite === true, thinkMode: b.thinkMode });
+    /* Nov 14 2026: `adult` rides every desk call below that spreads these settings (callModel's lane marks). */
+    const writingSettings = { ...musicWritingSettings({ engine, mode, patient: b.patient === true, deep: b.background === true || b.deepWrite === true, thinkMode: b.thinkMode }), adult: await claudeAdultFor(req) };
     /* Part 216: the kill scan. Only for lyrics the desk originated -- supplied
      * lyrics are hers and are never scanned or touched. */
     const ownsLyrics = mode === 'write' && songEngines.includes(engine) && !(typeof b.lyrics === 'string' && b.lyrics.trim());
@@ -2696,6 +2718,7 @@ async function scriptHandler(req, res) {
           user: script,
           maxTokens: 16384,
           reasoning: editPassReasoning(),
+          adult: writingSettings.adult,
         });
         totalCost += shorter.costUSD;
         costMeasured = costMeasured && shorter.measured;
@@ -3949,6 +3972,7 @@ router.post('/projects/:id/carry', requireJwtAuth, express.json({ limit: '16kb' 
            * went on a quick vote thought under a 20 s chat limit instead of riding
            * instant. A format move needs no thought. */
           reasoning: editPassReasoning(),
+          adult: await claudeAdultFor(req),
         });
         const split = splitScriptAndReadback(reply.text);
         /* The words already carried across exactly; a Lyrics block the desk
@@ -4276,6 +4300,7 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
     const clean = audience === 'clean';
     const isClean = (words) => !hasExplicitWords(words);
     let idea = null, costUSD = 0, measured = true, tries = 0, usage = {};
+    const adult = await claudeAdultFor(req);
     while (!idea && tries < 2) {
       tries += 1;
       const made = await callModel({
@@ -4285,6 +4310,7 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
         model: lyricWritingModel,
         maxTokens: 8000,
         timeoutMs: 112000,
+        adult,
       });
       costUSD += made.costUSD; measured = measured && made.measured; usage = made.usage;
       const pitched = cleanSongIdea(made.text);

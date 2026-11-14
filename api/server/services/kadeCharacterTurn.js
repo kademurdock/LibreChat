@@ -128,11 +128,15 @@ async function compose({ userId, agentId, note, platformPaid = false, steps, tim
   const user = await db().getUserById(String(userId), '_id username email provider role name');
   if (!user) throw new Error('no such person');
   const token = await db().generateToken(user, 15 * 60 * 1000);
+  /* Nov 14 2026: a turn with no step budget of its own is one message the character sends (a friend text, a
+   * research or errand write-up, a reach-out), so it is marked for the speak-first writing lane: the gateway
+   * may write it with Claude for a verified adult, MiMo underneath (services/kadeHiddenRun.js). A background job
+   * (kadeTasks.js asks for many rounds with `steps`) stays unmarked, on MiMo, until Kade decides. */
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     'User-Agent': UA,
-    ...hiddenRunHeaders({ platformPaid, steps }),
+    ...hiddenRunHeaders({ platformPaid, steps, oneMessage: !steps }),
   };
   const body = {
     endpoint: 'agents',

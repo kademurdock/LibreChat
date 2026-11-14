@@ -40,8 +40,10 @@ const writerPricing = loadTs(path.join(__dirname, '../../../packages/api/src/uti
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
 const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry'];
 
-/** The route, loaded the way the app loads it, with the writer answering from `replies` in order. */
-function booth(replies = [], env = {}) {
+/** The route, loaded the way the app loads it, with the writer answering from `replies` in order.
+ *  Nov 14 2026: `opts.claudeLane` stands in for utils/kadeClaudeLane.js (none: the route sees an empty module, as an
+ *  older build would) and `opts.user` adds fields to the signed-in user (an account type). */
+function booth(replies = [], env = {}, opts = {}) {
   const handlers = new Map();
   const writerCalls = [];
   const writerOptions = [];
@@ -97,6 +99,7 @@ function booth(replies = [], env = {}) {
       if (name === './kadeSoundBoothChain') return { acquire: async () => 'fixture-lease', release: async () => {}, MAX_PARTS: 12 };
       if (LOCAL.includes(name)) return require(name);
       if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => () => {}, guideFor: (g) => g };
+      if (name === '../utils/kadeClaudeLane') return opts.claudeLane || {};
       return {};
     },
   };
@@ -105,7 +108,7 @@ function booth(replies = [], env = {}) {
     let status = 200;
     let result;
     const res = { status(v) { status = v; return this; }, json(v) { result = v; return this; } };
-    await handlers.get(key)({ user: { id: userId }, body, params }, res);
+    await handlers.get(key)({ user: { id: userId, ...(opts.user || {}) }, body, params }, res);
     return { status, result };
   };
   const call = async (key, body) => {
@@ -1124,4 +1127,60 @@ test('Seed still has a deterministic 2048-character fallback when the existing r
   assert.ok(out.script.endsWith('[The steady radio signal settles under the rain.]'));
   assert.ok(out.repairs.some((note) => note.startsWith('Cut to fit Seed Audio:')));
   assert.equal(out.problem, null);
+});
+
+/* Nov 14 2026, her words: "Change the lyric desk etc to it too, whatever benefits from better writing than Mimo".
+ * Every desk call names its writing lane for the gateway (headers only; the body never changes), and an adult's
+ * carry the verified-adult mark. The gateway (reframe-proxy claude-route.js) decides where each goes. */
+const claudeLaneModule = require('../utils/kadeClaudeLane');
+const OVER_SEED = () => [`[Repeated weather detail: ${'rain on the roof, '.repeat(35)}]\n${SEED_SCENE}\nREADBACK: ${SEED_READBACK}`, SEED_SCENE];
+const MIMO_EDITS = { KADE_SOUNDBOOTH_MODEL: 'xiaomi/mimo-v2.6-pro' }; // as on Railway: the edit passes run on MiMo
+
+test('every desk call names its lane: the song writer lyric-desk, the cut-to-fit booth-edit; an adult carries the mark', async () => {
+  const plain = booth(OVER_SEED(), MIMO_EDITS);
+  await plain.write({ engine: 'seed', text: 'Two people repair a radio after closing.' });
+  for (const [label, user, adult] of [['adult', { kadeAccountType: 'adult' }, true], ['admin', { role: 'ADMIN' }, true],
+    ['child', { kadeAccountType: 'child' }, false], ['teen', { kadeAccountType: 'teen' }, false], ['untyped', { role: 'USER' }, false]]) {
+    const desk = booth(OVER_SEED(), MIMO_EDITS, { claudeLane: claudeLaneModule, user });
+    const out = await desk.write({ engine: 'seed', text: 'Two people repair a radio after closing.' });
+    assert.equal(out.script, SEED_SCENE, label);
+    assert.equal(desk.writerCalls.length, 2, label);
+    assert.equal(desk.writerCalls[0].model, 'anthropic/claude-opus-5.5');
+    assert.equal(desk.writerCalls[1].model, 'xiaomi/mimo-v2.6-pro');
+    const mark = adult ? { 'x-kade-adult': '1' } : {};
+    const lanes = desk.writerOptions.map((o) => ({ lane: o.headers['x-kade-claude-lane'], adult: o.headers['x-kade-adult'] }));
+    assert.deepEqual(lanes, [{ lane: 'lyric-desk', adult: mark['x-kade-adult'] }, { lane: 'booth-edit', adult: mark['x-kade-adult'] }], label);
+    const a = JSON.stringify(desk.writerCalls);
+    const b = JSON.stringify(plain.writerCalls);
+    let at = 0;
+    while (at < a.length && a[at] === b[at]) at += 1;
+    assert.equal(a, b, `${label}: the bodies are exactly the unmarked ones; first difference at ${at}: ${a.slice(at - 80, at + 80)} || ${b.slice(at - 80, at + 80)}`);
+    for (const o of desk.writerOptions) {
+      assert.equal(o.headers.Authorization, 'Bearer offline-fixture');
+      assert.equal(o.headers['Content-Type'], 'application/json');
+    }
+  }
+  assert.equal(plain.writerOptions.some((o) => 'x-kade-claude-lane' in o.headers), false, 'an older build marks nothing');
+});
+
+test('KADE_SEND_CLAUDE_LANE=0 sends no lane mark at all', async () => {
+  process.env.KADE_SEND_CLAUDE_LANE = '0';
+  try {
+    const desk = booth(OVER_SEED(), MIMO_EDITS, { claudeLane: claudeLaneModule, user: { kadeAccountType: 'adult' } });
+    await desk.write({ engine: 'seed', text: 'Two people repair a radio after closing.' });
+    assert.equal(desk.writerOptions.length, 2);
+    assert.equal(desk.writerOptions.some((o) => 'x-kade-claude-lane' in o.headers || 'x-kade-adult' in o.headers), false);
+  } finally {
+    delete process.env.KADE_SEND_CLAUDE_LANE;
+  }
+});
+
+test('every writer call in the route passes the adult mark, directly or through the desk settings', () => {
+  const calls = ROUTE.split('await callModel({').slice(1);
+  assert.ok(calls.length >= 9, `found ${calls.length} writer calls`);
+  for (const call of calls) {
+    const body = call.slice(0, call.indexOf('});'));
+    assert.match(body, /\.\.\.writingSettings|adult/, body.slice(0, 160));
+  }
+  assert.match(ROUTE, /const writingSettings = \{ \.\.\.musicWritingSettings\([^\n]*\), adult: await claudeAdultFor\(req\) \};/);
 });

@@ -96,6 +96,17 @@ router.post('/generate', requireJwtAuth, async (req, res) => {
      * Flash as Pro's backup). Thinking is switched off out loud so a 400-token
      * draft is never spent on reasoning, and Pro gets a longer wait than
      * Flash's 25 seconds. */
+    /* Nov 14 2026, her words: "Change the lyric desk etc to it too, whatever benefits from better writing than
+     * Mimo". For a verified adult the gateway writes the brief with Claude Opus on her Claude credit and falls back
+     * to this MiMo call on any trouble; children, teens and untyped accounts stay on MiMo (utils/kadeClaudeLane.js,
+     * reframe-proxy claude-route.js). Headers only; required here so any trouble only leaves the call unmarked. */
+    let claudeHeaders = {};
+    try {
+      const claudeLane = require('../utils/kadeClaudeLane');
+      claudeHeaders = claudeLane.claudeLaneHeaders('spotter-draft', await claudeLane.claudeAdult(req));
+    } catch (_) {
+      claudeHeaders = {};
+    }
     const r = await axios.post(
       (process.env.REFRAME_PROXY_URL || 'https://reframe-proxy-production.up.railway.app') + '/chat/completions',
       {
@@ -105,7 +116,7 @@ router.post('/generate', requireJwtAuth, async (req, res) => {
         reasoning: { enabled: false, effort: 'none' },
         messages: [{ role: 'user', content: prompt }],
       },
-      { timeout: 45000, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' } },
+      { timeout: 45000, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', ...claudeHeaders } },
     );
     const text = r.data && r.data.choices && r.data.choices[0] && r.data.choices[0].message && r.data.choices[0].message.content;
     if (!text) return res.status(502).json({ error: 'generator returned nothing' });

@@ -349,15 +349,24 @@ export async function initializeCustom({
     const backgroundRun =
       process.env.KADE_SEND_BACKGROUND !== '0' &&
       (req as unknown as { kadeBackground?: unknown }).kadeBackground === true;
+    /** KADE Nov 14 2026: a hidden run that is ONE message a character sends on its own (services/
+     *  kadeHiddenRun.js sets req.kadeClaudeLane = 'speak-first') says so with kade_claude_lane, so the
+     *  gateway may write it with Claude for a verified adult, MiMo underneath (reframe-proxy claude-route.js).
+     *  The gateway takes the mark off before any host sees it. Absent on every other turn, so those bodies are
+     *  byte-identical. Kill switch: KADE_SEND_CLAUDE_LANE=0. */
+    const speakFirst =
+      process.env.KADE_SEND_CLAUDE_LANE !== '0' &&
+      (req as unknown as { kadeClaudeLane?: unknown }).kadeClaudeLane === 'speak-first';
     const finalClientOptions = {
       modelOptions,
       ...clientOptions,
-      ...(liveAsked || backgroundRun
+      ...(liveAsked || backgroundRun || speakFirst
         ? {
             addParams: {
               ...((clientOptions.addParams as Record<string, unknown> | undefined) ?? {}),
               ...(liveAsked ? { kade_live: true } : {}),
               ...(backgroundRun ? { kade_background: true } : {}),
+              ...(speakFirst ? { kade_claude_lane: 'speak-first' } : {}),
             },
           }
         : {}),

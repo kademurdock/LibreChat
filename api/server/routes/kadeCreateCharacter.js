@@ -596,6 +596,18 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
     }
 
     const userContent = personaUserContent({ description, existingInstructions, answers, round, name });
+    /* Nov 14 2026, her words: "Change the lyric desk etc to it too, whatever benefits from better writing than
+     * Mimo". The gateway writes a verified adult's persona with Claude Opus on her Claude credit and falls back to
+     * this MiMo call on any trouble; children, teens and untyped accounts stay on MiMo (utils/kadeClaudeLane.js,
+     * reframe-proxy claude-route.js). The person pays what MiMo would have cost: the gateway hands back MiMo-priced
+     * usage. Required here, not at the top, so any trouble loading it only leaves the call unmarked. */
+    let claudeHeaders = {};
+    try {
+      const claudeLane = require('../utils/kadeClaudeLane');
+      claudeHeaders = claudeLane.claudeLaneHeaders('persona-writer', await claudeLane.claudeAdult(req));
+    } catch (_) {
+      claudeHeaders = {};
+    }
     const started = Date.now();
     const r = await axios.post(
       gatewayUrl,
@@ -609,7 +621,7 @@ router.post('/write-persona', express.json({ limit: '256kb' }), async (req, res)
         ],
       },
       {
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...claudeHeaders },
         timeout: 300000, // PART 115: round 5 of a real persona ran 131 s against 180; drafts grow every round (reframe deep lane allows 420 s)
       },
     );
