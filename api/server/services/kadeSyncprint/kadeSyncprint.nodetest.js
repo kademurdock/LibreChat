@@ -54,6 +54,20 @@ test('the vendored syncprint.js matches its checksum file', () => {
   assert.equal(SyncPrint.error, null);
 });
 
+/* Nov 14 2026 integration review: the -text rule in .gitattributes keeps only the line endings.
+ * The repo's own formatters reached the file too: prettier --write and eslint --fix on every
+ * staged .js file (lint-staged), npm run format and npm run lint:fix. Prettier made its 1,929
+ * lines into 2,652, with another checksum. Both now skip it. */
+test("the repo's formatters leave syncprint.js alone", () => {
+  const repo = path.join(__dirname, '..', '..', '..', '..');
+  const file = 'api/server/services/kadeSyncprint/syncprint.js';
+  const read = (name) => fs.readFileSync(path.join(repo, name), 'utf8');
+  assert.ok(read('.prettierignore').split(/\r?\n/).includes(file), 'prettier skips it');
+  const ignores = /ignores:\s*\[([^\]]*)\]/.exec(read('eslint.config.mjs'));
+  assert.ok(ignores && ignores[1].includes(`'${file}'`), "eslint's global ignores list it");
+  assert.ok(read('.gitattributes').split(/\r?\n/).includes(`${file} -text`), 'git keeps its bytes');
+});
+
 test('a fingerprint made on the worker thread finds a 6 s clip of the same sound, with hiss too', async () => {
   const samples = film(45);
   const made = await fingerprintFile(write('film.s16', samples));

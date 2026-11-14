@@ -43,6 +43,8 @@ export default [
       'meili_data/**/*',
       '**/node_modules/**/*',
       '.devcontainer/**/*',
+      // Tellavision Follow along: a byte-exact copy of the library the phone apps ship (checksummed).
+      'api/server/services/kadeSyncprint/syncprint.js',
     ],
   },
   ...fixupConfigRules(
