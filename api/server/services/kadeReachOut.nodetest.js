@@ -53,6 +53,9 @@ beforeEach(() => {
   for (const k of Object.keys(process.env)) if (k.startsWith('KADE_REACHOUT')) delete process.env[k];
   /* Build two: a dry run is the default. These tests prove the sending machinery, so they switch it on. */
   process.env.KADE_REACHOUT_DRY = '0';
+  /* Nov 14 2026: the default amount set aside is now Claude-sized (20 cents). The older tests were written
+   * for MiMo's 1.5 and keep it; the Claude tests at the end use the default. */
+  process.env.KADE_REACHOUT_EST_CENTS = '1.5';
   reach._seam.coll = (name) => (colls[name] = colls[name] || new FakeCollection());
   reach._seam.data = {
     recentPeople: async () => world.recent.slice(),
@@ -329,7 +332,7 @@ test('the default ceilings: 10 messages and 25 cents a day', () => {
   const s = reach.settings({});
   assert.equal(s.maxPerDay, 10);
   assert.equal(s.maxCentsPerDay, 25);
-  assert.equal(s.estCents, 1.5);
+  assert.equal(s.estCents, 20, 'Claude-sized since Nov 14: about 20 to 30 cents a message');
   assert.equal(s.idleDays, 3);
 });
 
@@ -620,4 +623,233 @@ test('the bridge friend text passes the same switch, the same one-a-day rule and
   assert.deepEqual(await reach.gateSpeak({ userId: uid(4), agentId: A1, now: NOON }), { ok: false, why: 'platform-cap' });
   process.env.KADE_REACHOUT_SPEAK_GATE = '0';
   assert.equal((await reach.gateSpeak({ userId: uid(3), agentId: A1, now: NOON })).ok, true, 'switch off: as before');
+});
+
+/* ------------------------------------- Nov 14 2026: counting what Claude really cost */
+
+/* The gateway bills a turn Claude wrote at the MiMo price, so the rows say about a cent and a half where
+ * Kade's credit paid about 20 to 30 cents; what Claude cost above the rows is added from the turn's own
+ * record (services/kadeClaudeCost.js). */
+const near = (got, want) => assert.ok(got != null && Math.abs(got - want) < 1e-9, `got ${got}, want ${want}`);
+
+test('a turn\'s cents: the billed rows re-priced to the provider, plus what Claude cost above them', () => {
+  const rows = [
+    { tokenValue: -1500, kadeFactor: 1 },
+    { tokenValue: -3000, kadeFactor: 2 },
+  ];
+  near(reach.turnCentsOf(rows, 0), 0.3);
+  near(reach.turnCentsOf(rows, 0.2), 20.3);
+  near(reach.turnCentsOf([], 0.21), 21);
+  near(reach.turnCentsOf(null, 0.21), 21);
+  assert.equal(reach.turnCentsOf([], 0), null, 'nothing known');
+  assert.equal(reach.turnCentsOf(undefined), null);
+  near(reach.turnCentsOf(rows, -5), 0.3);
+  near(reach.turnCentsOf(rows, Number.NaN), 0.3);
+  near(reach.turnCentsOf([{ tokenValue: 2000 }], 0), 0.2);
+});
+
+test('a friend text Claude wrote counts what it really cost, so the 25-cent day stops the next one', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  person(uid(1));
+  person(uid(2));
+  const asked = [];
+  reach._seam.data.turnCents = async (id) => {
+    asked.push(id);
+    return 24;
+  };
+  const first = await reach.gateSpeak({ userId: uid(1), agentId: A1, now: NOON });
+  assert.equal(first.ok, true);
+  assert.equal((await reach.stats(NOON)).today.cents, 20, 'a Claude-sized amount set aside before the turn');
+  await first.done({ posted: true, composeConversationId: 'tmp-ft-1' }, null);
+  assert.deepEqual(asked, ['tmp-ft-1'], 'the throwaway chat the text was written in');
+  assert.equal((await reach.stats(NOON)).today.cents, 24);
+  /* 24 cents spent and 20 to set aside is over the 25-cent day. */
+  assert.deepEqual(await reach.gateSpeak({ userId: uid(2), agentId: A1, now: NOON }), { ok: false, why: 'platform-cap' });
+});
+
+test('a friend text that failed keeps what was set aside; one that was not posted still counts its cost', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  process.env.KADE_REACHOUT_MAX_CENTS_PER_DAY = '100';
+  person(uid(1));
+  person(uid(2));
+  reach._seam.data.turnCents = async () => 0.9;
+  const failed = await reach.gateSpeak({ userId: uid(1), agentId: A1, now: NOON });
+  await failed.done(null, new Error('the turn broke before it started'));
+  const after = (await reach.stats(NOON)).today;
+  assert.equal(after.cents, 20, 'the money may have been spent');
+  assert.equal(after.sent, 0, 'not counted as a message');
+  const unposted = await reach.gateSpeak({ userId: uid(2), agentId: A1, now: NOON });
+  await unposted.done({ posted: false, composeConversationId: 'tmp-ft-2' }, null);
+  const end = (await reach.stats(NOON)).today;
+  assert.equal(end.cents, 20.9, 'its real cost replaced the 20 set aside');
+  assert.equal(end.sent, 0);
+});
+
+test('a reach-out message Claude wrote: its real cost goes on the day, and the ceiling holds the next', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  for (let i = 1; i <= 3; i += 1) person(uid(i));
+  process.env.KADE_REACHOUT_MAX_PER_TICK = '10';
+  world.cents = 26;
+  const out = await tick();
+  assert.equal(spoke.length, 1, 'one Claude-priced message spends the 25-cent day');
+  assert.equal(out.reasons['platform-cap'] >= 1, true);
+  assert.ok(out.today.cents >= 26, `spent ${out.today.cents}`);
+});
+
+test('Claude texts in flight at the same time: each sets aside 20 cents, so the second waits for tomorrow', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  person(uid(1));
+  person(uid(2));
+  const a = await reach.gateSpeak({ userId: uid(1), agentId: A1, now: NOON });
+  assert.equal(a.ok, true);
+  /* the first has not finished yet */
+  assert.deepEqual(await reach.gateSpeak({ userId: uid(2), agentId: A1, now: NOON }), { ok: false, why: 'platform-cap' });
+  /* with room for more on the day, both fit */
+  process.env.KADE_REACHOUT_MAX_CENTS_PER_DAY = '60';
+  person(uid(3));
+  assert.equal((await reach.gateSpeak({ userId: uid(3), agentId: A1, now: NOON })).ok, true);
+});
+
+test('a text that was written and then failed is counted at its real cost, not the amount set aside', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  process.env.KADE_REACHOUT_MAX_CENTS_PER_DAY = '100';
+  person(uid(1));
+  person(uid(2));
+  const asked = [];
+  reach._seam.data.turnCents = async (id) => {
+    asked.push(id);
+    return id === 'tmp-written' ? 27 : 3;
+  };
+  /* the friend-text gate: the post broke after Claude wrote it */
+  const ft = await reach.gateSpeak({ userId: uid(1), agentId: A1, now: NOON });
+  await ft.done(null, Object.assign(new Error('save-message took longer than 30 s'), { composeConversationId: 'tmp-written' }));
+  assert.equal((await reach.stats(NOON)).today.cents, 27);
+  /* a turn still running (so far less than the amount set aside) keeps the amount set aside */
+  const slow = await reach.gateSpeak({ userId: uid(2), agentId: A1, now: NOON });
+  await slow.done(null, Object.assign(new Error('the character took too long'), { composeConversationId: 'tmp-slow' }));
+  assert.equal((await reach.stats(NOON)).today.cents, 47);
+  assert.deepEqual(asked, ['tmp-written', 'tmp-slow']);
+});
+
+test('reach-out: a turn that was written and then failed settles at its real cost, and is not a message', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  process.env.KADE_REACHOUT_MAX_CENTS_PER_DAY = '100';
+  person(uid(1));
+  reach._seam.data.turnCents = async (id) => (id === 'tmp-broke' ? 31 : null);
+  reach._seam.speak = async (args) => {
+    spoke.push(args);
+    throw Object.assign(new Error('touch-conversation took longer than 30 s'), { composeConversationId: 'tmp-broke' });
+  };
+  const out = await tick();
+  assert.equal(spoke.length, 1);
+  assert.equal(out.today.sent, 0, 'a failed turn is not a message');
+  assert.ok(Math.abs(out.today.cents - 31.003) < 1e-9, `cents ${out.today.cents}`);
+  assert.equal(row(`s:${uid(1)}:2026-11-12`).status, 'failed');
+  assert.equal(row(`s:${uid(1)}:2026-11-12`).cents, 31);
+});
+
+/* ---------------------------- Nov 14 2026 (safety review): who is set aside at the Claude price */
+
+test('claudeLaneFor: a typed adult or the admin, never a child, a teen, an untyped account or a test seat', () => {
+  const on = {};
+  assert.equal(reach.claudeLaneFor({ _id: 'a1', kadeAccountType: 'adult', role: 'USER' }, on), true);
+  assert.equal(reach.claudeLaneFor({ _id: 'k1', role: 'ADMIN' }, on), true, 'the admin, untyped');
+  assert.equal(reach.claudeLaneFor({ _id: 'u1', role: 'USER' }, on), false, 'untyped stays on MiMo');
+  assert.equal(reach.claudeLaneFor({ _id: 'c1', kadeAccountType: 'child', role: 'ADMIN' }, on), false);
+  assert.equal(reach.claudeLaneFor({ _id: 't1', kadeAccountType: 'teen', role: 'USER' }, on), false);
+  assert.equal(reach.claudeLaneFor(null, on), false);
+  assert.equal(reach.claudeLaneFor({ _id: 'a1', kadeAccountType: 'adult' }, { KADE_SEND_CLAUDE_LANE: '0' }), false, 'mark off');
+  assert.equal(
+    reach.claudeLaneFor({ _id: 'seat1', kadeAccountType: 'adult' }, { KADE_CLAUDE_EXCLUDE_USERS: 'x, seat1' }),
+    false,
+    'a test seat',
+  );
+});
+
+test('estFor: Claude-sized unless the person stays on MiMo; unknown is the safe side', () => {
+  const s = reach.settings({});
+  assert.equal(s.estMimoCents, 1.5);
+  assert.equal(reach.estFor({ claudeLane: false }, s), 1.5);
+  assert.equal(reach.estFor({ claudeLane: true }, s), 20);
+  assert.equal(reach.estFor({}, s), 20);
+  assert.equal(reach.estFor(null, s), 20);
+});
+
+test('a friend text for someone who stays on MiMo is set aside at 1.5, so MiMo days keep their room', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  for (let i = 1; i <= 5; i += 1) person(uid(i), { person: { claudeLane: false } });
+  for (let i = 1; i <= 5; i += 1) {
+    const g = await reach.gateSpeak({ userId: uid(i), agentId: A1, now: NOON });
+    assert.equal(g.ok, true, `text ${i}`);
+    await g.done({ posted: true }, null);
+  }
+  assert.equal((await reach.stats(NOON)).today.cents, 7.5);
+});
+
+test('reach-out sets aside per person too: a MiMo person at 1.5, a Claude person at 20', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  person(uid(1), { person: { claudeLane: false } });
+  const spent = [];
+  reach._seam.data.turnCents = async () => null;
+  reach._seam.speak = async (args) => {
+    spoke.push(args);
+    spent.push((await reach.stats(NOON)).today.cents);
+    return { posted: true, conversationId: 'c-1', composeConversationId: 'tmp-1', text: 'How did the filling go?' };
+  };
+  await tick();
+  assert.deepEqual(spent, [1.503], 'MiMo: 1.5 set aside (and the reading)');
+});
+
+/* ------------------------- Nov 14 2026 (safety review): the real turnCents, not a stand-in */
+
+test('turnCents reads the billed rows and adds what Claude cost above them; a lost record is logged', async () => {
+  const { FakeCollection: Fake, stubModules: stub } = require('../../test/kadeFakeMongo.cjs');
+  const tx = new Fake();
+  await tx.insertOne({ conversationId: 'tmp-r', tokenValue: -1500, kadeFactor: 1 });
+  await tx.insertOne({ conversationId: 'tmp-r', tokenValue: -3000, kadeFactor: 2 });
+  await tx.insertOne({ conversationId: 'other', tokenValue: -900000, kadeFactor: 1 });
+  const restore = stub({
+    mongoose: { connection: { collection: (name) => (name === 'transactions' ? { find: (f) => ({ project: () => tx.find(f) }) } : null) } },
+  });
+  const cost = require('./kadeClaudeCost');
+  const costs = new Fake();
+  cost._seam.coll = () => costs;
+  const log = require('@librechat/data-schemas').logger;
+  const savedWarn = log.warn;
+  const said = [];
+  log.warn = (m) => said.push(m);
+  try {
+    near(await reach._defaultData.turnCents('tmp-r'), 0.3, 'rows only: no Claude record');
+    await costs.insertOne({ _id: 'tmp-r', usd: 0.2, calls: 1 });
+    near(await reach._defaultData.turnCents('tmp-r'), 20.3);
+    assert.equal(await reach._defaultData.turnCents('nobody'), null);
+    cost._seam.coll = () => {
+      throw new Error('database blip');
+    };
+    near(await reach._defaultData.turnCents('tmp-r'), 0.3, 'a failed read counts the rows');
+    assert.equal(said.length, 1);
+    assert.match(said[0], /Claude cost record unreadable for tmp-r: database blip/);
+  } finally {
+    log.warn = savedWarn;
+    cost._seam.coll = null;
+    restore();
+  }
+});
+
+test('a text the site provably never started gives back all it set aside', async () => {
+  delete process.env.KADE_REACHOUT_EST_CENTS;
+  person(uid(1));
+  person(uid(2));
+  reach._seam.data.turnCents = async () => 99;
+  const ft = await reach.gateSpeak({ userId: uid(1), agentId: A1, now: NOON });
+  await ft.done(null, Object.assign(new Error('the site would not start the turn (403): no access'), { composeStarted: false }));
+  assert.equal((await reach.stats(NOON)).today.cents, 0, 'nothing was spent');
+  reach._seam.speak = async (args) => {
+    spoke.push(args);
+    throw Object.assign(new Error('the site would not start the turn (403): no access'), { composeStarted: false });
+  };
+  const out = await tick({ userId: uid(2) });
+  assert.equal(spoke.length, 1);
+  assert.ok(Math.abs(out.today.cents - 0.003) < 1e-9, `only the reading: ${out.today.cents}`);
+  assert.equal(row(`s:${uid(2)}:2026-11-12`).cents, 0);
 });

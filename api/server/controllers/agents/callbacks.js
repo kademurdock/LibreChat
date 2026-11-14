@@ -25,6 +25,7 @@ const {
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { createStreamScrubber } = require('~/server/utils/stripAiTells');
 const { withToolLabels } = require('~/server/services/kadeToolLabels');
+const { costOf: claudeCostOf } = require('~/server/services/kadeClaudeCost');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
 const { saveBase64Image } = require('~/server/services/Files/process');
 
@@ -103,6 +104,13 @@ class ModelEndHandler {
       const usage = data?.output?.usage_metadata;
       if (!usage) {
         return this.finalize(errorMessage);
+      }
+      /* KADE Nov 14 2026: a call Claude wrote carries its real cost in the gateway's note; a hidden run
+       * records it so reach-out's money ceiling counts her credit (services/kadeClaudeCost.js). Nothing
+       * reads this field for billing. */
+      const claudeCost = claudeCostOf(data?.output);
+      if (claudeCost) {
+        usage.kade_claude_cost = claudeCost;
       }
       const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
       if (modelName) {

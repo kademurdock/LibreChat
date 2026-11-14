@@ -4,7 +4,7 @@
  * Run: node --test api/server/services/kadeHiddenRun.nodetest.js */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { markHiddenRun, hiddenRunHeaders } = require('./kadeHiddenRun');
+const { markHiddenRun, hiddenRunHeaders, primaryOnlyLane } = require('./kadeHiddenRun');
 
 const reqWith = (headers) => ({ user: { id: 'u1' }, get: (name) => headers[String(name).toLowerCase()] });
 
@@ -115,4 +115,22 @@ test('with KADE_CLAUDE_EXCLUDE_USERS unset or empty, nobody is marked', () => {
     if (saved === undefined) delete process.env.KADE_CLAUDE_EXCLUDE_USERS;
     else process.env.KADE_CLAUDE_EXCLUDE_USERS = saved;
   }
+});
+
+/* Nov 14 2026 (re-check review): once the primary character's options carry the speak-first mark, it comes off the
+ * request, so agents loaded after it (a consulted librarian, a subagent, a handoff) stay on MiMo. */
+test('primaryOnlyLane takes the speak-first mark off once, and touches nothing else', () => {
+  const req = reqWith(hiddenRunHeaders({ oneMessage: true }));
+  markHiddenRun(req, {}, () => {});
+  assert.equal(req.kadeClaudeLane, 'speak-first');
+  assert.equal(primaryOnlyLane(req), true);
+  assert.equal(req.kadeClaudeLane, undefined);
+  assert.equal(req.kadeHiddenRun, true, 'still a hidden run');
+  assert.equal(req.kadeBackground, true);
+  assert.equal(primaryOnlyLane(req), false, 'nothing left to take off');
+  const chat = reqWith({});
+  markHiddenRun(chat, {}, () => {});
+  assert.equal(primaryOnlyLane(chat), false);
+  assert.equal(primaryOnlyLane(null), false);
+  assert.equal(primaryOnlyLane({ kadeClaudeLane: 'lyric-desk' }), false);
 });

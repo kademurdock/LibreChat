@@ -2305,6 +2305,17 @@ class AgentClient extends BaseClient {
     if (result) {
       this.usage = result;
     }
+
+    /* KADE Nov 14 2026: a character's own message (a hidden run, services/kadeHiddenRun.js) that Claude
+     * wrote records what Claude really cost above the MiMo-equivalent rows just written, so reach-out's
+     * money ceiling counts her credit (services/kadeClaudeCost.js recordForTurn: hidden runs' message
+     * turns only). Billing above is unchanged, and this never throws. */
+    await require('~/server/services/kadeClaudeCost').recordForTurn({
+      req: this.options.req,
+      context,
+      conversationId: this.conversationId,
+      collectedUsage,
+    });
   }
 
   /**

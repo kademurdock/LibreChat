@@ -107,6 +107,21 @@ function markHiddenRun(req, _res, next) {
   return next();
 }
 
+/**
+ * Nov 14 2026 (re-check review): the speak-first lane is for the character's OWN message. The custom endpoint reads
+ * req.kadeClaudeLane while each agent's options are built (packages/api endpoints/custom/initialize.ts), so once the
+ * primary agent's options carry the mark (Endpoints/agents/initialize.js) it is taken off the request: a consulted
+ * librarian, a subagent or a handoff loaded after it stays on MiMo, and no child call is written by Claude where
+ * reach-out cannot count it. Returns whether a mark was taken off.
+ */
+function primaryOnlyLane(req) {
+  if (req && typeof req === 'object' && req.kadeClaudeLane === 'speak-first') {
+    delete req.kadeClaudeLane;
+    return true;
+  }
+  return false;
+}
+
 /** Headers for a loopback call that should run hidden. `oneMessage`: the run is a single message
  *  a character sends on its own (the speak-first writing lane). */
 function hiddenRunHeaders({ platformPaid = false, steps, oneMessage = false } = {}) {
@@ -118,4 +133,4 @@ function hiddenRunHeaders({ platformPaid = false, steps, oneMessage = false } = 
   };
 }
 
-module.exports = { markHiddenRun, hiddenRunHeaders, ownerId, excludedFromClaude };
+module.exports = { markHiddenRun, hiddenRunHeaders, ownerId, excludedFromClaude, primaryOnlyLane };

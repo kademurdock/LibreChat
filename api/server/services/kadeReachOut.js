@@ -96,7 +96,14 @@ function settings(env = process.env) {
     maxPerDay: num(env, 'KADE_REACHOUT_MAX_PER_DAY', 10, 0, 500),
     maxChecksPerDay: num(env, 'KADE_REACHOUT_MAX_CHECKS_PER_DAY', 60, 0, 5000),
     maxCentsPerDay: num(env, 'KADE_REACHOUT_MAX_CENTS_PER_DAY', 25, 0, 5000),
-    estCents: num(env, 'KADE_REACHOUT_EST_CENTS', 1.5, 0.1, 100),
+    /* Nov 14 2026: set aside before a first message, replaced by its real cost after. 20 cents since the
+     * speak-first lane lets Claude write these (about 20 to 30 cents each; MiMo about 1.5): the real cost lands
+     * only when the turn ends, so the old 1.5 let two or three Claude texts, and any that overlap, under the
+     * 25-cent day. Keep it below the day's ceiling (the readings are set aside first). Only a person whose
+     * texts can go to Claude is set aside at this (estFor); with the gateway's lane off, set it to 1.5. */
+    estCents: num(env, 'KADE_REACHOUT_EST_CENTS', 20, 0.1, 100),
+    /* ...and for a person whose texts stay on MiMo (estFor below: untyped accounts, test seats). */
+    estMimoCents: num(env, 'KADE_REACHOUT_EST_MIMO_CENTS', 1.5, 0.1, 100),
     estCheckCents: num(env, 'KADE_REACHOUT_EST_CHECK_CENTS', 0.01, 0, 5),
     maxPerTick: num(env, 'KADE_REACHOUT_MAX_PER_TICK', 2, 1, 50),
     hourFrom: num(env, 'KADE_REACHOUT_HOUR_FROM', 10, 0, 23),
@@ -500,9 +507,37 @@ async function bumpDay(day, now, change) {
 
 const round = (n) => Math.round(n * 10000) / 10000;
 
-function reserveSend(day, now, s) {
+/**
+ * Nov 14 2026 (review): the amount set aside for one first message. Claude-sized for a person whose messages can go
+ * to Claude (person.claudeLane, from claudeLaneFor), MiMo-sized for one whose messages stay on MiMo. Not known
+ * (an older stand-in, a read that failed) counts as Claude: the safe side.
+ */
+function estFor(person, s) {
+  return person && person.claudeLane === false ? s.estMimoCents : s.estCents;
+}
+
+/**
+ * Would this person's own messages carry the speak-first mark (services/kadeHiddenRun.js) and the verified-adult
+ * note the gateway's lane needs (Endpoints/agents/build.js isKadeAdult: typed adult, or the admin; never a child)?
+ * Not a test seat (KADE_CLAUDE_EXCLUDE_USERS), with the mark switched on (KADE_SEND_CLAUDE_LANE). The gateway's own
+ * switch (KADE_CLAUDE_LANES) is not known here, so a person who passes is set aside at the Claude price.
+ */
+function claudeLaneFor(u, env = process.env) {
+  try {
+    if (!u) return false;
+    if (String((env && env.KADE_SEND_CLAUDE_LANE) ?? '').trim() === '0') return false;
+    const type = u.kadeAccountType;
+    const admin = String(u.role || '').toUpperCase() === 'ADMIN';
+    if (type === 'child' || type === 'teen' || !(type === 'adult' || admin)) return false;
+    return !require('./kadeHiddenRun').excludedFromClaude({ user: { id: String(u._id != null ? u._id : u.id) } }, env);
+  } catch (_) {
+    return true;
+  }
+}
+
+function reserveSend(day, now, s, est = s.estCents) {
   return bumpDay(day, now, (d) =>
-    d.sent + 1 > s.maxPerDay || d.cents + s.estCents > s.maxCentsPerDay ? null : { sent: d.sent + 1, cents: round(d.cents + s.estCents) },
+    d.sent + 1 > s.maxPerDay || d.cents + est > s.maxCentsPerDay ? null : { sent: d.sent + 1, cents: round(d.cents + est) },
   );
 }
 
@@ -566,6 +601,8 @@ const defaultData = {
       child: require('./kadeAccountType').isChildLike(u),
       reviewSeat,
       memoryOff: Boolean(u.personalization && u.personalization.memories === false),
+      /* Nov 14 2026: can this person's own messages go to Claude? (the amount set aside: estFor) */
+      claudeLane: claudeLaneFor(u),
     };
   },
   /** Per character: how many of the person's own messages, on how many days, in the window. */
@@ -615,24 +652,67 @@ const defaultData = {
     const row = await require('~/models/kadeMemorySummary').getMemorySummary(userId, agentId);
     return (row && row.thread) || '';
   },
-  /** Real provider cents of a platform-paid turn, from its own usage rows; null when unknown. */
+  /** Real provider cents of a platform-paid turn, from its own usage rows plus what Claude cost
+   *  above them (turnCentsOf); null when unknown. */
   async turnCents(conversationId) {
     if (!conversationId) return null;
-    const rows = await require('mongoose')
-      .connection.collection('transactions')
-      .find({ conversationId: String(conversationId) })
-      .project({ tokenValue: 1, kadeFactor: 1 })
-      .toArray();
-    if (!rows.length) return null;
-    const usd = rows.reduce((sum, r) => {
-      const f = typeof r.kadeFactor === 'number' && r.kadeFactor > 0 ? r.kadeFactor : 1;
-      return sum + Math.abs(Number(r.tokenValue) || 0) / f / 1e6;
-    }, 0);
-    return usd > 0 ? usd * 100 : null;
+    const [rows, claudeExtraUsd] = await Promise.all([
+      require('mongoose')
+        .connection.collection('transactions')
+        .find({ conversationId: String(conversationId) })
+        .project({ tokenValue: 1, kadeFactor: 1 })
+        .toArray(),
+      require('./kadeClaudeCost')
+        .extraUsdFor(conversationId)
+        .catch((e) => {
+          logger.warn(
+            `[kadeReachOut] Claude cost record unreadable for ${String(conversationId).slice(0, 8)}: ${e && e.message}`,
+          );
+          return 0;
+        }),
+    ]);
+    return turnCentsOf(rows, claudeExtraUsd);
   },
 };
 
 const data = () => seam.data || defaultData;
+
+/**
+ * Nov 14 2026: what a turn that failed after it was written really cost, when that is more than the amount set
+ * aside. services/kadeCharacterTurn.js puts the throwaway chat's id on the error once the site has started the
+ * turn; null keeps the amount set aside (no id, nothing recorded yet, or a turn still running that has so far
+ * cost less than it).
+ */
+async function failedTurnCents(error, est) {
+  const id = error && typeof error === 'object' ? error.composeConversationId : null;
+  if (!id) return null;
+  const real = await data()
+    .turnCents(String(id))
+    .catch(() => null);
+  return real != null && real > est ? real : null;
+}
+
+/**
+ * Nov 14 2026: cents of one turn. The rows are what the website billed, re-priced to the provider
+ * (tokenValue over the platform factor). A turn Claude wrote is billed at the MiMo-equivalent price
+ * (the gateway's claude-route.js), so what Claude really cost above that is added from the turn's own
+ * record (services/kadeClaudeCost.js): without it, the 25-cent ceiling saw about a cent and a half where
+ * her credit paid about 20 to 30 cents. Null when nothing is known.
+ */
+function turnCentsOf(rows, claudeExtraUsd = 0) {
+  const list = Array.isArray(rows) ? rows : [];
+  const extra =
+    typeof claudeExtraUsd === 'number' && Number.isFinite(claudeExtraUsd) && claudeExtraUsd > 0
+      ? claudeExtraUsd
+      : 0;
+  if (!list.length && !extra) return null;
+  const usd =
+    list.reduce((sum, r) => {
+      const f = typeof r.kadeFactor === 'number' && r.kadeFactor > 0 ? r.kadeFactor : 1;
+      return sum + Math.abs(Number(r.tokenValue) || 0) / f / 1e6;
+    }, 0) + extra;
+  return usd > 0 ? usd * 100 : null;
+}
 
 /**
  * Jev's reading of the candidates, best first, one call each, stopping at the first yes.
@@ -706,7 +786,13 @@ async function gather(userId, state, { now, s }) {
  */
 async function sendOne({ userId, cand, state, now, s, day }) {
   if (!(await claimPersonDay(userId, day, now, { agentId: cand.agentId, kind: cand.kind }))) return { outcome: 'sent-today' };
-  const reserved = await reserveSend(day, now, s);
+  const est = estFor(
+    await data()
+      .person(userId)
+      .catch(() => null),
+    s,
+  );
+  const reserved = await reserveSend(day, now, s, est);
   if (!reserved) {
     await coll().deleteOne({ _id: sendKey(userId, day) });
     return { outcome: 'platform-cap' };
@@ -730,15 +816,23 @@ async function sendOne({ userId, cand, state, now, s, day }) {
       },
     });
   } catch (e) {
-    /* The turn may or may not have run: the money stays counted, the message does not. */
+    /* The turn may or may not have run: the money stays counted, the message does not. Nov 14 2026: a turn
+     * that was written and then failed (the post, a timeout) is counted at its real cost when that is more
+     * than the amount set aside (failedTurnCents). */
     await bumpDay(day, now, (d) => ({ sent: Math.max(0, d.sent - 1) }));
-    await settle('failed', { why: String((e && e.message) || e).slice(0, 120) });
+    /* A turn the site provably never started cost nothing: all of it comes back. */
+    const ran = e && e.composeStarted === false ? 0 : await failedTurnCents(e, est);
+    if (ran != null) {
+      await bumpDay(day, now, (d) => ({ cents: round(Math.max(0, d.cents - est + ran)) }));
+    }
+    const why = String((e && e.message) || e).slice(0, 120);
+    await settle('failed', ran != null ? { why, cents: ran } : { why });
     return { outcome: 'failed' };
   }
   const real = await data()
     .turnCents(out && out.composeConversationId)
     .catch(() => null);
-  if (real != null) await bumpDay(day, now, (d) => ({ cents: round(Math.max(0, d.cents - s.estCents + real)) }));
+  if (real != null) await bumpDay(day, now, (d) => ({ cents: round(Math.max(0, d.cents - est + real)) }));
   if (!out || out.posted === false) {
     await bumpDay(day, now, (d) => ({ sent: Math.max(0, d.sent - 1) }));
     await settle('dropped', { why: problem || 'not-posted', cents: real });
@@ -888,7 +982,8 @@ async function gateSpeak({ userId, agentId, now = new Date() }) {
     : null;
   if (why) return { ok: false, why };
   if (!(await claimPersonDay(userId, day, now, { agentId: String(agentId), kind: 'friend-text' }))) return { ok: false, why: 'sent-today' };
-  if (!(await reserveSend(day, now, s))) {
+  const est = estFor(person, s);
+  if (!(await reserveSend(day, now, s, est))) {
     await coll().deleteOne({ _id: sendKey(userId, day) });
     return { ok: false, why: 'platform-cap' };
   }
@@ -897,6 +992,22 @@ async function gateSpeak({ userId, agentId, now = new Date() }) {
     done: async (out, error) => {
       const posted = !error && out && out.posted !== false;
       if (!posted) await bumpDay(day, now, (d) => ({ sent: Math.max(0, d.sent - 1) }));
+      /* Nov 14 2026: the turn's real cost replaces the amount set aside, as for reach-out's own
+       * messages (sendOne): on Claude a friend text costs about 20 to 30 cents. A turn that failed keeps
+       * the amount set aside, unless it was written first and really cost more (failedTurnCents), or
+       * the site provably never started it (all of it comes back). */
+      let real =
+        out && out.composeConversationId
+          ? await data()
+              .turnCents(out.composeConversationId)
+              .catch(() => null)
+          : null;
+      if (!out && error) real = error.composeStarted === false ? 0 : await failedTurnCents(error, est);
+      if (real != null) {
+        await bumpDay(day, now, (d) => ({
+          cents: round(Math.max(0, d.cents - est + real)),
+        }));
+      }
       await coll().updateOne({ _id: sendKey(userId, day) }, { $set: { status: posted ? 'sent' : 'failed' } });
       if (posted) await writeState(userId, { lastSentAt: now, lastSentDay: day, lastAgentId: String(agentId), ignored: (state.ignored || 0) + 1 });
     },
@@ -954,6 +1065,9 @@ async function stats(now = new Date()) {
 }
 
 module.exports = {
+  turnCentsOf,
+  estFor,
+  claudeLaneFor,
   settings,
   centralParts,
   switchWords,
@@ -977,4 +1091,6 @@ module.exports = {
   NOTE_OFF,
   NOTE_ON,
   _seam: seam,
+  /* Nov 14 2026: the real reads, for the test that runs turnCents against stand-in collections. */
+  _defaultData: defaultData,
 };
