@@ -119,6 +119,9 @@ export function mediaProblem(log: string): MediaProblem {
 export type ExecuteOptions = { cwd?: string; logBytes?: number; timeoutMs?: number };
 const tooLong =
   'This video took too long to prepare. Describe a shorter part, or a lower-resolution copy.';
+/** A media tool run that `execute` stopped at its time limit. */
+export const timedOut = (error: unknown): boolean =>
+  error instanceof MediaError && /^timed out after \d+ ms$/.test(error.detail);
 
 export async function command(
   bin: string,
@@ -911,13 +914,29 @@ async function soundPass(
  * makes (`range`, source seconds), so the sound's second 0 is the part's start. `oneSided` is the
  * plan's own fix for a capture with sound on one side. Returns the seconds written, or null when
  * the video has no sound.
+ *
+ * `working` (Nov 14 2026 review), for the original of a whole video: a run measured its plan on
+ * normalize's working copy (generated timestamps, one steady sound track), so that copy is made
+ * again in this folder first, read, and removed. Without it an over-the-air recording that
+ * switches between 5.1 and stereo, or an AVI, reads on another clock than its track.
  */
 export async function syncSound(
   source: string,
   file: string,
   signal: AbortSignal,
-  options: { range?: Interval; oneSided?: 'left' | 'right'; media?: Media } = {},
+  options: { range?: Interval; oneSided?: 'left' | 'right'; media?: Media; working?: string } = {},
 ): Promise<number | null> {
+  if (options.working !== undefined && !options.range) {
+    const working = await normalize(source, options.working, signal);
+    try {
+      return await syncSound(working.file, file, signal, {
+        media: working.media,
+        ...(options.oneSided ? { oneSided: options.oneSided } : {}),
+      });
+    } finally {
+      if (working.file !== source) await rm(working.file, { force: true }).catch(() => undefined);
+    }
+  }
   const info = { ...(await mediaOf(source, options.media, signal)) };
   if (info.audioIndex === null) return null;
   if (options.oneSided) info.oneSided = options.oneSided;

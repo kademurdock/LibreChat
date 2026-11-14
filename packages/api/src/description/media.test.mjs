@@ -1342,3 +1342,34 @@ test('follow along: the on-request pass makes the same sound, and a part starts 
     (error) => error instanceof media.MediaError && error.kind === 'too-short',
   );
 });
+
+test('follow along: on request, a whole video is read through the working copy its plan was measured on', async () => {
+  const { readdir } = await import('node:fs/promises');
+  /* An over-the-air recording that switches between 5.1, stereo and 44.1 kHz, and an Xvid AVI. */
+  const sources = { 'switch.ts': await switching(), 'xvid.avi': await xvidFixture() };
+  for (const [name, file] of Object.entries(sources)) {
+    /* What a describe run does: normalize the original, then the sound pass on its working copy. */
+    const describeDir = await folder(`follow-working-${name}`);
+    const working = await media.normalize(file, describeDir, signal);
+    await media.soundtrack(working.file, describeDir, signal, working.media, {
+      scan: false,
+      sync: join(describeDir, 'sync.s16'),
+    });
+    const described = s16(await readFile(join(describeDir, 'sync.s16')));
+    /* What the on-request pass does with the same original. */
+    const askedDir = await folder(`follow-working-asked-${name}`);
+    const seconds = await media.syncSound(file, join(askedDir, 'sync.s16'), signal, { working: askedDir });
+    const asked = s16(await readFile(join(askedDir, 'sync.s16')));
+    assert.equal(asked.length, described.length, `${name}: ${asked.length} samples, the describe run had ${described.length}`);
+    assert.equal(seconds, asked.length / 8000);
+    assert.ok(correlation(asked, described) > 0.999, `${name}: the same sound, sample for sample`);
+    near(bursts(at48(asked)), bursts(at48(described)), 0.005, `${name}: the same moments`);
+    assert.deepEqual(await readdir(askedDir), ['sync.s16'], `${name}: the working copy is removed`);
+  }
+  near(
+    bursts(at48(s16(await readFile(join(await folder('follow-working-switch.ts'), 'sync.s16'))))),
+    [1, 5, 9],
+    0.03,
+    'the switching recording keeps its three parts on the picture clock',
+  );
+});

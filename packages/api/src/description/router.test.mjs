@@ -4916,6 +4916,13 @@ const printed = (id) =>
   });
 const goneSource =
   'The original video is no longer on the server, so a follow-along track cannot be made. Describe it again to get one.';
+const goneTries = 'A follow-along track could not be made for this video after three tries.';
+/** Where a copy's track is kept: copies/<version>/track-<finished ms>.json (Nov 14 2026 review). */
+async function trackObject(owner, id, version) {
+  const copy = (await Jobs.findById(id).lean()).copies.find((item) => item.version === version);
+  return `/test/described-video/${owner}/${id}/copies/${version}/track-${new Date(copy.finishedAt).getTime()}.json`;
+}
+const trackFiles = (id) => keysOf(id).filter((key) => /\/track(-\d+)?\.json$/.test(key));
 
 test('follow along: switched off (unset, empty, 0), the describer is exactly as before', async () => {
   for (const value of [undefined, '', '0', 'off', ' 0 '])
@@ -4933,7 +4940,7 @@ test('follow along: switched off (unset, empty, 0), the describer is exactly as 
     for (const field of ['sync', 'syncWanted', 'syncing', 'syncTries'])
       assert.equal(field in stored, false, `no ${field} on the job`);
     assert.equal(followCalls, calls, 'no fingerprint worker started');
-    assert.deepEqual(keysOf(id).filter((key) => key.includes('/sync/') || key.endsWith('track.json')), []);
+    assert.deepEqual([...keysOf(id).filter((key) => key.includes('/sync/')), ...trackFiles(id)], []);
     const job = (await fcall('get', `/jobs/${id}`, 'follow-off').expect(200)).body;
     assert.equal('follow' in job, false, 'no follow word on the job');
     const list = (await fcall('get', '/jobs', 'follow-off').expect(200)).body.jobs;
@@ -4993,7 +5000,8 @@ test('follow along: a run makes its fingerprint; only the owner gets the track a
     }
     assert.match(track.cues[0].text, /^Section cue \d+\.$/);
     assert.ok(track.quiet.length >= 1);
-    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/1/track.json`), 'kept beside the copy');
+    assert.ok(objects.has(await trackObject(owner, id, 1)), 'kept beside the copy, named for its finishing time');
+    assert.equal(trackFiles(id).length, 1);
     const reads = storageLog.length;
     const again = (await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body;
     assert.deepEqual(again.track, track, 'POST answers at once when the fingerprint is there');
@@ -5062,8 +5070,8 @@ test('follow along: each version has its own track from its plan’s one fingerp
     assert.equal(first.track.print.sha256, latest.track.print.sha256);
     const posted = (await fcall('post', `/jobs/${id}/track`, owner).send({ version: 1 }).expect(200)).body;
     assert.equal(posted.version, 1);
-    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/1/track.json`));
-    assert.ok(objects.has(`/test/described-video/${owner}/${id}/copies/2/track.json`));
+    assert.ok(objects.has(await trackObject(owner, id, 1)));
+    assert.ok(objects.has(await trackObject(owner, id, 2)));
     const missing = await fcall('get', `/jobs/${id}/track?version=9`, owner).expect(404);
     assert.equal(missing.body.error, 'That finished version is not available.');
     await Jobs.updateOne({ _id: id }, { $push: { copies: { version: 7, rehearsal: true, finishedAt: new Date() } } });
@@ -5121,7 +5129,7 @@ test('follow along: an original that is gone, or a video with no sound, is said 
     const refused = await fcall('post', `/jobs/${gone}/track`, owner).expect(409);
     assert.equal(refused.body.error, goneSource);
     assert.equal(refused.body.follow, 'gone');
-    assert.equal((await Jobs.findById(gone).lean()).syncTries, 3);
+    assert.deepEqual((await Jobs.findById(gone).lean()).syncTries, { plan: 3 });
     assert.equal((await fcall('get', `/jobs/${gone}`, owner).expect(200)).body.follow, 'gone');
     assert.equal((await fcall('get', `/jobs/${gone}/track`, owner).expect(409)).body.error, goneSource);
     assert.ok(logLines.slice(from).some((line) => line === `sync gone id=${gone} plan=plan why=source`));
@@ -5154,26 +5162,23 @@ test('follow along: a failed fingerprint never costs the copy; three failed trie
       await fcall('post', `/jobs/${id}/track`, owner).expect(202);
       for (let attempt = 1; attempt <= 3; attempt++) {
         await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
-        await followRouters().worker.tick();
-        const stored = await Jobs.findById(id).lean();
-        assert.equal(stored.syncTries, attempt, `try ${attempt}`);
+        /* The pass runs beside the check lane: wait for it to settle. */
+        const stored = await waitFor(async () => {
+          await followRouters().worker.tick();
+          const job = await Jobs.findById(id).lean();
+          assert.equal(job.syncTries?.plan, attempt, `try ${attempt}`);
+          return job;
+        }, 120000);
         assert.ok(attempt === 3 || stored.syncing > new Date(), 'a failure waits an hour before the next try');
       }
       assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'gone');
       const refused = await fcall('get', `/jobs/${id}/track`, owner).expect(409);
-      assert.equal(
-        refused.body.error,
-        'A follow-along track could not be made for this video after three tries. Describe it again to get one.',
-      );
-      const before = logLines.length;
-      await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
-      await followRouters().worker.tick();
-      assert.equal(
-        logLines.slice(before).some((line) => line.startsWith(`sync failed id=${id}`)),
-        false,
-        'nothing more is tried',
-      );
-      assert.equal((await Jobs.findById(id).lean()).syncTries, 3);
+      assert.equal(refused.body.error, goneTries);
+      assert.doesNotMatch(refused.body.error, /describe/i, 'never sent to a paid describe, which reuses the plan');
+      const ended = await Jobs.findById(id).lean();
+      assert.deepEqual(ended.syncWanted, [], 'nothing waits, so the check lane never takes it again');
+      assert.equal(ended.syncing, undefined);
+      assert.deepEqual(ended.syncTries, { plan: 3 });
       await fcall('delete', `/jobs/${id}`, owner).expect(200);
     } finally {
       followFails = false;
@@ -5216,12 +5221,19 @@ test('follow along: on one server, a fingerprint still being made reads as makin
       assert.equal(job.follow, 'making', 'the copy is ready before its fingerprint');
       const asked = await scall('post', `/jobs/${id}/track`, owner).expect(202);
       assert.equal(asked.body.follow, 'making');
-      assert.equal((await Jobs.findById(id).lean()).syncWanted, undefined, 'nothing more is queued');
+      assert.deepEqual(
+        (await Jobs.findById(id).lean()).syncWanted,
+        ['plan'],
+        'the ask is kept, in case the one on its way fails',
+      );
+      await single.tick();
+      assert.equal(entered, 1, 'the check lane makes no second one while the first is on its way');
       assert.equal((await scall('get', `/jobs/${id}/track`, owner).expect(202)).body.follow, 'making');
       release();
       await waitFor(async () => {
         assert.equal((await scall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'ready');
       });
+      assert.deepEqual((await Jobs.findById(id).lean()).syncWanted, [], 'the one made settles the ask');
       assert.equal((await scall('get', `/jobs/${id}/track`, owner).expect(200)).body.follow, 'ready');
       await scall('delete', `/jobs/${id}`, owner).expect(200);
     } finally {
@@ -5247,5 +5259,257 @@ test('follow along: a fingerprint file that vanished from storage is noticed and
     await printed(id);
     assert.equal((await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body.follow, 'ready');
     await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
+
+/* ---------- Follow along: the Nov 14 2026 review ---------- */
+
+test('follow along: Describe the rest gets a track for the whole copy; a rename or a credit change builds it again', async () => {
+  await withFollow('1', async () => {
+    const owner = 'follow-finish';
+    const id = await readyJob(owner, 'follow-finish-upload-01', 150);
+    await fcall('post', `/jobs/${id}/start`, owner).send({ ...settings, preview: true }).expect(202);
+    const preview = await followSettle(id, ['done', 'failed'], owner);
+    assert.equal(preview.state, 'done', preview.error);
+    assert.equal(preview.preview, true);
+    const print = (await printed(id)).sync.plan;
+    assert.ok(Math.abs(print.seconds - 150) < 0.2, `a preview's plan, so its fingerprint, is the whole film: ${print.seconds} s`);
+    const first = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(first.version, 1);
+    assert.ok(first.track.covers.endSec < 140, `the preview's track covers ${first.track.covers.endSec} s`);
+    const previewKey = await trackObject(owner, id, 1);
+    assert.ok(objects.has(previewKey));
+
+    await fcall('post', `/jobs/${id}/finish`, owner).send({}).expect(202);
+    const finished = await followSettle(id, ['done', 'failed'], owner);
+    assert.equal(finished.state, 'done', finished.error);
+    assert.equal(finished.version, 1, 'the same version is finished');
+    assert.equal(finished.preview, false);
+    assert.equal(finished.follow, 'ready', 'the same plan, so the same fingerprint');
+    const whole = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(whole.version, 1);
+    assert.equal(whole.track.print.sha256, first.track.print.sha256);
+    assert.ok(Math.abs(whole.track.covers.endSec - 150) < 0.5, `the whole copy: ${whole.track.covers.endSec} s`);
+    assert.ok(
+      whole.track.cues.length > first.track.cues.length,
+      `${whole.track.cues.length} lines, not the preview's ${first.track.cues.length}`,
+    );
+    const wholeKey = await trackObject(owner, id, 1);
+    assert.notEqual(wholeKey, previewKey);
+    assert.deepEqual(trackFiles(id), [wholeKey], "the preview's track is erased");
+    const posted = (await fcall('post', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.deepEqual(posted.track, whole.track, 'and the whole one is reused');
+
+    await fcall('post', `/jobs/${id}/rename`, owner).send({ name: 'Napoleon' }).expect(200);
+    const renamed = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+    assert.equal(renamed.track.title, 'Napoleon', 'a rename builds it again');
+    assert.equal('credit' in renamed.track, false);
+    const credit = process.env.KADE_DESCRIPTION_CREDIT;
+    process.env.KADE_DESCRIPTION_CREDIT = 'both';
+    try {
+      const credited = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+      assert.deepEqual(credited.track.credit, {
+        start: 'Audio description by Kade-AI.',
+        end: 'Described by Kade-AI. More at kademurdock dot com.',
+      }, 'the credit follows the switch as it is now');
+    } finally {
+      process.env.KADE_DESCRIPTION_CREDIT = credit;
+    }
+    assert.equal('credit' in (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body.track, false);
+    assert.deepEqual(trackFiles(id), [wholeKey]);
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+    assert.deepEqual(keysOf(id), []);
+  });
+});
+
+test('follow along: tries are counted by plan, and storage trouble is not a try', async () => {
+  const owner = 'follow-tries';
+  let id;
+  await withFollow(undefined, async () => {
+    id = await followCopy(owner, 'follow-tries-upload-01');
+  });
+  await withFollow('1', async () => {
+    /* Three failed tries at a part of the video leave the whole video's plan alone. */
+    await Jobs.updateOne({ _id: id }, { $set: { syncTries: { 'plan-0-10000': 3 } } });
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'possible');
+    assert.equal((await fcall('post', `/jobs/${id}/track`, owner).expect(202)).body.follow, 'making');
+    /* Storage stops answering while the original is read: the video waits ten minutes, uncounted. */
+    faults.push({ method: 'GET', match: new RegExp(`${id}/source$`), times: 1000, status: 503 });
+    const from = logLines.length;
+    try {
+      await waitFor(async () => {
+        await followRouters().worker.tick();
+        assert.ok(logLines.slice(from).some((line) => line.startsWith(`sync failed id=${id} plan=plan from=request`)));
+        assert.ok((await Jobs.findById(id).lean()).syncing > new Date(Date.now() + 60000));
+      }, 120000);
+    } finally {
+      faults.length = 0;
+    }
+    const line = logLines.slice(from).find((item) => item.startsWith(`sync failed id=${id}`));
+    assert.match(line, / passing=true /);
+    const paused = await Jobs.findById(id).lean();
+    assert.deepEqual(paused.syncTries, { 'plan-0-10000': 3 }, 'not counted as a try');
+    assert.deepEqual(paused.syncWanted, ['plan']);
+    const wait = new Date(paused.syncing).getTime() - Date.now();
+    assert.ok(wait > 8 * 60000 && wait <= 10 * 60000, `looked at again in ${Math.round(wait / 1000)} s`);
+    assert.equal((await fcall('get', `/jobs/${id}`, owner).expect(200)).body.follow, 'making');
+    /* With storage back, the next pass makes it. */
+    await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
+    await followRouters().worker.tick();
+    const made = await printed(id);
+    assert.deepEqual(made.syncTries, { 'plan-0-10000': 3 }, 'the other plan keeps its own count');
+    assert.equal((await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body.follow, 'ready');
+    await fcall('delete', `/jobs/${id}`, owner).expect(200);
+  });
+});
+
+test('follow along: an ask made while the first fingerprint is on its way is kept, so a failure is made good on request', async () => {
+  await withFollow('1', async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    let made = 0;
+    const single = createDescriptionRouter({
+      ...hooks,
+      sync: async (file, options) => {
+        made++;
+        if (made === 1) {
+          await gate;
+          throw new Error('The fingerprint ran out of memory.');
+        }
+        return kadeSyncprint.fingerprintFile(file, options);
+      },
+    });
+    const singleApp = express();
+    singleApp.use(express.json());
+    singleApp.use(single.router);
+    const owner = 'follow-inflight-fails';
+    const scall = (method, path) => request(singleApp)[method](path).set('x-user', owner);
+    try {
+      const id = await readyJob(owner, 'follow-inflight-fails-01', 30);
+      await scall('post', `/jobs/${id}/start`).send(settings).expect(202);
+      const done = await waitFor(async () => {
+        await single.tick();
+        const job = (await scall('get', `/jobs/${id}`).expect(200)).body;
+        assert.ok(['done', 'failed'].includes(job.state), job.state);
+        return job;
+      }, 5 * 60000);
+      assert.equal(done.state, 'done', done.error);
+      assert.equal(made, 1, 'the fingerprint is on its way');
+      assert.equal((await scall('post', `/jobs/${id}/track`).expect(202)).body.follow, 'making');
+      assert.deepEqual((await Jobs.findById(id).lean()).syncWanted, ['plan']);
+      const from = logLines.length;
+      release();
+      await waitFor(() =>
+        assert.ok(logLines.slice(from).some((line) => line.startsWith(`sync failed id=${id} plan=plan from=describe`))),
+      );
+      assert.equal((await scall('get', `/jobs/${id}`).expect(200)).body.follow, 'making', 'still asked for');
+      /* The check lane saw the first on its way and looks again in a minute: skip the wait. */
+      await Jobs.updateOne({ _id: id }, { $unset: { syncing: 1 } });
+      await waitFor(async () => {
+        await single.tick();
+        assert.ok((await Jobs.findById(id).lean()).sync?.plan);
+      }, 120000);
+      assert.equal(made, 2);
+      assert.ok(logLines.slice(from).some((line) => line.startsWith(`sync made id=${id} plan=plan from=request`)));
+      assert.equal((await scall('get', `/jobs/${id}/track`).expect(200)).body.follow, 'ready');
+      await scall('delete', `/jobs/${id}`).expect(200);
+    } finally {
+      release();
+      await single.close();
+    }
+  });
+});
+
+test('follow along: a track saved after its video was deleted is erased', async () => {
+  await withFollow('1', async () => {
+    const owner = 'follow-late-track';
+    const id = await followCopy(owner, 'follow-late-track-upload-01');
+    await printed(id);
+    const from = logLines.length;
+    let deleted = false;
+    /* The video is deleted while its track is being saved: the delete erases everything it finds. */
+    storageHook = async ({ method, key }) => {
+      if (method !== 'PUT' || !key.includes(id) || !/\/track-\d+\.json$/.test(key)) return;
+      storageHook = null;
+      await fcall('delete', `/jobs/${id}`, owner).expect(200);
+      deleted = true;
+    };
+    try {
+      const answer = (await fcall('get', `/jobs/${id}/track`, owner).expect(200)).body;
+      assert.equal(answer.follow, 'ready', 'the ask that was building it is still answered');
+    } finally {
+      storageHook = null;
+    }
+    assert.equal(deleted, true);
+    assert.equal(await Jobs.findById(id).lean(), null);
+    assert.deepEqual(keysOf(id), [], 'the late track is erased too');
+    assert.deepEqual(versionsOf(id), [], 'every stored version of it');
+    assert.ok(
+      logLines.slice(from).some((line) => line === `sync track-dropped id=${id} version=1 why="the video was deleted"`),
+    );
+  });
+});
+
+test('follow along: the on-request pass runs beside the check lane, so a new upload is checked meanwhile', async () => {
+  const owner = 'follow-beside';
+  let id;
+  await withFollow(undefined, async () => {
+    id = await followCopy(owner, 'follow-beside-upload-01');
+  });
+  await withFollow('1', async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    let entered = 0;
+    const beside = createDescriptionRouter({
+      ...hooks,
+      sync: async (file, options) => {
+        entered++;
+        await gate;
+        return kadeSyncprint.fingerprintFile(file, options);
+      },
+    });
+    const besideApp = express();
+    besideApp.use(express.json());
+    besideApp.use(beside.router);
+    const bcall = (method, path) => request(besideApp)[method](path).set('x-user', owner);
+    let fresh;
+    try {
+      await bcall('post', `/jobs/${id}/track`).expect(202);
+      /* The pass reaches the fingerprint, which waits. */
+      await waitFor(async () => {
+        await beside.tick();
+        assert.equal(entered, 1);
+      }, 120000);
+      const bytes = await readFile(await video(30));
+      const created = (
+        await bcall('post', '/uploads')
+          .send({ requestId: 'follow-beside-upload-02', name: 'clip.mp4', bytes: bytes.length })
+          .expect(200)
+      ).body;
+      fresh = created.job.id;
+      for (let offset = 0, part = 1; offset < bytes.length; offset += created.chunkBytes, part++)
+        await bcall('post', `/jobs/${fresh}/chunks`)
+          .set('Content-Type', 'application/octet-stream')
+          .set('X-Part-Number', String(part))
+          .send(bytes.subarray(offset, offset + created.chunkBytes))
+          .expect(200);
+      await bcall('post', `/jobs/${fresh}/prepare`).expect(200);
+      /* The check lane is free: the new upload is checked while the fingerprint still waits. */
+      const checked = await waitFor(async () => {
+        await beside.tick();
+        const job = await Jobs.findById(fresh).lean();
+        assert.equal(job.state, 'ready', job.error);
+        return job;
+      }, 120000);
+      assert.ok(Math.abs(checked.seconds - 30) < 0.5);
+      assert.equal(entered, 1, 'one fingerprint pass at a time');
+      assert.equal((await Jobs.findById(id).lean()).sync?.plan, undefined, 'the fingerprint still waits');
+      release();
+      await waitFor(async () => assert.ok((await Jobs.findById(id).lean()).sync?.plan), 60000);
+      for (const item of [id, fresh]) await bcall('delete', `/jobs/${item}`).expect(200);
+    } finally {
+      release();
+      await beside.close();
+    }
   });
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
-import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -57,9 +57,10 @@ import {
   lookWidth,
   runStarts,
   byLabel,
+  soundAgainWithoutSync,
 } from './engine.ts';
 import { readAnalysis, nextContinuity, analysisPrompt, plainCapitals } from './prompt.ts';
-import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
+import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError, execute, timedOut } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
@@ -5681,7 +5682,7 @@ test('follow along: when the extra output fails the pass runs again without it, 
   const result = await run(f, [], [cue], { keeper });
   assert.equal(handed.length, 1);
   assert.equal(handed[0].file, '', 'the keeper is told there is no sound to keep');
-  assert.ok(handed[0].problem, 'and why');
+  assert.match(handed[0].problem, /^the sound pass failed with the follow-along sound and worked without it: /, 'and why');
   assert.ok(result.video, 'the copy is made');
   assert.equal(kept.plans.at(-1).loudness.program < 0, true, 'the soundtrack was still measured');
   const g = await fixture('follow-throws', 9);
@@ -5691,4 +5692,35 @@ test('follow along: when the extra output fails the pass runs again without it, 
   };
   const made = await run(g, [], [cue], { keeper: throwing.keeper });
   assert.ok(made.video, 'a keeper that throws is ignored');
+});
+
+test('follow along: the sound pass runs again without the follow-along sound only when that could have caused the failure', async () => {
+  /* A real pass stopped at its time limit: an hour or more is never spent twice. */
+  const late = await execute(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-re', '-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono', '-t', '30', '-f', 'null', '-'],
+    signal,
+    undefined,
+    undefined,
+    { timeoutMs: 300 },
+  ).then(
+    () => null,
+    (error) => error,
+  );
+  assert.ok(late instanceof MediaError && timedOut(late), `stopped at its limit: ${late?.detail}`);
+  assert.equal(soundAgainWithoutSync(late), false);
+  /* A real damaged source fails the same way again. */
+  const garbage = join(root, 'follow-garbage.mp4');
+  await writeFile(garbage, Buffer.alloc(4096, 7));
+  const damaged = await execute(ffmpegPath, ['-nostdin', '-v', 'error', '-i', garbage, '-f', 'null', '-'], signal).then(
+    () => null,
+    (error) => error,
+  );
+  assert.ok(damaged instanceof MediaError && damaged.kind === 'damaged', `damaged: ${damaged?.kind}`);
+  assert.equal(timedOut(damaged), false);
+  assert.equal(soundAgainWithoutSync(damaged), false);
+  /* A tool or disk failure could be the extra output's: worth one more pass without it. */
+  assert.equal(soundAgainWithoutSync(new MediaError('tools', 'exit 1: Error opening output file sync.s16')), true);
+  assert.equal(soundAgainWithoutSync(new MediaError('disk', 'exit 1: No space left on device')), true);
+  assert.equal(soundAgainWithoutSync(new Error('spawn EBUSY')), true);
 });

@@ -44,6 +44,7 @@ import {
   sectionSound,
   soundtrack,
   stretch,
+  timedOut,
 } from './media';
 import { bareVoiceAt, creditComment, creditLines, endBreath, layCredit } from './credit';
 import {
@@ -174,8 +175,9 @@ export type Keeper = {
    * Follow along (Nov 2026). When present, a fresh plan's sound pass also writes the soundtrack
    * as 8 kHz mono 16-bit raw sound (media.ts `Soundtrack.sync`); the file is handed here, then
    * deleted, so this must take what it needs before it returns, and must not throw. `file` is ''
-   * when that extra output failed and the pass ran again without it (`problem` says why): a
-   * fingerprint never costs the copy. Never called for a plan that is reused.
+   * when there is no such sound, and `problem` says why: the pass failed and ran again without
+   * it (a fingerprint never costs the copy), or the pass failed outright and the run stops. Never
+   * called for a plan that is reused.
    */
   keepSync?: (file: string, problem?: string) => Promise<void>;
 };
@@ -650,6 +652,14 @@ const keytermsWanted = (): boolean => process.env.KADE_DESCRIPTION_KEYTERMS === 
  * too (Nov 2026). KADE_DESCRIPTION_SCAN_BESIDE=0 runs it after the sound pass, as before.
  */
 const scanBeside = (): boolean => process.env.KADE_DESCRIPTION_SCAN_BESIDE !== '0';
+/**
+ * Follow along (Nov 14 2026 review): whether a sound pass that also wrote the follow-along sound
+ * could have failed because of it, so it is worth one more pass without it. A pass that ran out
+ * of time (an hour or more), or read a damaged or unusable source, would only fail again.
+ */
+export const soundAgainWithoutSync = (error: unknown): boolean =>
+  !(error instanceof MediaError) ||
+  ((error.kind === 'tools' || error.kind === 'disk') && !timedOut(error));
 
 export async function describeVideo(request: Request): Promise<Outcome> {
   const { directory, settings, signal, progress, meter } = request;
@@ -681,9 +691,11 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   const source = working.file;
   /**
    * The plan's sound pass. A keeper that keeps follow-along fingerprints (`Keeper.keepSync`) also
-   * gets the follow-along sound, which is deleted once handed over. When that extra output makes
-   * the pass fail, the pass runs once more without it and the keeper is told: a fingerprint never
-   * costs the copy, and without the hook the pass is exactly as before.
+   * gets the follow-along sound, which is deleted once handed over. When the pass fails in a way
+   * that extra output could have caused, it runs once more without it, so a fingerprint never
+   * costs the copy; one that ran out of time, or read a damaged source, is not run again
+   * (`soundAgainWithoutSync`). Either way the keeper is told what really happened. Without the
+   * hook the pass is exactly as before.
    */
   const measureSound = async (media: Media, scan: boolean): Promise<Soundtrack> => {
     const keepSync = keeper.keepSync;
@@ -703,8 +715,23 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     } catch (error) {
       await remove();
       if (signal.aborted) throw error;
-      await handOver('', error instanceof Error ? error.message : 'the sound pass failed');
-      return soundtrack(source, directory, signal, media, { scan });
+      const reason = error instanceof Error ? error.message : 'unknown error';
+      if (!soundAgainWithoutSync(error)) {
+        await handOver('', `the sound pass failed: ${reason}`);
+        throw error;
+      }
+      let measured: Soundtrack;
+      try {
+        measured = await soundtrack(source, directory, signal, media, { scan });
+      } catch (again) {
+        if (!signal.aborted) await handOver('', `the sound pass failed: ${reason}`);
+        throw again;
+      }
+      await handOver(
+        '',
+        `the sound pass failed with the follow-along sound and worked without it: ${reason}`,
+      );
+      return measured;
     }
     const { sync, ...measured } = sound;
     if (sync) await handOver(sync);
