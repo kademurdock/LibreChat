@@ -38,7 +38,7 @@ const scriptWriter = loadTs(path.join(__dirname, '../../../packages/api/src/audi
 const writerPricing = loadTs(path.join(__dirname, '../../../packages/api/src/utils/writing.ts'));
 
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
-const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry'];
+const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry', './kadeSoundBoothTasks'];
 
 /** The route, loaded the way the app loads it, with the writer answering from `replies` in order.
  *  Nov 14 2026: `opts.claudeLane` stands in for utils/kadeClaudeLane.js (none: the route sees an empty module, as an
@@ -1317,7 +1317,7 @@ test('a reopened edit project sends its last drawn seed back, and it is drawn fr
 test('the guide offers Change words with its own labelled boxes, and the old free-text starter is gone', () => {
   const { GUIDE } = booth().internals;
   const auk = GUIDE.engines.scenema;
-  assert.equal(JSON.stringify(auk.settings.find((s) => s.key === 'auk_task').options), JSON.stringify(['speech', 'edit', 'change_words']));
+  assert.equal(JSON.stringify(auk.settings.find((s) => s.key === 'auk_task').options), JSON.stringify(['speech', 'edit', 'change_words', 'clean_up_or_change']));
   for (const key of ['words_kind', 'old_text', 'new_text', 'words_from', 'words_to', 'takes']) {
     const setting = auk.settings.find((s) => s.key === key);
     assert.ok(setting && setting.label && setting.hint, key);
@@ -1326,4 +1326,102 @@ test('the guide offers Change words with its own labelled boxes, and the old fre
   assert.ok(starters.length >= 2);
   for (const r of starters) { assert.equal(r.task, 'change_words'); assert.ok(r.old && r.new); }
   assert.equal(auk.recipes.some((r) => r.task === 'edit' && /replace/i.test(r.text)), false);
+});
+
+/* ---------- Clean up or change (Nov 15 2026) ---------- */
+const FIX = { auk_task: 'clean_up_or_change', reference_voice_url: TAKE };
+
+test('Clean up or change: the task goes to the bridge as an id and choices, with a fresh seed and no instruction', async () => {
+  const desk = booth();
+  const out = await desk.render({ ...FIX, fix_task: 'pitch', fix_direction: 'down', fix_semitones: '3', instruction: 'Replace Tuesday with Thursday', seed: 77 });
+  assert.equal(out.ok, true);
+  assert.equal(desk.bridgeCalls.length, 1);
+  const sent = desk.bridgeCalls[0];
+  assert.equal(sent.auk_task, 'edit');
+  assert.equal(sent.edit_task, 'pitch');
+  assert.deepEqual({ ...sent.edit_slots }, { direction: 'down', semitones: 3 });
+  assert.equal(sent.instruction, undefined, 'the bridge builds the template; nothing she typed is an instruction');
+  assert.doesNotMatch(JSON.stringify(sent), /Tuesday/);
+  assert.equal(sent.prompt, 'Lower the pitch by 3 semitones.', 'the take is captioned in plain words');
+  assert.ok(Number.isInteger(sent.seed));
+  assert.notEqual(sent.seed, 77, 'a typed seed is not used: every try is a fresh take');
+  assert.equal(sent.gen_seconds, undefined, 'a pitch change keeps the length');
+  const last = desk.saved.at(-1);
+  assert.equal(last.options.auk_task, 'edit');
+  assert.equal(last.options.edit_kind, 'task');
+  assert.equal(last.options.edit_task, 'pitch');
+  assert.equal(last.options.instruction, undefined);
+  assert.equal(last.voiceSeed, undefined, 'an edit never sets the project voice seed');
+  assert.match(last.readback, /^Your imported recording, edited: Lower the pitch by 3 semitones\./);
+  /* the next try rolls new dice */
+  const again = booth();
+  await again.render({ ...FIX, fix_task: 'pitch', fix_direction: 'down', fix_semitones: '3' });
+  assert.notEqual(again.bridgeCalls[0].seed, sent.seed);
+});
+
+test('Clean up or change: a speed change sends the new length; a clean-up keeps it; the range is kept', async () => {
+  const desk = booth();
+  await desk.render({ ...FIX, fix_task: 'speed', fix_speed: '2' });
+  assert.equal(desk.bridgeCalls[0].gen_seconds, 5, 'the 10 second fixture at double speed');
+  assert.deepEqual({ ...desk.bridgeCalls[0].edit_slots }, { speed: 2 });
+  const ranged = booth();
+  await ranged.render({ ...FIX, fix_task: 'speed', fix_speed: '0.5', edit_start: 2, edit_end: 8, gen_seconds: 99 });
+  assert.equal(ranged.bridgeCalls[0].gen_seconds, 12, 'Target seconds is not used; half speed doubles the 6 seconds');
+  assert.equal(ranged.bridgeCalls[0].edit_start, 2);
+  assert.equal(ranged.bridgeCalls[0].edit_end, 8);
+  const clean = booth();
+  await clean.render({ ...FIX, fix_task: 'clean_up' });
+  assert.equal(clean.bridgeCalls[0].edit_task, 'clean_up');
+  assert.deepEqual({ ...clean.bridgeCalls[0].edit_slots }, {});
+  assert.equal(clean.bridgeCalls[0].gen_seconds, undefined);
+  const voice = booth();
+  await voice.render({ ...FIX, fix_task: 'voice', fix_description: 'a deep, "warm" older man' });
+  assert.deepEqual({ ...voice.bridgeCalls[0].edit_slots }, { description: "a deep, 'warm' older man" });
+});
+
+test('Clean up or change: unclear choices are refused in one plain sentence before anything is spent', async () => {
+  const desk = booth();
+  const bad = async (body, message) => {
+    const { status, result } = await desk.request('post/render', { engine: 'scenema', ...FIX, ...body });
+    assert.equal(status, 400, JSON.stringify(result));
+    assert.equal(result.error, message);
+  };
+  await bad({}, 'Pick what to do with the recording.');
+  await bad({ fix_task: 'make_it_better' }, 'Pick what to do with the recording.');
+  await bad({ fix_task: 'speed', fix_speed: '1.8' }, 'Choose a new speed from the list.');
+  await bad({ fix_task: 'volume', fix_direction: 'up' }, 'Choose how many decibels from the list.');
+  await bad({ fix_task: 'voice', fix_description: '  ' }, 'Describe the new voice first.');
+  await bad({ fix_task: 'voice', fix_description: "one that says 'hi' instead of 'hello'" }, 'Describe only the voice. To change words, choose change words under Task.');
+  const { status, result } = await desk.request('post/render', { engine: 'scenema', auk_task: 'clean_up_or_change', fix_task: 'clean_up' });
+  assert.equal(status, 400);
+  assert.equal(result.error, 'Import the recording you want to clean up or change.');
+  assert.equal(desk.bridgeCalls.length, 0);
+});
+
+test('the guide offers Clean up or change with labelled choices, each shown only for its task, and starter buttons for each', () => {
+  const { GUIDE } = booth().internals;
+  const auk = GUIDE.engines.scenema;
+  const what = auk.settings.find((s) => s.key === 'fix_task');
+  assert.deepEqual([...what.options], require('./kadeSoundBoothTasks').TASK_IDS, 'the guide lists every task the server accepts, in order');
+  assert.match(auk.settings.find((s) => s.key === 'fix_speaker').hint, new RegExp(`Works on ${require('./kadeSoundBoothTasks').MAX_SPEAKER_RANGE_S} seconds or less`));
+  /* each slot's options are the module's choices, as text */
+  const choices = { fix_effect: 'effect', fix_speaker: 'speaker', fix_speed: 'speed', fix_semitones: 'semitones', fix_db: 'db', fix_emotion: 'emotion', fix_sound: 'sound' };
+  const T = require('./kadeSoundBoothTasks').TASKS;
+  const allowed = (slot) => Object.values(T).map((t) => t.slots[slot]).find(Boolean);
+  for (const [key, slot] of Object.entries(choices)) assert.deepEqual([...auk.settings.find((s) => s.key === key).options], allowed(slot).map(String), key);
+  assert.deepEqual([...auk.settings.find((s) => s.key === 'fix_direction').options], ['up', 'down']);
+  for (const o of what.options) assert.ok(what.labels[o], o);
+  const slots = auk.settings.filter((s) => s.key.startsWith('fix_') && s.key !== 'fix_task');
+  for (const s of slots) {
+    assert.ok(s.label && s.hint && s.forTasks && s.forTasks.length, s.key);
+    if (s.kind === 'choice') assert.ok(s.options.includes(s.default), s.key);
+  }
+  assert.deepEqual(Object.fromEntries(slots.map((s) => [s.key, [...s.forTasks]])), {
+    fix_effect: ['remove_effect'], fix_speaker: ['keep_speaker'], fix_speed: ['speed'], fix_direction: ['pitch', 'volume'],
+    fix_semitones: ['pitch'], fix_db: ['volume'], fix_emotion: ['emotion'], fix_sound: ['remove_sound'], fix_description: ['voice'],
+  });
+  const starters = auk.recipes.filter((r) => r.task === 'clean_up_or_change');
+  assert.deepEqual([...new Set(starters.map((r) => r.fix))].sort(), [...what.options].sort(), 'one starter button for every change');
+  /* the off-template free-text starters these replace are gone */
+  assert.equal(auk.recipes.some((r) => r.task === 'edit' && /noise|pitch|regional accent|texture|mood|separate/i.test(r.label)), false);
 });

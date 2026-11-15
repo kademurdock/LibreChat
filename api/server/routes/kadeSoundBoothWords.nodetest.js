@@ -154,7 +154,7 @@ test('the Change words controls are labelled buttons and lists, and every result
   assert.doesNotMatch(spots, /autoplay/);
   assert.match(pageFunction('findSpot'), /list\.focus\(\)[\s\S]*say\(r\.data\.spoken/);
   /* an edit never sends the project's voice seed */
-  assert.match(script, /b\.seed === undefined && b\.auk_task!=='edit' && b\.auk_task!=='change_words'\) b\.seed = state\.voiceSeed;/);
+  assert.match(script, /b\.seed === undefined && b\.auk_task!=='edit' && b\.auk_task!=='change_words' && b\.auk_task!=='clean_up_or_change'\) b\.seed = state\.voiceSeed;/);
   assert.match(script, /if\(state\.engine==='scenema' && b\.auk_task==='change_words'\) b\.changes=wordChangesToSend\(\);/);
 });
 

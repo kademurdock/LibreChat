@@ -84,6 +84,9 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
     voice_sample: process.env.KADE_AUK_VOICE_SAMPLE !== '0' && opts?.auk_task !== 'edit' && !opts?.reference_voice_url ? true : undefined,
     auk_task: opts.auk_task,
     instruction: opts.instruction,
+    /* Nov 15 2026: Clean up or change -- each section gets the same task id and choices; the bridge builds the instruction. */
+    edit_task: opts.edit_task,
+    edit_slots: opts.edit_slots,
     gen_seconds: opts.gen_seconds,
     edit_start: opts.edit_start,
     edit_end: opts.edit_end,

@@ -128,6 +128,8 @@ const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
 /* Nov 14 2026: Change words on AuK -- one change per render, fresh seeds, the take that says the new words. */
 const words = require('./kadeSoundBoothWords');
+/* Nov 15 2026: Clean up or change on AuK -- one trained task per try, sent as a task id and fixed choices. */
+const aukTasks = require('./kadeSoundBoothTasks');
 const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription, assertSeedScriptReply } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
@@ -1542,17 +1544,27 @@ const GUIDE = {
       tagline: 'Create a voice or reshape a recording.',
       recipes: [
         { label: 'Design a storyteller voice', task: 'speech', text: 'An adult woman with a warm lower register, a gentle Southern American accent, textured but clear speech, and expressive storytelling inflection.' },
-        { label: 'Change mood and inflection', task: 'edit', text: 'Make the delivery cheerful and animated, with expressive inflection. Preserve the words and speaker identity.' },
         { label: 'Try a new accent (experimental)', task: 'edit', text: 'Give the speaker a gentle Southern American accent. Preserve the words and overall voice identity.' },
-        { label: 'Remove a regional accent', task: 'edit', text: 'Remove the regional accent while preserving the speaker\'s voice and content.' },
-        { label: 'Change voice texture', task: 'edit', text: 'Make the voice warmer and slightly huskier. Preserve the words and timing.' },
+        /* Nov 15 2026: clean-ups and changes AuK was trained on, one per try (kadeSoundBoothTasks.js). Each fills the
+         * Clean up or change boxes; `text` is the plain line for screens that only read it. */
+        { label: 'Clean up noise and echo', task: 'clean_up_or_change', fix: 'clean_up', text: 'Clean up noise and echo.' },
+        { label: 'Restore muffled audio', task: 'clean_up_or_change', fix: 'restore_muffled', text: 'Restore muffled audio.' },
+        { label: 'Remove a phone sound', task: 'clean_up_or_change', fix: 'remove_effect', slots: { effect: 'phone' }, text: 'Remove the phone sound.' },
+        { label: 'Keep only the singing', task: 'clean_up_or_change', fix: 'keep_singing', text: 'Keep only the singing.' },
+        { label: 'Keep all voices, drop the music', task: 'clean_up_or_change', fix: 'keep_voices', text: 'Keep all the voices and drop the music.' },
+        { label: 'Keep one speaker', task: 'clean_up_or_change', fix: 'keep_speaker', slots: { speaker: '1' }, text: 'Keep only the first person to talk.' },
+        { label: 'Slow it down', task: 'clean_up_or_change', fix: 'speed', slots: { speed: '0.75' }, text: 'Change the speed to 0.75 times.' },
+        { label: 'Raise the pitch', task: 'clean_up_or_change', fix: 'pitch', slots: { direction: 'up', semitones: '2' }, text: 'Raise the pitch by 2 semitones.' },
+        { label: 'Make it louder', task: 'clean_up_or_change', fix: 'volume', slots: { direction: 'up', db: '5' }, text: 'Make it 5 decibels louder.' },
+        { label: 'Change mood', task: 'clean_up_or_change', fix: 'emotion', slots: { emotion: 'happy' }, text: 'Make it sound happy.' },
+        { label: 'Whisper to normal voice', task: 'clean_up_or_change', fix: 'whisper_to_normal', text: 'Turn a whisper into a normal voice.' },
+        { label: 'Remove an accent', task: 'clean_up_or_change', fix: 'remove_accent', text: 'Remove the accent.' },
+        { label: 'Remove breaths', task: 'clean_up_or_change', fix: 'remove_sound', slots: { sound: 'breaths' }, text: 'Remove the breaths.' },
+        { label: 'Change voice texture', task: 'clean_up_or_change', fix: 'voice', slots: { description: 'a warmer, slightly husky voice' }, text: 'Change the voice to: a warmer, slightly husky voice.' },
         /* Nov 14 2026: words are changed in the Change words form, never by a free-form instruction (kadeSoundBoothWords.js). */
         { label: 'Change words', task: 'change_words', kind: 'spoken', old: 'Tuesday', new: 'Thursday', text: "Replace 'Tuesday' with 'Thursday'." },
         { label: 'Change sung words', task: 'change_words', kind: 'sung', old: 'rear view', new: 'like you', text: 'Change "rear view" to "like you" in the vocal recording.' },
         { label: 'Whisper', task: 'edit', text: 'Turn the speech into a natural whisper. Preserve the words and speaker identity.' },
-        { label: 'Adjust pitch', task: 'edit', text: 'Raise the pitch by two semitones while preserving the words and speaking speed.' },
-        { label: 'Clean noise and room echo', task: 'edit', text: 'Remove background noise and reverberation. Preserve the voice and every spoken word.' },
-        { label: 'Separate speech from background', task: 'edit', text: 'Isolate the main speaking voice and remove background sounds and music. Preserve every spoken word.' },
       ],
       where: 'Runs on a rented GPU that sleeps between jobs. Your recording stays in your library.',
       cost: 'Billed by GPU time, including startup and up to two minutes awake after the last job. No total estimate yet.',
@@ -1561,14 +1573,37 @@ const GUIDE = {
       howToWrite: [
         'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
         'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
-        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones. If the edit changes speed, set Target seconds for edit.',
+        'To clean up or change a recording, choose clean up or change under Task, import the recording and pick what to do: clean up noise and echo, restore muffled audio, remove a phone or megaphone sound, keep only the singing or the voices, keep one speaker, or change the speed, pitch, volume, mood, accent, breaths or voice. These are the changes AuK was trained on, so they work best. Each try is a fresh take, and your original is kept.',
+        'To edit some other way, choose edit under Task and write Edit instructions. AuK may not follow wording it was not trained on.',
         'To change words, choose change words under Task. Type the words it says now, the new words, and From and To seconds around them; Find the spot lists what is said every four seconds. Each change makes three fresh takes, four for sung words, and keeps the one that says the new words. Changing sung words is hit or miss with AuK. Add several changes to the list and they run one after another.',
         'For a voice or age change, try the timbre template: Keep the spoken content unchanged and change the timbre to: "a youthful, light voice with clear diction". This requests a change; listen to judge whether it worked.',
         'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
       /* Part 296: `advanced` settings sit in one collapsed "More settings" group on both screens. */
       settings: [
-        { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes how the imported recording sounds. Change words swaps words in it.', kind: 'choice', options: ['speech', 'edit', 'change_words'], default: 'speech' },
+        { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording from your own instructions. Change words swaps words in it. Clean up or change makes one of the changes AuK was trained on.', kind: 'choice', options: ['speech', 'edit', 'change_words', 'clean_up_or_change'], default: 'speech' },
+        /* Nov 15 2026: Clean up or change. Shown only for that task; a choice box appears only for the tasks that need it
+         * (`forTasks`). `labels` are what each option says; the value is what is sent. */
+        { key: 'fix_task', label: 'What to do', hint: 'One change per try. Each try is a fresh take, and your original is kept.', kind: 'choice',
+          options: ['clean_up', 'restore_muffled', 'remove_effect', 'keep_singing', 'keep_voices', 'keep_speaker', 'speed', 'pitch', 'volume', 'emotion', 'whisper_to_normal', 'remove_accent', 'remove_sound', 'voice'], default: 'clean_up',
+          labels: { clean_up: 'Clean up noise and echo', restore_muffled: 'Restore muffled audio', remove_effect: 'Remove a phone, megaphone or underwater sound',
+            keep_singing: 'Keep only the singing', keep_voices: 'Keep all voices, drop the music', keep_speaker: 'Keep one speaker',
+            speed: 'Change the speed', pitch: 'Change the pitch', volume: 'Change the volume', emotion: 'Change the mood',
+            whisper_to_normal: 'Whisper to normal voice', remove_accent: 'Remove an accent', remove_sound: 'Remove breaths, laughs or other sounds',
+            voice: 'Change the voice' } },
+        { key: 'fix_effect', label: 'Effect to remove', hint: 'The sound that is on the recording now.', kind: 'choice', options: ['phone', 'megaphone', 'underwater'],
+          labels: { phone: 'Phone', megaphone: 'Megaphone', underwater: 'Underwater or muffled' }, default: 'phone', forTasks: ['remove_effect'] },
+        { key: 'fix_speaker', label: 'Speaker to keep', hint: 'Counted by who starts talking first. Works on 14 seconds or less at a time, so set Edit from and Edit to around that stretch.', kind: 'choice', options: ['1', '2', '3'],
+          labels: { 1: 'The first to talk', 2: 'The second to talk', 3: 'The third to talk' }, default: '1', forTasks: ['keep_speaker'] },
+        { key: 'fix_speed', label: 'New speed', hint: 'The words and voice stay the same.', kind: 'choice', options: ['0.5', '0.75', '1.25', '1.5', '2'],
+          labels: { 0.5: 'Half speed', 0.75: 'A little slower, 0.75 times', 1.25: 'A little faster, 1.25 times', 1.5: 'Faster, 1.5 times', 2: 'Double speed' }, default: '0.75', forTasks: ['speed'] },
+        { key: 'fix_direction', label: 'Up or down', hint: 'Up is higher or louder. Down is lower or quieter.', kind: 'choice', options: ['up', 'down'], default: 'up', forTasks: ['pitch', 'volume'] },
+        { key: 'fix_semitones', label: 'Semitones', hint: 'One semitone is a small step. Three is clearly different.', kind: 'choice', options: ['1', '2', '3'], default: '1', forTasks: ['pitch'] },
+        { key: 'fix_db', label: 'Decibels', hint: 'Five is a small step. Fifteen is a big one.', kind: 'choice', options: ['5', '10', '15'], default: '5', forTasks: ['volume'] },
+        { key: 'fix_emotion', label: 'Mood', hint: 'The words and voice stay the same.', kind: 'choice', options: ['happy', 'angry', 'sad', 'fearful', 'surprised', 'disgusted', 'calm', 'excited'], default: 'happy', forTasks: ['emotion'] },
+        { key: 'fix_sound', label: 'Sound to remove', hint: 'Every one of these sounds is taken out.', kind: 'choice', options: ['breaths', 'laughs', 'sighs', 'coughs', 'ums'],
+          labels: { breaths: 'Breaths', laughs: 'Laughs', sighs: 'Sighs', coughs: 'Coughs', ums: 'Ums and uhs' }, default: 'breaths', forTasks: ['remove_sound'] },
+        { key: 'fix_description', label: 'New voice', hint: 'Describe the voice you want, like: a deep, warm older man. The words stay the same.', kind: 'text', forTasks: ['voice'] },
         { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit. To change words, choose change words under Task.', kind: 'text' },
         /* Nov 14 2026: Change words. Shown only for that task; a screen with only these boxes sends one change. */
         { key: 'words_kind', label: 'Spoken or sung', hint: 'Sung words use the singing version of the change.', kind: 'choice', options: ['spoken', 'sung'], default: 'spoken' },
@@ -2031,6 +2066,7 @@ function projectView(p, factor = 1, access = {}) {
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
       : wordEdit ? `AuK — ${(p.wordChanges || []).length === 1 ? 'a word change' : `${(p.wordChanges || []).length} word changes`} in an imported recording`
+      : aukEdit && (p.options || {}).edit_kind === 'task' ? 'AuK — a clean-up or change of an imported recording'
       : aukEdit ? 'AuK — an edit of an imported recording'
       : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : '')),
     /* Edits saved before Oct 2 2026 kept the bare instruction here. */
@@ -3000,16 +3036,21 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   /* Nov 14 2026: Change words is an edit too (stored as auk_task 'edit', edit_kind 'words'), but it is
    * sent as data -- old words, new words, where -- and never as an instruction (kadeSoundBoothWords.js). */
   const wording = engine === 'scenema' && b.auk_task === 'change_words';
-  const editing = engine === 'scenema' && (b.auk_task === 'edit' || wording);
+  /* Nov 15 2026: Clean up or change is an edit too (auk_task 'edit', edit_kind 'task'), sent as a task id and fixed
+   * choices; the bridge builds AuK's own template (kadeSoundBoothTasks.js). */
+  const fixing = engine === 'scenema' && b.auk_task === 'clean_up_or_change';
+  const editing = engine === 'scenema' && (b.auk_task === 'edit' || wording || fixing);
   if (wording && !b.reference_voice_url) return res.status(400).json({ error: 'Import the recording whose words you want to change.' });
-  if (editing && !wording && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
+  if (fixing && !b.reference_voice_url) return res.status(400).json({ error: 'Import the recording you want to clean up or change.' });
+  if (editing && !wording && !fixing && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
   /* Free-form text is not how words change: AuK follows one trained template per change. */
-  if (editing && !wording && words.looksLikeWordChange(b.instruction)) {
+  if (editing && !wording && !fixing && words.looksLikeWordChange(b.instruction)) {
     return res.status(400).json({ error: 'That sounds like a word change. Choose change words under Task, type the old and new words and roughly where they are, and the booth will aim at that spot and check the new words.' });
   }
   let wordPlan = null;
   let wordTakes = words.DEFAULT_TAKES;
-  if (editing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });
+  let taskPlan = null;
+  if (editing && !fixing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });
   if (editing && ['edit_start', 'edit_end'].some(key => b[key] != null && (!Number.isFinite(b[key]) || b[key] < 0))) {
     return res.status(400).json({ error: 'Edit start and end must be seconds inside the recording.' });
   }
@@ -3023,12 +3064,16 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       if (wording) {
         wordPlan = words.planWordChanges(b, seconds);
         wordTakes = words.takesFrom(b.takes, wordPlan);
+      } else if (fixing) {
+        /* The length of the result is the task's (a speed change sets it); Target seconds is not used here. */
+        taskPlan = aukTasks.planTask(b, seconds, { looksLikeWordChange: words.looksLikeWordChange });
+        editParts = planAukEdit(seconds, { edit_start: b.edit_start, edit_end: b.edit_end, ...(taskPlan.genSeconds != null ? { gen_seconds: taskPlan.genSeconds } : {}) });
       } else editParts = planAukEdit(seconds, b);
     } catch (error) {
       return res.status(400).json({ error: errorText(error.message, { name: 'The edit', fallback: 'Import the recording again before editing.' }) });
     }
   }
-  let script = String(wording ? words.summary(wordPlan) : editing ? b.instruction : b.script || '').trim();
+  let script = String(wording ? words.summary(wordPlan) : fixing ? taskPlan.caption : editing ? b.instruction : b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
   /* The same repair runs on the way to the GPU, because a script can reach
@@ -3097,6 +3142,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
     const estimate = estimateFor(engine, quoteScript, priceFactor(req.user));
     if (wording) { estimate.audioSeconds = null; estimate.spoken = `AuK will make ${wordPlan.length === 1 ? 'this change' : `these ${wordPlan.length} changes, one after another,`} with ${wordTakes} fresh take${wordTakes === 1 ? '' : 's'} each, and keep a take only if it says the new words. Every take uses GPU time; startup is billed too. ` + estimate.spoken; }
+    else if (fixing) { estimate.audioSeconds = taskPlan.genSeconds; estimate.spoken = `AuK will make this change to your imported recording: ${taskPlan.caption} It saves a new take, and each try is a fresh one. Your original is kept. GPU time is billed; the cost depends on recording length and startup. ` + estimate.spoken; }
     else if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
     /* A pasted song is said to have been sorted before anything is spent. */
     const pasteNote = req.songPaste && req.songPaste.note;
@@ -3109,6 +3155,12 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   try {
     const opts = {};
     if (wording) { opts.auk_task = 'edit'; opts.edit_kind = 'words'; opts.instruction = script; opts.takes = wordTakes; }
+    else if (fixing) {
+      /* No instruction is stored or sent: the bridge builds AuK's template from the task and its choices. */
+      opts.auk_task = 'edit'; opts.edit_kind = 'task'; opts.edit_task = taskPlan.task; opts.edit_slots = taskPlan.slots;
+      if (taskPlan.genSeconds != null) opts.gen_seconds = taskPlan.genSeconds;
+      for (const key of ['edit_start', 'edit_end']) if (b[key] != null) opts[key] = b[key];
+    }
     else if (editing) { opts.auk_task = 'edit'; opts.instruction = script; for (const key of ['gen_seconds', 'edit_start', 'edit_end']) if (b[key] != null) opts[key] = b[key]; }
     const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
     if (isUrl(b.reference_voice_url)) opts.reference_voice_url = b.reference_voice_url;
@@ -3198,7 +3250,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
        * speech; reusing it made every retry of an edit roll the same dice. A seed she typed in More
        * settings is kept, unless it is only the project's voice seed coming back from the screen.
        * Change words draws its own seeds per change (kadeSoundBoothWords.js). */
-      if (wording || !Number.isInteger(opts.seed) || opts.seed === project.voiceSeed || opts.seed === project.lastEditSeed) delete opts.seed;
+      /* Clean up or change is a fresh take every try, like Change words: a typed seed is not used. */
+      if (wording || fixing || !Number.isInteger(opts.seed) || opts.seed === project.voiceSeed || opts.seed === project.lastEditSeed) delete opts.seed;
       /* The drawn seed is saved with the options, so a reopened project sends it back. It is kept as
        * lastEditSeed too, so that copy is known for what it is and drawn fresh again. */
       if (!wording && !Number.isInteger(opts.seed)) { opts.seed = words.freshSeeds(1)[0]; project.lastEditSeed = opts.seed; }
@@ -3372,6 +3425,9 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           edit_start: opts.edit_start,
           edit_end: opts.edit_end,
           instruction: opts.instruction,
+          /* Nov 15 2026: Clean up or change -- a task id and its choices; the bridge builds the instruction. */
+          edit_task: opts.edit_task,
+          edit_slots: opts.edit_slots,
           gen_seconds: opts.gen_seconds,
           reference_voice_url: opts.reference_voice_url,
           background_sfx: opts.background_sfx,

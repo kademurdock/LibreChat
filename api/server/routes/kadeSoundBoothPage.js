@@ -231,7 +231,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function post(path, body){ return request(path,body||{}); }
     function get(path){ return request(path); }
-    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='change_words') return 'Change the words'; if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; if(isUpload()) return uploadUi().render||'Render'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
+    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='change_words') return 'Change the words'; if(state.engine==='scenema' && state.values.auk_task==='clean_up_or_change') return 'Change the recording'; if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; if(isUpload()) return uploadUi().render||'Render'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
     function busy(){ return state.rendering || state.jobId || state.writing || state.importing || state.copying; }
     /* Sep 27 2026: an engine whose guide entry says flow 'upload' has no script: the imported recording is the input. Only an
      * account the server gives one to ever has it (Sing it in my voice), and its words come from its guide entry. */
@@ -364,7 +364,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function applyWorkflow(){
       updateRenderControls();
-      var music=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'), scene=state.engine==='seed', effects=state.engine==='stable', upload=isUpload(), wording=state.engine==='scenema'&&state.values.auk_task==='change_words', editing=state.engine==='scenema'&&(state.values.auk_task==='edit'||wording);
+      var music=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'), scene=state.engine==='seed', effects=state.engine==='stable', upload=isUpload(), wording=state.engine==='scenema'&&state.values.auk_task==='change_words', fixing=state.engine==='scenema'&&state.values.auk_task==='clean_up_or_change', editing=state.engine==='scenema'&&(state.values.auk_task==='edit'||wording||fixing);
       var g=state.guide.engines[state.engine];
       document.getElementById('renderHint').textContent=g.cost + ' Generation starts with one press.';
       document.getElementById('btnRender').setAttribute('aria-describedby','renderHint');
@@ -405,6 +405,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           document.getElementById('editorLegend').textContent='Change words in a recording';
           document.getElementById('scriptHint').textContent='Import the recording. Type the words it says now, the new words, and From and To seconds around them. Find the spot lists what is said every four seconds, so you can pick the spot by ear. Each change makes fresh takes and keeps one only if it says the new words; otherwise your recording is left as it was.'+(Number.isInteger(Number(state.values.seed))&&String(state.values.seed).trim()!==''?' The seed in More settings is not used here: every take gets a fresh one.':'');
           document.querySelector('#settingsDrawer summary').textContent='Recording and words to change';
+        }
+        /* Nov 15 2026: Clean up or change -- one trained AuK change per try, picked from a list. */
+        if(fixing){
+          document.getElementById('editorLegend').textContent='Clean up or change a recording';
+          document.getElementById('scriptHint').textContent='Import the recording, then pick what to do. Each try is a fresh take. Your original is kept.'+(Number.isInteger(Number(state.values.seed))&&String(state.values.seed).trim()!==''?' The seed in More settings is not used here.':'');
+          document.querySelector('#settingsDrawer summary').textContent='Recording and what to do';
         }
       } else if(state.engine==='scenema'){
         document.getElementById('btnPreview').hidden=false;document.getElementById('btnNewVoice').hidden=false;
@@ -486,7 +492,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='choice'){
           var locked=!!s.locked, chosen=locked?s.default:(v!=null?v:s.default);
           var choiceHead=locked?'<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint locked" id="'+id+'_h">'+esc(s.hint)+'</p>':head;
-          return choiceHead+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h'+(s.key==='words_kind'&&v==='sung'?' '+id+'_sung':'')+'"'+(locked?' disabled':'')+'>'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+(chosen===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
+          return choiceHead+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h'+(s.key==='words_kind'&&v==='sung'?' '+id+'_sung':'')+'"'+(locked?' disabled':'')+'>'+s.options.map(function(o){ /* Nov 15 2026: a choice may name its options (labels); the value is still what is sent. */ var lab = s.labels&&s.labels[o]!=null?String(s.labels[o]):o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+(chosen===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
         }
         if(s.kind==='clip'){
           /* Explicit extensions, not audio/* — a .ogg is typed video/ogg or
@@ -512,9 +518,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           /* Nov 14 2026: Change words has its own boxes; Edit keeps its instructions; speech shows neither. */
           var task=state.values.auk_task, wordKeys=['words_kind','old_text','new_text','words_from','words_to','takes'];
           if(task!=='change_words'&&wordKeys.indexOf(s.key)>=0)return false;
-          if(task!=='edit'&&['instruction','edit_start','edit_end','gen_seconds'].indexOf(s.key)>=0)return false;
-          if((task==='edit'||task==='change_words')&&['voice_description','pace'].indexOf(s.key)>=0)return false;
-          if(task==='change_words'&&s.key==='seed')return false;
+          /* Nov 15 2026: Clean up or change shows What to do, then only the choice boxes the picked change needs. */
+          var fixing=task==='clean_up_or_change';
+          if(!fixing&&s.key.indexOf('fix_')===0)return false;
+          if(fixing&&s.forTasks&&s.forTasks.indexOf(fixTask())<0)return false;
+          if(task!=='edit'&&['instruction','gen_seconds'].indexOf(s.key)>=0)return false;
+          if(task!=='edit'&&!fixing&&['edit_start','edit_end'].indexOf(s.key)>=0)return false;
+          if((task==='edit'||task==='change_words'||fixing)&&['voice_description','pace'].indexOf(s.key)>=0)return false;
+          if((task==='change_words'||fixing)&&s.key==='seed')return false;
         }
         if((state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') && state.values.instrumental && (s.key==='lyrics'||s.key==='keep_lyrics')) return false; return true;
       });
@@ -543,6 +554,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           state.values.auk_task=recipe.task;
           if(recipe.task==='speech')state.clips=[];
           var key=recipe.task==='speech'?'voice_description':recipe.task==='change_words'?'old_text':'instruction';
+          if(recipe.task==='clean_up_or_change'){
+            /* Nov 15 2026: a clean-up or change fills What to do and its choices, never an instruction. */
+            state.values.fix_task=recipe.fix; Object.keys(recipe.slots||{}).forEach(function(k){ state.values['fix_'+k]=String(recipe.slots[k]); });
+            invalidateQuote(); renderSettings(); document.getElementById('set_fix_task').focus();
+            say(recipe.label+' is chosen. Nothing is made until you choose '+renderLabel()+'.'); return;
+          }
           if(recipe.task==='change_words'){state.values.words_kind=recipe.kind||'spoken';state.values.old_text=recipe.old||'';state.values.new_text=recipe.new||'';}
           else state.values[key]=recipe.text;
           invalidateQuote(); renderSettings();
@@ -553,7 +570,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Handlers over the whole panel: a setting may sit in More settings. */
       Array.prototype.forEach.call(panel.querySelectorAll('[data-key]'), function(el){
         if(state.transcribing && el.dataset.key==='lyrics')el.disabled=true;
-        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'||el.dataset.key==='words_kind'){renderSettings();document.getElementById(el.id).focus();} if(el.dataset.key==='words_kind'&&el.value==='sung') say(SUNG_NOTE); if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'||el.dataset.key==='words_kind'||el.dataset.key==='fix_task'){renderSettings();document.getElementById(el.id).focus();} if(el.dataset.key==='words_kind'&&el.value==='sung') say(SUNG_NOTE); if(el.dataset.key==='fix_task'&&fixNext()) say(fixNext()); if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
       });
       Array.prototype.forEach.call(panel.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -568,6 +585,31 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         btn.onclick = function(){ if(busy())return; invalidateQuote();state.clips.splice(parseInt(btn.dataset.rmclip,10),1); say('Clip removed.'); renderSettings(); };
       });
       applyWorkflow();
+    }
+
+    /* ---- Clean up or change (Nov 15 2026) ----
+     * One change AuK was trained on, picked from What to do, with a choice box only where the change needs one.
+     * The page sends the change's id and its choices; the bridge builds AuK's own instruction. */
+    function fixSetting(key){ var g=state.guide.engines.scenema; return g ? g.settings.filter(function(s){ return s.key===key; })[0] : null; }
+    function fixTask(){ var v=state.values.fix_task, s=fixSetting('fix_task'); return v || (s && s.default) || 'clean_up'; }
+    /* The sentence said after What to do changes, when the change needs a choice or a description. */
+    function fixNext(){
+      var g=state.guide.engines.scenema, task=fixTask(), need=g ? g.settings.filter(function(s){ return s.forTasks && s.forTasks.indexOf(task)>=0; }) : [];
+      if(!need.length) return '';
+      if(need[0].kind==='text') return 'Next, describe the '+need[0].label.toLowerCase()+' below.';
+      return 'Next, choose '+need.map(function(s){ return s.label; }).join(', then ')+', below.';
+    }
+    /* Choice boxes she never touched still show their default, so their default is what is sent. */
+    function fixDefaults(b){
+      var g=state.guide.engines.scenema; if(!g) return b;
+      g.settings.forEach(function(s){ if(s.key.indexOf('fix_')===0 && s.kind==='choice' && (b[s.key]==null || String(b[s.key]).trim()==='') && s.default!=null) b[s.key]=s.default; });
+      return b;
+    }
+    function fixReady(){
+      document.getElementById('settingsDrawer').open=true;
+      if(!state.clips.length){ var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say('Import the recording you want to clean up or change.',true); return false; }
+      if(fixTask()==='voice' && !String(state.values.fix_description||'').trim()){ var box=document.getElementById('set_fix_description'); if(box) box.focus(); say('Describe the new voice first.',true); return false; }
+      return true;
     }
 
     /* ---- Change words (Nov 14 2026) ----
@@ -794,6 +836,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.engine==='seed' && b.audio_quality===true) b.audio_quality='high';
       if(b.audio_quality===true) b.audio_quality='high';
       if(state.engine==='scenema' && b.auk_task==='change_words') b.changes=wordChangesToSend();
+      if(state.engine==='scenema' && b.auk_task==='clean_up_or_change') fixDefaults(b);
       return b;
     }
 
@@ -1056,7 +1099,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
-      if(!script && !preview && b.auk_task!=='change_words' && b.auk_task!=='edit' && !isUpload()){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
+      if(!script && !preview && b.auk_task!=='change_words' && b.auk_task!=='clean_up_or_change' && b.auk_task!=='edit' && !isUpload()){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
       /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
        * how I sound."), different again from the two on the server, so what a
@@ -1071,7 +1114,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* THE SEED IS THE VOICE. Without this the penny she spent auditioning a
        * voice bought her nothing — the render cast a different actor. */
       /* Nov 14 2026: an edit is a fresh try on a fresh seed every time, so the voice seed stays out of it. */
-      if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined && b.auk_task!=='edit' && b.auk_task!=='change_words') b.seed = state.voiceSeed;
+      if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined && b.auk_task!=='edit' && b.auk_task!=='change_words' && b.auk_task!=='clean_up_or_change') b.seed = state.voiceSeed;
       if(state.rerollVoice) b.newVoice = true;
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
@@ -1104,6 +1147,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var sent=collect();
       if(isUpload() && !state.clips.length){ document.getElementById('settingsDrawer').open=true; var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say(uploadUi().needClip||'Import a recording first.',true); return; }
       if(state.engine==='scenema' && sent.auk_task==='change_words' && !wordsReady()) return;
+      if(state.engine==='scenema' && sent.auk_task==='clean_up_or_change' && !fixReady()) return;
       if((state.engine==='yue2'||state.engine==='ace') && !sent.lyrics && String(sent.singing||'').trim().toLowerCase().indexOf('instrumental')!==0){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
       return doRender(preview);
     }
@@ -1214,9 +1258,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    (t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '') +
                    (t.voiceNote ? '<p class="hint">' + esc(t.voiceNote) + '</p>' : '') +
                    (ue && !t.voiceOf && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
-                   (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2'||p.engine==='ace') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="change_words">Change words in this take</button>');
+                   (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2'||p.engine==='ace') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="change_words">Change words in this take</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="clean_up_or_change">Clean up or change this take</button>');
           }).join('') +
-          (upload ? '' : '<details><summary>'+(aukEdit?'Edit instructions':p.engine==='stable'?'Sound description':p.engine==='lyria'||p.engine==='ace'?'Music direction':'Script')+'</summary><pre class="script">' + esc(aukEdit ? (p.options.instruction || p.script) : (p.screenplay || p.script)) + '</pre></details>') +
+          (upload ? '' : '<details><summary>'+(aukEdit&&p.options.edit_kind==='task'?'The change asked for':aukEdit?'Edit instructions':p.engine==='stable'?'Sound description':p.engine==='lyria'||p.engine==='ace'?'Music direction':'Script')+'</summary><pre class="script">' + esc(aukEdit ? (p.options.instruction || p.script) : (p.screenplay || p.script)) + '</pre></details>') +
           ((p.carryTo||[]).length ?
             '<details class="carry"><summary>Copy this saved work to another engine</summary>' +
             '<p class="hint">Copies the script, lyrics and compatible references to a saved draft. Open it first to copy your current edits instead.</p>' +
@@ -1277,8 +1321,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
          * about 70 seconds. The MP3 stays under it past eight minutes. */
         state.importError='';state.clips=[{url:project.engine==='ace'?take.url:(take.masterUrl||take.url),name:project.title}];
         invalidateQuote();renderSettings();
-        say(covering?'Song attached for a YuE2 cover. Describe the new style and check the lyrics. The original is kept.':button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':button.dataset.use==='change_words'?'Take attached. Type the words it says now, the new words and roughly where. List what is said, with times, can help you find the spot. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
-        document.getElementById(button.dataset.use==='edit'?'set_instruction':button.dataset.use==='change_words'?'set_old_text':'script').focus();
+        say(covering?'Song attached for a YuE2 cover. Describe the new style and check the lyrics. The original is kept.':button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':button.dataset.use==='change_words'?'Take attached. Type the words it says now, the new words and roughly where. List what is said, with times, can help you find the spot. The original is kept.':button.dataset.use==='clean_up_or_change'?'Take attached. Pick what to do. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
+        document.getElementById(button.dataset.use==='edit'?'set_instruction':button.dataset.use==='change_words'?'set_old_text':button.dataset.use==='clean_up_or_change'?'set_fix_task':'script').focus();
       };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
         btn.onclick = function(){
@@ -1307,6 +1351,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           if(p.engine==='scenema' && p.options && p.options.edit_kind==='words'){
             state.values.auk_task='change_words'; delete state.values.instruction; delete state.values.edit_kind;
             state.wordQueue=(p.wordChanges||[]).map(function(c){ return {kind:c.kind==='vocal'?'sung':'spoken', oldText:c.oldText, newText:c.newText, rangeStart:c.rangeStart, rangeEnd:c.rangeEnd}; });
+          }
+          /* Nov 15 2026: a Clean up or change project reopens on it, with the same change and choices picked. */
+          if(p.engine==='scenema' && p.options && p.options.edit_kind==='task'){
+            state.values.auk_task='clean_up_or_change'; state.values.fix_task=p.options.edit_task;
+            Object.keys(p.options.edit_slots||{}).forEach(function(k){ state.values['fix_'+k]=String(p.options.edit_slots[k]); });
+            ['instruction','edit_kind','edit_task','gen_seconds'].forEach(function(k){ delete state.values[k]; });
           }
           /* Part 296: a saved score sits in More settings, so the group opens to show it. */
           if(state.guide.engines[p.engine].settings.some(function(s){ var v=state.values[s.key]; return s.advanced && s.kind==='text' && typeof v==='string' && v.trim(); })) moreOpen[p.engine]=true;

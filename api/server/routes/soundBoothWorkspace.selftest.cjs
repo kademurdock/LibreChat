@@ -109,9 +109,23 @@ const server=http.createServer((req,res)=>{
   assert.equal(await page.locator('#set_auk_task').inputValue(),'speech');
   assert.match(await page.locator('#set_voice_description').inputValue(),/Southern American accent/);
   await page.getByText('Voice design and editing ideas',{exact:true}).click();
-  await page.getByRole('button',{name:'Change mood and inflection',exact:true}).click();
+  await page.getByRole('button',{name:'Try a new accent (experimental)',exact:true}).click();
   assert.equal(await page.locator('#set_auk_task').inputValue(),'edit');
   assert.match(await page.locator('#set_instruction').inputValue(),/Preserve the words/);
+  /* Nov 15 2026: a Clean up or change starter picks the change and its choice, labelled, and spends nothing. */
+  await page.getByText('Voice design and editing ideas',{exact:true}).click();
+  await page.getByRole('button',{name:'Change mood',exact:true}).click();
+  assert.equal(await page.locator('#set_auk_task').inputValue(),'clean_up_or_change');
+  assert.equal(await page.locator('#set_fix_task').inputValue(),'emotion');
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'set_fix_task');
+  assert.equal(await page.getByLabel('Mood',{exact:true}).inputValue(),'happy');
+  assert.equal(await page.locator('#set_fix_speed').count(),0,'only the boxes the change needs');
+  assert.equal(await page.locator('#set_instruction').count(),0,'no free-text instruction for a trained change');
+  assert.equal(await page.locator('#btnRender').textContent(),'Change the recording');
+  await page.getByLabel('What to do',{exact:true}).selectOption('speed');
+  assert.equal(await page.getByLabel('New speed',{exact:true}).locator('option:checked').textContent(),'A little slower, 0.75 times');
+  assert.equal(await page.locator('#set_fix_emotion').count(),0);
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'set_fix_task','focus stays on What to do');
   assert.equal(sent.length,2,'recipes must not generate or spend money');
   await page.getByRole('button',{name:'Edit this take',exact:true}).click();
   assert.equal(await page.locator('#set_auk_task').inputValue(),'edit');
