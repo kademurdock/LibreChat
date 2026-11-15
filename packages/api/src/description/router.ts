@@ -926,10 +926,12 @@ type SyncGone = 'source' | 'silent' | 'tries';
  * again reuses the saved plan, so it costs money and makes no new fingerprint.
  * Nov 14 2026 integration review: nor does the first. Describing again is refused once the
  * original is gone (requireSource); the video added again is a new job, with its own fingerprint.
+ * Nov 14 2026 deploy: the first sentence now says plainly that the original is not stored and that
+ * bringing the video in again makes a new described copy that can follow along.
  */
 const goneText: Record<SyncGone, string> = {
   source:
-    'The original video is no longer on the server, so a follow-along track cannot be made for this copy. To get one, add the video again and describe it.',
+    "The original video is no longer stored, so Follow along can't be made for this copy. Bringing the video in again makes a new described copy that can follow along.",
   silent:
     'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.',
   tries: 'A follow-along track could not be made for this video after three tries.',

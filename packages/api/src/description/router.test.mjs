@@ -4916,7 +4916,7 @@ const printed = (id) =>
   });
 /* Nov 14 2026 integration review: describing again is refused once the original is gone, so the sentence says what works. */
 const goneSource =
-  'The original video is no longer on the server, so a follow-along track cannot be made for this copy. To get one, add the video again and describe it.';
+  "The original video is no longer stored, so Follow along can't be made for this copy. Bringing the video in again makes a new described copy that can follow along.";
 const goneTries = 'A follow-along track could not be made for this video after three tries.';
 const goneSilent = 'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.';
 /** Where a copy's track is kept: copies/<version>/track-<finished ms>.json (Nov 14 2026 review). */
