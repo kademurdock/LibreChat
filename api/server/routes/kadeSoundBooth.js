@@ -126,6 +126,8 @@ const { parseScreenplay, screenplayToSpeak, speakToScreenplay, isSpeakXml, SCREE
 const carry = require('./kadeSoundBoothCarry');
 const songPaste = require('./kadeSoundBoothPaste');
 const chain = require('./kadeSoundBoothChain');
+/* Nov 14 2026: Change words on AuK -- one change per render, fresh seeds, the take that says the new words. */
+const words = require('./kadeSoundBoothWords');
 const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription, assertSeedScriptReply } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
@@ -1544,7 +1546,9 @@ const GUIDE = {
         { label: 'Try a new accent (experimental)', task: 'edit', text: 'Give the speaker a gentle Southern American accent. Preserve the words and overall voice identity.' },
         { label: 'Remove a regional accent', task: 'edit', text: 'Remove the regional accent while preserving the speaker\'s voice and content.' },
         { label: 'Change voice texture', task: 'edit', text: 'Make the voice warmer and slightly huskier. Preserve the words and timing.' },
-        { label: 'Change words', task: 'edit', text: 'Replace "Tuesday" with "Thursday". Preserve the speaker, delivery and all other words.' },
+        /* Nov 14 2026: words are changed in the Change words form, never by a free-form instruction (kadeSoundBoothWords.js). */
+        { label: 'Change words', task: 'change_words', kind: 'spoken', old: 'Tuesday', new: 'Thursday', text: "Replace 'Tuesday' with 'Thursday'." },
+        { label: 'Change sung words', task: 'change_words', kind: 'sung', old: 'rear view', new: 'like you', text: 'Change "rear view" to "like you" in the vocal recording.' },
         { label: 'Whisper', task: 'edit', text: 'Turn the speech into a natural whisper. Preserve the words and speaker identity.' },
         { label: 'Adjust pitch', task: 'edit', text: 'Raise the pitch by two semitones while preserving the words and speaking speed.' },
         { label: 'Clean noise and room echo', task: 'edit', text: 'Remove background noise and reverberation. Preserve the voice and every spoken word.' },
@@ -1553,18 +1557,26 @@ const GUIDE = {
       where: 'Runs on a rented GPU that sleeps between jobs. Your recording stays in your library.',
       cost: 'Billed by GPU time, including startup and up to two minutes awake after the last job. No total estimate yet.',
       bestFor: ['expressive speech, in a described or imported voice', 'editing the words, mood, pitch or pace of a recording', 'removing noise or echo, or separating a voice'],
-      notFor: ['a whole scene with sounds: use Seed Audio', 'exact accents or word edits without listening back'],
+      notFor: ['a whole scene with sounds: use Seed Audio', 'exact accents', 'long rewrites: change a few words at a time'],
       howToWrite: [
         'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
         'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
-        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones; Replace one word with another. If the edit changes speed or adds or removes words, set Target seconds for edit.',
+        'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones. If the edit changes speed, set Target seconds for edit.',
+        'To change words, choose change words under Task. Type the words it says now, the new words, and From and To seconds around them; Find the spot lists what is said every four seconds. Each change makes three fresh takes, four for sung words, and keeps the one that says the new words. Changing sung words is hit or miss with AuK. Add several changes to the list and they run one after another.',
         'For a voice or age change, try the timbre template: Keep the spoken content unchanged and change the timbre to: "a youthful, light voice with clear diction". This requests a change; listen to judge whether it worked.',
         'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
       /* Part 296: `advanced` settings sit in one collapsed "More settings" group on both screens. */
       settings: [
-        { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes the imported recording.', kind: 'choice', options: ['speech', 'edit'], default: 'speech' },
-        { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit.', kind: 'text' },
+        { key: 'auk_task', label: 'Task', hint: 'Speech creates a performance. Edit changes how the imported recording sounds. Change words swaps words in it.', kind: 'choice', options: ['speech', 'edit', 'change_words'], default: 'speech' },
+        { key: 'instruction', label: 'Edit instructions', hint: 'What to change and what to keep. Used only for edit. To change words, choose change words under Task.', kind: 'text' },
+        /* Nov 14 2026: Change words. Shown only for that task; a screen with only these boxes sends one change. */
+        { key: 'words_kind', label: 'Spoken or sung', hint: 'Sung words use the singing version of the change.', kind: 'choice', options: ['spoken', 'sung'], default: 'spoken' },
+        { key: 'old_text', label: 'Words it says now', hint: 'Just the few words to change, as they are said.', kind: 'text' },
+        { key: 'new_text', label: 'New words', hint: 'What it should say there instead.', kind: 'text' },
+        { key: 'words_from', label: 'From second', hint: 'A little before the words. Find the spot lists what is said every four seconds.', kind: 'number', min: 0 },
+        { key: 'words_to', label: 'To second', hint: 'A little after the words. 3 to 12 seconds around them works best; 30 at most.', kind: 'number', min: 0.5 },
+        { key: 'takes', label: 'Takes to try', hint: 'Each take is a fresh try, and the one that says the new words is kept. Left empty, it is 3 for spoken words and 4 for sung. More takes use more GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 3, advanced: true },
         { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery, used when no reference is attached.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent. Edits regenerate audio and may reduce quality; test a short section first. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
         { key: 'edit_start', label: 'Edit from second (optional)', hint: 'Leave blank to start at the beginning. Audio outside the selected section is kept.', kind: 'number', min: 0 },
@@ -1996,6 +2008,7 @@ function projectView(p, factor = 1, access = {}) {
    * its settings, because then that line is the only place the voice is. It never gets a SEX:
    * line: the AuK worker does not read gender (review 1). */
   const aukEdit = p.engine === 'scenema' && (p.options || {}).auk_task === 'edit';
+  const wordEdit = aukEdit && (p.options || {}).edit_kind === 'words';
   const instruction = aukEdit ? String((p.options || {}).instruction || p.script || '').trim() : '';
   const voiceInSettings = p.engine === 'scenema' && !!String((p.options || {}).voice_description || '').trim();
   return {
@@ -2017,6 +2030,7 @@ function projectView(p, factor = 1, access = {}) {
       ? 'Lyria — a song made from a brief' + ((p.options || {}).instrumental ? ', instrumental' : '') + ((p.options || {}).lyrics ? ', to your own lyrics' : '')
       : p.engine === 'seed'
       ? 'Seed Audio — a whole scene in one pass' + ((p.options || {}).audio_urls && p.options.audio_urls.length ? `, cloning ${p.options.audio_urls.length} clip${p.options.audio_urls.length === 1 ? '' : 's'}` : '')
+      : wordEdit ? `AuK — ${(p.wordChanges || []).length === 1 ? 'a word change' : `${(p.wordChanges || []).length} word changes`} in an imported recording`
       : aukEdit ? 'AuK — an edit of an imported recording'
       : 'AuK — one actor performing' + ((p.options || {}).reference_voice_url ? ', cloning a clip' : ', voice from the description') + (Number.isInteger(p.voiceSeed) ? `, voice ${p.voiceSeed}` : '')),
     /* Edits saved before Oct 2 2026 kept the bare instruction here. */
@@ -2031,6 +2045,8 @@ function projectView(p, factor = 1, access = {}) {
     voiceSeed: p.voiceSeed,
     hasRecoverableAudio: (p.parts || []).some((part) => part.state === 'done' && part.url) || (p.assets || []).length > 0,
     parts: (p.parts || []).map(({ index, state, durationS, costUSD }) => ({ index, state, durationS, costUSD: typeof costUSD === 'number' ? priced(costUSD, paid) : costUSD })),
+    /* Nov 14 2026: Change words -- each change, its state and what the takes said. */
+    ...(wordEdit ? { wordChanges: words.changesView(p.wordChanges) } : {}),
     jobs: p.jobs || [],
     assets: p.assets || [],
     state: p.state,
@@ -2896,6 +2912,84 @@ function seedClips() {
   return seedClipPreparer;
 }
 
+/* ============================ edit sources ================================ */
+/* An imported recording an edit may read: in our storage, saved on this account, and its length.
+ * Shared by edits and by Find the spot (Nov 14 2026; the checks are the ones edits always ran). */
+async function editSource(req, reference, { withAudio = false } = {}) {
+  if (!isAukStorageReference(reference)) throw new Error('Import this recording into Sound Booth before editing it.');
+  const user = String(req.user.id);
+  let assetSources;
+  const savedSources = async () => {
+    if (!assetSources) {
+      const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
+      assetSources = assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
+    }
+    return assetSources;
+  };
+  const requireOwned = async source => {
+    if (isAukOwnedReference(user, source)) return;
+    if (!isAukOwnedReference(user, source, await savedSources())) throw new Error('That recording is not saved on your account. Import it again.');
+  };
+  await requireOwned(reference);
+  const url = await validateMusicReference(user, reference, {
+    ...musicReferenceHooks,
+    refresh: async source => {
+      await requireOwned(source);
+      const refreshed = await freshAssetUrl(source);
+      await requireOwned(refreshed);
+      return refreshed;
+    },
+    savedSources,
+  }, { speechEdit: true });
+  let seconds = await musicReferenceSeconds(user, url);
+  let audio = null;
+  if (!(seconds > 0) || withAudio) {
+    audio = await editSourceAudio(url);
+    if (!(seconds > 0)) seconds = await require('./kadeSoundBoothStitch').durationOf(audio);
+  }
+  return { url, seconds, audio };
+}
+
+async function editSourceAudio(url) {
+  const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 256 * 1024 * 1024, headers: { 'User-Agent': UA } });
+  return Buffer.from(r.data);
+}
+
+/* ======================= POST /words/transcript ===========================
+ * Nov 14 2026, Change words: Find the spot. The imported recording, transcribed four seconds at a
+ * time on MiMo (her rule: transcription on MiMo), so she can pick From and To by ear. The listening
+ * costs a small fraction of a cent and is logged as usage like any other call. Nothing is generated. */
+router.post('/words/transcript', requireJwtAuth, express.json({ limit: '16kb' }), async (req, res) => {
+  const b = req.body || {};
+  let source;
+  try {
+    /* Only the length is needed up front: ffmpeg reads just the asked stretch from the URL. */
+    source = await editSource(req, b.reference_voice_url);
+  } catch (error) {
+    return res.status(400).json({ error: errorText(error.message, { name: 'The recording', fallback: 'Import the recording again first.' }) });
+  }
+  try {
+    const from = Number.isFinite(b.from) ? b.from : 0;
+    const to = Number.isFinite(b.to) ? b.to : undefined;
+    let result;
+    try {
+      result = await words.timedTranscript({ url: source.url }, source.seconds, { from, to });
+    } catch (error) {
+      /* An ffmpeg here that cannot read the URL: fall back to the downloaded recording. */
+      if (!error.ffmpeg) throw error;
+      result = await words.timedTranscript(source.audio || await editSourceAudio(source.url), source.seconds, { from, to });
+    }
+    if (result.costUSD > 0) {
+      logKadeUsage({ userId: String(req.user.id), service: 'sound_booth_listen', quantity: result.lines.length, unit: 'windows', costUSD: result.costUSD,
+        metadata: { via: 'sound-booth', lane: 'words-transcript', model: process.env.KADE_WORDS_LISTENER_MODEL || 'xiaomi/mimo-v2.6-flash' } }).catch(() => {});
+    }
+    return res.json({ ok: true, seconds: source.seconds, from: result.from, to: result.to, windowSeconds: words.WINDOW_S, lines: result.lines, spoken: result.spoken });
+  } catch (error) {
+    logger.warn(`[soundbooth/words] transcript failed user=${req.user.id}: ${providerError(error, { name: 'The listener' }).detail}`);
+    return res.status(502).json({ error: errorText(error.message, { name: 'The listener', fallback: 'The recording could not be transcribed just now. Set the spot by ear and try again later.' }) });
+  }
+});
+
 /* ============================ POST /render ================================ */
 router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (req, res) => {
   const b = req.body || {};
@@ -2903,8 +2997,18 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   if (b.referenceExpected === true && engine !== 'lyria' && !(engine === 'seed' ? Array.isArray(b.audio_urls) && b.audio_urls.length && b.audio_urls.every(url => typeof url === 'string' && url.trim()) : typeof b.reference_voice_url === 'string' && b.reference_voice_url.trim())) {
     return res.status(400).json({ error: 'The expected reference clip is missing. Import it again before generating.' });
   }
-  const editing = engine === 'scenema' && b.auk_task === 'edit';
-  if (editing && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
+  /* Nov 14 2026: Change words is an edit too (stored as auk_task 'edit', edit_kind 'words'), but it is
+   * sent as data -- old words, new words, where -- and never as an instruction (kadeSoundBoothWords.js). */
+  const wording = engine === 'scenema' && b.auk_task === 'change_words';
+  const editing = engine === 'scenema' && (b.auk_task === 'edit' || wording);
+  if (wording && !b.reference_voice_url) return res.status(400).json({ error: 'Import the recording whose words you want to change.' });
+  if (editing && !wording && (!b.reference_voice_url || !String(b.instruction || '').trim())) return res.status(400).json({ error: 'Import a recording and describe what you want to change.' });
+  /* Free-form text is not how words change: AuK follows one trained template per change. */
+  if (editing && !wording && words.looksLikeWordChange(b.instruction)) {
+    return res.status(400).json({ error: 'That sounds like a word change. Choose change words under Task, type the old and new words and roughly where they are, and the booth will aim at that spot and check the new words.' });
+  }
+  let wordPlan = null;
+  let wordTakes = words.DEFAULT_TAKES;
   if (editing && b.gen_seconds != null && (!Number.isFinite(b.gen_seconds) || b.gen_seconds <= 0)) return res.status(400).json({ error: 'Target seconds must be positive.' });
   if (editing && ['edit_start', 'edit_end'].some(key => b[key] != null && (!Number.isFinite(b[key]) || b[key] < 0))) {
     return res.status(400).json({ error: 'Edit start and end must be seconds inside the recording.' });
@@ -2913,43 +3017,18 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let editReferenceUrl = null;
   if (editing) {
     try {
-      if (!isAukStorageReference(b.reference_voice_url)) throw new Error('Import this recording into Sound Booth before editing it.');
-      const user = String(req.user.id);
-      let assetSources;
-      const savedSources = async () => {
-        if (!assetSources) {
-          const assets = await KadeAsset.find({ user, kind: 'audio' }).select('url metadata.wavUrl').lean();
-          assetSources = assets.flatMap(asset => [asset.url, asset.metadata?.wavUrl]).filter(Boolean);
-        }
-        return assetSources;
-      };
-      const requireOwned = async source => {
-        if (isAukOwnedReference(user, source)) return;
-        if (!isAukOwnedReference(user, source, await savedSources())) throw new Error('That recording is not saved on your account. Import it again.');
-      };
-      await requireOwned(b.reference_voice_url);
-      const url = await validateMusicReference(user, b.reference_voice_url, {
-        ...musicReferenceHooks,
-        refresh: async source => {
-          await requireOwned(source);
-          const refreshed = await freshAssetUrl(source);
-          await requireOwned(refreshed);
-          return refreshed;
-        },
-        savedSources,
-      }, { speechEdit: true });
-      editReferenceUrl = url;
-      let seconds = await musicReferenceSeconds(String(req.user.id), url);
-      if (!(seconds > 0)) {
-        const audio = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 256 * 1024 * 1024, headers: { 'User-Agent': UA } });
-        seconds = await require('./kadeSoundBoothStitch').durationOf(Buffer.from(audio.data));
-      }
-      editParts = planAukEdit(seconds, b);
+      const source = await editSource(req, b.reference_voice_url);
+      editReferenceUrl = source.url;
+      const seconds = source.seconds;
+      if (wording) {
+        wordPlan = words.planWordChanges(b, seconds);
+        wordTakes = words.takesFrom(b.takes, wordPlan);
+      } else editParts = planAukEdit(seconds, b);
     } catch (error) {
       return res.status(400).json({ error: errorText(error.message, { name: 'The edit', fallback: 'Import the recording again before editing.' }) });
     }
   }
-  let script = String(editing ? b.instruction : b.script || '').trim();
+  let script = String(wording ? words.summary(wordPlan) : editing ? b.instruction : b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
   /* The same repair runs on the way to the GPU, because a script can reach
@@ -3017,7 +3096,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     const quoteScript = b.preview === true && engine === 'scenema'
       ? previewExcerpt(script, { maxWords: 40 }).prompt : script;
     const estimate = estimateFor(engine, quoteScript, priceFactor(req.user));
-    if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
+    if (wording) { estimate.audioSeconds = null; estimate.spoken = `AuK will make ${wordPlan.length === 1 ? 'this change' : `these ${wordPlan.length} changes, one after another,`} with ${wordTakes} fresh take${wordTakes === 1 ? '' : 's'} each, and keep a take only if it says the new words. Every take uses GPU time; startup is billed too. ` + estimate.spoken; }
+    else if (editing) { estimate.audioSeconds = b.gen_seconds || null; estimate.spoken = 'AuK will edit your imported recording and save a new take. GPU time is billed; the cost depends on recording length and startup. ' + estimate.spoken; }
     /* A pasted song is said to have been sorted before anything is spent. */
     const pasteNote = req.songPaste && req.songPaste.note;
     if (pasteNote) estimate.spoken = pasteNote + ' ' + estimate.spoken;
@@ -3028,7 +3108,8 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let projectLease = null;
   try {
     const opts = {};
-    if (editing) { opts.auk_task = 'edit'; opts.instruction = script; for (const key of ['gen_seconds', 'edit_start', 'edit_end']) if (b[key] != null) opts[key] = b[key]; }
+    if (wording) { opts.auk_task = 'edit'; opts.edit_kind = 'words'; opts.instruction = script; opts.takes = wordTakes; }
+    else if (editing) { opts.auk_task = 'edit'; opts.instruction = script; for (const key of ['gen_seconds', 'edit_start', 'edit_end']) if (b[key] != null) opts[key] = b[key]; }
     const isUrl = (u) => typeof u === 'string' && /^https?:\/\/\S+$/i.test(u) && u.length < 2048;
     if (isUrl(b.reference_voice_url)) opts.reference_voice_url = b.reference_voice_url;
     if (editReferenceUrl) opts.reference_voice_url = editReferenceUrl;
@@ -3112,7 +3193,16 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     }
     const previousScript = project.script;
     const previousOptions = project.options || {};
-    if (engine === 'scenema') {
+    if (editing) {
+      /* Nov 14 2026: every edit is a fresh attempt on a fresh seed. The project's voice seed is for
+       * speech; reusing it made every retry of an edit roll the same dice. A seed she typed in More
+       * settings is kept, unless it is only the project's voice seed coming back from the screen.
+       * Change words draws its own seeds per change (kadeSoundBoothWords.js). */
+      if (wording || !Number.isInteger(opts.seed) || opts.seed === project.voiceSeed || opts.seed === project.lastEditSeed) delete opts.seed;
+      /* The drawn seed is saved with the options, so a reopened project sends it back. It is kept as
+       * lastEditSeed too, so that copy is known for what it is and drawn fresh again. */
+      if (!wording && !Number.isInteger(opts.seed)) { opts.seed = words.freshSeeds(1)[0]; project.lastEditSeed = opts.seed; }
+    } else if (engine === 'scenema') {
       if (b.newVoice === true) { project.voiceSeed = undefined; delete opts.seed; }
       if (!Number.isInteger(project.voiceSeed) && project.parts?.length && !b.newVoice) {
         project.voiceSeed = chain.deterministicSeed(previousScript);
@@ -3136,11 +3226,40 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (engine === 'lyria' && readbackIsSungWords(readback, project.sungLyrics)) readback = '';
     project.readback = readback.slice(0, 600);
     project.options = opts;
+    /* A word queue belongs to its Change words render only; /status reads a non-empty one as a queue. */
+    if (!wording && project.wordChanges?.length) project.wordChanges = [];
     project.lastRenderAt = new Date();
     project.lastError = undefined;
 
+    if (wording) {
+      /* A failed or stopped queue asked again with the same changes and the same recording keeps the
+       * changes already made and tries the rest with fresh takes. */
+      const sameSource = JSON.stringify(stableOption(previousOptions.reference_voice_url)) === JSON.stringify(stableOption(opts.reference_voice_url));
+      const resume = ['failed', 'cancelled'].includes(project.state) && previousOptions.edit_kind === 'words' && sameSource &&
+        words.sameChanges(project.wordChanges, wordPlan);
+      project.wordChanges = wordPlan.map((change, index) => {
+        const previous = resume && project.wordChanges[index];
+        if (previous?.state === 'done') return typeof previous.toObject === 'function' ? previous.toObject() : previous;
+        return { ...change, state: 'pending' };
+      });
+      project.parts = [];
+      project.stitchedAssetId = undefined;
+      project.state = 'queued';
+      await project.save();
+      const step = await words.advanceLocked(project);
+      if (step.state === 'failed') return res.status(400).json({ error: project.lastError, projectId: String(project._id) });
+      const kept = project.wordChanges.filter((c) => c.state === 'done').length;
+      const spoken = (wordPlan.length > 1
+        ? `${wordPlan.length} word changes, one at a time, starting with the latest spot in the recording so the earlier spots do not move.`
+        : 'One word change.') + ` ${wordTakes} take${wordTakes === 1 ? '' : 's'} each; a take is kept only if it says the new words.` +
+        (resume && kept ? ` ${kept} change${kept === 1 ? '' : 's'} already made ${kept === 1 ? 'is' : 'are'} kept.` : '') + ' Keep the booth open to carry on; reopening resumes it.';
+      return res.json({ ok: true, jobId: step.jobId || null, projectId: String(project._id), engine, queued: step.state !== 'done',
+        resumed: resume, words: { total: wordPlan.length, done: kept }, wordChanges: words.changesView(project.wordChanges),
+        estimate: { ...estimateFor(engine, script, priceFactor(req.user)), spoken }, spoken });
+    }
+
     if (editing && editParts.length > 1) {
-      const sameOptions = Object.keys({ ...previousOptions, ...opts }).every(key =>
+      const sameOptions = Object.keys({ ...previousOptions, ...opts }).filter((key) => key !== 'seed').every(key =>
         JSON.stringify(stableOption(previousOptions[key])) === JSON.stringify(stableOption(opts[key])));
       const resume = ['failed', 'cancelled'].includes(project.state) && previousScript === script && sameOptions &&
         project.parts?.length === editParts.length && project.parts.every((part, i) =>
@@ -3256,7 +3375,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
           gen_seconds: opts.gen_seconds,
           reference_voice_url: opts.reference_voice_url,
           background_sfx: opts.background_sfx,
-          seed: project.voiceSeed,
+          seed: editing ? opts.seed : project.voiceSeed,
           pace: opts.pace,
           keep_wav: opts.keep_wav,
           validate: opts.validate,
@@ -3696,6 +3815,27 @@ router.get('/status/:jobId', requireJwtAuth, async (req, res) => {
      * step is idempotent because both surfaces may poll the same project at
      * once. If she closes the app mid-chain it PAUSES rather than breaking —
      * the parts already paid for keep their audio and the next open resumes. */
+    /* Nov 14 2026: a Change words queue advances here too, one change at a time. */
+    if ((project.wordChanges || []).length) {
+      const step = await words.advance(project);
+      if (step.finished) {
+        try { await linkJobAssets([project], req.user.id); }
+        catch (e) { logger.warn('[soundbooth] link on word change failed: ' + e.message); }
+      }
+      /* No push from here: the bridge already sends one per finished change, with what it heard. */
+      const view = words.changesView(project.wordChanges);
+      return res.json({
+        jobId,
+        projectId: String(project._id),
+        state: project.state,
+        error: ['failed', 'cancelled'].includes(project.state) ? project.lastError || null : null,
+        words: { total: view.length, done: view.filter((c) => c.state === 'done').length },
+        wordChanges: view,
+        report: step.report || null,
+        url: (step.finished && step.finished.url) || null,
+        spoken: step.spoken || words.sayProgress(project, null),
+      });
+    }
     if ((project.parts || []).length > 1) {
       const step = await chain.advance(project, {
         onStitched: async ({ seconds }) => {
@@ -3808,12 +3948,31 @@ router.post('/cancel/:jobId', requireJwtAuth, async (req, res) => {
       project.set(current.toObject());
       if (!['queued', 'running'].includes(project.state)) return res.json({ ok: true, state: project.state });
       const active = project.parts?.find((part) => ['queued', 'running'].includes(part.state));
-      const activeJobId = active?.jobId || project.jobs.at(-1);
+      const activeWord = project.wordChanges?.find((change) => ['queued', 'running'].includes(change.state));
+      const activeJobId = active?.jobId || activeWord?.jobId || project.jobs.at(-1);
       const result = await axios.post(
         `${bridgeBase()}/audio/scenema/cancel`,
         { secret, jobId: activeJobId },
         { headers: { 'User-Agent': UA }, timeout: 15000 },
       );
+      if (activeWord) {
+        /* Nov 14 2026: a stopped word change goes back on the list; Render again tries it with fresh
+         * takes. One that finished before Stop arrived is kept, report and all. */
+        if (result.data?.state === 'done') {
+          const finished = await axios.get(`${bridgeBase()}/audio/scenema/status`, {
+            params: { secret, jobId: activeJobId }, headers: { 'User-Agent': UA }, timeout: 15000,
+          });
+          const j = finished.data || {};
+          if (j.state === 'done' && j.result?.url) {
+            Object.assign(activeWord, { state: 'done', url: j.result.url, wavUrl: j.result.wavUrl, report: j.result.editReport || null, costUSD: j.costUSD || 0, pickedSeed: j.result.seed });
+            project.costUSD = (project.costUSD || 0) + (j.costUSD || 0);
+          } else Object.assign(activeWord, { state: 'pending', jobId: undefined });
+        } else Object.assign(activeWord, { state: 'pending', jobId: undefined });
+        project.markModified('wordChanges');
+        project.state = 'cancelled';
+        await project.save();
+        return res.json({ ok: true, state: 'cancelled', spoken: 'Stopped. Changes already made are kept as takes. Render again to carry on with the rest. GPU time already used may still be charged.' });
+      }
       if (result.data?.state === 'done' && !active) {
         return res.json({ ok: true, state: 'done', spoken: 'That take finished before Stop reached it. Refreshing its result.' });
       }

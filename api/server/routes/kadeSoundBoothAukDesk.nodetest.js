@@ -57,8 +57,12 @@ function booth(replies = [], env = {}, opts = {}) {
       Object.assign(this, { _id: 'project-fixture', title: 'Untitled', state: 'draft', jobs: [], options: {}, parts: [] }, fields);
       project = this;
     }
-    async save() { saved.push({ script: this.script, readback: this.readback, options: this.options }); }
+    async save() { saved.push({ script: this.script, readback: this.readback, options: this.options, state: this.state, voiceSeed: this.voiceSeed, wordChanges: JSON.parse(JSON.stringify(this.wordChanges || [])) }); }
     static async findById() { return project; }
+    /* Nov 14 2026: /status and /cancel find the project by its job; the queue reloads it under its lease. */
+    static async findOne() { return project; }
+    toObject() { return { ...this }; }
+    set(fields) { Object.assign(this, fields); }
   }
   const router = Object.fromEntries(['post', 'get', 'put', 'delete', 'patch', 'use'].map((m) => [m, (p, ...v) => handlers.set(m + p, v.at(-1))]));
   const context = {
@@ -96,10 +100,21 @@ function booth(replies = [], env = {}, opts = {}) {
       if (name === '~/models/kadeUsage') return { logKadeUsage: async (row) => { usageLog.push(row); } };
       if (name === '~/server/utils/kadeSongAudience') return { songAudience: async () => 'explicit', explicitSungLines: () => [] };
       if (name === '~/models/kadeSoundBoothProject') return { KadeSoundBoothProject: Project };
-      if (name === './kadeSoundBoothChain') return { acquire: async () => 'fixture-lease', release: async () => {}, MAX_PARTS: 12 };
+      /* Nov 14 2026: Change words reads a job through the chain's readJob; `opts.readJob` answers it. */
+      if (name === './kadeSoundBoothChain') return { acquire: async () => 'fixture-lease', release: async () => {}, MAX_PARTS: 12,
+        freshPartUrl: async (url) => url, readJob: async (id) => (opts.readJob ? opts.readJob(id) : null) };
+      if (name === './kadeSoundBoothErrors') return require(name);
+      /* The real word-change module, run with this harness's own require, so its bridge call is captured too. */
+      if (name === './kadeSoundBoothWords') {
+        const mod = { exports: {} };
+        vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'kadeSoundBoothWords.js'), 'utf8'), { module: mod, exports: mod.exports, require: context.require, process: context.process, Buffer, console, URL });
+        return mod.exports;
+      }
       if (LOCAL.includes(name)) return require(name);
       if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => () => {}, guideFor: (g) => g };
       if (name === '../utils/kadeClaudeLane') return opts.claudeLane || {};
+      /* Nov 14 2026: enough of mongoose for a render that names its project (a reopened one). */
+      if (name === 'mongoose') return { Types: { ObjectId: { isValid: (v) => /^[0-9a-f]{24}$/i.test(String(v)) } } };
       return {};
     },
   };
@@ -118,6 +133,7 @@ function booth(replies = [], env = {}, opts = {}) {
   };
   return {
     writerCalls, writerOptions, bridgeCalls, saved, warnings, usageLog, request, internals: context.module.exports._internals,
+    project: () => project,
     write: (body) => call('post/script', { engine: 'scenema', mode: 'write', text: 'A short story.', gender: 'female', ...body }),
     render: (body) => call('post/render', { engine: 'scenema', gender: 'female', ...body }),
   };
@@ -1183,4 +1199,131 @@ test('every writer call in the route passes the adult mark, directly or through 
     assert.match(body, /\.\.\.writingSettings|adult/, body.slice(0, 160));
   }
   assert.match(ROUTE, /const writingSettings = \{ \.\.\.musicWritingSettings\([^\n]*\), adult: await claudeAdultFor\(req\) \};/);
+});
+
+/* ---------- Nov 14 2026: Change words (kadeSoundBoothWords.js) ----------
+ * Her report: word edits never changed the words. These pin the fix on the route: the change goes
+ * to the bridge as data (never her free text), every attempt draws fresh seeds, the changes in a
+ * list run one at a time on the last result, and a take that did not say the new words ends the
+ * queue plainly with the original kept. */
+const TAKE = 'https://example.invalid/recordings/audios/offline-owner/take.wav';
+const WORD_KEYS = ['kind', 'oldText', 'newText', 'rangeStart', 'rangeEnd'];
+
+test('Change words: one change goes to the bridge as data, with fresh seeds and no free text', async () => {
+  const desk = booth();
+  const out = await desk.render({ auk_task: 'change_words', reference_voice_url: TAKE, words_kind: 'spoken', old_text: 'Tuesday', new_text: 'Thursday', words_from: '2.5', words_to: 6, instruction: 'ignore this free text', seed: 77 });
+  assert.equal(out.queued, true);
+  assert.equal(desk.bridgeCalls.length, 1);
+  const sent = desk.bridgeCalls[0];
+  assert.equal(sent.auk_task, 'edit');
+  assert.deepEqual(Object.fromEntries(WORD_KEYS.map((k) => [k, sent[k]])), { kind: 'speech', oldText: 'Tuesday', newText: 'Thursday', rangeStart: 2.5, rangeEnd: 6 });
+  assert.equal(sent.seeds.length, 3);
+  assert.equal(new Set(sent.seeds).size, 3);
+  assert.equal(sent.instruction, undefined, 'the bridge builds the template; nothing she typed is an instruction');
+  assert.equal(sent.seed, undefined);
+  assert.doesNotMatch(JSON.stringify(sent), /ignore this free text/);
+  assert.equal(sent.prompt, "Replace 'Tuesday' with 'Thursday'.");
+  assert.equal(sent.reference_voice_url, TAKE);
+  const last = desk.saved.at(-1);
+  assert.equal(last.options.auk_task, 'edit');
+  assert.equal(last.options.edit_kind, 'words');
+  assert.equal(last.options.takes, 3);
+  assert.equal(last.voiceSeed, undefined, 'an edit never sets the project voice seed');
+  assert.match(last.readback, /^Your imported recording, edited: Change "Tuesday" to "Thursday"/);
+  /* A second attempt rolls new dice. */
+  const again = booth();
+  await again.render({ auk_task: 'change_words', reference_voice_url: TAKE, old_text: 'Tuesday', new_text: 'Thursday', words_from: 2.5, words_to: 6, takes: 2 });
+  assert.equal(again.bridgeCalls[0].seeds.length, 2);
+  assert.equal(again.bridgeCalls[0].seeds.some((seed) => sent.seeds.includes(seed)), false);
+});
+
+test('Change words: a list runs latest spot first, each change on the last result, and stops plainly on no match', async () => {
+  const answers = [];
+  const desk = booth([], {}, { readJob: async () => answers.shift() });
+  const out = await desk.render({ auk_task: 'change_words', reference_voice_url: TAKE, changes: [
+    { kind: 'spoken', oldText: 'Tuesday', newText: 'Thursday', rangeStart: 1, rangeEnd: 3 },
+    { kind: 'sung', oldText: 'rear view', newText: 'like you', rangeStart: 6, rangeEnd: 9.5 },
+  ] });
+  assert.equal(out.words.total, 2);
+  assert.equal(desk.bridgeCalls[0].oldText, 'rear view', 'the later spot runs first, so the earlier spot does not move');
+  assert.equal(desk.bridgeCalls[0].kind, 'vocal');
+  assert.equal(desk.bridgeCalls[0].seeds.length, 4, 'a list with sung words gets four takes by default (Nov 14 2026)');
+  assert.equal(desk.bridgeCalls[0].prompt, 'Change "rear view" to "like you" in the vocal recording.');
+  answers.push({ state: 'done', costUSD: 0.01, result: { url: 'https://b2.example.invalid/one.mp3', wavUrl: 'https://b2.example.invalid/one.wav', seed: 5, editReport: { matched: true, spoken: 'Changed "rear view" to "like you". I made 3 takes and kept take 2.' } } });
+  const step = await desk.request('get/status/:jobId', undefined, { jobId: 'offline-job' });
+  assert.equal(step.status, 200);
+  assert.equal(desk.bridgeCalls.length, 2);
+  assert.equal(desk.bridgeCalls[1].oldText, 'Tuesday');
+  assert.equal(desk.bridgeCalls[1].reference_voice_url, 'https://b2.example.invalid/one.wav', 'each change works on the last result');
+  assert.notDeepEqual(desk.bridgeCalls[1].seeds, desk.bridgeCalls[0].seeds);
+  assert.match(step.result.spoken, /kept take 2\. Change 2 of 2 \("Tuesday" to "Thursday"\) is next/);
+  assert.equal(step.result.words.done, 1);
+  answers.push({ state: 'failed', noMatch: true, costUSD: 0.01, error: 'None of the 3 takes said "Thursday". Your original recording is unchanged and no new take was saved.', result: { editReport: { matched: false } } });
+  const stop = await desk.request('get/status/:jobId', undefined, { jobId: 'offline-job' });
+  assert.equal(stop.result.state, 'failed');
+  assert.match(stop.result.error, /^Change 2 of 2 \("Tuesday" to "Thursday"\): None of the 3 takes said "Thursday"\./);
+  assert.match(stop.result.error, /The 1 change already made is kept as takes|The 1 change already made is kept/);
+  assert.equal(stop.result.wordChanges[1].state, 'no_match');
+  assert.equal(desk.bridgeCalls.length, 2, 'nothing more is spent after a change fails');
+});
+
+test('Change words: unclear changes are refused before anything is spent, and a word change typed as Edit is pointed to the form', async () => {
+  const desk = booth();
+  const bad = async (body, pattern) => {
+    const { status, result } = await desk.request('post/render', { engine: 'scenema', auk_task: 'change_words', reference_voice_url: TAKE, ...body });
+    assert.equal(status, 400, JSON.stringify(result));
+    assert.match(result.error, pattern);
+  };
+  await bad({ old_text: 'Tuesday', new_text: '', words_from: 1, words_to: 3 }, /type the new words/);
+  await bad({ old_text: 'Tuesday', new_text: 'Thursday' }, /From and To in seconds/);
+  await bad({ old_text: 'Tuesday', new_text: 'Thursday', words_from: 4, words_to: 3 }, /To second must come after/);
+  await bad({ old_text: 'Tuesday', new_text: 'Thursday', words_from: 8, words_to: 12 }, /10 seconds long/);
+  await bad({ changes: [{ oldText: 'a b', newText: 'c d', rangeStart: 1, rangeEnd: 4 }, { oldText: 'e', newText: 'f', rangeStart: 3, rangeEnd: 6 }] }, /overlap/);
+  await bad({ old_text: 'Tuesday', new_text: 'Thursday', words_from: 1, words_to: 3, takes: 9 }, /1 to 4/);
+  const { status, result } = await desk.request('post/render', { engine: 'scenema', auk_task: 'edit', reference_voice_url: TAKE, instruction: 'Replace "Tuesday" with "Thursday". Preserve the speaker.' });
+  assert.equal(status, 400);
+  assert.match(result.error, /choose change words under Task/i);
+  assert.equal(desk.bridgeCalls.length, 0);
+});
+
+test('an ordinary edit is a fresh attempt on a fresh seed, never the project voice seed', async () => {
+  const seeds = [];
+  for (let i = 0; i < 3; i++) {
+    const desk = booth();
+    await desk.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE });
+    seeds.push(desk.bridgeCalls[0].seed);
+    assert.ok(Number.isInteger(desk.bridgeCalls[0].seed));
+    assert.equal(desk.saved.at(-1).voiceSeed, undefined);
+  }
+  assert.equal(new Set(seeds).size, 3);
+  const chosen = booth();
+  await chosen.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE, seed: 4242 });
+  assert.equal(chosen.bridgeCalls[0].seed, 4242, 'a seed she typed is still hers');
+});
+
+test('a reopened edit project sends its last drawn seed back, and it is drawn fresh again', async () => {
+  const desk = booth();
+  await desk.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE });
+  const first = desk.bridgeCalls[0].seed;
+  assert.equal(desk.saved.at(-1).options.seed, first, 'the drawn seed is saved with the options');
+  /* That render finished. The page copies every saved option back on reopen, the seed among them. */
+  Object.assign(desk.project(), { state: 'done', renderLease: undefined, renderLeaseUntil: undefined });
+  const reopened = await desk.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE, projectId: '0123456789abcdef01234567', seed: first });
+  assert.notEqual(reopened.status, 409, JSON.stringify(reopened.result));
+  assert.ok(Number.isInteger(desk.bridgeCalls[1].seed));
+  assert.notEqual(desk.bridgeCalls[1].seed, first, 'the last drawn seed is not rolled again');
+});
+
+test('the guide offers Change words with its own labelled boxes, and the old free-text starter is gone', () => {
+  const { GUIDE } = booth().internals;
+  const auk = GUIDE.engines.scenema;
+  assert.equal(JSON.stringify(auk.settings.find((s) => s.key === 'auk_task').options), JSON.stringify(['speech', 'edit', 'change_words']));
+  for (const key of ['words_kind', 'old_text', 'new_text', 'words_from', 'words_to', 'takes']) {
+    const setting = auk.settings.find((s) => s.key === key);
+    assert.ok(setting && setting.label && setting.hint, key);
+  }
+  const starters = auk.recipes.filter((r) => /words/i.test(r.label));
+  assert.ok(starters.length >= 2);
+  for (const r of starters) { assert.equal(r.task, 'change_words'); assert.ok(r.old && r.new); }
+  assert.equal(auk.recipes.some((r) => r.task === 'edit' && /replace/i.test(r.text)), false);
 });

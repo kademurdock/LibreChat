@@ -29,7 +29,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 const axios = require('axios');
-const { randomUUID } = require('crypto');
+const { randomUUID, randomInt } = require('crypto');
 /* Tolerant on purpose: this module's decision logic is worth testing on its
  * own, and a hard require on the app's logger would mean booting LibreChat to
  * check that every part gets the same voice seed. */
@@ -67,7 +67,10 @@ async function submitPart({ userId, script, opts, partIndex, total }) {
      * the description unless pinned, so an unpinned five-part story is five
      * subtly different readers. This is the single most important line in the
      * file. */
-    seed: Number.isInteger(opts?.seed) ? opts.seed : deterministicSeed(userId, script, partIndex),
+    /* Nov 14 2026: an EDIT is a new attempt every time, so it never falls back to the per-user seed
+     * (that rolled the same dice on every retry, AUK_EDIT_DIAGNOSIS.md); the render route sends a
+     * fresh seed per attempt, and this is the floor if one is missing. */
+    seed: Number.isInteger(opts?.seed) ? opts.seed : opts?.auk_task === 'edit' ? randomInt(1, 2147483647) : deterministicSeed(userId, script, partIndex),
     pace: opts?.pace,
     keep_wav: opts?.keep_wav,
     validate: opts?.validate,
@@ -347,4 +350,4 @@ async function freshPartUrl(url) {
   return needsRefresh(url, 3600) ? getNewS3URL(url) : url;
 }
 
-module.exports = { advance, advanceLocked, acquire, release, stitch, submitPart, sayProgress, deterministicSeed, MAX_PARTS };
+module.exports = { advance, advanceLocked, acquire, release, stitch, submitPart, sayProgress, deterministicSeed, readJob, freshPartUrl, MAX_PARTS };
