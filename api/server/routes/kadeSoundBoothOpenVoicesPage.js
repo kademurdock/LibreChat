@@ -7,7 +7,7 @@
  * here does not touch the main render's quote (events stop at the panel). */
 
 const OPEN_VOICES_HTML = `
-    <details id="openVoicesDrawer" hidden><summary>Open voices: design a voice, or speak with a saved one (VoxCPM2 and Ming)</summary>
+    <details id="openVoicesDrawer" hidden><summary id="ovSummary">Open voices: design a voice, or speak with a saved one</summary>
     <fieldset id="openVoicesPanel"><legend>Open voices</legend>
       <label class="field" for="ovEngine">Voice engine</label>
       <select id="ovEngine" aria-describedby="ovEngineHint"></select>
@@ -81,6 +81,9 @@ const OPEN_VOICES_SCRIPT = `
     if(!first.ok || !first.data.engines || !first.data.engines.length) return;
     ov.engines = first.data.engines; ov.coldNote = first.data.coldNote || '';
     ov.engines.forEach(function(e){ var o = document.createElement('option'); o.value = e.id; o.textContent = e.label; $('ovEngine').appendChild(o); });
+    var labels = ov.engines.map(function(e){ return e.label; }).join(' and ');
+    $('ovSummary').textContent = 'Open voices: design a voice, or speak with a saved one (' + labels + ')';
+    var intro = $('ovIntro'); if(intro) intro.textContent = ' You can also design and reuse voices with ' + labels + ' under Open voices.';
     function showEngine(){ var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0]; $('ovEngineHint').textContent = e ? e.about : ''; }
     $('ovEngine').onchange = showEngine; showEngine();
     function fillVoices(keep){
@@ -90,7 +93,11 @@ const OPEN_VOICES_SCRIPT = `
       if(keep && Array.prototype.some.call(sel.options, function(o){ return o.value === keep; })) sel.value = keep;
       showVoice();
     }
-    function showVoice(){ var clip = $('ovVoice').value === 'clip'; $('ovClipBox').hidden = !clip; $('ovForget').hidden = clip; }
+    function voiceName(id){ var v = ov.voices.find(function(x){ return x.id === id; }); return v ? v.name : 'this voice'; }
+    function showVoice(){
+      var clip = $('ovVoice').value === 'clip'; $('ovClipBox').hidden = !clip; $('ovForget').hidden = clip;
+      if(!clip) $('ovForget').textContent = 'Remove ' + voiceName($('ovVoice').value) + ' from my list';
+    }
     $('ovVoice').onchange = showVoice;
     async function reloadVoices(keep){ var r = await call('/open-voices'); if(r.ok){ ov.voices = r.data.voices || []; fillVoices(keep); } }
     ov.voices = first.data.voices || []; fillVoices();
@@ -122,33 +129,48 @@ const OPEN_VOICES_SCRIPT = `
       var name = $('ovClipName').value.trim(); if(!name){ say('Give the voice a name first.', true); $('ovClipName').focus(); return; }
       var r = await call('/open-voices/keep-clip', { clipUrl: ov.clip.url, name: name, clipWords: $('ovClipWords').value, seconds: ov.clip.seconds });
       if(!r.ok){ say(r.data.error || 'The voice did not save.', true); return; }
-      await reloadVoices(r.data.voice && r.data.voice.id); say(r.data.spoken || 'Saved.');
+      await reloadVoices(r.data.voice && r.data.voice.id); say(r.data.spoken || 'Saved.'); $('ovVoice').focus();
     };
     $('ovForget').onclick = async function(){
       var id = $('ovVoice').value; if(!id || id === 'clip') return;
+      var nm = voiceName(id);
+      if(!window.confirm('Remove ' + nm + ' from your voices? The recording stays in My Creations.')) { say('Kept ' + nm + '.'); return; }
       var r = await call('/open-voices/forget', { voiceId: id });
       if(!r.ok){ say(r.data.error || 'Could not remove it.', true); return; }
       await reloadVoices(); say(r.data.spoken || 'Removed.'); $('ovVoice').focus();
     };
 
-    function setBusy(b){ ov.busy = b; $('ovMake').disabled = b; $('ovStop').hidden = !b; }
+    /* Make stays focusable while a take runs (aria-disabled, and the busy check ignores a press), so
+     * VoiceOver never loses its place. When the take ends, focus on Stop or nowhere goes back to Make. */
+    function setBusy(b){
+      ov.busy = b;
+      if(b){ $('ovMake').setAttribute('aria-disabled', 'true'); $('ovStop').hidden = false; return; }
+      $('ovMake').removeAttribute('aria-disabled');
+      var a = document.activeElement;
+      if(!a || a === document.body || a === $('ovStop')) $('ovMake').focus();
+      $('ovStop').hidden = true;
+    }
+    function follow(jobId, msg){
+      ov.jobId = jobId; ov.lastSpoken = Date.now(); setBusy(true);
+      if(document.activeElement === $('ovMake')) $('ovStop').focus();
+      say(msg); clearTimeout(ov.timer); ov.timer = setTimeout(poll, 3000);
+    }
     $('ovMake').onclick = async function(){
-      if(ov.busy) return;
+      if(ov.busy){ say('A take is still being made. Press Stop this take to end it.'); return; }
       var body = { engine: $('ovEngine').value, mode: ov.mode, text: $('ovText').value, seed: $('ovSeed').value };
       if(ov.mode === 'design') body.description = $('ovDescription').value;
       else {
         body.style = $('ovStyle').value;
-        if($('ovVoice').value === 'clip'){ if(!ov.clip){ say('Import a clip first, or pick a saved voice.', true); $('ovClip').focus(); return; } body.clipUrl = ov.clip.url; body.clipWords = $('ovClipWords').value; }
+        if($('ovVoice').value === 'clip'){ if(!ov.clip){ say('Import a clip first, or pick a saved voice.', true); $('ovClip').focus(); return; } body.clipUrl = ov.clip.url; body.clipWords = $('ovClipWords').value; body.clipSeconds = ov.clip.seconds; }
         else body.voiceId = $('ovVoice').value;
       }
-      setBusy(true); say('Starting a take…');
+      setBusy(true); $('ovStop').focus(); say('Starting a take…');
       var r = await call('/open-voices/take', body);
+      if(r.status === 409 && r.data.jobId){ follow(r.data.jobId, r.data.error || 'Your last take is still being made. The page will say when it is ready.'); return; }
       if(!r.ok){ setBusy(false); say(r.data.error || 'The take could not start.', true); return; }
-      ov.jobId = r.data.jobId; ov.lastSpoken = Date.now();
-      var msg = 'Making a take, voice number ' + r.data.seed + '.';
+      var msg = 'Making a take.';
       if(r.data.coldLikely && !ov.coldSaid){ ov.coldSaid = true; msg += ' ' + (r.data.coldNote || ov.coldNote); }
-      say(msg + ' The page will say when it is ready.');
-      ov.timer = setTimeout(poll, 3000);
+      follow(r.data.jobId, msg + ' The page will say when it is ready.');
     };
     $('ovStop').onclick = async function(){
       if(!ov.jobId) return;
@@ -163,7 +185,10 @@ const OPEN_VOICES_SCRIPT = `
       var d = r.data || {};
       if(id !== ov.jobId) return;
       if(r.ok && d.state === 'done' && d.url){ ov.jobId = null; setBusy(false); addTake(d, id); return; }
-      if(!r.ok || d.state === 'failed' || d.state === 'cancelled'){ ov.jobId = null; setBusy(false); say(d.error || 'The take did not finish.', true); return; }
+      /* A lost connection, a slow answer or a server hiccup is not the end of a take: keep checking.
+       * Only a clear failed or stopped state, or a take the server no longer knows, ends it here. */
+      var gone = r.status >= 400 && r.status < 500;
+      if(gone || d.state === 'failed' || d.state === 'cancelled'){ ov.jobId = null; setBusy(false); say(d.error || 'The take did not finish.', true); return; }
       if(d.spoken && Date.now() - ov.lastSpoken > 20000){ ov.lastSpoken = Date.now(); say(d.spoken); }
       ov.timer = setTimeout(poll, 3000);
     }
@@ -172,28 +197,36 @@ const OPEN_VOICES_SCRIPT = `
       var n = ov.takes, engine = (ov.engines.find(function(e){ return e.id === d.engine; }) || {}).label || d.engine;
       var li = document.createElement('li'); li.className = 'proj';
       var title = 'Take ' + n + ', ' + engine + ', voice number ' + d.seed + (d.seconds ? ', ' + Math.round(d.seconds) + ' seconds' : '');
-      var h = document.createElement('h3'); h.textContent = title; li.appendChild(h);
+      var h = document.createElement('h4'); h.tabIndex = -1; h.textContent = title; li.appendChild(h);
       var a = document.createElement('audio'); a.controls = true; a.preload = 'none'; a.src = d.url; a.setAttribute('aria-label', 'Play take ' + n); li.appendChild(a);
       var lab = document.createElement('label'); lab.className = 'field'; lab.htmlFor = 'ovName' + n; lab.textContent = 'Name for this voice';
       var name = document.createElement('input'); name.type = 'text'; name.id = 'ovName' + n; name.maxLength = 80;
       var keep = document.createElement('button'); keep.type = 'button'; keep.className = 'act quiet'; keep.textContent = 'Keep as a saved voice';
       keep.setAttribute('aria-label', 'Keep take ' + n + ' as a saved voice');
       keep.onclick = async function(){
+        if(keep.getAttribute('aria-disabled') === 'true'){ say(keep.textContent + '.'); return; }
         var nm = name.value.trim(); if(!nm){ say('Give the voice a name first.', true); name.focus(); return; }
         var r = await call('/open-voices/keep', { jobId: jobId, name: nm });
         if(!r.ok){ say(r.data.error || 'The voice did not save.', true); return; }
-        keep.disabled = true; keep.textContent = 'Kept as ' + nm; await reloadVoices(); say(r.data.spoken || 'Saved.');
+        keep.setAttribute('aria-disabled', 'true'); keep.textContent = 'Kept as ' + nm; keep.removeAttribute('aria-label');
+        await reloadVoices(); say(r.data.spoken || 'Saved.');
       };
       li.appendChild(lab); li.appendChild(name); li.appendChild(keep);
       $('ovTakes').insertBefore(li, $('ovTakes').firstChild); $('ovTakesHeading').hidden = false;
-      say(title + ' is ready. Play it, or keep it as a saved voice.');
+      say('Take ' + n + ' is ready. Play it, or keep it as a saved voice.');
+      var a2 = document.activeElement;
+      if(!a2 || a2 === document.body || a2 === $('ovMake') || a2 === $('ovStop')) h.focus();
     }
   })();
   </script>`;
 
-/* Both empty while KADE_OPEN_VOICES=0, so the page is then the text it was before. */
+/* The intro's Open voices sentence: an empty span the panel script fills in with the engines the
+ * server lists, so VoiceOver never hears of an engine that is not there. */
+const OPEN_VOICES_INTRO = '<span id="ovIntro"></span>';
+
+/* All empty while KADE_OPEN_VOICES=0, so the page is then the text it was before. */
 function pageParts(env = process.env) {
-  return env.KADE_OPEN_VOICES === '0' ? { OPEN_VOICES_HTML: '', OPEN_VOICES_SCRIPT: '' } : { OPEN_VOICES_HTML, OPEN_VOICES_SCRIPT };
+  return env.KADE_OPEN_VOICES === '0' ? { OPEN_VOICES_HTML: '', OPEN_VOICES_SCRIPT: '', OPEN_VOICES_INTRO: '' } : { OPEN_VOICES_HTML, OPEN_VOICES_SCRIPT, OPEN_VOICES_INTRO };
 }
 
-module.exports = { OPEN_VOICES_HTML, OPEN_VOICES_SCRIPT, pageParts };
+module.exports = { OPEN_VOICES_HTML, OPEN_VOICES_SCRIPT, OPEN_VOICES_INTRO, pageParts };

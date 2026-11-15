@@ -31,7 +31,7 @@ const DESCRIBE = typeof describeParts === 'function' ? { ...NO_DESCRIBE, ...desc
 /* Nov 15 2026: Open voices, VoxCPM2 and Ming (kadeSoundBoothOpenVoicesPage.js), spliced in by interpolation. Empty while
  * KADE_OPEN_VOICES=0, so the page is then the text it was before. The panel itself stays hidden until the server lists an engine. */
 const { pageParts: openVoiceParts } = require('./kadeSoundBoothOpenVoicesPage');
-const OPEN_VOICES = { OPEN_VOICES_HTML: '', OPEN_VOICES_SCRIPT: '', ...(typeof openVoiceParts === 'function' ? openVoiceParts() : {}) };
+const OPEN_VOICES = { OPEN_VOICES_HTML: '', OPEN_VOICES_SCRIPT: '', OPEN_VOICES_INTRO: '', ...(typeof openVoiceParts === 'function' ? openVoiceParts() : {}) };
 
 const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -86,7 +86,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Make speech with AuK (or design and reuse voices with VoxCPM2 and Ming under Open voices), music with Lyria or YuE2, sounds with Stable Audio, or a scene with Seed Audio. Each engine keeps its own draft.</p>
+  <p class="muted">Make speech with AuK, music with Lyria or YuE2, sounds with Stable Audio, or a scene with Seed Audio. Each engine keeps its own draft.${OPEN_VOICES.OPEN_VOICES_INTRO}</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 

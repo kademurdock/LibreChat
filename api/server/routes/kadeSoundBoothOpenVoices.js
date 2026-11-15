@@ -37,28 +37,45 @@ const MAX_NAME = 80;
 const PROMPT_CLIP_MAX_S = 29.5; // the workers take a clip's exact words only for a clip of 30 s or less
 const COLD_NOTE = 'The first take after a quiet spell can take a few minutes while the voice engine starts. After that, takes come back in seconds.';
 const HEALTH_TTL_MS = 60 * 1000;
+const PROMPT_CLIP_SENTENCE = 'The exact words only work for a clip of thirty seconds or less. Clear the words, or use a shorter clip.';
+const STILL_MAKING = 'Your last take is still being made. The page will say when it is ready.';
 
 const oneLine = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
 const isId = (v) => typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
 const isJobId = (v) => typeof v === 'string' && /^ov_[a-z0-9]{6,40}$/i.test(v);
 
-/* Which engines the bridge can run. Read from its health (cached); on any failure VoxCPM2 (which
- * has a default endpoint) is offered and Ming stays hidden. */
+const NOTHING = Object.freeze({ voxcpm: false, ming: false });
+
+/* Which engines the bridge can run. Read from its health (cached, one call in flight at a time).
+ * When the bridge cannot be reached (a network error or a timeout) VoxCPM2, which has a default
+ * endpoint, is offered and Ming stays hidden. When the bridge answers with an HTTP error (a 403
+ * from a secret that does not match, a 404 from a bridge without the lane) nothing is offered. */
 function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
   let cached = null;
-  return async function readiness() {
-    /* No bridge secret: no bridge to ask, and nothing is offered. */
-    if (!secret()) return { voxcpm: false, ming: false };
-    if (cached && now() - cached.at < HEALTH_TTL_MS) return cached.value;
+  let inflight = null;
+  async function ask() {
     let value = { voxcpm: true, ming: false };
     try {
       const r = await http.get(`${bridgeBase()}/audio/open-voices/health`, { params: { secret: secret() }, timeout: 4000 });
-      const e = (r.data && r.data.engines) || {};
-      value = { voxcpm: !!(r.data.enabled && e.voxcpm && e.voxcpm.configured), ming: !!(r.data.enabled && e.ming && e.ming.configured) };
-    } catch (_) { /* keep the fallback */ }
+      const d = (r && r.data) || {};
+      const e = d.engines || {};
+      value = { voxcpm: !!(d.enabled && e.voxcpm && e.voxcpm.configured), ming: !!(d.enabled && e.ming && e.ming.configured) };
+    } catch (err) {
+      if (err && err.response) value = { ...NOTHING };
+    }
     cached = { at: now(), value };
     return value;
-  };
+  }
+  async function readiness() {
+    /* No bridge secret: no bridge to ask, and nothing is offered. */
+    if (!secret()) return { ...NOTHING };
+    if (cached && now() - cached.at < HEALTH_TTL_MS) return cached.value;
+    if (!inflight) inflight = ask().finally(() => { inflight = null; });
+    return inflight;
+  }
+  /* The last answer, however old, or null before the first one. Never calls the bridge. */
+  readiness.last = () => (secret() ? (cached ? cached.value : null) : { ...NOTHING });
+  return readiness;
 }
 
 function engineList(ready) {
@@ -129,13 +146,21 @@ function createOpenVoicesRouter(deps) {
       const url = await fresh(row.backupUrl || row.url);
       return { url, words: promptWordsFor(row.metadata.savedVoice) };
     }
+    let url;
     try {
-      const url = await references(user).refresh(String(b.clipUrl));
-      const words = oneLine(b.clipWords).slice(0, 1000);
-      return { url, words };
+      url = await references(user).refresh(String(b.clipUrl));
     } catch (e) {
       return { error: 'That clip is not saved on your account. Import it again.' };
     }
+    /* The workers take a clip's exact words only for a clip of thirty seconds or less. A clip known
+     * to be longer is refused before any GPU time; a clip of unknown length goes without the words. */
+    let words = oneLine(b.clipWords).slice(0, 1000);
+    const seconds = Number(b.clipSeconds);
+    if (words) {
+      if (Number.isFinite(seconds) && seconds > PROMPT_CLIP_MAX_S) return { error: PROMPT_CLIP_SENTENCE };
+      if (!(Number.isFinite(seconds) && seconds > 0)) words = '';
+    }
+    return { url, words };
   }
 
   router.get('/open-voices', auth, async (req, res) => {
@@ -165,7 +190,10 @@ function createOpenVoicesRouter(deps) {
       try {
         r = await http.post(`${bridgeBase()}/audio/open-voices/start`, body, { timeout: 45000 });
       } catch (e) {
-        const said = e.response && e.response.data && typeof e.response.data.error === 'string' ? e.response.data.error : 'The voice engine could not be reached. Nothing was made.';
+        const d = (e.response && e.response.data) || {};
+        /* Her last take is still running: hand its job back so the page picks it up again (with Stop). */
+        if (isJobId(d.jobId)) return res.status(409).json({ error: STILL_MAKING, jobId: d.jobId, stillMaking: true });
+        const said = typeof d.error === 'string' && d.error ? d.error : 'The voice engine could not be reached. Nothing was made.';
         return res.status(e.response ? 400 : 502).json({ error: said });
       }
       const d = r.data || {};
@@ -270,9 +298,21 @@ function createOpenVoicesRouter(deps) {
   return router;
 }
 
-/* The /health block. Never inside guide.engines (older iPhone builds list those). */
-async function healthBlock(readiness) {
-  try { return { engines: engineList(await readiness()), coldNote: COLD_NOTE }; } catch (_) { return { engines: [], coldNote: COLD_NOTE }; }
+/* The /health block. Never inside guide.engines (older iPhone builds list those).
+ * /health opens the booth for every engine, so it never waits on the bridge for long: it takes the
+ * live answer if it comes within `waitMs`, otherwise the last known one (or nothing yet), and the
+ * bridge call carries on in the background to fill the cache. The panel's own GET /open-voices
+ * still waits for the live answer. */
+async function healthBlock(readiness, waitMs = 300) {
+  const fallback = () => (typeof readiness.last === 'function' && readiness.last()) || NOTHING;
+  try {
+    let timer;
+    const live = Promise.resolve().then(() => readiness()).catch(() => fallback());
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(fallback()), waitMs); if (timer.unref) timer.unref(); });
+    const ready = await Promise.race([live, late]);
+    clearTimeout(timer);
+    return { engines: engineList(ready), coldNote: COLD_NOTE };
+  } catch (_) { return { engines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT };
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };

@@ -148,7 +148,7 @@ test('Speak with a saved voice: re-signed clip, its words, and the style', async
 test('Speak with an imported clip: only this person\'s upload, re-signed, words passed through', async (t) => {
   const { call, http } = await boot(t);
   const clip = `${B2}/audios/${USER}/soundbooth-ref-abc.wav?X-Amz-Signature=old`;
-  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'This is me talking.', text: 'Hi' });
+  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'This is me talking.', clipSeconds: 12.4, text: 'Hi' });
   assert.equal(r.status, 200);
   const start = http.calls.find((c) => c.url.endsWith('/start'));
   assert.equal(start.body.reference_voice_url, `${B2}/audios/${USER}/soundbooth-ref-abc.wav?X-Amz-Signature=fresh`);
@@ -156,6 +156,21 @@ test('Speak with an imported clip: only this person\'s upload, re-signed, words 
   const foreign = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: `${B2}/audios/${OTHER}/x.wav`, text: 'Hi' });
   assert.equal(foreign.status, 400);
   assert.match(foreign.body.error, /not saved on your account/);
+});
+
+test('an imported clip\'s words go only with a clip of thirty seconds or less', async (t) => {
+  const { call, http } = await boot(t);
+  const clip = `${B2}/audios/${USER}/soundbooth-ref-abc.wav`;
+  const starts = () => http.calls.filter((c) => c.url.endsWith('/start'));
+  const long = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'All of it.', clipSeconds: 45, text: 'Hi' });
+  assert.equal(long.status, 400);
+  assert.match(long.body.error, /thirty seconds or less/);
+  assert.equal(starts().length, 0, 'refused before any GPU time');
+  const unknown = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'All of it.', text: 'Hi' });
+  assert.equal(unknown.status, 200);
+  assert.equal('prompt_text' in starts().at(-1).body, false, 'a clip of unknown length goes without the words');
+  await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'All of it.', clipSeconds: 29, text: 'Hi' });
+  assert.equal(starts().at(-1).body.prompt_text, 'All of it.');
 });
 
 test('a finished take reports its recording; Keep marks its My Creations row, with no cap', async (t) => {
@@ -201,17 +216,55 @@ test('a bridge refusal is said plainly; a failed take carries its sentence; Stop
   const bridge = {
     get: async () => ({ data: { state: 'failed', error: 'The reference clip is silent or damaged.' } }),
     post: async (url) => {
-      if (url.endsWith('/start')) { const e = new Error('400'); e.response = { status: 400, data: { error: 'One take at a time. The last one is still being made.' } }; throw e; }
+      if (url.endsWith('/start')) { const e = new Error('400'); e.response = { status: 400, data: { error: 'The words are too long. The most is 5000 characters.' } }; throw e; }
       return { data: { ok: true, state: 'cancelled' } };
     },
   };
   const { call, http } = await boot(t, { bridge });
   const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'design', description: 'd', text: 'x' });
   assert.equal(r.status, 400);
-  assert.equal(r.body.error, 'One take at a time. The last one is still being made.');
+  assert.equal(r.body.error, 'The words are too long. The most is 5000 characters.');
   assert.equal((await call('/open-voices/take/ov_abc123def')).body.error, 'The reference clip is silent or damaged.');
   assert.equal((await call('/open-voices/stop', { jobId: 'ov_abc123def' })).body.state, 'cancelled');
   assert.deepEqual(http.calls.at(-1).body, { secret: 'test-only', jobId: 'ov_abc123def', userId: USER });
+});
+
+test('a take still running comes back with its job, so the page can follow it and offer Stop', async (t) => {
+  const bridge = {
+    get: async () => ({ data: { state: 'running', wait: { spoken: 'Speaking now.' } } }),
+    post: async () => { const e = new Error('400'); e.response = { status: 400, data: { error: 'One take at a time. The last one is still being made.', jobId: 'ov_still123' } }; throw e; },
+  };
+  const { call } = await boot(t, { bridge });
+  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'design', description: 'd', text: 'x' });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.jobId, 'ov_still123');
+  assert.equal(r.body.error, ov.STILL_MAKING);
+});
+
+test('readiness: a bridge that answers with an HTTP error offers nothing; one that cannot be reached offers VoxCPM2', async () => {
+  const refuse = (status) => ({ get: async () => { const e = new Error(String(status)); e.response = { status }; throw e; } });
+  for (const status of [403, 404, 500]) {
+    const read = ov.createReadiness({ http: refuse(status), bridgeBase: () => 'https://bridge.test', secret: () => 's' });
+    assert.deepEqual(await read(), { voxcpm: false, ming: false }, String(status));
+  }
+  const timeout = ov.createReadiness({ http: { get: async () => { const e = new Error('timeout of 4000ms exceeded'); e.code = 'ECONNABORTED'; throw e; } }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
+  assert.deepEqual(await timeout(), { voxcpm: true, ming: false });
+});
+
+test('/health never waits long on the bridge: the last answer, or nothing yet, and the cache fills behind it', async () => {
+  let release = null;
+  let asked = 0;
+  const http = { get: () => { asked++; return new Promise((r) => { release = () => r({ data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true } } } }); }); } };
+  const read = ov.createReadiness({ http, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
+  const t0 = Date.now();
+  const first = await ov.healthBlock(read, 50);
+  assert.ok(Date.now() - t0 < 1000);
+  assert.deepEqual(first.engines, [], 'nothing known yet');
+  const second = ov.healthBlock(read, 2000);
+  release();
+  assert.deepEqual((await second).engines.map((e) => e.id), ['voxcpm', 'ming']);
+  assert.equal(asked, 1, 'one bridge call in flight, shared');
+  assert.deepEqual((await ov.healthBlock(read, 50)).engines.map((e) => e.id), ['voxcpm', 'ming'], 'from the cache');
 });
 
 test('readiness: from the bridge health, cached; Ming hidden when the bridge cannot say', async () => {
@@ -239,6 +292,15 @@ test('the panel: real labels for every control, no second live region, nothing a
   assert.match(OPEN_VOICES_HTML, />Design a voice</);
   assert.match(OPEN_VOICES_HTML, />Speak with a voice</);
   assert.match(OPEN_VOICES_SCRIPT, /coldSaid/);
+  /* By ear: Make is never disabled under her finger, a take's heading nests under Takes, the start
+   * line has no long number, and Remove names the voice and asks first. */
+  assert.doesNotMatch(OPEN_VOICES_SCRIPT, /\.disabled\s*=/);
+  assert.match(OPEN_VOICES_SCRIPT, /createElement\('h4'\)/);
+  assert.match(OPEN_VOICES_SCRIPT, /'Making a take\.'/);
+  assert.doesNotMatch(OPEN_VOICES_SCRIPT, /Making a take, voice number/);
+  assert.match(OPEN_VOICES_SCRIPT, /window\.confirm\('Remove ' \+ nm/);
+  assert.match(OPEN_VOICES_SCRIPT, /clipSeconds/);
+  assert.doesNotMatch(OPEN_VOICES_HTML, /VoxCPM2 and Ming/, 'the engine names come from the server list');
   const vm = require('node:vm');
   new vm.Script(OPEN_VOICES_SCRIPT.replace(/^\s*<script>|<\/script>\s*$/g, ''));
 });
