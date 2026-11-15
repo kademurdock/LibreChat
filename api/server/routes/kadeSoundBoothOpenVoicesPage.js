@@ -87,7 +87,13 @@ const OPEN_VOICES_SCRIPT = `
     var panel = document.getElementById('openVoicesPanel');
     if(!drawer || !panel) return;
     var status = document.getElementById('status');
-    function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
+    /* The same sentence twice would not change the live region, so screen readers would stay quiet
+     * (a second tag insert, a second press after a refusal). A repeat gets a trailing no-break space,
+     * on and off, so every say is heard. */
+    function say(msg, isErr){
+      status.className = 'status' + (isErr ? ' err' : '');
+      status.textContent = status.textContent === msg ? msg + '\u00a0' : msg;
+    }
     function $(id){ return document.getElementById(id); }
     ['input','change'].forEach(function(t){ panel.addEventListener(t, function(e){ e.stopPropagation(); }); });
     var token = null; try { token = await getToken(); } catch(e) {}
@@ -124,7 +130,16 @@ const OPEN_VOICES_SCRIPT = `
       $('ovMingSpeak').hidden = !(m && ov.mode === 'speak');
       $('ovTagsBox').hidden = !(m && ov.mode === 'speak');
     }
-    function showEngine(){ var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0]; $('ovEngineHint').textContent = e ? e.about : ''; showMing(); }
+    function showEngine(){
+      var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0];
+      $('ovEngineHint').textContent = e ? e.about + (e.controls && e.controls.about ? ' ' + e.controls.about : '') : '';
+      showMing();
+    }
+    /* What switching mode shows of Ming's controls, said after the mode sentence. */
+    function mingShown(){
+      if(!isMing()) return '';
+      return ov.mode === 'design' ? ' You can also pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.';
+    }
     $('ovEngine').onchange = function(){
       showEngine();
       var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; });
@@ -169,8 +184,8 @@ const OPEN_VOICES_SCRIPT = `
       $('ovDesignBox').hidden = m !== 'design'; $('ovSpeakBox').hidden = m !== 'speak';
       showMing();
     }
-    $('ovModeDesign').onclick = function(){ setMode('design'); say('Design a voice. Describe it, then type the words to say.'); };
-    $('ovModeSpeak').onclick = function(){ setMode('speak'); say(ov.voices.length ? 'Speak with a voice. Pick a saved voice or import a clip.' : 'Speak with a voice. You have no saved voices yet, so import a clip, or keep a designed take first.'); };
+    $('ovModeDesign').onclick = function(){ setMode('design'); say('Design a voice. Describe it, then type the words to say.' + mingShown()); };
+    $('ovModeSpeak').onclick = function(){ setMode('speak'); say((ov.voices.length ? 'Speak with a voice. Pick a saved voice or import a clip.' : 'Speak with a voice. You have no saved voices yet, so import a clip, or keep a designed take first.') + mingShown()); };
     drawer.hidden = false;
 
     $('ovClip').onchange = async function(){
@@ -218,6 +233,13 @@ const OPEN_VOICES_SCRIPT = `
       if(document.activeElement === $('ovMake')) $('ovStop').focus();
       say(msg); clearTimeout(ov.timer); ov.timer = setTimeout(poll, 3000);
     }
+    /* A refusal names the control to change (the route's field); focus goes there when it is shown. */
+    function focusField(field){
+      var ids = { text: 'ovText', language: 'ovLanguage', style: 'ovStyle', emotion: 'ovEmotion', speed: 'ovSpeed', pitch: 'ovPitch',
+        volume: 'ovVolume', description: 'ovDescription', voice: 'ovBuiltin', clipWords: $('ovVoice').value === 'clip' ? 'ovClipWords' : 'ovVoice' };
+      var el = field && ids[field] ? $(ids[field]) : null;
+      if(el && !el.closest('[hidden]')) el.focus();
+    }
     $('ovMake').onclick = async function(){
       if(ov.busy){ say('A take is still being made. Press Stop this take to end it.'); return; }
       var body = { engine: $('ovEngine').value, mode: ov.mode, text: $('ovText').value, seed: $('ovSeed').value };
@@ -245,7 +267,7 @@ const OPEN_VOICES_SCRIPT = `
       setBusy(true); $('ovStop').focus(); say('Starting a take…');
       var r = await call('/open-voices/take', body);
       if(r.status === 409 && r.data.jobId){ follow(r.data.jobId, r.data.error || 'Your last take is still being made. The page will say when it is ready.'); return; }
-      if(!r.ok){ setBusy(false); say(r.data.error || 'The take could not start.', true); return; }
+      if(!r.ok){ setBusy(false); say(r.data.error || 'The take could not start.', true); focusField(r.data.field); return; }
       var msg = 'Making a take.';
       if(r.data.coldLikely && !ov.coldSaid){ ov.coldSaid = true; msg += ' ' + (r.data.coldNote || ov.coldNote); }
       follow(r.data.jobId, msg + ' The page will say when it is ready.');

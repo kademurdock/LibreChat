@@ -29,7 +29,7 @@ const ENGINES = {
   voxcpm: { id: 'voxcpm', label: 'VoxCPM2', maxDescription: 400,
     about: 'Open voice model. Designs a voice from a description, or speaks in a saved voice or a clip.' },
   ming: { id: 'ming', label: 'Ming', maxDescription: 600,
-    about: 'Open voice model from Ant Group. Designs a voice from a description or uses a built-in one, or speaks in a saved voice or a clip, with a choice of emotion, speed, language and sound tags.' },
+    about: 'Open voice model from Ant Group. Designs a voice from a description, or speaks in a saved voice or a clip.' },
 };
 
 /* Ming's own controls (worker ming_contract.py; bridge open-voices.js checks the same rules).
@@ -62,6 +62,9 @@ const MING_CONTROLS = {
     { value: '[Question-ei]', label: 'Question, ei' }, { value: '[Question-ah]', label: 'Question, ah' }, { value: '[Question-en]', label: 'Question, en' },
     { value: '[Question-oh]', label: 'Question, oh' }, { value: '[Question-huh]', label: 'Question, huh' },
   ],
+  /* Said after the engine's `about` by a client that shows these controls. `about` itself stays
+   * the plain sentence, so an iPhone build without the controls is never told about them. */
+  about: 'Ming also has built-in voices, and a choice of emotion, speed, pitch, volume, language and sound tags.',
   tagNote: 'Sound tags work only in Speak with a voice, with a clip of thirty seconds or less whose words are typed in, and no style, emotion, speed, pitch or volume.',
 };
 const MING_FIELDS = ['voice', 'emotion', 'speed', 'pitch', 'volume', 'language'];
@@ -84,26 +87,34 @@ function soundTags(text) {
   return { tags, unknown };
 }
 
-/* Ming's one-task rules on a bridge body. `hasWords` says whether the clip's words go along
- * (undefined before the reference is known: the two rules that need them wait for it). */
-function mingRules(body, hasWords) {
+/* Ming's one-task rules on a bridge body -> { error, field } or null. `field` names the control to
+ * change (text, language, clipWords, emotion, style), so the page and the iPhone move focus there.
+ * `hasWords` says whether the clip's words go along (undefined before the reference is known: the
+ * two rules that need them wait for it). */
+function mingRule(body, hasWords) {
   if (body.engine !== 'ming') return null;
+  const no = (error, field) => ({ error, field });
   const { tags, unknown } = soundTags(body.text);
-  if (unknown) return `Ming does not know the sound tag ${unknown}. Pick one from Sound tags, or take it out.`;
+  if (unknown) return no(`Ming does not know the sound tag ${unknown}. Pick one from Sound tags, or take it out.`, 'text');
   const level = !!(body.speed || body.pitch || body.volume);
   const controls = !!(body.emotion || level);
-  if (body.mode === 'design') return tags.length ? `Sound tags need Speak with a voice, with ${WORDS_CLIP}.` : null;
+  if (body.mode === 'design') return tags.length ? no(`Sound tags need Speak with a voice, with ${WORDS_CLIP}.`, 'text') : null;
   if ([body.emotion, level, body.style].filter(Boolean).length > 1) {
-    return 'Ming takes one of these per take: a style, an emotion, or speed, pitch and volume. Clear the others.';
+    return no('Ming takes one of these per take: a style, an emotion, or speed, pitch and volume. Clear the others.', body.emotion ? 'emotion' : 'style');
   }
-  if (tags.length && (controls || body.style)) return `Sound tags work only with ${NO_MIX}. Clear those, or take the tags out.`;
+  if (tags.length && (controls || body.style)) return no(`Sound tags work only with ${NO_MIX}. Clear those, or take the tags out.`, 'text');
   const far = body.language && !['en', 'zh'].includes(body.language) ? LANGUAGE_NAMES[body.language] : '';
-  if (far && (controls || body.style)) return `${far} works only with ${NO_MIX}. Clear those, or set the language back.`;
+  if (far && (controls || body.style)) return no(`${far} works only with ${NO_MIX}. Clear those, or set the language back.`, 'language');
   if (hasWords === false) {
-    if (tags.length) return `Sound tags need ${WORDS_CLIP}. Take the tags out, or use such a clip.`;
-    if (far) return `${far} needs ${WORDS_CLIP}. Use such a clip, or set the language back.`;
+    if (tags.length) return no(`Sound tags need ${WORDS_CLIP}. Take the tags out, or use such a clip.`, 'clipWords');
+    if (far) return no(`${far} needs ${WORDS_CLIP}. Use such a clip, or set the language back.`, 'clipWords');
   }
   return null;
+}
+/* The sentence alone (older callers and tests). */
+function mingRules(body, hasWords) {
+  const r = mingRule(body, hasWords);
+  return r ? r.error : null;
 }
 
 /* Ming's controls from a take request -> { fields } or { error }. Empty values are "not set". */
@@ -119,11 +130,11 @@ function mingFields(b, engine, mode) {
   for (const k of given) {
     const v = pick(k);
     const [list, said] = lists[k];
-    if (typeof v !== 'string' || !list.some((o) => o.value === v)) return { error: said };
+    if (typeof v !== 'string' || !list.some((o) => o.value === v)) return { error: said, field: k };
     fields[k] = v;
   }
-  if (mode === 'design' && given.some((k) => k !== 'voice')) return { error: 'Emotion, speed, pitch, volume and language are for Speak with a voice.' };
-  if (mode === 'speak' && fields.voice) return { error: 'Built-in voices are for Design a voice.' };
+  if (mode === 'design' && given.some((k) => k !== 'voice')) return { error: 'Emotion, speed, pitch, volume and language are for Speak with a voice.', field: given.find((k) => k !== 'voice') };
+  if (mode === 'speak' && fields.voice) return { error: 'Built-in voices are for Design a voice.', field: 'voice' };
   return { fields };
 }
 const MAX_TEXT = 5000;
@@ -139,7 +150,10 @@ const oneLine = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : 
 const isId = (v) => typeof v === 'string' && /^[a-f0-9]{24}$/i.test(v);
 const isJobId = (v) => typeof v === 'string' && /^ov_[a-z0-9]{6,40}$/i.test(v);
 
-const NOTHING = Object.freeze({ voxcpm: false, ming: false });
+/* mingControls: the bridge reads Ming's extra controls (its health says ming.controls). Until it does,
+ * the controls are neither offered nor forwarded, so a fork deployed before its bridge never sends a
+ * control the bridge would silently drop on paid GPU time. */
+const NOTHING = Object.freeze({ voxcpm: false, ming: false, mingControls: false });
 
 /* Which engines the bridge can run. Read from its health (cached, one call in flight at a time).
  * When the bridge cannot be reached (a network error or a timeout) VoxCPM2, which has a default
@@ -149,12 +163,13 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
   let cached = null;
   let inflight = null;
   async function ask() {
-    let value = { voxcpm: true, ming: false };
+    let value = { voxcpm: true, ming: false, mingControls: false };
     try {
       const r = await http.get(`${bridgeBase()}/audio/open-voices/health`, { params: { secret: secret() }, timeout: 4000 });
       const d = (r && r.data) || {};
       const e = d.engines || {};
-      value = { voxcpm: !!(d.enabled && e.voxcpm && e.voxcpm.configured), ming: !!(d.enabled && e.ming && e.ming.configured) };
+      const ming = !!(d.enabled && e.ming && e.ming.configured);
+      value = { voxcpm: !!(d.enabled && e.voxcpm && e.voxcpm.configured), ming, mingControls: ming && e.ming.controls === true };
     } catch (err) {
       if (err && err.response) value = { ...NOTHING };
     }
@@ -175,7 +190,7 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
 
 function engineList(ready) {
   return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription,
-    ...(e.id === 'ming' ? { controls: MING_CONTROLS } : {}) }));
+    ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}) }));
 }
 
 function voiceView(row, url) {
@@ -202,12 +217,16 @@ function checkTake(b = {}, ready = {}) {
   if (text.length > MAX_TEXT) return { error: `The words are too long. The most is ${MAX_TEXT} characters.` };
   const body = { engine, mode: mode === 'design' ? 'design' : 'clone', text };
   const ming = mingFields(b, engine, mode);
-  if (ming.error) return { error: ming.error };
+  if (ming.error) return { error: ming.error, field: ming.field };
+  const controlsReady = engine === 'ming' && !!ready.mingControls;
+  if (Object.keys(ming.fields).length && !controlsReady) {
+    return { error: 'Ming\'s extra controls are not ready yet. Set them back to Not set, or try again later.', field: Object.keys(ming.fields)[0] };
+  }
   if (mode === 'design') {
     const description = oneLine(b.description);
-    if (description && ming.fields.voice) return { error: 'Use a built-in voice or a description, not both. Clear one of them.' };
-    if (!description && !ming.fields.voice) return { error: engine === 'ming' ? 'Describe the voice first, or pick a built-in voice.' : 'Describe the voice first.' };
-    if (description.length > ENGINES[engine].maxDescription) return { error: `The description is too long. The most is ${ENGINES[engine].maxDescription} characters.` };
+    if (description && ming.fields.voice) return { error: 'Use a built-in voice or a description, not both. Clear one of them.', field: 'description' };
+    if (!description && !ming.fields.voice) return { error: controlsReady ? 'Describe the voice first, or pick a built-in voice.' : 'Describe the voice first.', field: 'description' };
+    if (description.length > ENGINES[engine].maxDescription) return { error: `The description is too long. The most is ${ENGINES[engine].maxDescription} characters.`, field: 'description' };
     if (description) body.description = description;
   } else {
     const style = oneLine(b.style);
@@ -221,8 +240,8 @@ function checkTake(b = {}, ready = {}) {
     body.seed = seed;
   }
   Object.assign(body, ming.fields);
-  const rule = mingRules(body);
-  if (rule) return { error: rule };
+  const rule = mingRule(body);
+  if (rule) return rule;
   return { body };
 }
 
@@ -280,15 +299,15 @@ function createOpenVoicesRouter(deps) {
     try {
       const b = req.body || {};
       const checked = checkTake(b, await readiness());
-      if (checked.error) return res.status(400).json({ error: checked.error });
+      if (checked.error) return res.status(400).json({ error: checked.error, ...(checked.field ? { field: checked.field } : {}) });
       const body = { ...checked.body, secret: secret(), userId: String(req.user.id) };
       if (body.mode === 'clone') {
         const ref = await referenceFor(String(req.user.id), b);
         if (ref.error) return res.status(400).json({ error: ref.error });
         body.reference_voice_url = ref.url;
         if (ref.words) body.prompt_text = ref.words;
-        const rule = mingRules(body, !!ref.words);
-        if (rule) return res.status(400).json({ error: rule });
+        const rule = mingRule(body, !!ref.words);
+        if (rule) return res.status(400).json(rule);
       }
       let r;
       try {
@@ -419,4 +438,4 @@ async function healthBlock(readiness, waitMs = 300) {
   } catch (_) { return { engines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, soundTags, MING_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, mingRule, soundTags, MING_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };

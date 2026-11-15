@@ -245,10 +245,10 @@ test('readiness: a bridge that answers with an HTTP error offers nothing; one th
   const refuse = (status) => ({ get: async () => { const e = new Error(String(status)); e.response = { status }; throw e; } });
   for (const status of [403, 404, 500]) {
     const read = ov.createReadiness({ http: refuse(status), bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-    assert.deepEqual(await read(), { voxcpm: false, ming: false }, String(status));
+    assert.deepEqual(await read(), { voxcpm: false, ming: false, mingControls: false }, String(status));
   }
   const timeout = ov.createReadiness({ http: { get: async () => { const e = new Error('timeout of 4000ms exceeded'); e.code = 'ECONNABORTED'; throw e; } }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-  assert.deepEqual(await timeout(), { voxcpm: true, ming: false });
+  assert.deepEqual(await timeout(), { voxcpm: true, ming: false, mingControls: false });
 });
 
 test('/health never waits long on the bridge: the last answer, or nothing yet, and the cache fills behind it', async () => {
@@ -272,14 +272,14 @@ test('readiness: from the bridge health, cached; Ming hidden when the bridge can
   let clock = 0;
   const http = { get: async () => { n++; if (n === 2) throw new Error('down'); return { data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true } } } }; } };
   const read = ov.createReadiness({ http, bridgeBase: () => 'https://bridge.test', secret: () => 's', now: () => clock });
-  assert.deepEqual(await read(), { voxcpm: true, ming: true });
-  assert.deepEqual(await read(), { voxcpm: true, ming: true });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false }, 'a bridge that does not say controls: true');
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false });
   assert.equal(n, 1);
   clock += 61000;
-  assert.deepEqual(await read(), { voxcpm: true, ming: false });
+  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false });
   let asked = 0;
   const silent = ov.createReadiness({ http: { get: async () => { asked++; return { data: {} }; } }, bridgeBase: () => 'https://bridge.test', secret: () => '' });
-  assert.deepEqual(await silent(), { voxcpm: false, ming: false });
+  assert.deepEqual(await silent(), { voxcpm: false, ming: false, mingControls: false });
   assert.equal(asked, 0, 'no bridge secret, no call');
   assert.deepEqual((await ov.healthBlock(async () => ({ voxcpm: true, ming: false }))).engines.map((e) => e.id), ['voxcpm']);
 });
@@ -308,7 +308,7 @@ test('the panel: real labels for every control, no second live region, nothing a
 /* ---------- Ming's own controls (worker ming_contract.py) ---------- */
 
 test('checkTake: Ming built-in voice, one control per take, tags and languages; VoxCPM2 refuses them', () => {
-  const ready = { voxcpm: true, ming: true };
+  const ready = { voxcpm: true, ming: true, mingControls: true };
   assert.deepEqual(ov.checkTake({ engine: 'ming', mode: 'design', voice: 'US_Emma', text: 'Hi' }, ready).body, { engine: 'ming', mode: 'design', text: 'Hi', voice: 'US_Emma' });
   assert.deepEqual(ov.MING_CONTROLS.voices.map((v) => v.value), ['US_Emma', 'UK_George', 'UK_Charlotte', '灵小柔', '灵楷']);
   assert.equal(ov.MING_CONTROLS.tags.length, 14);
@@ -336,7 +336,7 @@ test('Ming over the route: tags and far languages need the clip words before any
     { _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/ming/a.mp3`, metadata: { savedVoice: { name: 'Short', words: 'Hello there.', seconds: 3 } } },
     { _id: '7b0000000000000000000002', user: USER, kind: 'audio', url: `${B2}/ming/b.mp3`, metadata: { savedVoice: { name: 'No words', seconds: 40 } } },
   ];
-  const { call, http } = await boot(t, { rows, ready: { voxcpm: true, ming: true } });
+  const { call, http } = await boot(t, { rows, ready: { voxcpm: true, ming: true, mingControls: true } });
   const starts = () => http.calls.filter((c) => c.url.endsWith('/start'));
   const noWords = await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000002', text: 'Well [Sigh] fine.' });
   assert.equal(noWords.status, 400);
@@ -360,7 +360,7 @@ test('Ming over the route: tags and far languages need the clip words before any
 
 test('the panel by DOM: Ming controls only with Ming, a tag lands at the cursor, the take sends the controls', async () => {
   const { JSDOM } = require('jsdom');
-  const engines = ov.engineList({ voxcpm: true, ming: true });
+  const engines = ov.engineList({ voxcpm: true, ming: true, mingControls: true });
   const sent = [];
   const dom = new JSDOM(`<!doctype html><body><p id="status" role="status"></p>${OPEN_VOICES_HTML}</body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
@@ -430,4 +430,85 @@ test('the booth page carries the panel and still parses', () => {
   assert.match(soundBoothHtml, /id="openVoicesDrawer" hidden/);
   const vm = require('node:vm');
   for (const m of soundBoothHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
+});
+
+/* ---------- review fixes (Nov 15 2026) ---------- */
+
+test('Ming controls wait for a bridge that reads them: not listed, not forwarded, refused plainly', async () => {
+  const old = { voxcpm: true, ming: true, mingControls: false };
+  const ming = ov.engineList(old).find((e) => e.id === 'ming');
+  assert.equal('controls' in ming, false, 'not offered to the page or the iPhone');
+  assert.doesNotMatch(ming.about, /emotion|sound tags|built-in/, 'the about text does not promise controls');
+  assert.match(ov.engineList({ ...old, mingControls: true }).find((e) => e.id === 'ming').controls.about, /built-in voices/);
+  const speak = { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'Hi' };
+  const r = ov.checkTake({ ...speak, emotion: 'happy' }, old);
+  assert.match(r.error, /extra controls are not ready yet/);
+  assert.equal(r.field, 'emotion');
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', voice: 'US_Emma', text: 'Hi' }, old).error, /not ready yet/);
+  assert.equal(ov.checkTake({ engine: 'ming', mode: 'design', text: 'Hi' }, old).error, 'Describe the voice first.', 'no built-in voice offered');
+  assert.deepEqual(ov.checkTake({ ...speak, emotion: '', speed: '' }, old).body, { engine: 'ming', mode: 'clone', text: 'Hi' }, 'empty controls still pass');
+  const read = ov.createReadiness({ http: { get: async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true, controls: true } } } }) }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: true });
+});
+
+test('every Ming refusal names the control to change', () => {
+  const ready = { voxcpm: true, ming: true, mingControls: true };
+  const speak = { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'Hi' };
+  const field = (b, words) => (words === undefined ? ov.checkTake(b, ready).field : ov.mingRule({ ...b, mode: 'clone' }, words).field);
+  assert.equal(field({ ...speak, text: 'Hi [Yawn]' }), 'text');
+  assert.equal(field({ ...speak, text: 'Hi [Sigh]', emotion: 'sad' }), 'text');
+  assert.equal(field({ ...speak, language: 'fr', speed: 'slow' }), 'language');
+  assert.equal(field({ ...speak, emotion: 'sad', pitch: 'low' }), 'emotion');
+  assert.equal(field({ ...speak, speed: 'fast', style: 'calm' }), 'style');
+  assert.equal(field({ ...speak, text: 'Hi [Sigh]' }, false), 'clipWords');
+  assert.equal(field({ ...speak, language: 'ko' }, false), 'clipWords');
+  assert.equal(field({ engine: 'ming', mode: 'design', voice: 'US_Emma', description: 'warm', text: 'Hi' }), 'description');
+  assert.equal(field({ ...speak, emotion: 'bored' }), 'emotion');
+  assert.equal(ov.mingRules({ ...speak, mode: 'clone', text: 'Hi [Sigh]' }, false), ov.mingRule({ ...speak, mode: 'clone', text: 'Hi [Sigh]' }, false).error);
+});
+
+test('the panel by DOM: a repeat is still heard, mode switches name the Ming controls, a refusal moves focus to its control', async () => {
+  const { JSDOM } = require('jsdom');
+  const engines = ov.engineList({ voxcpm: true, ming: true, mingControls: true });
+  let answer = { error: 'Sound tags need a clip of thirty seconds or less whose words are typed in.', field: 'clipWords' };
+  const dom = new JSDOM(`<!doctype html><body><p id="status" role="status"></p>${OPEN_VOICES_HTML}</body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  w.getToken = async () => 'tok';
+  w.AbortSignal.timeout = () => undefined;
+  w.fetch = async (url, o) => {
+    const body = o && o.body ? JSON.parse(o.body) : null;
+    const data = url.endsWith('/open-voices') ? { engines, voices: [{ id: '7b0000000000000000000001', name: 'Grandpa', seconds: 40 }], coldNote: '' } : answer;
+    return { ok: !body, status: body ? 400 : 200, json: async () => data };
+  };
+  w.eval(OPEN_VOICES_SCRIPT.replace(/^\s*<script>|<\/script>\s*$/g, ''));
+  const $ = (id) => w.document.getElementById(id);
+  for (let i = 0; i < 20 && $('openVoicesDrawer').hidden; i++) await new Promise((r) => setTimeout(r, 5));
+  $('ovEngine').value = 'ming'; $('ovEngine').onchange();
+  assert.match($('ovEngineHint').textContent, /Ming also has built-in voices/);
+  $('ovModeSpeak').onclick();
+  assert.match($('status').textContent, /Emotion, speed, pitch, volume, language and sound tags are shown\.$/);
+  $('ovModeDesign').onclick();
+  assert.match($('status').textContent, /You can also pick a built-in voice\.$/);
+  $('ovModeSpeak').onclick();
+  /* The same tag twice: the second insert still changes the live region. */
+  $('ovTag').value = '[Sigh]';
+  $('ovInsertTag').onclick();
+  const first = $('status').textContent;
+  $('ovInsertTag').onclick();
+  assert.notEqual($('status').textContent, first, 'a repeat is heard');
+  assert.equal($('status').textContent.trim(), first.trim());
+  $('ovInsertTag').onclick();
+  assert.equal($('status').textContent, first, 'and the third one too');
+  /* The server's refusal names the clip words; with a saved voice picked, focus goes to Saved voice. */
+  $('ovVoice').value = '7b0000000000000000000001';
+  await $('ovMake').onclick();
+  assert.match($('status').textContent, /Sound tags need a clip/);
+  assert.equal(w.document.activeElement, $('ovVoice'));
+  answer = { error: 'French works only with no style, emotion, speed, pitch or volume.', field: 'language' };
+  await $('ovMake').onclick();
+  assert.equal(w.document.activeElement, $('ovLanguage'));
+  answer = { error: 'Ming does not know the sound tag [Yawn].', field: 'text' };
+  await $('ovMake').onclick();
+  assert.equal(w.document.activeElement, $('ovText'));
+  dom.window.close();
 });
