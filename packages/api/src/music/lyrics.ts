@@ -99,9 +99,14 @@ async function mimoAudio(
   };
   const format = formats[mime];
   if (!format) throw new GeminiMiss('skip:not-audio', true);
+  /* Nov 14 2026: Novita no longer serves MiMo, and Makora's Flash price rose to $0.18 and $0.36 per
+   * million tokens (OpenRouter's endpoint list that day), over the old $0.14 and $0.28 cap. By that
+   * list no host could take a Flash listen (not tried live), so a draft fell back to scribe_v2 and
+   * Describe the sound found nothing. The recording can be a person's own singing, so zero
+   * retention stays; the cap rises to Makora's price, so Makora can serve again. */
   const prices = model.endsWith('-pro')
     ? { prompt: 0.435, completion: 0.87 }
-    : { prompt: 0.14, completion: 0.28 };
+    : { prompt: 0.18, completion: 0.36 };
   const { data } = await axios.post<ListenerReply>(
     endpoint.href,
     {

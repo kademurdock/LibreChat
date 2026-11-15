@@ -41,15 +41,35 @@
  * everything about the request: the id sent, `mediaProvider`, how it thinks, the room for its
  * thinking, `readReply`, `refusalTries`, the price of a reply that names no cost (`videoRates`)
  * and the usage row.
+ *
+ * HALF PRICE FOR VIDEOS NOBODY WAITS ON (Nov 14 2026). Google Vertex's flex tier of the video model
+ * costs half its standard tier and keeps nothing either (`FLEX_ENDPOINT`), but it is slower and is
+ * turned away when Google is busy. So only background callers ask for it, the Library's video
+ * describer (kadeReadingRoomDescribe.js) and the gallery's videos (kadeAsset.js), and each asks
+ * once more on the standard tier when flex fails (`askFlexFirst`). Share-to-describe and companion
+ * sight, where a person waits, stay on the standard tier.
  */
 
 const ZERO_RETENTION = Object.freeze({ zdr: true, data_collection: 'deny' });
 
 /**
+ * OpenRouter's endpoint for Google Vertex's flex tier of the video model. On OpenRouter's endpoint
+ * list of Nov 14 2026 (21:29 UTC), google/gemini-3.8-flash costs $0.375 and $1.875 per million
+ * tokens there, half the $0.75 and $3.75 of Vertex's global standard endpoint, and the endpoint is
+ * on OpenRouter's zero-retention list. It was slower that day: about a 15-second wait, two minutes
+ * at the slow end, and 94% uptime over a day. The described-video engine has asked the same
+ * endpoint since Sep 26 2026 (packages/api/src/description/providers.ts `flexEndpoint`).
+ */
+const FLEX_ENDPOINT = 'google-vertex/global/flex';
+
+/**
  * How a refused request is asked again: Novita's two refusals on Oct 16 2026 came in one burst
  * about 11 s apart, so up to three tries, 20 s apart. Tests shorten the wait.
+ * `flexQueueMs`: how much longer than a standard try a flex try may take, for Google's queue (the
+ * described-video engine's `visionLimits.flexQueueMs`: in its Sep 26 2026 bake-off flex's first
+ * byte came 19 to 112 s in).
  */
-const limits = { refusalTries: 3, refusalMs: 20000 };
+const limits = { refusalTries: 3, refusalMs: 20000, flexQueueMs: 120000 };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isMimo = (model) => String(model || '').startsWith('xiaomi/mimo-');
@@ -101,19 +121,52 @@ function mediaModel(model, kind, env = process.env) {
 }
 
 /**
+ * Whether a background caller's request for `model` asks Google Vertex's flex tier first. Only the
+ * models known to have a flex tier do (Nov 14 2026 review): by default the video model alone,
+ * google/gemini-3.8-flash. Another Google model would fail 404 on every request and be estimated
+ * at Flash's flex price. KADE_VIDEO_FLEX_MODELS (a comma list) names others; give it
+ * KADE_VIDEO_FLEX_IN_USD_PER_M and KADE_VIDEO_FLEX_OUT_USD_PER_M too. KADE_VIDEO_TIER=standard
+ * puts every request back on the standard tier, as before Nov 14 2026.
+ */
+function flexFor(model, env = process.env) {
+  const tier = String((env && env.KADE_VIDEO_TIER) || '')
+    .trim()
+    .toLowerCase();
+  const known = String((env && env.KADE_VIDEO_FLEX_MODELS) || VIDEO_MODEL)
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  const name = String(model || '').trim().toLowerCase();
+  return isGoogle(name) && known.includes(name) && tier !== 'standard';
+}
+
+/**
  * OpenRouter's `provider` block for one describer request, for the model it is really sent to
  * (`mediaModel`). A MiMo video goes only to the hosts that hear its soundtrack; MiMo pictures and
  * text try DeepInfra first and may fall back to the other zero-retention hosts; Google models never
  * reach AI Studio (Kade's own key, billed double), which leaves Google Vertex.
+ *
+ * `flex` (Nov 14 2026, for background callers only): a Google request goes only to Vertex's flex
+ * endpoint, still with zero retention, and with no fallback inside OpenRouter, since a flex request
+ * that fell back there would bill the standard price unasked. When flex fails, the caller asks once
+ * more on the standard tier itself (`askFlexFirst`). Other models have no flex tier here and are
+ * routed as before, and so is everything when KADE_VIDEO_TIER=standard (`flexFor`).
  */
-function mediaProvider(model, kind, env = process.env) {
+function mediaProvider(model, kind, env = process.env, { flex = false } = {}) {
   if (isMimo(model)) {
     return kind === 'video'
       ? { ...ZERO_RETENTION, only: videoHosts(env), allow_fallbacks: true }
       : { ...ZERO_RETENTION, order: ['DeepInfra'], allow_fallbacks: true };
   }
   if (isGoogle(model)) {
-    return { ...ZERO_RETENTION, ignore: ['google-ai-studio'] };
+    return flex && flexFor(model, env)
+      ? {
+          ...ZERO_RETENTION,
+          only: [FLEX_ENDPOINT],
+          ignore: ['google-ai-studio'],
+          allow_fallbacks: false,
+        }
+      : { ...ZERO_RETENTION, ignore: ['google-ai-studio'] };
   }
   return { ...ZERO_RETENTION };
 }
@@ -197,6 +250,12 @@ function plainAnswer(model) {
   return { reasoning: { enabled: false }, room: 0 };
 }
 
+/** A positive price from a setting, or `fallback`. */
+const rate = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
 /**
  * USD per million tokens, in and out, for a reply from the video model that names no cost. The
  * default is google/gemini-3.8-flash's price in OpenRouter's public model list on Nov 13 2026
@@ -205,14 +264,153 @@ function plainAnswer(model) {
  * KADE_VIDEO_MODEL needs KADE_VIDEO_IN_USD_PER_M and KADE_VIDEO_OUT_USD_PER_M set with it.
  */
 function videoRates(env = process.env) {
-  const rate = (value, fallback) => {
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 ? n : fallback;
-  };
   return {
     in: rate(env && env.KADE_VIDEO_IN_USD_PER_M, 0.825),
     out: rate(env && env.KADE_VIDEO_OUT_USD_PER_M, 4.125),
   };
+}
+
+/**
+ * USD per million tokens, in and out, on Vertex's flex tier: for a flex reply that names no cost,
+ * and for the Library's estimate of a run that asks flex. The default is google/gemini-3.8-flash on
+ * `FLEX_ENDPOINT` ($0.375 and $1.875, OpenRouter's endpoint list on Nov 14 2026; it doubles on Jan 1
+ * 2027). A different KADE_VIDEO_MODEL needs KADE_VIDEO_FLEX_IN_USD_PER_M and
+ * KADE_VIDEO_FLEX_OUT_USD_PER_M set with it.
+ */
+function flexRates(env = process.env) {
+  return {
+    in: rate(env && env.KADE_VIDEO_FLEX_IN_USD_PER_M, 0.375),
+    out: rate(env && env.KADE_VIDEO_FLEX_OUT_USD_PER_M, 1.875),
+  };
+}
+
+/**
+ * The tier that served a reply, `flex` or `standard`: what OpenRouter's `service_tier` says, or the
+ * tier asked when it says nothing. A flex request that Google moved to its standard tier is billed
+ * the standard price (OpenRouter: billing follows the tier that served), so it is priced as one.
+ */
+function servedTier(data, asked) {
+  const said = String((data && data.service_tier) || '')
+    .trim()
+    .toLowerCase();
+  if (asked !== 'flex' || !said) {
+    return asked;
+  }
+  return said === 'flex' ? 'flex' : 'standard';
+}
+
+/** A reply cut off at its token limit: OpenRouter's `length`, or Google's own MAX_TOKENS. */
+function cutOff(choice) {
+  return (
+    Boolean(choice) &&
+    (choice.finish_reason === 'length' ||
+      String(choice.native_finish_reason || '').toUpperCase() === 'MAX_TOKENS')
+  );
+}
+
+/**
+ * Why the reply to a flex try is no use, so it is asked again on the standard tier; '' when it can
+ * be read. An error OpenRouter sent inside the reply (Google took the request, then failed: busy,
+ * or out of time), or a reply with no answer. A reply cut off at its token limit is read. A refusal is read as
+ * one (`readReply`), never asked again: Google declines the same clip on standard too. So is a
+ * content filter's decline sent as an error inside the reply (OpenRouter's `error_type`
+ * content_policy_violation or refusal, as providers.ts reads it).
+ */
+function flexTrouble(data) {
+  const choice = data && Array.isArray(data.choices) ? data.choices[0] : undefined;
+  const error = (choice && choice.error) || (data && data.error);
+  if (error || (choice && choice.finish_reason === 'error')) {
+    const type = error && error.metadata && error.metadata.error_type;
+    if (type === 'content_policy_violation' || type === 'refusal') {
+      return '';
+    }
+    const code = Number(error && error.code);
+    return Number.isInteger(code) && code > 0 ? `error ${code} in the reply` : 'error in the reply';
+  }
+  if (!choice) {
+    return 'no answer';
+  }
+  /* A reply cut off at its token limit (`cutOff`) is read as it was before flex (Nov 14 2026
+   * review): standard would be cut off at the same limit, at twice the price. */
+  return '';
+}
+
+/** Connection failures with no answer, as Node and axios name them. */
+const NETWORK_CODES = new Set([
+  'ECONNABORTED',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ERR_NETWORK',
+]);
+/** A deadline that ran out after the request went: OpenRouter may still bill the flex try. */
+const TIMEOUT_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT']);
+
+/**
+ * Whether a flex try that failed outright is worth one more try on the standard tier: Google busy
+ * or rate limiting (429), a server error (5xx), no flex endpoint to send it to (404: renamed,
+ * dropped or down), a timeout (408, or the caller's own deadline), or a connection that dropped
+ * with no answer (`NETWORK_CODES`, or axios with no reply and no code). A refused key, no credit or
+ * a bad request (400, 401, 402, 403, 413) would fail on standard too, and so would an error of our
+ * own that carries some other code (Nov 14 2026 review).
+ */
+function flexRetryable(error) {
+  const status = Number(error && error.response && error.response.status) || 0;
+  if (status) {
+    return status === 404 || status === 408 || status === 429 || status >= 500;
+  }
+  const code = error && error.code;
+  if (code) {
+    return NETWORK_CODES.has(String(code));
+  }
+  return Boolean(error && error.isAxiosError);
+}
+
+/**
+ * A failed flex try in a few words for the log: its HTTP status or error code, never its body. A
+ * timeout says the flex try may still be billed: Google can finish a request we stopped waiting
+ * for, and only the reply that arrives is booked.
+ */
+function flexFailure(error) {
+  const status = error && error.response && error.response.status;
+  if (status) {
+    return `HTTP ${status}`;
+  }
+  const code = String((error && error.code) || 'no answer');
+  return TIMEOUT_CODES.has(code) ? `${code}: timed out; the flex try may still be billed` : code;
+}
+
+/**
+ * Asks one background request on Vertex's flex tier first when `flex` (`flexFor`), then once more
+ * on the standard tier if flex failed in a way worth it (`flexRetryable`) or its reply is no use
+ * (`flexTrouble`). OpenRouter never moves a flex request to standard by itself, since flex is
+ * pinned with no fallback (`mediaProvider`), so this is the one second try, at the standard price.
+ * `ask(tier)` sends one request and answers its axios response; the caller counts each reply's
+ * cost there, a flex reply that was no use included. `onRetry(reason)` hears why flex failed.
+ * Answers `{ response, tier }`: the reply that is used and the tier it was asked on.
+ */
+async function askFlexFirst(flex, ask, onRetry = () => {}) {
+  if (!flex) {
+    return { response: await ask('standard'), tier: 'standard' };
+  }
+  let reason;
+  try {
+    const response = await ask('flex');
+    reason = flexTrouble(response && response.data);
+    if (!reason) {
+      return { response, tier: 'flex' };
+    }
+  } catch (error) {
+    if (!flexRetryable(error)) {
+      throw error;
+    }
+    reason = flexFailure(error);
+  }
+  onRetry(reason);
+  return { response: await ask('standard'), tier: 'standard' };
 }
 
 /**
@@ -235,6 +433,7 @@ function readReply(data, model, kind, env = process.env) {
 module.exports = {
   ZERO_RETENTION,
   VIDEO_MODEL,
+  FLEX_ENDPOINT,
   limits,
   pause,
   isMimo,
@@ -242,6 +441,7 @@ module.exports = {
   videoHosts,
   contentKind,
   mediaModel,
+  flexFor,
   mediaProvider,
   heardBy,
   refusedChoice,
@@ -249,5 +449,11 @@ module.exports = {
   alwaysThinks,
   plainAnswer,
   videoRates,
+  flexRates,
+  servedTier,
+  cutOff,
+  flexTrouble,
+  flexRetryable,
+  askFlexFirst,
   readReply,
 };

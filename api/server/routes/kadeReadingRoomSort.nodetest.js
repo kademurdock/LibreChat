@@ -1,7 +1,9 @@
 /* Oct 16 2026 — what the Library book sorter sends to OpenRouter. It reads its
  * own KADE_LIBRARY_SORT_MODEL (MiMo Pro by default) and never the live
- * librarian's KADE_LIBRARIAN_MODEL, keeps thinking off, and sends the
- * zero-retention provider block with DeepInfra first.
+ * librarian's KADE_LIBRARIAN_MODEL, keeps thinking off, and sends its provider
+ * block. Nov 14 2026: only book titles, authors and synopses go, so the block
+ * keeps out hosts that train but not hosts that keep prompts: GMICloud first
+ * (16% cheaper), then DeepInfra, then any other host.
  * Run: node --test api/server/routes/kadeReadingRoomSort.nodetest.js (no network, no database). */
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
@@ -77,16 +79,19 @@ afterEach(() => {
 });
 
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
-const ZERO_RETENTION_DEEPINFRA = { zdr: true, data_collection: 'deny', order: ['DeepInfra'], allow_fallbacks: true };
+const NO_TRAINING_GMICLOUD = { data_collection: 'deny', order: ['GMICloud', 'DeepInfra'], allow_fallbacks: true };
 
-test('MiMo Pro sorts by default, thinking off, zero retention with DeepInfra first', async () => {
+test('MiMo Pro sorts by default, thinking off, GMICloud then DeepInfra, no host that trains, no zero-retention pin', async () => {
   assert.equal(await sorter.sortOnce({ force: true, userId: 'u1' }), 2);
   assert.equal(posts.length, 1);
   const [url, body] = posts[0];
   assert.equal(url, 'https://openrouter.ai/api/v1/chat/completions');
   assert.equal(body.model, 'xiaomi/mimo-v2.6-pro');
   assert.deepEqual(body.reasoning, { enabled: false, effort: 'none' });
-  assert.deepEqual(body.provider, ZERO_RETENTION_DEEPINFRA);
+  assert.deepEqual(body.provider, NO_TRAINING_GMICLOUD);
+  assert.equal(body.provider.zdr, undefined, 'titles, authors and synopses only: a host may keep them');
+  /* Only the books' own words go: no person's name, id or email. */
+  assert.doesNotMatch(JSON.stringify(body.messages), /u1/);
   assert.deepEqual(body.response_format, { type: 'json_object' });
   assert.equal(usageRows[0].metadata.model, 'xiaomi/mimo-v2.6-pro');
 });
@@ -106,7 +111,7 @@ test('KADE_LIBRARY_SORT_MODEL picks the sorter model and keeps the provider bloc
   const body = posts[0][1];
   assert.equal(body.model, 'xiaomi/mimo-v2.6-flash');
   assert.deepEqual(body.reasoning, { enabled: false, effort: 'none' });
-  assert.deepEqual(body.provider, ZERO_RETENTION_DEEPINFRA);
+  assert.deepEqual(body.provider, NO_TRAINING_GMICLOUD);
   near(usageRows[0].costUSD, 0.14 + 0.28);
 });
 

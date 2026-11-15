@@ -129,9 +129,16 @@ export type Providers = {
   expected?: (look: Look) => number;
   /**
    * The words heard in one narration take that ran long (production: listen.ts `listen`), or null
-   * when nobody could listen. Absent (test providers): length alone decides.
+   * when nobody could listen. Absent (test providers): length alone decides. `log` is the job's
+   * server log, so it can say which host listened, or why none could. `mayKeep` is the job's
+   * `listenMayKeep`: false keeps the take on zero retention.
    */
-  listen?: (pcm: Float32Array, signal: AbortSignal) => Promise<string | null>;
+  listen?: (
+    pcm: Float32Array,
+    signal: AbortSignal,
+    log?: (message: string) => void,
+    options?: { mayKeep: boolean },
+  ) => Promise<string | null>;
 };
 export const productionProviders: Providers = {
   transcribe,
@@ -243,6 +250,12 @@ export type Request = {
    * all-capital words on screen are sent to it in ordinary case (prompt.ts `plainCapitals`).
    */
   fishVoice?: boolean;
+  /**
+   * The repeat check may hear a take on a host that keeps prompts (listen.ts `listenMayKeep`: a
+   * YouTube video). Absent or false, a take stays on zero
+   * retention: it reads out the description of what may be a person's own video.
+   */
+  listenMayKeep?: boolean;
 };
 export type Outcome = {
   video: string;
@@ -1336,7 +1349,9 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       : secondsPerByte / clipNative;
     const check = paceCheck(text, said, pace);
     if (!check.suspect) return 'clean';
-    const heard = providers.listen ? await providers.listen(pcm, signal) : null;
+    const heard = providers.listen
+      ? await providers.listen(pcm, signal, log, { mayKeep: request.listenMayKeep === true })
+      : null;
     const verdict =
       heard !== null
         ? repeatsWords(text, heard)
