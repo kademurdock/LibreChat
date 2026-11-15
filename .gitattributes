@@ -1,3 +1,8 @@
 # Force LF line endings for shell scripts and git hooks (required for cross-platform compatibility)
 .husky/* text eol=lf
 *.sh text eol=lf
+# Tellavision Follow along (Nov 14 2026): syncprint.js is an exact copy of the
+# library the phone apps also ship; its checksum is tested, so git must never
+# change its line endings. The checksum file beside it keeps its bytes too.
+api/server/services/kadeSyncprint/syncprint.js -text
+api/server/services/kadeSyncprint/syncprint.js.sha256 -text

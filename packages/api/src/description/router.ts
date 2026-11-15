@@ -6,10 +6,11 @@ import mongoose from 'mongoose';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Router, raw } from 'express';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
 import { randomUUID, createHash } from 'node:crypto';
-import { mkdtemp, rm, stat, statfs } from 'node:fs/promises';
+import { copyFile, mkdtemp, rename, rm, stat, statfs } from 'node:fs/promises';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream, createWriteStream } from 'node:fs';
 import {
@@ -71,14 +72,16 @@ import {
   libraryPathSchema,
   defaultLibraryPath,
 } from './revision';
-import { describeVideo, productionProviders } from './engine';
+import { describeVideo, productionProviders, silentLoudness } from './engine';
 import { importYouTube, worthRetrying, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
 import { rehearsalProviders } from './rehearsal';
-import { creditWhere, logoChoice, logos } from './credit';
+import { creditLines, creditWhere, logoChoice, logos } from './credit';
 import type { Credit, CreditLogo } from './credit';
-import { MediaError, decodeVoice, dropDescriptionText, probe, stretch } from './media';
+import { MediaError, decodeVoice, dropDescriptionText, probe, stretch, syncSound } from './media';
+import { trackFormat, trackSteps, trackVersion } from './track';
+import type { Track, TrackCredit } from './track';
 import { clock, spokenLength } from './transcript';
 import { fishSpeedModel, settingsSchema, slowestRate, Halt, tiers } from './types';
 import { pcmSeconds, sampleRate, trimSilence } from './mix';
@@ -233,6 +236,28 @@ type Hooks = {
    * the credit is said without a logo.
    */
   creditLogos?: string;
+  /**
+   * Follow along (Nov 2026): makes a film's fingerprint from a raw sound file (8 kHz mono signed
+   * 16-bit little-endian) off the main thread, with a time limit (the wrapper's
+   * kadeSyncprint.fingerprintFile); `bytes` is the .sypr file. Without it, and while
+   * KADE_DESCRIPTION_FOLLOW is unset, empty or 0, there is no follow along at all.
+   */
+  sync?: (
+    file: string,
+    options: { signal: AbortSignal },
+  ) => Promise<{ bytes: Uint8Array; seconds: number; peaks?: number; format?: number }>;
+};
+/** One saved follow-along fingerprint: `described-video/<owner>/<job>/sync/<plan>.sypr`. */
+type SyncRecord = {
+  /** syncprint's format number. */
+  format: number;
+  bytes: number;
+  /** Seconds of sound it covers, from its plan's second 0. */
+  seconds: number;
+  /** The plan it was made from: `plan`, or `plan-<start ms>-<end ms>` for a part. */
+  plan: string;
+  sha256: string;
+  at: Date;
 };
 type Part = { number: number; etag: string; bytes: number; hash: string };
 type SourcePrivacy = { shared: boolean; grownUpsOnly: boolean; ownerIsActor: boolean };
@@ -354,6 +379,21 @@ type Job = {
   youtube?: string;
   library?: { book: string; track: number };
   lastNotice?: { at: Date; kind: string; result: string };
+  /**
+   * Follow along (Nov 2026). Never written while KADE_DESCRIPTION_FOLLOW is off. `sync`: each
+   * saved fingerprint by its plan name. `syncWanted`: plans someone asked a fingerprint for
+   * (POST /jobs/:id/track), made by the check lane when it is idle (`syncOldPlan`). `syncing`:
+   * that task holds this video until then (or waits after a failure). `syncTries`: by plan name,
+   * that task's failed tries in a row (storage, database or disk-space trouble is not one); at
+   * three, or when the original is gone or has no sound, no more are made for that plan.
+   * `syncGone` (Nov 14 2026 integration review): by plan name, why no more are made, as found
+   * when that was decided, so every answer gives that reason.
+   */
+  sync?: Record<string, SyncRecord>;
+  syncWanted?: string[];
+  syncing?: Date;
+  syncTries?: Record<string, number>;
+  syncGone?: Record<string, SyncGone>;
 };
 type Lock = { _id: string; worker: string; until: Date };
 /** One day's allowance: cents held by open runs and spent by closed ones. */
@@ -470,6 +510,14 @@ const jobSchema = new mongoose.Schema<Job>(
     youtube: String,
     library: { book: String, track: Number },
     lastNotice: { at: Date, kind: String, result: String },
+    sync: mongoose.Schema.Types.Mixed,
+    /* No empty-list default: a job never gains this field unless follow along writes it. */
+    syncWanted: { type: [String], default: undefined },
+    syncing: Date,
+    /* By plan name: { plan: 2, "plan-0-60000": 1 }. */
+    syncTries: mongoose.Schema.Types.Mixed,
+    /* By plan name, why no more fingerprints are made: { plan: "silent" }. */
+    syncGone: mongoose.Schema.Types.Mixed,
   },
   { timestamps: true },
 );
@@ -843,6 +891,62 @@ const planKey = (range?: Interval, rehearsal: boolean = false) =>
 /** Where the part cut from a job's source is kept, so later runs of that part skip the re-encode. */
 const workingKey = (job: Pick<Job, 'key'>, range: Interval) =>
   `${folder(job)}/working/${Math.round(range.start * 1000)}-${Math.round(range.end * 1000)}.mkv`;
+/** The part a plan name covers (`planKey`): none for the whole video. */
+const rangeOf = (plan: string): Interval | undefined => {
+  const found = /^plan-(\d+)-(\d+)$/.exec(plan);
+  return found ? { start: Number(found[1]) / 1000, end: Number(found[2]) / 1000 } : undefined;
+};
+/**
+ * Follow along (Nov 2026, Tellavision): KADE_DESCRIPTION_FOLLOW, read at each request. Unset,
+ * empty or 0 (also off, false or no): off, with no routes, no fingerprint and no new job field.
+ * admin: the administrator only. Anything else (1, on, all): everyone who describes video.
+ */
+type FollowMode = 'off' | 'admin' | 'all';
+const followMode = (): FollowMode => {
+  const value = (process.env.KADE_DESCRIPTION_FOLLOW ?? '').trim().toLowerCase();
+  if (!value || ['0', 'off', 'false', 'no'].includes(value)) return 'off';
+  return value === 'admin' ? 'admin' : 'all';
+};
+/** What a job's latest finished copy has for follow along. */
+type FollowWord = 'ready' | 'possible' | 'making' | 'gone';
+/** The idle task's tries at one plan's fingerprint. */
+const syncTriesMax = 3;
+/** How long the idle task leaves a video after storage, database or disk-space trouble: not a try. */
+const syncPause = 10 * 60 * 1000;
+/** The idle task's failed tries at this plan's fingerprint (`Job.syncTries`, by plan name). */
+const triesOf = (job: Pick<Job, 'syncTries'>, plan: string): number => {
+  const tries = job.syncTries;
+  return tries && typeof tries === 'object' ? Number(tries[plan]) || 0 : 0;
+};
+/** Why a fingerprint can never be made for a video. */
+type SyncGone = 'source' | 'silent' | 'tries';
+/*
+ * Nov 14 2026 review: the third sentence no longer says to describe the video again. Describing
+ * again reuses the saved plan, so it costs money and makes no new fingerprint.
+ * Nov 14 2026 integration review: nor does the first. Describing again is refused once the
+ * original is gone (requireSource); the video added again is a new job, with its own fingerprint.
+ */
+const goneText: Record<SyncGone, string> = {
+  source:
+    'The original video is no longer on the server, so a follow-along track cannot be made for this copy. To get one, add the video again and describe it.',
+  silent:
+    'This video has no sound, so a phone cannot follow it. A follow-along track cannot be made.',
+  tries: 'A follow-along track could not be made for this video after three tries.',
+};
+/** A reason kept on a job (`Job.syncGone`), when it is one. */
+const goneReason = (value: unknown): SyncGone | undefined =>
+  value === 'source' || value === 'silent' || value === 'tries' ? value : undefined;
+/** One fingerprint line for the server log: "[described-video] sync made id=… plan=plan …". */
+const syncLine = (outcome: string, fields: Record<string, LogValue>): string =>
+  [
+    `sync ${outcome}`,
+    ...Object.entries(fields)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '')
+      .map(
+        ([key, value]) =>
+          `${key}=${typeof value === 'string' && /[\s"=]/.test(value) ? JSON.stringify(value) : String(value)}`,
+      ),
+  ].join(' ');
 const sameVoice = (a: Settings, b: Settings) => voiceFields.every((key) => a[key] === b[key]);
 const doneCount = (manifest: Manifest) =>
   manifest.filter((entry) => entry !== null && entry !== undefined).length;
@@ -1272,6 +1376,18 @@ export function createDescriptionRouter(hooks: Hooks): {
     hooks.wallet && hooks.priceFactor ? validFactor(hooks.priceFactor(hooks.actor(req))) : 1;
   /** The administrator: sees real prices, rehearses, curates and may choose a job's tier. */
   const isAdmin = (req: Request): boolean => hooks.actor(req).role === 'ADMIN';
+  /** Follow along is on at all (KADE_DESCRIPTION_FOLLOW admin or everyone, and the wrapper's `sync`). */
+  const followOn = (): boolean => !!hooks.sync && followMode() !== 'off';
+  /** This person may follow along: everyone, or only the administrator while the switch says admin. */
+  const followFor = (req: Request): boolean => {
+    const mode = followMode();
+    return !!hooks.sync && (mode === 'all' || (mode === 'admin' && isAdmin(req)));
+  };
+  /**
+   * Whether the person asking may follow along, for every job the request answers with (each
+   * gains its `follow` word only then), without passing the request through every answer.
+   */
+  const viewer = new AsyncLocalStorage<{ follow: boolean }>();
   const storage = () => hooks.storage();
   const warn = (message: string) => (hooks.warn ?? hooks.log)(message);
   /** Every storage call gives up after two minutes, and sooner when the job is stopped. */
@@ -1760,6 +1876,30 @@ export function createDescriptionRouter(hooks: Hooks): {
   }
 
   /* ---------- the job as the page sees it ---------- */
+  /**
+   * Follow along: what the latest finished copy has. ready: its fingerprint is saved, so the
+   * track route answers with the track. making: one was asked for and is being made. possible:
+   * none yet; POST /jobs/:id/track asks for one, free. gone: none can be made (the original is
+   * gone, the video has no sound, or three tries failed). No word without a finished copy.
+   */
+  /** The name a fingerprint in progress is kept under in `controllers`, so a shutdown stops it. */
+  const syncName = (job: string, plan: string) => `sync:${job}:${plan}`;
+  /** A fingerprint of this plan is being made right now on this server. */
+  const printing = (job: string, plan: string): boolean => controllers.has(syncName(job, plan));
+  const followWord = (job: Job): FollowWord | undefined => {
+    if (job.state === 'deleting') return undefined;
+    const copy = latestCopy(job);
+    if (!copy) return undefined;
+    const plan = planKey(copy.range);
+    if (job.sync?.[plan]) return 'ready';
+    if (triesOf(job, plan) >= syncTriesMax) return 'gone';
+    return job.syncWanted?.includes(plan) || printing(job._id, plan) ? 'making' : 'possible';
+  };
+  const followEntry = (job: Job): { follow?: FollowWord } => {
+    if (!viewer.getStore()?.follow) return {};
+    const word = followWord(job);
+    return word ? { follow: word } : {};
+  };
   const eta = (job: Job) => {
     if (job.state !== 'running' || !job.runAt) return undefined;
     const done = job.progress - (job.runFrom || 0);
@@ -1874,6 +2014,7 @@ export function createDescriptionRouter(hooks: Hooks): {
             at: job.lastRehearsal.at,
           }
         : undefined,
+      ...followEntry(job),
     };
   };
   const single = async (job: Job) =>
@@ -1901,6 +2042,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       .then(() => next())
       .catch(() => res.status(503).json({ error: 'Video jobs are temporarily unavailable.' }));
   });
+  router.use((req, _res, next) => viewer.run({ follow: followFor(req) }, next));
   function route(method: 'get' | 'post' | 'delete', path: string, action: RequestHandler) {
     router[method](path, (req, res, next) => {
       Promise.resolve(action(req, res, next)).catch((error: unknown) => {
@@ -2834,6 +2976,8 @@ export function createDescriptionRouter(hooks: Hooks): {
       previewSeconds: previewSeconds(),
       /* Phase 4 pick 2 (Nov 12 2026): the page offers listening while a job is made. */
       listenAhead: listenAheadOn(),
+      /* Tellavision (Nov 2026): the apps show Follow along with my TV only when this is true. */
+      followAlong: followFor(req),
       library: !!hooks.library,
       defaultLibraryPath,
       ...(await prefsView(hooks.actor(req).id, catalog)),
@@ -4014,6 +4158,502 @@ export function createDescriptionRouter(hooks: Hooks): {
     });
   });
 
+  /* ---------- Follow along (Nov 2026, Tellavision step 0) ----------
+   * A phone listens to the film on another screen and speaks a copy's descriptions in step. It
+   * needs the copy's track (track.ts, saved as copies/<version>/track-<finished ms>.json and
+   * reused) and the fingerprint of the plan the copy was made from (sync/<plan>.sypr), made at
+   * describe time from the sound pass or later on request. Only the job's owner ever gets either. */
+  const syncKey = (job: Pick<Job, 'key'>, plan: string) => `${folder(job)}/sync/${plan}.sypr`;
+  /**
+   * Where a copy's track is kept: named for the moment the copy was finished (Nov 14 2026
+   * review). Describe the rest, and Continue after a stopped finish, write a new copy under the
+   * same version from the same plan, so its fingerprint is the same; the preview's track, saved
+   * under the preview's own finishing time, is then never read for the whole copy.
+   */
+  const trackKey = (job: Job, copy: FinishedCopy): string => {
+    const finished = copy.finishedAt ? new Date(copy.finishedAt).getTime() : Number.NaN;
+    return `${copyFolder(job, copy)}/track${Number.isFinite(finished) ? `-${finished}` : ''}.json`;
+  };
+  /** The finishing time a track key names; NaN for a copy kept without one. */
+  const trackStamp = (key: string): number =>
+    Number(/\/track-(\d+)\.json$/.exec(key)?.[1] ?? Number.NaN);
+  const followRefused = () => new Problem('Follow along is not available.', 404);
+  /** The copy a track is for: the asked version (never a rehearsal), else the latest real copy. */
+  function trackCopy(job: Job, version?: string): FinishedCopy {
+    if (job.state === 'deleting') throw new Problem('This video is being deleted.');
+    if (version !== undefined) {
+      const copy = selectCopy(job, version);
+      if (copy.rehearsal)
+        throw new Problem(
+          'A rehearsal copy has a test tone, not descriptions, so it has no follow-along track.',
+        );
+      return copy;
+    }
+    const copy = latestCopy(job);
+    if (!copy) throw new Problem('This video has no finished described copy yet.');
+    return copy;
+  }
+  /** The saved fingerprint of a plan, when its file is really there. */
+  async function printOf(job: Job, plan: string): Promise<SyncRecord | undefined> {
+    const print = job.sync?.[plan];
+    if (!print) return undefined;
+    if (await exists(syncKey(job, plan)).catch(() => true)) return print;
+    await Jobs.updateOne(
+      { _id: job._id },
+      { $unset: { [`sync.${plan}`]: 1 } },
+      { timestamps: false },
+    );
+    warn(syncLine('missing', { id: job._id, plan }));
+    return undefined;
+  }
+  /**
+   * Why no fingerprint can ever be made for this plan, when that is so. A soundtrack that is there
+   * but measured as silent (Nov 14 2026 integration review: `silentLoudness`, the rule `levelsFor`
+   * mixes by) has nothing a phone could hear, just like no soundtrack at all.
+   */
+  async function unmakeable(job: Job, plan: string): Promise<SyncGone | undefined> {
+    const stored = await readJson<{ plan: Plan }>(`${folder(job)}/${plan}.json`).catch(
+      () => undefined,
+    );
+    if (stored?.plan?.audio === false) return 'silent';
+    if (Number(stored?.plan?.loudness?.program) <= silentLoudness) return 'silent';
+    const kept = await exists(job.sourceKey || job.key).catch(() => true);
+    return kept ? undefined : 'source';
+  }
+  /** Why this plan was given up: as found then (`syncGone`), else as it is now. */
+  const goneWhy = async (job: Job, plan: string): Promise<SyncGone> =>
+    goneReason(job.syncGone?.[plan]) ?? (await unmakeable(job, plan)) ?? 'tries';
+  /**
+   * No more fingerprints for this plan: its tries are used up, nothing waits, and why is kept
+   * (`syncGone`), so every answer gives that reason. `keepHold` leaves alone a hold the check lane
+   * has on the video (`syncing`), for work that is not the lane's own pass. `fields` go on the
+   * log line.
+   */
+  async function giveUp(
+    job: Pick<Job, '_id'>,
+    plan: string,
+    why: SyncGone,
+    options: { keepHold?: boolean; fields?: Record<string, LogValue> } = {},
+  ): Promise<void> {
+    await Jobs.updateOne(
+      { _id: job._id, state: { $ne: 'deleting' } },
+      {
+        $set: { [`syncTries.${plan}`]: syncTriesMax, [`syncGone.${plan}`]: why },
+        $pull: { syncWanted: plan },
+        ...(options.keepHold ? {} : { $unset: { syncing: 1 } }),
+      },
+      { timestamps: false },
+    );
+    warn(syncLine('gone', { id: job._id, plan, why, ...options.fields }));
+  }
+  /**
+   * One failed try at a plan's fingerprint on request: the video waits an hour (`syncing`, set
+   * when the task took it), and the third ends it for that plan.
+   */
+  async function countTry(job: Pick<Job, '_id'>, plan: string): Promise<void> {
+    const counted = await Jobs.findOneAndUpdate(
+      { _id: job._id, state: { $ne: 'deleting' } },
+      { $inc: { [`syncTries.${plan}`]: 1 } },
+      { new: true, timestamps: false, projection: { syncTries: 1 } },
+    ).lean();
+    if (counted && triesOf(counted, plan) >= syncTriesMax) await giveUp(job, plan, 'tries');
+  }
+  /**
+   * Storage, database or disk-space trouble during a fingerprint (Nov 14 2026 review): passing,
+   * so it is never counted as a try. The only Problem there is checkRoom's (short of temporary
+   * space, likely while a long render runs). `aborted` is whether the task's own time limit ran out.
+   */
+  const passingTrouble = (error: unknown, aborted: boolean): boolean =>
+    error instanceof Problem ||
+    (error instanceof MediaError && error.kind === 'disk') ||
+    infrastructure(error, aborted);
+  /** The Kade-AI credit as the phone says it: none when the copy left it out. */
+  function trackCredit(job: Job, copy: FinishedCopy): TrackCredit | null {
+    const where = creditWhere();
+    if (where === 'off' || (copy.settings ?? job.settings)?.credit === false) return null;
+    return {
+      ...(where === 'both' ? { start: creditLines.start.said } : {}),
+      ...(copy.preview ? {} : { end: creditLines.end.said }),
+    };
+  }
+  /**
+   * A copy's track: the saved one when it was built for this copy as it was finished, its
+   * fingerprint, its title and its credit as they are now, else built and saved.
+   */
+  async function trackFor(
+    job: Job,
+    copy: FinishedCopy,
+    plan: string,
+    print: SyncRecord,
+  ): Promise<Track> {
+    const key = trackKey(job, copy);
+    const title = plainName(job.name);
+    const credit = trackCredit(job, copy);
+    const kept = await readJson<Track>(key).catch(() => undefined);
+    if (
+      kept?.format === trackFormat &&
+      kept.version === trackVersion &&
+      kept.copyVersion === copy.version &&
+      kept.print?.sha256 === print.sha256 &&
+      kept.title === title &&
+      (kept.credit?.start ?? '') === (credit?.start ?? '') &&
+      (kept.credit?.end ?? '') === (credit?.end ?? '')
+    )
+      return kept;
+    const stored = await readJson<{ plan: Plan; words: Word[] }>(`${folder(job)}/${plan}.json`);
+    if (!stored?.plan)
+      throw new Problem(
+        'The saved plan for this copy is missing, so a follow-along track cannot be made.',
+      );
+    const parsed = settingsSchema.safeParse(copy.settings ?? job.settings);
+    const settings: Settings = parsed.success
+      ? parsed.data
+      : settingsSchema.parse({ voice: (copy.settings ?? job.settings)?.voice || 'narrator' });
+    const records = [...(await baseRecords(job, copy)).values()];
+    const firstLook = await readJson<{ state?: Continuity }>(
+      `${folder(job)}/first-look-${copy.firstLook || 1}.json`,
+    ).catch(() => undefined);
+    /* Section by section, letting chats and calls run in between (a long film is ~0.7 s of work). */
+    const steps = trackSteps({
+      job: job._id,
+      copyVersion: copy.version,
+      title,
+      settings,
+      plan: stored.plan,
+      words: stored.words ?? [],
+      records,
+      ...(firstLook?.state?.people?.length ? { reference: firstLook.state.people } : {}),
+      ...(job.seconds ? { filmSeconds: job.seconds } : {}),
+      print: { format: print.format, bytes: print.bytes, sha256: print.sha256 },
+      credit,
+    });
+    let step = steps.next();
+    while (!step.done) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      step = steps.next();
+    }
+    const track = step.value;
+    const saved = await putText(key, JSON.stringify(track)).then(
+      () => true,
+      (error: Error) => {
+        warn(syncLine('track-not-kept', { id: job._id, plan, error: scrub(error.message) }));
+        return false;
+      },
+    );
+    if (saved)
+      await keptTrack(job, copy, key).catch((error: Error) =>
+        warn(syncLine('track-check-failed', { id: job._id, plan, error: scrub(error.message) })),
+      );
+    return track;
+  }
+  /**
+   * After a track is saved (Nov 14 2026 review). Building a long film's track takes seconds: a
+   * video deleted or expired meanwhile has no record left to erase the new file with, and a copy
+   * finished again meanwhile (same version, new finishing time) never reads it, so either way it
+   * is erased here. Otherwise the tracks of the copies this one replaced (a preview's, before
+   * Describe the rest) go: only older finishing times, so a slow build never erases a newer one.
+   */
+  async function keptTrack(job: Job, copy: FinishedCopy, key: string): Promise<void> {
+    const current = await Jobs.findById(job._id).lean();
+    let why = '';
+    if (!current || current.state === 'deleting') why = 'the video was deleted';
+    else {
+      const still = copiesFor(current).find(
+        (item) => item.version === copy.version && !item.rehearsal,
+      );
+      if (!still) why = 'the copy is gone';
+      else if (trackKey(current, still) !== key) why = 'the copy was finished again';
+    }
+    if (why) {
+      await erasePrefix(key);
+      hooks.log(syncLine('track-dropped', { id: job._id, version: copy.version, why }));
+      return;
+    }
+    const stamp = trackStamp(key);
+    if (!Number.isFinite(stamp)) return;
+    for (const other of await listKeys(`${copyFolder(job, copy)}/track-`))
+      if (trackStamp(other) < stamp) await erasePrefix(other);
+  }
+  const printLinkSeconds = 6 * 3600;
+  /**
+   * The ready answer. `finishedAt` (Nov 14 2026, agreed with the phone) is the finishing time of
+   * the copy this track was built from, exactly as `copies[].finishedAt` shows it (a Date's JSON),
+   * or null when the copy has none. Describe the rest finishes a copy again under the same version,
+   * so a phone keeps a track by version and this time, and fetches again when the copy's differs.
+   */
+  async function trackReady(job: Job, copy: FinishedCopy, plan: string, print: SyncRecord) {
+    const track = await trackFor(job, copy, plan, print);
+    return {
+      follow: 'ready' as const,
+      version: copy.version,
+      finishedAt: copy.finishedAt ? new Date(copy.finishedAt).toJSON() : null,
+      track,
+      printUrl: await getSignedUrl(
+        storage(),
+        new GetObjectCommand({
+          Bucket: bucket(),
+          Key: syncKey(job, plan),
+          ResponseContentType: 'application/octet-stream',
+        }),
+        { expiresIn: printLinkSeconds },
+      ),
+      expiresAt: new Date(Date.now() + printLinkSeconds * 1000),
+    };
+  }
+  const trackMaking = (copy: FinishedCopy) => ({
+    follow: 'making' as const,
+    version: copy.version,
+    retryAfterSeconds: 30,
+    message: 'Your follow-along track is being made. It is free. Check again in a minute.',
+  });
+  const trackGone = (copy: FinishedCopy, why: SyncGone) => ({
+    error: goneText[why],
+    follow: 'gone' as const,
+    version: copy.version,
+  });
+  /** GET ?version=N: the track and a six-hour link to its fingerprint, or why there is none yet. */
+  route('get', '/jobs/:id/track', async (req, res) => {
+    if (!followFor(req)) throw followRefused();
+    const job = await owned(req);
+    const copy = trackCopy(
+      job,
+      typeof req.query.version === 'string' ? req.query.version : undefined,
+    );
+    const plan = planKey(copy.range);
+    const print = await printOf(job, plan);
+    if (print) {
+      res.json(await trackReady(job, copy, plan, print));
+      return;
+    }
+    if (triesOf(job, plan) >= syncTriesMax) {
+      res.status(409).json(trackGone(copy, await goneWhy(job, plan)));
+      return;
+    }
+    if (job.syncWanted?.includes(plan) || printing(job._id, plan)) {
+      res.status(202).json(trackMaking(copy));
+      return;
+    }
+    res.status(409).json({
+      error: 'This copy has no follow-along track yet. Ask for one; it is free.',
+      follow: 'possible',
+      version: copy.version,
+    });
+  });
+  /** POST (?version=N or {version}): asks for a track, free. Ready at once when its fingerprint is saved. */
+  route('post', '/jobs/:id/track', async (req, res) => {
+    if (!followFor(req)) throw followRefused();
+    const job = await owned(req);
+    const asked = req.query.version ?? (req.body as { version?: unknown } | undefined)?.version;
+    const copy = trackCopy(
+      job,
+      typeof asked === 'string' || typeof asked === 'number' ? String(asked) : undefined,
+    );
+    const plan = planKey(copy.range);
+    const print = await printOf(job, plan);
+    if (print) {
+      res.json(await trackReady(job, copy, plan, print));
+      return;
+    }
+    if (triesOf(job, plan) >= syncTriesMax) {
+      res.status(409).json(trackGone(copy, await goneWhy(job, plan)));
+      return;
+    }
+    /*
+     * The ask is always recorded (Nov 14 2026 review). One made at describe time may still be on
+     * its way here: it needs neither the original nor the check lane, and when it is saved it
+     * settles the ask. When it fails instead, the recorded ask has the check lane make one.
+     */
+    if (!job.syncWanted?.includes(plan)) {
+      const why = printing(job._id, plan) ? undefined : await unmakeable(job, plan);
+      if (why) {
+        await giveUp(job, plan, why);
+        res.status(409).json(trackGone(copy, why));
+        return;
+      }
+      await Jobs.updateOne(
+        { _id: job._id, state: { $ne: 'deleting' } },
+        { $addToSet: { syncWanted: plan } },
+        { timestamps: false },
+      );
+      hooks.log(syncLine('wanted', { id: job._id, plan, version: copy.version }));
+      void tick();
+    }
+    res.status(202).json(trackMaking(copy));
+  });
+  /**
+   * Makes, saves and records one fingerprint from the raw follow-along sound in `directory`, which
+   * it then removes. Never throws: a failure is one "sync failed" line and the job goes on.
+   * A shutdown stops the worker (its controller is aborted with every other). The outcome says
+   * whether storage or database trouble stopped it (`passing`, never counted as a try), and
+   * `silent` when the fingerprint found no sound at all, which ends that plan.
+   */
+  async function fingerprint(
+    job: Pick<Job, '_id' | 'key'>,
+    plan: string,
+    file: string,
+    directory: string,
+    from: 'describe' | 'request',
+    outer?: AbortSignal,
+  ): Promise<'made' | 'dropped' | 'failed' | 'passing' | 'silent'> {
+    const name = syncName(job._id, plan);
+    const controller = new AbortController();
+    controllers.set(name, controller);
+    const signal = outer ? AbortSignal.any([controller.signal, outer]) : controller.signal;
+    const started = Date.now();
+    try {
+      if (!hooks.sync) throw new Error('No fingerprint maker is set up.');
+      const made = await hooks.sync(file, { signal });
+      signal.throwIfAborted();
+      /*
+       * Nov 14 2026 integration review: a fingerprint with no peaks is never found, so a phone
+       * would listen for ten minutes and give up without the reason. It is not saved, and the
+       * plan is given up as silent: the same sound would give the same empty fingerprint.
+       */
+      if (made.peaks === 0) {
+        await giveUp(job, plan, 'silent', {
+          keepHold: from === 'describe',
+          fields: { from, peaks: 0 },
+        });
+        return 'silent';
+      }
+      const body = Buffer.from(made.bytes.buffer, made.bytes.byteOffset, made.bytes.byteLength);
+      const key = syncKey(job, plan);
+      await storage().send(
+        new PutObjectCommand({
+          Bucket: bucket(),
+          Key: key,
+          Body: body,
+          ContentType: 'application/octet-stream',
+        }),
+        within(signal),
+      );
+      const record: SyncRecord = {
+        format: made.format ?? 1,
+        bytes: body.length,
+        seconds: Math.round(made.seconds * 1000) / 1000,
+        plan,
+        sha256: createHash('sha256').update(body).digest('hex'),
+        at: new Date(),
+      };
+      /*
+       * Only the check lane's own pass lets go of the video (`syncing`): one made at describe time
+       * leaves alone a hold the lane has on it for another plan.
+       */
+      const saved = await Jobs.updateOne(
+        { _id: job._id, state: { $ne: 'deleting' } },
+        {
+          $set: { [`sync.${plan}`]: record },
+          $pull: { syncWanted: plan },
+          $unset: {
+            [`syncTries.${plan}`]: 1,
+            [`syncGone.${plan}`]: 1,
+            ...(from === 'request' ? { syncing: 1 } : {}),
+          },
+        },
+        { timestamps: false },
+      );
+      if (!saved.matchedCount) {
+        await erasePrefix(key).catch(() => {});
+        hooks.log(syncLine('dropped', { id: job._id, plan, from, why: 'the video was deleted' }));
+        return 'dropped';
+      }
+      hooks.log(
+        syncLine('made', {
+          id: job._id,
+          plan,
+          from,
+          bytes: record.bytes,
+          seconds: Math.round(record.seconds * 10) / 10,
+          peaks: made.peaks,
+          ms: Date.now() - started,
+        }),
+      );
+      return 'made';
+    } catch (error) {
+      const passing = passingTrouble(error, signal.aborted);
+      warn(
+        syncLine('failed', {
+          id: job._id,
+          plan,
+          from,
+          error: scrub(error instanceof Error ? error.message : String(error)),
+          ...(passing ? { passing: true } : {}),
+          ms: Date.now() - started,
+        }),
+      );
+      return passing ? 'passing' : 'failed';
+    } finally {
+      if (controllers.get(name) === controller) controllers.delete(name);
+      await rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  /**
+   * The keeper's `keepSync`: takes the follow-along sound out of the run's folder (a rename in the
+   * same temporary disk) and fingerprints it in the background, so the run never waits for it.
+   */
+  async function takeSync(
+    job: Job,
+    plan: string,
+    file: string,
+    problem?: string,
+    heard?: { program: number },
+  ): Promise<void> {
+    /* No sound to keep: the engine says why, worded for what really failed (Nov 14 2026 review). */
+    if (!file) {
+      warn(
+        syncLine('skipped', {
+          id: job._id,
+          plan,
+          from: 'describe',
+          why: scrub(problem || 'the sound pass wrote no follow-along sound'),
+        }),
+      );
+      return;
+    }
+    /*
+     * Nov 14 2026 integration review: a soundtrack that is there but measured as silent (a screen
+     * recording, a muted phone clip) has nothing a phone could hear. Its fingerprint would never
+     * be found, so none is made. The plan is given up at once: the word is gone, and the routes
+     * say the video has no sound, as unmakeable does for such a plan later.
+     */
+    if (heard && heard.program <= silentLoudness) {
+      await giveUp(job, plan, 'silent', {
+        keepHold: true,
+        fields: { from: 'describe', loudness: heard.program },
+      }).catch((error: unknown) =>
+        warn(
+          syncLine('failed', {
+            id: job._id,
+            plan,
+            from: 'describe',
+            error: scrub(error instanceof Error ? error.message : String(error)),
+          }),
+        ),
+      );
+      return;
+    }
+    let directory: string | undefined;
+    try {
+      directory = await mkdtemp(join(tmpdir(), 'kade-described-sync-'));
+      const own = join(directory, 'sound.s16');
+      await rename(file, own).catch(() => copyFile(file, own));
+      const work = fingerprint(job, plan, own, directory, 'describe').then(() => undefined);
+      directory = undefined;
+      inflight.add(work);
+      void work.finally(() => inflight.delete(work));
+    } catch (error) {
+      warn(
+        syncLine('failed', {
+          id: job._id,
+          plan,
+          from: 'describe',
+          error: scrub(error instanceof Error ? error.message : String(error)),
+        }),
+      );
+      if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   type KeeperState = {
     keeper: RunKeeper;
     manifest: Manifest;
@@ -4202,6 +4842,13 @@ export function createDescriptionRouter(hooks: Hooks): {
               await erasePrefix(`${prefix}/working/`);
               await putFile(workingKey(job, range), file, 'video/x-matroska', signal);
             },
+          }
+        : {}),
+      /* Follow along: only while the switch is on, and never for a rehearsal's plan. */
+      ...(followOn() && !rehearsal
+        ? {
+            keepSync: (file: string, problem?: string, heard?: { program: number }) =>
+              takeSync(job, planKey(range), file, problem, heard),
           }
         : {}),
     };
@@ -5527,6 +6174,146 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
   }
 
+  /**
+   * Follow along, on request (Nov 2026): a fingerprint for a copy planned before fingerprints were
+   * made at describe time, or whose own failed. When no check is waiting, the check lane starts,
+   * beside itself (`startSyncPass`), one pass for one video at rest that someone asked a track for
+   * (`syncWanted`). It reads the original (or the part already cut from it), makes the sound on
+   * the very clock the plan's own sound pass used (media.ts `syncSound`: a whole video through
+   * normalize's working copy again, a part by the same cut) and fingerprints it, free. When the
+   * original is gone or has no sound it gives up at once. A failed try waits an hour, and three
+   * end it for that plan. Storage, database or disk-space trouble is not a try (Nov 14 2026
+   * review): it waits `syncPause`. Nothing runs while KADE_DESCRIPTION_FOLLOW is off.
+   */
+  async function syncOldPlan(): Promise<void> {
+    if (!followOn()) return;
+    const now = new Date();
+    const job = await Jobs.findOneAndUpdate(
+      {
+        state: { $in: quietStates },
+        'syncWanted.0': { $exists: true },
+        $or: [{ syncing: { $exists: false } }, { syncing: { $lt: now } }],
+      },
+      { $set: { syncing: new Date(now.getTime() + hour) } },
+      { new: true, timestamps: false, sort: { createdAt: 1 } },
+    ).lean();
+    if (!job) return;
+    const plan = job.syncWanted?.[0] ?? '';
+    const settle = (update: mongoose.UpdateQuery<Job>) =>
+      Jobs.updateOne({ _id: job._id, state: { $ne: 'deleting' } }, update, { timestamps: false });
+    /** Lets go of the video until then, so other asks go first. */
+    const later = (ms: number) => settle({ $set: { syncing: new Date(Date.now() + ms) } });
+    if (job.sync?.[plan] || triesOf(job, plan) >= syncTriesMax) {
+      await settle({ $pull: { syncWanted: plan }, $unset: { syncing: 1 } });
+      return;
+    }
+    /*
+     * The one made at describe time is still running here, and settles the ask itself when it is
+     * saved. In case it fails instead, the ask is looked at again in a minute.
+     */
+    if (printing(job._id, plan)) {
+      await later(minute);
+      return;
+    }
+    const name = `sync-pass:${job._id}`;
+    const controller = new AbortController();
+    controllers.set(name, controller);
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30 * minute)]);
+    let directory: string | undefined;
+    const started = Date.now();
+    try {
+      const why = await unmakeable(job, plan);
+      if (why) {
+        await giveUp(job, plan, why);
+        return;
+      }
+      const stored = await readJson<{ plan: Plan }>(`${folder(job)}/${plan}.json`, signal);
+      const range = stored?.plan?.range ?? rangeOf(plan);
+      /** The part a run already cut has the plan's own second 0; otherwise the same cut is made. */
+      const part = range ? workingKey(job, range) : undefined;
+      const partBytes = part ? await sizeOf(part, signal) : undefined;
+      const key = part && partBytes !== undefined ? part : job.sourceKey || job.key;
+      const bytes = key === part ? partBytes : await sizeOf(key, signal);
+      if (bytes === undefined) {
+        await giveUp(job, plan, 'source');
+        return;
+      }
+      await checkRoom(bytes);
+      directory = await mkdtemp(join(tmpdir(), 'kade-described-sync-pass-'));
+      const source = join(directory, 'source');
+      await download(key, source, signal, { bytes });
+      const sound = join(directory, 'sound.s16');
+      /*
+       * Nov 14 2026 review: a whole video's plan measured normalize's working copy, which its run
+       * made from the original, so that copy is made again here (in `directory`) before the sound
+       * is read. A broadcast recording that switches between 5.1 and stereo, or an AVI, then has
+       * the very clock its track was timed on.
+       */
+      const seconds = await syncSound(source, sound, signal, {
+        ...(!range ? { working: directory } : key !== part ? { range } : {}),
+        ...(stored?.plan?.oneSided ? { oneSided: stored.plan.oneSided } : {}),
+      });
+      await rm(source, { force: true });
+      if (seconds === null) {
+        await giveUp(job, plan, 'silent');
+        return;
+      }
+      /* `fingerprint` removes the folder from here on. */
+      const folderOfSound = directory;
+      directory = undefined;
+      const outcome = await fingerprint(job, plan, sound, folderOfSound, 'request', signal);
+      if (outcome === 'made' || outcome === 'dropped' || outcome === 'silent') return;
+      /* A shutdown is not a failed try: the next idle check lane asks again. */
+      if (controller.signal.aborted) await settle({ $unset: { syncing: 1 } });
+      else if (outcome === 'passing') await later(syncPause);
+      else await countTry(job, plan);
+    } catch (error) {
+      if (controller.signal.aborted) {
+        await settle({ $unset: { syncing: 1 } }).catch(() => {});
+        return;
+      }
+      const passing = passingTrouble(error, signal.aborted);
+      warn(
+        syncLine('failed', {
+          id: job._id,
+          plan,
+          from: 'request',
+          error: scrub(error instanceof Error ? error.message : String(error)),
+          ...(passing ? { passing: true } : {}),
+          ms: Date.now() - started,
+        }),
+      );
+      await (passing ? later(syncPause) : countTry(job, plan)).catch(() => {});
+    } finally {
+      if (controllers.get(name) === controller) controllers.delete(name);
+      if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  /**
+   * The on-request fingerprint pass runs beside the check lane, one at a time on this server
+   * (Nov 14 2026 review). A long film's download, sound pass and fingerprint take minutes, and a
+   * new upload's free check or a YouTube import must not wait behind them. A shutdown stops it
+   * and waits for it, as for every other piece of work in `inflight`.
+   */
+  let syncPass: Promise<void> | undefined;
+  function startSyncPass(): void {
+    if (syncPass || closing || !followOn()) return;
+    const work = syncOldPlan().catch((error: unknown) =>
+      warn(
+        line('dv.lane', {
+          lane: 'sync',
+          error: scrub(error instanceof Error ? error.message : 'failed'),
+        }),
+      ),
+    );
+    syncPass = work;
+    inflight.add(work);
+    void work.finally(() => {
+      inflight.delete(work);
+      if (syncPass === work) syncPass = undefined;
+    });
+  }
+
   async function runLane(name: 'check' | 'render'): Promise<void> {
     const lane = lanes[name];
     if (closing || lane.running || mongoose.connection.readyState !== 1) return;
@@ -5560,6 +6347,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       ).lean();
       if (!job) {
         if (name === 'render') await quietOldCopy();
+        else startSyncPass();
         return;
       }
       if (name === 'render') {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 process.env.KADE_DESCRIPTION_MODEL = 'google/gemini-3.8-flash';
-import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, copyFile, stat, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -57,9 +57,10 @@ import {
   lookWidth,
   runStarts,
   byLabel,
+  soundAgainWithoutSync,
 } from './engine.ts';
 import { readAnalysis, nextContinuity, analysisPrompt, plainCapitals } from './prompt.ts';
-import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError } from './media.ts';
+import { capabilities, command, lookClip, probe, frameRate, sectionClip, stripFont, MediaError, execute, timedOut } from './media.ts';
 import { transcriptText, clock } from './transcript.ts';
 import { settingsSchema, Halt } from './types.ts';
 import { editsSchema, revise, scriptCues, libraryPathSchema } from './revision.ts';
@@ -5616,4 +5617,113 @@ test('DESC-12: at the default width a run keeps one look ahead; at 3 the looks o
       delete process.env.KADE_DESCRIPTION_LOOKS;
     }
   }
+});
+
+/* ---------- Follow along (Nov 2026, Tellavision): the sound pass's follow-along output ---------- */
+
+test('follow along: the keeper is handed the film as 8 kHz mono 16-bit sound, deleted once handed over', async () => {
+  const f = await fixture('follow-sync', 9);
+  const { keeper, kept } = keeperFor(undefined);
+  const handed = [];
+  keeper.keepSync = async (file, problem, heard) => {
+    const sound = await readFile(file);
+    handed.push({ file, problem, sound, heard });
+  };
+  const backend = providers(f.voice, [], [cue]);
+  let during;
+  backend.transcribe = async () => {
+    during = await readdir(f.work);
+    return [];
+  };
+  const result = await run(f, [], [], { keeper, providers: backend });
+  assert.equal(handed.length, 1, 'one fresh plan, one hand-over');
+  assert.equal(handed[0].problem, undefined);
+  /* Nov 14 2026 integration review: the soundtrack's loudness comes with it, as the plan keeps it. */
+  assert.deepEqual(handed[0].heard, { program: kept.plans.at(-1).loudness.program });
+  assert.ok(handed[0].heard.program > -69, `the tone is sound a phone can hear: ${handed[0].heard.program} LUFS`);
+  assert.match(handed[0].file, /sync\.s16$/);
+  const samples = new Int16Array(handed[0].sound.buffer, handed[0].sound.byteOffset, handed[0].sound.length / 2);
+  assert.ok(Math.abs(samples.length / 8000 - 9) < 0.02, `${samples.length} samples at 8 kHz for 9 s`);
+  /* The film's own 220 Hz tone: zero crossings at twice 220 a second, nothing doubled or halved. */
+  let crossings = 0;
+  for (let i = 8001; i < 16000; i++) if ((samples[i - 1] < 0) !== (samples[i] < 0)) crossings++;
+  assert.ok(Math.abs(crossings - 440) <= 6, `${crossings} zero crossings in one second`);
+  assert.equal(during.includes('sync.s16'), false, 'deleted before the dialogue is timed');
+  assert.ok(result.video);
+  assert.equal(kept.plans.length >= 1, true);
+});
+
+test('follow along: without the keeper hook nothing extra is written; a reused plan is never handed over', async () => {
+  const f = await fixture('follow-off', 9);
+  const { keeper } = keeperFor(undefined);
+  const backend = providers(f.voice, [], [cue]);
+  let during;
+  backend.transcribe = async () => {
+    during = await readdir(f.work);
+    return [];
+  };
+  await run(f, [], [], { keeper, providers: backend });
+  assert.deepEqual(
+    during.filter((name) => /sync|\.s16$/.test(name)),
+    [],
+    'the sound pass is the one from before',
+  );
+  const again = await fixture('follow-reused', 9);
+  const reused = keeperFor(savedPlan(9, []));
+  const handed = [];
+  reused.keeper.keepSync = async (file) => handed.push(file);
+  await run(again, [], [cue], { keeper: reused.keeper });
+  assert.deepEqual(handed, [], 'no sound pass, so no fingerprint');
+});
+
+test('follow along: when the extra output fails the pass runs again without it, and a failing keeper never costs the copy', async () => {
+  const f = await fixture('follow-fail', 9);
+  await mkdir(join(f.work, 'sync.s16'), { recursive: true });
+  const { keeper, kept } = keeperFor(undefined);
+  const handed = [];
+  keeper.keepSync = async (file, problem) => handed.push({ file, problem });
+  const result = await run(f, [], [cue], { keeper });
+  assert.equal(handed.length, 1);
+  assert.equal(handed[0].file, '', 'the keeper is told there is no sound to keep');
+  assert.match(handed[0].problem, /^the sound pass failed with the follow-along sound and worked without it: /, 'and why');
+  assert.ok(result.video, 'the copy is made');
+  assert.equal(kept.plans.at(-1).loudness.program < 0, true, 'the soundtrack was still measured');
+  const g = await fixture('follow-throws', 9);
+  const throwing = keeperFor(undefined);
+  throwing.keeper.keepSync = async () => {
+    throw new Error('storage is down');
+  };
+  const made = await run(g, [], [cue], { keeper: throwing.keeper });
+  assert.ok(made.video, 'a keeper that throws is ignored');
+});
+
+test('follow along: the sound pass runs again without the follow-along sound only when that could have caused the failure', async () => {
+  /* A real pass stopped at its time limit: an hour or more is never spent twice. */
+  const late = await execute(
+    ffmpegPath,
+    ['-nostdin', '-v', 'error', '-re', '-f', 'lavfi', '-i', 'anullsrc=r=8000:cl=mono', '-t', '30', '-f', 'null', '-'],
+    signal,
+    undefined,
+    undefined,
+    { timeoutMs: 300 },
+  ).then(
+    () => null,
+    (error) => error,
+  );
+  assert.ok(late instanceof MediaError && timedOut(late), `stopped at its limit: ${late?.detail}`);
+  assert.equal(soundAgainWithoutSync(late), false);
+  /* A real damaged source fails the same way again. */
+  const garbage = join(root, 'follow-garbage.mp4');
+  await writeFile(garbage, Buffer.alloc(4096, 7));
+  const damaged = await execute(ffmpegPath, ['-nostdin', '-v', 'error', '-i', garbage, '-f', 'null', '-'], signal).then(
+    () => null,
+    (error) => error,
+  );
+  assert.ok(damaged instanceof MediaError && damaged.kind === 'damaged', `damaged: ${damaged?.kind}`);
+  assert.equal(timedOut(damaged), false);
+  assert.equal(soundAgainWithoutSync(damaged), false);
+  /* A tool or disk failure could be the extra output's: worth one more pass without it. */
+  assert.equal(soundAgainWithoutSync(new MediaError('tools', 'exit 1: Error opening output file sync.s16')), true);
+  assert.equal(soundAgainWithoutSync(new MediaError('disk', 'exit 1: No space left on device')), true);
+  assert.equal(soundAgainWithoutSync(new Error('spawn EBUSY')), true);
 });

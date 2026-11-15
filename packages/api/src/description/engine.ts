@@ -44,6 +44,7 @@ import {
   sectionSound,
   soundtrack,
   stretch,
+  timedOut,
 } from './media';
 import { bareVoiceAt, creditComment, creditLines, endBreath, layCredit } from './credit';
 import {
@@ -170,6 +171,17 @@ export type Keeper = {
   restore: (index: number, directory: string) => Promise<SectionFiles>;
   /** Stores the part cut from the source, so later runs of the same part skip the re-encode. */
   keepWorking?: (file: string) => Promise<void>;
+  /**
+   * Follow along (Nov 2026). When present, a fresh plan's sound pass also writes the soundtrack
+   * as 8 kHz mono 16-bit raw sound (media.ts `Soundtrack.sync`); the file is handed here, then
+   * deleted, so this must take what it needs before it returns, and must not throw. `file` is ''
+   * when there is no such sound, and `problem` says why: the pass failed and ran again without
+   * it (a fingerprint never costs the copy), or the pass failed outright and the run stops. Never
+   * called for a plan that is reused. With the file comes `heard` (Nov 14 2026 integration
+   * review): the soundtrack's integrated loudness, as the plan keeps it (`Plan.loudness.program`),
+   * so a soundtrack that is there but silent (`silentLoudness`) is known before the plan is kept.
+   */
+  keepSync?: (file: string, problem?: string, heard?: { program: number }) => Promise<void>;
 };
 export const localKeeper = (): Keeper => ({
   saved: { records: [] },
@@ -254,6 +266,13 @@ const presets: Record<Settings['volume'], Preset> = {
 };
 
 /**
+ * Integrated loudness (LUFS) at or below which a soundtrack counts as silent: ebur128 reports -70
+ * when every block is under its absolute gate. `levelsFor` mixes such a film as one with no sound,
+ * and follow along makes no fingerprint of it, since a phone would hear nothing to find.
+ */
+export const silentLoudness: number = -69;
+
+/**
  * Evens out the finished copy: the soundtrack is brought toward -20 LUFS (never more than 6 dB
  * into the peak limiter), and the narrator is set against the dialogue. Without a dialogue
  * measurement it falls back to the programme level lowered for a wide loudness range (EBU TR 084
@@ -262,7 +281,7 @@ const presets: Record<Settings['volume'], Preset> = {
 export function levelsFor(plan: Plan, choice: Settings['volume']): Levels {
   const preset = presets[choice];
   const { program, peak, dialogue, lra } = plan.loudness;
-  if (!plan.audio || program <= -69)
+  if (!plan.audio || program <= silentLoudness)
     return { gain: 0, narration: -18 + preset.lift, duck: preset.duck };
   const gain = Math.min(12, 5 - peak, Math.max(-12, -20 - program));
   let anchor = program + preset.lift;
@@ -642,6 +661,14 @@ const keytermsWanted = (): boolean => process.env.KADE_DESCRIPTION_KEYTERMS === 
  * too (Nov 2026). KADE_DESCRIPTION_SCAN_BESIDE=0 runs it after the sound pass, as before.
  */
 const scanBeside = (): boolean => process.env.KADE_DESCRIPTION_SCAN_BESIDE !== '0';
+/**
+ * Follow along (Nov 14 2026 review): whether a sound pass that also wrote the follow-along sound
+ * could have failed because of it, so it is worth one more pass without it. A pass that ran out
+ * of time (an hour or more), or read a damaged or unusable source, would only fail again.
+ */
+export const soundAgainWithoutSync = (error: unknown): boolean =>
+  !(error instanceof MediaError) ||
+  ((error.kind === 'tools' || error.kind === 'disk') && !timedOut(error));
 
 export async function describeVideo(request: Request): Promise<Outcome> {
   const { directory, settings, signal, progress, meter } = request;
@@ -671,6 +698,55 @@ export async function describeVideo(request: Request): Promise<Outcome> {
   if (working.file !== request.source && within(directory, request.source))
     await rm(request.source, { force: true });
   const source = working.file;
+  /**
+   * The plan's sound pass. A keeper that keeps follow-along fingerprints (`Keeper.keepSync`) also
+   * gets the follow-along sound, which is deleted once handed over. When the pass fails in a way
+   * that extra output could have caused, it runs once more without it, so a fingerprint never
+   * costs the copy; one that ran out of time, or read a damaged source, is not run again
+   * (`soundAgainWithoutSync`). Either way the keeper is told what really happened. Without the
+   * hook the pass is exactly as before.
+   */
+  const measureSound = async (media: Media, scan: boolean): Promise<Soundtrack> => {
+    const keepSync = keeper.keepSync;
+    if (!keepSync) return soundtrack(source, directory, signal, media, { scan });
+    const handOver = async (file: string, problem?: string, heard?: { program: number }) => {
+      try {
+        await keepSync(file, problem, heard);
+      } catch {
+        /* the keeper reports its own failures; the copy goes on */
+      }
+    };
+    const file = join(directory, 'sync.s16');
+    const remove = () => rm(file, { force: true, recursive: true }).catch(() => undefined);
+    let sound: Soundtrack;
+    try {
+      sound = await soundtrack(source, directory, signal, media, { scan, sync: file });
+    } catch (error) {
+      await remove();
+      if (signal.aborted) throw error;
+      const reason = error instanceof Error ? error.message : 'unknown error';
+      if (!soundAgainWithoutSync(error)) {
+        await handOver('', `the sound pass failed: ${reason}`);
+        throw error;
+      }
+      let measured: Soundtrack;
+      try {
+        measured = await soundtrack(source, directory, signal, media, { scan });
+      } catch (again) {
+        if (!signal.aborted) await handOver('', `the sound pass failed: ${reason}`);
+        throw again;
+      }
+      await handOver(
+        '',
+        `the sound pass failed with the follow-along sound and worked without it: ${reason}`,
+      );
+      return measured;
+    }
+    const { sync, ...measured } = sound;
+    if (sync) await handOver(sync, undefined, { program: measured.program });
+    await remove();
+    return measured;
+  };
   const chapters = workingChapters(request.chapters ?? [], settings.range, working.media.seconds);
   const reusable = !!keeper.saved.plan && sameRange(keeper.saved.plan.range, settings.range);
   if (keeper.saved.plan && !reusable) log('The saved plan was for another part of the video.');
@@ -697,9 +773,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
     let sound: Soundtrack | null = null;
     let language: string | undefined;
     try {
-      sound = media.audio
-        ? await soundtrack(source, directory, signal, media, { scan: !beside })
-        : null;
+      sound = media.audio ? await measureSound(media, !beside) : null;
       await progress('Finding the dialogue', 3);
       words = sound
         ? await providers.transcribe(sound.dialogue, media.seconds, signal, meter, {

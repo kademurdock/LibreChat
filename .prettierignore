@@ -1,0 +1,3 @@
+# Tellavision Follow along (Nov 14 2026): syncprint.js is a byte-exact copy of the library the
+# phone apps also ship, checked against syncprint.js.sha256. It must never be reformatted.
+api/server/services/kadeSyncprint/syncprint.js
