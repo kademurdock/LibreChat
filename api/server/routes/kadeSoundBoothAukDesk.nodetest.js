@@ -1247,6 +1247,7 @@ test('Change words: a list runs latest spot first, each change on the last resul
   assert.equal(out.words.total, 2);
   assert.equal(desk.bridgeCalls[0].oldText, 'rear view', 'the later spot runs first, so the earlier spot does not move');
   assert.equal(desk.bridgeCalls[0].kind, 'vocal');
+  assert.equal(desk.bridgeCalls[0].seeds.length, 4, 'a list with sung words gets four takes by default (Nov 14 2026)');
   assert.equal(desk.bridgeCalls[0].prompt, 'Change "rear view" to "like you" in the vocal recording.');
   answers.push({ state: 'done', costUSD: 0.01, result: { url: 'https://b2.example.invalid/one.mp3', wavUrl: 'https://b2.example.invalid/one.wav', seed: 5, editReport: { matched: true, spoken: 'Changed "rear view" to "like you". I made 3 takes and kept take 2.' } } });
   const step = await desk.request('get/status/:jobId', undefined, { jobId: 'offline-job' });

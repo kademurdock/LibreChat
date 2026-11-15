@@ -472,10 +472,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function settingField(s){
         var id = 'set_'+s.key, v = state.values[s.key];
         var head = '<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
+        /* Nov 14 2026: sung word changes are hit or miss; the note sits under Spoken or sung and the select reads it. */
+        if(s.key==='words_kind' && v==='sung') head+='<p class="hint" id="'+id+'_sung">'+esc(SUNG_NOTE)+'</p>';
         if(s.key==='lyrics'||s.key==='instruction') return head+'<textarea id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" rows="8">'+esc(v||'')+'</textarea>';
         if(s.kind==='text') return head+'<input type="text" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" value="'+esc(v||'')+'">';
         if(s.kind==='range') return head+'<input type="range" id="'+id+'" data-key="'+s.key+'" min="'+s.min+'" max="'+s.max+'" step="'+(s.step||1)+'" aria-describedby="'+id+'_h" value="'+(v!=null?esc(v):s.default)+'"><output id="'+id+'_value" for="'+id+'" aria-hidden="true">'+(v!=null?esc(v):s.default)+'</output>';
-        if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="'+(s.step||'any')+'"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
+        if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="'+(s.step||'any')+'"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.key==='takes'?esc('normal is '+takesDefault()):s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         /* Part 295: a Family feature pack choice outside the pack (the YuE2 Style) comes with
          * locked. It is shown greyed out, never hidden: its label, every option and a hint that
@@ -484,7 +486,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='choice'){
           var locked=!!s.locked, chosen=locked?s.default:(v!=null?v:s.default);
           var choiceHead=locked?'<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint locked" id="'+id+'_h">'+esc(s.hint)+'</p>':head;
-          return choiceHead+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h"'+(locked?' disabled':'')+'>'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+(chosen===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
+          return choiceHead+'<select id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h'+(s.key==='words_kind'&&v==='sung'?' '+id+'_sung':'')+'"'+(locked?' disabled':'')+'>'+s.options.map(function(o){ var lab = o===''?'None':o.replace(/_/g,' '); return '<option value="'+esc(o)+'"'+(chosen===o?' selected':'')+'>'+esc(lab.charAt(0).toUpperCase()+lab.slice(1))+'</option>'; }).join('')+'</select>';
         }
         if(s.kind==='clip'){
           /* Explicit extensions, not audio/* — a .ogg is typed video/ogg or
@@ -551,7 +553,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Handlers over the whole panel: a setting may sit in More settings. */
       Array.prototype.forEach.call(panel.querySelectorAll('[data-key]'), function(el){
         if(state.transcribing && el.dataset.key==='lyrics')el.disabled=true;
-        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'){renderSettings();document.getElementById(el.id).focus();} if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'||el.dataset.key==='words_kind'){renderSettings();document.getElementById(el.id).focus();} if(el.dataset.key==='words_kind'&&el.value==='sung') say(SUNG_NOTE); if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
       });
       Array.prototype.forEach.call(panel.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -573,6 +575,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * Every control is a labelled button or field, and every result is said in the status line. */
     function clockOf(n){ n=Math.max(0,Number(n)||0); var m=Math.floor(n/60), s2=Math.floor(n%60); return m+':'+(s2<10?'0':'')+s2; }
     function secOf(n){ return String(Math.round(n*10)/10); }
+    var SUNG_NOTE='Changing sung words is hit or miss with AuK. It makes several takes and keeps the one where the new words are heard.';
+    /* Takes when the box is empty: 4 if a sung change is in the boxes or the list, else 3 (the server does the same). */
+    function takesDefault(){ return (state.values.words_kind==='sung' || (state.wordQueue||[]).some(function(c){return c.kind==='sung';})) ? 4 : 3; }
     function changeLine(c){ return (c.kind==='sung'?'Sung':'Spoken')+': "'+c.oldText+'" to "'+c.newText+'", from '+secOf(c.rangeStart)+' to '+secOf(c.rangeEnd)+' seconds'; }
     function fieldChange(){ var v=state.values; return {kind:v.words_kind==='sung'?'sung':'spoken', oldText:String(v.old_text||'').trim(), newText:String(v.new_text||'').trim(), rangeStart:parseFloat(v.words_from), rangeEnd:parseFloat(v.words_to)}; }
     function fieldsEmpty(c){ return !c.oldText && !c.newText && isNaN(c.rangeStart) && isNaN(c.rangeEnd); }

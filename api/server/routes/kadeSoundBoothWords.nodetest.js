@@ -204,3 +204,34 @@ test('Find the spot reads only the asked stretch from the URL with ffmpeg', asyn
   assert.equal(args[args.indexOf('-t') + 1], '12');
   assert.equal(args[args.indexOf('-i') + 1], 'https://storage.test/her.mp3');
 });
+
+/* Nov 14 2026: sung word changes are hit or miss in AuK (Tencent's own sung sample is garbled too),
+ * so singing gets four takes by default and the form says so plainly; speech keeps three. */
+test('takes default to four when a change is sung and three for speech; a set number always wins', () => {
+  assert.equal(words.takesFrom(undefined, [{ kind: 'speech' }]), 3);
+  assert.equal(words.takesFrom('', [{ kind: 'sung' }]), 4);
+  assert.equal(words.takesFrom(undefined, [{ kind: 'vocal' }]), 4);
+  assert.equal(words.takesFrom(undefined, [{ kind: 'spoken' }, { kind: 'vocal' }]), 4, 'any sung change in the list');
+  assert.equal(words.takesFrom('2', [{ kind: 'vocal' }]), 2);
+  assert.equal(words.takesFrom(undefined, []), 3);
+  const plan = words.planWordChanges({ words_kind: 'sung', old_text: 'rear view', new_text: 'like you', words_from: 3, words_to: 6.5 }, 9);
+  assert.equal(words.takesFrom(undefined, plan), 4);
+});
+
+test('the form shows and says one plain line when the words are sung, and the takes box shows the right normal', () => {
+  const NOTE = 'Changing sung words is hit or miss with AuK. It makes several takes and keeps the one where the new words are heard.';
+  assert.ok(script.includes("var SUNG_NOTE='" + NOTE + "';"));
+  const field = pageFunction('settingField');
+  assert.match(field, /if\(s\.key==='words_kind' && v==='sung'\) head\+='<p class="hint" id="'\+id\+'_sung">'\+esc\(SUNG_NOTE\)\+'<\/p>';/);
+  assert.match(field, /aria-describedby="'\+id\+'_h'\+\(s\.key==='words_kind'&&v==='sung'\?' '\+id\+'_sung':''\)\+'"/);
+  assert.match(field, /s\.key==='takes'\?esc\('normal is '\+takesDefault\(\)\)/);
+  assert.match(script, /if\(el\.dataset\.key==='words_kind'&&el\.value==='sung'\) say\(SUNG_NOTE\);/);
+  const ctx = { state: { values: {}, wordQueue: [] } };
+  vm.runInNewContext(pageFunction('takesDefault') + '\nthis.t=takesDefault;', ctx);
+  assert.equal(ctx.t(), 3);
+  ctx.state.values.words_kind = 'sung';
+  assert.equal(ctx.t(), 4);
+  ctx.state.values.words_kind = 'spoken';
+  ctx.state.wordQueue = [{ kind: 'sung' }];
+  assert.equal(ctx.t(), 4);
+});

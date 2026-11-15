@@ -1562,7 +1562,7 @@ const GUIDE = {
         'For speech, put only the words to say in the script. With no reference, Describe a new voice sets the voice.',
         'With a reference, speech uses its voice and accent. For another accent, edit the recording first and use that take as the reference; adding an accent is experimental.',
         'To edit, choose edit under Task, import the recording and write Edit instructions, such as: Remove background noise; Raise pitch by two semitones. If the edit changes speed, set Target seconds for edit.',
-        'To change words, choose change words under Task. Type the words it says now, the new words, and From and To seconds around them; Find the spot lists what is said every four seconds. Each change makes three fresh takes and keeps the one that says the new words. Add several changes to the list and they run one after another.',
+        'To change words, choose change words under Task. Type the words it says now, the new words, and From and To seconds around them; Find the spot lists what is said every four seconds. Each change makes three fresh takes, four for sung words, and keeps the one that says the new words. Changing sung words is hit or miss with AuK. Add several changes to the list and they run one after another.',
         'For a voice or age change, try the timbre template: Keep the spoken content unchanged and change the timbre to: "a youthful, light voice with clear diction". This requests a change; listen to judge whether it worked.',
         'Long recordings are made in sections and joined, so listen to the joins. Each take keeps a WAV master and an MP3.',
       ],
@@ -1576,7 +1576,7 @@ const GUIDE = {
         { key: 'new_text', label: 'New words', hint: 'What it should say there instead.', kind: 'text' },
         { key: 'words_from', label: 'From second', hint: 'A little before the words. Find the spot lists what is said every four seconds.', kind: 'number', min: 0 },
         { key: 'words_to', label: 'To second', hint: 'A little after the words. 3 to 12 seconds around them works best; 30 at most.', kind: 'number', min: 0.5 },
-        { key: 'takes', label: 'Takes to try', hint: 'Each take is a fresh try, and the one that says the new words is kept. More takes use more GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 3, advanced: true },
+        { key: 'takes', label: 'Takes to try', hint: 'Each take is a fresh try, and the one that says the new words is kept. Left empty, it is 3 for spoken words and 4 for sung. More takes use more GPU time.', kind: 'number', min: 1, max: 4, step: 1, default: 3, advanced: true },
         { key: 'voice_description', label: 'Describe a new voice (without a reference)', hint: 'Accent, age, texture and delivery, used when no reference is attached.', kind: 'text' },
         { key: 'reference_voice_url', label: 'Import voice or recording', hint: 'Speech copies its voice and accent. Edits regenerate audio and may reduce quality; test a short section first. WAV, MP3 or M4A.', kind: 'clip', max: 1 },
         { key: 'edit_start', label: 'Edit from second (optional)', hint: 'Leave blank to start at the beginning. Audio outside the selected section is kept.', kind: 'number', min: 0 },
@@ -3022,7 +3022,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
       const seconds = source.seconds;
       if (wording) {
         wordPlan = words.planWordChanges(b, seconds);
-        wordTakes = words.takesFrom(b.takes);
+        wordTakes = words.takesFrom(b.takes, wordPlan);
       } else editParts = planAukEdit(seconds, b);
     } catch (error) {
       return res.status(400).json({ error: errorText(error.message, { name: 'The edit', fallback: 'Import the recording again before editing.' }) });

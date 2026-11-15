@@ -14,7 +14,7 @@
  *   - ONE change per render. Several changes queue and run one after another, each on the last
  *     result. They run from the END of the recording backwards, so a change that makes the audio
  *     a little longer or shorter never moves the spot of a change still waiting.
- *   - fresh seeds on every attempt (three takes by default), never the project's voice seed.
+ *   - fresh seeds on every attempt (three takes by default, four for sung words), never the project's voice seed.
  *   - the bridge listens to every take (MiMo) and keeps the one that says the new words. If none
  *     does, the change stops, says so, and her original recording stays as it was.
  *   - "Find the spot": the recording transcribed a few seconds at a time on MiMo (her rule for
@@ -52,6 +52,8 @@ const MAX_RANGE_S = 28;
 const MIN_GAP_S = 2;
 const MAX_TAKES = 4;
 const DEFAULT_TAKES = 3;
+/* Nov 14 2026: sung word changes are hit or miss in AuK (a model weakness), so they get one more take. */
+const DEFAULT_SUNG_TAKES = 4;
 const WINDOW_S = 4;
 const MAX_TRANSCRIPT_S = 180;
 const bridgeBase = () =>
@@ -104,9 +106,14 @@ function looksLikeWordChange(instruction) {
   return text.split(/[.;!?\n]+/).some((clause) => !WC_STYLE.test(clause) && WC_PLAIN.some((r) => r.test(clause)));
 }
 
-function takesFrom(value) {
+/** Takes when none is set: 4 if any change is sung, else 3. */
+function defaultTakes(changes) {
+  return (changes || []).some((c) => c && kindOf(c.kind) === 'vocal') ? DEFAULT_SUNG_TAKES : DEFAULT_TAKES;
+}
+
+function takesFrom(value, changes) {
   const n = num(value);
-  if (value == null || value === '' || Number.isNaN(n)) return DEFAULT_TAKES;
+  if (value == null || value === '' || Number.isNaN(n)) return defaultTakes(changes);
   if (!Number.isInteger(n) || n < 1 || n > MAX_TAKES) throw new Error(`Takes to try must be a whole number from 1 to ${MAX_TAKES}.`);
   return n;
 }
@@ -277,7 +284,7 @@ async function advanceLocked(project) {
       let source = made ? made.wavUrl || made.url : project.options?.reference_voice_url;
       if (!source) throw new Error('The recording to change is missing. Import it again.');
       source = await chain.freshPartUrl(source);
-      const seeds = freshSeeds(takesFrom(project.options?.takes));
+      const seeds = freshSeeds(takesFrom(project.options?.takes, [next]));
       const jobId = await submitChange({ userId: project.user, change: next, sourceUrl: source, seeds });
       Object.assign(next, { jobId, seeds, state: 'queued', error: undefined, report: null });
       project.state = 'queued';
@@ -436,7 +443,7 @@ async function timedTranscript(buffer, seconds, { from = 0, to } = {}, deps = {}
 }
 
 module.exports = {
-  MAX_CHANGES, MAX_TAKES, DEFAULT_TAKES, MIN_RANGE_S, MAX_RANGE_S, MIN_GAP_S, WINDOW_S, MAX_TRANSCRIPT_S,
+  MAX_CHANGES, MAX_TAKES, DEFAULT_TAKES, DEFAULT_SUNG_TAKES, defaultTakes, MIN_RANGE_S, MAX_RANGE_S, MIN_GAP_S, WINDOW_S, MAX_TRANSCRIPT_S,
   kindOf, wordTemplate, looksLikeWordChange, takesFrom, freshSeeds, planWordChanges, summary, sameChanges,
   submitChange, advance, advanceLocked, changesView, sayProgress, sayDone, timedTranscript, cutWindows, mimoHear,
 };
