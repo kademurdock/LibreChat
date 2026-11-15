@@ -1,16 +1,18 @@
 /*
  * Nov 14 2026: the describer's repeat check (listen.ts) hears back a narration take that ran long.
  * Novita no longer serves MiMo and Makora's price rose over the old cap, so by OpenRouter's endpoint
- * list no host could take the call and every take fell back to length alone, silently. The take is
- * the platform's own narration, so it may go to a host that keeps it but never to one that trains:
- * Makora first, then Xiaomi, at most Makora's price, and the log says which host heard it, or why
- * none did. No model is called: axios answers through a fake adapter.
+ * list no host could take the call and every take fell back to length alone, silently. Now Makora
+ * may serve at its price, and the log says which host heard it, or why none did.
+ * Nov 14 2026 review: a take reads out the description of the job's video, and that video can be a
+ * person's own upload. So a take stays on zero retention (Makora alone) unless the job's source may
+ * be kept (`listenMayKeep`: a YouTube video): then Makora, then Xiaomi, which
+ * keeps prompts 30 days and never trains. No model is called: axios answers through a fake adapter.
  * Run (see the lane's tooling): node --import tsx --test src/description/listen.test.mjs
  */
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
 import { createRequire } from 'node:module';
-import { listen } from './listen.ts';
+import { listen, listenMayKeep } from './listen.ts';
 import { sampleRate } from './mix.ts';
 
 const axios = createRequire(import.meta.url)('axios');
@@ -64,12 +66,46 @@ const httpError = (config, status, data) =>
     },
   );
 
-test("the repeat check asks Makora, then Xiaomi, keeps out hosts that train, and pays at most Makora's price", async () => {
+test("by default a take stays on zero retention: Makora alone, at most Makora's price", async () => {
   process.env.OPENROUTER_KEY = 'test-key';
   delete process.env.KADE_VOICE_LISTEN_HOSTS;
   const calls = fakeAxios(() => heard('Makora'));
   const lines = [];
-  const words = await listen(take(2), signal, (line) => lines.push(line));
+  assert.ok(await listen(take(2), signal, (line) => lines.push(line)));
+  assert.ok(await listen(take(2), signal, (line) => lines.push(line), { mayKeep: false }));
+  assert.equal(calls.length, 2);
+  for (const { body } of calls) {
+    assert.deepEqual(body.provider, {
+      order: ['Makora'],
+      only: ['Makora'],
+      allow_fallbacks: true,
+      zdr: true,
+      data_collection: 'deny',
+      max_price: { prompt: 0.18, completion: 0.36 },
+    });
+  }
+  /* A host list set by hand never lifts zero retention for such a take. */
+  process.env.KADE_VOICE_LISTEN_HOSTS = 'Makora,Xiaomi';
+  await listen(take(2), signal);
+  assert.equal(calls[2].body.provider.zdr, true);
+  assert.deepEqual(calls[2].body.provider.only, ['Makora', 'Xiaomi']);
+});
+
+test('only YouTube videos may use a host that keeps prompts; uploads and Library videos never', () => {
+  assert.equal(listenMayKeep('youtube'), true);
+  /* A shared shelf can still hold someone's own home video. */
+  assert.equal(listenMayKeep('library'), false);
+  assert.equal(listenMayKeep('upload'), false);
+  assert.equal(listenMayKeep(undefined), false);
+  assert.equal(listenMayKeep('something new'), false);
+});
+
+test("a take whose source may be kept asks Makora, then Xiaomi, keeps out hosts that train, and pays at most Makora's price", async () => {
+  process.env.OPENROUTER_KEY = 'test-key';
+  delete process.env.KADE_VOICE_LISTEN_HOSTS;
+  const calls = fakeAxios(() => heard('Makora'));
+  const lines = [];
+  const words = await listen(take(2), signal, (line) => lines.push(line), { mayKeep: true });
   assert.equal(words, 'A red square. A red square.');
   assert.equal(calls.length, 1);
   const { body, config, url } = calls[0];
@@ -85,7 +121,7 @@ test("the repeat check asks Makora, then Xiaomi, keeps out hosts that train, and
   assert.equal(
     body.provider.zdr,
     undefined,
-    "the platform's own narration may be kept, never trained on",
+    'a take of a YouTube video may be kept, never trained on',
   );
   assert.equal(body.user, undefined, 'no user id goes with it');
   assert.equal(body.messages[0].content[1].type, 'input_audio');

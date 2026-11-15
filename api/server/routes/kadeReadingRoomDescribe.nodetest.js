@@ -286,18 +286,46 @@ test('server errors, a missing flex endpoint, a timeout and an error inside the 
   }
 });
 
-test('a flex reply cut off at its token limit is paid for and asked again on standard; both costs count', async () => {
+/* Nov 14 2026 review: a cut-off reply is read as it was before flex (parseScenes salvages what it
+ * can). Standard would be cut off at the same limit, at twice the price. */
+test('a flex reply cut off at its token limit is read as before and not asked again on standard', async () => {
   const cut = { finish_reason: 'length', native_finish_reason: 'MAX_TOKENS', message: { content: '{"summary": "A furn' } };
   const { internals, calls, warnings } = load(
     (_body, n) => (n === 1 ? answer('Google', cut, 0.01) : answer('Google')),
     { KADE_VIDEO_MODEL: '' },
   );
   const result = await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 1);
+  assert.equal(result.text, '{"summary": "A furn');
+  near(result.costUSD, 0.01);
+  assert.deepEqual(warnings, []);
+});
+
+test('a timed-out flex try is logged as one that may still be billed', async () => {
+  const timeout = Object.assign(new Error('timeout of 540000ms exceeded'), { isAxiosError: true, code: 'ECONNABORTED' });
+  const { internals, calls, warnings } = load(
+    (_body, n) => {
+      if (n === 1) throw timeout;
+      return answer('Google');
+    },
+    { KADE_VIDEO_MODEL: '' },
+  );
+  await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
   assert.equal(calls.length, 2);
-  assert.deepEqual(plain(calls[1].body.provider), STANDARD);
-  assert.equal(internals.parseScenes(result.text).summary, 'A furniture store ad.');
-  near(result.costUSD, 0.012);
-  assert.match(warnings[0], /the flex try failed \(cut off\)/);
+  assert.deepEqual(warnings, [
+    '[library/describe] the flex try failed (ECONNABORTED: timed out; the flex try may still be billed); asking again on the standard tier',
+  ]);
+});
+
+test('a Google model with no known flex tier is asked on standard only, and estimated at its own rates', async () => {
+  const argon = { KADE_VIDEO_MODEL: 'google/gemini-4-argon', KADE_VIDEO_IN_USD_PER_M: '2', KADE_VIDEO_OUT_USD_PER_M: '10' };
+  const { internals, calls, library } = load(() => answer('Google'), argon);
+  await internals.lookAt(Buffer.from('mp4'), 'video/mp4', 'Describe this.');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.model, 'google/gemini-4-argon');
+  assert.deepEqual(plain(calls[0].body.provider), STANDARD);
+  /* Ten minutes: 60,000 tokens in and 18,440 out at $2 and $10 a million: $0.3044. */
+  assert.equal(library.estimate(600).usd, 0.3044);
 });
 
 test('a bad request or no credit on flex is not asked again on standard, and a decline stands', async () => {
@@ -315,7 +343,7 @@ test('a bad request or no credit on flex is not asked again on standard, and a d
 });
 
 test('when the standard try fails too, the flex reply already paid for rides on the failure', async () => {
-  const cut = { finish_reason: 'length', message: { content: '{"sum' } };
+  const cut = { finish_reason: 'error', error: { code: 502, message: 'Provider returned error' }, message: { content: '' } };
   const { internals, calls } = load(
     (_body, n) => {
       if (n === 1) return answer('Google', cut, 0.01);

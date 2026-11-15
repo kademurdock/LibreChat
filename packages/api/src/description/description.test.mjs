@@ -2290,6 +2290,7 @@ async function run(f, words, cues, overrides = {}) {
     log: overrides.log ? (line) => overrides.log.push(line) : undefined,
     credit: overrides.credit,
     fishVoice: overrides.fishVoice,
+    listenMayKeep: overrides.listenMayKeep,
   });
   return { ...result, backend };
 }
@@ -5638,4 +5639,28 @@ test('the listener is handed the job log, so the server log says which host hear
   assert.equal(result.report.descriptions.length, 1);
   assert.ok(log.includes('listen: Makora heard the take (61 prompt tokens)'), log.join('\n'));
   assert.ok(log.some((line) => /^Voice take 1 of 3 repeated itself: 7\.0 s/.test(line)), log.join('\n'));
+});
+
+/* Nov 14 2026 review: a take of a person's own upload stays on zero retention. Only a job whose
+ * router said its source may be kept (a YouTube video) lets the listener use a host
+ * that keeps prompts. */
+test('the listener hears whether this job may use a host that keeps prompts; by default it may not', async () => {
+  for (const listenMayKeep of [undefined, false, true]) {
+    const f = await fixture(`voice-listener-keep-${String(listenMayKeep)}`);
+    const twice = await toneFile(f.dir, 'twice.wav', 660, 7);
+    const backend = providers(f.voice, [], [cue]);
+    let takes = 0;
+    backend.synthesize = async (_text, _voice, _session, file) => {
+      takes++;
+      await copyFile(takes === 1 ? twice : f.voice, file);
+    };
+    const asked = [];
+    backend.listen = async (pcm, _signal, _log, options) => {
+      asked.push(options);
+      return pcm.length / sampleRate > 5 ? `${cue.text} ${cue.text}` : cue.text;
+    };
+    await run(f, [], [], { providers: backend, listenMayKeep });
+    assert.ok(asked.length >= 1, String(listenMayKeep));
+    for (const options of asked) assert.deepEqual(options, { mayKeep: listenMayKeep === true });
+  }
 });

@@ -121,15 +121,23 @@ function mediaModel(model, kind, env = process.env) {
 }
 
 /**
- * Whether a background caller's request for `model` asks Google Vertex's flex tier first. Only a
- * Google model has one here. KADE_VIDEO_TIER=standard puts every request back on the standard
- * tier, as before Nov 14 2026.
+ * Whether a background caller's request for `model` asks Google Vertex's flex tier first. Only the
+ * models known to have a flex tier do (Nov 14 2026 review): by default the video model alone,
+ * google/gemini-3.8-flash. Another Google model would fail 404 on every request and be estimated
+ * at Flash's flex price. KADE_VIDEO_FLEX_MODELS (a comma list) names others; give it
+ * KADE_VIDEO_FLEX_IN_USD_PER_M and KADE_VIDEO_FLEX_OUT_USD_PER_M too. KADE_VIDEO_TIER=standard
+ * puts every request back on the standard tier, as before Nov 14 2026.
  */
 function flexFor(model, env = process.env) {
   const tier = String((env && env.KADE_VIDEO_TIER) || '')
     .trim()
     .toLowerCase();
-  return isGoogle(model) && tier !== 'standard';
+  const known = String((env && env.KADE_VIDEO_FLEX_MODELS) || VIDEO_MODEL)
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  const name = String(model || '').trim().toLowerCase();
+  return isGoogle(name) && known.includes(name) && tier !== 'standard';
 }
 
 /**
@@ -303,7 +311,7 @@ function cutOff(choice) {
 /**
  * Why the reply to a flex try is no use, so it is asked again on the standard tier; '' when it can
  * be read. An error OpenRouter sent inside the reply (Google took the request, then failed: busy,
- * or out of time), a reply with no answer, or one cut off at its token limit. A refusal is read as
+ * or out of time), or a reply with no answer. A reply cut off at its token limit is read. A refusal is read as
  * one (`readReply`), never asked again: Google declines the same clip on standard too. So is a
  * content filter's decline sent as an error inside the reply (OpenRouter's `error_type`
  * content_policy_violation or refusal, as providers.ts reads it).
@@ -322,28 +330,57 @@ function flexTrouble(data) {
   if (!choice) {
     return 'no answer';
   }
-  return cutOff(choice) ? 'cut off' : '';
+  /* A reply cut off at its token limit (`cutOff`) is read as it was before flex (Nov 14 2026
+   * review): standard would be cut off at the same limit, at twice the price. */
+  return '';
 }
+
+/** Connection failures with no answer, as Node and axios name them. */
+const NETWORK_CODES = new Set([
+  'ECONNABORTED',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ERR_NETWORK',
+]);
+/** A deadline that ran out after the request went: OpenRouter may still bill the flex try. */
+const TIMEOUT_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT']);
 
 /**
  * Whether a flex try that failed outright is worth one more try on the standard tier: Google busy
  * or rate limiting (429), a server error (5xx), no flex endpoint to send it to (404: renamed,
  * dropped or down), a timeout (408, or the caller's own deadline), or a connection that dropped
- * with no answer. A refused key, no credit or a bad request (400, 401, 402, 403, 413) would fail on
- * standard too.
+ * with no answer (`NETWORK_CODES`, or axios with no reply and no code). A refused key, no credit or
+ * a bad request (400, 401, 402, 403, 413) would fail on standard too, and so would an error of our
+ * own that carries some other code (Nov 14 2026 review).
  */
 function flexRetryable(error) {
   const status = Number(error && error.response && error.response.status) || 0;
   if (status) {
     return status === 404 || status === 408 || status === 429 || status >= 500;
   }
-  return Boolean(error && (error.isAxiosError || error.code));
+  const code = error && error.code;
+  if (code) {
+    return NETWORK_CODES.has(String(code));
+  }
+  return Boolean(error && error.isAxiosError);
 }
 
-/** A failed flex try in a few words for the log: its HTTP status or error code, never its body. */
+/**
+ * A failed flex try in a few words for the log: its HTTP status or error code, never its body. A
+ * timeout says the flex try may still be billed: Google can finish a request we stopped waiting
+ * for, and only the reply that arrives is booked.
+ */
 function flexFailure(error) {
   const status = error && error.response && error.response.status;
-  return status ? `HTTP ${status}` : String((error && error.code) || 'no answer');
+  if (status) {
+    return `HTTP ${status}`;
+  }
+  const code = String((error && error.code) || 'no answer');
+  return TIMEOUT_CODES.has(code) ? `${code}: timed out; the flex try may still be billed` : code;
 }
 
 /**

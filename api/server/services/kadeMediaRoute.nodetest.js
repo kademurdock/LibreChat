@@ -235,6 +235,18 @@ test('KADE_VIDEO_TIER=standard puts background requests back on the standard tie
   }
 });
 
+test('flex only for models known to have a flex tier; another Google model stays on standard at its own rates', () => {
+  /* Nov 14 2026 review: a Google model with no Vertex flex tier failed 404 on every segment and was
+   * estimated at Gemini 3.8 Flash's flex price. */
+  const argon = { KADE_VIDEO_MODEL: 'google/gemini-4-argon', KADE_VIDEO_IN_USD_PER_M: '2', KADE_VIDEO_OUT_USD_PER_M: '10' };
+  assert.equal(route.flexFor('google/gemini-4-argon', argon), false);
+  assert.deepEqual(route.mediaProvider('google/gemini-4-argon', 'video', argon, { flex: true }), STANDARD);
+  assert.equal(route.flexFor('Google/Gemini-3.8-Flash', {}), true, 'case does not matter');
+  /* A model added by hand to the flex list asks flex. */
+  assert.equal(route.flexFor('google/gemini-4-argon', { KADE_VIDEO_FLEX_MODELS: 'google/gemini-3.8-flash, google/gemini-4-argon' }), true);
+  assert.equal(route.flexFor('google/gemini-3.8-flash', { KADE_VIDEO_FLEX_MODELS: 'google/gemini-4-argon' }), false);
+});
+
 test('a flex reply that names no cost is priced at the flex rates, and a reply Google moved to standard at standard', () => {
   assert.deepEqual(route.flexRates({}), { in: 0.375, out: 1.875 });
   assert.deepEqual(
@@ -261,13 +273,25 @@ test('which flex failures are asked again on standard, and which would fail ther
   assert.equal(route.flexRetryable(timeout), true);
   assert.equal(route.flexRetryable(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })), true);
   assert.equal(route.flexRetryable(new TypeError('a bug of ours')), false);
+  /* Nov 14 2026 review: an error of our own that carries a code is not a flex failure. */
+  assert.equal(route.flexRetryable(Object.assign(new Error('bad arg'), { code: 'ERR_INVALID_ARG' })), false);
+  assert.equal(
+    route.flexRetryable(Object.assign(new Error('too big'), { isAxiosError: true, code: 'ERR_FR_MAX_BODY_LENGTH_EXCEEDED' })),
+    false,
+  );
+  for (const code of ['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']) {
+    assert.equal(route.flexRetryable(Object.assign(new Error(code), { code })), true, code);
+  }
+  assert.equal(route.flexRetryable(Object.assign(new Error('no answer'), { isAxiosError: true })), true, 'axios, no reply, no code');
   /* A reply that came back is judged by what is in it. */
   const reply = (choice, extra = {}) => ({ choices: choice ? [choice] : [], ...extra });
   assert.equal(route.flexTrouble(reply({ finish_reason: 'stop', message: { content: '{}' } })), '');
-  assert.equal(route.flexTrouble(reply({ finish_reason: 'length', message: { content: '{"sc' } })), 'cut off');
+  /* Nov 14 2026 review: a reply cut off at its token limit is read as before; standard would be cut
+   * off at the same limit, at twice the price. */
+  assert.equal(route.flexTrouble(reply({ finish_reason: 'length', message: { content: '{"sc' } })), '');
   assert.equal(
     route.flexTrouble(reply({ finish_reason: 'stop', native_finish_reason: 'MAX_TOKENS', message: { content: '' } })),
-    'cut off',
+    '',
   );
   assert.equal(route.flexTrouble({ error: { code: 429, message: 'Resource exhausted' } }), 'error 429 in the reply');
   assert.equal(
@@ -320,11 +344,16 @@ test('askFlexFirst: flex once, then standard once when flex fails; never standar
 
   r = await run(true, Object.assign(new Error('timeout of 540000ms exceeded'), { isAxiosError: true, code: 'ECONNABORTED' }));
   assert.deepEqual(r.asked, ['flex', 'standard']);
-  assert.deepEqual(r.reasons, ['ECONNABORTED']);
+  /* The log says the abandoned flex try may still be billed (Nov 14 2026 review). */
+  assert.deepEqual(r.reasons, ['ECONNABORTED: timed out; the flex try may still be billed']);
 
-  r = await run(true, { data: { choices: [{ finish_reason: 'length', message: { content: '{"sum' } }] } });
-  assert.deepEqual(r.asked, ['flex', 'standard']);
-  assert.deepEqual(r.reasons, ['cut off']);
+  const cut = { data: { choices: [{ finish_reason: 'length', message: { content: '{"sum' } }] } };
+  r = await run(true, cut);
+  assert.deepEqual(r.asked, ['flex'], 'a cut-off flex reply is used, not asked again');
+  assert.equal(r.result.tier, 'flex');
+  assert.equal(r.result.response, cut);
+
+  await assert.rejects(run(true, Object.assign(new Error('bad arg'), { code: 'ERR_INVALID_ARG' })), /bad arg/);
 
   r = await run(true, { data: { error: { code: 503, message: 'overloaded' } } });
   assert.deepEqual(r.asked, ['flex', 'standard']);

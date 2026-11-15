@@ -72,6 +72,7 @@ import {
   defaultLibraryPath,
 } from './revision';
 import { describeVideo, productionProviders } from './engine';
+import { listenMayKeep } from './listen';
 import { importYouTube, worthRetrying, youtubeURL } from './youtube';
 import { FAMILY_PACK_NOTE, FAMILY_PACK_REFUSAL } from '../family/pack';
 import type { FamilyFeatures } from '../family/pack';
@@ -5010,6 +5011,8 @@ export function createDescriptionRouter(hooks: Hooks): {
            */
           credit: creditFor(settings, rehearsal ? meter : includedMeter, hooks.creditLogos),
           fishVoice: !!(await voiceCatalog()).fish?.includes(runSettings.voice),
+          /* A take of a person's upload or a Library video stays on zero retention. */
+          listenMayKeep: listenMayKeep(job.source || (job.youtube ? 'youtube' : 'upload')),
         };
         const output = await (hooks.describe ?? describeVideo)(request);
         await progress('Saving the described copy', 97);

@@ -16,17 +16,32 @@ import { userAgent } from './providers';
  * Nov 14 2026: Novita no longer serves MiMo, and Makora's price rose to $0.18 and $0.36 per million
  * tokens, over the $0.14 and $0.28 cap. By OpenRouter's endpoint list that day no host could take
  * the call (not tried live), so every take fell back to length alone, with nothing in the log.
- * The take is the platform's own narration voice reading a description the engine wrote, so under
- * Kade's rule it may go to a host that keeps it: `zdr` is dropped, and `data_collection: 'deny'`
- * still keeps out every host that trains on what it is sent (OpenRouter applies `data_collection`
- * to training and `zdr` to keeping). Makora first: it keeps nothing and waited 0.5 s. Then Xiaomi,
- * at $0.14 and $0.28: it keeps prompts 30 days and never trains, and it is slow (a 3.9 s wait,
- * 14.5 s at the slow end, against the 15 s limit). The cap is Makora's price. `log` hears which
- * host answered, or why none did, for the server log (engine.ts passes the job's log).
+ * The cap is now Makora's price. Makora keeps nothing and waited 0.5 s. `log` hears which host
+ * answered, or why none did, for the server log (engine.ts passes the job's log).
+ *
+ * Who may keep a take (Nov 14 2026 review). A take reads out the description of the job's video,
+ * which can carry names and words heard in it, and that video can be a person's own upload. So a
+ * take keeps `zdr` (Makora alone by default) unless the job's source may be kept (`listenMayKeep`:
+ * a YouTube video, already public). Then, under Kade's rule, `zdr` is
+ * dropped and Xiaomi follows Makora, at $0.14 and $0.28: it keeps prompts 30 days and never trains,
+ * and it is slow (a 3.9 s wait, 14.5 s at the slow end, against the 15 s limit).
+ * `data_collection: 'deny'` keeps out every host that trains on what it is sent, either way
+ * (OpenRouter applies `data_collection` to training and `zdr` to keeping).
  */
 const listenRate = 16000;
-const listenHosts = 'Makora,Xiaomi';
+const zeroRetentionHosts = 'Makora';
+const keptHosts = 'Makora,Xiaomi';
 const listenPrice = { prompt: 0.18, completion: 0.36 };
+
+/**
+ * Whether a take of this job's video may go to a host that keeps prompts: only a YouTube video,
+ * which is public already. A person's upload stays on zero retention, and so does every Library
+ * video: a shared shelf can still hold someone's own home video. So does a source this code does
+ * not know.
+ */
+export function listenMayKeep(source: string | undefined): boolean {
+  return source === 'youtube';
+}
 const prompt =
   'Transcribe every word spoken in this audio exactly as heard. If a word or phrase is said more than once, write it each time it is said. Reply with the words only.';
 
@@ -80,12 +95,13 @@ export async function listen(
   pcm: Float32Array,
   signal: AbortSignal,
   log: (message: string) => void = () => {},
+  { mayKeep = false }: { mayKeep?: boolean } = {},
 ): Promise<string | null> {
   if (process.env.KADE_VOICE_LISTEN === '0') return null;
   const key = process.env.OPENROUTER_KEY;
   const seconds = pcm.length / sampleRate;
   if (!key || seconds < 0.2 || seconds > 120) return null;
-  const hosts = (process.env.KADE_VOICE_LISTEN_HOSTS || listenHosts)
+  const hosts = (process.env.KADE_VOICE_LISTEN_HOSTS || (mayKeep ? keptHosts : zeroRetentionHosts))
     .split(',')
     .map((host) => host.trim())
     .filter(Boolean);
@@ -114,6 +130,7 @@ export async function listen(
           order: hosts,
           only: hosts,
           allow_fallbacks: true,
+          ...(mayKeep ? {} : { zdr: true }),
           data_collection: 'deny',
           max_price: { ...listenPrice },
         },

@@ -218,14 +218,23 @@ test('a gallery video that flex turns away is asked once more on the standard ti
   assert.deepEqual(warnings, ['[kadeAsset] the flex try failed (HTTP 503); asking again on the standard tier']);
 });
 
-test('a flex reply cut off at its limit is booked and asked again on standard', async () => {
+/* Nov 14 2026 review: a cut-off reply is read as it was before flex; standard would be cut off at
+ * the same limit, at twice the price. */
+test('a flex reply cut off at its limit is booked once and read as before, never asked again on standard', async () => {
   const cut = { provider: 'Google', choices: [{ finish_reason: 'length', message: { content: 'A described sc' } }], usage: { prompt_tokens: 1e6, completion_tokens: 1e6 } };
-  const { bodies, usage, updates } = await fixture({}, { answer: (n) => (n === 1 ? cut : described) }).describe('video', {}, { modelCalls: 2 });
-  assert.deepEqual(plain(bodies[1].provider), STANDARD);
-  assert.ok(JSON.stringify(updates).includes('A described scene.'));
-  assert.equal(usage.length, 2, 'both replies are paid for');
+  const { bodies, usage, updates } = await fixture({}, { answer: () => cut }).describe('video');
+  assert.equal(bodies.length, 1);
+  assert.deepEqual(plain(bodies[0].provider), FLEX);
+  assert.ok(JSON.stringify(updates).includes('A described sc'));
+  assert.equal(usage.length, 1);
   near(usage[0].costUSD, 0.375 + 1.875);
-  near(usage[1].costUSD, 0.825 + 4.125);
+});
+
+test('a gallery video on a Google model with no known flex tier goes to standard only', async () => {
+  const { bodies } = await fixture({ KADE_VIDEO_MODEL: 'google/gemini-4-argon' }, { provider: 'Google' }).describe('video');
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].model, 'google/gemini-4-argon');
+  assert.deepEqual(plain(bodies[0].provider), STANDARD);
 });
 
 test('a bad request on flex goes to the prompt fallback, never to a second video request', async () => {

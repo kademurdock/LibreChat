@@ -190,7 +190,7 @@ const thinking = () => {
  *
  * Nov 14 2026: a Google look asks Vertex's flex tier first (`onFlex`, kadeMediaRoute
  * `askFlexFirst`). When flex fails (busy or rate limited, a server error, no flex endpoint, out of
- * time, an error inside its reply, or a reply cut off at its token limit), the look is asked once
+ * time, an error inside its reply), the look is asked once (a reply cut off at its token limit is read as before)
  * more on the standard tier. Every reply's cost is counted at the price of the tier that served it,
  * a flex reply that was no use included, so the usage row and the daily cap see all of it. A cost
  * already spent rides on a failure (`costUSD`), for the server log.
