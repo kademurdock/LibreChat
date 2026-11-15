@@ -1,0 +1,251 @@
+/* Open voices in the Sound Booth (Nov 15 2026): VoxCPM2 and Ming, Design a voice and Speak with a
+ * voice, saved voices as marked My Creations rows. The router runs with fakes for the bridge,
+ * storage re-signing and the asset store; nothing is called for real.
+ *
+ * Run: node --test api/server/routes/kadeSoundBoothOpenVoices.nodetest.js */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const express = require('express');
+const ov = require('./kadeSoundBoothOpenVoices');
+const { OPEN_VOICES_HTML, OPEN_VOICES_SCRIPT } = require('./kadeSoundBoothOpenVoicesPage');
+
+const USER = '6a0000000000000000000abc';
+const OTHER = '6a0000000000000000000def';
+const B2 = 'https://s3.us-east-005.backblazeb2.com/bucket';
+
+/* ---------- a tiny in-memory KadeAsset ---------- */
+function fakeAssets(rows) {
+  let n = 0;
+  const get = (o, p) => p.split('.').reduce((v, k) => (v == null ? undefined : v[k]), o);
+  const match = (row, q) => Object.entries(q).every(([k, v]) => {
+    const have = get(row, k);
+    if (v && typeof v === 'object' && '$exists' in v) return (have !== undefined) === v.$exists;
+    return String(have) === String(v);
+  });
+  const chain = (value) => ({ sort() { return chain(value); }, select() { return chain(value); }, lean: async () => (value == null ? null : JSON.parse(JSON.stringify(value))) });
+  return {
+    rows,
+    find: (q) => chain(rows.filter((r) => match(r, q))),
+    findOne: (q) => chain(rows.find((r) => match(r, q)) || null),
+    async updateOne(q, u) {
+      const row = rows.find((r) => match(r, q));
+      if (!row) return { modifiedCount: 0 };
+      for (const [k, v] of Object.entries(u.$set || {})) { const ks = k.split('.'); let o = row; ks.slice(0, -1).forEach((x) => { o = o[x] = o[x] || {}; }); o[ks.at(-1)] = v; }
+      for (const k of Object.keys(u.$unset || {})) { const ks = k.split('.'); let o = row; ks.slice(0, -1).forEach((x) => { o = o && o[x]; }); if (o) delete o[ks.at(-1)]; }
+      return { modifiedCount: 1 };
+    },
+    async create(doc) { const row = { _id: `7b00000000000000000000${String(++n).padStart(2, '0')}`, ...JSON.parse(JSON.stringify(doc)) }; rows.push(row); return row; },
+  };
+}
+
+function fakeHttp(bridge) {
+  const calls = [];
+  return {
+    calls,
+    async get(url, o) { calls.push({ verb: 'get', url, o }); return bridge.get(url, o); },
+    async post(url, body, o) { calls.push({ verb: 'post', url, body, o }); return bridge.post(url, body, o); },
+  };
+}
+
+async function boot(t, { ready = { voxcpm: true, ming: false }, rows = [], bridge } = {}) {
+  const assets = fakeAssets(rows);
+  const http = fakeHttp(bridge || {
+    get: async (url, o) => ({ data: { state: 'done', engine: 'voxcpm', mode: 'design', seed: 5, result: { url: `${B2}/voxcpm/t.mp3?X-Amz-Signature=w`, seconds: 2.5, seed: 5 }, jobId: o.params.jobId } }),
+    post: async (url, body) => ({ data: url.endsWith('/start') ? { ok: true, jobId: 'ov_abc123def', seed: body.seed || 77, coldLikely: true } : { ok: true, state: 'cancelled' } }),
+  });
+  const refreshed = [];
+  const app = express();
+  app.use((req, _res, next) => { req.user = { id: req.headers['x-user'] || USER }; next(); });
+  app.use(ov.createOpenVoicesRouter({
+    auth: (_req, _res, next) => next(), http, bridgeBase: () => 'https://bridge.test', secret: () => 'test-only',
+    readiness: async () => ready, KadeAsset: assets,
+    fresh: async (url) => { refreshed.push(url); return url.replace(/\?.*$/, '') + '?X-Amz-Signature=fresh'; },
+    references: (user) => ({
+      authorize: async (url) => { if (!String(url).startsWith(`${B2}/audios/${user}/`)) throw new Error('not yours'); },
+      refresh: async (url) => { if (!String(url).startsWith(`${B2}/audios/${user}/`)) throw new Error('not yours'); return url.replace(/\?.*$/, '') + '?X-Amz-Signature=fresh'; },
+    }),
+  }));
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.on('listening', r));
+  t.after(() => new Promise((r) => { server.closeAllConnections(); server.close(r); }));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, body, user) => {
+    const r = await fetch(base + path, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...(user ? { 'x-user': user } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, body: await r.json() };
+  };
+  return { call, http, assets, refreshed };
+}
+
+test('checkTake: both modes, plain refusals, Ming refused while not set up', () => {
+  const ready = { voxcpm: true, ming: false };
+  assert.deepEqual(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: ' A  warm voice ', text: ' Hi ' }, ready).body,
+    { engine: 'voxcpm', mode: 'design', text: 'Hi', description: 'A warm voice' });
+  assert.equal(ov.checkTake({ engine: 'ming', mode: 'design', description: 'd', text: 'Hi' }, ready).error, 'Ming is not set up yet. Use VoxCPM2 for now.');
+  assert.equal(ov.checkTake({ engine: 'ming', mode: 'design', description: 'd', text: 'Hi' }, { ming: true }).body.engine, 'ming');
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'design', text: 'Hi' }, ready).error, /Describe the voice/);
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'speak', text: 'Hi' }, ready).error, /saved voice or import a clip/);
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd', text: '' }, ready).error, /words to say/);
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd', text: 'x'.repeat(5001) }, ready).error, /5000/);
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd'.repeat(401), text: 'x' }, ready).error, /400/);
+  assert.match(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd', text: 'x', seed: 'abc' }, ready).error, /whole number/);
+  assert.equal(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd', text: 'x', seed: '' }, ready).body.seed, undefined);
+  assert.equal(ov.checkTake({ engine: 'voxcpm', mode: 'design', description: 'd', text: 'x', seed: '12' }, ready).body.seed, 12);
+  const speak = ov.checkTake({ engine: 'voxcpm', mode: 'speak', text: 'x', style: 'slightly faster,  cheerful tone', voiceId: '7b0000000000000000000001' }, ready).body;
+  assert.deepEqual(speak, { engine: 'voxcpm', mode: 'clone', text: 'x', style: 'slightly faster, cheerful tone' });
+});
+
+test('a saved voice sends its words only for a short clip', () => {
+  assert.equal(ov.promptWordsFor({ words: 'Hello there.', seconds: 3 }), 'Hello there.');
+  assert.equal(ov.promptWordsFor({ words: 'Long one.', seconds: 31 }), '');
+  assert.equal(ov.promptWordsFor({ words: 'No length.' }), '');
+  assert.equal(ov.promptWordsFor({ seconds: 3 }), '');
+});
+
+test('the list shows ready engines and only this person\'s saved voices, re-signed', async (t) => {
+  const rows = [
+    { _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/voxcpm/a.mp3?X-Amz-Signature=old`, backupUrl: `${B2}/assets/a.mp3?X-Amz-Signature=old`, metadata: { savedVoice: { name: 'Grandpa', engine: 'voxcpm', seconds: 3.1 } } },
+    { _id: '7b0000000000000000000002', user: USER, kind: 'audio', url: `${B2}/voxcpm/b.mp3`, metadata: { jobId: 'ov_x' } },
+    { _id: '7b0000000000000000000003', user: OTHER, kind: 'audio', url: `${B2}/voxcpm/c.mp3`, metadata: { savedVoice: { name: 'Not hers' } } },
+  ];
+  const { call } = await boot(t, { rows });
+  const r = await call('/open-voices');
+  assert.deepEqual(r.body.engines.map((e) => e.id), ['voxcpm']);
+  assert.deepEqual(r.body.voices.map((v) => v.name), ['Grandpa']);
+  assert.equal(r.body.voices[0].url, `${B2}/assets/a.mp3?X-Amz-Signature=fresh`, 'the mirror, re-signed');
+  assert.equal(r.body.coldNote, ov.COLD_NOTE);
+});
+
+test('Design a voice: the bridge gets the description and words, and the cold note comes back', async (t) => {
+  const { call, http } = await boot(t);
+  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'design', description: 'A bright young voice', text: 'Good morning.' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.jobId, 'ov_abc123def');
+  assert.equal(r.body.coldLikely, true);
+  assert.match(r.body.coldNote, /first take after a quiet spell can take a few minutes/);
+  const start = http.calls.find((c) => c.url === 'https://bridge.test/audio/open-voices/start');
+  assert.deepEqual(start.body, { engine: 'voxcpm', mode: 'design', text: 'Good morning.', description: 'A bright young voice', secret: 'test-only', userId: USER });
+  const refused = await call('/open-voices/take', { engine: 'ming', mode: 'design', description: 'd', text: 'x' });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.error, 'Ming is not set up yet. Use VoxCPM2 for now.');
+});
+
+test('Speak with a saved voice: re-signed clip, its words, and the style', async (t) => {
+  const rows = [{ _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/voxcpm/a.mp3?X-Amz-Signature=old`,
+    metadata: { savedVoice: { name: 'Grandpa', engine: 'voxcpm', words: 'Hello there, kiddo.', seconds: 2.8 } } }];
+  const { call, http } = await boot(t, { rows, ready: { voxcpm: true, ming: true } });
+  const r = await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'Time for supper.', style: 'cheerful tone' });
+  assert.equal(r.status, 200);
+  const start = http.calls.find((c) => c.url.endsWith('/start'));
+  assert.equal(start.body.mode, 'clone');
+  assert.equal(start.body.reference_voice_url, `${B2}/voxcpm/a.mp3?X-Amz-Signature=fresh`);
+  assert.equal(start.body.prompt_text, 'Hello there, kiddo.');
+  assert.equal(start.body.style, 'cheerful tone');
+  const theirs = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'x' }, OTHER);
+  assert.equal(theirs.status, 400);
+  assert.match(theirs.body.error, /saved voice is gone/);
+});
+
+test('Speak with an imported clip: only this person\'s upload, re-signed, words passed through', async (t) => {
+  const { call, http } = await boot(t);
+  const clip = `${B2}/audios/${USER}/soundbooth-ref-abc.wav?X-Amz-Signature=old`;
+  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: clip, clipWords: 'This is me talking.', text: 'Hi' });
+  assert.equal(r.status, 200);
+  const start = http.calls.find((c) => c.url.endsWith('/start'));
+  assert.equal(start.body.reference_voice_url, `${B2}/audios/${USER}/soundbooth-ref-abc.wav?X-Amz-Signature=fresh`);
+  assert.equal(start.body.prompt_text, 'This is me talking.');
+  const foreign = await call('/open-voices/take', { engine: 'voxcpm', mode: 'speak', clipUrl: `${B2}/audios/${OTHER}/x.wav`, text: 'Hi' });
+  assert.equal(foreign.status, 400);
+  assert.match(foreign.body.error, /not saved on your account/);
+});
+
+test('a finished take reports its recording; Keep marks its My Creations row, with no cap', async (t) => {
+  const rows = [];
+  for (let i = 0; i < 30; i++) rows.push({ _id: `7c00000000000000000000${String(i).padStart(2, '0')}`, user: USER, kind: 'audio', url: `${B2}/x${i}.mp3`, metadata: { savedVoice: { name: `V${i}` } } });
+  rows.push({ _id: '7b0000000000000000000009', user: USER, kind: 'audio', url: `${B2}/voxcpm/t.mp3`, metadata: { jobId: 'ov_abc123def', openVoice: { engine: 'voxcpm', mode: 'design', description: 'A bright voice', words: 'Good morning.', seconds: 2.5 } } });
+  const { call, assets } = await boot(t, { rows });
+  const s = await call('/open-voices/take/ov_abc123def');
+  assert.equal(s.body.state, 'done');
+  assert.equal(s.body.assetId, '7b0000000000000000000009');
+  assert.equal(s.body.seconds, 2.5);
+  assert.equal((await call('/open-voices/keep', { jobId: 'ov_abc123def', name: '' })).status, 400);
+  const k = await call('/open-voices/keep', { jobId: 'ov_abc123def', name: 'Morning voice' });
+  assert.equal(k.status, 200);
+  assert.equal(k.body.spoken, 'Saved Morning voice to your voices.');
+  const kept = assets.rows.find((r) => r._id === '7b0000000000000000000009').metadata.savedVoice;
+  assert.equal(kept.name, 'Morning voice');
+  assert.equal(kept.words, 'Good morning.');
+  assert.equal(kept.seconds, 2.5);
+  assert.equal((await call('/open-voices')).body.voices.length, 31);
+  assert.equal((await call('/open-voices/keep', { jobId: 'ov_abc123def', name: 'x' }, OTHER)).status, 404);
+  assert.equal((await call('/open-voices/take/not-a-job')).status, 400);
+});
+
+test('an imported clip can be kept as a voice, and a voice can be forgotten', async (t) => {
+  const { call, assets } = await boot(t);
+  const clip = `${B2}/audios/${USER}/soundbooth-ref-abc.wav?X-Amz-Signature=old`;
+  const k = await call('/open-voices/keep-clip', { clipUrl: clip, name: 'My own voice', clipWords: 'Hi, it is me.', seconds: 12.34 });
+  assert.equal(k.status, 200);
+  const row = assets.rows.at(-1);
+  assert.equal(row.url, clip);
+  assert.equal(row.service, 'soundbooth_voice');
+  assert.deepEqual({ ...row.metadata.savedVoice, savedAt: 'x' }, { name: 'My own voice', engine: null, description: '', words: 'Hi, it is me.', seconds: 12.3, savedAt: 'x' });
+  assert.equal((await call('/open-voices/keep-clip', { clipUrl: `${B2}/audios/${OTHER}/x.wav`, name: 'n' })).status, 400);
+  const f = await call('/open-voices/forget', { voiceId: k.body.voice.id });
+  assert.equal(f.status, 200);
+  assert.equal(row.metadata.savedVoice, undefined);
+  assert.equal(assets.rows.includes(row), true, 'the recording stays');
+  assert.equal((await call('/open-voices/forget', { voiceId: k.body.voice.id })).status, 404);
+});
+
+test('a bridge refusal is said plainly; a failed take carries its sentence; Stop reaches the bridge', async (t) => {
+  const bridge = {
+    get: async () => ({ data: { state: 'failed', error: 'The reference clip is silent or damaged.' } }),
+    post: async (url) => {
+      if (url.endsWith('/start')) { const e = new Error('400'); e.response = { status: 400, data: { error: 'One take at a time. The last one is still being made.' } }; throw e; }
+      return { data: { ok: true, state: 'cancelled' } };
+    },
+  };
+  const { call, http } = await boot(t, { bridge });
+  const r = await call('/open-voices/take', { engine: 'voxcpm', mode: 'design', description: 'd', text: 'x' });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, 'One take at a time. The last one is still being made.');
+  assert.equal((await call('/open-voices/take/ov_abc123def')).body.error, 'The reference clip is silent or damaged.');
+  assert.equal((await call('/open-voices/stop', { jobId: 'ov_abc123def' })).body.state, 'cancelled');
+  assert.deepEqual(http.calls.at(-1).body, { secret: 'test-only', jobId: 'ov_abc123def', userId: USER });
+});
+
+test('readiness: from the bridge health, cached; Ming hidden when the bridge cannot say', async () => {
+  let n = 0;
+  let clock = 0;
+  const http = { get: async () => { n++; if (n === 2) throw new Error('down'); return { data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true } } } }; } };
+  const read = ov.createReadiness({ http, bridgeBase: () => 'https://bridge.test', secret: () => 's', now: () => clock });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true });
+  assert.equal(n, 1);
+  clock += 61000;
+  assert.deepEqual(await read(), { voxcpm: true, ming: false });
+  let asked = 0;
+  const silent = ov.createReadiness({ http: { get: async () => { asked++; return { data: {} }; } }, bridgeBase: () => 'https://bridge.test', secret: () => '' });
+  assert.deepEqual(await silent(), { voxcpm: false, ming: false });
+  assert.equal(asked, 0, 'no bridge secret, no call');
+  assert.deepEqual((await ov.healthBlock(async () => ({ voxcpm: true, ming: false }))).engines.map((e) => e.id), ['voxcpm']);
+});
+
+test('the panel: real labels for every control, no second live region, nothing auto-plays', () => {
+  const ids = [...OPEN_VOICES_HTML.matchAll(/<(?:select|textarea|input)[^>]*id="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(ids.length >= 8);
+  for (const id of ids) assert.match(OPEN_VOICES_HTML, new RegExp(`<label[^>]*for="${id}"`), `${id} has a label`);
+  assert.doesNotMatch(OPEN_VOICES_HTML + OPEN_VOICES_SCRIPT, /aria-live|autoplay|\.play\(\)/);
+  assert.match(OPEN_VOICES_HTML, />Design a voice</);
+  assert.match(OPEN_VOICES_HTML, />Speak with a voice</);
+  assert.match(OPEN_VOICES_SCRIPT, /coldSaid/);
+  const vm = require('node:vm');
+  new vm.Script(OPEN_VOICES_SCRIPT.replace(/^\s*<script>|<\/script>\s*$/g, ''));
+});
+
+test('the booth page carries the panel and still parses', () => {
+  const { soundBoothHtml } = require('./kadeSoundBoothPage');
+  assert.match(soundBoothHtml, /id="openVoicesDrawer" hidden/);
+  const vm = require('node:vm');
+  for (const m of soundBoothHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
+});

@@ -28,6 +28,10 @@ const { PAGE_SOURCE: SONG_PASTE_SOURCE } = require('./kadeSoundBoothPaste');
 const { pageParts: describeParts } = require('./kadeSoundBoothDescribe');
 const NO_DESCRIBE = { ask: '', hint: '', button: '', top: '', rearm: '', hold: '', settle: '', heard: '', ahead: '', functions: '' };
 const DESCRIBE = typeof describeParts === 'function' ? { ...NO_DESCRIBE, ...describeParts() } : NO_DESCRIBE;
+/* Nov 15 2026: Open voices, VoxCPM2 and Ming (kadeSoundBoothOpenVoicesPage.js), spliced in by interpolation. Empty while
+ * KADE_OPEN_VOICES=0, so the page is then the text it was before. The panel itself stays hidden until the server lists an engine. */
+const { pageParts: openVoiceParts } = require('./kadeSoundBoothOpenVoicesPage');
+const OPEN_VOICES = { OPEN_VOICES_HTML: '', OPEN_VOICES_SCRIPT: '', ...(typeof openVoiceParts === 'function' ? openVoiceParts() : {}) };
 
 const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth — Kade-AI</title>${SHARED_HEAD}
 <style>
@@ -82,7 +86,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Make speech with AuK, music with Lyria or YuE2, sounds with Stable Audio, or a scene with Seed Audio. Each engine keeps its own draft.</p>
+  <p class="muted">Make speech with AuK (or design and reuse voices with VoxCPM2 and Ming under Open voices), music with Lyria or YuE2, sounds with Stable Audio, or a scene with Seed Audio. Each engine keeps its own draft.</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
 
@@ -94,7 +98,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <details id="engineDetails"><summary>About this engine</summary><p id="engineWhere"></p><p id="engineCost"></p><p id="engineBest"></p><p id="engineNotFor"></p></details>
       <details id="chooser"><summary></summary><p id="chooserAnswer"></p><ul id="chooserRules"></ul></details>
       <button type="button" class="act quiet" id="btnSuggest">Pick one for me from what I typed</button>
-    </fieldset>
+    </fieldset>${OPEN_VOICES.OPEN_VOICES_HTML}
     <details id="starterDrawer"><summary>Starting points and fresh drafts</summary><fieldset id="starterPanel"><legend>Start something</legend>
       <label class="field" for="starter" id="starterLabel">A starting script</label>
       <select id="starter"><option value="">Choose a starting point</option></select>
@@ -1396,7 +1400,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     loadLibrary();
     say('Ready. ' + state.guide.chooser.answer);
   })();
-  </script>
+  </script>${OPEN_VOICES.OPEN_VOICES_SCRIPT}
 <script src="/assets/soundbooth/workbench.js"></script>
 </body></html>`;
 

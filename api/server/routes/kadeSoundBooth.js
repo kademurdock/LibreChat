@@ -4563,6 +4563,30 @@ router.post('/idea', requireJwtAuth, express.json({ limit: '8kb' }), async (req,
   }
 });
 
+/* Nov 15 2026: open voices, VoxCPM2 and Ming (kadeSoundBoothOpenVoices.js; bridge open-voices.js).
+ * Design a voice from a description, or speak with a saved voice or a clip. Saved voices are My
+ * Creations rows marked metadata.savedVoice; clips are re-signed from our storage before a worker
+ * sees them. KADE_OPEN_VOICES=0 hides the panel and the routes. */
+const openVoices = require('./kadeSoundBoothOpenVoices');
+/* A harness that stubs every require gets the booth without the panel, as with Sing it in my voice. */
+const OPEN_VOICES_READY = !!openVoices && ['createReadiness', 'createOpenVoicesRouter', 'healthBlock'].every((f) => typeof openVoices[f] === 'function');
+const openVoicesOn = () => OPEN_VOICES_READY && process.env.KADE_OPEN_VOICES !== '0';
+const openVoicesReady = OPEN_VOICES_READY
+  ? openVoices.createReadiness({ http: axios, bridgeBase, secret: () => process.env.BRIDGE_SECRET || '' })
+  : async () => ({ voxcpm: false, ming: false });
+if (OPEN_VOICES_READY) {
+  router.use('/open-voices', (req, res, next) => (openVoicesOn() ? next() : res.status(404).json({ error: 'Open voices are switched off.' })));
+  router.use(openVoices.createOpenVoicesRouter({
+    auth: requireJwtAuth,
+    http: axios,
+    bridgeBase,
+    readiness: openVoicesReady,
+    KadeAsset,
+    fresh: freshAssetUrl,
+    references: (user) => audioReferenceGuard(user),
+    logger,
+  }));
+}
 /* ============================ GET /health ================================= */
 /* ============================ POST /suggest =============================== */
 router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, res) => {
@@ -4595,6 +4619,8 @@ router.get('/health', requireJwtAuth, async (req, res) => {
       ...(myVoice ? { myvoice: { configured: true, queued: true, model: 'RVC v2' } } : {}),
       ...(aceOn(req.user) ? { ace: { configured: aceConfigured(), queued: true, model: 'ACE-Step 1.5 XL' } } : {}),
     },
+    /* Nov 15 2026: VoxCPM2 and Ming, outside guide.engines so older iPhone builds never list them. */
+    ...(openVoicesOn() ? { openVoices: await openVoices.healthBlock(openVoicesReady) } : {}),
     scriptDesk: !!(process.env.REFRAME_PROXY_SECRET || process.env.OPENROUTER_KEY),
     lyricWritingPersona: 'Lyric',
     lyricWritingModel,
