@@ -46,7 +46,10 @@ const UA =
 const MAX_CHANGES = 6;
 const MAX_TEXT = 200;
 const MIN_RANGE_S = 0.5;
-const MAX_RANGE_S = 30;
+/* The worker refuses a crop over 30 s; the crop is the range plus 1 s each side. */
+const MAX_RANGE_S = 28;
+/* Each change regenerates its range plus 1 s each side, so two changes need twice that between them. */
+const MIN_GAP_S = 2;
 const MAX_TAKES = 4;
 const DEFAULT_TAKES = 3;
 const WINDOW_S = 4;
@@ -75,11 +78,30 @@ function wordTemplate(kind, oldText, newText) {
 }
 
 /** An Edit instruction that is really a word change, so it can be sent to Change words instead. */
-function looksLikeWordChange(text) {
-  const s = String(text || '');
-  const q = `["'“”‘’]`;
-  return new RegExp(`\\b(replace|change|swap|switch)\\b[^.\\n]{0,40}?${q}[^"”\\n]{1,80}${q}[^.\\n]{0,20}?\\b(with|to|into|for)\\b\\s*${q}`, 'i').test(s) ||
-    new RegExp(`\\bsay(s|ing)?\\s+${q}[^"”\\n]{1,80}${q}\\s+instead of\\b`, 'i').test(s);
+/* A word change written as free text (Nov 14 2026). Quoted pairs ("Replace 'a' with 'b'",
+ * 'Sing "x" instead of "y"', '"a" -> "b"'), the same forms as the worker's _WORD_CHANGE; and the
+ * unquoted forms the worker lets through: "Replace Tuesday with Thursday", "Swap Tuesday for
+ * Thursday", "Make it say Thursday instead of Tuesday", "Change the word(s)/lyric(s) ...".
+ * A clause about the sound (noise, voice, timbre, mood, pace ...) is a style edit and passes, so
+ * "Change the mood to cheerful" and AuK's timbre template still go through. The fork, the bridge
+ * and the tests in both keep this rule word for word the same. */
+const WC_Q = '(?:(?<![A-Za-z])\'(?:[^\'\\n]|(?<=[A-Za-z])\'(?=[A-Za-z]))+\'(?![A-Za-z])|"[^"\\n]+"|\u2018[^\u2019\\n]+\u2019|\u201c[^\u201d\\n]+\u201d)';
+const WC_QUOTED = [
+  new RegExp(`\\b(?:replace|change|swap|switch|substitute)\\b[^.\\n]{0,40}?${WC_Q}[^.\\n]{0,20}?\\b(?:with|to|into|for|by)\\b\\s*${WC_Q}`, 'i'),
+  new RegExp(`\\b(?:say|says|saying|sing|sings|singing)\\b[^.\\n]{0,40}?${WC_Q}\\s*,?\\s*instead\\s+of\\s+${WC_Q}`, 'i'),
+  new RegExp(`${WC_Q}\\s*(?:->|\u2192|=>)\\s*${WC_Q}`),
+];
+const WC_NAMED = /\b(?:change|edit|fix|rewrite|alter|replace|swap)\s+(?:the\s+|a\s+|these\s+|this\s+|that\s+|some\s+|her\s+|his\s+|my\s+|one\s+)?(?:words?|lyrics?|lines?|phrase)\b/i;
+const WC_STYLE = /\b(?:noise|music|background|reverb\w*|echo|hum|hiss|room|voice|timbre|accent|tone|emotion|mood|style|pitch|speed|pace|tempo|volume|soft\w*|loud\w*|quiet\w*|whisper\w*|breath\w*)\b/i;
+const WC_PLAIN = [
+  /\b(?:replace|swap|switch|substitute)\s+\S.{0,60}?\s(?:with|for|by)\s+\S/i,
+  /\b(?:say|says|saying|sing|sings|singing)\s+\S.{0,60}?\binstead\s+of\s+\S/i,
+];
+
+function looksLikeWordChange(instruction) {
+  const text = String(instruction || '');
+  if (WC_QUOTED.some((r) => r.test(text)) || WC_NAMED.test(text)) return true;
+  return text.split(/[.;!?\n]+/).some((clause) => !WC_STYLE.test(clause) && WC_PLAIN.some((r) => r.test(clause)));
 }
 
 function takesFrom(value) {
@@ -110,8 +132,11 @@ function planWordChanges(b, seconds) {
   const changes = raw.map((c, i) => {
     const name = many ? `Change ${i + 1}: ` : '';
     if (!c || typeof c !== 'object') throw new Error(`${name}this change is empty.`);
-    const oldText = clean(c.oldText);
-    const newText = clean(c.newText);
+    const kind = kindOf(c.kind);
+    /* Sung words go inside the worker's "..." template, so their double quotes come out here. */
+    const tidy = (v) => (kind === 'vocal' ? clean(clean(v).replace(/["\u201c\u201d]/g, '')) : clean(v));
+    const oldText = tidy(c.oldText);
+    const newText = tidy(c.newText);
     if (!oldText) throw new Error(`${name}type the words it says now.`);
     if (!newText) throw new Error(`${name}type the new words.`);
     if (oldText.length > MAX_TEXT || newText.length > MAX_TEXT) throw new Error(`${name}keep the words under ${MAX_TEXT} characters. Change one phrase at a time.`);
@@ -126,12 +151,17 @@ function planWordChanges(b, seconds) {
     const span = rangeEnd - rangeStart;
     if (span < MIN_RANGE_S) throw new Error(`${name}give it at least half a second around the words.`);
     if (span > MAX_RANGE_S) throw new Error(`${name}${secs(span)} seconds is too wide. Choose ${MAX_RANGE_S} seconds or less around the words; 3 to 12 works best.`);
-    return { kind: kindOf(c.kind), oldText, newText, rangeStart: Math.round(rangeStart * 1000) / 1000, rangeEnd: Math.round(Math.min(rangeEnd, Number.isFinite(seconds) && seconds > 0 ? seconds : rangeEnd) * 1000) / 1000, asked: i };
+    return { kind, oldText, newText, rangeStart: Math.round(rangeStart * 1000) / 1000, rangeEnd: Math.round(Math.min(rangeEnd, Number.isFinite(seconds) && seconds > 0 ? seconds : rangeEnd) * 1000) / 1000, asked: i };
   });
   const ordered = [...changes].sort((a, b2) => b2.rangeStart - a.rangeStart);
   for (let i = 1; i < ordered.length; i++) {
     if (ordered[i].rangeEnd > ordered[i - 1].rangeStart) {
       throw new Error(`Two changes overlap between ${secs(ordered[i - 1].rangeStart)} and ${secs(ordered[i].rangeEnd)} seconds. Make them one change, or move one of them.`);
+    }
+    /* The worker remakes a second either side of each range, so a change closer than that would
+     * remake the start or end of its neighbour's new words. */
+    if (ordered[i - 1].rangeStart - ordered[i].rangeEnd < MIN_GAP_S) {
+      throw new Error(`Two changes are less than ${MIN_GAP_S} seconds apart (${secs(ordered[i].rangeEnd)} and ${secs(ordered[i - 1].rangeStart)} seconds). Each change remakes a second on either side, so they would garble each other. Make them one change, or leave ${MIN_GAP_S} seconds between them.`);
     }
   }
   return ordered.map(({ asked: _a, ...c }) => c);
@@ -255,7 +285,7 @@ async function advanceLocked(project) {
       touched(project);
       await project.save();
       logger.info(`[soundbooth/words] change ${index + 1}/${total} queued job=${jobId} takes=${seeds.length} project=${project._id}`);
-      const nextLine = `${sayChange(next, index, total)} is ${made || finished ? 'next' : 'queued'}. ${seeds.length} take${seeds.length === 1 ? '' : 's'}.`;
+      const nextLine = `${sayChange(next, index, total)} is ${made || finished ? 'next' : 'queued'}. Asking for ${seeds.length} take${seeds.length === 1 ? '' : 's'}.`;
       return { changed: true, state: 'queued', jobId, spoken: [said, nextLine].filter(Boolean).join(' '), finished, report: finished?.report };
     } catch (e) {
       const why = providerError(e, { name: 'The render service' });
@@ -303,19 +333,25 @@ function changesView(changes) {
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     execFile(process.env.FFMPEG_PATH || 'ffmpeg', args, { timeout: 120000, maxBuffer: 4 * 1024 * 1024 }, (error, _out, stderr) => {
-      if (error) reject(new Error(String(stderr || error.message).split('\n').filter(Boolean).slice(-1)[0] || 'ffmpeg failed'));
+      if (error) reject(Object.assign(new Error(String(stderr || error.message).split('\n').filter(Boolean).slice(-1)[0] || 'ffmpeg failed'), { ffmpeg: true }));
       else resolve();
     });
   });
 }
 
-/** Cut `from`..`to` into WINDOW_S mono 16 kHz WAV windows. Returns [{start, end, buffer}]. */
-async function cutWindows(buffer, from, to) {
+/** Cut `from`..`to` into WINDOW_S mono 16 kHz WAV windows. Returns [{start, end, buffer}].
+ * `source` is the recording's bytes, or { url } for one already checked as hers in our storage:
+ * then ffmpeg seeks in the URL and reads only that stretch, so "List the next stretch" does not
+ * download the whole recording again (https only). */
+async function cutWindows(source, from, to) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'booth-words-'));
   try {
-    const input = path.join(dir, 'in.audio');
-    await fs.writeFile(input, buffer);
-    await runFfmpeg(['-hide_banner', '-loglevel', 'error', '-ss', String(from), '-t', String(to - from), '-i', input,
+    let input;
+    const fromUrl = !Buffer.isBuffer(source) && typeof source?.url === 'string' && /^https:\/\/\S+$/i.test(source.url);
+    if (fromUrl) input = source.url;
+    else if (Buffer.isBuffer(source)) { input = path.join(dir, 'in.audio'); await fs.writeFile(input, source); }
+    else throw new Error('No recording to listen to.');
+    await runFfmpeg(['-hide_banner', '-loglevel', 'error', ...(fromUrl ? ['-protocol_whitelist', 'https,tls,tcp'] : []), '-ss', String(from), '-t', String(to - from), '-i', input,
       '-ac', '1', '-ar', '16000', '-f', 'segment', '-segment_time', String(WINDOW_S), '-reset_timestamps', '1', path.join(dir, 'w%04d.wav')]);
     const names = (await fs.readdir(dir)).filter((n) => /^w\d{4}\.wav$/.test(n)).sort();
     const windows = [];
@@ -400,7 +436,7 @@ async function timedTranscript(buffer, seconds, { from = 0, to } = {}, deps = {}
 }
 
 module.exports = {
-  MAX_CHANGES, MAX_TAKES, DEFAULT_TAKES, MIN_RANGE_S, MAX_RANGE_S, WINDOW_S, MAX_TRANSCRIPT_S,
+  MAX_CHANGES, MAX_TAKES, DEFAULT_TAKES, MIN_RANGE_S, MAX_RANGE_S, MIN_GAP_S, WINDOW_S, MAX_TRANSCRIPT_S,
   kindOf, wordTemplate, looksLikeWordChange, takesFrom, freshSeeds, planWordChanges, summary, sameChanges,
   submitChange, advance, advanceLocked, changesView, sayProgress, sayDone, timedTranscript, cutWindows, mimoHear,
 };

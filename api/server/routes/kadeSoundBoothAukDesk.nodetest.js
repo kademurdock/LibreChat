@@ -113,6 +113,8 @@ function booth(replies = [], env = {}, opts = {}) {
       if (LOCAL.includes(name)) return require(name);
       if (name === './kadeSoundBoothLink') return { createReferenceLinkRouter: () => () => {}, guideFor: (g) => g };
       if (name === '../utils/kadeClaudeLane') return opts.claudeLane || {};
+      /* Nov 14 2026: enough of mongoose for a render that names its project (a reopened one). */
+      if (name === 'mongoose') return { Types: { ObjectId: { isValid: (v) => /^[0-9a-f]{24}$/i.test(String(v)) } } };
       return {};
     },
   };
@@ -131,6 +133,7 @@ function booth(replies = [], env = {}, opts = {}) {
   };
   return {
     writerCalls, writerOptions, bridgeCalls, saved, warnings, usageLog, request, internals: context.module.exports._internals,
+    project: () => project,
     write: (body) => call('post/script', { engine: 'scenema', mode: 'write', text: 'A short story.', gender: 'female', ...body }),
     render: (body) => call('post/render', { engine: 'scenema', gender: 'female', ...body }),
   };
@@ -1295,6 +1298,19 @@ test('an ordinary edit is a fresh attempt on a fresh seed, never the project voi
   const chosen = booth();
   await chosen.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE, seed: 4242 });
   assert.equal(chosen.bridgeCalls[0].seed, 4242, 'a seed she typed is still hers');
+});
+
+test('a reopened edit project sends its last drawn seed back, and it is drawn fresh again', async () => {
+  const desk = booth();
+  await desk.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE });
+  const first = desk.bridgeCalls[0].seed;
+  assert.equal(desk.saved.at(-1).options.seed, first, 'the drawn seed is saved with the options');
+  /* That render finished. The page copies every saved option back on reopen, the seed among them. */
+  Object.assign(desk.project(), { state: 'done', renderLease: undefined, renderLeaseUntil: undefined });
+  const reopened = await desk.render({ auk_task: 'edit', instruction: 'Remove background noise.', reference_voice_url: TAKE, projectId: '0123456789abcdef01234567', seed: first });
+  assert.notEqual(reopened.status, 409, JSON.stringify(reopened.result));
+  assert.ok(Number.isInteger(desk.bridgeCalls[1].seed));
+  assert.notEqual(desk.bridgeCalls[1].seed, first, 'the last drawn seed is not rolled again');
 });
 
 test('the guide offers Change words with its own labelled boxes, and the old free-text starter is gone', () => {

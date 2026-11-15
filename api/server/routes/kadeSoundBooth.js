@@ -2944,11 +2944,15 @@ async function editSource(req, reference, { withAudio = false } = {}) {
   let seconds = await musicReferenceSeconds(user, url);
   let audio = null;
   if (!(seconds > 0) || withAudio) {
-    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 256 * 1024 * 1024, headers: { 'User-Agent': UA } });
-    audio = Buffer.from(r.data);
+    audio = await editSourceAudio(url);
     if (!(seconds > 0)) seconds = await require('./kadeSoundBoothStitch').durationOf(audio);
   }
   return { url, seconds, audio };
+}
+
+async function editSourceAudio(url) {
+  const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 0, maxContentLength: 256 * 1024 * 1024, headers: { 'User-Agent': UA } });
+  return Buffer.from(r.data);
 }
 
 /* ======================= POST /words/transcript ===========================
@@ -2959,14 +2963,22 @@ router.post('/words/transcript', requireJwtAuth, express.json({ limit: '16kb' })
   const b = req.body || {};
   let source;
   try {
-    source = await editSource(req, b.reference_voice_url, { withAudio: true });
+    /* Only the length is needed up front: ffmpeg reads just the asked stretch from the URL. */
+    source = await editSource(req, b.reference_voice_url);
   } catch (error) {
     return res.status(400).json({ error: errorText(error.message, { name: 'The recording', fallback: 'Import the recording again first.' }) });
   }
   try {
     const from = Number.isFinite(b.from) ? b.from : 0;
     const to = Number.isFinite(b.to) ? b.to : undefined;
-    const result = await words.timedTranscript(source.audio, source.seconds, { from, to });
+    let result;
+    try {
+      result = await words.timedTranscript({ url: source.url }, source.seconds, { from, to });
+    } catch (error) {
+      /* An ffmpeg here that cannot read the URL: fall back to the downloaded recording. */
+      if (!error.ffmpeg) throw error;
+      result = await words.timedTranscript(source.audio || await editSourceAudio(source.url), source.seconds, { from, to });
+    }
     if (result.costUSD > 0) {
       logKadeUsage({ userId: String(req.user.id), service: 'sound_booth_listen', quantity: result.lines.length, unit: 'windows', costUSD: result.costUSD,
         metadata: { via: 'sound-booth', lane: 'words-transcript', model: process.env.KADE_WORDS_LISTENER_MODEL || 'xiaomi/mimo-v2.6-flash' } }).catch(() => {});
@@ -3186,8 +3198,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
        * speech; reusing it made every retry of an edit roll the same dice. A seed she typed in More
        * settings is kept, unless it is only the project's voice seed coming back from the screen.
        * Change words draws its own seeds per change (kadeSoundBoothWords.js). */
-      if (wording || !Number.isInteger(opts.seed) || opts.seed === project.voiceSeed) delete opts.seed;
-      if (!wording && !Number.isInteger(opts.seed)) opts.seed = words.freshSeeds(1)[0];
+      if (wording || !Number.isInteger(opts.seed) || opts.seed === project.voiceSeed || opts.seed === project.lastEditSeed) delete opts.seed;
+      /* The drawn seed is saved with the options, so a reopened project sends it back. It is kept as
+       * lastEditSeed too, so that copy is known for what it is and drawn fresh again. */
+      if (!wording && !Number.isInteger(opts.seed)) { opts.seed = words.freshSeeds(1)[0]; project.lastEditSeed = opts.seed; }
     } else if (engine === 'scenema') {
       if (b.newVoice === true) { project.voiceSeed = undefined; delete opts.seed; }
       if (!Number.isInteger(project.voiceSeed) && project.parts?.length && !b.newVoice) {

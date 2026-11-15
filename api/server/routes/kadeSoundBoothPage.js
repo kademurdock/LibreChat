@@ -403,7 +403,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         document.getElementById('settingsDrawer').open=true;
         if(wording){
           document.getElementById('editorLegend').textContent='Change words in a recording';
-          document.getElementById('scriptHint').textContent='Import the recording. Type the words it says now, the new words, and From and To seconds around them. Find the spot lists what is said every four seconds, so you can pick the spot by ear. Each change makes fresh takes and keeps one only if it says the new words; otherwise your recording is left as it was.';
+          document.getElementById('scriptHint').textContent='Import the recording. Type the words it says now, the new words, and From and To seconds around them. Find the spot lists what is said every four seconds, so you can pick the spot by ear. Each change makes fresh takes and keeps one only if it says the new words; otherwise your recording is left as it was.'+(Number.isInteger(Number(state.values.seed))&&String(state.values.seed).trim()!==''?' The seed in More settings is not used here: every take gets a fresh one.':'');
           document.querySelector('#settingsDrawer summary').textContent='Recording and words to change';
         }
       } else if(state.engine==='scenema'){
@@ -617,7 +617,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           :'<p class="hint" id="wordQueue">No changes in the list yet. With an empty list, Render makes the one change in the boxes above.</p>')+
         '</div>'+
         '<div role="group" aria-labelledby="spotHead"><h3 id="spotHead">Find the spot</h3>'+
-        '<button type="button" class="act quiet" id="btnFindSpot" aria-describedby="findSpotHint"'+(state.clips.length&&!state.findingSpot?'':' disabled')+'>'+(state.findingSpot?'Listening':'List what is said, with times')+'</button>'+
+        '<button type="button" class="act quiet" id="btnFindSpot" aria-describedby="findSpotHint"'+(state.clips.length?(state.findingSpot?' aria-disabled="true"':''):' disabled')+'>'+(state.findingSpot?'Listening':'List what is said, with times')+'</button>'+
         '<p class="hint" id="findSpotHint">'+(state.clips.length?'Listens to the recording four seconds at a time and lists what is said. Play a stretch to hear it, then use it as the spot. Nothing is made; the listening costs a tiny fraction of a cent.':'Import the recording first.')+'</p>'+
         '<div id="wordSpots">'+spotsHtml()+'</div></div>');
       document.getElementById('btnAddChange').onclick=function(){
@@ -647,8 +647,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       };});
       Array.prototype.forEach.call(extras.querySelectorAll('[data-spotuse]'),function(button){button.onclick=function(){
         var l=state.wordSpots.lines[Number(button.dataset.spotuse)], total=state.wordSpots.seconds||l.end;
-        state.values.words_from=String(Math.max(0,Math.round((l.start-0.5)*10)/10));
-        state.values.words_to=String(Math.min(total,Math.round((l.end+0.5)*10)/10));
+        state.values.words_from=String(Math.max(0,Math.round((l.start-1)*10)/10));
+        state.values.words_to=String(Math.min(total,Math.round((l.end+1)*10)/10));
         invalidateQuote(); renderSettings(); var box=document.getElementById(state.values.old_text?'set_new_text':'set_old_text'); if(box) box.focus();
         say('Spot set: from '+state.values.words_from+' to '+state.values.words_to+' seconds. If the words run on into the next stretch, raise To by a few seconds.');
       };});
@@ -657,11 +657,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!state.clips.length){ say('Import the recording first.',true); return; }
       if(state.findingSpot) return;
       var url=state.clips[0].url;
+      var asker=document.activeElement && document.activeElement.id;
       state.findingSpot=true; renderSettings();
+      /* The settings are redrawn; put focus back on the button that was used (it says Listening). */
+      var spotBtn=document.getElementById(asker==='btnMoreSpots'?'btnMoreSpots':'btnFindSpot')||document.getElementById('btnFindSpot'); if(spotBtn) spotBtn.focus();
       say('Listening to the recording four seconds at a time. This takes a few seconds.');
       var r=await post('/api/kade/sound-booth/words/transcript',{reference_voice_url:url, from:from||0});
       state.findingSpot=false;
-      if(!r.ok){ renderSettings(); say(r.data.error||'The recording could not be transcribed just now. Set the spot by ear.',true); return; }
+      if(!r.ok){ renderSettings(); var again=document.getElementById('btnFindSpot'); if(again) again.focus(); say(r.data.error||'The recording could not be transcribed just now. Set the spot by ear.',true); return; }
       var kept=from && state.wordSpots && state.wordSpots.url===url ? state.wordSpots.lines : [];
       state.wordSpots={url:url, lines:kept.concat(r.data.lines||[]), to:r.data.to, seconds:r.data.seconds};
       renderSettings();

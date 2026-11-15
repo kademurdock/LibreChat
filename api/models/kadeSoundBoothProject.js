@@ -125,6 +125,9 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
      * different person. Set on the first preview or render of a project and
      * reused for every render after; `newVoice: true` rerolls it deliberately. */
     voiceSeed: { type: Number },
+    /** Nov 14 2026: the seed last drawn for an edit. It is saved in options too, so a reopened
+     * project sends it back; matching this, it is drawn fresh instead of reused. */
+    lastEditSeed: { type: Number },
     renderLease: { type: String },
     renderLeaseUntil: { type: Date },
     /** KadeAsset ids for every finished render of this project. */

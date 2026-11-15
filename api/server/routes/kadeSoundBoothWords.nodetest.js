@@ -157,3 +157,50 @@ test('the Change words controls are labelled buttons and lists, and every result
   assert.match(script, /b\.seed === undefined && b\.auk_task!=='edit' && b\.auk_task!=='change_words'\) b\.seed = state\.voiceSeed;/);
   assert.match(script, /if\(state\.engine==='scenema' && b\.auk_task==='change_words'\) b\.changes=wordChangesToSend\(\);/);
 });
+
+test('unquoted word changes are caught too; style edits and the timbre template are not', () => {
+  for (const text of ['Replace Tuesday with Thursday', 'Change the word Tuesday to Thursday', 'Make it say Thursday instead of Tuesday',
+    'Sing "like you" instead of "rear view"', 'Swap Tuesday for Thursday', 'Fix the lyrics in the chorus.', '"a" -> "b"']) {
+    assert.equal(words.looksLikeWordChange(text), true, text);
+  }
+  for (const text of ['Make this a whisper.', 'Give this voice an Irish accent.', 'Change the emotion to happy.', 'Replace the background noise with silence.', "Keep the speaker's room sound."]) {
+    assert.equal(words.looksLikeWordChange(text), false, text);
+  }
+});
+
+test('the widest range is 28 seconds, since the worker adds a second each side and stops at 30', () => {
+  assert.equal(words.MAX_RANGE_S, 28);
+  assert.throws(() => words.planWordChanges({ old_text: 'a', new_text: 'b', words_from: 0, words_to: 29 }, 60), /Choose 28 seconds or less/);
+  assert.equal(words.planWordChanges({ old_text: 'a', new_text: 'b', words_from: 0, words_to: 28 }, 60)[0].rangeEnd, 28);
+});
+
+test('two changes need two seconds between them, because each remakes a second either side', () => {
+  const near = { changes: [{ oldText: 'a', newText: 'b', rangeStart: 10, rangeEnd: 12 }, { oldText: 'c', newText: 'd', rangeStart: 7, rangeEnd: 9.5 }] };
+  assert.throws(() => words.planWordChanges(near, 30), /less than 2 seconds apart \(9\.5 and 10 seconds\)/);
+  const apart = { changes: [{ oldText: 'a', newText: 'b', rangeStart: 10, rangeEnd: 12 }, { oldText: 'c', newText: 'd', rangeStart: 5, rangeEnd: 8 }] };
+  assert.deepEqual(words.planWordChanges(apart, 30).map((c) => c.oldText), ['a', 'c']);
+});
+
+test('sung words lose their double quotes, since the worker puts them inside its own quotes', () => {
+  const [c] = words.planWordChanges({ words_kind: 'sung', old_text: '"rear" view', new_text: 'like \u201cyou\u201d', words_from: 1, words_to: 3 }, 9);
+  assert.deepEqual([c.oldText, c.newText], ['rear view', 'like you']);
+  const [spoken] = words.planWordChanges({ words_kind: 'spoken', old_text: 'say "hi"', new_text: 'say "bye"', words_from: 1, words_to: 3 }, 9);
+  assert.equal(spoken.oldText, 'say "hi"');
+});
+
+test('Find the spot reads only the asked stretch from the URL with ffmpeg', async () => {
+  const calls = [];
+  const cp = require('child_process');
+  const real = cp.execFile;
+  cp.execFile = (bin, args, opts, cb) => { calls.push(args); cb(new Error('no ffmpeg here'), '', 'Protocol not found'); };
+  try {
+    const mod = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'kadeSoundBoothWords.js'), 'utf8'), { module: mod, exports: mod.exports, require, process, Buffer, console, URL });
+    await assert.rejects(mod.exports.cutWindows({ url: 'https://storage.test/her.mp3' }, 8, 20), (e) => e.ffmpeg === true);
+  } finally { cp.execFile = real; }
+  const args = [...calls[0]];
+  assert.deepEqual(args.slice(args.indexOf('-protocol_whitelist'), args.indexOf('-protocol_whitelist') + 2), ['-protocol_whitelist', 'https,tls,tcp']);
+  assert.equal(args[args.indexOf('-ss') + 1], '8');
+  assert.equal(args[args.indexOf('-t') + 1], '12');
+  assert.equal(args[args.indexOf('-i') + 1], 'https://storage.test/her.mp3');
+});
