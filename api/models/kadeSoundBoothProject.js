@@ -90,6 +90,31 @@ const kadeSoundBoothProjectSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    /** Nov 14 2026 — Change words (kadeSoundBoothWords.js). One word change per render, queued in
+     * the order they run (latest spot first), each working on the last result. Each is its own
+     * bridge job with fresh seeds; the bridge keeps the take that says the new words, or none
+     * ('no_match'), and `report` is what it heard. Empty on every other kind of render. */
+    wordChanges: {
+      type: [
+        {
+          kind: { type: String, enum: ['speech', 'vocal'], default: 'speech' },
+          oldText: { type: String },
+          newText: { type: String },
+          rangeStart: { type: Number },
+          rangeEnd: { type: Number },
+          seeds: { type: [Number], default: undefined },
+          pickedSeed: { type: Number },
+          jobId: { type: String },
+          url: { type: String },
+          wavUrl: { type: String },
+          state: { type: String, enum: ['pending', 'queued', 'running', 'done', 'failed', 'no_match'], default: 'pending' },
+          report: { type: mongoose.Schema.Types.Mixed },
+          costUSD: { type: Number },
+          error: { type: String },
+        },
+      ],
+      default: [],
+    },
     /** Set once the parts are joined and filed, so a re-poll cannot make a
      * second copy of the same recording. */
     stitchedAssetId: { type: String },

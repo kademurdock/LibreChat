@@ -231,7 +231,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function post(path, body){ return request(path,body||{}); }
     function get(path){ return request(path); }
-    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; if(isUpload()) return uploadUi().render||'Render'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
+    function renderLabel(){ if(state.engine==='scenema' && state.values.auk_task==='change_words') return 'Change the words'; if(state.engine==='scenema' && state.values.auk_task==='edit') return 'Edit recording'; if(isUpload()) return uploadUi().render||'Render'; return state.engine==='stable' ? 'Generate sounds' : (state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') ? 'Make music' : state.engine==='seed' ? 'Generate scene' : 'Perform script'; }
     function busy(){ return state.rendering || state.jobId || state.writing || state.importing || state.copying; }
     /* Sep 27 2026: an engine whose guide entry says flow 'upload' has no script: the imported recording is the input. Only an
      * account the server gives one to ever has it (Sing it in my voice), and its words come from its guide entry. */
@@ -364,7 +364,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     function applyWorkflow(){
       updateRenderControls();
-      var music=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'), scene=state.engine==='seed', effects=state.engine==='stable', upload=isUpload(), editing=state.engine==='scenema'&&state.values.auk_task==='edit';
+      var music=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'), scene=state.engine==='seed', effects=state.engine==='stable', upload=isUpload(), wording=state.engine==='scenema'&&state.values.auk_task==='change_words', editing=state.engine==='scenema'&&(state.values.auk_task==='edit'||wording);
       var g=state.guide.engines[state.engine];
       document.getElementById('renderHint').textContent=g.cost + ' Generation starts with one press.';
       document.getElementById('btnRender').setAttribute('aria-describedby','renderHint');
@@ -401,6 +401,11 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         document.getElementById('scriptHint').textContent='Import the recording and describe the change below. Select a short time range for a precise word or lyric edit; audio outside it is kept.';
         document.querySelector('#settingsDrawer summary').textContent='Recording and edit instructions';
         document.getElementById('settingsDrawer').open=true;
+        if(wording){
+          document.getElementById('editorLegend').textContent='Change words in a recording';
+          document.getElementById('scriptHint').textContent='Import the recording. Type the words it says now, the new words, and From and To seconds around them. Find the spot lists what is said every four seconds, so you can pick the spot by ear. Each change makes fresh takes and keeps one only if it says the new words; otherwise your recording is left as it was.';
+          document.querySelector('#settingsDrawer summary').textContent='Recording and words to change';
+        }
       } else if(state.engine==='scenema'){
         document.getElementById('btnPreview').hidden=false;document.getElementById('btnNewVoice').hidden=false;
       }
@@ -502,9 +507,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var box = document.getElementById('settings'), more = document.getElementById('moreSettings'), panel = document.getElementById('settingsPanel');
       var show = g.settings.filter(function(s){
         if(state.engine==='scenema'){
-          var editing=state.values.auk_task==='edit';
-          if(!editing&&['instruction','edit_start','edit_end','gen_seconds'].indexOf(s.key)>=0)return false;
-          if(editing&&['voice_description','pace'].indexOf(s.key)>=0)return false;
+          /* Nov 14 2026: Change words has its own boxes; Edit keeps its instructions; speech shows neither. */
+          var task=state.values.auk_task, wordKeys=['words_kind','old_text','new_text','words_from','words_to','takes'];
+          if(task!=='change_words'&&wordKeys.indexOf(s.key)>=0)return false;
+          if(task!=='edit'&&['instruction','edit_start','edit_end','gen_seconds'].indexOf(s.key)>=0)return false;
+          if((task==='edit'||task==='change_words')&&['voice_description','pace'].indexOf(s.key)>=0)return false;
+          if(task==='change_words'&&s.key==='seed')return false;
         }
         if((state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') && state.values.instrumental && (s.key==='lyrics'||s.key==='keep_lyrics')) return false; return true;
       });
@@ -519,6 +527,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         document.getElementById('btnLyrics').disabled=busy();
         document.getElementById('btnLyrics').onclick=transcribeLyrics;${DESCRIBE.button}
       }
+      if(state.engine==='scenema' && state.values.auk_task==='change_words') wordExtras(extras);
       if(state.importError){
         extras.insertAdjacentHTML('beforeend','<p role="alert">'+esc(state.importError)+' Retry the import or discard this failed attempt before generating.</p><button type="button" class="act quiet" id="discardImport">Discard failed import</button>');
         document.getElementById('discardImport').onclick=function(){state.importError='';invalidateQuote();renderSettings();say('Failed import discarded. Review the attached clips before generating.');};
@@ -531,8 +540,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           var recipe=g.recipes[Number(button.dataset.recipe)];
           state.values.auk_task=recipe.task;
           if(recipe.task==='speech')state.clips=[];
-          var key=recipe.task==='speech'?'voice_description':'instruction';
-          state.values[key]=recipe.text; invalidateQuote(); renderSettings();
+          var key=recipe.task==='speech'?'voice_description':recipe.task==='change_words'?'old_text':'instruction';
+          if(recipe.task==='change_words'){state.values.words_kind=recipe.kind||'spoken';state.values.old_text=recipe.old||'';state.values.new_text=recipe.new||'';}
+          else state.values[key]=recipe.text;
+          invalidateQuote(); renderSettings();
           document.getElementById('set_'+key).focus();
           say('Example filled in. Edit it to suit your idea. No generation started.');
         };});
@@ -555,6 +566,107 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         btn.onclick = function(){ if(busy())return; invalidateQuote();state.clips.splice(parseInt(btn.dataset.rmclip,10),1); say('Clip removed.'); renderSettings(); };
       });
       applyWorkflow();
+    }
+
+    /* ---- Change words (Nov 14 2026) ----
+     * One change per render; the list holds the rest and the server runs them one after another.
+     * Every control is a labelled button or field, and every result is said in the status line. */
+    function clockOf(n){ n=Math.max(0,Number(n)||0); var m=Math.floor(n/60), s2=Math.floor(n%60); return m+':'+(s2<10?'0':'')+s2; }
+    function secOf(n){ return String(Math.round(n*10)/10); }
+    function changeLine(c){ return (c.kind==='sung'?'Sung':'Spoken')+': "'+c.oldText+'" to "'+c.newText+'", from '+secOf(c.rangeStart)+' to '+secOf(c.rangeEnd)+' seconds'; }
+    function fieldChange(){ var v=state.values; return {kind:v.words_kind==='sung'?'sung':'spoken', oldText:String(v.old_text||'').trim(), newText:String(v.new_text||'').trim(), rangeStart:parseFloat(v.words_from), rangeEnd:parseFloat(v.words_to)}; }
+    function fieldsEmpty(c){ return !c.oldText && !c.newText && isNaN(c.rangeStart) && isNaN(c.rangeEnd); }
+    function changeProblem(c){
+      if(!c.oldText) return ['set_old_text','Type the words it says now.'];
+      if(!c.newText) return ['set_new_text','Type the new words.'];
+      if(isNaN(c.rangeStart)) return ['set_words_from','Set From, the second a little before the words.'];
+      if(isNaN(c.rangeEnd)) return ['set_words_to','Set To, the second a little after the words.'];
+      if(c.rangeEnd<=c.rangeStart) return ['set_words_to','To has to be after From.'];
+      if(c.rangeEnd-c.rangeStart>30) return ['set_words_to','Keep the spot to 30 seconds or less. 3 to 12 seconds around the words works best.'];
+      return null;
+    }
+    function wordChangesToSend(){ var list=(state.wordQueue||[]).slice(), c=fieldChange(); if(!fieldsEmpty(c)) list.push(c); return list; }
+    function wordsReady(){
+      var c=fieldChange(), list=state.wordQueue||[];
+      document.getElementById('settingsDrawer').open=true;
+      if(!state.clips.length){ var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say('Import the recording whose words you want to change.',true); return false; }
+      if(!fieldsEmpty(c) || !list.length){ var bad=changeProblem(c); if(bad){ var f=document.getElementById(bad[0]); if(f) f.focus(); say(bad[1],true); return false; } }
+      return true;
+    }
+    function spotsHtml(){
+      var spots=state.wordSpots;
+      if(!spots || !state.clips.length || spots.url!==state.clips[0].url) return '';
+      var more=spots.seconds && spots.to < spots.seconds-0.05;
+      return '<audio id="spotPlayer" preload="none" src="'+esc(spots.url)+'"></audio>'+
+        '<ol id="spotList" aria-label="What is said, four seconds at a time" tabindex="-1">'+spots.lines.map(function(l,i){
+          var when=clockOf(l.start)+' to '+clockOf(l.end);
+          return '<li>'+esc(when)+': '+esc(l.missed?'could not be heard':(l.text||'no words'))+
+            ' <button type="button" class="act quiet" data-spotplay="'+i+'">Play '+esc(when)+'</button>'+
+            '<button type="button" class="act quiet" data-spotuse="'+i+'">Use '+esc(when)+' as the spot</button></li>';
+        }).join('')+'</ol>'+
+        (more?'<button type="button" class="act quiet" id="btnMoreSpots">List the next stretch, from '+esc(clockOf(spots.to))+'</button>':'');
+    }
+    function wordExtras(extras){
+      var q=state.wordQueue||(state.wordQueue=[]);
+      if(state.wordSpots && (!state.clips.length || state.wordSpots.url!==state.clips[0].url)) state.wordSpots=null;
+      extras.insertAdjacentHTML('beforeend',
+        '<div role="group" aria-labelledby="wordQueueHead"><h3 id="wordQueueHead">Changes to make</h3>'+
+        '<button type="button" class="act" id="btnAddChange" aria-describedby="addChangeHint">Add this change to the list</button>'+
+        '<p class="hint" id="addChangeHint">Adds the words and spot above as one change and clears the boxes for the next. Render makes every change in the list, one at a time, each on the last result. They run from the latest spot back, so earlier spots do not move.</p>'+
+        (q.length?'<ol id="wordQueue" aria-label="Changes to make">'+q.map(function(c,i){return '<li>'+esc(changeLine(c))+' <button type="button" class="act quiet" data-rmchange="'+i+'">Remove change '+(i+1)+'</button></li>';}).join('')+'</ol>'
+          :'<p class="hint" id="wordQueue">No changes in the list yet. With an empty list, Render makes the one change in the boxes above.</p>')+
+        '</div>'+
+        '<div role="group" aria-labelledby="spotHead"><h3 id="spotHead">Find the spot</h3>'+
+        '<button type="button" class="act quiet" id="btnFindSpot" aria-describedby="findSpotHint"'+(state.clips.length&&!state.findingSpot?'':' disabled')+'>'+(state.findingSpot?'Listening':'List what is said, with times')+'</button>'+
+        '<p class="hint" id="findSpotHint">'+(state.clips.length?'Listens to the recording four seconds at a time and lists what is said. Play a stretch to hear it, then use it as the spot. Nothing is made; the listening costs a tiny fraction of a cent.':'Import the recording first.')+'</p>'+
+        '<div id="wordSpots">'+spotsHtml()+'</div></div>');
+      document.getElementById('btnAddChange').onclick=function(){
+        if(busy())return;
+        var c=fieldChange(), bad=changeProblem(c);
+        if(bad){ var f=document.getElementById(bad[0]); if(f) f.focus(); say(bad[1],true); return; }
+        if(q.length>=6){ say('Up to six changes at a time. Render these first, then add the rest.',true); return; }
+        q.push(c); ['old_text','new_text','words_from','words_to'].forEach(function(k){ delete state.values[k]; });
+        invalidateQuote(); renderSettings(); var box=document.getElementById('set_old_text'); if(box) box.focus();
+        say('Change '+q.length+' added: '+changeLine(c)+'. '+q.length+' change'+(q.length===1?'':'s')+' in the list. Type the next one, or choose '+renderLabel()+'.');
+      };
+      Array.prototype.forEach.call(extras.querySelectorAll('[data-rmchange]'),function(button){button.onclick=function(){
+        if(busy())return;
+        var i=Number(button.dataset.rmchange), gone=q.splice(i,1)[0];
+        invalidateQuote(); renderSettings(); var head=document.getElementById('btnAddChange'); if(head) head.focus();
+        say('Removed change '+(i+1)+': '+changeLine(gone)+'. '+(q.length?q.length+' left in the list.':'The list is empty.'));
+      };});
+      document.getElementById('btnFindSpot').onclick=function(){ findSpot(0); };
+      var more=document.getElementById('btnMoreSpots'); if(more) more.onclick=function(){ findSpot(state.wordSpots.to); };
+      var player=document.getElementById('spotPlayer');
+      Array.prototype.forEach.call(extras.querySelectorAll('[data-spotplay]'),function(button){button.onclick=function(){
+        var l=state.wordSpots.lines[Number(button.dataset.spotplay)];
+        player.ontimeupdate=function(){ if(player.currentTime>=l.end){ player.pause(); player.ontimeupdate=null; } };
+        try{ player.currentTime=l.start; }catch(e){}
+        var go=player.play(); if(go&&go.catch) go.catch(function(){ say('The recording would not play here. Use the clip player above.',true); });
+        say('Playing '+clockOf(l.start)+' to '+clockOf(l.end)+'.');
+      };});
+      Array.prototype.forEach.call(extras.querySelectorAll('[data-spotuse]'),function(button){button.onclick=function(){
+        var l=state.wordSpots.lines[Number(button.dataset.spotuse)], total=state.wordSpots.seconds||l.end;
+        state.values.words_from=String(Math.max(0,Math.round((l.start-0.5)*10)/10));
+        state.values.words_to=String(Math.min(total,Math.round((l.end+0.5)*10)/10));
+        invalidateQuote(); renderSettings(); var box=document.getElementById(state.values.old_text?'set_new_text':'set_old_text'); if(box) box.focus();
+        say('Spot set: from '+state.values.words_from+' to '+state.values.words_to+' seconds. If the words run on into the next stretch, raise To by a few seconds.');
+      };});
+    }
+    async function findSpot(from){
+      if(!state.clips.length){ say('Import the recording first.',true); return; }
+      if(state.findingSpot) return;
+      var url=state.clips[0].url;
+      state.findingSpot=true; renderSettings();
+      say('Listening to the recording four seconds at a time. This takes a few seconds.');
+      var r=await post('/api/kade/sound-booth/words/transcript',{reference_voice_url:url, from:from||0});
+      state.findingSpot=false;
+      if(!r.ok){ renderSettings(); say(r.data.error||'The recording could not be transcribed just now. Set the spot by ear.',true); return; }
+      var kept=from && state.wordSpots && state.wordSpots.url===url ? state.wordSpots.lines : [];
+      state.wordSpots={url:url, lines:kept.concat(r.data.lines||[]), to:r.data.to, seconds:r.data.seconds};
+      renderSettings();
+      var list=document.getElementById('spotList'); if(list) list.focus();
+      say(r.data.spoken||'Transcribed.');
     }
 
     async function transcribeLyrics(){
@@ -673,6 +785,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.clips.length && state.engine!=='lyria' && state.engine!=='ace'){ b.referenceExpected=true; if(state.engine==='seed') b.audio_urls = state.clips.slice(0,3).map(function(c){return c.url;}); else b.reference_voice_url = state.clips[0].url; }
       if(state.engine==='seed' && b.audio_quality===true) b.audio_quality='high';
       if(b.audio_quality===true) b.audio_quality='high';
+      if(state.engine==='scenema' && b.auk_task==='change_words') b.changes=wordChangesToSend();
       return b;
     }
 
@@ -935,7 +1048,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       try {
       var script = document.getElementById('script').value.trim();
       var b = collect();
-      if(!script && !preview && b.auk_task!=='edit' && !isUpload()){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
+      if(!script && !preview && b.auk_task!=='change_words' && b.auk_task!=='edit' && !isUpload()){ say(state.engine==='stable'?'Describe your sounds first.':(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace')?'Describe the music you want first.':'There is nothing to render yet. Write a script first.', true); document.getElementById('script').focus(); return; }
       if(preview && !script && !b.voice_description){ say('Describe the voice first, or write a script, so there is a voice to preview.', true); return; }
       /* Part 122.1: this line used to invent a THIRD sample sentence ("Here is
        * how I sound."), different again from the two on the server, so what a
@@ -949,7 +1062,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.projectId) b.projectId = state.projectId;
       /* THE SEED IS THE VOICE. Without this the penny she spent auditioning a
        * voice bought her nothing — the render cast a different actor. */
-      if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined) b.seed = state.voiceSeed;
+      /* Nov 14 2026: an edit is a fresh try on a fresh seed every time, so the voice seed stays out of it. */
+      if(!preview && Number.isInteger(state.voiceSeed) && b.seed === undefined && b.auk_task!=='edit' && b.auk_task!=='change_words') b.seed = state.voiceSeed;
       if(state.rerollVoice) b.newVoice = true;
       say('Sending it\\u2026');
       var r = await post('/api/kade/sound-booth/render', b);
@@ -981,6 +1095,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Part 295: an instrumental needs no words (Singing or instrumental, when the server offers it). */
       var sent=collect();
       if(isUpload() && !state.clips.length){ document.getElementById('settingsDrawer').open=true; var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say(uploadUi().needClip||'Import a recording first.',true); return; }
+      if(state.engine==='scenema' && sent.auk_task==='change_words' && !wordsReady()) return;
       if((state.engine==='yue2'||state.engine==='ace') && !sent.lyrics && String(sent.singing||'').trim().toLowerCase().indexOf('instrumental')!==0){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
       return doRender(preview);
     }
@@ -1072,12 +1187,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         var when = ''; try { when = new Date(p.updatedAt).toLocaleString('en-US', {month:'long', day:'numeric', hour:'numeric', minute:'2-digit'}); } catch(e){}
         var upload = isUpload(p.engine), ue = uploadEngine(), eg = state.guide.engines[p.engine] || {};
         var aukEdit = p.engine === 'scenema' && !!p.options && p.options.auk_task === 'edit';
+        var stateWords = {done:'made', no_match:'no take said the new words', failed:'stopped', pending:'waiting', queued:'in progress', running:'in progress'};
+        var wordList = (p.wordChanges||[]).length ? '<ol aria-label="Word changes">' + p.wordChanges.map(function(c){
+          return '<li>' + esc(changeLine({kind:c.kind==='vocal'?'sung':'spoken', oldText:c.oldText, newText:c.newText, rangeStart:c.rangeStart, rangeEnd:c.rangeEnd})) + ': ' + esc(stateWords[c.state]||c.state) + (c.spoken ? '<p class="hint">' + esc(c.spoken) + '</p>' : '') + '</li>';
+        }).join('') + '</ol>' : '';
         var engine = upload ? eg.name : p.engine === 'stable' ? 'Stable Audio' : p.engine === 'yue2' ? 'YuE2' : p.engine === 'ace' ? 'ACE-Step XL' : p.engine === 'lyria' ? 'Lyria' : p.engine === 'seed' ? 'Seed Audio' : 'AuK HQ';
         var stateWord = p.state === 'done' ? 'finished' : p.state;
         return '<div class="proj"><h3>' + esc(p.title) + '</h3>' +
           '<p class="hint">' + esc(p.why || engine) + ' \\u00b7 ' + esc(stateWord) + ' \\u00b7 ' + esc(when) + (p.costUSD ? ' \\u00b7 about ' + Math.max(1, Math.round(p.costUSD*100)) + ' cents'+((p.engine==='yue2'||p.engine==='ace'||upload)?' of execution; startup and idle are extra':'') : '') + '</p>' +
           (p.lastError ? '<p role="note">'+esc(p.lastError)+'</p>' : '') +
           (p.readback ? '<p>' + esc(p.readback) + '</p>' : '') +
+          wordList +
           (p.sungLyrics ? '<details><summary>Words it sang</summary><pre class="script">' + esc(p.sungLyrics) + '</pre></details>' : '') +
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
@@ -1086,7 +1206,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
                    (t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '') +
                    (t.voiceNote ? '<p class="hint">' + esc(t.voiceNote) + '</p>' : '') +
                    (ue && !t.voiceOf && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +
-                   (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2'||p.engine==='ace') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button>');
+                   (p.engine==='stable' || upload ? '' : (p.engine==='lyria'||p.engine==='yue2'||p.engine==='ace') ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="cover">Cover this take</button>' : '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="speech">Use this voice</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="edit">Edit this take</button> <button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="change_words">Change words in this take</button>');
           }).join('') +
           (upload ? '' : '<details><summary>'+(aukEdit?'Edit instructions':p.engine==='stable'?'Sound description':p.engine==='lyria'||p.engine==='ace'?'Music direction':'Script')+'</summary><pre class="script">' + esc(aukEdit ? (p.options.instruction || p.script) : (p.screenplay || p.script)) + '</pre></details>') +
           ((p.carryTo||[]).length ?
@@ -1143,13 +1263,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         state.projectId=null; state.values.auk_task=button.dataset.use;
         if(covering){document.getElementById('trackTitle').value=project.title+' (cover)';state.values={lyrics:project.options&&project.options.lyrics||''};document.getElementById('script').value=project.screenplay||project.script||'';}
         if(button.dataset.use==='edit'){state.values.instruction='';delete state.values.gen_seconds;}
+        if(button.dataset.use==='change_words'){['old_text','new_text','words_from','words_to'].forEach(function(k){delete state.values[k];});state.wordQueue=[];state.wordSpots=null;}
         /* An ACE-Step XL take attaches its listening MP3, not the WAV master: the master is 24-bit 48 kHz stereo (about 290 kB a
          * second), and the booth checks a cover's length by reading the file, up to twenty megabytes, which a WAV passes only up to
          * about 70 seconds. The MP3 stays under it past eight minutes. */
         state.importError='';state.clips=[{url:project.engine==='ace'?take.url:(take.masterUrl||take.url),name:project.title}];
         invalidateQuote();renderSettings();
-        say(covering?'Song attached for a YuE2 cover. Describe the new style and check the lyrics. The original is kept.':button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
-        document.getElementById(button.dataset.use==='edit'?'set_instruction':'script').focus();
+        say(covering?'Song attached for a YuE2 cover. Describe the new style and check the lyrics. The original is kept.':button.dataset.use==='edit'?'Take attached. Describe the edit you want. The original is kept.':button.dataset.use==='change_words'?'Take attached. Type the words it says now, the new words and roughly where. List what is said, with times, can help you find the spot. The original is kept.':'Voice reference attached. Write the words you want this voice to say.');
+        document.getElementById(button.dataset.use==='edit'?'set_instruction':button.dataset.use==='change_words'?'set_old_text':'script').focus();
       };});
       Array.prototype.forEach.call(box.querySelectorAll('[data-open]'), function(btn){
         btn.onclick = function(){
@@ -1173,6 +1294,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           /* Oct 2 2026: a speech project saved with the voice inside its script shows that voice
            * in Describe a new voice, so the script box holds only the performance. */
           if(p.engine==='scenema' && state.values.auk_task!=='edit' && !String(state.values.voice_description||'').trim() && p.voice_description && !state.clips.length) state.values.voice_description=p.voice_description;
+          /* Nov 14 2026: a Change words project reopens on Change words, its changes back in the list. */
+          state.wordQueue=[]; state.wordSpots=null;
+          if(p.engine==='scenema' && p.options && p.options.edit_kind==='words'){
+            state.values.auk_task='change_words'; delete state.values.instruction; delete state.values.edit_kind;
+            state.wordQueue=(p.wordChanges||[]).map(function(c){ return {kind:c.kind==='vocal'?'sung':'spoken', oldText:c.oldText, newText:c.newText, rangeStart:c.rangeStart, rangeEnd:c.rangeEnd}; });
+          }
           /* Part 296: a saved score sits in More settings, so the group opens to show it. */
           if(state.guide.engines[p.engine].settings.some(function(s){ var v=state.values[s.key]; return s.advanced && s.kind==='text' && typeof v==='string' && v.trim(); })) moreOpen[p.engine]=true;
           invalidateQuote(); renderSettings(); if(isUpload() && state.clips.length) quoteUpload();
