@@ -29,12 +29,12 @@ const fluxApiJsonSchema = {
     width: {
       type: 'number',
       description:
-        'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024.',
+        'Width of the generated image in pixels. Must be a multiple of 32. Default is 1024. The FLUX.1 endpoints (/v1/flux-pro-1.1, /v1/flux-pro, /v1/flux-dev, /v1/flux-pro-finetuned) take 256 to 1440.',
     },
     height: {
       type: 'number',
       description:
-        'Height of the generated image in pixels. Must be a multiple of 32. Default is 768.',
+        'Height of the generated image in pixels. Must be a multiple of 32. Default is 768. The FLUX.1 endpoints (/v1/flux-pro-1.1, /v1/flux-pro, /v1/flux-dev, /v1/flux-pro-finetuned) take 256 to 1440.',
     },
     prompt_upsampling: {
       type: 'boolean',
@@ -94,6 +94,49 @@ const fluxApiJsonSchema = {
   },
   required: [],
 };
+
+/* KADE Nov 15 2026 (Amber A's report 6ac95f1a, Oct 9): Lux asked FLUX.1 pro for a 1024x1536
+ * infographic and BFL refused it ("height ... less than or equal to 1440"), so that try made no
+ * picture. The FLUX.1 endpoints take width and height from 256 to 1440 in steps of 32. A size
+ * outside that is now fitted before it is sent: scaled down with its shape kept, rounded to 32,
+ * kept inside 256-1440. FLUX.2 and the ultra endpoints keep what the model asked for. */
+const FLUX1_SIZE_ENDPOINTS = new Set([
+  '/v1/flux-pro-1.1',
+  '/v1/flux-pro',
+  '/v1/flux-dev',
+  '/v1/flux-pro-finetuned',
+]);
+const FLUX1_MIN_SIDE = 256;
+const FLUX1_MAX_SIDE = 1440;
+
+/**
+ * @param {string} endpoint
+ * @param {unknown} width
+ * @param {unknown} height
+ * @returns {{ width?: number, height?: number }} the size to send; a missing or unusable side is left out
+ */
+function fitFluxSize(endpoint, width, height) {
+  const num = (v) => {
+    const n = typeof v === 'string' ? Number(v.trim()) : v;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  let w = num(width);
+  let h = num(height);
+  if (!FLUX1_SIZE_ENDPOINTS.has(endpoint)) {
+    return { width: w, height: h };
+  }
+  const longest = Math.max(w || 0, h || 0);
+  if (longest > FLUX1_MAX_SIDE) {
+    const scale = FLUX1_MAX_SIDE / longest;
+    w = w && w * scale;
+    h = h && h * scale;
+  }
+  const fit = (n) =>
+    n === undefined
+      ? undefined
+      : Math.min(FLUX1_MAX_SIDE, Math.max(FLUX1_MIN_SIDE, Math.round(n / 32) * 32));
+  return { width: fit(w), height: fit(h) };
+}
 
 const displayMessage =
   "Flux displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -276,11 +319,12 @@ class FluxAPI extends Tool {
     };
 
     // Add optional parameters if provided
-    if (imageData.width) {
-      payload.width = imageData.width;
+    const size = fitFluxSize(imageData.endpoint, imageData.width, imageData.height);
+    if (size.width) {
+      payload.width = size.width;
     }
-    if (imageData.height) {
-      payload.height = imageData.height;
+    if (size.height) {
+      payload.height = size.height;
     }
     if (imageData.steps) {
       payload.steps = imageData.steps;
@@ -540,11 +584,12 @@ class FluxAPI extends Tool {
     };
 
     // Add optional parameters if provided
-    if (imageData.width) {
-      payload.width = imageData.width;
+    const size = fitFluxSize(endpoint, imageData.width, imageData.height);
+    if (size.width) {
+      payload.width = size.width;
     }
-    if (imageData.height) {
-      payload.height = imageData.height;
+    if (size.height) {
+      payload.height = size.height;
     }
     if (imageData.steps) {
       payload.steps = imageData.steps;
@@ -706,3 +751,4 @@ class FluxAPI extends Tool {
 }
 
 module.exports = FluxAPI;
+module.exports.fitFluxSize = fitFluxSize;
