@@ -29,8 +29,103 @@ const ENGINES = {
   voxcpm: { id: 'voxcpm', label: 'VoxCPM2', maxDescription: 400,
     about: 'Open voice model. Designs a voice from a description, or speaks in a saved voice or a clip.' },
   ming: { id: 'ming', label: 'Ming', maxDescription: 600,
-    about: 'Open voice model from Ant Group. Designs a voice from a description, or speaks in a saved voice or a clip.' },
+    about: 'Open voice model from Ant Group. Designs a voice from a description or uses a built-in one, or speaks in a saved voice or a clip, with a choice of emotion, speed, language and sound tags.' },
 };
+
+/* Ming's own controls (worker ming_contract.py; bridge open-voices.js checks the same rules).
+ * Ming runs one task per take, so per take it takes ONE of: a style, an emotion, or speed, pitch
+ * and volume. Sound tags and the languages past English and Chinese need the clip's typed words
+ * (prompt_text) and none of those. Built-in voices replace the description in Design a voice:
+ * upstream tts_tasks.EN_IP_VOICES at a39b806, plus the two Chinese voices its README recommends.
+ * Each option is { value, label }; the label is what she hears. The list also goes to the iPhone
+ * in /health openVoices.engines[ming].controls. */
+const MING_CONTROLS = {
+  voices: [
+    { value: 'US_Emma', label: 'Emma, American English, woman' },
+    { value: 'UK_George', label: 'George, British English, man' },
+    { value: 'UK_Charlotte', label: 'Charlotte, British English, woman' },
+    { value: '\u7075\u5c0f\u67d4', label: 'Ling Xiaorou, Chinese, young woman' },
+    { value: '\u7075\u6977', label: 'Ling Kai, Chinese, young man' },
+  ],
+  emotions: ['happy', 'sad', 'angry', 'neutral', 'surprised', 'fearful', 'disgusted'].map((v) => ({ value: v, label: v[0].toUpperCase() + v.slice(1) })),
+  speeds: [{ value: 'slow', label: 'Slow' }, { value: 'medium', label: 'Medium' }, { value: 'fast', label: 'Fast' }],
+  levels: [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }],
+  languages: [
+    { value: 'en', label: 'English' }, { value: 'zh', label: 'Chinese' }, { value: 'de', label: 'German' }, { value: 'es', label: 'Spanish' },
+    { value: 'fr', label: 'French' }, { value: 'ko', label: 'Korean' }, { value: 'ja', label: 'Japanese' },
+  ],
+  /* Ming's 14 sound tags (ming_tiny.task_protocol.PARALINGUISTIC_TAGS). */
+  tags: [
+    { value: '[Breathing]', label: 'Breathing' }, { value: '[Cough]', label: 'Cough' }, { value: '[Sigh]', label: 'Sigh' },
+    { value: '[Laughter]', label: 'Laughter' }, { value: '[Surprise-ah]', label: 'Surprise, ah' }, { value: '[Surprise-oh]', label: 'Surprise, oh' },
+    { value: '[Dissatisfaction-hnn]', label: 'Dissatisfied, hnn' }, { value: '[Uhm]', label: 'Uhm' }, { value: '[Confirmation-en]', label: 'Agreeing, en' },
+    { value: '[Question-ei]', label: 'Question, ei' }, { value: '[Question-ah]', label: 'Question, ah' }, { value: '[Question-en]', label: 'Question, en' },
+    { value: '[Question-oh]', label: 'Question, oh' }, { value: '[Question-huh]', label: 'Question, huh' },
+  ],
+  tagNote: 'Sound tags work only in Speak with a voice, with a clip of thirty seconds or less whose words are typed in, and no style, emotion, speed, pitch or volume.',
+};
+const MING_FIELDS = ['voice', 'emotion', 'speed', 'pitch', 'volume', 'language'];
+const LANGUAGE_NAMES = Object.fromEntries(MING_CONTROLS.languages.map((l) => [l.value, l.label]));
+/* The worker's tag pattern, and the other spellings it rewrites to its own tags. */
+const TAG_RE = /\[([A-Za-z][A-Za-z -]{0,30})\]/g;
+const KNOWN_TAG = new Set([...MING_CONTROLS.tags.map((t) => t.value.slice(1, -1).toLowerCase()),
+  'laugh', 'laughs', 'laughing', 'chuckle', 'chuckles', 'giggle', 'giggles', 'sighs', 'sighing', 'coughs', 'coughing',
+  'breath', 'breathes', 'breathe', 'inhale', 'inhales', 'exhale', 'exhales', 'um', 'uh', 'umm', 'hmm', 'huh']);
+const NO_MIX = 'no style, emotion, speed, pitch or volume';
+const WORDS_CLIP = 'a clip of thirty seconds or less whose words are typed in';
+
+function soundTags(text) {
+  const tags = [];
+  let unknown = '';
+  for (const m of String(text || '').matchAll(TAG_RE)) {
+    if (KNOWN_TAG.has(m[1].trim().toLowerCase())) tags.push(m[0]);
+    else if (!unknown) unknown = m[0];
+  }
+  return { tags, unknown };
+}
+
+/* Ming's one-task rules on a bridge body. `hasWords` says whether the clip's words go along
+ * (undefined before the reference is known: the two rules that need them wait for it). */
+function mingRules(body, hasWords) {
+  if (body.engine !== 'ming') return null;
+  const { tags, unknown } = soundTags(body.text);
+  if (unknown) return `Ming does not know the sound tag ${unknown}. Pick one from Sound tags, or take it out.`;
+  const level = !!(body.speed || body.pitch || body.volume);
+  const controls = !!(body.emotion || level);
+  if (body.mode === 'design') return tags.length ? `Sound tags need Speak with a voice, with ${WORDS_CLIP}.` : null;
+  if ([body.emotion, level, body.style].filter(Boolean).length > 1) {
+    return 'Ming takes one of these per take: a style, an emotion, or speed, pitch and volume. Clear the others.';
+  }
+  if (tags.length && (controls || body.style)) return `Sound tags work only with ${NO_MIX}. Clear those, or take the tags out.`;
+  const far = body.language && !['en', 'zh'].includes(body.language) ? LANGUAGE_NAMES[body.language] : '';
+  if (far && (controls || body.style)) return `${far} works only with ${NO_MIX}. Clear those, or set the language back.`;
+  if (hasWords === false) {
+    if (tags.length) return `Sound tags need ${WORDS_CLIP}. Take the tags out, or use such a clip.`;
+    if (far) return `${far} needs ${WORDS_CLIP}. Use such a clip, or set the language back.`;
+  }
+  return null;
+}
+
+/* Ming's controls from a take request -> { fields } or { error }. Empty values are "not set". */
+function mingFields(b, engine, mode) {
+  const fields = {};
+  const pick = (k) => (typeof b[k] === 'string' ? b[k].trim() : b[k]);
+  const given = MING_FIELDS.filter((k) => { const v = pick(k); return v !== undefined && v !== null && v !== ''; });
+  if (!given.length) return { fields };
+  if (engine !== 'ming') return { error: 'Built-in voices, emotion, speed, pitch, volume and language work only with Ming.' };
+  const lists = { voice: [MING_CONTROLS.voices, 'Pick a built-in voice from the list.'], emotion: [MING_CONTROLS.emotions, 'Pick an emotion from the list.'],
+    speed: [MING_CONTROLS.speeds, 'Pick slow, medium or fast for the speed.'], pitch: [MING_CONTROLS.levels, 'Pick low, medium or high for the pitch.'],
+    volume: [MING_CONTROLS.levels, 'Pick low, medium or high for the volume.'], language: [MING_CONTROLS.languages, 'Pick a language from the list.'] };
+  for (const k of given) {
+    const v = pick(k);
+    const [list, said] = lists[k];
+    if (typeof v !== 'string' || !list.some((o) => o.value === v)) return { error: said };
+    fields[k] = v;
+  }
+  if (mode === 'design' && given.some((k) => k !== 'voice')) return { error: 'Emotion, speed, pitch, volume and language are for Speak with a voice.' };
+  if (mode === 'speak' && fields.voice) return { error: 'Built-in voices are for Design a voice.' };
+  return { fields };
+}
 const MAX_TEXT = 5000;
 const MAX_STYLE = 400;
 const MAX_NAME = 80;
@@ -79,7 +174,8 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
 }
 
 function engineList(ready) {
-  return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription }));
+  return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription,
+    ...(e.id === 'ming' ? { controls: MING_CONTROLS } : {}) }));
 }
 
 function voiceView(row, url) {
@@ -105,11 +201,14 @@ function checkTake(b = {}, ready = {}) {
   if (!text) return { error: 'Type the words to say.' };
   if (text.length > MAX_TEXT) return { error: `The words are too long. The most is ${MAX_TEXT} characters.` };
   const body = { engine, mode: mode === 'design' ? 'design' : 'clone', text };
+  const ming = mingFields(b, engine, mode);
+  if (ming.error) return { error: ming.error };
   if (mode === 'design') {
     const description = oneLine(b.description);
-    if (!description) return { error: 'Describe the voice first.' };
+    if (description && ming.fields.voice) return { error: 'Use a built-in voice or a description, not both. Clear one of them.' };
+    if (!description && !ming.fields.voice) return { error: engine === 'ming' ? 'Describe the voice first, or pick a built-in voice.' : 'Describe the voice first.' };
     if (description.length > ENGINES[engine].maxDescription) return { error: `The description is too long. The most is ${ENGINES[engine].maxDescription} characters.` };
-    body.description = description;
+    if (description) body.description = description;
   } else {
     const style = oneLine(b.style);
     if (style.length > MAX_STYLE) return { error: `The style is too long. The most is ${MAX_STYLE} characters.` };
@@ -121,6 +220,9 @@ function checkTake(b = {}, ready = {}) {
     if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) return { error: 'The voice number must be a whole number from 0 to 2147483647.' };
     body.seed = seed;
   }
+  Object.assign(body, ming.fields);
+  const rule = mingRules(body);
+  if (rule) return { error: rule };
   return { body };
 }
 
@@ -185,6 +287,8 @@ function createOpenVoicesRouter(deps) {
         if (ref.error) return res.status(400).json({ error: ref.error });
         body.reference_voice_url = ref.url;
         if (ref.words) body.prompt_text = ref.words;
+        const rule = mingRules(body, !!ref.words);
+        if (rule) return res.status(400).json({ error: rule });
       }
       let r;
       try {
@@ -315,4 +419,4 @@ async function healthBlock(readiness, waitMs = 300) {
   } catch (_) { return { engines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, soundTags, MING_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };

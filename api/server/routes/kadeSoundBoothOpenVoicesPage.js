@@ -17,6 +17,11 @@ const OPEN_VOICES_HTML = `
         <button type="button" id="ovModeSpeak" aria-pressed="false">Speak with a voice</button>
       </div>
       <div id="ovDesignBox">
+        <div id="ovMingDesign" hidden>
+          <label class="field" for="ovBuiltin">Built-in voice</label>
+          <select id="ovBuiltin" aria-describedby="ovBuiltinHint"><option value="">None. Use my description</option></select>
+          <p class="hint" id="ovBuiltinHint">A ready-made Ming voice instead of a description. When you pick one, leave the description empty.</p>
+        </div>
         <label class="field" for="ovDescription">Describe the voice</label>
         <p class="hint" id="ovDescriptionHint">For example: a warm older man with a slow Southern drawl and a little gravel. Each try makes a new voice.</p>
         <textarea id="ovDescription" aria-describedby="ovDescriptionHint" style="min-height:4.5rem"></textarea>
@@ -40,10 +45,30 @@ const OPEN_VOICES_HTML = `
         <label class="field" for="ovStyle">Style (optional)</label>
         <input type="text" id="ovStyle" maxlength="400" aria-describedby="ovStyleHint">
         <p class="hint" id="ovStyleHint">Plain words, for example: slightly faster, cheerful tone.</p>
+        <div id="ovMingSpeak" hidden>
+          <p class="hint" id="ovMingSpeakHint">Ming takes one of these per take: a style, an emotion, or speed, pitch and volume.</p>
+          <label class="field" for="ovEmotion">Emotion</label>
+          <select id="ovEmotion" aria-describedby="ovMingSpeakHint"><option value="">Not set</option></select>
+          <label class="field" for="ovSpeed">Speed</label>
+          <select id="ovSpeed" aria-describedby="ovMingSpeakHint"><option value="">Not set</option></select>
+          <label class="field" for="ovPitch">Pitch</label>
+          <select id="ovPitch" aria-describedby="ovMingSpeakHint"><option value="">Not set</option></select>
+          <label class="field" for="ovVolume">Volume</label>
+          <select id="ovVolume" aria-describedby="ovMingSpeakHint"><option value="">Not set</option></select>
+          <label class="field" for="ovLanguage">Language of the words to say</label>
+          <select id="ovLanguage" aria-describedby="ovLanguageHint"><option value="">Found from the words</option></select>
+          <p class="hint" id="ovLanguageHint">German, Spanish, French, Korean and Japanese need a clip of thirty seconds or less whose words are typed in, and no style, emotion, speed, pitch or volume.</p>
+        </div>
       </div>
       <label class="field" for="ovText">Words to say</label>
       <textarea id="ovText" maxlength="5000" aria-describedby="ovTextHint" style="min-height:5rem"></textarea>
       <p class="hint" id="ovTextHint">Up to 5,000 characters. For a voice you plan to keep, a sentence or two is best.</p>
+      <div id="ovTagsBox" hidden>
+        <label class="field" for="ovTag">Sound tags</label>
+        <select id="ovTag" aria-describedby="ovTagHint"></select>
+        <button type="button" class="act quiet" id="ovInsertTag" aria-describedby="ovTagHint">Insert the sound tag in the words</button>
+        <p class="hint" id="ovTagHint">Puts the tag where your cursor was in Words to say. Tags need a clip of thirty seconds or less whose words are typed in, and no style, emotion, speed, pitch or volume.</p>
+      </div>
       <label class="field" for="ovSeed">Voice number (optional)</label>
       <input type="number" id="ovSeed" min="0" max="2147483647" step="1" aria-describedby="ovSeedHint">
       <p class="hint" id="ovSeedHint">Leave it empty for a new take every try. Type a take's number to hear that take again.</p>
@@ -84,8 +109,45 @@ const OPEN_VOICES_SCRIPT = `
     var labels = ov.engines.map(function(e){ return e.label; }).join(' and ');
     $('ovSummary').textContent = 'Open voices: design a voice, or speak with a saved one (' + labels + ')';
     var intro = $('ovIntro'); if(intro) intro.textContent = ' You can also design and reuse voices with ' + labels + ' under Open voices.';
-    function showEngine(){ var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0]; $('ovEngineHint').textContent = e ? e.about : ''; }
-    $('ovEngine').onchange = showEngine; showEngine();
+    /* Ming's own controls, filled from the server's list and shown only while Ming is picked. */
+    var mingEngine = ov.engines.find(function(x){ return x.id === 'ming'; });
+    var mc = (mingEngine && mingEngine.controls) || null;
+    function fillSelect(id, list){ (list || []).forEach(function(o){ var op = document.createElement('option'); op.value = o.value; op.textContent = o.label; $(id).appendChild(op); }); }
+    if(mc){
+      fillSelect('ovBuiltin', mc.voices); fillSelect('ovEmotion', mc.emotions); fillSelect('ovSpeed', mc.speeds);
+      fillSelect('ovPitch', mc.levels); fillSelect('ovVolume', mc.levels); fillSelect('ovLanguage', mc.languages); fillSelect('ovTag', mc.tags);
+    }
+    function isMing(){ return !!mc && $('ovEngine').value === 'ming'; }
+    function showMing(){
+      var m = isMing();
+      $('ovMingDesign').hidden = !(m && ov.mode === 'design');
+      $('ovMingSpeak').hidden = !(m && ov.mode === 'speak');
+      $('ovTagsBox').hidden = !(m && ov.mode === 'speak');
+    }
+    function showEngine(){ var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0]; $('ovEngineHint').textContent = e ? e.about : ''; showMing(); }
+    $('ovEngine').onchange = function(){
+      showEngine();
+      var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; });
+      if(e) say(e.label + ' picked.' + (isMing() ? (ov.mode === 'design' ? ' You can pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.') : ''));
+    };
+    showEngine();
+    /* Where the cursor was in Words to say, so a sound tag lands there. Before she has been in the
+     * box, a tag goes at the end. */
+    var caret = null;
+    $('ovText').addEventListener('blur', function(){ caret = { start: this.selectionStart, end: this.selectionEnd }; });
+    $('ovInsertTag').onclick = function(){
+      var t = $('ovText'), sel = $('ovTag'), tag = sel.value;
+      if(!tag){ say('Pick a sound tag first.', true); sel.focus(); return; }
+      var name = sel.options[sel.selectedIndex].textContent, len = t.value.length;
+      var s = caret ? Math.min(caret.start, len) : len, e = caret ? Math.min(Math.max(caret.end, s), len) : len;
+      var before = t.value.slice(0, s), after = t.value.slice(e);
+      var ins = (before && !/\\s$/.test(before) ? ' ' : '') + tag + (after && !/^\\s/.test(after) ? ' ' : '');
+      if((before + ins + after).length > 5000){ say('The words are at the 5,000 character limit. Nothing was inserted.', true); return; }
+      t.value = before + ins + after;
+      var pos = before.length + ins.length; caret = { start: pos, end: pos };
+      t.focus(); t.setSelectionRange(pos, pos);
+      say('Inserted the ' + name + ' tag. You are back in Words to say, just after it.');
+    };
     function fillVoices(keep){
       var sel = $('ovVoice'); sel.textContent = '';
       ov.voices.forEach(function(v){ var o = document.createElement('option'); o.value = v.id; o.textContent = v.name + (v.seconds ? ', ' + Math.round(v.seconds) + ' seconds' : ''); sel.appendChild(o); });
@@ -105,6 +167,7 @@ const OPEN_VOICES_SCRIPT = `
       ov.mode = m;
       $('ovModeDesign').setAttribute('aria-pressed', m === 'design'); $('ovModeSpeak').setAttribute('aria-pressed', m === 'speak');
       $('ovDesignBox').hidden = m !== 'design'; $('ovSpeakBox').hidden = m !== 'speak';
+      showMing();
     }
     $('ovModeDesign').onclick = function(){ setMode('design'); say('Design a voice. Describe it, then type the words to say.'); };
     $('ovModeSpeak').onclick = function(){ setMode('speak'); say(ov.voices.length ? 'Speak with a voice. Pick a saved voice or import a clip.' : 'Speak with a voice. You have no saved voices yet, so import a clip, or keep a designed take first.'); };
@@ -158,6 +221,21 @@ const OPEN_VOICES_SCRIPT = `
     $('ovMake').onclick = async function(){
       if(ov.busy){ say('A take is still being made. Press Stop this take to end it.'); return; }
       var body = { engine: $('ovEngine').value, mode: ov.mode, text: $('ovText').value, seed: $('ovSeed').value };
+      /* Ming's controls go only with Ming. Ming takes one choice per take, so a mix is named here
+       * and focus goes to the control to change; the server checks the rest. */
+      if(isMing()){
+        if(ov.mode === 'design'){
+          body.voice = $('ovBuiltin').value;
+          if(body.voice && $('ovDescription').value.trim()){ say('Use a built-in voice or a description, not both. Clear the description, or set Built-in voice to None.', true); $('ovDescription').focus(); return; }
+        } else {
+          ['emotion', 'speed', 'pitch', 'volume', 'language'].forEach(function(k){ body[k] = $('ov' + k[0].toUpperCase() + k.slice(1)).value; });
+          var level = body.speed || body.pitch || body.volume, style = $('ovStyle').value.trim();
+          if([body.emotion, level, style].filter(Boolean).length > 1){
+            say('Ming takes one of these per take: a style, an emotion, or speed, pitch and volume. Clear the others.', true);
+            (body.emotion ? $('ovEmotion') : $('ovStyle')).focus(); return;
+          }
+        }
+      }
       if(ov.mode === 'design') body.description = $('ovDescription').value;
       else {
         body.style = $('ovStyle').value;

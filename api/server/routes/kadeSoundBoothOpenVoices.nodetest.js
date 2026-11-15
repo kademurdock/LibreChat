@@ -305,6 +305,126 @@ test('the panel: real labels for every control, no second live region, nothing a
   new vm.Script(OPEN_VOICES_SCRIPT.replace(/^\s*<script>|<\/script>\s*$/g, ''));
 });
 
+/* ---------- Ming's own controls (worker ming_contract.py) ---------- */
+
+test('checkTake: Ming built-in voice, one control per take, tags and languages; VoxCPM2 refuses them', () => {
+  const ready = { voxcpm: true, ming: true };
+  assert.deepEqual(ov.checkTake({ engine: 'ming', mode: 'design', voice: 'US_Emma', text: 'Hi' }, ready).body, { engine: 'ming', mode: 'design', text: 'Hi', voice: 'US_Emma' });
+  assert.deepEqual(ov.MING_CONTROLS.voices.map((v) => v.value), ['US_Emma', 'UK_George', 'UK_Charlotte', '灵小柔', '灵楷']);
+  assert.equal(ov.MING_CONTROLS.tags.length, 14);
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', voice: 'US_Emma', description: 'warm', text: 'Hi' }, ready).error, /not both/);
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', text: 'Hi' }, ready).error, /or pick a built-in voice/);
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', voice: 'Nobody', text: 'Hi' }, ready).error, /Pick a built-in voice/);
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', description: 'd', emotion: 'sad', text: 'Hi' }, ready).error, /are for Speak with a voice/);
+  assert.match(ov.checkTake({ engine: 'ming', mode: 'design', description: 'd', text: 'Hi [Sigh]' }, ready).error, /Sound tags need Speak with a voice/);
+  const speak = { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'Hi' };
+  assert.deepEqual(ov.checkTake({ ...speak, emotion: 'happy', speed: '', language: 'en' }, ready).body, { engine: 'ming', mode: 'clone', text: 'Hi', emotion: 'happy', language: 'en' });
+  assert.match(ov.checkTake({ ...speak, voice: 'US_Emma' }, ready).error, /for Design a voice/);
+  for (const mix of [{ emotion: 'sad', pitch: 'low' }, { emotion: 'sad', style: 'calm' }, { speed: 'fast', style: 'calm' }]) {
+    assert.match(ov.checkTake({ ...speak, ...mix }, ready).error, /one of these per take/, JSON.stringify(mix));
+  }
+  assert.match(ov.checkTake({ ...speak, text: 'Hi [Sigh]', emotion: 'sad' }, ready).error, /Sound tags work only with no style/);
+  assert.match(ov.checkTake({ ...speak, language: 'fr', speed: 'slow' }, ready).error, /^French works only with no style/);
+  assert.match(ov.checkTake({ ...speak, text: 'Hi [Yawn]' }, ready).error, /does not know the sound tag \[Yawn\]/);
+  assert.match(ov.checkTake({ ...speak, emotion: 'bored' }, ready).error, /Pick an emotion/);
+  assert.match(ov.checkTake({ ...speak, engine: 'voxcpm', emotion: 'happy' }, ready).error, /work only with Ming/);
+  assert.deepEqual(ov.checkTake({ ...speak, engine: 'voxcpm', text: 'Hi [Yawn]', emotion: '' }, ready).body, { engine: 'voxcpm', mode: 'clone', text: 'Hi [Yawn]' }, 'VoxCPM2 unchanged');
+});
+
+test('Ming over the route: tags and far languages need the clip words before any GPU time; the controls reach the bridge', async (t) => {
+  const rows = [
+    { _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/ming/a.mp3`, metadata: { savedVoice: { name: 'Short', words: 'Hello there.', seconds: 3 } } },
+    { _id: '7b0000000000000000000002', user: USER, kind: 'audio', url: `${B2}/ming/b.mp3`, metadata: { savedVoice: { name: 'No words', seconds: 40 } } },
+  ];
+  const { call, http } = await boot(t, { rows, ready: { voxcpm: true, ming: true } });
+  const starts = () => http.calls.filter((c) => c.url.endsWith('/start'));
+  const noWords = await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000002', text: 'Well [Sigh] fine.' });
+  assert.equal(noWords.status, 400);
+  assert.match(noWords.body.error, /Sound tags need a clip of thirty seconds or less whose words are typed in/);
+  const german = await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000002', text: 'Guten Tag.', language: 'de' });
+  assert.match(german.body.error, /^German needs a clip/);
+  assert.equal(starts().length, 0, 'refused before the bridge');
+  const tagged = await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'Well [Sigh] fine.', language: 'en' });
+  assert.equal(tagged.status, 200);
+  assert.equal(starts().at(-1).body.prompt_text, 'Hello there.');
+  assert.equal(starts().at(-1).body.language, 'en');
+  await call('/open-voices/take', { engine: 'ming', mode: 'speak', voiceId: '7b0000000000000000000002', text: 'Hi', speed: 'slow', volume: 'high' });
+  const b = starts().at(-1).body;
+  assert.deepEqual([b.speed, b.volume, 'pitch' in b, 'emotion' in b], ['slow', 'high', false, false]);
+  await call('/open-voices/take', { engine: 'ming', mode: 'design', voice: 'UK_Charlotte', text: 'Good evening.' });
+  assert.deepEqual(starts().at(-1).body, { engine: 'ming', mode: 'design', text: 'Good evening.', voice: 'UK_Charlotte', secret: 'test-only', userId: USER });
+  const list = await call('/open-voices');
+  assert.equal(list.body.engines.find((e) => e.id === 'ming').controls.tags.length, 14);
+  assert.equal('controls' in list.body.engines.find((e) => e.id === 'voxcpm'), false);
+});
+
+test('the panel by DOM: Ming controls only with Ming, a tag lands at the cursor, the take sends the controls', async () => {
+  const { JSDOM } = require('jsdom');
+  const engines = ov.engineList({ voxcpm: true, ming: true });
+  const sent = [];
+  const dom = new JSDOM(`<!doctype html><body><p id="status" role="status"></p>${OPEN_VOICES_HTML}</body>`, { runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  w.getToken = async () => 'tok';
+  w.AbortSignal.timeout = () => undefined;
+  w.fetch = async (url, o) => {
+    const body = o && o.body ? JSON.parse(o.body) : null;
+    if (body) sent.push({ url, body });
+    const data = url.endsWith('/open-voices') ? { engines, voices: [{ id: '7b0000000000000000000001', name: 'Grandpa', seconds: 3 }], coldNote: '' } : { error: 'Held for the test.' };
+    return { ok: !body, status: body ? 400 : 200, json: async () => data };
+  };
+  w.eval(OPEN_VOICES_SCRIPT.replace(/^\s*<script>|<\/script>\s*$/g, ''));
+  const $ = (id) => w.document.getElementById(id);
+  for (let i = 0; i < 20 && $('openVoicesDrawer').hidden; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal($('openVoicesDrawer').hidden, false);
+  const pickEngine = (id) => { $('ovEngine').value = id; $('ovEngine').onchange(); };
+  pickEngine('voxcpm');
+  assert.deepEqual([$('ovMingDesign').hidden, $('ovMingSpeak').hidden, $('ovTagsBox').hidden], [true, true, true], 'VoxCPM2 shows none');
+  pickEngine('ming');
+  assert.match($('status').textContent, /Ming picked\. You can pick a built-in voice/);
+  assert.equal($('ovMingDesign').hidden, false);
+  assert.equal($('ovTagsBox').hidden, true, 'tags only in Speak with a voice');
+  assert.deepEqual([...$('ovBuiltin').options].map((o) => o.value), ['', 'US_Emma', 'UK_George', 'UK_Charlotte', '灵小柔', '灵楷']);
+  $('ovBuiltin').value = 'US_Emma';
+  $('ovDescription').value = 'warm';
+  $('ovText').value = 'Hello.';
+  await $('ovMake').onclick();
+  assert.match($('status').textContent, /not both/);
+  assert.equal(w.document.activeElement, $('ovDescription'));
+  assert.equal(sent.length, 0);
+  $('ovModeSpeak').onclick();
+  assert.deepEqual([$('ovMingDesign').hidden, $('ovMingSpeak').hidden, $('ovTagsBox').hidden], [true, false, false]);
+  assert.equal($('ovTag').options.length, 14);
+  /* A tag at the cursor: between the two words, spaced, focus back in the words box after it. */
+  $('ovText').value = 'Well fine.';
+  $('ovText').focus(); $('ovText').setSelectionRange(4, 4); $('ovText').blur();
+  $('ovTag').value = '[Sigh]';
+  $('ovInsertTag').onclick();
+  assert.equal($('ovText').value, 'Well [Sigh] fine.');
+  assert.equal(w.document.activeElement, $('ovText'));
+  assert.equal($('ovText').selectionStart, 'Well [Sigh]'.length);
+  assert.match($('status').textContent, /Inserted the Sigh tag/);
+  $('ovEmotion').value = 'sad'; $('ovSpeed').value = 'fast';
+  await $('ovMake').onclick();
+  assert.match($('status').textContent, /one of these per take/);
+  assert.equal(w.document.activeElement, $('ovEmotion'));
+  $('ovSpeed').value = '';
+  $('ovVoice').value = '7b0000000000000000000001';
+  await $('ovMake').onclick();
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].body, { engine: 'ming', mode: 'speak', text: 'Well [Sigh] fine.', seed: '', emotion: 'sad', speed: '', pitch: '', volume: '', language: '', style: '', voiceId: '7b0000000000000000000001' });
+  assert.match($('status').textContent, /Held for the test/);
+  pickEngine('voxcpm');
+  assert.equal($('ovMingSpeak').hidden, true);
+  dom.window.close();
+});
+
+test('the panel: the Ming controls are labelled and hidden until Ming is picked', () => {
+  for (const id of ['ovMingDesign', 'ovMingSpeak', 'ovTagsBox']) assert.match(OPEN_VOICES_HTML, new RegExp(`id="${id}" hidden`));
+  for (const id of ['ovBuiltin', 'ovEmotion', 'ovSpeed', 'ovPitch', 'ovVolume', 'ovLanguage', 'ovTag']) assert.match(OPEN_VOICES_HTML, new RegExp(`<label[^>]*for="${id}"`));
+  assert.match(OPEN_VOICES_HTML, /Tags need a clip of thirty seconds or less whose words are typed in, and no style/);
+  assert.ok(OPEN_VOICES_SCRIPT.includes('/\\s$/'), 'the regex survives the template literal');
+});
+
 test('the booth page carries the panel and still parses', () => {
   const { soundBoothHtml } = require('./kadeSoundBoothPage');
   assert.match(soundBoothHtml, /id="openVoicesDrawer" hidden/);
