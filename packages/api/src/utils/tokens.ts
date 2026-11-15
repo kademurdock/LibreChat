@@ -375,6 +375,18 @@ const aggregateModels = {
   'gpt-oss-20b': 131000,
   'gpt-oss:120b': 131000,
   'gpt-oss-120b': 131000,
+  // KADE Nov 15 2026: Xiaomi MiMo was missing, so every MiMo agent without a
+  // hand-set maxContextTokens fell to DEFAULT_MAX_CONTEXT_TOKENS (32000). A
+  // 40K-character persona plus cards and tools then filled the whole budget
+  // and pruning dropped every message ("empty_messages": Della, Amber A's
+  // report Nov 15). Windows from OpenRouter's model list that day; the
+  // KADE_MAX_CONTEXT_TOKENS platform cap still clamps them.
+  mimo: 1000000,
+  'mimo-v2.5': 1000000,
+  'mimo-v2.5-pro': 1024000,
+  'mimo-v2.6': 1048576,
+  'mimo-v2.6-pro': 1048576,
+  'mimo-v2.6-flash': 1048576,
   ...qwenModels,
   ...xAIModels,
   ...googleModels,
