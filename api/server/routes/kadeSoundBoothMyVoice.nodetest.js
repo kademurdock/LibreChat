@@ -623,6 +623,7 @@ test('an upload engine asks for its recording instead of a script, then renders 
       referenceReady: () => true,
       collect: () => ({ engine: 'myvoice' }),
       say: (words, err) => ctx.said.push([words, !!err]),
+      reveal: () => {},
       document: {
         getElementById: () => ({ open: false, focus() {} }),
         querySelector: () => ({ focus: () => focused.push('file') }),

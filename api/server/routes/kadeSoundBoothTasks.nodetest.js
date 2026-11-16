@@ -135,7 +135,8 @@ test('choices name their options in plain words, and only the boxes the picked c
 });
 
 test('after a change is picked, the next step is said in one plain sentence; untouched boxes send what they show', () => {
-  const ctx = { state: { values: {}, clips: [], guide: { engines: { scenema: { settings: GUIDE_SETTINGS } } } }, said: [], focused: [] };
+  const ctx = { state: { values: {}, clips: [], guide: { engines: { scenema: { settings: GUIDE_SETTINGS } } } }, said: [], focused: [], revealed: [] };
+  ctx.reveal = (id) => ctx.revealed.push(id);
   ctx.say = (text, alert) => ctx.said.push([text, !!alert]);
   ctx.document = {
     getElementById: (id) => (id === 'settingsDrawer' ? {} : { focus: () => ctx.focused.push(id) }),
@@ -162,6 +163,7 @@ test('after a change is picked, the next step is said in one plain sentence; unt
   assert.equal(ctx.focused.at(-1), 'set_fix_description');
   ctx.state.values.fix_description = 'a deep voice';
   assert.equal(f.fixReady(), true);
+  assert.ok(ctx.revealed.length && ctx.revealed.every((id) => id === 'settingsDrawer'), 'the settings drawer is opened through the one reveal helper');
 });
 
 test('the page sends the change as choices, never the voice seed, and offers it on every take and starter button', () => {

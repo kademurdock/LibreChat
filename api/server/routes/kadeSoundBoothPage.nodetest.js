@@ -254,7 +254,7 @@ test('YuE2: an instrumental renders with no words, a sung song still asks for th
     const ctx = {
       state: { writing: false, engine: 'yue2' }, said: [], rendered: 0,
       referenceReady: () => true, collect: () => sent, isUpload: () => false,
-      say: (words) => ctx.said.push(words),
+      say: (words) => ctx.said.push(words), reveal: () => {},
       document: { getElementById: () => ({ focus() {} }) },
     };
     ctx.doRender = () => { ctx.rendered++; };
@@ -299,4 +299,85 @@ test('each engine is announced by what it does', () => {
   /* A draft is not free for a member, so the writing hint never reads as if it were. */
   assert.match(html, /id="quickWritingHint">Neither button makes audio\. Drafts and song ideas use the writing model; Surprise me is free for other ideas\.</);
   assert.doesNotMatch(html, /otherwise it is free/);
+});
+/* Nov 16 2026: the four booth sections follow the APG disclosure pattern, an h2 holding one button and a region, so
+ * VoiceOver on Safari and iPhone lists every section in the headings rotor (a heading inside a details summary can
+ * vanish from it). Only her own press is remembered; the page opens things through one helper. */
+test('each booth section is an h2 button that shows or hides a labelled region, and no heading hides in a summary', () => {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM(html, { url: 'https://example.test/sound-booth' });
+  const doc = dom.window.document;
+  const want = [['secVoice', 'Make a voice', false], ['secEdit', 'Edit audio', false], ['secBooth', 'Make speech, music and sounds', true], ['recentDrawer', 'Recent work and recordings', false]];
+  const found = [...doc.querySelectorAll('#app > .section')].map((s) => s.id);
+  assert.deepEqual(found, want.map((w) => w[0]));
+  for (const [id, name, open] of want) {
+    const sec = doc.getElementById(id);
+    const h2 = sec.firstElementChild;
+    assert.equal(h2.tagName, 'H2', id + ' starts with its h2');
+    assert.equal(h2.children.length, 1);
+    const btn = h2.firstElementChild;
+    assert.equal(btn.tagName, 'BUTTON'); assert.equal(btn.type, 'button'); assert.equal(btn.id, id + '-btn');
+    assert.equal(btn.textContent, name);
+    assert.equal(btn.getAttribute('aria-expanded'), String(open));
+    assert.equal(btn.getAttribute('aria-controls'), id + '-body');
+    const body = doc.getElementById(id + '-body');
+    assert.equal(body.parentElement, sec);
+    assert.equal(body.getAttribute('role'), 'region');
+    assert.equal(body.getAttribute('aria-labelledby'), btn.id);
+    assert.equal(body.hidden, !open);
+  }
+  assert.equal(doc.querySelectorAll('details.section').length, 0);
+  assert.equal(doc.querySelectorAll('summary h1, summary h2, summary h3, summary h4, summary h5, summary h6').length, 0);
+  assert.doesNotMatch(html, /<summary>[^<]*<h[1-6]/, 'no heading is written into a summary by a script either');
+});
+
+test('section memory keeps only her own presses; the one reveal helper and focus open sections for this visit only', () => {
+  const { JSDOM } = require('jsdom');
+  const sectionScript = scripts.find((s) => s.includes('kadeSoundBoothSections'));
+  function load(saved) {
+    const dom = new JSDOM(html, { url: 'https://example.test/sound-booth', runScripts: 'outside-only' });
+    if (saved) dom.window.localStorage.setItem('kadeSoundBoothSections', saved);
+    dom.window.eval(sectionScript);
+    return dom.window;
+  }
+  let w = load();
+  let doc = w.document;
+  const expanded = (id) => doc.getElementById(id + '-btn').getAttribute('aria-expanded');
+  const saved = () => w.localStorage.getItem('kadeSoundBoothSections');
+  doc.getElementById('secEdit-btn').click();
+  assert.equal(expanded('secEdit'), 'true'); assert.equal(doc.getElementById('secEdit-body').hidden, false);
+  doc.getElementById('secBooth-btn').click();
+  assert.equal(expanded('secBooth'), 'false'); assert.equal(doc.getElementById('secBooth-body').hidden, true);
+  assert.deepEqual(JSON.parse(saved()), { secEdit: true, secBooth: false });
+  /* A page-made open: a details inside a closed section, and a whole section. Neither is saved. */
+  assert.equal(w.kadeBoothReveal('settingsDrawer').id, 'settingsDrawer');
+  assert.equal(doc.getElementById('settingsDrawer').open, true); assert.equal(expanded('secBooth'), 'true');
+  w.kadeBoothReveal(doc.getElementById('recentDrawer'));
+  assert.equal(expanded('recentDrawer'), 'true');
+  assert.deepEqual(JSON.parse(saved()), { secEdit: true, secBooth: false });
+  assert.equal(w.kadeBoothReveal('noSuchThing'), null);
+  /* Focus on a section's own button leaves it shut; focus into its region opens it, and focus lands there. */
+  doc.getElementById('secVoice-btn').focus();
+  assert.equal(expanded('secVoice'), 'false'); assert.equal(doc.activeElement.id, 'secVoice-btn');
+  doc.getElementById('btnAukVoice').focus();
+  assert.equal(expanded('secVoice'), 'true');
+  assert.deepEqual(JSON.parse(saved()), { secEdit: true, secBooth: false });
+  /* The next visit restores her choices and the defaults for the rest. */
+  w = load(saved()); doc = w.document;
+  assert.equal(expanded('secEdit'), 'true'); assert.equal(expanded('secBooth'), 'false');
+  assert.equal(expanded('secVoice'), 'false'); assert.equal(expanded('recentDrawer'), 'false');
+  assert.equal(doc.getElementById('secBooth-body').hidden, true);
+  /* A broken saved value falls back to the defaults. */
+  w = load('{not json'); doc = w.document;
+  assert.equal(expanded('secBooth'), 'true'); assert.equal(expanded('secEdit'), 'false');
+});
+
+test('the page script opens sections and drawers only through the reveal helper', () => {
+  const whole = scripts.find((s) => s.includes('var reveal = window.kadeBoothReveal'));
+  assert.ok(whole, 'the main script takes the helper');
+  const main = whole.split('\n').filter((line) => !line.includes('var reveal = window.kadeBoothReveal')).join('\n');
+  assert.doesNotMatch(main, /\.open\s*=\s*true/);
+  assert.doesNotMatch(main, /setAttribute\('open'/);
+  assert.doesNotMatch(main, /closest\('details/);
+  assert.doesNotMatch(main, /getElementById\('(secVoice|secEdit|secBooth|recentDrawer)'\)\.open/);
 });
