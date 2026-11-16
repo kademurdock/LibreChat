@@ -1,5 +1,7 @@
 /* The Sound Booth page's Open voices panel (Nov 15 2026): VoxCPM2 and Ming, Design a voice and
- * Speak with a voice. Spliced into kadeSoundBoothPage.js by interpolation, so none of this passes
+ * Speak with a voice. Nov 16 2026: Chatterbox (a Version and only that version's controls, its own
+ * built-in voice in Design a voice) and DramaBox (Words to say becomes the Scene), each listed only
+ * when the server says the bridge runs it. Spliced into kadeSoundBoothPage.js by interpolation, so none of this passes
  * through that file's template-literal escaping. Routes: kadeSoundBoothOpenVoices.js.
  *
  * Screen-reader shape (her rule): real labelled controls, the page's ONE live region (#status),
@@ -17,6 +19,7 @@ const OPEN_VOICES_HTML = `
         <button type="button" id="ovModeSpeak" aria-pressed="false">Speak with a voice</button>
       </div>
       <div id="ovDesignBox">
+        <p class="hint" id="ovDesignNote" hidden></p>
         <div id="ovMingDesign" hidden>
           <label class="field" for="ovBuiltin">Built-in voice</label>
           <select id="ovBuiltin" aria-describedby="ovBuiltinHint"><option value="">None. Use my description</option></select>
@@ -44,9 +47,11 @@ const OPEN_VOICES_HTML = `
           <input type="text" id="ovClipName" maxlength="80">
           <button type="button" class="act quiet" id="ovKeepClip">Keep this clip as a saved voice</button>
         </div>
+        <div id="ovStyleWrap">
         <label class="field" for="ovStyle">Style (optional)</label>
         <input type="text" id="ovStyle" maxlength="400" aria-describedby="ovStyleHint">
         <p class="hint" id="ovStyleHint">Plain words, for example: slightly faster, cheerful tone.</p>
+        </div>
         <div id="ovMingSpeak" hidden>
           <p class="hint" id="ovMingSpeakHint">Ming takes one of these per take: a style, an emotion, or speed, pitch and volume.</p>
           <label class="field" for="ovEmotion">Emotion</label>
@@ -62,7 +67,32 @@ const OPEN_VOICES_HTML = `
           <p class="hint" id="ovLanguageHint">German, Spanish, French, Korean and Japanese need a clip of thirty seconds or less whose words are typed in, and no style, emotion, speed, pitch or volume.</p>
         </div>
       </div>
-      <label class="field" for="ovText">Words to say</label>
+      <div id="ovCbBox" hidden>
+        <label class="field" for="ovVersion">Version</label>
+        <select id="ovVersion" aria-describedby="ovVersionHint"></select>
+        <p class="hint" id="ovVersionHint"></p>
+        <div id="ovCbTuning" hidden>
+          <label class="field" for="ovExaggeration">Expressiveness (optional)</label>
+          <input type="number" id="ovExaggeration" min="0.25" max="2" step="0.05" aria-describedby="ovExaggerationHint">
+          <p class="hint" id="ovExaggerationHint">How lively and dramatic it sounds. Empty is the usual 0.5. From 0.25 to 2.</p>
+          <label class="field" for="ovSteadiness">Steadiness (optional)</label>
+          <input type="number" id="ovSteadiness" min="0" max="1" step="0.05" aria-describedby="ovSteadinessHint">
+          <p class="hint" id="ovSteadinessHint">How closely it keeps to the voice and an even pace. Empty is the usual 0.5. Lower is slower and looser. At most 1.</p>
+        </div>
+        <div id="ovCbLangBox" hidden>
+          <label class="field" for="ovCbLanguage">Language of the words to say</label>
+          <select id="ovCbLanguage"></select>
+        </div>
+        <label class="field" for="ovVariety">Variety (optional)</label>
+        <input type="number" id="ovVariety" min="0.05" max="5" step="0.05" aria-describedby="ovVarietyHint">
+        <p class="hint" id="ovVarietyHint"></p>
+      </div>
+      <div id="ovDbBox" hidden>
+        <label class="field" for="ovDuration">Scene length in seconds (optional)</label>
+        <input type="number" id="ovDuration" min="3" max="45" step="1" aria-describedby="ovDurationHint">
+        <p class="hint" id="ovDurationHint">Leave it empty and DramaBox decides. For a short scene, 3 to 45 seconds.</p>
+      </div>
+      <label class="field" for="ovText" id="ovTextLabel">Words to say</label>
       <textarea id="ovText" maxlength="5000" aria-describedby="ovTextHint" style="min-height:5rem"></textarea>
       <p class="hint" id="ovTextHint">Up to 5,000 characters. For a voice you plan to keep, a sentence or two is best.</p>
       <div id="ovTagsBox" hidden>
@@ -109,7 +139,7 @@ const OPEN_VOICES_SCRIPT = `
         return { ok: r.ok, status: r.status, data: j || {} };
       } catch(e) { return { ok: false, status: 0, data: { error: 'Connection lost. Try again.' } }; }
     }
-    var ov = { mode: 'design', engines: [], voices: [], clip: null, jobId: null, timer: null, coldSaid: false, takes: 0, lastSpoken: 0, busy: false };
+    var ov = { mode: 'design', engines: [], voices: [], clip: null, jobId: null, timer: null, coldSaid: {}, takes: 0, lastSpoken: 0, busy: false, tagsFor: '' };
     var first = await call('/open-voices');
     if(!first.ok || !first.data.engines || !first.data.engines.length) return;
     ov.engines = first.data.engines; ov.coldNote = first.data.coldNote || '';
@@ -123,27 +153,68 @@ const OPEN_VOICES_SCRIPT = `
     function fillSelect(id, list){ (list || []).forEach(function(o){ var op = document.createElement('option'); op.value = o.value; op.textContent = o.label; $(id).appendChild(op); }); }
     if(mc){
       fillSelect('ovBuiltin', mc.voices); fillSelect('ovEmotion', mc.emotions); fillSelect('ovSpeed', mc.speeds);
-      fillSelect('ovPitch', mc.levels); fillSelect('ovVolume', mc.levels); fillSelect('ovLanguage', mc.languages); fillSelect('ovTag', mc.tags);
+      fillSelect('ovPitch', mc.levels); fillSelect('ovVolume', mc.levels); fillSelect('ovLanguage', mc.languages);
     }
+    /* Chatterbox's version list, languages and tags; DramaBox needs only the engine entry. */
+    var cbEngine = ov.engines.find(function(x){ return x.id === 'chatterbox'; });
+    var cbc = (cbEngine && cbEngine.controls) || null;
+    if(cbc){
+      fillSelect('ovVersion', cbc.versions); fillSelect('ovCbLanguage', cbc.languages);
+      $('ovCbLanguage').value = 'en';
+    }
+    var mingTagHint = $('ovTagHint').textContent;
+    function cur(){ return ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0]; }
     function isMing(){ return !!mc && $('ovEngine').value === 'ming'; }
+    function isCb(){ return !!cbc && $('ovEngine').value === 'chatterbox'; }
+    function isDb(){ return $('ovEngine').value === 'dramabox'; }
+    function version(){ return cbc ? (cbc.versions.find(function(v){ return v.value === $('ovVersion').value; }) || cbc.versions[0]) : null; }
+    function maxText(){ var e = cur(); return (e && e.maxText) || 5000; }
+    /* The Sound tags list belongs to the engine picked: refilled only when that changes. */
+    function fillTags(which){
+      if(ov.tagsFor === which) return;
+      ov.tagsFor = which; $('ovTag').textContent = '';
+      fillSelect('ovTag', which === 'chatterbox' ? cbc.tags : which === 'ming' && mc ? mc.tags : []);
+      $('ovTagHint').textContent = which === 'chatterbox' ? cbc.tagNote : mingTagHint;
+    }
     /* Nov 16 2026: a built-in voice and a description used to be refused together, and VoiceOver can
      * change a closed select while arrowing past it, so every Make sent her back to the description.
      * Now a built-in voice hides the description (it is kept, not sent) and None brings it back. */
     function builtinOn(){ return isMing() && ov.mode === 'design' && !!$('ovBuiltin').value; }
+    /* Shows only what the picked engine (and Chatterbox version) uses. Hidden boxes keep their
+     * values; only what is shown is sent. */
     function showMing(){
-      var m = isMing();
-      $('ovDescWrap').hidden = builtinOn();
+      var m = isMing(), cb = isCb(), db = isDb(), v = version(), e = cur();
+      var turbo = cb && v && v.value === 'turbo';
+      $('ovDescWrap').hidden = builtinOn() || cb || db;
+      $('ovDesignNote').hidden = !(cb || db); $('ovDesignNote').textContent = (cb || db) && e.designNote ? e.designNote : '';
+      $('ovStyleWrap').hidden = cb || db;
       $('ovMingDesign').hidden = !(m && ov.mode === 'design');
       $('ovMingSpeak').hidden = !(m && ov.mode === 'speak');
-      $('ovTagsBox').hidden = !(m && ov.mode === 'speak');
+      $('ovCbBox').hidden = !cb;
+      $('ovCbTuning').hidden = !(cb && !turbo);
+      $('ovCbLangBox').hidden = !(cb && v && v.value === 'multilingual');
+      $('ovDbBox').hidden = !db;
+      if(cb && v){
+        $('ovVersionHint').textContent = v.about;
+        $('ovVarietyHint').textContent = 'How much each take varies. Empty is the usual 0.8. From ' + v.variety[0] + ' to ' + v.variety[1] + '.';
+        $('ovVariety').max = v.variety[1];
+      }
+      var tags = (m && ov.mode === 'speak') || turbo;
+      if(tags) fillTags(turbo ? 'chatterbox' : 'ming');
+      $('ovTagsBox').hidden = !tags;
+      $('ovTextLabel').textContent = (e && e.textLabel) || 'Words to say';
+      if(e && e.textHint) $('ovTextHint').textContent = e.textHint;
+      $('ovText').maxLength = maxText();
     }
     function showEngine(){
-      var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; }) || ov.engines[0];
+      var e = cur();
       $('ovEngineHint').textContent = e ? e.about + (e.controls && e.controls.about ? ' ' + e.controls.about : '') : '';
       showMing();
     }
-    /* What switching mode shows of Ming's controls, said after the mode sentence. */
+    /* What switching mode or engine shows, said after the first sentence. */
     function mingShown(){
+      if(isCb()) return ov.mode === 'design' ? ' Chatterbox uses its own built-in voice here.' : '';
+      if(isDb()) return ov.mode === 'design' ? ' DramaBox picks the voice from your scene.' : ' Write the scene in the Scene box.';
       if(!isMing()) return '';
       return ov.mode === 'design' ? ' You can also pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.';
     }
@@ -155,7 +226,15 @@ const OPEN_VOICES_SCRIPT = `
     $('ovEngine').onchange = function(){
       showEngine();
       var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; });
-      if(e) say(e.label + ' picked.' + (isMing() ? (ov.mode === 'design' ? ' You can pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.') : ''));
+      if(!e) return;
+      if(isCb()) say(e.label + ' picked. ' + version().label + ' version.' + mingShown());
+      else if(isDb()) say(e.label + ' picked. Words to say is now Scene.' + mingShown());
+      else say(e.label + ' picked.' + (isMing() ? (ov.mode === 'design' ? ' You can pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.') : ''));
+    };
+    $('ovVersion').onchange = function(){
+      showMing();
+      var v = version(), shown = v.value === 'turbo' ? ' Sound tags are shown.' : ' Expressiveness and Steadiness are shown.' + (v.value === 'multilingual' ? ' Pick the language.' : '');
+      say(v.label + ' picked.' + shown);
     };
     showEngine();
     /* Where the cursor was in Words to say, so a sound tag lands there. Before she has been in the
@@ -169,7 +248,7 @@ const OPEN_VOICES_SCRIPT = `
       var s = caret ? Math.min(caret.start, len) : len, e = caret ? Math.min(Math.max(caret.end, s), len) : len;
       var before = t.value.slice(0, s), after = t.value.slice(e);
       var ins = (before && !/\\s$/.test(before) ? ' ' : '') + tag + (after && !/^\\s/.test(after) ? ' ' : '');
-      if((before + ins + after).length > 5000){ say('The words are at the 5,000 character limit. Nothing was inserted.', true); return; }
+      if((before + ins + after).length > maxText()){ say('The words are at the ' + maxText().toLocaleString('en-US') + ' character limit. Nothing was inserted.', true); return; }
       t.value = before + ins + after;
       var pos = before.length + ins.length; caret = { start: pos, end: pos };
       t.focus(); t.setSelectionRange(pos, pos);
@@ -196,7 +275,7 @@ const OPEN_VOICES_SCRIPT = `
       $('ovDesignBox').hidden = m !== 'design'; $('ovSpeakBox').hidden = m !== 'speak';
       showMing();
     }
-    $('ovModeDesign').onclick = function(){ setMode('design'); say('Design a voice. Describe it, then type the words to say.' + mingShown()); };
+    $('ovModeDesign').onclick = function(){ setMode('design'); say((isCb() || isDb() ? 'Design a voice.' : 'Design a voice. Describe it, then type the words to say.') + mingShown()); };
     $('ovModeSpeak').onclick = function(){ setMode('speak'); say((ov.voices.length ? 'Speak with a voice. Pick a saved voice or import a clip.' : 'Speak with a voice. You have no saved voices yet, so import a clip, or keep a designed take first.') + mingShown()); };
     drawer.hidden = false;
 
@@ -247,8 +326,11 @@ const OPEN_VOICES_SCRIPT = `
     }
     /* A refusal names the control to change (the route's field); focus goes there when it is shown. */
     function focusField(field){
+      var clip = $('ovVoice').value === 'clip';
       var ids = { text: 'ovText', language: 'ovLanguage', style: 'ovStyle', emotion: 'ovEmotion', speed: 'ovSpeed', pitch: 'ovPitch',
-        volume: 'ovVolume', description: 'ovDescription', voice: 'ovBuiltin', clipWords: $('ovVoice').value === 'clip' ? 'ovClipWords' : 'ovVoice' };
+        volume: 'ovVolume', description: 'ovDescription', voice: 'ovBuiltin', clipWords: clip ? 'ovClipWords' : 'ovVoice',
+        engine: 'ovEngine', seed: 'ovSeed', version: 'ovVersion', temperature: 'ovVariety', exaggeration: 'ovExaggeration', cfg_weight: 'ovSteadiness',
+        language_id: 'ovCbLanguage', duration: 'ovDuration', reference: clip ? 'ovClip' : 'ovVoice' };
       var el = field && ids[field] ? $(ids[field]) : null;
       if(el && el.closest('[hidden]') && field === 'description' && builtinOn()) el = $('ovBuiltin');
       if(el && !el.closest('[hidden]')) el.focus();
@@ -270,9 +352,17 @@ const OPEN_VOICES_SCRIPT = `
           }
         }
       }
-      if(ov.mode === 'design'){ if(!builtinOn()) body.description = $('ovDescription').value; }
+      /* Chatterbox: the version and only its controls. DramaBox: the scene length. */
+      if(isCb()){
+        var v = version(); body.version = v.value; body.temperature = $('ovVariety').value;
+        if(v.value !== 'turbo'){ body.exaggeration = $('ovExaggeration').value; body.cfg_weight = $('ovSteadiness').value; }
+        if(v.value === 'multilingual') body.language_id = $('ovCbLanguage').value;
+      }
+      if(isDb()) body.duration = $('ovDuration').value;
+      var own = isCb() || isDb();
+      if(ov.mode === 'design'){ if(!builtinOn() && !own) body.description = $('ovDescription').value; }
       else {
-        body.style = $('ovStyle').value;
+        if(!own) body.style = $('ovStyle').value;
         if($('ovVoice').value === 'clip'){ if(!ov.clip){ say('Import a clip first, or pick a saved voice.', true); $('ovClip').focus(); return; } body.clipUrl = ov.clip.url; body.clipWords = $('ovClipWords').value; body.clipSeconds = ov.clip.seconds; }
         else body.voiceId = $('ovVoice').value;
       }
@@ -281,7 +371,7 @@ const OPEN_VOICES_SCRIPT = `
       if(r.status === 409 && r.data.jobId){ follow(r.data.jobId, r.data.error || 'Your last take is still being made. The page will say when it is ready.'); return; }
       if(!r.ok){ setBusy(false); say(r.data.error || 'The take could not start.', true); focusField(r.data.field); return; }
       var msg = 'Making a take.';
-      if(r.data.coldLikely && !ov.coldSaid){ ov.coldSaid = true; msg += ' ' + (r.data.coldNote || ov.coldNote); }
+      if(r.data.coldLikely && !ov.coldSaid[body.engine]){ ov.coldSaid[body.engine] = true; msg += ' ' + (r.data.coldNote || (cur() && cur().coldNote) || ov.coldNote); }
       follow(r.data.jobId, msg + ' The page will say when it is ready.');
     };
     $('ovStop').onclick = async function(){
@@ -307,6 +397,8 @@ const OPEN_VOICES_SCRIPT = `
     function addTake(d, jobId){
       ov.takes++;
       var n = ov.takes, engine = (ov.engines.find(function(e){ return e.id === d.engine; }) || {}).label || d.engine;
+      var ver = d.version && cbc ? cbc.versions.find(function(v){ return v.value === d.version; }) : null;
+      if(ver) engine += ' ' + ver.label;
       var li = document.createElement('li'); li.className = 'proj';
       var title = 'Take ' + n + ', ' + engine + ', voice number ' + d.seed + (d.seconds ? ', ' + Math.round(d.seconds) + ' seconds' : '');
       var h = document.createElement('h4'); h.tabIndex = -1; h.textContent = title; li.appendChild(h);

@@ -22,15 +22,157 @@
  *
  * iPhone: /health gains a top-level `openVoices` block; `guide.engines` is unchanged, so an older
  * build that lists the guide's engines never sees these two.
+ *
+ * Nov 16 2026: CHATTERBOX and DRAMABOX join (bridge open-voices.js; workers chatterbox_contract.py
+ * and dramabox_contract.py). Each is offered only while the bridge health says it is configured
+ * (CHATTERBOX_ENDPOINT_ID / DRAMABOX_ENDPOINT_ID set there); a bridge without them never lists them.
+ *   Chatterbox: no description. Design a voice = its own built-in voice; Speak with a voice = a saved
+ *     voice or clip. A Version (Turbo, Original, Multilingual) and only that version's controls:
+ *     Turbo sound tags; Original and Multilingual Expressiveness (exaggeration) and Steadiness
+ *     (cfg_weight); Multilingual a language; Variety (temperature) for all. Turbo clips must be over 5 s.
+ *   DramaBox: no description and no style. Words to say becomes the Scene: words in double quotes
+ *     are spoken, the rest is how they are acted. Optional Scene length (3-45 s). A clip of at least
+ *     3 s sets the voice.
+ * A clip's typed words go only to VoxCPM2 and Ming (the other two never read them). In /health the
+ * two new engines are listed under openVoices.moreEngines, not openVoices.engines: an iPhone build
+ * that shows every listed engine with a description box would only be refused.
  * -------------------------------------------------------------------------- */
 const express = require('express');
 
+const WORDS_HINT = 'For a voice you plan to keep, a sentence or two is best.';
+const COLD_NOTE = 'The first take after a quiet spell can take a few minutes while the voice engine starts. After that, takes come back in seconds.';
 const ENGINES = {
-  voxcpm: { id: 'voxcpm', label: 'VoxCPM2', maxDescription: 400,
+  voxcpm: { id: 'voxcpm', label: 'VoxCPM2', maxDescription: 400, maxText: 5000,
     about: 'Open voice model. Designs a voice from a description, or speaks in a saved voice or a clip.' },
-  ming: { id: 'ming', label: 'Ming', maxDescription: 600,
+  ming: { id: 'ming', label: 'Ming', maxDescription: 600, maxText: 2500,
     about: 'Open voice model from Ant Group. Designs a voice from a description, or speaks in a saved voice or a clip.' },
+  chatterbox: { id: 'chatterbox', label: 'Chatterbox', maxDescription: 0, maxText: 5000, more: true,
+    about: 'Quick, expressive voices. Turbo takes sound tags like laugh and sigh.',
+    designNote: 'Chatterbox uses its own built-in voice here. To use your own voice, choose Speak with a voice.' },
+  dramabox: { id: 'dramabox', label: 'DramaBox', maxDescription: 0, maxText: 4000, more: true,
+    about: 'Write a scene. Words in quotes are spoken, the rest is how they are acted. English only.',
+    designNote: 'DramaBox picks the voice from your scene. Describe the speaker in the scene, outside the quotes.',
+    textLabel: 'Scene',
+    textHint: 'Words inside double quotes are spoken. Everything else is how they are acted, and is never said. For example: An old sailor, tired but kind, leans on the rail. "Storm\'s coming." He laughs softly. "Always is." Up to 4,000 characters.',
+    coldNote: 'The first DramaBox take after a quiet spell can take several minutes while it loads. After that, takes come back much faster.' },
 };
+for (const e of Object.values(ENGINES)) {
+  e.textLabel = e.textLabel || 'Words to say';
+  e.textHint = e.textHint || `Up to ${e.maxText.toLocaleString('en-US')} characters. ${WORDS_HINT}`;
+  e.coldNote = e.coldNote || COLD_NOTE;
+}
+
+/* Chatterbox's controls (worker chatterbox_contract.py; the bridge checks the same rules). Each
+ * option is { value, label }. Labels are what she hears; the values go to the worker. */
+const CB_LANGUAGES = { ar: 'Arabic', zh: 'Chinese', da: 'Danish', nl: 'Dutch', en: 'English', fi: 'Finnish', fr: 'French', de: 'German',
+  el: 'Greek', he: 'Hebrew', hi: 'Hindi', it: 'Italian', ja: 'Japanese', ko: 'Korean', ms: 'Malay', no: 'Norwegian', pl: 'Polish',
+  pt: 'Portuguese', ru: 'Russian', es: 'Spanish', sw: 'Swahili', sv: 'Swedish', tr: 'Turkish' };
+const CHATTERBOX_CONTROLS = {
+  versions: [
+    { value: 'turbo', label: 'Turbo', about: 'Turbo: fast, English, and takes sound tags like laugh and sigh. In Speak with a voice, its clip must be over 5 seconds.', variety: [0.05, 2] },
+    { value: 'original', label: 'Original', about: 'Original: English, with Expressiveness and Steadiness.', variety: [0.05, 5] },
+    { value: 'multilingual', label: 'Multilingual', about: 'Multilingual: 23 languages, with Expressiveness and Steadiness. Pick the language below.', variety: [0.05, 5] },
+  ],
+  /* chatterbox-turbo's added tokens: nine sound events, then ten style tokens upstream does not document. */
+  tags: [
+    ...[['[laugh]', 'Laugh'], ['[chuckle]', 'Chuckle'], ['[sigh]', 'Sigh'], ['[gasp]', 'Gasp'], ['[cough]', 'Cough'], ['[clear throat]', 'Clear throat'],
+      ['[sniff]', 'Sniff'], ['[groan]', 'Groan'], ['[shush]', 'Shush']].map(([value, label]) => ({ value, label })),
+    ...[['[whispering]', 'Whispering'], ['[happy]', 'Happy'], ['[angry]', 'Angry'], ['[sarcastic]', 'Sarcastic'], ['[surprised]', 'Surprised'],
+      ['[fear]', 'Fear'], ['[crying]', 'Crying'], ['[dramatic]', 'Dramatic'], ['[narration]', 'Narration'], ['[advertisement]', 'Advertisement']]
+      .map(([value, label]) => ({ value, label: `${label}, a way of speaking` })),
+  ],
+  aliases: ['laughs', 'laughing', 'laughter', 'chuckles', 'giggle', 'giggles', 'sighs', 'sighing', 'coughs', 'coughing', 'gasps', 'groans',
+    'sniffs', 'sniffle', 'throat clear', 'clears throat', 'clearing throat', 'shh', 'whisper', 'whispers', 'cries', 'crying', 'sarcasm', 'surprise', 'scared'],
+  languages: Object.entries(CB_LANGUAGES).map(([value, label]) => ({ value, label })),
+  exaggeration: [0.25, 2],
+  tagNote: 'Puts the tag where your cursor was in Words to say. Sound tags work only with Turbo.',
+  turboClipMinS: 5,
+};
+const DRAMABOX_CONTROLS = { duration: [3, 45], clipMinS: 3 };
+const CB_TAG_RE = /\[([^\[\]]{1,40})\]/g; // the worker's own pattern: any bracketed words
+const CB_KNOWN = new Set(CHATTERBOX_CONTROLS.tags.map((t) => t.value.slice(1, -1)).concat(CHATTERBOX_CONTROLS.aliases));
+const CURLY_QUOTES = /[“”„‟«»]/g;
+const isSet = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+const numberOf = (v) => (typeof v === 'number' ? v : Number(String(v).trim()));
+/* Words that are only tags, spaces and end marks say nothing. */
+const SAYS_NOTHING = /^[\s.,!?]*$/;
+
+/* Chatterbox's own fields -> { fields } or { error, field }. */
+function chatterboxRule(b, text) {
+  const no = (error, field) => ({ error, field });
+  const version = isSet(b.version) ? String(b.version).trim().toLowerCase() : 'turbo';
+  const v = CHATTERBOX_CONTROLS.versions.find((x) => x.value === version);
+  if (!v) return no('Pick Turbo, Original or Multilingual for the version.', 'version');
+  const fields = { version };
+  let unknown = '';
+  let tagged = false;
+  for (const m of text.matchAll(CB_TAG_RE)) {
+    if (CB_KNOWN.has(m[1].replace(/\s+/g, ' ').trim().toLowerCase())) tagged = true;
+    else if (!unknown) unknown = m[0];
+  }
+  if (version === 'turbo') {
+    if (unknown) return no(`Chatterbox Turbo does not know the sound tag ${unknown}. Pick one from Sound tags, or take it out.`, 'text');
+    if (SAYS_NOTHING.test(text.replace(CB_TAG_RE, ''))) return no('Type some words to say, not only sound tags.', 'text');
+  } else if (tagged) return no('Sound tags work only with Chatterbox Turbo. Take them out, or set the version to Turbo.', 'text');
+  if (isSet(b.temperature)) {
+    const t = numberOf(b.temperature);
+    const [lo, hi] = v.variety;
+    if (!Number.isFinite(t) || t < lo || t > hi) return no(`Variety must be a number from ${lo} to ${hi} for ${v.label}.`, 'temperature');
+    fields.temperature = t;
+  }
+  if (version === 'turbo') {
+    if (isSet(b.exaggeration)) return no('Expressiveness is for Original and Multilingual. Turbo does not use it.', 'exaggeration');
+    if (isSet(b.cfg_weight)) return no('Steadiness is for Original and Multilingual. Turbo does not use it.', 'cfg_weight');
+  } else {
+    if (isSet(b.exaggeration)) {
+      const x = numberOf(b.exaggeration);
+      const [lo, hi] = CHATTERBOX_CONTROLS.exaggeration;
+      if (!Number.isFinite(x) || x < lo || x > hi) return no(`Expressiveness must be a number from ${lo} to ${hi}.`, 'exaggeration');
+      fields.exaggeration = x;
+    }
+    if (isSet(b.cfg_weight)) {
+      const c = numberOf(b.cfg_weight);
+      const zeroOk = version === 'multilingual';
+      if (!Number.isFinite(c) || c > 1 || c < 0 || (c === 0 && !zeroOk)) {
+        return no(zeroOk ? 'Steadiness must be a number from 0 to 1.' : 'Steadiness must be above 0 and at most 1 for Original.', 'cfg_weight');
+      }
+      fields.cfg_weight = c;
+    }
+  }
+  const lang = isSet(b.language_id) ? String(b.language_id).trim().toLowerCase() : '';
+  if (version === 'multilingual') {
+    if (!CB_LANGUAGES[lang]) return no('Pick a language for Multilingual.', 'language_id');
+    fields.language_id = lang;
+  } else if (lang && lang !== 'en') return no(`${v.label} speaks English only. Set the version to Multilingual for other languages.`, 'version');
+  return { fields };
+}
+
+/* DramaBox's scene and length -> { fields } or { error, field }. */
+function dramaboxRule(b, text) {
+  const no = (error, field) => ({ error, field });
+  const scene = text.replace(CURLY_QUOTES, '"');
+  if ((scene.match(/"/g) || []).length % 2) return no('A quote mark in the scene is not closed. Put every spoken line inside double quotes.', 'text');
+  if (![...scene.matchAll(/"([^"]+)"/g)].some((m) => m[1].trim())) {
+    return no('The scene needs at least one spoken line inside double quotes. Words outside the quotes are acted, not spoken.', 'text');
+  }
+  const fields = {};
+  if (isSet(b.duration) && numberOf(b.duration) !== 0) {
+    const d = numberOf(b.duration);
+    const [lo, hi] = DRAMABOX_CONTROLS.duration;
+    if (!Number.isFinite(d) || d < lo || d > hi) return no(`Scene length must be from ${lo} to ${hi} seconds, or empty to let DramaBox decide.`, 'duration');
+    fields.duration = d;
+  }
+  return { fields };
+}
+
+/* The shortest clip each engine takes (null: no rule here). */
+function clipFloor(body) {
+  if (body.engine === 'chatterbox' && body.version === 'turbo') {
+    return { over: CHATTERBOX_CONTROLS.turboClipMinS, error: 'Chatterbox Turbo needs a clip longer than 5 seconds. Pick a longer one, or set the version to Original.' };
+  }
+  if (body.engine === 'dramabox') return { atLeast: DRAMABOX_CONTROLS.clipMinS, error: 'DramaBox needs a clip of at least 3 seconds. Pick a longer one.' };
+  return null;
+}
 
 /* Ming's own controls (worker ming_contract.py; bridge open-voices.js checks the same rules).
  * Ming runs one task per take, so per take it takes ONE of: a style, an emotion, or speed, pitch
@@ -123,7 +265,7 @@ function mingFields(b, engine, mode) {
   const pick = (k) => (typeof b[k] === 'string' ? b[k].trim() : b[k]);
   const given = MING_FIELDS.filter((k) => { const v = pick(k); return v !== undefined && v !== null && v !== ''; });
   if (!given.length) return { fields };
-  if (engine !== 'ming') return { error: 'Built-in voices, emotion, speed, pitch, volume and language work only with Ming.' };
+  if (engine !== 'ming') return { error: 'Built-in voices, emotion, speed, pitch, volume and language work only with Ming.', field: given[0] };
   const lists = { voice: [MING_CONTROLS.voices, 'Pick a built-in voice from the list.'], emotion: [MING_CONTROLS.emotions, 'Pick an emotion from the list.'],
     speed: [MING_CONTROLS.speeds, 'Pick slow, medium or fast for the speed.'], pitch: [MING_CONTROLS.levels, 'Pick low, medium or high for the pitch.'],
     volume: [MING_CONTROLS.levels, 'Pick low, medium or high for the volume.'], language: [MING_CONTROLS.languages, 'Pick a language from the list.'] };
@@ -141,7 +283,6 @@ const MAX_TEXT = 5000;
 const MAX_STYLE = 400;
 const MAX_NAME = 80;
 const PROMPT_CLIP_MAX_S = 29.5; // the workers take a clip's exact words only for a clip of 30 s or less
-const COLD_NOTE = 'The first take after a quiet spell can take a few minutes while the voice engine starts. After that, takes come back in seconds.';
 const HEALTH_TTL_MS = 60 * 1000;
 const PROMPT_CLIP_SENTENCE = 'The exact words only work for a clip of thirty seconds or less. Clear the words, or use a shorter clip.';
 const STILL_MAKING = 'Your last take is still being made. The page will say when it is ready.';
@@ -153,7 +294,7 @@ const isJobId = (v) => typeof v === 'string' && /^ov_[a-z0-9]{6,40}$/i.test(v);
 /* mingControls: the bridge reads Ming's extra controls (its health says ming.controls). Until it does,
  * the controls are neither offered nor forwarded, so a fork deployed before its bridge never sends a
  * control the bridge would silently drop on paid GPU time. */
-const NOTHING = Object.freeze({ voxcpm: false, ming: false, mingControls: false });
+const NOTHING = Object.freeze({ voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false });
 
 /* Which engines the bridge can run. Read from its health (cached, one call in flight at a time).
  * When the bridge cannot be reached (a network error or a timeout) VoxCPM2, which has a default
@@ -163,13 +304,14 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
   let cached = null;
   let inflight = null;
   async function ask() {
-    let value = { voxcpm: true, ming: false, mingControls: false };
+    let value = { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false };
     try {
       const r = await http.get(`${bridgeBase()}/audio/open-voices/health`, { params: { secret: secret() }, timeout: 4000 });
       const d = (r && r.data) || {};
       const e = d.engines || {};
       const ming = !!(d.enabled && e.ming && e.ming.configured);
-      value = { voxcpm: !!(d.enabled && e.voxcpm && e.voxcpm.configured), ming, mingControls: ming && e.ming.controls === true };
+      const on = (k) => !!(d.enabled && e[k] && e[k].configured);
+      value = { voxcpm: on('voxcpm'), ming, mingControls: ming && e.ming.controls === true, chatterbox: on('chatterbox'), dramabox: on('dramabox') };
     } catch (err) {
       if (err && err.response) value = { ...NOTHING };
     }
@@ -190,7 +332,9 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
 
 function engineList(ready) {
   return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription,
-    ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}) }));
+    maxText: e.maxText, textLabel: e.textLabel, textHint: e.textHint, coldNote: e.coldNote, ...(e.designNote ? { designNote: e.designNote } : {}),
+    ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}),
+    ...(e.id === 'chatterbox' ? { controls: CHATTERBOX_CONTROLS } : {}), ...(e.id === 'dramabox' ? { controls: DRAMABOX_CONTROLS } : {}) }));
 }
 
 function voiceView(row, url) {
@@ -205,19 +349,50 @@ function promptWordsFor(saved) {
   return words && typeof saved.seconds === 'number' && saved.seconds > 0 && saved.seconds <= PROMPT_CLIP_MAX_S ? words.slice(0, 1000) : '';
 }
 
+function seedOf(b) {
+  if (b.seed !== undefined && b.seed !== null && String(b.seed).trim() !== '') {
+    const seed = Number(String(b.seed).trim());
+    if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) return { error: 'The voice number must be a whole number from 0 to 2147483647.', field: 'seed' };
+    return { seed };
+  }
+  return {};
+}
+
 /* A take request -> the bridge body (without the reference), or { error }. */
 function checkTake(b = {}, ready = {}) {
   const engine = String(b.engine || '');
-  if (!ENGINES[engine]) return { error: 'Pick VoxCPM2 or Ming.' };
-  if (!ready[engine]) return { error: engine === 'ming' ? 'Ming is not set up yet. Use VoxCPM2 for now.' : 'VoxCPM2 is not available right now.' };
+  if (!ENGINES[engine]) return { error: 'Pick a voice engine from the list.', field: 'engine' };
+  if (!ready[engine]) {
+    return { error: engine === 'ming' ? 'Ming is not set up yet. Use VoxCPM2 for now.' : engine === 'voxcpm' ? 'VoxCPM2 is not available right now.'
+      : `${ENGINES[engine].label} is not set up yet. Pick another voice engine.`, field: 'engine' };
+  }
   const mode = b.mode === 'design' ? 'design' : b.mode === 'speak' ? 'speak' : '';
   if (!mode) return { error: 'Choose Design a voice or Speak with a voice.' };
+  const scene = engine === 'dramabox';
   const text = typeof b.text === 'string' ? b.text.trim() : '';
-  if (!text) return { error: 'Type the words to say.' };
-  if (text.length > MAX_TEXT) return { error: `The words are too long. The most is ${MAX_TEXT} characters.` };
+  if (!text) return { error: scene ? 'Write the scene first.' : 'Type the words to say.', field: 'text' };
+  const maxText = ENGINES[engine].maxText;
+  if (text.length > maxText) return { error: `The ${scene ? 'scene is' : 'words are'} too long for ${ENGINES[engine].label}. The most is ${maxText} characters.`, field: 'text' };
   const body = { engine, mode: mode === 'design' ? 'design' : 'clone', text };
   const ming = mingFields(b, engine, mode);
   if (ming.error) return { error: ming.error, field: ming.field };
+  if (ENGINES[engine].more) {
+    /* Chatterbox and DramaBox: no description, no style; their own controls. */
+    if (mode === 'design' && oneLine(b.description)) {
+      return { error: scene ? 'DramaBox takes no description. Describe the speaker in the scene, outside the quotes.' : ENGINES.chatterbox.designNote, field: 'description' };
+    }
+    if (mode === 'speak' && oneLine(b.style)) {
+      return { error: `${ENGINES[engine].label} takes no style. ${scene ? 'Write how it is said in the scene, outside the quotes.' : 'Clear the style.'}`, field: 'style' };
+    }
+    if (mode === 'speak' && !isId(b.voiceId) && !(typeof b.clipUrl === 'string' && b.clipUrl)) return { error: 'Pick a saved voice or import a clip first.', field: 'reference' };
+    const own = scene ? dramaboxRule(b, text) : chatterboxRule(b, text);
+    if (own.error) return own;
+    Object.assign(body, own.fields);
+    const seed = seedOf(b);
+    if (seed.error) return seed;
+    if (seed.seed !== undefined) body.seed = seed.seed;
+    return { body };
+  }
   const controlsReady = engine === 'ming' && !!ready.mingControls;
   if (Object.keys(ming.fields).length && !controlsReady) {
     return { error: 'Ming\'s extra controls are not ready yet. Set them back to Not set, or try again later.', field: Object.keys(ming.fields)[0] };
@@ -234,11 +409,9 @@ function checkTake(b = {}, ready = {}) {
     if (style) body.style = style;
     if (!isId(b.voiceId) && !(typeof b.clipUrl === 'string' && b.clipUrl)) return { error: 'Pick a saved voice or import a clip first.' };
   }
-  if (b.seed !== undefined && b.seed !== null && String(b.seed).trim() !== '') {
-    const seed = Number(String(b.seed).trim());
-    if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) return { error: 'The voice number must be a whole number from 0 to 2147483647.' };
-    body.seed = seed;
-  }
+  const seed = seedOf(b);
+  if (seed.error) return seed;
+  if (seed.seed !== undefined) body.seed = seed.seed;
   Object.assign(body, ming.fields);
   const rule = mingRule(body);
   if (rule) return rule;
@@ -260,28 +433,31 @@ function createOpenVoicesRouter(deps) {
   }
 
   /* The clip and its words for Speak with a voice, re-signed from our storage. */
-  async function referenceFor(user, b) {
+  async function referenceFor(user, b, useWords = true) {
     if (isId(b.voiceId)) {
       const row = await KadeAsset.findOne({ _id: b.voiceId, user, 'metadata.savedVoice': { $exists: true } }).select('url backupUrl metadata.savedVoice').lean();
-      if (!row) return { error: 'That saved voice is gone. Pick another one.' };
+      if (!row) return { error: 'That saved voice is gone. Pick another one.', field: 'reference' };
       const url = await fresh(row.backupUrl || row.url);
-      return { url, words: promptWordsFor(row.metadata.savedVoice) };
+      const seconds = row.metadata.savedVoice.seconds;
+      return { url, words: useWords ? promptWordsFor(row.metadata.savedVoice) : '', seconds: typeof seconds === 'number' ? seconds : null };
     }
     let url;
     try {
       url = await references(user).refresh(String(b.clipUrl));
     } catch (e) {
-      return { error: 'That clip is not saved on your account. Import it again.' };
+      return { error: 'That clip is not saved on your account. Import it again.', field: 'reference' };
     }
+    const seconds = Number(b.clipSeconds);
+    const known = Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    if (!useWords) return { url, words: '', seconds: known };
     /* The workers take a clip's exact words only for a clip of thirty seconds or less. A clip known
      * to be longer is refused before any GPU time; a clip of unknown length goes without the words. */
     let words = oneLine(b.clipWords).slice(0, 1000);
-    const seconds = Number(b.clipSeconds);
     if (words) {
       if (Number.isFinite(seconds) && seconds > PROMPT_CLIP_MAX_S) return { error: PROMPT_CLIP_SENTENCE };
       if (!(Number.isFinite(seconds) && seconds > 0)) words = '';
     }
-    return { url, words };
+    return { url, words, seconds: known };
   }
 
   router.get('/open-voices', auth, async (req, res) => {
@@ -303,8 +479,14 @@ function createOpenVoicesRouter(deps) {
       if (checked.error) return res.status(400).json({ error: checked.error, ...(checked.field ? { field: checked.field } : {}) });
       const body = { ...checked.body, secret: secret(), userId: String(req.user.id) };
       if (body.mode === 'clone') {
-        const ref = await referenceFor(String(req.user.id), b);
-        if (ref.error) return res.status(400).json({ error: ref.error });
+        const more = !!ENGINES[body.engine].more;
+        const ref = await referenceFor(String(req.user.id), b, !more);
+        if (ref.error) return res.status(400).json({ error: ref.error, ...(ref.field ? { field: ref.field } : {}) });
+        /* A clip known to be too short for the engine is refused before any GPU time. */
+        const floor = clipFloor(body);
+        if (floor && typeof ref.seconds === 'number' && (floor.over ? ref.seconds <= floor.over : ref.seconds < floor.atLeast)) {
+          return res.status(400).json({ error: floor.error, field: 'reference' });
+        }
         body.reference_voice_url = ref.url;
         if (ref.words) body.prompt_text = ref.words;
         const rule = mingRule(body, !!ref.words);
@@ -323,8 +505,8 @@ function createOpenVoicesRouter(deps) {
       const d = r.data || {};
       if (!d.jobId) return res.status(502).json({ error: 'The voice engine did not start a take. Nothing was made.' });
       log.info(`[soundbooth/open-voices] take job=${d.jobId} engine=${body.engine} mode=${body.mode} user=${req.user.id}`);
-      return res.json({ ok: true, jobId: d.jobId, engine: body.engine, mode: b.mode, seed: d.seed, coldLikely: d.coldLikely !== false,
-        coldNote: d.coldLikely !== false ? COLD_NOTE : '' });
+      return res.json({ ok: true, jobId: d.jobId, engine: body.engine, ...(body.version ? { version: body.version } : {}), mode: b.mode, seed: d.seed,
+        coldLikely: d.coldLikely !== false, coldNote: d.coldLikely !== false ? ENGINES[body.engine].coldNote : '' });
     } catch (e) {
       log.warn('[soundbooth/open-voices] take failed: ' + e.message);
       return res.status(500).json({ error: 'The take could not start. Try again.' });
@@ -343,7 +525,7 @@ function createOpenVoicesRouter(deps) {
       if (e.response && e.response.status === 404) return res.status(404).json({ error: 'That take is no longer listed.' });
       return res.json({ state: 'unknown', spoken: 'Still checking on the take.' });
     }
-    const out = { state: j.state, engine: j.engine, mode: j.mode, seed: j.seed, spoken: (j.wait && j.wait.spoken) || '' };
+    const out = { state: j.state, engine: j.engine, ...(j.version ? { version: j.version } : {}), mode: j.mode, seed: j.seed, spoken: (j.wait && j.wait.spoken) || '' };
     if (j.state === 'done' && j.result) {
       Object.assign(out, { url: j.result.url, seconds: j.result.seconds, seed: j.result.seed });
       const row = await KadeAsset.findOne({ user: String(req.user.id), 'metadata.jobId': jobId }).select('_id').lean();
@@ -435,8 +617,10 @@ async function healthBlock(readiness, waitMs = 300) {
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve(fallback()), waitMs); if (timer.unref) timer.unref(); });
     const ready = await Promise.race([live, late]);
     clearTimeout(timer);
-    return { engines: engineList(ready), coldNote: COLD_NOTE };
-  } catch (_) { return { engines: [], coldNote: COLD_NOTE }; }
+    const list = engineList(ready);
+    return { engines: list.filter((e) => !ENGINES[e.id].more), moreEngines: list.filter((e) => ENGINES[e.id].more), coldNote: COLD_NOTE };
+  } catch (_) { return { engines: [], moreEngines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, mingRule, soundTags, MING_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, clipFloor,
+  MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };

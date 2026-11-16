@@ -143,3 +143,15 @@ test('/health does not wait on a slow bridge', async () => {
   await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual((await slow.health()).body.openVoices.engines.map((e) => e.id), ['voxcpm'], 'the answer arrives for the next look');
 });
+
+test('Chatterbox and DramaBox ride in openVoices.moreEngines; openVoices.engines and the guide are unchanged', async () => {
+  const all = async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: false }, chatterbox: { configured: true }, dramabox: { configured: true } } } });
+  const h = await booth({ bridge: all }).health();
+  assert.deepEqual(h.body.openVoices.engines.map((e) => e.id), ['voxcpm']);
+  assert.deepEqual(h.body.openVoices.moreEngines.map((e) => e.id), ['chatterbox', 'dramabox']);
+  const plain = await booth({ openVoices: false }).health();
+  assert.equal(JSON.stringify(h.body.guide), JSON.stringify(plain.body.guide));
+  for (const id of ['chatterbox', 'dramabox']) assert.equal(id in h.body.guide.engines, false);
+  const off = await booth({ bridge: ready }).health();
+  assert.deepEqual(off.body.openVoices.moreEngines, [], 'unset on the bridge: not offered');
+});
