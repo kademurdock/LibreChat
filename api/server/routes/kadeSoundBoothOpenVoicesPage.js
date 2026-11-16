@@ -92,6 +92,15 @@ const OPEN_VOICES_HTML = `
         <input type="number" id="ovDuration" min="3" max="45" step="1" aria-describedby="ovDurationHint">
         <p class="hint" id="ovDurationHint">Leave it empty and DramaBox decides. For a short scene, 3 to 45 seconds.</p>
       </div>
+      <div id="ovWriterBox" role="group" aria-labelledby="ovWriterHeading">
+        <h4 id="ovWriterHeading">The writer</h4>
+        <label class="field" for="ovIdea">What should it say? (for Write it for me)</label>
+        <textarea id="ovIdea" maxlength="3000" aria-describedby="ovIdeaHint" style="min-height:3rem"></textarea>
+        <p class="hint" id="ovIdeaHint"></p>
+        <button type="button" class="act" id="ovWrite">Write it for me</button>
+        <button type="button" class="act quiet" id="ovFormat">Format my words for this engine</button>
+        <button type="button" class="act quiet" id="ovUndoWrite" hidden>Put back the words I had</button>
+      </div>
       <label class="field" for="ovText" id="ovTextLabel">Words to say</label>
       <textarea id="ovText" maxlength="5000" aria-describedby="ovTextHint" style="min-height:5rem"></textarea>
       <p class="hint" id="ovTextHint">Up to 5,000 characters. For a voice you plan to keep, a sentence or two is best.</p>
@@ -130,11 +139,11 @@ const OPEN_VOICES_SCRIPT = `
     ['input','change'].forEach(function(t){ panel.addEventListener(t, function(e){ e.stopPropagation(); }); });
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token) return;
-    async function call(path, body){
+    async function call(path, body, waitMs){
       try {
         var r = await fetch('/api/kade/sound-booth' + path, { method: body === undefined ? 'GET' : 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(60000) });
+          body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(waitMs || 60000) });
         var j = null; try { j = await r.json(); } catch(e) {}
         return { ok: r.ok, status: r.status, data: j || {} };
       } catch(e) { return { ok: false, status: 0, data: { error: 'Connection lost. Try again.' } }; }
@@ -203,8 +212,17 @@ const OPEN_VOICES_SCRIPT = `
       if(tags) fillTags(turbo ? 'chatterbox' : 'ming');
       $('ovTagsBox').hidden = !tags;
       $('ovTextLabel').textContent = (e && e.textLabel) || 'Words to say';
+      $('ovIdeaHint').textContent = writerHint(e, cb, db, turbo, v);
       if(e && e.textHint) $('ovTextHint').textContent = e.textHint;
       $('ovText').maxLength = maxText();
+    }
+    /* What the writer does for the engine picked, in one plain sentence. */
+    function writerHint(e, cb, db, turbo, v){
+      var name = e ? e.label : 'this engine';
+      if(db) return 'For example: write a script about a tired sailor saying goodbye in a storm. The writer puts the spoken words in quotes, and the acting and background sounds around them. The scene goes in Scene.';
+      if(turbo) return 'For example: a friend telling a funny story about a lost dog. The writer writes words for Chatterbox Turbo and adds sound tags like laugh or sigh where they fit. They go in Words to say.';
+      if(cb) return 'For example: a radio host welcoming listeners on a rainy morning. The writer writes plain words for Chatterbox ' + (v ? v.label : '') + (v && v.value === 'multilingual' ? ', in the language picked below' : '') + '. They go in Words to say.';
+      return 'For example: a grandmother reading a bedtime story. The writer writes plain words for ' + name + ' to say' + (ov.mode === 'design' && !builtinOn() ? ', and a voice description if yours is empty' : '') + '. They go in Words to say.';
     }
     function showEngine(){
       var e = cur();
@@ -345,6 +363,38 @@ const OPEN_VOICES_SCRIPT = `
       }
       return false;
     }
+    /* Nov 16 2026: the writer. Write it for me turns the idea into words in this engine's own format;
+     * Format my words keeps her words and only shapes them. The answer replaces Words to say (or Scene),
+     * and Put back the words I had restores what was there. Nothing is rendered and no GPU time is used. */
+    ov.writing = false; ov.before = null;
+    async function runWriter(how){
+      if(ov.writing){ say('The writer is still working.'); return; }
+      var body = { engine: $('ovEngine').value, mode: ov.mode, how: how, idea: $('ovIdea').value, words: $('ovText').value };
+      if(isMing() && ov.mode === 'design') body.voice = $('ovBuiltin').value;
+      if(ov.mode === 'design' && !builtinOn() && !isCb() && !isDb()) body.description = $('ovDescription').value;
+      if(isCb()){ body.version = version().value; if(body.version === 'multilingual') body.language_id = $('ovCbLanguage').value; }
+      if(isDb()) body.duration = $('ovDuration').value;
+      if(how === 'write' && body.idea.trim().length < 3){ say('Type what it should say in the idea box first. One sentence is enough.', true); $('ovIdea').focus(); return; }
+      if(how === 'format' && !body.words.trim()){ say('Type your words in ' + $('ovTextLabel').textContent + ' first.', true); $('ovText').focus(); return; }
+      ov.writing = true; $('ovWrite').setAttribute('aria-disabled', 'true'); $('ovFormat').setAttribute('aria-disabled', 'true');
+      say(how === 'write' ? 'Writing. This can take up to a minute or two.' : 'Formatting your words.');
+      var r = await call('/open-voices/write', body, 150000);
+      ov.writing = false; $('ovWrite').removeAttribute('aria-disabled'); $('ovFormat').removeAttribute('aria-disabled');
+      if(!r.ok){ say(r.data.error || 'The writer had trouble. Try again.', true); if(r.data.field === 'idea') $('ovIdea').focus(); else focusField(r.data.field); return; }
+      var had = $('ovText').value;
+      if(had.trim() && had !== r.data.text){ ov.before = had; $('ovUndoWrite').hidden = false; }
+      $('ovText').value = r.data.text || '';
+      if(r.data.voice && !$('ovDescription').value.trim() && !ownHidden($('ovDescription'))) $('ovDescription').value = r.data.voice;
+      say(r.data.spoken || 'Done. Read it over, then Make a take.');
+      $('ovText').focus(); $('ovText').setSelectionRange(0, 0);
+    }
+    $('ovWrite').onclick = function(){ runWriter('write'); };
+    $('ovFormat').onclick = function(){ runWriter('format'); };
+    $('ovUndoWrite').onclick = function(){
+      if(ov.before === null) return;
+      $('ovText').value = ov.before; ov.before = null; $('ovUndoWrite').hidden = true;
+      say('Your words are back in ' + $('ovTextLabel').textContent + '.'); $('ovText').focus();
+    };
     $('ovMake').onclick = async function(){
       if(ov.busy){ say('A take is still being made. Press Stop this take to end it.'); return; }
       var body = { engine: $('ovEngine').value, mode: ov.mode, text: $('ovText').value, seed: $('ovSeed').value };

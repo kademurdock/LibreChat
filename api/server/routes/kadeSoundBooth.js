@@ -4585,6 +4585,27 @@ if (OPEN_VOICES_READY) {
     fresh: freshAssetUrl,
     references: (user) => audioReferenceGuard(user),
     logger,
+    /* Nov 16 2026: Open voices' script writer is the desk's own call: the same daily cap, writer model,
+     * zero-retention lane, Claude lane mark and usage ledger as Write it for me on the AuK and Seed desks. */
+    write: async ({ system, user, req, engine, how }) => {
+      if (scriptCapHit(req.user.id)) return { status: 429, error: `That's ${SCRIPT_DAILY_CAP} scripts today. The writing desk reopens tomorrow.` };
+      const started = Date.now();
+      const made = await callModel({
+        ...musicWritingSettings({ engine: 'speech', mode: 'write', thinkMode: 'low' }),
+        system,
+        user,
+        model: lyricWritingModel,
+        maxTokens: 8000,
+        timeoutMs: 112000,
+        adult: await claudeAdultFor(req),
+      });
+      logKadeUsage({
+        userId: req.user.id, service: 'soundbooth_script', quantity: 1, unit: 'calls', costUSD: made.costUSD,
+        metadata: { engine: 'open-' + engine, mode: how, costMeasured: made.measured, model: lyricWritingModel, ms: Date.now() - started, inTok: made.usage.prompt_tokens, outTok: made.usage.completion_tokens },
+      }).catch(() => {});
+      if (made.finishReason === 'length' && !String(made.text || '').trim()) return { status: 502, error: 'The writer ran out of time. Your idea is kept. Try again.' };
+      return { text: made.text };
+    },
   }));
 }
 /* ============================ GET /health ================================= */

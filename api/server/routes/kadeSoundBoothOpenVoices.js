@@ -38,6 +38,7 @@
  * that shows every listed engine with a description box would only be refused.
  * -------------------------------------------------------------------------- */
 const express = require('express');
+const writer = require('./kadeSoundBoothOpenVoicesWriter');
 
 const WORDS_HINT = 'For a voice you plan to keep, a sentence or two is best.';
 const COLD_NOTE = 'The first take after a quiet spell can take a few minutes while the voice engine starts. After that, takes come back in seconds.';
@@ -468,6 +469,35 @@ function createOpenVoicesRouter(deps) {
     } catch (e) {
       log.warn('[soundbooth/open-voices] list failed: ' + e.message);
       return res.status(500).json({ error: 'Could not load your voices. Try again.' });
+    }
+  });
+
+  /* Nov 16 2026: the script writer for every engine (kadeSoundBoothOpenVoicesWriter.js). `deps.write`
+   * is the booth desk's own call ({ system, user, req } -> { text, costUSD } or { error, status });
+   * without it the route says the writer is not here. Nothing is rendered and no GPU time is used. */
+  router.post('/open-voices/write', auth, json, async (req, res) => {
+    const b = req.body || {};
+    if (typeof deps.write !== 'function') return res.status(503).json({ error: 'The writer is not available here.' });
+    const ready = await readiness();
+    if (!ENGINES[b.engine] || !ready[b.engine]) return res.status(400).json({ error: 'Pick a voice engine first.', field: 'engine' });
+    const language = typeof b.language_id === 'string' ? CB_LANGUAGES[b.language_id] : '';
+    const builtin = b.engine === 'ming' && b.mode !== 'speak' && typeof b.voice === 'string' && b.voice
+      ? (MING_CONTROLS.voices.find((v) => v.value === b.voice) || {}) : null;
+    const ask = writer.writerRequest({ ...b, languageName: language || '', builtin: !!builtin, builtinName: builtin && builtin.label });
+    if (ask.error) return res.status(400).json({ error: ask.error, field: ask.field });
+    try {
+      const out = await deps.write({ system: ask.system, user: ask.user, req, engine: b.engine, how: ask.how });
+      if (out.error) return res.status(out.status || 502).json({ error: out.error });
+      const got = writer.parseWriterReply(out.text, { engine: b.engine, version: b.version, how: ask.how, shape: ask.shape, askVoice: ask.askVoice });
+      if (got.error) return res.status(502).json({ error: got.error });
+      log.info(`[soundbooth/open-voices] wrote engine=${b.engine} how=${ask.how} chars=${got.text.length} voice=${got.voice ? 1 : 0}`);
+      const where = b.engine === 'dramabox' ? 'Scene' : 'Words to say';
+      const spoken = (ask.how === 'format' ? `Your words are formatted for ${ask.shape.name}, in ${where}.` : `Written for ${ask.shape.name}. It is in ${where}.`)
+        + (got.voice ? ' A voice description was added too.' : '') + ' Read it over, then Make a take.';
+      return res.json({ text: got.text, voice: got.voice, spoken });
+    } catch (e) {
+      log.warn('[soundbooth/open-voices] write failed: ' + e.message);
+      return res.status(502).json({ error: 'The writer had trouble. Your idea is kept. Try again.' });
     }
   });
 
