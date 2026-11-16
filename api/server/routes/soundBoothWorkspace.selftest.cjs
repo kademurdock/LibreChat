@@ -50,8 +50,8 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.locator('#status').innerText(),'Writing thought: '+mode+'.');
   }
   assert.equal(await page.locator('#quickDraft').count(),0);
-  assert.equal(await page.locator('#recentDrawer').getAttribute('open'),null);
-  await page.locator('#recentDrawer > summary').click();
+  assert.equal(await page.locator('#recentDrawer-btn').getAttribute('aria-expanded'),'false');assert.equal(await page.locator('#recentDrawer-body').isHidden(),true);
+  await page.locator('#recentDrawer-btn').click();
   await page.getByRole('heading',{name:'Recoverable recording',exact:true}).waitFor();
   assert.equal(await page.locator('#showFailed').isChecked(),false);
   assert.equal(await page.getByRole('heading',{name:'Failed empty attempt',exact:true}).count(),0);
@@ -302,7 +302,7 @@ const server=http.createServer((req,res)=>{
   await page.locator('[data-engine="yue2"]').click();
   assert.equal(await page.locator('#script').inputValue(),originalYue,'source draft remains in its tab');
   await page.locator('[data-engine="stable"]').click();
-  await page.locator('#secEdit > summary').click(); // Nov 16 2026: the free workbench sits in Edit audio
+  await page.locator('#secEdit-btn').click(); // Nov 16 2026: the free workbench sits in Edit audio
   assert.equal(await page.getByRole('heading',{name:'Free workbench: trim, fade, and add a background'}).isVisible(),true);
   const silentWav=Buffer.alloc(44+88200);
   silentWav.write('RIFF',0);silentWav.writeUInt32LE(silentWav.length-8,4);silentWav.write('WAVEfmt ',8);

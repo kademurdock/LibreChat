@@ -17,8 +17,9 @@
  * region, cost said before Render, Render is a two-step confirm, nothing
  * auto-plays.
  *
- * Nov 16 2026, her ask: the "stacked up structure" got chaotic. The page is four sections, each a disclosure whose
- * summary is its h2: Make a voice (Open voices, AuK voice design), Edit audio (AuK clean up, change words, edit, and
+ * Nov 16 2026, her ask: the "stacked up structure" got chaotic. The page is four sections, each an h2 whose only
+ * child is a show/hide button (the APG disclosure pattern; a heading inside a summary can vanish from the VoiceOver
+ * headings rotor): Make a voice (Open voices, AuK voice design), Edit audio (AuK clean up, change words, edit, and
  * the free workbench), Make speech, music and sounds (the engine workspace, cards grouped by kind), and Recent work.
  * Open ones are remembered; a section opens itself when the page opens a disclosure in it or moves focus into it.
  * -------------------------------------------------------------------------- */
@@ -78,10 +79,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
   .proj audio { width:100%; max-width:640px; display:block; margin:.5rem 0 .3rem; }
   pre.script { white-space:pre-wrap; word-wrap:break-word; font-size:.9rem; background:#f1f3f6; padding:.7rem .8rem; border-radius:10px; max-height:16rem; overflow:auto; }
   .clips li { margin:.2rem 0; }
-  details.section { border:1px solid #d9dde3; border-radius:14px; padding:.3rem 1rem .6rem; margin:1rem 0; }
-  details.section > summary { padding:.4rem 0; }
-  details.section > summary h2 { display:inline; font-size:1.3rem; margin:0; }
-  details.section > summary:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  .section { border:1px solid #d9dde3; border-radius:14px; padding:.3rem 1rem .6rem; margin:1rem 0; }
+  .section > h2 { font-size:1.3rem; margin:0; }
+  .section > h2 > button { font:inherit; font-weight:700; color:inherit; background:none; border:0; padding:.4rem 0; margin:0; width:100%; text-align:left; cursor:pointer; }
+  .section > h2 > button::before { content:''; display:inline-block; width:0; height:0; margin-right:.5em; vertical-align:.12em; border-left:.5em solid currentColor; border-top:.32em solid transparent; border-bottom:.32em solid transparent; transition:transform .15s; }
+  .section > h2 > button[aria-expanded="true"]::before { transform:rotate(90deg); }
+  .section > h2 > button:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
   .enggroup h3 { margin:.7rem 0 .35rem; font-size:1rem; }
   @media (prefers-color-scheme: dark) {
     textarea, input[type=text], input[type=number], select, .seg button, .engcard { background:#1e2127; border-color:#3a3f49; }
@@ -89,7 +92,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     button.act { background:#1e2127; }
     button.act.primary { background:#1f7a49; }
     .proj { background:#1e2127; border-color:#2c2f37; }
-    details.section { border-color:#3a3f49; }
+    .section { border-color:#3a3f49; }
     pre.script { background:#181b20; }
   }
 </style>
@@ -109,7 +112,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
   <main id="app" hidden>
     <!-- Nov 16 2026, her ask: the stacked-up booth got chaotic. Four sections, each a disclosure with its own h2:
          Make a voice, Edit audio, Make speech, music and sounds (the engine workspace), Recent work. Every id is unchanged. -->
-    <details class="section" id="secVoice"><summary><h2>Make a voice</h2></summary>
+    <div class="section" id="secVoice"><h2><button type="button" id="secVoice-btn" aria-expanded="false" aria-controls="secVoice-body">Make a voice</button></h2>
+    <div id="secVoice-body" role="region" aria-labelledby="secVoice-btn" hidden>
       <p class="hint">Design a new voice from words, or speak with one you saved.</p>
       ${OPEN_VOICES.OPEN_VOICES_HTML}
       <div id="aukVoiceBox" hidden>
@@ -117,9 +121,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <p class="hint" id="aukVoiceHint">AuK HQ makes a voice from a description, then performs your script in it. This opens AuK HQ under Make speech, music and sounds.</p>
         <button type="button" class="act" id="btnAukVoice" data-auk-task="speech" aria-describedby="aukVoiceHint">Design a voice with AuK HQ</button>
       </div>
-    </details>
+    </div></div>
 
-    <details class="section" id="secEdit"><summary><h2>Edit audio</h2></summary>
+    <div class="section" id="secEdit"><h2><button type="button" id="secEdit-btn" aria-expanded="false" aria-controls="secEdit-body">Edit audio</button></h2>
+    <div id="secEdit-body" role="region" aria-labelledby="secEdit-btn" hidden>
       <div id="aukEditBox" hidden>
         <h3>Change a recording with AuK HQ</h3>
         <p class="hint" id="aukEditHint">Each one opens AuK HQ under Make speech, music and sounds, set to that task. Your original is kept.</p>
@@ -142,9 +147,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <p id="mixStatus" class="hint"></p>
         <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p><button type="button" class="act quiet" id="mixUse">Use mix as reference in current engine (uploads)</button><p class="hint">First choose AuK HQ, Seed Audio or YuE2 under Make speech, music and sounds. Reference uploads accept up to 20 MB; trim a shorter mix if needed.</p></div>
       </form>
-    </details>
+    </div></div>
 
-    <details class="section" id="secBooth" open><summary><h2>Make speech, music and sounds</h2></summary>
+    <div class="section" id="secBooth"><h2><button type="button" id="secBooth-btn" aria-expanded="true" aria-controls="secBooth-body">Make speech, music and sounds</button></h2>
+    <div id="secBooth-body" role="region" aria-labelledby="secBooth-btn">
     <p class="hint">Pick an engine, write or describe what you want, then render. Each engine keeps its own draft.</p>
     <fieldset>
       <legend>Engine</legend>
@@ -230,49 +236,60 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     </div>
     <button type="button" class="act quiet" id="btnScriptFile">Download this script as text</button>
     </details>
-    </details>
+    </div></div>
 
-    <details class="section" id="recentDrawer"><summary><h2>Recent work and recordings</h2></summary>
+    <div class="section" id="recentDrawer"><h2><button type="button" id="recentDrawer-btn" aria-expanded="false" aria-controls="recentDrawer-body">Recent work and recordings</button></h2>
+    <div id="recentDrawer-body" role="region" aria-labelledby="recentDrawer-btn" hidden>
     <p class="hint">Generation attempts are grouped here so you can reopen a script or compare takes. You do not need to organize projects to use the booth. Saved recordings stay in My Creations until you delete them there.</p>
     <label><input type="checkbox" id="showFailed"> Show failed and stopped attempts without audio</label>
     <div id="library" aria-live="off"><p class="muted">Nothing here yet.</p></div>
-    </details>
+    </div></div>
   </main>
 
   <footer class="muted">Finished audio also lands in <a href="/my-creations">My Creations</a>, where it can be downloaded and shared. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
   <script>
-  /* Nov 16 2026: the four booth sections. Which are open is remembered in this browser. A section opens itself
-   * when the page opens a disclosure inside it, or moves focus into it, so a result or a field is never shut away.
-   * Only her own open or close (a click, Enter or Space on the section's summary) is remembered; an open the page
-   * makes itself lasts for this visit only. */
+  /* Nov 16 2026: the four booth sections. Which are open is remembered in this browser.
+   * Each section is an h2 holding one button (aria-expanded, aria-controls) and a region the button shows or hides; a
+   * details summary would hide the h2 from the VoiceOver headings rotor on Safari and iPhone.
+   * Only her own press of a section button (click, Enter or Space) is remembered. The page opens things through ONE
+   * helper, window.kadeBoothReveal(element or id): it opens that details or section and every details or section around
+   * it, for this visit only, so a result, an error or a field is never shut away. Moving focus into a closed section
+   * opens it the same way. */
   (function(){
     var KEY='kadeSoundBoothSections', kept={};
     try{ kept=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ kept={}; }
-    function sectionOf(el){ for(var p=el&&el.parentElement;p;p=p.parentElement){ if(p.tagName==='DETAILS'&&p.classList.contains('section')) return p; } return null; }
+    function part(sec,which){ return sec&&sec.id ? document.getElementById(sec.id+'-'+which) : null; }
+    function isSection(el){ return !!(el&&el.classList&&el.classList.contains('section')&&part(el,'btn')&&part(el,'body')); }
+    function isOpen(sec){ var b=part(sec,'body'); return !!b&&!b.hidden; }
+    function setSection(sec,open){
+      var b=part(sec,'body'), t=part(sec,'btn'); if(!b||!t) return;
+      b.hidden=!open; t.setAttribute('aria-expanded',open?'true':'false');
+    }
+    /* Opens every closed details and section region around el. Focus on a details' own summary does not open that
+     * details, and focus on a section's button does not open that section (the button sits outside its region). */
     function openAround(el){
       for(var p=el&&el.parentElement;p;p=p.parentElement){
-        if(p.tagName!=='DETAILS'||p.open) continue;
-        if(el.tagName==='SUMMARY'&&el.parentElement===p) continue;
-        p.open=true;
+        if(p.tagName==='DETAILS'){ if(!p.open&&!(el.tagName==='SUMMARY'&&el.parentElement===p)) p.open=true; continue; }
+        var sec=p.parentElement; if(p.hidden&&isSection(sec)&&part(sec,'body')===p) setSection(sec,true);
       }
     }
-    var byHand=null;
-    document.addEventListener('click',function(e){
-      var s=e.target&&e.target.closest?e.target.closest('summary'):null;
-      if(s&&s.parentElement&&s.parentElement.tagName==='DETAILS'&&s.parentElement.classList.contains('section')) byHand=s.parentElement;
-    },true);
-    Array.prototype.forEach.call(document.querySelectorAll('details.section'),function(d){
-      if(Object.prototype.hasOwnProperty.call(kept,d.id)) d.open=!!kept[d.id];
-      d.addEventListener('toggle',function(){
-        if(byHand!==d) return;
-        byHand=null; kept[d.id]=d.open; try{ localStorage.setItem(KEY,JSON.stringify(kept)); }catch(e){}
+    function reveal(el){
+      if(typeof el==='string') el=document.getElementById(el);
+      if(!el) return null;
+      if(el.tagName==='DETAILS') el.open=true; else if(isSection(el)) setSection(el,true);
+      openAround(el);
+      return el;
+    }
+    window.kadeBoothReveal=reveal;
+    Array.prototype.forEach.call(document.querySelectorAll('.section'),function(sec){
+      if(!isSection(sec)) return;
+      if(Object.prototype.hasOwnProperty.call(kept,sec.id)) setSection(sec,!!kept[sec.id]);
+      part(sec,'btn').addEventListener('click',function(){
+        var open=!isOpen(sec); setSection(sec,open);
+        kept[sec.id]=open; try{ localStorage.setItem(KEY,JSON.stringify(kept)); }catch(e){}
       });
     });
-    document.addEventListener('toggle',function(e){
-      var d=e.target; if(!d||d.tagName!=='DETAILS'||!d.open) return;
-      var s=sectionOf(d); if(s&&!s.open) s.open=true;
-    },true);
     try{
       var nativeFocus=HTMLElement.prototype.focus;
       HTMLElement.prototype.focus=function(){ try{ openAround(this); }catch(e){} return nativeFocus.apply(this,arguments); };
@@ -282,6 +299,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
   <script>
   (async function(){
     var status = document.getElementById('status');
+    /* Every page-made open goes through the section script's one helper (see above). */
+    var reveal = window.kadeBoothReveal || function(el){ el=typeof el==='string'?document.getElementById(el):el; if(el&&el.tagName==='DETAILS') el.open=true; return el; };
     var app = document.getElementById('app');
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token){ status.className='status err'; status.textContent='Please sign in at the chat site first, then reload this page.'; return; }
@@ -391,7 +410,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('trackTitle').value=draft.title||'';document.getElementById('text').value=draft.sourceText||'';
       document.getElementById('script').value=draft.script||'';document.getElementById('readback').textContent='';document.getElementById('mood').value='';
       state.input=draft.sourceText?'brief':'words';setMode('easy');setInput(state.input);invalidateQuote();showCode('');
-      document.getElementById('settingsDrawer').open=!!(state.values.lyrics||state.clips.length);
+      if(state.values.lyrics||state.clips.length) reveal('settingsDrawer'); else document.getElementById('settingsDrawer').open=false;
       showDraftTransfer();focusWork();
     }
     document.getElementById('btnCopyDraft').onclick=async function(){
@@ -434,7 +453,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('btnPreview').hidden = (e !== 'scenema');
       document.getElementById('btnNewVoice').hidden = (e !== 'scenema');
       invalidateQuote();setMode(state.mode);setInput(state.input||'words');applyWorkflow();showCode(state.lastXml);
-      if(isUpload(e)){ document.getElementById('settingsDrawer').open=true; if(!quiet) say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
+      if(isUpload(e)){ reveal('settingsDrawer'); if(!quiet) say(uploadUi(e).select||g.name); if(state.clips.length) quoteUpload(); return true; }
       var waitingName=state.jobEngine&&state.guide.engines[state.jobEngine]&&state.guide.engines[state.jobEngine].name;
       say(g.name+'. '+(state.jobId?(waitingName||'Another engine')+' render is still being checked. You can edit this draft or stop that render before generating here.':e==='lyria'?'Describe your music, add optional lyrics, then choose Make music.':e==='ace'?'Describe the style, add lyrics, then choose Make music.':e==='yue2'?'Describe the style, add lyrics, then choose Make music.':e==='stable'?'Describe your sounds, then choose Generate sounds.':e==='seed'?'Build a scene with dialogue, sounds and up to three reference voices.':'Write a performance and direct its voice.'));return true;
     }
@@ -487,7 +506,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         document.getElementById('editorLegend').textContent='Edit a recording';
         document.getElementById('scriptHint').textContent='Import the recording and describe the change below. Select a short time range for a precise word or lyric edit; audio outside it is kept.';
         document.querySelector('#settingsDrawer summary').textContent='Recording and edit instructions';
-        document.getElementById('settingsDrawer').open=true;
+        reveal('settingsDrawer');
         if(wording){
           document.getElementById('editorLegend').textContent='Change words in a recording';
           document.getElementById('scriptHint').textContent='Import the recording. Type the words it says now, the new words, and From and To seconds around them. Find the spot lists what is said every four seconds, so you can pick the spot by ear. Each change makes fresh takes and keeps one only if it says the new words; otherwise your recording is left as it was.'+(Number.isInteger(Number(state.values.seed))&&String(state.values.seed).trim()!==''?' The seed in More settings is not used here: every take gets a fresh one.':'');
@@ -694,7 +713,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       return b;
     }
     function fixReady(){
-      document.getElementById('settingsDrawer').open=true;
+      reveal('settingsDrawer');
       if(!state.clips.length){ var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say('Import the recording you want to clean up or change.',true); return false; }
       if(fixTask()==='voice' && !String(state.values.fix_description||'').trim()){ var box=document.getElementById('set_fix_description'); if(box) box.focus(); say('Describe the new voice first.',true); return false; }
       return true;
@@ -723,7 +742,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function wordChangesToSend(){ var list=(state.wordQueue||[]).slice(), c=fieldChange(); if(!fieldsEmpty(c)) list.push(c); return list; }
     function wordsReady(){
       var c=fieldChange(), list=state.wordQueue||[];
-      document.getElementById('settingsDrawer').open=true;
+      reveal('settingsDrawer');
       if(!state.clips.length){ var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say('Import the recording whose words you want to change.',true); return false; }
       if(!fieldsEmpty(c) || !list.length){ var bad=changeProblem(c); if(bad){ var f=document.getElementById(bad[0]); if(f) f.focus(); say(bad[1],true); return false; } }
       return true;
@@ -841,7 +860,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var setting=state.guide.engines[state.engine].settings.find(function(s){return s.kind==='clip';});
       if(!setting){say('This engine does not accept recordings. Choose AuK HQ, Seed Audio or YuE2 under Make speech, music and sounds, then use the mix.',true);return;}
       if(state.clips.length>=setting.max){say('Remove the current reference first, or choose another engine, before attaching the mix.',true);return;}
-      document.getElementById('settingsDrawer').open=true;importClip(event.detail.file);
+      reveal('settingsDrawer');importClip(event.detail.file);
     });
     /* The price for this recording, asked of the server (the same estimate the render answers with) and shown by the button
      * before anything is spent. Nothing is said aloud, so it never talks over the import's own sentence. */
@@ -1040,7 +1059,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         : state.engine==='seed' ? 'A short scene at '+place+'. Two people discover '+turn+'. Include natural dialogue and the sounds around them.'
         : 'Write a short, vivid first-person story about '+place+' and '+turn+'. Give it a strong opening and a satisfying ending.';
       var song=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace');
-      if(!song){writingUndo={engine:state.engine,text:document.getElementById('script').value,idea:document.getElementById('text').value,input:state.input};document.getElementById('text').value=idea;setInput('brief');document.getElementById('writingDrawer').open=true;document.getElementById('btnUndoWriting').hidden=false;invalidateQuote();document.getElementById('text').focus();say('New idea in the writing desk. Your performance script is kept. Choose Write a script from this to draft it; Undo restores the previous idea.');return;}
+      if(!song){writingUndo={engine:state.engine,text:document.getElementById('script').value,idea:document.getElementById('text').value,input:state.input};document.getElementById('text').value=idea;setInput('brief');reveal('writingDrawer');document.getElementById('btnUndoWriting').hidden=false;invalidateQuote();document.getElementById('text').focus();say('New idea in the writing desk. Your performance script is kept. Choose Write a script from this to draft it; Undo restores the previous idea.');return;}
       /* Part 228: for songs the writer invents the idea from sparks drawn on the
        * server. The list above is only what she gets if the writer cannot be reached. */
       var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
@@ -1233,10 +1252,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(state.writing || !referenceReady())return;
       /* Part 295: an instrumental needs no words (Singing or instrumental, when the server offers it). */
       var sent=collect();
-      if(isUpload() && !state.clips.length){ document.getElementById('settingsDrawer').open=true; var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say(uploadUi().needClip||'Import a recording first.',true); return; }
+      if(isUpload() && !state.clips.length){ reveal('settingsDrawer'); var pick=document.querySelector('#settings input[type=file]'); if(pick) pick.focus(); say(uploadUi().needClip||'Import a recording first.',true); return; }
       if(state.engine==='scenema' && sent.auk_task==='change_words' && !wordsReady()) return;
       if(state.engine==='scenema' && sent.auk_task==='clean_up_or_change' && !fixReady()) return;
-      if((state.engine==='yue2'||state.engine==='ace') && !sent.lyrics && String(sent.singing||'').trim().toLowerCase().indexOf('instrumental')!==0){document.getElementById('settingsDrawer').open=true;document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
+      if((state.engine==='yue2'||state.engine==='ace') && !sent.lyrics && String(sent.singing||'').trim().toLowerCase().indexOf('instrumental')!==0){reveal('settingsDrawer');document.getElementById('set_lyrics').focus();say('Add the words to sing, or use Write my song idea to draft lyrics.',true);return;}
       return doRender(preview);
     }
     btnRender.onclick=function(){return confirmRender(false);};
@@ -1294,7 +1313,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           stopPoll(); state.jobId = null;state.jobEngine = null;updateRenderControls(); state.lastWait = null; state.cancelArmed = null; document.getElementById('btnCancel').hidden = true;
           if(s === 'failed'){
             document.getElementById('showFailed').checked=true;
-            document.getElementById('recentDrawer').open=true;
+            reveal('recentDrawer');
             document.getElementById('renderFailureMessage').textContent=r.data.error || r.data.spoken || 'No finished recording was returned. Your saved attempt remains in the library.';
             document.getElementById('renderFailure').showModal();
             document.getElementById('btnFailureOK').focus();
@@ -1494,7 +1513,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!setEngine('scenema', true)) return;
       state.values.auk_task=task; if(task!=='speech') state.projectId=null;
       invalidateQuote(); renderSettings();
-      document.getElementById('settingsDrawer').open=true;
+      reveal('settingsDrawer');
       var pick=document.querySelector('#settings input[type=file]'), first=document.getElementById(AUK_TASK_FIELD[task])||document.getElementById('set_auk_task');
       var target=(task!=='speech' && !state.clips.length && pick && !pick.disabled) ? pick : first;
       if(target) target.focus();

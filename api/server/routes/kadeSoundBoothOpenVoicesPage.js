@@ -332,8 +332,18 @@ const OPEN_VOICES_SCRIPT = `
         engine: 'ovEngine', seed: 'ovSeed', version: 'ovVersion', temperature: 'ovVariety', exaggeration: 'ovExaggeration', cfg_weight: 'ovSteadiness',
         language_id: 'ovCbLanguage', duration: 'ovDuration', reference: clip ? 'ovClip' : 'ovVoice' };
       var el = field && ids[field] ? $(ids[field]) : null;
-      if(el && el.closest('[hidden]') && field === 'description' && builtinOn()) el = $('ovBuiltin');
-      if(el && !el.closest('[hidden]')) el.focus();
+      if(el && ownHidden(el) && field === 'description' && builtinOn()) el = $('ovBuiltin');
+      if(el && !ownHidden(el)){ if(window.kadeBoothReveal) window.kadeBoothReveal(el); el.focus(); }
+    }
+    /* Hidden by Open voices itself. A closed booth section's region is hidden too, but that one is opened for this
+     * visit (not saved) so the named field still gets focus. */
+    function ownHidden(el){
+      for(var p = el; p; p = p.parentElement){
+        if(!p.hidden) continue;
+        var sec = p.parentElement;
+        if(!(p.getAttribute('role') === 'region' && sec && sec.classList.contains('section') && p.id === sec.id + '-body')) return true;
+      }
+      return false;
     }
     $('ovMake').onclick = async function(){
       if(ov.busy){ say('A take is still being made. Press Stop this take to end it.'); return; }

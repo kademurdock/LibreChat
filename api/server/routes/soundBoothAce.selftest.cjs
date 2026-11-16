@@ -212,7 +212,7 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.equal(await page.locator('#set_lyrics').inputValue(), '');
 
     /* ---- the library ---- */
-    await page.locator('#recentDrawer > summary').click();
+    await page.locator('#recentDrawer-btn').click();
     const aceRow = page.locator('#library .proj', { hasText: 'Rain Song' });
     assert.match(await aceRow.locator('.hint').first().innerText(), /^ACE-Step XL — a song made on the sleeping music GPU, best quality · finished · .* · about 2 cents of execution; startup and idle are extra$/);
     assert.equal(await aceRow.locator('[data-use="cover"]').count(), 1, 'Cover this take is offered on an ACE take');
@@ -300,7 +300,7 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     await plain.locator('[data-engine="yue2"]').click();
     if (!(await plain.locator('#draftTools').evaluate((el) => el.open))) await plain.locator('#draftTools > summary').click(); // Nov 16 2026: copy and download sit in their own disclosure
     assert.deepEqual(await plain.locator('#copyEngine option').allInnerTexts(), ['Lyria']);
-    await plain.locator('#recentDrawer > summary').click();
+    await plain.locator('#recentDrawer-btn').click();
     await plain.locator('#library .proj', { hasText: 'Rain Song' }).locator('[data-open]').click();
     assert.match(await plain.locator('#status').innerText(), /not open to your account right now/);
     assert.equal(await plain.locator('[data-engine="yue2"]').getAttribute('aria-pressed'), 'true', 'the page stayed where it was');

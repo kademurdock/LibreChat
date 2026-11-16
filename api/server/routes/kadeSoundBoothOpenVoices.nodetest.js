@@ -782,3 +782,38 @@ test('the panel by DOM: a Chatterbox take is titled with its version, and DramaB
   assert.match($('status').textContent, /first DramaBox take after a quiet spell can take several minutes/);
   p.close();
 });
+
+/* Nov 16 2026: booth sections are h2 buttons with hidden regions. A refusal still moves focus into a closed
+ * Make a voice section, opening it for this visit only; a field Open voices hides itself is still skipped. */
+test('in the booth page, a refusal opens a closed section for its field and does not save it', () => {
+  const { JSDOM } = require('jsdom');
+  const { soundBoothHtml } = require('./kadeSoundBoothPage');
+  const dom = new JSDOM(soundBoothHtml, { runScripts: 'outside-only', url: 'https://example.test/sound-booth' });
+  const w = dom.window, d = w.document;
+  const scripts = [...soundBoothHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  w.eval(scripts.find((s) => s.includes('kadeSoundBoothSections')));
+  const src = scripts.find((s) => s.includes('function focusField'));
+  const grab = (name) => {
+    const i = src.indexOf('function ' + name + '(');
+    let depth = 0, j = src.indexOf('{', i);
+    for (; j < src.length; j++) { if (src[j] === '{') depth++; else if (src[j] === '}' && --depth === 0) break; }
+    return src.slice(i, j + 1);
+  };
+  w.eval('var $=function(id){return document.getElementById(id)};var builtinOn=function(){return false};' +
+    grab('focusField') + grab('ownHidden') + ';window.focusFieldForTest=focusField;');
+  d.getElementById('app').hidden = false;
+  d.getElementById('openVoicesDrawer').hidden = false;
+  assert.equal(d.getElementById('secVoice-btn').getAttribute('aria-expanded'), 'false');
+  assert.ok(d.getElementById('ovText').closest('[hidden]'), 'the closed section hides the field');
+  w.focusFieldForTest('text');
+  assert.equal(d.activeElement, d.getElementById('ovText'));
+  assert.equal(d.getElementById('secVoice-btn').getAttribute('aria-expanded'), 'true');
+  assert.equal(w.localStorage.getItem('kadeSoundBoothSections'), null, 'a page-made open is not saved');
+  d.getElementById('secVoice-btn').click();
+  d.getElementById('secVoice-btn').focus();
+  d.getElementById('openVoicesDrawer').hidden = true;
+  w.focusFieldForTest('text');
+  assert.equal(d.activeElement, d.getElementById('secVoice-btn'), 'a field Open voices hides is skipped');
+  assert.equal(d.getElementById('secVoice-btn').getAttribute('aria-expanded'), 'false', 'and its section stays closed');
+  w.close();
+});

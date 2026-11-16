@@ -170,7 +170,7 @@ test('ACE: Make music asks for the words first, and lets an instrumental go thro
     const ctx = {
       state: { writing: false, engine }, said: [], rendered: 0, focused: [],
       referenceReady: () => true, collect: () => sent, isUpload: () => false,
-      say: (words) => ctx.said.push(words),
+      say: (words) => ctx.said.push(words), reveal: () => {},
       document: { getElementById: (id) => ({ focus() { ctx.focused.push(id); }, open: false }) },
     };
     ctx.doRender = () => { ctx.rendered++; };
