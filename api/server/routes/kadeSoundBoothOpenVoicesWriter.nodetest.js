@@ -73,6 +73,10 @@ test('replies are cleaned for the engine that reads them', () => {
   assert.equal(noAsk.voice, '');
   assert.ok(w.parseWriterReply("I'm sorry, but I can't write that.", { engine: 'voxcpm', shape: shape({ engine: 'voxcpm' }) }).error);
   assert.ok(w.parseWriterReply('', { engine: 'voxcpm', shape: shape({ engine: 'voxcpm' }) }).error);
+  const marked = w.parseWriterReply('WORDS:
+%%%cheerful friendly%%% Hi y'all, it's seven thirty.', { engine: 'ming', how: 'format', shape: shape({ engine: 'ming' }) });
+  assert.equal(marked.text, 'Hi y'all, it's seven thirty.');
+  assert.match(w.writerRequest({ engine: 'voxcpm', how: 'write', idea: 'a story' }).system, /about 20 to 60 seconds/);
 });
 
 test('the route writes, formats and refuses in plain sentences', async (t) => {

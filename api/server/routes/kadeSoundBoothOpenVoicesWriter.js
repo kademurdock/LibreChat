@@ -29,6 +29,8 @@ const PLAIN_RULES = [
   'Spell numbers, dates, money, symbols and abbreviations the way they are said ("twenty twenty-six", "three dollars", "doctor").',
   'Let punctuation carry the pauses and the feeling: commas, full stops, question marks, an ellipsis or a dash where the speaker would breathe.',
   'Write the way people talk, not the way essays read: short sentences, contractions, a little rhythm.',
+  'No markers or codes of any kind (no %%%, no <tags>, no (directions)): every character is spoken.',
+  'Unless they ask for a length, keep it to about 20 to 60 seconds of speech (roughly 50 to 150 words). A voice you plan to keep needs only a sentence or two.',
 ];
 
 /* What each engine reads -> { name, rules[], voiceLine, maxText } */
@@ -126,6 +128,9 @@ function parseWriterReply(raw, req) {
   const at = t.search(/^\s*WORDS\s*:/im);
   let text = at === -1 ? t.replace(/^\s*VOICE\s*:.*$/im, '') : t.slice(at).replace(/^\s*WORDS\s*:[ \t]*/i, '');
   text = text.replace(/^\s*READBACK\s*:.*$/gim, '').trim();
+  /* Seen live Nov 16 on Ming: the writer opened with "%%%cheerful friendly%%%", which the engine would read out. */
+  text = text.replace(/%{2,}[^%
+]{0,80}%{2,}/g, '').replace(/^[ 	]+/gm, '').trim();
   if (!text || (at === -1 && REFUSAL.test(text))) return { error: 'The writer would not write that one. Your idea is kept. Try saying it another way.' };
   const engine = req.engine;
   if (engine !== 'dramabox') text = text.replace(/^\s*[-*]\s+/gm, '');
