@@ -36,7 +36,12 @@ const baseGuide = vm.runInNewContext('(' + backend.slice(a, b) + ')', {
   yueCost: 'No reliable per-song cost estimate yet. YuE2 currently does not deduct from your credit balance.',
 });
 /* What /health sends an account that may use ACE-Step XL, and one that may not (the shared guide, untouched). */
-const guides = { with: { ...baseGuide, engines: { ...baseGuide.engines, ace: aceGuide({}) } }, without: baseGuide };
+const { myVoiceGuideEngine } = require(root + '/packages/api/src/music/myVoice.ts');
+const guides = {
+  with: { ...baseGuide, engines: { ...baseGuide.engines, ace: aceGuide({}) } },
+  without: baseGuide,
+  upload: { ...baseGuide, engines: { ...baseGuide.engines, ace: aceGuide({}), myvoice: myVoiceGuideEngine({}) } },
+};
 assert.ok(!('ace' in baseGuide.engines), 'the shared GUIDE has no ACE card in it');
 
 const LYRICS = '[Verse]\nthe invented words\n\n[Chorus]\nhold on, hold on\n(hold on)';
@@ -293,7 +298,8 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.deepEqual(await plain.locator('#engines .engcard').evaluateAll((els) => els.map((el) => el.dataset.engine)), ['scenema', 'lyria', 'yue2', 'stable', 'seed']);
     assert.equal(await plain.locator('[data-engine="ace"]').count(), 0);
     await plain.locator('[data-engine="yue2"]').click();
-    assert.deepEqual(await plain.locator('#copyEngine option').allTextContents(), ['Lyria']);
+    if (!(await plain.locator('#draftTools').evaluate((el) => el.open))) await plain.locator('#draftTools > summary').click(); // Nov 16 2026: copy and download sit in their own disclosure
+    assert.deepEqual(await plain.locator('#copyEngine option').allInnerTexts(), ['Lyria']);
     await plain.locator('#recentDrawer > summary').click();
     await plain.locator('#library .proj', { hasText: 'Rain Song' }).locator('[data-open]').click();
     assert.match(await plain.locator('#status').innerText(), /not open to your account right now/);
@@ -301,6 +307,14 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     await plain.locator('#library .proj', { hasText: 'Rain Song' }).locator('[data-use="cover"]').click();
     assert.equal(await plain.locator('.clips audio source').getAttribute('src'), ACE_MP3, 'a saved ACE take can still be covered on the YuE2 card');
     await plain.close();
+
+    /* ---- an upload engine (Sing it in my voice) sits in Speech and voices, right after AuK HQ ---- */
+    guideKey = 'upload';
+    const withUpload = await open();
+    assert.deepEqual(await withUpload.locator('#engines .engcard').evaluateAll((els) => els.map((el) => el.dataset.engine)), ['scenema', 'myvoice', 'lyria', 'yue2', 'ace', 'stable', 'seed'], 'card and Tab order with an upload engine');
+    assert.deepEqual(await withUpload.locator('#engines [role="group"]').evaluateAll((els) => els.map((g) => [g.querySelector('h3').textContent, [...g.querySelectorAll('.engcard')].map((c) => c.dataset.engine)])),
+      [['Speech and voices', ['scenema', 'myvoice']], ['Music', ['lyria', 'yue2', 'ace']], ['Sounds and scenes', ['stable', 'seed']]]);
+    await withUpload.close();
 
     assert.deepEqual(errors, []);
     console.log('ACE-Step XL page tests passed: the card, a render with only the changed choices, instrumental and missing words, the writing desk, the library, Cover this take with the MP3, Open in the booth, Copy draft through the real carry, and a guide with no ACE card.');

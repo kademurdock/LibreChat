@@ -5,13 +5,16 @@
   /* Nov 16 2026: the booth keeps ONE live region (#status). The workbench line under the form is plain text, and
    * every workbench message is said through #status too. */
   const noteBox = document.getElementById('mixStatus');
-  const note = {
-    set textContent(message) {
-      if (noteBox) noteBox.textContent = message;
-      const status = document.getElementById('status');
-      if (status) { status.className = 'status'; status.textContent = message; }
-    },
-  };
+  /* The same rules as the page's say(): an error is marked 'status err', and a message said twice in a row gets a
+   * trailing no-break space so the live region changes and a screen reader speaks it again. */
+  function tell(message, isError) {
+    if (noteBox) noteBox.textContent = message;
+    const status = document.getElementById('status');
+    if (!status) return;
+    status.className = 'status' + (isError ? ' err' : '');
+    status.textContent = status.textContent === message ? message + '\u00a0' : message;
+  }
+  const note = { set textContent(message) { tell(message, false); } };
   const field = (name) => document.getElementById(name);
   let resultURL;
   let sourceURL;
@@ -69,7 +72,7 @@
   });
   field('mixUse').addEventListener('click', () => {
     if (!resultBlob) return;
-    if (resultBlob.size > 20 * 1024 * 1024) { note.textContent = 'This WAV is over the 20 MB reference limit. Select a shorter portion and make the mix again, or download it.'; return; }
+    if (resultBlob.size > 20 * 1024 * 1024) { tell('This WAV is over the 20 MB reference limit. Select a shorter portion and make the mix again, or download it.', true); return; }
     window.dispatchEvent(new CustomEvent('soundbooth:use-mix', { detail: { file: new File([resultBlob], 'sound-booth-mix.wav', { type: 'audio/wav' }) } }));
   });
   form.addEventListener('submit', async (event) => {
@@ -101,7 +104,7 @@
       field('mixPlayer').src = resultURL; field('mixDownload').href = resultURL;
       field('mixResult').hidden = false;
       note.textContent = 'Ready: ' + duration.toFixed(1) + ' seconds. Play the mix, download the WAV, or attach it as a reference. It stays on this device until you choose to upload it.';
-    } catch (error) { note.textContent = error.name === 'EncodingError' ? 'That file could not be read as audio. Try WAV, MP3, or M4A.' : error.message; }
+    } catch (error) { tell(error.name === 'EncodingError' ? 'That file could not be read as audio. Try WAV, MP3, or M4A.' : error.message, true); }
     finally { if (decoder) await decoder.close().catch(() => {}); button.disabled = false; }
   });
 })();

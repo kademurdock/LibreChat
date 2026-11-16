@@ -140,7 +140,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <label><input id="mixLoop" type="checkbox" checked> Repeat the background to fit</label>
         <button class="act" id="mixBuild" type="submit">Make this mix — free</button>
         <p id="mixStatus" class="hint"></p>
-        <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p><button type="button" class="act quiet" id="mixUse">Use mix as reference in current engine (uploads)</button><p class="hint">Choose AuK, Seed Audio or YuE2 first. Reference uploads accept up to 20 MB; trim a shorter mix if needed.</p></div>
+        <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p><button type="button" class="act quiet" id="mixUse">Use mix as reference in current engine (uploads)</button><p class="hint">First choose AuK HQ, Seed Audio or YuE2 under Make speech, music and sounds. Reference uploads accept up to 20 MB; trim a shorter mix if needed.</p></div>
       </form>
     </details>
 
@@ -243,7 +243,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
   <script>
   /* Nov 16 2026: the four booth sections. Which are open is remembered in this browser. A section opens itself
-   * when the page opens a disclosure inside it, or moves focus into it, so a result or a field is never shut away. */
+   * when the page opens a disclosure inside it, or moves focus into it, so a result or a field is never shut away.
+   * Only her own open or close (a click, Enter or Space on the section's summary) is remembered; an open the page
+   * makes itself lasts for this visit only. */
   (function(){
     var KEY='kadeSoundBoothSections', kept={};
     try{ kept=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ kept={}; }
@@ -255,9 +257,17 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         p.open=true;
       }
     }
+    var byHand=null;
+    document.addEventListener('click',function(e){
+      var s=e.target&&e.target.closest?e.target.closest('summary'):null;
+      if(s&&s.parentElement&&s.parentElement.tagName==='DETAILS'&&s.parentElement.classList.contains('section')) byHand=s.parentElement;
+    },true);
     Array.prototype.forEach.call(document.querySelectorAll('details.section'),function(d){
       if(Object.prototype.hasOwnProperty.call(kept,d.id)) d.open=!!kept[d.id];
-      d.addEventListener('toggle',function(){ kept[d.id]=d.open; try{ localStorage.setItem(KEY,JSON.stringify(kept)); }catch(e){} });
+      d.addEventListener('toggle',function(){
+        if(byHand!==d) return;
+        byHand=null; kept[d.id]=d.open; try{ localStorage.setItem(KEY,JSON.stringify(kept)); }catch(e){}
+      });
     });
     document.addEventListener('toggle',function(e){
       var d=e.target; if(!d||d.tagName!=='DETAILS'||!d.open) return;
@@ -829,7 +839,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     window.addEventListener('soundbooth:use-mix',function(event){
       if(busy()){say('Finish the current operation before attaching the mix.',true);return;}
       var setting=state.guide.engines[state.engine].settings.find(function(s){return s.kind==='clip';});
-      if(!setting){say('This engine does not accept recordings. Choose AuK, Seed Audio or YuE2, then use the mix.',true);return;}
+      if(!setting){say('This engine does not accept recordings. Choose AuK HQ, Seed Audio or YuE2 under Make speech, music and sounds, then use the mix.',true);return;}
       if(state.clips.length>=setting.max){say('Remove the current reference first, or choose another engine, before attaching the mix.',true);return;}
       document.getElementById('settingsDrawer').open=true;importClip(event.detail.file);
     });
