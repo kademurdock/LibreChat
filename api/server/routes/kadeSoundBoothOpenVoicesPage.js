@@ -7,8 +7,8 @@
  * here does not touch the main render's quote (events stop at the panel). */
 
 const OPEN_VOICES_HTML = `
-    <details id="openVoicesDrawer" hidden><summary id="ovSummary">Open voices: design a voice, or speak with a saved one</summary>
-    <fieldset id="openVoicesPanel"><legend>Open voices</legend>
+    <div id="openVoicesDrawer" hidden><h3 id="ovSummary">Open voices</h3>
+    <fieldset id="openVoicesPanel"><legend>Design a voice, or speak with a saved one</legend>
       <label class="field" for="ovEngine">Voice engine</label>
       <select id="ovEngine" aria-describedby="ovEngineHint"></select>
       <p class="hint" id="ovEngineHint"></p>
@@ -80,7 +80,7 @@ const OPEN_VOICES_HTML = `
       <h3 id="ovTakesHeading" hidden>Takes</h3>
       <ul id="ovTakes" aria-labelledby="ovTakesHeading" style="list-style:none;padding:0"></ul>
     </fieldset>
-    </details>`;
+    </div>`;
 
 const OPEN_VOICES_SCRIPT = `
   <script>
@@ -115,8 +115,8 @@ const OPEN_VOICES_SCRIPT = `
     ov.engines = first.data.engines; ov.coldNote = first.data.coldNote || '';
     ov.engines.forEach(function(e){ var o = document.createElement('option'); o.value = e.id; o.textContent = e.label; $('ovEngine').appendChild(o); });
     var labels = ov.engines.map(function(e){ return e.label; }).join(' and ');
-    $('ovSummary').textContent = 'Open voices: design a voice, or speak with a saved one (' + labels + ')';
-    var intro = $('ovIntro'); if(intro) intro.textContent = ' You can also design and reuse voices with ' + labels + ' under Open voices.';
+    $('ovSummary').textContent = 'Open voices: ' + labels;
+    var intro = $('ovIntro'); if(intro) intro.textContent = ' Make a voice holds ' + labels + '.';
     /* Ming's own controls, filled from the server's list and shown only while Ming is picked. */
     var mingEngine = ov.engines.find(function(x){ return x.id === 'ming'; });
     var mc = (mingEngine && mingEngine.controls) || null;

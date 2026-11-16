@@ -144,6 +144,7 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.deepEqual(await page.locator('#set_guidance').evaluate((el) => [el.type, el.min, el.max, el.step, el.value]), ['range', '1', '3', '0.1', '1']);
     assert.equal(await page.locator('#set_reference_voice_url').count(), 0, 'ACE-Step XL has no recording to cover');
     assert.equal(await page.locator('#btnLyrics').count(), 0);
+    if (!(await page.locator('#draftTools').evaluate((el) => el.open))) await page.locator('#draftTools > summary').click(); // Nov 16 2026: copy and download sit in their own disclosure
     assert.deepEqual(await page.locator('#copyEngine option').allInnerTexts(), ['Lyria', 'YuE2'], 'Copy draft offers the other song engines');
 
     /* ---- a render: the direction, the lyrics, and only the choices she changed ---- */
@@ -292,7 +293,7 @@ const sentTo = (suffix) => sent.filter((entry) => entry.url.endsWith(suffix));
     assert.deepEqual(await plain.locator('#engines .engcard').evaluateAll((els) => els.map((el) => el.dataset.engine)), ['scenema', 'lyria', 'yue2', 'stable', 'seed']);
     assert.equal(await plain.locator('[data-engine="ace"]').count(), 0);
     await plain.locator('[data-engine="yue2"]').click();
-    assert.deepEqual(await plain.locator('#copyEngine option').allInnerTexts(), ['Lyria']);
+    assert.deepEqual(await plain.locator('#copyEngine option').allTextContents(), ['Lyria']);
     await plain.locator('#recentDrawer > summary').click();
     await plain.locator('#library .proj', { hasText: 'Rain Song' }).locator('[data-open]').click();
     assert.match(await plain.locator('#status').innerText(), /not open to your account right now/);

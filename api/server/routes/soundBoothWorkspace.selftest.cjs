@@ -287,6 +287,7 @@ const server=http.createServer((req,res)=>{
   await page.locator('[data-engine="yue2"]').click();
   const originalYue=await page.locator('#script').inputValue(), copiedLyrics=await page.locator('#set_lyrics').inputValue();
   const beforeCopy=sent.length;
+  if(!(await page.locator('#draftTools').evaluate((el)=>el.open)))await page.locator('#draftTools > summary').click(); // Nov 16 2026: copy and download sit in their own disclosure
   await page.locator('#btnCopyDraft').click();
   await page.locator('#status').filter({hasText:'Copied to Lyria'}).waitFor();
   assert.equal(sent.length,beforeCopy+1);
@@ -301,7 +302,8 @@ const server=http.createServer((req,res)=>{
   await page.locator('[data-engine="yue2"]').click();
   assert.equal(await page.locator('#script').inputValue(),originalYue,'source draft remains in its tab');
   await page.locator('[data-engine="stable"]').click();
-  await page.getByText('Free audio workbench: trim, fade, and add a background',{exact:true}).click();
+  await page.locator('#secEdit > summary').click(); // Nov 16 2026: the free workbench sits in Edit audio
+  assert.equal(await page.getByRole('heading',{name:'Free workbench: trim, fade, and add a background'}).isVisible(),true);
   const silentWav=Buffer.alloc(44+88200);
   silentWav.write('RIFF',0);silentWav.writeUInt32LE(silentWav.length-8,4);silentWav.write('WAVEfmt ',8);
   silentWav.writeUInt32LE(16,16);silentWav.writeUInt16LE(1,20);silentWav.writeUInt16LE(1,22);

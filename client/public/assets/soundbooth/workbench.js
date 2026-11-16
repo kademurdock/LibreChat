@@ -2,7 +2,16 @@
   'use strict';
   const form = document.getElementById('audioWorkbench');
   if (!form) return;
-  const note = document.getElementById('mixStatus');
+  /* Nov 16 2026: the booth keeps ONE live region (#status). The workbench line under the form is plain text, and
+   * every workbench message is said through #status too. */
+  const noteBox = document.getElementById('mixStatus');
+  const note = {
+    set textContent(message) {
+      if (noteBox) noteBox.textContent = message;
+      const status = document.getElementById('status');
+      if (status) { status.className = 'status'; status.textContent = message; }
+    },
+  };
   const field = (name) => document.getElementById(name);
   let resultURL;
   let sourceURL;

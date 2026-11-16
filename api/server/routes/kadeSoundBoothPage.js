@@ -16,6 +16,11 @@
  * SCREEN-READER SHAPE (her rule): real labelled controls, ONE aria-live
  * region, cost said before Render, Render is a two-step confirm, nothing
  * auto-plays.
+ *
+ * Nov 16 2026, her ask: the "stacked up structure" got chaotic. The page is four sections, each a disclosure whose
+ * summary is its h2: Make a voice (Open voices, AuK voice design), Edit audio (AuK clean up, change words, edit, and
+ * the free workbench), Make speech, music and sounds (the engine workspace, cards grouped by kind), and Recent work.
+ * Open ones are remembered; a section opens itself when the page opens a disclosure in it or moves focus into it.
  * -------------------------------------------------------------------------- */
 const { SHARED_HEAD } = require('./kadePages');
 /* Sep 25 2026: the three-box paste splitter, as source text, so the page runs
@@ -73,12 +78,18 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
   .proj audio { width:100%; max-width:640px; display:block; margin:.5rem 0 .3rem; }
   pre.script { white-space:pre-wrap; word-wrap:break-word; font-size:.9rem; background:#f1f3f6; padding:.7rem .8rem; border-radius:10px; max-height:16rem; overflow:auto; }
   .clips li { margin:.2rem 0; }
+  details.section { border:1px solid #d9dde3; border-radius:14px; padding:.3rem 1rem .6rem; margin:1rem 0; }
+  details.section > summary { padding:.4rem 0; }
+  details.section > summary h2 { display:inline; font-size:1.3rem; margin:0; }
+  details.section > summary:focus-visible { outline:3px solid #ffbf47; outline-offset:2px; }
+  .enggroup h3 { margin:.7rem 0 .35rem; font-size:1rem; }
   @media (prefers-color-scheme: dark) {
     textarea, input[type=text], input[type=number], select, .seg button, .engcard { background:#1e2127; border-color:#3a3f49; }
     .engcard[aria-pressed="true"] { background:#1b2a4a; border-color:#5b8def; }
     button.act { background:#1e2127; }
     button.act.primary { background:#1f7a49; }
     .proj { background:#1e2127; border-color:#2c2f37; }
+    details.section { border-color:#3a3f49; }
     pre.script { background:#181b20; }
   }
 </style>
@@ -86,19 +97,98 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 <body>
   <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a> &nbsp;&middot;&nbsp; <a class="back" href="/my-creations">My Creations &rarr;</a></p>
   <h1>Sound Booth</h1>
-  <p class="muted">Make speech with AuK, music with Lyria or YuE2, sounds with Stable Audio, or a scene with Seed Audio. Each engine keeps its own draft.${OPEN_VOICES.OPEN_VOICES_INTRO}</p>
+  <p class="muted">The booth has four parts you can open and close: Make a voice, Edit audio, Make speech, music and sounds, and Recent work. It remembers which ones you left open.${OPEN_VOICES.OPEN_VOICES_INTRO}</p>
 
   <div id="status" class="status" role="status" aria-live="polite">Loading the Sound Booth&hellip;</div>
+  <dialog id="renderFailure" role="alertdialog" aria-labelledby="renderFailureTitle" aria-describedby="renderFailureMessage">
+    <h2 id="renderFailureTitle">Generation stopped</h2>
+    <p id="renderFailureMessage"></p>
+    <button type="button" class="act" id="btnFailureOK" aria-describedby="renderFailureMessage">OK</button>
+  </dialog>
 
   <main id="app" hidden>
+    <!-- Nov 16 2026, her ask: the stacked-up booth got chaotic. Four sections, each a disclosure with its own h2:
+         Make a voice, Edit audio, Make speech, music and sounds (the engine workspace), Recent work. Every id is unchanged. -->
+    <details class="section" id="secVoice"><summary><h2>Make a voice</h2></summary>
+      <p class="hint">Design a new voice from words, or speak with one you saved.</p>
+      ${OPEN_VOICES.OPEN_VOICES_HTML}
+      <div id="aukVoiceBox" hidden>
+        <h3>AuK HQ voice design</h3>
+        <p class="hint" id="aukVoiceHint">AuK HQ makes a voice from a description, then performs your script in it. This opens AuK HQ under Make speech, music and sounds.</p>
+        <button type="button" class="act" id="btnAukVoice" data-auk-task="speech" aria-describedby="aukVoiceHint">Design a voice with AuK HQ</button>
+      </div>
+    </details>
+
+    <details class="section" id="secEdit"><summary><h2>Edit audio</h2></summary>
+      <div id="aukEditBox" hidden>
+        <h3>Change a recording with AuK HQ</h3>
+        <p class="hint" id="aukEditHint">Each one opens AuK HQ under Make speech, music and sounds, set to that task. Your original is kept.</p>
+        <button type="button" class="act" id="btnAukFix" data-auk-task="clean_up_or_change" aria-describedby="aukEditHint">Clean up or change a recording</button>
+        <button type="button" class="act" id="btnAukWords" data-auk-task="change_words" aria-describedby="aukEditHint">Change words in a recording</button>
+        <button type="button" class="act quiet" id="btnAukEdit" data-auk-task="edit" aria-describedby="aukEditHint">Edit a recording from my own note</button>
+      </div>
+      <h3>Free workbench: trim, fade, and add a background</h3>
+      <form id="audioWorkbench"><p>Choose recordings from your device. Make a stereo WAV up to five minutes long. Files stay on this device; there is no generation charge.</p>
+        <label class="field" for="mixMain">Main recording</label><input id="mixMain" type="file" accept="audio/*,.wav,.mp3,.m4a" required>
+        <audio id="mixOriginal" controls preload="metadata" aria-label="Original recording"></audio>
+        <div class="row"><div><label for="mixStart">Keep from, seconds</label><input id="mixStart" type="number" step="any" min="0" value="0" aria-label="Start time"></div><div><label for="mixEnd">Keep until, seconds</label><input id="mixEnd" type="number" step="any" min="0.01" value="10" aria-label="End time"></div></div>
+        <label for="mixGain">Main volume, decibels</label><input id="mixGain" type="number" min="-36" max="12" value="0" aria-label="Main volume">
+        <label for="mixFadeIn">Fade in, seconds</label><input id="mixFadeIn" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade in">
+        <label for="mixFadeOut">Fade out, seconds</label><input id="mixFadeOut" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade out">
+        <label class="field" for="mixBed">Optional background music or ambience</label><input id="mixBed" type="file" accept="audio/*,.wav,.mp3,.m4a">
+        <label for="mixBedGain">Background volume, decibels</label><input id="mixBedGain" type="number" min="-48" max="0" value="-18" aria-label="Background volume">
+        <label><input id="mixLoop" type="checkbox" checked> Repeat the background to fit</label>
+        <button class="act" id="mixBuild" type="submit">Make this mix — free</button>
+        <p id="mixStatus" class="hint"></p>
+        <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p><button type="button" class="act quiet" id="mixUse">Use mix as reference in current engine (uploads)</button><p class="hint">Choose AuK, Seed Audio or YuE2 first. Reference uploads accept up to 20 MB; trim a shorter mix if needed.</p></div>
+      </form>
+    </details>
+
+    <details class="section" id="secBooth" open><summary><h2>Make speech, music and sounds</h2></summary>
+    <p class="hint">Pick an engine, write or describe what you want, then render. Each engine keeps its own draft.</p>
     <fieldset>
       <legend>Engine</legend>
-      <div class="engines" role="group" aria-label="Which engine" id="engines"></div>
+      <div class="enggroups" role="group" aria-label="Which engine" id="engines"></div>
       <p id="engineSummary" class="hint"></p>
       <details id="engineDetails"><summary>About this engine</summary><p id="engineWhere"></p><p id="engineCost"></p><p id="engineBest"></p><p id="engineNotFor"></p></details>
       <details id="chooser"><summary></summary><p id="chooserAnswer"></p><ul id="chooserRules"></ul></details>
       <button type="button" class="act quiet" id="btnSuggest">Pick one for me from what I typed</button>
-    </fieldset>${OPEN_VOICES.OPEN_VOICES_HTML}
+    </fieldset>
+    <fieldset id="editorPanel">
+      <legend id="editorLegend">The script</legend>
+      <p class="hint" id="scriptHint">Write only the words to perform. For sound effects, use Seed Audio.</p>
+      <label class="field" for="trackTitle">Track title</label><input type="text" id="trackTitle" maxlength="80" aria-describedby="trackTitleHint"><p class="hint" id="trackTitleHint">Optional. A song draft fills an empty title with the writer's title. Your own title is kept. Other recordings use the first few words when left blank.</p>
+      <label class="field" for="script" id="editorLabel">Script</label>
+      <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
+      <div class="quick-actions" role="group" aria-label="Writing help" id="quickWriting">
+        <button type="button" class="act" id="btnDraft">Help write this</button>
+        <button type="button" class="act quiet" id="btnInspire"><span aria-hidden="true">&#127922; </span>Surprise me</button>
+        <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
+        <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
+      </div>
+      <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
+      <p class="hint" id="writingThinkHint">Auto thinks as long as Medium. A song draft takes about a minute and a half on Low, two minutes on Medium and up to three on High. Song length follows your idea.</p>
+      <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
+      <p id="readback" class="hint"></p>
+      <details id="settingsDrawer"><summary>Voice, references, and all settings</summary>
+      <fieldset id="settingsPanel"><legend id="settingsLegend">Voice and sound</legend>
+        <div id="settings"></div>
+
+        <div id="moodPanel"><label class="field" for="mood">Performance mood</label>
+        <p class="hint">A note to the actor about what they feel. It is never spoken.</p>
+        <select id="mood"><option value="">No particular mood</option></select></div>
+        <div id="moreSettings"></div>
+
+      </fieldset>
+      </details>
+      <div id="renderActions">
+        <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (short paid preview)</button>
+        <button type="button" class="act quiet" id="btnNewVoice" hidden>Cast a different voice</button>
+        <button type="button" class="act primary" id="btnRender">Render</button>
+        <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
+      </div>
+      <p class="hint" id="renderHint">Generation starts with one press. Cost information is shown here before you start.</p>
+    </fieldset>
     <details id="starterDrawer"><summary>Starting points and fresh drafts</summary><fieldset id="starterPanel"><legend>Start something</legend>
       <label class="field" for="starter" id="starterLabel">A starting script</label>
       <select id="starter"><option value="">Choose a starting point</option></select>
@@ -106,8 +196,6 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <button type="button" class="act quiet" id="btnBlank">New blank draft</button>
       <p class="hint" id="starterHint">Free to load, and nothing is made until you generate. Loading one replaces your current draft.</p>
     </fieldset>
-
-
     </details>
     <details id="writingDrawer"><summary>Writing desk: ideas, exact words, and formatting</summary>
     <fieldset id="modePanel">
@@ -132,50 +220,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         <button type="button" class="act" id="btnMake">Turn my words into a script</button>
       </div>
     </fieldset>
-
     </details>
-    <details id="settingsDrawer"><summary>Voice, references, and all settings</summary>
-    <fieldset id="settingsPanel"><legend id="settingsLegend">Voice and sound</legend>
-      <div id="settings"></div>
-
-      <div id="moodPanel"><label class="field" for="mood">Performance mood</label>
-      <p class="hint">A note to the actor about what they feel. It is never spoken.</p>
-      <select id="mood"><option value="">No particular mood</option></select></div>
-      <div id="moreSettings"></div>
-
-    </fieldset>
-
-    </details>
-    <fieldset id="editorPanel">
-      <legend id="editorLegend">The script</legend>
-      <p class="hint" id="scriptHint">Write only the words to perform. For sound effects, use Seed Audio.</p>
-      <label class="field" for="trackTitle">Track title</label><input type="text" id="trackTitle" maxlength="80" aria-describedby="trackTitleHint"><p class="hint" id="trackTitleHint">Optional. A song draft fills an empty title with the writer's title. Your own title is kept. Other recordings use the first few words when left blank.</p>
-      <label class="field" for="script" id="editorLabel">Script</label>
-      <textarea id="script" aria-describedby="scriptHint" spellcheck="false"></textarea>
-      <div class="quick-actions" role="group" aria-label="Writing help" id="quickWriting">
-        <button type="button" class="act" id="btnDraft">Help write this</button>
-        <button type="button" class="act quiet" id="btnInspire"><span aria-hidden="true">&#127922; </span>Surprise me</button>
-        <button type="button" class="act quiet" id="btnUndoWriting" hidden>Undo writing change</button>
-        <button type="button" class="act quiet" id="btnThink" aria-label="Writing thought: Auto" aria-describedby="writingThinkHint">Think: Auto</button>
-      </div>
-      <p class="hint" id="quickWritingHint">Neither button makes audio. Drafts and song ideas use the writing model; Surprise me is free for other ideas.</p>
-      <p class="hint" id="writingThinkHint">Auto thinks as long as Medium. A song draft takes about a minute and a half on Low, two minutes on Medium and up to three on High. Song length follows your idea.</p>
-      <details id="codeBox" hidden><summary>Show the engine's code for this script</summary><pre class="script" id="codeView" aria-label="The engine code, read only"></pre></details>
-      <p id="readback" class="hint"></p>
-      <div id="renderActions">
-        <button type="button" class="act quiet" id="btnPreview" hidden>Hear this voice first (short paid preview)</button>
-        <button type="button" class="act quiet" id="btnNewVoice" hidden>Cast a different voice</button>
-        <button type="button" class="act primary" id="btnRender">Render</button>
-        <button type="button" class="act" id="btnCancel" hidden>Stop this render</button>
-      </div>
-      <p class="hint" id="renderHint">Generation starts with one press. Cost information is shown here before you start.</p>
-      <dialog id="renderFailure" role="alertdialog" aria-labelledby="renderFailureTitle" aria-describedby="renderFailureMessage">
-        <h2 id="renderFailureTitle">Generation stopped</h2>
-        <p id="renderFailureMessage"></p>
-        <button type="button" class="act" id="btnFailureOK" aria-describedby="renderFailureMessage">OK</button>
-      </dialog>
-    </fieldset>
-
+    <details id="draftTools"><summary>Copy or download this draft</summary>
     <div id="draftTransfer" role="group" aria-label="Copy current draft">
       <label for="copyEngine">Try this draft in</label><select id="copyEngine" aria-describedby="copyHint"></select>
       <button type="button" class="act quiet" id="btnCopyDraft">Copy and open</button>
@@ -183,24 +229,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       <p class="hint" id="copyHint">Copy the current idea, script, lyrics and compatible references. Free; no project is saved and no audio is generated. Your source draft stays in its tab.</p>
     </div>
     <button type="button" class="act quiet" id="btnScriptFile">Download this script as text</button>
-    <details><summary>Free audio workbench: trim, fade, and add a background</summary>
-      <form id="audioWorkbench"><p>Choose recordings from your device. Make a stereo WAV up to five minutes long. Files stay on this device; there is no generation charge.</p>
-        <label class="field" for="mixMain">Main recording</label><input id="mixMain" type="file" accept="audio/*,.wav,.mp3,.m4a" required>
-        <audio id="mixOriginal" controls preload="metadata" aria-label="Original recording"></audio>
-        <div class="row"><div><label for="mixStart">Keep from, seconds</label><input id="mixStart" type="number" step="any" min="0" value="0" aria-label="Start time"></div><div><label for="mixEnd">Keep until, seconds</label><input id="mixEnd" type="number" step="any" min="0.01" value="10" aria-label="End time"></div></div>
-        <label for="mixGain">Main volume, decibels</label><input id="mixGain" type="number" min="-36" max="12" value="0" aria-label="Main volume">
-        <label for="mixFadeIn">Fade in, seconds</label><input id="mixFadeIn" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade in">
-        <label for="mixFadeOut">Fade out, seconds</label><input id="mixFadeOut" type="number" min="0" max="30" step="0.1" value="0" aria-label="Fade out">
-        <label class="field" for="mixBed">Optional background music or ambience</label><input id="mixBed" type="file" accept="audio/*,.wav,.mp3,.m4a">
-        <label for="mixBedGain">Background volume, decibels</label><input id="mixBedGain" type="number" min="-48" max="0" value="-18" aria-label="Background volume">
-        <label><input id="mixLoop" type="checkbox" checked> Repeat the background to fit</label>
-        <button class="act" id="mixBuild" type="submit">Make this mix — free</button>
-        <p id="mixStatus" role="status" aria-live="polite"></p>
-        <div id="mixResult" hidden><audio id="mixPlayer" controls aria-label="Finished local mix"></audio><p><a id="mixDownload" download="sound-booth-mix.wav">Download the mix as WAV</a></p><button type="button" class="act quiet" id="mixUse">Use mix as reference in current engine (uploads)</button><p class="hint">Choose AuK, Seed Audio or YuE2 first. Reference uploads accept up to 20 MB; trim a shorter mix if needed.</p></div>
-      </form>
+    </details>
     </details>
 
-    <details id="recentDrawer"><summary>Recent work and recordings</summary>
+    <details class="section" id="recentDrawer"><summary><h2>Recent work and recordings</h2></summary>
     <p class="hint">Generation attempts are grouped here so you can reopen a script or compare takes. You do not need to organize projects to use the booth. Saved recordings stay in My Creations until you delete them there.</p>
     <label><input type="checkbox" id="showFailed"> Show failed and stopped attempts without audio</label>
     <div id="library" aria-live="off"><p class="muted">Nothing here yet.</p></div>
@@ -209,6 +241,34 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
 
   <footer class="muted">Finished audio also lands in <a href="/my-creations">My Creations</a>, where it can be downloaded and shared. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
 
+  <script>
+  /* Nov 16 2026: the four booth sections. Which are open is remembered in this browser. A section opens itself
+   * when the page opens a disclosure inside it, or moves focus into it, so a result or a field is never shut away. */
+  (function(){
+    var KEY='kadeSoundBoothSections', kept={};
+    try{ kept=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ kept={}; }
+    function sectionOf(el){ for(var p=el&&el.parentElement;p;p=p.parentElement){ if(p.tagName==='DETAILS'&&p.classList.contains('section')) return p; } return null; }
+    function openAround(el){
+      for(var p=el&&el.parentElement;p;p=p.parentElement){
+        if(p.tagName!=='DETAILS'||p.open) continue;
+        if(el.tagName==='SUMMARY'&&el.parentElement===p) continue;
+        p.open=true;
+      }
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('details.section'),function(d){
+      if(Object.prototype.hasOwnProperty.call(kept,d.id)) d.open=!!kept[d.id];
+      d.addEventListener('toggle',function(){ kept[d.id]=d.open; try{ localStorage.setItem(KEY,JSON.stringify(kept)); }catch(e){} });
+    });
+    document.addEventListener('toggle',function(e){
+      var d=e.target; if(!d||d.tagName!=='DETAILS'||!d.open) return;
+      var s=sectionOf(d); if(s&&!s.open) s.open=true;
+    },true);
+    try{
+      var nativeFocus=HTMLElement.prototype.focus;
+      HTMLElement.prototype.focus=function(){ try{ openAround(this); }catch(e){} return nativeFocus.apply(this,arguments); };
+    }catch(e){}
+  })();
+  </script>
   <script>
   (async function(){
     var status = document.getElementById('status');
@@ -258,6 +318,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var engBox = document.getElementById('engines');
     var engineOrder=['scenema','lyria','yue2','ace','stable','seed'];
     Object.keys(state.guide.engines).forEach(function(k){ if(engineOrder.indexOf(k)<0) engineOrder.push(k); });
+    /* Nov 16 2026: the cards sit in named groups, each a labelled group with its own heading. An engine joins its group
+     * by key; a recording-in engine (flow upload) joins Speech and voices; any other engine goes under More engines. */
+    var ENGINE_GROUPS={scenema:'voice',lyria:'music',yue2:'music',ace:'music',stable:'sound',seed:'sound'}, GROUP_NAMES={voice:'Speech and voices',music:'Music',sound:'Sounds and scenes',more:'More engines'};
+    function engineGroup(k){
+      var key=ENGINE_GROUPS[k]||(isUpload(k)?'voice':'more'), box=document.getElementById('engGroup_'+key);
+      if(box) return box;
+      var wrap=document.createElement('div'); wrap.className='enggroup'; wrap.setAttribute('role','group'); wrap.setAttribute('aria-labelledby','engGroupHead_'+key);
+      wrap.innerHTML='<h3 id="engGroupHead_'+key+'">'+esc(GROUP_NAMES[key])+'</h3><div class="engines" id="engGroup_'+key+'"></div>';
+      engBox.appendChild(wrap); return document.getElementById('engGroup_'+key);
+    }
     engineOrder.forEach(function(k){
       var g = state.guide.engines[k];if(!g)return;
       var b = document.createElement('button');
@@ -265,7 +335,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       b.innerHTML = '<strong>'+esc(g.name)+'</strong><p>'+esc(g.tagline)+'</p>';
       b.setAttribute('aria-label', g.name+'. '+g.tagline);
       b.onclick = function(){ setEngine(k, false, true); };
-      engBox.appendChild(b);
+      engineGroup(k).appendChild(b);
     });
     var ch = state.guide.chooser;
     document.querySelector('#chooser summary').textContent = ch.question;
@@ -299,7 +369,10 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('draftTransfer').hidden=!choices.length;
       select.innerHTML=choices.map(function(e){return '<option value="'+esc(e)+'">'+esc(state.guide.engines[e].name)+'</option>';}).join('');
       document.getElementById('btnUndoCopy').hidden=!copyUndo[state.engine];
+      showDraftTools();
     }
+    /* Copy or download this draft is hidden when it would hold nothing. */
+    function showDraftTools(){ document.getElementById('draftTools').hidden=document.getElementById('draftTransfer').hidden&&document.getElementById('btnScriptFile').hidden; }
     function applyCopiedDraft(draft, sourceClips){
       state.projectId=null;state.voiceSeed=null;state.rerollVoice=false;state.lastXml='';state.deskVoice=null;state.importError='';
       state.values=Object.assign({},draft.options||{});
@@ -344,7 +417,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.engine = e;
       showDraftTransfer();
       document.getElementById('btnUndoWriting').hidden=!writingUndo || writingUndo.engine!==e;
-      Array.prototype.forEach.call(engBox.children, function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
+      Array.prototype.forEach.call(engBox.querySelectorAll('.engcard'), function(c){ c.setAttribute('aria-pressed', c.dataset.engine===e); });
       var g = state.guide.engines[e];
       document.querySelector('#howto summary').textContent = (isUpload(e) ? 'How to use ' : 'How to write for ') + g.name;
       document.getElementById('howtoList').innerHTML = g.howToWrite.map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('');
@@ -431,6 +504,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       select.value=selected;
       var howto=document.getElementById('howto');
       document.getElementById('editorLabel').before(howto);
+      showDraftTools();
     }
     function setMode(m){
       state.mode = m;
@@ -1396,6 +1470,33 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var a=document.createElement('a');a.href=url;a.download=music?'music-direction.txt':'sound-booth-script.txt';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
       say(music?'Music direction and any lyrics downloaded.':'Script downloaded as text.');
     };
+    /* Nov 16 2026: Make a voice and Edit audio start AuK HQ on one task, in Make speech, music and sounds. The draft is kept;
+     * only the task changes. Focus goes to the recording picker when one is needed, else to the task's first box. */
+    var AUK_TASK_SAY={speech:'AuK HQ, voice design. Describe a new voice, then write the words to say in the script.',
+      clean_up_or_change:'AuK HQ, clean up or change. Import the recording, then pick what to do. Your original is kept.',
+      change_words:'AuK HQ, change words. Import the recording, then type the words it says now and the new words. Your original is kept.',
+      edit:'AuK HQ, edit. Import the recording, then write what to change in Edit instructions. Your original is kept.'};
+    var AUK_TASK_FIELD={speech:'set_voice_description',clean_up_or_change:'set_fix_task',change_words:'set_old_text',edit:'set_instruction'};
+    function aukTasks(){ var g=state.guide.engines.scenema, s=g&&g.settings.filter(function(x){ return x.key==='auk_task'; })[0]; return (s&&s.options)||[]; }
+    function startAukTask(task){
+      if(aukTasks().indexOf(task)<0) return;
+      if(busy()){ say('Finish the current operation first.',true); return; }
+      if(!setEngine('scenema', true)) return;
+      state.values.auk_task=task; if(task!=='speech') state.projectId=null;
+      invalidateQuote(); renderSettings();
+      document.getElementById('settingsDrawer').open=true;
+      var pick=document.querySelector('#settings input[type=file]'), first=document.getElementById(AUK_TASK_FIELD[task])||document.getElementById('set_auk_task');
+      var target=(task!=='speech' && !state.clips.length && pick && !pick.disabled) ? pick : first;
+      if(target) target.focus();
+      say(task==='speech'&&state.clips.length ? 'AuK HQ, speech. A recording is attached, so AuK copies its voice. Remove it in the settings to design a voice from words.' : task!=='speech'&&state.clips.length ? AUK_TASK_SAY[task].replace(/Import the recording, then/, 'The attached recording is used.').replace(/[.] (pick|type|write)/, function(m, w){ return '. '+w.charAt(0).toUpperCase()+w.slice(1); }) : AUK_TASK_SAY[task]);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('[data-auk-task]'), function(button){
+      var task=button.getAttribute('data-auk-task');
+      button.hidden=aukTasks().indexOf(task)<0;
+      button.onclick=function(){ startAukTask(task); };
+    });
+    document.getElementById('aukVoiceBox').hidden=aukTasks().indexOf('speech')<0;
+    document.getElementById('aukEditBox').hidden=!['clean_up_or_change','change_words','edit'].some(function(t){ return aukTasks().indexOf(t)>=0; });
     setEngine('scenema'); setMode('easy'); setInput('words');
     loadLibrary();
     say('Ready. ' + state.guide.chooser.answer);
