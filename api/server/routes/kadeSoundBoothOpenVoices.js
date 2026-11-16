@@ -299,6 +299,7 @@ function createOpenVoicesRouter(deps) {
     try {
       const b = req.body || {};
       const checked = checkTake(b, await readiness());
+      if (checked.error) log.info(`[soundbooth/open-voices] take refused engine=${String(b.engine || '').slice(0, 12)} mode=${String(b.mode || '').slice(0, 8)} field=${checked.field || '-'}`);
       if (checked.error) return res.status(400).json({ error: checked.error, ...(checked.field ? { field: checked.field } : {}) });
       const body = { ...checked.body, secret: secret(), userId: String(req.user.id) };
       if (body.mode === 'clone') {

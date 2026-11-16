@@ -20,11 +20,13 @@ const OPEN_VOICES_HTML = `
         <div id="ovMingDesign" hidden>
           <label class="field" for="ovBuiltin">Built-in voice</label>
           <select id="ovBuiltin" aria-describedby="ovBuiltinHint"><option value="">None. Use my description</option></select>
-          <p class="hint" id="ovBuiltinHint">A ready-made Ming voice instead of a description. When you pick one, leave the description empty.</p>
+          <p class="hint" id="ovBuiltinHint">A ready-made Ming voice instead of a description. Picking one hides Describe the voice; set this back to None to describe one.</p>
         </div>
+        <div id="ovDescWrap">
         <label class="field" for="ovDescription">Describe the voice</label>
         <p class="hint" id="ovDescriptionHint">For example: a warm older man with a slow Southern drawl and a little gravel. Each try makes a new voice.</p>
         <textarea id="ovDescription" aria-describedby="ovDescriptionHint" style="min-height:4.5rem"></textarea>
+        </div>
       </div>
       <div id="ovSpeakBox" hidden>
         <label class="field" for="ovVoice">Saved voice</label>
@@ -124,8 +126,13 @@ const OPEN_VOICES_SCRIPT = `
       fillSelect('ovPitch', mc.levels); fillSelect('ovVolume', mc.levels); fillSelect('ovLanguage', mc.languages); fillSelect('ovTag', mc.tags);
     }
     function isMing(){ return !!mc && $('ovEngine').value === 'ming'; }
+    /* Nov 16 2026: a built-in voice and a description used to be refused together, and VoiceOver can
+     * change a closed select while arrowing past it, so every Make sent her back to the description.
+     * Now a built-in voice hides the description (it is kept, not sent) and None brings it back. */
+    function builtinOn(){ return isMing() && ov.mode === 'design' && !!$('ovBuiltin').value; }
     function showMing(){
       var m = isMing();
+      $('ovDescWrap').hidden = builtinOn();
       $('ovMingDesign').hidden = !(m && ov.mode === 'design');
       $('ovMingSpeak').hidden = !(m && ov.mode === 'speak');
       $('ovTagsBox').hidden = !(m && ov.mode === 'speak');
@@ -140,6 +147,11 @@ const OPEN_VOICES_SCRIPT = `
       if(!isMing()) return '';
       return ov.mode === 'design' ? ' You can also pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.';
     }
+    $('ovBuiltin').onchange = function(){
+      showMing();
+      var sel = this;
+      say(sel.value ? sel.options[sel.selectedIndex].textContent + ' picked. Describe the voice is hidden. Set Built-in voice to None to describe a voice.' : 'No built-in voice. Describe the voice is shown.');
+    };
     $('ovEngine').onchange = function(){
       showEngine();
       var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; });
@@ -238,6 +250,7 @@ const OPEN_VOICES_SCRIPT = `
       var ids = { text: 'ovText', language: 'ovLanguage', style: 'ovStyle', emotion: 'ovEmotion', speed: 'ovSpeed', pitch: 'ovPitch',
         volume: 'ovVolume', description: 'ovDescription', voice: 'ovBuiltin', clipWords: $('ovVoice').value === 'clip' ? 'ovClipWords' : 'ovVoice' };
       var el = field && ids[field] ? $(ids[field]) : null;
+      if(el && el.closest('[hidden]') && field === 'description' && builtinOn()) el = $('ovBuiltin');
       if(el && !el.closest('[hidden]')) el.focus();
     }
     $('ovMake').onclick = async function(){
@@ -248,7 +261,6 @@ const OPEN_VOICES_SCRIPT = `
       if(isMing()){
         if(ov.mode === 'design'){
           body.voice = $('ovBuiltin').value;
-          if(body.voice && $('ovDescription').value.trim()){ say('Use a built-in voice or a description, not both. Clear the description, or set Built-in voice to None.', true); $('ovDescription').focus(); return; }
         } else {
           ['emotion', 'speed', 'pitch', 'volume', 'language'].forEach(function(k){ body[k] = $('ov' + k[0].toUpperCase() + k.slice(1)).value; });
           var level = body.speed || body.pitch || body.volume, style = $('ovStyle').value.trim();
@@ -258,7 +270,7 @@ const OPEN_VOICES_SCRIPT = `
           }
         }
       }
-      if(ov.mode === 'design') body.description = $('ovDescription').value;
+      if(ov.mode === 'design'){ if(!builtinOn()) body.description = $('ovDescription').value; }
       else {
         body.style = $('ovStyle').value;
         if($('ovVoice').value === 'clip'){ if(!ov.clip){ say('Import a clip first, or pick a saved voice.', true); $('ovClip').focus(); return; } body.clipUrl = ov.clip.url; body.clipWords = $('ovClipWords').value; body.clipSeconds = ov.clip.seconds; }

@@ -384,13 +384,24 @@ test('the panel by DOM: Ming controls only with Ming, a tag lands at the cursor,
   assert.equal($('ovMingDesign').hidden, false);
   assert.equal($('ovTagsBox').hidden, true, 'tags only in Speak with a voice');
   assert.deepEqual([...$('ovBuiltin').options].map((o) => o.value), ['', 'US_Emma', 'UK_George', 'UK_Charlotte', '灵小柔', '灵楷']);
-  $('ovBuiltin').value = 'US_Emma';
+  /* Nov 16 2026: a built-in voice hides the description and the take goes without it (it used to
+   * refuse both, sending her back to the description every time). None brings it back. */
   $('ovDescription').value = 'warm';
+  $('ovBuiltin').value = 'US_Emma'; $('ovBuiltin').onchange();
+  assert.match($('status').textContent, /Emma, American English, woman picked. Describe the voice is hidden/);
+  assert.equal($('ovDescWrap').hidden, true);
   $('ovText').value = 'Hello.';
   await $('ovMake').onclick();
-  assert.match($('status').textContent, /not both/);
-  assert.equal(w.document.activeElement, $('ovDescription'));
-  assert.equal(sent.length, 0);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].body, { engine: 'ming', mode: 'design', text: 'Hello.', seed: '', voice: 'US_Emma' });
+  sent.length = 0;
+  $('ovBuiltin').value = ''; $('ovBuiltin').onchange();
+  assert.equal($('ovDescWrap').hidden, false);
+  assert.equal($('ovDescription').value, 'warm', 'the description is kept');
+  pickEngine('voxcpm');
+  $('ovBuiltin').value = 'US_Emma';
+  assert.equal($('ovDescWrap').hidden, false, 'VoxCPM2 always shows the description');
+  $('ovBuiltin').value = ''; pickEngine('ming');
   $('ovModeSpeak').onclick();
   assert.deepEqual([$('ovMingDesign').hidden, $('ovMingSpeak').hidden, $('ovTagsBox').hidden], [true, false, false]);
   assert.equal($('ovTag').options.length, 14);
