@@ -129,8 +129,7 @@ function parseWriterReply(raw, req) {
   let text = at === -1 ? t.replace(/^\s*VOICE\s*:.*$/im, '') : t.slice(at).replace(/^\s*WORDS\s*:[ \t]*/i, '');
   text = text.replace(/^\s*READBACK\s*:.*$/gim, '').trim();
   /* Seen live Nov 16 on Ming: the writer opened with "%%%cheerful friendly%%%", which the engine would read out. */
-  text = text.replace(/%{2,}[^%
-]{0,80}%{2,}/g, '').replace(/^[ 	]+/gm, '').trim();
+  text = text.replace(/%{2,}[^%\n]{0,80}%{2,}/g, '').replace(/^[ \t]+/gm, '').trim();
   if (!text || (at === -1 && REFUSAL.test(text))) return { error: 'The writer would not write that one. Your idea is kept. Try saying it another way.' };
   const engine = req.engine;
   if (engine !== 'dramabox') text = text.replace(/^\s*[-*]\s+/gm, '');
