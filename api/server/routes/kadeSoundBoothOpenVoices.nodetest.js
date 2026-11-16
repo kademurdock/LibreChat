@@ -296,7 +296,7 @@ test('the panel: real labels for every control, no second live region, nothing a
    * line has no long number, and Remove names the voice and asks first. */
   assert.doesNotMatch(OPEN_VOICES_SCRIPT, /\.disabled\s*=/);
   assert.match(OPEN_VOICES_SCRIPT, /createElement\('h4'\)/);
-  assert.match(OPEN_VOICES_SCRIPT, /'Making a take\.'/);
+  assert.ok(OPEN_VOICES_SCRIPT.includes("'Making ' + (ov.queue ? ov.queue.total + ' takes, one after another.' : 'a take.')"));
   assert.doesNotMatch(OPEN_VOICES_SCRIPT, /Making a take, voice number/);
   assert.match(OPEN_VOICES_SCRIPT, /window\.confirm\('Remove ' \+ nm/);
   assert.match(OPEN_VOICES_SCRIPT, /clipSeconds/);

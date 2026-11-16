@@ -130,10 +130,11 @@ function panel(engines, answer) {
   const win = dom.window;
   win.getToken = async () => 'tok';
   win.AbortSignal.timeout = () => undefined;
+  const realSet = win.setTimeout.bind(win); win.setTimeout = (fn, ms) => realSet(fn, ms === 3000 ? 1 : ms);
   win.fetch = async (url, o) => {
     const body = o && o.body ? JSON.parse(o.body) : null;
     if (body) sent.push({ url, body });
-    if (url.endsWith('/open-voices')) return { ok: true, status: 200, json: async () => ({ engines, voices: [], coldNote: 'cold' }) };
+    if (url.endsWith('/open-voices')) return { ok: true, status: 200, json: async () => ({ engines, voices: [{ id: '7b0000000000000000000001', name: 'Grandpa', seconds: 8 }], coldNote: 'cold' }) };
     const a = answer(url, body);
     return { ok: !a.error, status: a.error ? (a.status || 400) : 200, json: async () => a };
   };
@@ -190,5 +191,49 @@ test('the panel by DOM: Write it for me fills the words in the engine\'s format,
   assert.equal(sent.at(-1).body.language_id, 'fr');
   assert.match($('status').textContent, /40 scripts today/);
   assert.equal($('ovWrite').getAttribute('aria-disabled'), null);
+  p.close();
+});
+
+test('the panel by DOM: Takes per press makes takes one after another, and each take and saved voice downloads', async () => {
+  let n = 0;
+  const p = panel(ov.engineList(ALL), (url, body) => {
+    if (url.endsWith('/open-voices/take')) { n += 1; return { ok: true, jobId: 'ov_queue0000' + n, coldLikely: false }; }
+    const m = url.match(/take\/(ov_queue0000\d)/);
+    if (m) return { state: 'done', engine: 'dramabox', url: 'https://b2.test/' + m[1] + '.mp3', seed: 100 + Number(m[1].slice(-1)), seconds: 9, assetId: '7b000000000000000000000' + m[1].slice(-1) };
+    return {};
+  });
+  const { $, w, sent } = p;
+  const got = [];
+  const inner = w.fetch;
+  w.fetch = async (url, o) => {
+    if (url.includes('/asset-download/')) { got.push(url); return { ok: true, status: 200, blob: async () => ({ type: 'audio/mpeg' }) }; }
+    return inner(url, o);
+  };
+  const clicked = [];
+  w.URL.createObjectURL = () => 'blob:test'; w.URL.revokeObjectURL = () => {};
+  w.HTMLAnchorElement.prototype.click = function () { clicked.push(this.download); };
+  await p.ready();
+  $('ovEngine').value = 'dramabox'; $('ovEngine').onchange();
+  $('ovText').value = 'She smiles. "Hello."';
+  $('ovSeed').value = '50';
+  $('ovCount').value = '3';
+  await $('ovMake').onclick();
+  for (let i = 0; i < 100 && $('ovTakes').children.length < 3; i++) await new Promise((r) => setTimeout(r, 10));
+  const takes = sent.filter((s) => s.url.endsWith('/open-voices/take'));
+  assert.deepEqual(takes.map((s) => s.body.seed), ['50', '51', '52']);
+  assert.equal($('ovTakes').children.length, 3);
+  assert.match($('status').textContent, /Take 3 is ready, the last of 3\. Play it, download it/);
+  assert.equal($('ovStop').hidden, true);
+  const btn = [...$('ovTakes').querySelectorAll('button')].find((b) => b.textContent === 'Download take 3');
+  await btn.onclick();
+  assert.match(got.at(-1), /asset-download\/7b0000000000000000000003$/);
+  assert.equal(clicked.at(-1), 'DramaBox take 3 voice 103.mp3', $('status').textContent + ' ' + clicked.length);
+  assert.match($('status').textContent, /Saved DramaBox take 3 voice 103\.mp3 to your downloads/);
+  $('ovModeSpeak').onclick();
+  assert.equal($('ovDownloadVoice').hidden, false);
+  assert.equal($('ovDownloadVoice').textContent, 'Download Grandpa');
+  await $('ovDownloadVoice').onclick();
+  assert.match(got.at(-1), /asset-download\/7b0000000000000000000001$/);
+  assert.equal(clicked.at(-1), 'Grandpa.mp3');
   p.close();
 });

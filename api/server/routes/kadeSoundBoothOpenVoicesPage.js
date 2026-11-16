@@ -35,6 +35,7 @@ const OPEN_VOICES_HTML = `
         <label class="field" for="ovVoice">Saved voice</label>
         <select id="ovVoice" aria-describedby="ovVoiceHint"></select>
         <p class="hint" id="ovVoiceHint">Your saved voices, newest first. Or choose An imported clip and import one below.</p>
+        <button type="button" class="act quiet" id="ovDownloadVoice" hidden>Download this voice</button>
         <button type="button" class="act quiet" id="ovForget" hidden>Remove this voice from my list</button>
         <div id="ovClipBox" hidden>
           <label class="field" for="ovClip">Import a clip: WAV, MP3 or M4A</label>
@@ -113,6 +114,9 @@ const OPEN_VOICES_HTML = `
       <label class="field" for="ovSeed">Voice number (optional)</label>
       <input type="number" id="ovSeed" min="0" max="2147483647" step="1" aria-describedby="ovSeedHint">
       <p class="hint" id="ovSeedHint">Leave it empty for a new take every try. Type a take's number to hear that take again.</p>
+      <label class="field" for="ovCount">Takes per press</label>
+      <select id="ovCount" aria-describedby="ovCountHint"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+      <p class="hint" id="ovCountHint">Makes this many takes one after another, each a new voice. Stop this take ends the rest too. Each take is billed GPU time: once the engine is running, about 1 to 2 cents a take.</p>
       <button type="button" class="act primary" id="ovMake">Make a take</button>
       <button type="button" class="act" id="ovStop" hidden>Stop this take</button>
       <p class="hint">Each take is saved in My Creations. GPU time is billed.</p>
@@ -281,10 +285,34 @@ const OPEN_VOICES_SCRIPT = `
     }
     function voiceName(id){ var v = ov.voices.find(function(x){ return x.id === id; }); return v ? v.name : 'this voice'; }
     function showVoice(){
-      var clip = $('ovVoice').value === 'clip'; $('ovClipBox').hidden = !clip; $('ovForget').hidden = clip;
-      if(!clip) $('ovForget').textContent = 'Remove ' + voiceName($('ovVoice').value) + ' from my list';
+      var clip = $('ovVoice').value === 'clip'; $('ovClipBox').hidden = !clip; $('ovForget').hidden = clip; $('ovDownloadVoice').hidden = clip;
+      if(!clip){
+        $('ovForget').textContent = 'Remove ' + voiceName($('ovVoice').value) + ' from my list';
+        $('ovDownloadVoice').textContent = 'Download ' + voiceName($('ovVoice').value);
+      }
     }
     $('ovVoice').onchange = showVoice;
+    /* Nov 16 2026, her words: "It won't let me just download the mp3 ... I like to collect/save my voice samples on my pc."
+     * The file comes through the site's own download route (the owner's asset, re-signed from storage) and is saved
+     * under the voice's own name. */
+    function fileName(name){ return String(name || 'voice').replace(/[^A-Za-z0-9 ._,'()-]+/g, ' ').replace(/ +/g, ' ').trim().slice(0, 80) || 'voice'; }
+    async function download(assetId, name){
+      say('Downloading ' + name + '…');
+      try {
+        var r = await fetch('/api/kade/asset-download/' + encodeURIComponent(assetId), { headers: { 'Authorization': 'Bearer ' + token }, signal: AbortSignal.timeout(120000) });
+        if(!r.ok) throw new Error('not ok');
+        var blob = await r.blob();
+        var ext = /wav/.test(blob.type) ? 'wav' : /ogg/.test(blob.type) ? 'ogg' : /mp4|m4a|aac/.test(blob.type) ? 'm4a' : 'mp3';
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fileName(name) + '.' + ext;
+        document.body.appendChild(a); a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+        say('Saved ' + a.download + ' to your downloads.');
+      } catch(e) { say('The download did not work. Try again.', true); }
+    }
+    $('ovDownloadVoice').onclick = function(){
+      var id = $('ovVoice').value; if(!id || id === 'clip') return;
+      return download(id, voiceName(id));
+    };
     async function reloadVoices(keep){ var r = await call('/open-voices'); if(r.ok){ ov.voices = r.data.voices || []; fillVoices(keep); } }
     ov.voices = first.data.voices || []; fillVoices();
     function setMode(m){
@@ -340,7 +368,7 @@ const OPEN_VOICES_SCRIPT = `
     function follow(jobId, msg){
       ov.jobId = jobId; ov.lastSpoken = Date.now(); setBusy(true);
       if(document.activeElement === $('ovMake')) $('ovStop').focus();
-      say(msg); clearTimeout(ov.timer); ov.timer = setTimeout(poll, 3000);
+      if(msg) say(msg); clearTimeout(ov.timer); ov.timer = setTimeout(poll, 3000);
     }
     /* A refusal names the control to change (the route's field); focus goes there when it is shown. */
     function focusField(field){
@@ -426,19 +454,34 @@ const OPEN_VOICES_SCRIPT = `
         if($('ovVoice').value === 'clip'){ if(!ov.clip){ say('Import a clip first, or pick a saved voice.', true); $('ovClip').focus(); return; } body.clipUrl = ov.clip.url; body.clipWords = $('ovClipWords').value; body.clipSeconds = ov.clip.seconds; }
         else body.voiceId = $('ovVoice').value;
       }
-      setBusy(true); $('ovStop').focus(); say('Starting a take…');
-      var r = await call('/open-voices/take', body);
-      if(r.status === 409 && r.data.jobId){ follow(r.data.jobId, r.data.error || 'Your last take is still being made. The page will say when it is ready.'); return; }
-      if(!r.ok){ setBusy(false); say(r.data.error || 'The take could not start.', true); focusField(r.data.field); return; }
-      var msg = 'Making a take.';
-      if(r.data.coldLikely && !ov.coldSaid[body.engine]){ ov.coldSaid[body.engine] = true; msg += ' ' + (r.data.coldNote || (cur() && cur().coldNote) || ov.coldNote); }
-      follow(r.data.jobId, msg + ' The page will say when it is ready.');
+      /* Nov 16 2026: Takes per press makes up to four takes one after another (the bridge runs one take per person at
+       * a time). A typed voice number goes up by one for each take after the first, so no two are the same. */
+      var count = Math.max(1, Math.min(4, Number($('ovCount').value) || 1));
+      ov.queue = count > 1 ? { body: body, total: count, made: 0 } : null;
+      setBusy(true); $('ovStop').focus();
+      await startTake(body, count > 1 ? 'Starting take 1 of ' + count + '…' : 'Starting a take…');
     };
+    async function startTake(body, first){
+      if(first) say(first);
+      var r = await call('/open-voices/take', body);
+      if(r.status === 409 && r.data.jobId){ ov.queue = null; follow(r.data.jobId, r.data.error || 'Your last take is still being made. The page will say when it is ready.'); return; }
+      if(!r.ok){
+        var q = ov.queue; ov.queue = null; setBusy(false);
+        say((q && q.made ? q.made + ' of ' + q.total + ' takes were made. ' : '') + (r.data.error || 'The take could not start.'), true);
+        if(!q || !q.made) focusField(r.data.field);
+        return;
+      }
+      var msg = ov.queue && ov.queue.made ? '' : 'Making ' + (ov.queue ? ov.queue.total + ' takes, one after another.' : 'a take.');
+      if(r.data.coldLikely && !ov.coldSaid[body.engine]){ ov.coldSaid[body.engine] = true; msg += ' ' + (r.data.coldNote || (cur() && cur().coldNote) || ov.coldNote); }
+      follow(r.data.jobId, msg ? msg + ' The page will say when ' + (ov.queue ? 'each one is' : 'it is') + ' ready.' : '');
+    }
     $('ovStop').onclick = async function(){
       if(!ov.jobId) return;
       var r = await call('/open-voices/stop', { jobId: ov.jobId });
       if(!r.ok){ say(r.data.error || 'Stop was not confirmed.', true); return; }
-      clearTimeout(ov.timer); ov.jobId = null; setBusy(false); say('Stopped. Nothing was kept from this take.');
+      var q = ov.queue; ov.queue = null;
+      clearTimeout(ov.timer); ov.jobId = null; setBusy(false);
+      say('Stopped. Nothing was kept from this take.' + (q && q.made ? ' The ' + q.made + ' already made are kept.' : ''));
     };
     async function poll(){
       if(!ov.jobId) return;
@@ -446,15 +489,30 @@ const OPEN_VOICES_SCRIPT = `
       var r = await call('/open-voices/take/' + encodeURIComponent(id));
       var d = r.data || {};
       if(id !== ov.jobId) return;
-      if(r.ok && d.state === 'done' && d.url){ ov.jobId = null; setBusy(false); addTake(d, id); return; }
+      if(r.ok && d.state === 'done' && d.url){
+        ov.jobId = null;
+        var q = ov.queue; if(q) q.made++;
+        var more = !!q && q.made < q.total;
+        if(!more){ ov.queue = null; setBusy(false); }
+        addTake(d, id, q, more);
+        if(more){
+          var nb = Object.assign({}, q.body);
+          if(String(nb.seed || '').trim() !== '') nb.seed = String(Number(nb.seed) + q.made);
+          startTake(nb, '');
+        }
+        return;
+      }
       /* A lost connection, a slow answer or a server hiccup is not the end of a take: keep checking.
        * Only a clear failed or stopped state, or a take the server no longer knows, ends it here. */
       var gone = r.status >= 400 && r.status < 500;
-      if(gone || d.state === 'failed' || d.state === 'cancelled'){ ov.jobId = null; setBusy(false); say(d.error || 'The take did not finish.', true); return; }
+      if(gone || d.state === 'failed' || d.state === 'cancelled'){
+        var fq = ov.queue; ov.queue = null; ov.jobId = null; setBusy(false);
+        say((fq && fq.made ? fq.made + ' of ' + fq.total + ' takes were made. ' : '') + (d.error || 'The take did not finish.'), true); return;
+      }
       if(d.spoken && Date.now() - ov.lastSpoken > 20000){ ov.lastSpoken = Date.now(); say(d.spoken); }
       ov.timer = setTimeout(poll, 3000);
     }
-    function addTake(d, jobId){
+    function addTake(d, jobId, q, more){
       ov.takes++;
       var n = ov.takes, engine = (ov.engines.find(function(e){ return e.id === d.engine; }) || {}).label || d.engine;
       var ver = d.version && cbc ? cbc.versions.find(function(v){ return v.value === d.version; }) : null;
@@ -475,9 +533,20 @@ const OPEN_VOICES_SCRIPT = `
         keep.setAttribute('aria-disabled', 'true'); keep.textContent = 'Kept as ' + nm; keep.removeAttribute('aria-label');
         await reloadVoices(); say(r.data.spoken || 'Saved.');
       };
-      li.appendChild(lab); li.appendChild(name); li.appendChild(keep);
+      var assetId = d.assetId || null;
+      var dl = document.createElement('button'); dl.type = 'button'; dl.className = 'act quiet'; dl.textContent = 'Download take ' + n;
+      dl.onclick = async function(){
+        if(!assetId){
+          var r = await call('/open-voices/take/' + encodeURIComponent(jobId));
+          assetId = (r.data && r.data.assetId) || null;
+          if(!assetId){ say('Take ' + n + ' is still being saved. Try Download again in a moment.', true); return; }
+        }
+        return download(assetId, (name.value.trim() || (engine + ' take ' + n + ' voice ' + d.seed)));
+      };
+      li.appendChild(lab); li.appendChild(name); li.appendChild(keep); li.appendChild(dl);
       $('ovTakes').insertBefore(li, $('ovTakes').firstChild); $('ovTakesHeading').hidden = false;
-      say('Take ' + n + ' is ready. Play it, or keep it as a saved voice.');
+      if(more){ say('Take ' + n + ' is ready, ' + q.made + ' of ' + q.total + '. Making the next one.'); return; }
+      say('Take ' + n + ' is ready' + (q ? ', the last of ' + q.total : '') + '. Play it, download it, or keep it as a saved voice.');
       var a2 = document.activeElement;
       if(!a2 || a2 === document.body || a2 === $('ovMake') || a2 === $('ovStop')) h.focus();
     }
