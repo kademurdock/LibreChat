@@ -139,6 +139,11 @@ type FinishedCopy = {
   video?: string;
   /** Seconds of opening Kade-AI credit before the film's first frame (`report.credit.lead`). */
   lead?: number;
+  /**
+   * A follow-along track only (Nov 17 2026): made from a described soundtrack Kade already had,
+   * with no described video or audio file. Its descriptions are used through Follow along.
+   */
+  followOnly?: boolean;
 };
 /** familyPack (Oct 20 2026): the wrapper's Family pack answer, read by its priceFactor (at cost). */
 type Actor = { id: string; role?: string; child?: boolean; familyPack?: boolean };
@@ -1039,6 +1044,7 @@ const publicCopy = (copy: FinishedCopy) => ({
   finishedAt: copy.finishedAt,
   range: copy.range,
   rehearsal: !!copy.rehearsal,
+  followOnly: !!copy.followOnly,
 });
 const nextVersion = (job: Job) =>
   Math.max(job.lastVersion ?? 0, job.version ?? 1, ...copiesFor(job).map((copy) => copy.version)) +
@@ -3799,6 +3805,8 @@ export function createDescriptionRouter(hooks: Hooks): {
     const expiresIn = 6 * 3600;
     const result: Record<string, string> = {};
     for (const item of outputs) {
+      /* A follow-along track has no described video or audio: offer no link to a missing file. */
+      if (copy.followOnly && (item.kind === 'video' || item.kind === 'audio')) continue;
       const file = item.kind === 'video' ? (copy.video ?? item.file) : item.file;
       const key = `${copyFolder(job, copy)}/${file}`;
       if (!['video', 'audio', 'script'].includes(item.kind) && !(await exists(key))) continue;
@@ -3845,6 +3853,10 @@ export function createDescriptionRouter(hooks: Hooks): {
     const copy = selectCopy(job, input.version === undefined ? undefined : String(input.version));
     if (copy.rehearsal)
       throw new Problem('A rehearsal copy is a test tone, so it is not saved to the Library.');
+    if (copy.followOnly)
+      throw new Problem(
+        'This copy is a follow-along track made from a described soundtrack. It has no described audio to save.',
+      );
     if (copy.savedToLibrary) {
       res.json({ ...publicJob(job), savedToLibrary: copy.savedToLibrary, path: '' });
       return;

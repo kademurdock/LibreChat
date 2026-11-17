@@ -943,7 +943,7 @@ export const descriptionBrowserScript: string = String.raw`
     Array.prototype.slice.call($('video').querySelectorAll('track')).forEach(function(el){el.remove();});
     var player=media(),same=loadedFiles===id+'/'+version,resumeAt=same?player.currentTime:savedPosition(id,version),resumePlay=same&&!ended(player);
     ['video','audio'].forEach(function(name){var el=$(name);el.onloadedmetadata=function(){if(resumeAt&&el===media())el.currentTime=Math.min(resumeAt,el.duration||resumeAt);el.playbackRate=Number($('playback-rate').value);if(resumePlay&&el===media())el.play().catch(function(){});};});
-    $('video').src=result.video;$('audio').src=result.audio;
+    if(result.video)$('video').src=result.video;else $('video').removeAttribute('src');if(result.audio)$('audio').src=result.audio;else $('audio').removeAttribute('src');
     ['video','audio','transcript','captions','descriptions','script'].forEach(function(kind){var link=$(kind+'-download');link.hidden=!result[kind+'Download'];if(result[kind+'Download'])link.href=result[kind+'Download'];});
     /* Only the dialogue captions become a track. The description text is never given to the video:
      * Safari speaks a "descriptions" track on its own when a phone has Audio Descriptions turned on,
@@ -951,10 +951,11 @@ export const descriptionBrowserScript: string = String.raw`
     if(texts[1]){var url=URL.createObjectURL(new Blob([texts[1]],{type:'text/vtt'}));trackUrls.push(url);var track=document.createElement('track');track.kind='captions';track.label='Dialogue captions';track.srclang='en';track.src=url;$('video').appendChild(track);if(track.track)track.track.mode=$('player-captions').checked?'showing':'hidden';}
     cues=parseVtt(texts[0]);captionCues=parseVtt(texts[1]);captionShown='';showCaption();renderTranscript(texts[2]);
     $('results').hidden=false;$('skip').hidden=false;loadedFiles=id+'/'+version;
-    $('library-save-box').hidden=!config.library;
+    $('library-save-box').hidden=!config.library||!!copy.followOnly;
     $('library-save').textContent='Save version '+version+'’s described audio to my Library';
     gate('library-save',copy.savedToLibrary?'This version is already saved to your Library.':'');$('library-note').textContent=copy.savedToLibrary?'This version is saved to your Library.':'';
     $('summary').textContent='Version '+version+(copy.rehearsal?' is a rehearsal with a test tone, made without paid services: ':copy.preview?' is a preview: ':': ')+plural(copy.count||0,'description','descriptions')+'. '+(copy.range?'Describes '+clock(copy.range.start)+' to '+clock(copy.range.end)+' of the original. ':'Original length '+length(job.seconds)+'; ')+'described copy '+length(copy.outputSeconds)+'. '+(copy.skipped?plural(copy.skipped,'description was','descriptions were')+' left out; see the transcript for the reasons. ':'')+(copy.failedSections?plural(copy.failedSections,'part','parts')+' could not be described. ':'');
+    if(copy.followOnly)$('summary').textContent='Version '+version+' is a follow-along track: '+plural(copy.count||0,'description','descriptions')+', made from a described soundtrack you already had. There is no described video or audio to play here. Play the film on your TV, then open this video in the Kade-AI iPhone app and press Follow along with my TV. Original length '+length(job.seconds)+'.';
     $('position-note').textContent=!same&&resumeAt?'Playback starts at '+clock(resumeAt)+', where you stopped last time.':'';
     renderExpiry();mediaMetadata();
     if(focus)$('result-title').focus();

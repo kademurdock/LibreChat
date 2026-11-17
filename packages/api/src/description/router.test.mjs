@@ -5693,3 +5693,33 @@ test('follow along: a fingerprint that finds no sound at all is never kept, at d
     }
   });
 });
+
+test('a follow-along track made from a described soundtrack offers no video or audio and is not saved to the Library', async () => {
+  const id = await upload('follow-only-owner', 'follow-only-upload-0001');
+  const finishedAt = new Date();
+  await Jobs.updateOne(
+    { _id: id },
+    {
+      $set: {
+        state: 'done',
+        active: false,
+        progress: 100,
+        seconds: 600,
+        version: 1,
+        lastVersion: 1,
+        finishedAt,
+        count: 3,
+        copies: [{ version: 1, preview: false, count: 3, skipped: 0, failedSections: 0, finishedAt, followOnly: true }],
+      },
+    },
+  );
+  const job = (await call('get', `/jobs/${id}`, 'follow-only-owner').expect(200)).body;
+  const copies = (job.job ?? job).copies;
+  assert.equal(copies[0].followOnly, true);
+  const files = (await call('get', `/jobs/${id}/files?version=1`, 'follow-only-owner').expect(200)).body;
+  for (const kind of ['video', 'videoDownload', 'audio', 'audioDownload'])
+    assert.equal(files[kind], undefined, `no ${kind} link for a follow-along track`);
+  assert.ok(files.script, 'the timing report link is still offered');
+  const saved = await call('post', `/jobs/${id}/library`, 'follow-only-owner').send({ version: 1 }).expect(409);
+  assert.match(saved.body.error, /follow-along track made from a described soundtrack/);
+});
