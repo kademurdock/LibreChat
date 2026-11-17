@@ -93,6 +93,16 @@ const OPEN_VOICES_HTML = `
         <input type="number" id="ovDuration" min="3" max="45" step="1" aria-describedby="ovDurationHint">
         <p class="hint" id="ovDurationHint">Leave it empty and DramaBox decides. For a short scene, 3 to 45 seconds.</p>
       </div>
+      <div id="ovTuneBox" hidden>
+        <div id="ovStepsWrap">
+          <label class="field" for="ovSteps" id="ovStepsLabel">Quality</label>
+          <select id="ovSteps" aria-describedby="ovStepsHint"></select>
+          <p class="hint" id="ovStepsHint"></p>
+        </div>
+        <label class="field" for="ovCfg" id="ovCfgLabel">How closely it follows</label>
+        <select id="ovCfg" aria-describedby="ovCfgHint"></select>
+        <p class="hint" id="ovCfgHint"></p>
+      </div>
       <div id="ovWriterBox" role="group" aria-labelledby="ovWriterHeading">
         <h4 id="ovWriterHeading">The writer</h4>
         <label class="field" for="ovIdea">What should it say? (for Write it for me)</label>
@@ -207,6 +217,7 @@ const OPEN_VOICES_SCRIPT = `
       $('ovCbTuning').hidden = !(cb && !turbo);
       $('ovCbLangBox').hidden = !(cb && v && v.value === 'multilingual');
       $('ovDbBox').hidden = !db;
+      showSettings(e);
       if(cb && v){
         $('ovVersionHint').textContent = v.about;
         $('ovVarietyHint').textContent = 'How much each take varies. Empty is the usual 0.8. From ' + v.variety[0] + ' to ' + v.variety[1] + '.';
@@ -219,6 +230,37 @@ const OPEN_VOICES_SCRIPT = `
       $('ovIdeaHint').textContent = writerHint(e, cb, db, turbo, v);
       if(e && e.textHint) $('ovTextHint').textContent = e.textHint;
       $('ovText').maxLength = maxText();
+    }
+    /* Nov 16 2026: Quality (steps) and How closely it follows (cfg), from the engine's own settings
+     * list. The menus are refilled only when the engine changes; a choice the new engine also has is
+     * kept, anything else goes back to the usual. Only what is shown is sent. */
+    function fillSetting(id, s){
+      var was = $(id).value; $(id).textContent = '';
+      fillSelect(id, s ? s.options : []);
+      $(id).value = s && s.options.some(function(o){ return o.value === was; }) ? was : '';
+    }
+    function showSettings(e){
+      var s = (e && e.settings) || null;
+      $('ovTuneBox').hidden = !s;
+      if(!s || ov.settingsFor === e.id) return;
+      ov.settingsFor = e.id;
+      $('ovStepsWrap').hidden = !s.steps;
+      fillSetting('ovSteps', s.steps); fillSetting('ovCfg', s.cfg);
+      if(s.steps){ $('ovStepsLabel').textContent = s.steps.label; $('ovStepsHint').textContent = s.steps.hint; }
+      if(s.cfg){ $('ovCfgLabel').textContent = s.cfg.label; $('ovCfgHint').textContent = s.cfg.hint; }
+    }
+    /* Said when an engine with these menus is picked, so VoiceOver hears that they appeared. */
+    function settingsShown(e){
+      var s = e && e.settings;
+      if(!s) return '';
+      var names = [s.steps, s.cfg].filter(Boolean).map(function(x){ return x.label; });
+      return ' ' + names.join(' and ') + (names.length > 1 ? ' menus are' : ' menu is') + ' shown.';
+    }
+    function addSettings(body){
+      var s = cur() && cur().settings;
+      if(!s) return;
+      if(s.steps && $('ovSteps').value) body.steps = $('ovSteps').value;
+      if(s.cfg && $('ovCfg').value) body.cfg = $('ovCfg').value;
     }
     /* What the writer does for the engine picked, in one plain sentence. */
     function writerHint(e, cb, db, turbo, v){
@@ -250,8 +292,8 @@ const OPEN_VOICES_SCRIPT = `
       var e = ov.engines.find(function(x){ return x.id === $('ovEngine').value; });
       if(!e) return;
       if(isCb()) say(e.label + ' picked. ' + version().label + ' version.' + mingShown());
-      else if(isDb()) say(e.label + ' picked. Words to say is now Scene.' + mingShown());
-      else say(e.label + ' picked.' + (isMing() ? (ov.mode === 'design' ? ' You can pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.') : ''));
+      else if(isDb()) say(e.label + ' picked. Words to say is now Scene.' + mingShown() + settingsShown(e));
+      else say(e.label + ' picked.' + (isMing() ? (ov.mode === 'design' ? ' You can pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.') : '') + settingsShown(e));
     };
     $('ovVersion').onchange = function(){
       showMing();
@@ -376,7 +418,7 @@ const OPEN_VOICES_SCRIPT = `
       var ids = { text: 'ovText', language: 'ovLanguage', style: 'ovStyle', emotion: 'ovEmotion', speed: 'ovSpeed', pitch: 'ovPitch',
         volume: 'ovVolume', description: 'ovDescription', voice: 'ovBuiltin', clipWords: clip ? 'ovClipWords' : 'ovVoice',
         engine: 'ovEngine', seed: 'ovSeed', version: 'ovVersion', temperature: 'ovVariety', exaggeration: 'ovExaggeration', cfg_weight: 'ovSteadiness',
-        language_id: 'ovCbLanguage', duration: 'ovDuration', reference: clip ? 'ovClip' : 'ovVoice' };
+        language_id: 'ovCbLanguage', duration: 'ovDuration', steps: 'ovSteps', cfg: 'ovCfg', reference: clip ? 'ovClip' : 'ovVoice' };
       var el = field && ids[field] ? $(ids[field]) : null;
       if(el && ownHidden(el) && field === 'description' && builtinOn()) el = $('ovBuiltin');
       if(el && !ownHidden(el)){ if(window.kadeBoothReveal) window.kadeBoothReveal(el); el.focus(); }
@@ -447,6 +489,7 @@ const OPEN_VOICES_SCRIPT = `
         if(v.value === 'multilingual') body.language_id = $('ovCbLanguage').value;
       }
       if(isDb()) body.duration = $('ovDuration').value;
+      addSettings(body);
       var own = isCb() || isDb();
       if(ov.mode === 'design'){ if(!builtinOn() && !own) body.description = $('ovDescription').value; }
       else {

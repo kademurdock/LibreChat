@@ -733,7 +733,7 @@ test('the panel by DOM: DramaBox turns Words to say into the Scene, hides the de
   const { $, w, sent } = p;
   await p.ready();
   $('ovEngine').value = 'dramabox'; $('ovEngine').onchange();
-  assert.equal($('status').textContent, 'DramaBox picked. Words to say is now Scene. DramaBox picks the voice from your scene.');
+  assert.equal($('status').textContent, 'DramaBox picked. Words to say is now Scene. DramaBox picks the voice from your scene. How closely it follows the scene menu is shown.');
   assert.equal($('ovTextLabel').textContent, 'Scene');
   assert.match($('ovTextHint').textContent, /Words inside double quotes are spoken/);
   assert.equal($('ovText').maxLength, 4000);

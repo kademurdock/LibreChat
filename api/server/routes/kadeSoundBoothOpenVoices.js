@@ -90,6 +90,41 @@ const CHATTERBOX_CONTROLS = {
   turboClipMinS: 5,
 };
 const DRAMABOX_CONTROLS = { duration: [3, 45], clipMinS: 3 };
+/* Nov 16 2026, her yes: the strength and quality knobs the workers already read, as menus.
+ * VoxCPM2 (voxcpm_contract.py): inference_timesteps 4-50, usual 10 (its quickest); cfg_value 0.5-5,
+ * usual 2. DramaBox (dramabox_contract.py): cfg_scale 1-10, usual 2.5. The page sends `steps` and
+ * `cfg`; the bridge maps them to each worker's own names. They go out under `settings`, not
+ * `controls`, so an iPhone build that reads `controls` as Ming's never sees them. Empty = the usual. */
+const ENGINE_SETTINGS = {
+  voxcpm: {
+    steps: { range: [4, 50], label: 'Quality', hint: 'More steps usually sound cleaner. Each step up adds a few seconds of GPU time, still about 1 to 2 cents a take.',
+      options: [{ value: '', label: 'The usual, quickest' }, { value: '20', label: 'Better, a little slower' }, { value: '30', label: 'Best, slower' }, { value: '50', label: 'Highest, slowest' }] },
+    cfg: { range: [0.5, 5], label: 'How closely it follows', hint: 'How closely the voice keeps to your description or style. Very close can sound strained.',
+      options: [{ value: '1.5', label: 'Loose, more freedom' }, { value: '', label: 'The usual' }, { value: '2.5', label: 'Closer' }, { value: '3', label: 'Very close' }] },
+  },
+  dramabox: {
+    cfg: { range: [1, 10], label: 'How closely it follows the scene', hint: 'Closer keeps to the acting and sounds you wrote. Very close can sound strained.',
+      options: [{ value: '1.5', label: 'Loose, more freedom' }, { value: '', label: 'The usual' }, { value: '3.5', label: 'Closer' }, { value: '5', label: 'Very close' }] },
+  },
+};
+const SETTING_NAMES = { steps: 'Quality', cfg: 'How closely it follows' };
+/* The strength and quality of a take request -> { fields } or { error, field }. */
+function settingsRule(b, engine) {
+  const own = ENGINE_SETTINGS[engine] || {};
+  const fields = {};
+  for (const k of ['steps', 'cfg']) {
+    if (!isSet(b[k])) continue;
+    const s = own[k];
+    if (!s) return { error: `${SETTING_NAMES[k]} is not a setting ${ENGINES[engine].label} has. Set it back to the usual.`, field: k };
+    const n = numberOf(b[k]);
+    const [lo, hi] = s.range;
+    if (!Number.isFinite(n) || n < lo || n > hi || (k === 'steps' && !Number.isInteger(n))) {
+      return { error: `${s.label} must be ${k === 'steps' ? 'a whole number' : 'a number'} from ${lo} to ${hi}. Pick one from the list.`, field: k };
+    }
+    fields[k] = n;
+  }
+  return { fields };
+}
 const CB_TAG_RE = /\[([^\[\]]{1,40})\]/g; // the worker's own pattern: any bracketed words
 const CB_KNOWN = new Set(CHATTERBOX_CONTROLS.tags.map((t) => t.value.slice(1, -1)).concat(CHATTERBOX_CONTROLS.aliases));
 const CURLY_QUOTES = /[“”„‟«»]/g;
@@ -335,7 +370,8 @@ function engineList(ready) {
   return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription,
     maxText: e.maxText, textLabel: e.textLabel, textHint: e.textHint, coldNote: e.coldNote, ...(e.designNote ? { designNote: e.designNote } : {}),
     ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}),
-    ...(e.id === 'chatterbox' ? { controls: CHATTERBOX_CONTROLS } : {}), ...(e.id === 'dramabox' ? { controls: DRAMABOX_CONTROLS } : {}) }));
+    ...(e.id === 'chatterbox' ? { controls: CHATTERBOX_CONTROLS } : {}), ...(e.id === 'dramabox' ? { controls: DRAMABOX_CONTROLS } : {}),
+    ...(ENGINE_SETTINGS[e.id] ? { settings: ENGINE_SETTINGS[e.id] } : {}) }));
 }
 
 function voiceView(row, url) {
@@ -377,6 +413,9 @@ function checkTake(b = {}, ready = {}) {
   const body = { engine, mode: mode === 'design' ? 'design' : 'clone', text };
   const ming = mingFields(b, engine, mode);
   if (ming.error) return { error: ming.error, field: ming.field };
+  const tuned = settingsRule(b, engine);
+  if (tuned.error) return tuned;
+  Object.assign(body, tuned.fields);
   if (ENGINES[engine].more) {
     /* Chatterbox and DramaBox: no description, no style; their own controls. */
     if (mode === 'design' && oneLine(b.description)) {
@@ -652,5 +691,5 @@ async function healthBlock(readiness, waitMs = 300) {
   } catch (_) { return { engines: [], moreEngines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, clipFloor,
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, settingsRule, ENGINE_SETTINGS, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, clipFloor,
   MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };
