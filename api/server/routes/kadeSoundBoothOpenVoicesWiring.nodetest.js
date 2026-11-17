@@ -17,7 +17,7 @@ const path = require('node:path');
 
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
 const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry',
-  './kadeSoundBoothTasks', './kadeSoundBoothErrors'];
+  './kadeSoundBoothTasks', './kadeSoundBoothErrors', './kadeSoundBoothLimits'];
 
 /* The route, loaded with fakes. `openVoices` false stands the module in with an empty one; `bridge`
  * answers the open-voices health call (a promise, so a test can hold it). */

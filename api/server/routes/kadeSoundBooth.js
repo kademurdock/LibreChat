@@ -130,6 +130,8 @@ const chain = require('./kadeSoundBoothChain');
 const words = require('./kadeSoundBoothWords');
 /* Nov 15 2026: Clean up or change on AuK -- one trained task per try, sent as a task id and fixed choices. */
 const aukTasks = require('./kadeSoundBoothTasks');
+/* Nov 17 2026: every character limit the page's boxes show, the same numbers checked here (kadeSoundBoothLimits.js). */
+const { LIMITS, withTextLimits } = require('./kadeSoundBoothLimits');
 const { planAukEdit, isAukStorageReference, isAukOwnedReference, isOwnedAudioReference, audioAssetDescription, assertSeedScriptReply } = require('@librechat/api');
 /* Oct 2 2026: a provider's failure in plain words, and logged whole ("[object Object]" was all she heard). */
 const { providerError, errorText } = require('./kadeSoundBoothErrors');
@@ -619,10 +621,10 @@ function draftTimeoutMs(timeoutMs, wantsWords) {
   return wantsWords && timeoutMs >= 300000 ? timeoutMs - AUDIT_RESERVE_MS : timeoutMs;
 }
 const SCRIPT_DAILY_CAP = Number(process.env.KADE_SOUNDBOOTH_SCRIPT_CAP || 40);
-const MAX_SCENEMA_CHARS = 4000; // the bridge's own cap; mirrored so we fail early and kindly
-const MAX_SEED_CHARS = 2048; // Seed Audio's hard cap per clip
+const MAX_SCENEMA_CHARS = LIMITS.scenemaPart; // the bridge's own cap (4000); mirrored so we fail early and kindly
+const MAX_SEED_CHARS = LIMITS.seed; // Seed Audio's hard cap per clip (2048)
 const SEED_USD_PER_MIN = 0.1875; // fal's listed price, read Sep 2 2026 (Part 119.2)
-const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a description
+const MAX_LYRIA_CHARS = LIMITS.lyriaBrief; // the brief (3000), not the lyrics; Lyria reads a description
 /* Sep 25 2026: the words have their own cap, the same 8,000 YuE2 and a carry
  * already use. A 45-65 line song with section tags runs about 2,000-4,000
  * characters; the old render cut Your own lyrics at 4,000 without saying so,
@@ -630,7 +632,7 @@ const MAX_LYRIA_CHARS = 3000; // the brief, not the lyrics; Lyria reads a descri
  * Google documents no character cap for lyria-3.5, only a 131,072-token input
  * limit (models page, read Sep 25 2026); the whole wire prompt here is at most
  * about 11,000 characters, a few thousand tokens. */
-const MAX_LYRIA_LYRICS_CHARS = 8000;
+const MAX_LYRIA_LYRICS_CHARS = LIMITS.lyriaLyrics; // 8000
 const LYRIA_USD_PER_SONG = 0.08; // Google bills Lyria 3.5 PER SONG, not per minute
 
 /* ---------- the model id, and the wall everybody walks into ------------------
@@ -1212,7 +1214,7 @@ function wrapSpeak({ body, voice_description, gender, scene, shot, pace, languag
 function shapeAukDraft(body, b = {}) {
   let text = String(body || '').trim();
   const notes = [];
-  const chosen = String(b.voice_description || '').trim().slice(0, 600);
+  const chosen = String(b.voice_description || '').trim().slice(0, LIMITS.aukVoice);
   let writerVoice = '';
   if (isSpeakXml(text) || /<(?:action|sound)\b/i.test(text)) {
     /* Bare pieces get a bare tag: the settings fill it below, as /render fills a script box. */
@@ -2280,7 +2282,7 @@ async function scriptHandler(req, res) {
         b = { ...b, lyrics: lyricsPaste.lyrics };
       }
     }
-    const text = String(b.text || '').trim().slice(0, 6000);
+    const text = String(b.text || '').trim().slice(0, LIMITS.desk);
     if (text.length < 3) {
       return res.status(400).json({
         error:
@@ -2312,7 +2314,7 @@ async function scriptHandler(req, res) {
      * girl around five. It is now said as a fixed choice the words are written for. Neither
      * screen has a sex setting for AuK, so both always sent "female", which pushed every voice
      * the desk chose toward a woman; for AuK that line is left out and the voice says it. */
-    const aukVoice = engine === 'scenema' ? String(b.voice_description || '').trim().slice(0, 600) : '';
+    const aukVoice = engine === 'scenema' ? String(b.voice_description || '').trim().slice(0, LIMITS.aukVoice) : '';
     const aukReference = engine === 'scenema' && !!(b.reference_voice_url || (Array.isArray(b.audio_urls) && b.audio_urls.length));
     if (engine === 'scenema') {
       if (aukVoice && aukReference) {
@@ -2325,7 +2327,7 @@ async function scriptHandler(req, res) {
         lines.push('THE VOICE IS NOT CHOSEN YET: choose the voice that suits this and describe it in voice=.');
       }
     } else if (b.voice_description) {
-      lines.push(`WHO IS SPEAKING: ${String(b.voice_description).slice(0, 600)}`);
+      lines.push(`WHO IS SPEAKING: ${String(b.voice_description).slice(0, LIMITS.aukVoice)}`);
     }
     if (engine !== 'scenema' && (b.gender === 'male' || b.gender === 'female')) lines.push(`VOICE SEX: ${b.gender}`);
     if (mood) {
@@ -3076,6 +3078,10 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
   let script = String(wording ? words.summary(wordPlan) : fixing ? taskPlan.caption : editing ? b.instruction : b.script || '').trim();
   const mode = b.mode === 'advanced' ? 'advanced' : 'easy';
   if (!script) return res.status(400).json({ error: 'There is nothing to render yet.' });
+  /* Nov 17 2026: the bridge refuses an edit instruction past its prompt cap in its own words; this says it plainly first. */
+  if (editing && !wording && !fixing && script.length > LIMITS.scenemaPart) {
+    return res.status(400).json({ error: `Edit instructions are ${script.length.toLocaleString('en-US')} characters. AuK HQ takes ${LIMITS.scenemaPart.toLocaleString('en-US')}. Shorten them and try again.` });
+  }
   /* The same repair runs on the way to the GPU, because a script can reach
    * here without passing the script desk at all -- she can type one by hand in
    * Advanced, or paste one in. A %%% line is never legitimate AuK, so
@@ -3101,7 +3107,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     /* A VOICE: line typed inside raw XML would be spoken; it moves into the tag (see liftBodyHeaders).
      * Only VOICE:, SEX: and GENDER: here: "Who: is there at the door?" is a spoken line (review 1). */
     script = liftBodyHeaders(script, { strict: true }).xml;
-    const chosenVoice = String(b.voice_description || '').trim().slice(0, 600);
+    const chosenVoice = String(b.voice_description || '').trim().slice(0, LIMITS.aukVoice);
     if (chosenVoice) {
       /* Describe a new voice wins over a voice written in the script, as it always has. Oct 2 2026:
        * it no longer wins silently. With no reference (a reference sets the voice by itself), the
@@ -3217,7 +3223,7 @@ router.post('/render', requireJwtAuth, express.json({ limit: '128kb' }), async (
     if (['female', 'male'].includes(b.gender)) opts.gender = b.gender;
     if (typeof b.language === 'string') opts.language = b.language.slice(0, 12);
     if (['natural', 'balanced', 'strong'].includes(b.identity)) opts.identity = b.identity;
-    if (b.voice_description) opts.voice_description = String(b.voice_description).slice(0, 600);
+    if (b.voice_description) opts.voice_description = String(b.voice_description).slice(0, LIMITS.aukVoice);
     if (['closeup', 'wide', 'scene'].includes(b.shot)) opts.shot = b.shot;
     if (b.scene) opts.scene = String(b.scene).slice(0, 200);
     /* PREVIEW (her "how do I know what I'll get"): AuK's voice_design mode
@@ -4629,7 +4635,8 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     /* ACE-Step XL: its card is added last, and only for an account that may use it (ace.ts withAceGuide returns the very same guide otherwise). */
     /* Its Style choice (ACE_STYLES_ENABLED) is live only for the Family feature pack and greyed out for everyone else, as the YuE2 one is. */
     /* Nov 10 2026: the YuE2 cost line says the song price for everyone it is charged to (withSongPrice). */
-    guide: withSongPrice(ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide, req.user),
+    /* Nov 17 2026: last, so every engine card (ACE's too) carries its character limits for the page's boxes. */
+    guide: withTextLimits(withSongPrice(ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide, req.user)),
     features: boothFeatures(req.user),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },

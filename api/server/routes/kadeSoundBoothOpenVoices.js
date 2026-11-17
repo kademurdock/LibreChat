@@ -54,12 +54,12 @@ const ENGINES = {
     about: 'Write a scene. Words in quotes are spoken, the rest is how they are acted. English only.',
     designNote: 'DramaBox picks the voice from your scene. Describe the speaker in the scene, outside the quotes.',
     textLabel: 'Scene',
-    textHint: 'Words inside double quotes are spoken. Everything else is how they are acted, and is never said. For example: An old sailor, tired but kind, leans on the rail. "Storm\'s coming." He laughs softly. "Always is." Up to 4,000 characters.',
+    textHint: 'Words inside double quotes are spoken. Everything else is how they are acted, and is never said. For example: An old sailor, tired but kind, leans on the rail. "Storm\'s coming." He laughs softly. "Always is."', // "Up to N characters." is added below, from maxText (Nov 17 2026)
     coldNote: 'The first DramaBox take after a quiet spell can take several minutes while it loads. After that, takes come back much faster.' },
 };
 for (const e of Object.values(ENGINES)) {
   e.textLabel = e.textLabel || 'Words to say';
-  e.textHint = e.textHint || `Up to ${e.maxText.toLocaleString('en-US')} characters. ${WORDS_HINT}`;
+  e.textHint = e.textHint ? `${e.textHint} Up to ${e.maxText.toLocaleString('en-US')} characters.` : `Up to ${e.maxText.toLocaleString('en-US')} characters. ${WORDS_HINT}`;
   e.coldNote = e.coldNote || COLD_NOTE;
 }
 
@@ -318,6 +318,7 @@ function mingFields(b, engine, mode) {
 const MAX_TEXT = 5000;
 const MAX_STYLE = 400;
 const MAX_NAME = 80;
+const MAX_CLIP_WORDS = 1000; // the bridge refuses a clip's words past this (open-voices.js MAX_PROMPT_TEXT)
 const PROMPT_CLIP_MAX_S = 29.5; // the workers take a clip's exact words only for a clip of 30 s or less
 const HEALTH_TTL_MS = 60 * 1000;
 const PROMPT_CLIP_SENTENCE = 'The exact words only work for a clip of thirty seconds or less. Clear the words, or use a shorter clip.';
@@ -383,7 +384,7 @@ function voiceView(row, url) {
 /* The words of a saved voice's clip go to the worker only when they cover a short clip. */
 function promptWordsFor(saved) {
   const words = oneLine(saved && saved.words);
-  return words && typeof saved.seconds === 'number' && saved.seconds > 0 && saved.seconds <= PROMPT_CLIP_MAX_S ? words.slice(0, 1000) : '';
+  return words && typeof saved.seconds === 'number' && saved.seconds > 0 && saved.seconds <= PROMPT_CLIP_MAX_S ? words.slice(0, MAX_CLIP_WORDS) : '';
 }
 
 function seedOf(b) {
@@ -492,7 +493,7 @@ function createOpenVoicesRouter(deps) {
     if (!useWords) return { url, words: '', seconds: known };
     /* The workers take a clip's exact words only for a clip of thirty seconds or less. A clip known
      * to be longer is refused before any GPU time; a clip of unknown length goes without the words. */
-    let words = oneLine(b.clipWords).slice(0, 1000);
+    let words = oneLine(b.clipWords).slice(0, MAX_CLIP_WORDS);
     if (words) {
       if (Number.isFinite(seconds) && seconds > PROMPT_CLIP_MAX_S) return { error: PROMPT_CLIP_SENTENCE };
       if (!(Number.isFinite(seconds) && seconds > 0)) words = '';
@@ -504,7 +505,9 @@ function createOpenVoicesRouter(deps) {
     try {
       const ready = await readiness();
       const voices = await savedVoices(String(req.user.id));
-      return res.json({ engines: engineList(ready), voices, coldNote: COLD_NOTE, limits: { text: MAX_TEXT, style: MAX_STYLE, name: MAX_NAME } });
+      return res.json({ engines: engineList(ready), voices, coldNote: COLD_NOTE,
+        /* Nov 17 2026: the page's boxes take these as their maxlength and count (idea and clipWords added). */
+        limits: { text: MAX_TEXT, style: MAX_STYLE, name: MAX_NAME, idea: writer.MAX_IDEA, clipWords: MAX_CLIP_WORDS } });
     } catch (e) {
       log.warn('[soundbooth/open-voices] list failed: ' + e.message);
       return res.status(500).json({ error: 'Could not load your voices. Try again.' });
@@ -532,6 +535,7 @@ function createOpenVoicesRouter(deps) {
       log.info(`[soundbooth/open-voices] wrote engine=${b.engine} how=${ask.how} chars=${got.text.length} voice=${got.voice ? 1 : 0}`);
       const where = b.engine === 'dramabox' ? 'Scene' : 'Words to say';
       const spoken = (ask.how === 'format' ? `Your words are formatted for ${ask.shape.name}, in ${where}.` : `Written for ${ask.shape.name}. It is in ${where}.`)
+        + (got.cutTo ? ` Cut to the ${got.cutTo.toLocaleString('en-US')} characters ${ask.shape.name} takes.` : '')
         + (got.voice ? ' A voice description was added too.' : '') + ' Read it over, then Make a take.';
       return res.json({ text: got.text, voice: got.voice, spoken });
     } catch (e) {
@@ -627,7 +631,7 @@ function createOpenVoicesRouter(deps) {
       if (!row) return res.status(404).json({ error: 'That take is still being saved. Try Keep again in a moment.' });
       const ov = row.metadata.openVoice || {};
       const savedVoice = { name, engine: ov.engine || null, description: oneLine(ov.description).slice(0, 600),
-        words: oneLine(ov.words).slice(0, 1000), seconds: typeof ov.seconds === 'number' ? ov.seconds : null, savedAt: new Date().toISOString() };
+        words: oneLine(ov.words).slice(0, MAX_CLIP_WORDS), seconds: typeof ov.seconds === 'number' ? ov.seconds : null, savedAt: new Date().toISOString() };
       await KadeAsset.updateOne({ _id: row._id, user }, { $set: { 'metadata.savedVoice': savedVoice } });
       log.info(`[soundbooth/open-voices] kept voice asset=${row._id} user=${user}`);
       return res.json({ ok: true, voice: { id: String(row._id), name }, spoken: `Saved ${name} to your voices.` });
@@ -649,7 +653,7 @@ function createOpenVoicesRouter(deps) {
       const seconds = Number.isFinite(Number(b.seconds)) && Number(b.seconds) > 0 ? Math.round(Number(b.seconds) * 10) / 10 : null;
       const row = await KadeAsset.create({ user, kind: 'audio', service: 'soundbooth_voice', url: clip, prompt: name, model: 'imported clip', costUSD: 0,
         description: `A voice clip saved as ${name}.`,
-        metadata: { savedVoice: { name, engine: null, description: '', words: oneLine(b.clipWords).slice(0, 1000), seconds, savedAt: new Date().toISOString() } } });
+        metadata: { savedVoice: { name, engine: null, description: '', words: oneLine(b.clipWords).slice(0, MAX_CLIP_WORDS), seconds, savedAt: new Date().toISOString() } } });
       return res.json({ ok: true, voice: { id: String(row._id), name }, spoken: `Saved ${name} to your voices.` });
     } catch (e) {
       log.warn('[soundbooth/open-voices] keep-clip failed: ' + e.message);
@@ -692,4 +696,4 @@ async function healthBlock(readiness, waitMs = 300) {
 }
 
 module.exports = { createOpenVoicesRouter, createReadiness, checkTake, settingsRule, ENGINE_SETTINGS, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, clipFloor,
-  MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, PROMPT_CLIP_MAX_S, STILL_MAKING };
+  MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, MAX_STYLE, MAX_NAME, MAX_CLIP_WORDS, PROMPT_CLIP_MAX_S, STILL_MAKING };

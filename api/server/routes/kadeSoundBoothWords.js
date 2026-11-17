@@ -443,7 +443,7 @@ async function timedTranscript(buffer, seconds, { from = 0, to } = {}, deps = {}
 }
 
 module.exports = {
-  MAX_CHANGES, MAX_TAKES, DEFAULT_TAKES, DEFAULT_SUNG_TAKES, defaultTakes, MIN_RANGE_S, MAX_RANGE_S, MIN_GAP_S, WINDOW_S, MAX_TRANSCRIPT_S,
+  MAX_CHANGES, MAX_TEXT, MAX_TAKES, DEFAULT_TAKES, DEFAULT_SUNG_TAKES, defaultTakes, MIN_RANGE_S, MAX_RANGE_S, MIN_GAP_S, WINDOW_S, MAX_TRANSCRIPT_S,
   kindOf, wordTemplate, looksLikeWordChange, takesFrom, freshSeeds, planWordChanges, summary, sameChanges,
   submitChange, advance, advanceLocked, changesView, sayProgress, sayDone, timedTranscript, cutWindows, mimoHear,
 };

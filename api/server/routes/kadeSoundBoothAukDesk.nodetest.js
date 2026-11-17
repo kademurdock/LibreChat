@@ -38,7 +38,7 @@ const scriptWriter = loadTs(path.join(__dirname, '../../../packages/api/src/audi
 const writerPricing = loadTs(path.join(__dirname, '../../../packages/api/src/utils/writing.ts'));
 
 const ROUTE = fs.readFileSync(path.join(__dirname, 'kadeSoundBooth.js'), 'utf8');
-const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry', './kadeSoundBoothTasks'];
+const LOCAL = ['./kadeSoundBoothSplit', './kadeSoundBoothScreenplay', './kadeSoundBoothPaste', './kadeSoundBoothCarry', './kadeSoundBoothTasks', './kadeSoundBoothLimits'];
 
 /** The route, loaded the way the app loads it, with the writer answering from `replies` in order.
  *  Nov 14 2026: `opts.claudeLane` stands in for utils/kadeClaudeLane.js (none: the route sees an empty module, as an

@@ -144,8 +144,10 @@ function parseWriterReply(raw, req) {
   }
   if (engine === 'voxcpm' || (engine === 'ming' && req.how === 'write')) text = text.replace(/\*([^*\n]+)\*/g, '$1').replace(/\[[^\]\n]{1,40}\]/g, '').replace(/ {2,}/g, ' ').trim();
   const max = req.shape.maxText;
-  if (text.length > max) text = text.slice(0, max).replace(/\s+\S*$/, '');
-  return { text, voice: req.askVoice ? voice.slice(0, req.shape.voiceMax || 400) : '' };
+  /* Nov 17 2026: a cut is said (the route adds "Cut to the 2,500 characters Ming takes."), never silent. */
+  const cut = text.length > max;
+  if (cut) text = text.slice(0, max).replace(/\s+\S*$/, '');
+  return { text, voice: req.askVoice ? voice.slice(0, req.shape.voiceMax || 400) : '', ...(cut ? { cutTo: max } : {}) };
 }
 
 module.exports = { writerRequest, parseWriterReply, engineShape, CB_TAGS, MAX_IDEA };

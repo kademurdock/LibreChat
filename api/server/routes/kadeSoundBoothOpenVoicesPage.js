@@ -8,6 +8,9 @@
  * nothing auto-plays. The panel stays hidden until the server lists at least one engine. Typing
  * here does not touch the main render's quote (events stop at the panel). */
 
+/* Nov 17 2026: the caps helper the booth page runs too (kadeSoundBoothCaps.js), spliced into the script below. */
+const { CAPS_SOURCE } = require('./kadeSoundBoothCaps');
+
 const OPEN_VOICES_HTML = `
     <div id="openVoicesDrawer" hidden><h3 id="ovSummary">Open voices</h3>
     <fieldset id="openVoicesPanel"><legend>Design a voice, or speak with a saved one</legend>
@@ -145,11 +148,18 @@ const OPEN_VOICES_SCRIPT = `
     /* The same sentence twice would not change the live region, so screen readers would stay quiet
      * (a second tag insert, a second press after a refusal). A repeat gets a trailing no-break space,
      * on and off, so every say is heard. */
+    var caps = null, lastSaid = 0;
+    /* A box newly over its limit (after an engine change, say) is said in this same sentence, so the live region changes once. */
     function say(msg, isErr){
+      var note = caps ? caps.notes() : '';
+      if(note) msg = msg ? msg + ' ' + note : note;
       status.className = 'status' + (isErr ? ' err' : '');
       status.textContent = status.textContent === msg ? msg + '\u00a0' : msg;
+      lastSaid = Date.now();
     }
     function $(id){ return document.getElementById(id); }
+    ${CAPS_SOURCE}
+    caps = boothCaps({ say: say, status: status, saidAt: function(){ return lastSaid; } });
     ['input','change'].forEach(function(t){ panel.addEventListener(t, function(e){ e.stopPropagation(); }); });
     var token = null; try { token = await getToken(); } catch(e) {}
     if(!token) return;
@@ -165,7 +175,7 @@ const OPEN_VOICES_SCRIPT = `
     var ov = { mode: 'design', engines: [], voices: [], clip: null, jobId: null, timer: null, coldSaid: {}, takes: 0, lastSpoken: 0, busy: false, tagsFor: '' };
     var first = await call('/open-voices');
     if(!first.ok || !first.data.engines || !first.data.engines.length) return;
-    ov.engines = first.data.engines; ov.coldNote = first.data.coldNote || '';
+    ov.engines = first.data.engines; ov.coldNote = first.data.coldNote || ''; ov.limits = first.data.limits || {};
     ov.engines.forEach(function(e){ var o = document.createElement('option'); o.value = e.id; o.textContent = e.label; $('ovEngine').appendChild(o); });
     var labels = ov.engines.map(function(e){ return e.label; }).join(' and ');
     $('ovSummary').textContent = 'Open voices: ' + labels;
@@ -229,7 +239,20 @@ const OPEN_VOICES_SCRIPT = `
       $('ovTextLabel').textContent = (e && e.textLabel) || 'Words to say';
       $('ovIdeaHint').textContent = writerHint(e, cb, db, turbo, v);
       if(e && e.textHint) $('ovTextHint').textContent = e.textHint;
-      $('ovText').maxLength = maxText();
+      applyCaps(e, cb || db);
+    }
+    /* Nov 17 2026: each box's limit for the engine picked, from the server's list (maxText, maxDescription) and its
+     * limits (style, idea, clip words), with a count under the box. A lower limit keeps her words and says how many
+     * characters are over; the server still refuses the take until they are shorter. */
+    function applyCaps(e, own){
+      var lim = ov.limits || {}, who = e ? e.label : 'this engine';
+      caps.set($('ovText'), { max: maxText(), who: who, label: $('ovTextLabel').textContent });
+      caps.set($('ovDescription'), !own && e && e.maxDescription > 0 ? { max: e.maxDescription, who: who, label: 'The voice description' } : null);
+      /* Style keeps its cap while hidden (Chatterbox, DramaBox): it is not sent then, and comes back as it was.
+       * These three limits are the panel's own, the same on every engine, so the sentences name no engine. */
+      caps.set($('ovStyle'), { max: lim.style || 400, who: '', label: 'Style' });
+      caps.set($('ovIdea'), { max: lim.idea || 3000, cut: true, who: '', label: 'The idea box' });
+      caps.set($('ovClipWords'), { max: lim.clipWords || 1000, who: '', label: 'The clip words' });
     }
     /* Nov 16 2026: Quality (steps) and How closely it follows (cfg), from the engine's own settings
      * list. The menus are refilled only when the engine changes; a choice the new engine also has is

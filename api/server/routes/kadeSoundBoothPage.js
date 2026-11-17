@@ -29,6 +29,9 @@ const { SHARED_HEAD } = require('./kadePages');
  * by interpolation, so none of it passes through this file's template-literal
  * escaping. */
 const { PAGE_SOURCE: SONG_PASTE_SOURCE } = require('./kadeSoundBoothPaste');
+/* Nov 17 2026: character caps on the text boxes (kadeSoundBoothCaps.js), as source text spliced in by interpolation.
+ * The limits themselves come from /health's guide (kadeSoundBoothLimits.js withTextLimits). */
+const { CAPS_SOURCE } = require('./kadeSoundBoothCaps');
 /* Oct 11 2026: Describe the sound of the recording (kadeSoundBoothDescribe.js). Ten pieces of page source, spliced in below by
  * interpolation; all of them are empty strings while KADE_DESCRIBE_SOUND=0, so the page is then the text it was before. */
 const { pageParts: describeParts } = require('./kadeSoundBoothDescribe');
@@ -312,7 +315,12 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function showWritingThink(){state.writingThink=writingThink;var label='Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1),button=document.getElementById('btnThink');button.textContent=label.replace('Writing thought','Think');button.setAttribute('aria-label',label);button.title=label;button.disabled=!!state.writing;}
     document.getElementById('btnThink').onclick=function(){if(busy())return;writingThink=nextWritingThink(writingThink);try{localStorage.setItem('kadeSoundBoothThinkMode',writingThink);}catch(e){}showWritingThink();say('Writing thought: '+writingThink.charAt(0).toUpperCase()+writingThink.slice(1)+'.');};
     showWritingThink();
-    function say(msg, isErr){ status.className = 'status' + (isErr ? ' err' : ''); status.textContent = msg; }
+    /* Nov 17 2026: each sentence also recounts the capped boxes, since the page fills them in by itself just before saying so. */
+    var caps=null, lastSaid=0;
+    /* A box newly over its limit is said in this same sentence (caps.notes), so the live region changes once. The same
+     * sentence twice would not change the live region, so a repeat gets a trailing no-break space and is heard again. */
+    function say(msg, isErr){ var note=caps?caps.notes():''; if(note) msg=msg?msg+' '+note:note; status.className = 'status' + (isErr ? ' err' : ''); status.textContent = status.textContent===msg ? msg+'\\u00a0' : msg; lastSaid=Date.now(); }
+    caps=boothCaps({say:say,status:status,saidAt:function(){ return lastSaid; }});
     function showCode(xml){ var box = document.getElementById('codeBox'); var view = document.getElementById('codeView'); if(!box||!view) return; if(state.engine==='scenema' && xml && /<speak/i.test(xml) && state.mode==='advanced'){ view.textContent = xml; box.hidden = false; } else { box.hidden = true; view.textContent=''; } }
     function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':s; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
     async function request(path, body, method){
@@ -534,6 +542,27 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var howto=document.getElementById('howto');
       document.getElementById('editorLabel').before(howto);
       showDraftTools();
+      applyCaps(upload||editing);
+    }
+    /* Nov 17 2026: each box's character limit for the engine and task picked, from the guide (scriptMax, maxChars, deskMax:
+     * the numbers the server checks). AuK HQ speech has no one limit (a long script is made in parts), so its script box
+     * shows a count only. A box over a lowered limit keeps her words; the caps helper says how many are over. */
+    /* Lyria: the server measures only the brief above a "Lyrics:" heading (checkMusic, carry.splitLyricsBlock) and counts
+     * the words under it as lyrics, so the count does the same and the box takes no maxlength. ACE reads about the first 512
+     * characters of its direction (scriptReads), so the count and the status say so past it. On a song engine the writing
+     * desk box is counted with no maxlength: the server sorts a pasted song (a Style Box and a Lyrics Box) whole before
+     * its 6,000 cut, and a maxlength would cut the paste in the browser first. */
+    function briefLength(v){ var t=String(v||''), m=t.match(/(?:^|\\n)[ \\t]*lyrics[ \\t]*:[ \\t]*\\n?/i); return (m ? t.slice(0,m.index) : t).trim().length; }
+    function applyCaps(noScript){
+      var g=state.guide.engines[state.engine]||{}, who=g.name||'This engine', song=state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace';
+      var scriptCap={max:g.scriptMax||0, cut:!!g.scriptCut, who:who, label:document.getElementById('editorLabel').textContent, reads:g.scriptReads||0};
+      if(g.scriptLyricsApart){ scriptCap.measure=briefLength; scriptCap.measureNote='The Lyrics part is counted with the lyrics.'; }
+      caps.set(document.getElementById('script'), noScript ? null : scriptCap);
+      caps.set(document.getElementById('text'), state.guide.deskMax ? {max:song?0:state.guide.deskMax, cut:true, who:'the writing desk', label:document.getElementById('textLabel').textContent} : null);
+      (g.settings||[]).forEach(function(s){
+        var box=document.getElementById('set_'+s.key);
+        if(box && (box.tagName==='TEXTAREA' || box.type==='text')) caps.set(box, s.maxChars ? {max:s.maxChars, cut:!!s.maxCut, who:who, label:s.label} : null);
+      });
     }
     function setMode(m){
       state.mode = m;
@@ -1002,6 +1031,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       return 'Track title: '+title+'. ';
     }
     ${SONG_PASTE_SOURCE || ''}
+    ${CAPS_SOURCE}
     var writingUndo=null, writingLyrics;
     function changeWriting(value){
       var box=document.getElementById('script');
