@@ -9,8 +9,9 @@
  * What it does for one box, given { max, who, label, cut, measure, measureNote, reads }:
  * - maxlength is the limit, so typing and pasting stop there. maxlength never cuts text that is
  *   already in the box, and nothing here does either.
- * - A count under the box ("120 of 2,500 characters."), tied to it by aria-describedby. It is not a
- *   live region, so it is never read on its own while she types.
+ * - A fixed limit line ("Up to 2,500 characters.") tied to the box by aria-describedby, and a running
+ *   count after it ("120 of 2,500 characters.") that is NOT tied to the box and not a live region, so
+ *   typing never makes VoiceOver read anything (see countBox).
  * - Said once in the status line: when the box reaches the limit (again only after it drops well
  *   under it, or she leaves the box), when a paste was cut to fit, when a paste had no room at all, and
  *   when a picker change (or a filled-in draft) leaves more in the box than the engine takes. That last
@@ -31,17 +32,36 @@ function boothCaps(opts) {
   function plain(label) { return String(label || 'This box').replace(/\s*\([^)]*\)/g, '').replace(/[\s?:.!]+$/, '') || 'This box'; }
   function forWho(r) { return r.who ? ' for ' + r.who : ''; }
   function size(r) { return r.measure ? r.measure(r.box.value) : r.box.value.length; }
+  /* Nov 17 2026, her report: "every time I type a single character in a box ... it starts reading the box
+   * instructions along with the character count." VoiceOver reads a box's whole description again whenever
+   * any text it points at changes. So the description points only at a fixed limit line ("Up to 2,500
+   * characters."), written only when the limit itself changes, and the running count sits in its own line
+   * after the box, never tied to it, read only when she moves to it. */
+  function setText(el, t) { if (el.textContent !== t) el.textContent = t; }
   function countBox(box, make) {
-    var id = box.id + '_count', c = document.getElementById(id);
-    var d = (box.getAttribute('aria-describedby') || '').split(' ').filter(Boolean);
+    var id = box.id + '_count', lid = box.id + '_limit';
+    var c = document.getElementById(id), l = document.getElementById(lid);
+    var d = (box.getAttribute('aria-describedby') || '').split(' ').filter(Boolean).filter(function (x) { return x !== id; });
     if (!make) {
       if (c) c.remove();
-      if (d.indexOf(id) >= 0) box.setAttribute('aria-describedby', d.filter(function (x) { return x !== id; }).join(' '));
+      if (l) l.remove();
+      box.setAttribute('aria-describedby', d.filter(function (x) { return x !== lid; }).join(' '));
+      if (!box.getAttribute('aria-describedby')) box.removeAttribute('aria-describedby');
       return null;
     }
-    if (!c) { c = document.createElement('p'); c.className = 'hint'; c.id = id; box.insertAdjacentElement('afterend', c); }
-    if (d.indexOf(id) < 0) { d.push(id); box.setAttribute('aria-describedby', d.join(' ')); }
-    return c;
+    if (!l) { l = document.createElement('p'); l.className = 'hint'; l.id = lid; box.insertAdjacentElement('afterend', l); }
+    if (!c) { c = document.createElement('p'); c.className = 'hint'; c.id = id; l.insertAdjacentElement('afterend', c); }
+    if (d.indexOf(lid) < 0) d.push(lid);
+    var want = d.join(' ');
+    if (box.getAttribute('aria-describedby') !== want) box.setAttribute('aria-describedby', want);
+    return { count: c, limit: l };
+  }
+  function limitLine(r) {
+    if (!r.max) return 'No set limit.';
+    var t = 'Up to ' + fmt(r.max) + ' characters' + forWho(r) + '.';
+    if (r.measure && r.measureNote) t += ' ' + r.measureNote;
+    if (r.reads) t += ' ' + (r.who || 'This engine') + ' reads about the first ' + fmt(r.reads) + '.';
+    return t;
   }
   function line(r) {
     var n = size(r), t;
@@ -69,8 +89,15 @@ function boothCaps(opts) {
   function queue(r) { pending[r.box.id] = true; if (!timer) timer = setTimeout(flush, 0); }
   function show(r) {
     var c = countBox(r.box, true);
-    c.textContent = line(r);
-    c.hidden = !!r.box.hidden;
+    setText(c.limit, limitLine(r));
+    /* A hint that already names the limit ("Up to 5,000 characters.") is enough: the limit line stays on
+     * the page but is not read with the box a second time. */
+    var lid = c.limit.id, others = (r.box.getAttribute('aria-describedby') || '').split(' ').filter(function (x) { return x && x !== lid; });
+    var named = !!r.max && others.some(function (x) { var el = document.getElementById(x); return el && el.textContent.indexOf(fmt(r.max) + ' characters') >= 0; });
+    var want = (named ? others : others.concat([lid])).join(' ');
+    if (want && r.box.getAttribute('aria-describedby') !== want) r.box.setAttribute('aria-describedby', want);
+    setText(c.count, line(r));
+    c.count.hidden = c.limit.hidden = !!r.box.hidden;
     /* A hidden box over its limit is said when it is shown again (the next set or refresh), not lost. */
     var over = !!r.max && size(r) > r.max, seen = !hiddenNow(r.box);
     if (over && !r.over && seen) queue(r);

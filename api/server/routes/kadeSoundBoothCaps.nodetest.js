@@ -168,17 +168,25 @@ test('booth page: maxlength is the server limit for each engine, and follows the
   assert.equal($('script').getAttribute('aria-describedby'), 'scriptHint');
 });
 
-test('booth page: the count sits under the box, is read with it, and is never a live region', () => {
+test('booth page: the limit is read with the box, the count sits after it, and typing makes nothing read', () => {
   const { $, pick, w } = booth();
   pick('ace');
   $('set_lyrics').value = 'x'.repeat(120);
   $('set_lyrics').dispatchEvent(new w.Event('input'));
   assert.equal($('set_lyrics_count').textContent, '120 of 4,096 characters.');
-  assert.equal($('set_lyrics').getAttribute('aria-describedby'), 'set_lyrics_h set_lyrics_count');
-  assert.equal($('set_lyrics').nextElementSibling.id, 'set_lyrics_count');
+  assert.equal($('set_lyrics').getAttribute('aria-describedby'), 'set_lyrics_h set_lyrics_limit');
+  assert.equal($('set_lyrics').nextElementSibling.id, 'set_lyrics_limit');
+  assert.equal($('set_lyrics_limit').nextElementSibling.id, 'set_lyrics_count');
+  assert.equal($('set_lyrics_limit').textContent, 'Up to 4,096 characters for ACE-Step XL.');
+  /* Her report: typing re-read the box's description. Only the fixed limit line is tied to the box, and typing never changes it. */
+  const before = $('set_lyrics_limit').textContent;
+  $('set_lyrics').value = 'x'.repeat(121); $('set_lyrics').dispatchEvent(new w.Event('input'));
+  assert.equal($('set_lyrics_limit').textContent, before);
+  assert.equal($('set_lyrics_count').textContent, '121 of 4,096 characters.');
+  assert.ok(!$('set_lyrics').getAttribute('aria-describedby').includes('_count'));
   assert.equal($('set_lyrics_count').getAttribute('aria-live'), null);
   assert.equal($('set_lyrics_count').getAttribute('role'), null);
-  assert.equal($('script').getAttribute('aria-describedby'), 'scriptHint script_count');
+  assert.equal($('script').getAttribute('aria-describedby'), 'scriptHint script_limit');
   /* Typing says nothing until the limit. */
   w.say('Ready.');
   $('script').value = 'abc'; $('script').dispatchEvent(new w.Event('input'));
@@ -393,8 +401,9 @@ test('Open voices: Words to say and Describe the voice take each engine\'s limit
   assert.deepEqual([by.voxcpm.maxText, by.ming.maxText, by.dramabox.maxText], [5000, 2500, 4000]);
   pick('voxcpm'); assert.equal($('ovDescription').maxLength, 400);
   pick('ming'); assert.equal($('ovDescription').maxLength, 600);
-  assert.equal($('ovDescription').getAttribute('aria-describedby'), 'ovDescriptionHint ovDescription_count');
-  assert.equal($('ovText').getAttribute('aria-describedby'), 'ovTextHint ovText_count');
+  assert.equal($('ovDescription').getAttribute('aria-describedby'), 'ovDescriptionHint ovDescription_limit');
+  /* Its hint already says "Up to N characters", so the limit line is not read a second time. */
+  assert.equal($('ovText').getAttribute('aria-describedby'), 'ovTextHint');
   assert.equal($('ovStyle').maxLength, 400);
   assert.equal($('ovIdea').maxLength, 3000);
   assert.equal($('ovClipWords').maxLength, 1000);
