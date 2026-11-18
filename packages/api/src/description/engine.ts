@@ -1082,6 +1082,7 @@ export async function describeVideo(request: Request): Promise<Outcome> {
       const input: Look = {
         file: clip,
         seconds: seconds * scale,
+        start: section.start,
         brief: {
           ...briefFor(i, survey, scale),
           ...(stamped ? { stamped } : {}),

@@ -229,6 +229,15 @@ export function describedVideoPage(sharedHead: string): string {
 <label class="check"><input id="dv-first-look" type="checkbox" aria-describedby="dv-first-look-help"> Look through the whole film first to learn who is who (costs more)</label>
 <p id="dv-first-look-help" class="hint">An extra pass for consistent names and appearances. People are still named only when the film reveals their names; famous cartoon, puppet and game characters are named when they appear. Not used for videos of two minutes or less.</p>
 </fieldset>
+<fieldset id="dv-soundtrack-box" hidden><legend>Describe with a described soundtrack from your Library (optional)</legend>
+<p id="dv-soundtrack-help" class="hint">If your Library has an audio-described soundtrack of this same video, Kade-AI can use it as a guide. It writes its own descriptions from what that describer said, and looks at the picture only where nobody talks, so it costs much less. The copy stays private to you. It works for the whole video, not a part, and the extra passes are not used.</p>
+<label for="dv-soundtrack-search">Words from the soundtrack's title</label><input id="dv-soundtrack-search" type="search" maxlength="200" autocomplete="off" aria-describedby="dv-soundtrack-help">
+<button id="dv-soundtrack-find" type="button">Search my Library for a soundtrack</button>
+<p id="dv-soundtrack-status" class="hint"></p>
+<ul id="dv-soundtrack-results" class="jobs" aria-label="Soundtracks found" hidden></ul>
+<p id="dv-soundtrack-chosen" hidden></p>
+<button id="dv-soundtrack-clear" type="button" hidden>Stop using this soundtrack</button>
+</fieldset>
 <div id="dv-tier-box" hidden><label for="dv-tier">Google tier for the looks (only you see this)</label><select id="dv-tier" aria-describedby="dv-tier-help"><option value="">Server default</option><option value="flex">Flex: about half the price; each look may wait in Google’s queue</option><option value="standard">Standard: the full price; looks answer sooner</option></select>
 <p id="dv-tier-help" class="hint">The same model either way. A flex look that fails is asked again on standard. The server log and each part’s record say which tier every look used, so you can describe the same video both ways with Write fresh descriptions and compare by ear.</p></div>
 <div id="dv-credit-box" hidden><label class="check"><input id="dv-credit" type="checkbox" checked aria-describedby="dv-credit-help"> Kade-AI credit at the start and end (only you can turn it off)</label>
@@ -484,7 +493,7 @@ export const descriptionBrowserScript: string = String.raw`
   function previewSeconds(){return (config&&config.previewSeconds)||180;}
   function canPreview(){return describing()>previewSeconds()+60;}
   function previewName(){return 'Try the first '+length(previewSeconds())+(part().range?' of this part':'');}
-  function settings(){var s={voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim(),closeLook:$('close-look').checked,firstLook:$('first-look').checked};if(config&&config.tiers&&$('tier').value)s.tier=$('tier').value;if(config&&config.credit&&!$('credit').checked)s.credit=false;var p=part();if(p.range)s.range=p.range;return s;}
+  function settings(){var s={voice:$('voice').value,rate:Number($('rate').value),maxRate:Number($('max-rate').value),mode:$('mode').value,detail:$('detail').value,volume:$('volume').value,notes:$('notes').value.trim(),closeLook:$('close-look').checked,firstLook:$('first-look').checked};if(config&&config.tiers&&$('tier').value)s.tier=$('tier').value;if(config&&config.credit&&!$('credit').checked)s.credit=false;var p=part();if(p.range)s.range=p.range;if(soundtrack&&config&&config.soundtracks)s.reference={book:soundtrack.book,track:soundtrack.track};return s;}
   function voiceFields(){var s=settings();return {voice:s.voice,rate:s.rate,maxRate:s.maxRate,mode:s.mode,volume:s.volume};}
   function renderPart(){
     var p=part();['part-from','part-to'].forEach(function(id){if(p.field===id)$(id).setAttribute('aria-invalid','true');else $(id).removeAttribute('aria-invalid');});
@@ -658,13 +667,58 @@ export const descriptionBrowserScript: string = String.raw`
     if(value===null||!setSpeed('playback-rate',value))return;
     var rate=Number($('playback-rate').value);$('video').playbackRate=rate;$('audio').playbackRate=rate;if(ahead&&ahead.id)$('ahead').playbackRate=rate;
   }
+  /* Described soundtrack (reference.ts, Nov 18 2026): her own Library audio, found by title, used as a guide. */
+  var soundtrack=null,soundtrackSearchFor='';
+  function minutesOf(seconds){var m=Math.round((seconds||0)/60);return m<1?'under a minute':m===1?'1 minute':m+' minutes';}
+  function renderSoundtrack(announce){
+    var on=!!(config&&config.soundtracks);$('soundtrack-box').hidden=!on;if(!on)return;
+    $('soundtrack-chosen').hidden=!soundtrack;$('soundtrack-clear').hidden=!soundtrack;
+    $('soundtrack-chosen').textContent=soundtrack?'Using '+soundtrack.title+' as the guide. The closer look and first look are off for this video.':'';
+    $('close-look').disabled=!!soundtrack||$('settings').disabled;$('first-look').disabled=!!soundtrack||$('settings').disabled;
+    if(soundtrack){$('close-look').checked=false;$('first-look').checked=false;}
+    if(announce)say($('soundtrack-chosen').textContent||'No described soundtrack. The describer looks at the whole video.',true);
+  }
+  function useSoundtrack(item){
+    soundtrack={book:item.book,track:item.track,title:item.title};
+    $('soundtrack-results').hidden=true;$('soundtrack-results').textContent='';$('soundtrack-status').textContent='';
+    if($('part-from').value.trim()||$('part-to').value.trim()){$('part-from').value='';$('part-to').value='';renderPart();}
+    renderSoundtrack(true);$('soundtrack-clear').focus();
+    scheduleEstimates(!!job&&!!job.seconds,'');
+  }
+  async function findSoundtracks(){
+    var words=$('soundtrack-search').value.trim();
+    if(words.length<2){$('soundtrack-status').textContent='Type at least two letters of the title.';say($('soundtrack-status').textContent,true);$('soundtrack-search').focus();return;}
+    $('soundtrack-find').disabled=true;$('soundtrack-status').textContent='Searching your Library…';
+    try{
+      var data=await call('/library-soundtracks?q='+encodeURIComponent(words));
+      var list=$('soundtrack-results');list.textContent='';
+      (data.soundtracks||[]).forEach(function(item){
+        var li=document.createElement('li'),button=document.createElement('button');button.type='button';
+        button.textContent='Use '+item.title+', '+minutesOf(item.seconds);
+        if(item.path)button.setAttribute('aria-description','On the shelf '+item.path);
+        button.onclick=function(){useSoundtrack(item);};li.appendChild(button);list.appendChild(li);
+      });
+      var count=(data.soundtracks||[]).length;list.hidden=!count;
+      $('soundtrack-status').textContent=count?(count===1?'1 soundtrack found. It is listed next.':count+' soundtracks found. They are listed next, the described shelves first.'):'No audio in your Library has those words in its title or shelf. Try fewer words.';
+      say($('soundtrack-status').textContent,true);
+      if(count)list.querySelector('button').focus();
+    }catch(e){$('soundtrack-status').textContent=(e&&e.message)||'The search did not work. Try again.';say($('soundtrack-status').textContent,true);}
+    finally{$('soundtrack-find').disabled=false;}
+  }
+  function suggestSoundtrackSearch(name){
+    if(!name||$('soundtrack-search').value.trim()&&$('soundtrack-search').value!==soundtrackSearchFor)return;
+    soundtrackSearchFor=String(name).replace(/\.[a-z0-9]{2,4}$/i,'').replace(/[._]+/g,' ').replace(/\s+/g,' ').trim().slice(0,120);
+    $('soundtrack-search').value=soundtrackSearchFor;
+  }
   function fillForm(saved){
     setVoice(saved.voice);setSpeed('rate',saved.rate);setSpeed('max-rate',saved.maxRate);[['mode','mode'],['detail','detail'],['volume','volume']].forEach(function(pair){setSelect(pair[1],saved[pair[0]]);});
     $('notes').value=saved.notes||'';$('close-look').checked=!!saved.closeLook;$('first-look').checked=!!saved.firstLook;setSelect('tier',saved.tier||'');$('credit').checked=saved.credit!==false;
     $('part-from').value=saved.range?clock(saved.range.start):'';$('part-to').value=saved.range?clock(saved.range.end):'';$('part').open=!!saved.range;
+    soundtrack=saved.reference?{book:saved.reference.book,track:saved.reference.track,title:(job&&job.referenceTitle)||'the described soundtrack chosen before'}:null;renderSoundtrack(false);
   }
   function freshForm(){
     var cleared=!!$('notes').value.trim()||$('close-look').checked||$('first-look').checked||!!$('part-from').value.trim()||!!$('part-to').value.trim();
+    cleared=cleared||!!soundtrack;
     var saved=defaults();fillForm({voice:config&&config.defaultVoice,rate:saved.rate,maxRate:saved.maxRate,mode:saved.mode,detail:saved.detail,volume:saved.volume,notes:'',closeLook:false,firstLook:false});
     return cleared;
   }
@@ -858,6 +912,7 @@ export const descriptionBrowserScript: string = String.raw`
     $('settings').disabled=!config||busy||state==='deleting';
     ['detail','notes','close-look','first-look','tier','credit','part-from','part-to','preset-commercials','preset-cartoon','preset-tv','preset-film','preset-custom'].forEach(function(id){$(id).disabled=resumeOnly;});
     $('tier-box').hidden=!(config&&config.tiers);$('credit-box').hidden=!(config&&config.credit);
+    if(soundtrack&&!resumeOnly){$('close-look').disabled=true;$('first-look').disabled=true;}$('soundtrack-box').hidden=!(config&&config.soundtracks);
     $('voice-open').disabled=voicesOff;$('voice-default').disabled=voicesOff;$('sample-play').disabled=voicesOff;$('sample-fast').disabled=voicesOff;$('say-play').disabled=voicesOff;
     $('resume-note').hidden=!resuming;
     if(resuming){var saved=job.settings||{};$('resume-note').textContent='Continuing keeps the detail, notes and extra passes this attempt started with: '+(DETAIL_NAMES[saved.detail]||'Standard detail')+', closer look '+(saved.closeLook?'on':'off')+', first look '+(saved.firstLook?'on':'off')+'. You can change the voice, speeds, pauses and volume under Choose the narration before you continue.'+(fresh?' Other changes are only used by Write fresh descriptions, which starts over.':'');}
@@ -1000,7 +1055,7 @@ export const descriptionBrowserScript: string = String.raw`
     var changed=shownId!==data.id,before=changed?null:job,previous=changed?'':job&&job.state,lines=[];
     if(changed&&pollController){pollController.abort();pollController=null;}
     job=data;shownId=data.id;
-    if(changed){resetView();var cleared=false;if(data.settings){fillForm(data.settings);}else cleared=freshForm();if(cleared)lines.push('New video. Notes are empty and the extra passes are off.');shareDefaults();renderPart();$('folder').value=data.libraryPath||(config&&config.defaultLibraryPath)||DEFAULT_FOLDER;}
+    if(changed){resetView();suggestSoundtrackSearch(data.name);var cleared=false;if(data.settings){fillForm(data.settings);}else cleared=freshForm();if(cleared)lines.push('New video. Notes are empty and the extra passes are off.');shareDefaults();renderPart();$('folder').value=data.libraryPath||(config&&config.defaultLibraryPath)||DEFAULT_FOLDER;}
     if(job.cancelRequested&&!cancelSeenAt)cancelSeenAt=Date.now();if(!job.cancelRequested)cancelSeenAt=0;
     if(working(job)&&previous&&!working({state:previous}))lastQuarter=-1;
     var rehearsed=previous&&working({state:previous})&&job.state==='ready'?rehearsalEnd(job,before):'';
@@ -1120,6 +1175,9 @@ export const descriptionBrowserScript: string = String.raw`
     scheduleEstimates(paid&&!!job&&!!job.seconds,prefix);
   }
   ['voice','rate','max-rate','mode','detail','volume','notes','close-look','first-look','tier','credit','part-from','part-to'].forEach(function(id){$(id).addEventListener('change',function(){onSettingsChange(id);});});
+  $('soundtrack-find').onclick=function(){findSoundtracks();};
+  $('soundtrack-search').addEventListener('keydown',function(event){if(event.key==='Enter'){event.preventDefault();findSoundtracks();}});
+  $('soundtrack-clear').onclick=function(){soundtrack=null;renderSoundtrack(true);$('soundtrack-search').focus();scheduleEstimates(!!job&&!!job.seconds,'');};
   ['commercials','cartoon','tv','film','custom'].forEach(function(name){$('preset-'+name).addEventListener('change',function(){
     if(!$('preset-'+name).checked)return;
     if(name==='custom'){$('customize').open=true;say('Customize is open below the voice choices.',true);return;}

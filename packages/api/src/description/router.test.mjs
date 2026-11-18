@@ -413,6 +413,17 @@ before(async () => {
     },
     library: {
       folders: async () => ['Audio/Commercials/1996'],
+      openAudio: async (_req, book, track) => {
+        if (book === 'b'.repeat(24))
+          return { key: `media-library/${book}/${track}.mp3`, bytes: 5, title: 'Pilot (described)', ownerIsActor: true };
+        if (book === 'c'.repeat(24))
+          return { key: `media-library/${book}/${track}.mp3`, bytes: 5, title: 'Someone else', ownerIsActor: false };
+        throw Object.assign(new Error('That Library soundtrack was not found.'), { status: 404 });
+      },
+      soundtracks: async (_req, words) =>
+        /pilot/i.test(words)
+          ? [{ book: 'b'.repeat(24), track: 0, title: 'Pilot (described)', path: 'Audio/Described Movies & TV/TV', seconds: 1320 }]
+          : [],
       open: async (_req, book, track) => {
         if (book === 'd'.repeat(24))
           return {
@@ -5722,4 +5733,41 @@ test('a follow-along track made from a described soundtrack offers no video or a
   assert.ok(files.script, 'the timing report link is still offered');
   const saved = await call('post', `/jobs/${id}/library`, 'follow-only-owner').send({ version: 1 }).expect(409);
   assert.match(saved.body.error, /follow-along track made from a described soundtrack/);
+});
+
+test('a described soundtrack from her Library: found by title, priced lower, whole video only, her own audio only', async () => {
+  const id = await readyJob('soundtrack-owner', 'soundtrack-upload-0001', 1320);
+  const config = (await call('get', '/config', 'soundtrack-owner').expect(200)).body;
+  assert.equal(config.soundtracks, true);
+  const found = (await call('get', '/library-soundtracks?q=Pilot', 'soundtrack-owner').expect(200)).body;
+  assert.equal(found.soundtracks.length, 1);
+  assert.equal(found.soundtracks[0].book, 'b'.repeat(24));
+  assert.deepEqual((await call('get', '/library-soundtracks?q=x', 'soundtrack-owner').expect(200)).body.soundtracks, []);
+  const reference = { book: 'b'.repeat(24), track: 0 };
+  const plain = (await call('post', `/jobs/${id}/estimate`, 'soundtrack-owner').send({ action: 'start', settings }).expect(200)).body;
+  const guided = (
+    await call('post', `/jobs/${id}/estimate`, 'soundtrack-owner')
+      .send({ action: 'start', settings: { ...settings, reference, closeLook: true, firstLook: true } })
+      .expect(200)
+  ).body;
+  assert.ok(guided.breakdown.vision < plain.breakdown.vision / 2, 'looking only at quiet stretches costs far less');
+  assert.equal(guided.breakdown.closeLook, 0);
+  assert.equal(guided.breakdown.firstLook, 0);
+  const part = await call('post', `/jobs/${id}/start`, 'soundtrack-owner')
+    .send({ ...settings, reference, range: { start: 60, end: 120 } })
+    .expect(400);
+  assert.match(part.body.error, /whole video only/);
+  const theirs = await call('post', `/jobs/${id}/start`, 'soundtrack-owner')
+    .send({ ...settings, reference: { book: 'c'.repeat(24), track: 0 } })
+    .expect(403);
+  assert.match(theirs.body.error, /your own Library/);
+  assert.equal((await Jobs.findById(id)).state, 'ready');
+  await call('post', `/jobs/${id}/start`, 'soundtrack-owner').send({ ...settings, reference }).expect(202);
+  const job = await Jobs.findById(id).lean();
+  assert.deepEqual(job.settings.reference, reference);
+  assert.equal(job.referenceSource.key, `media-library/${'b'.repeat(24)}/0.mp3`);
+  assert.equal(job.settings.closeLook, false);
+  const shown = (await call('get', `/jobs/${id}`, 'soundtrack-owner').expect(200)).body;
+  assert.equal((shown.job ?? shown).referenceTitle, 'Pilot (described)');
+  await call('post', `/jobs/${id}/cancel`, 'soundtrack-owner');
 });

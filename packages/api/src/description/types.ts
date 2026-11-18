@@ -42,6 +42,12 @@ export type Settings = {
    * proxy says exact speed is on; a request's own value is thrown away.
    */
   speedModel?: 2;
+  /**
+   * A described soundtrack from her Library to describe with (reference.ts, Nov 18 2026): its
+   * Library item and track. Lines are written from it and the video model looks only at quiet
+   * stretches it leaves empty. Never with a part (`range`) or the extra passes.
+   */
+  reference?: { book: string; track: number };
 };
 /**
  * The slowest narration on the list (Oct 30 2026, Kade: "I want the same situation with described
@@ -76,6 +82,9 @@ export const settingsSchema: z.ZodType<Settings, z.ZodTypeDef, unknown> = z
     tier: z.enum(tiers).optional().catch(undefined),
     credit: z.boolean().optional().catch(undefined),
     speedModel: z.literal(2).optional().catch(undefined),
+    reference: z
+      .object({ book: z.string().regex(/^[a-f0-9]{24}$/), track: z.number().int().min(0).max(5000) })
+      .optional(),
   })
   .refine(
     (value) => value.maxRate >= value.rate,

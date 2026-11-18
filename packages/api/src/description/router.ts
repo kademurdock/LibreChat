@@ -37,6 +37,7 @@ import type {
   Interval,
   Meter,
   Plan,
+  Progress,
   SectionRecord,
   Settings,
   Tier,
@@ -85,6 +86,8 @@ import { trackFormat, trackSteps, trackVersion } from './track';
 import type { Track, TrackCredit } from './track';
 import { clock, spokenLength } from './transcript';
 import { fishSpeedModel, settingsSchema, slowestRate, Halt, tiers } from './types';
+import { prepareReference, referenceProviders } from './reference';
+import type { Reference } from './reference';
 import { pcmSeconds, sampleRate, trimSilence } from './mix';
 import { clipSpeed, ranOn } from './timing';
 import { listenAheadOn, readyPrefix, startAdvice } from './ahead';
@@ -161,9 +164,20 @@ type LibrarySource = {
   /** The source's own shelf, so a described copy can be filed beside its Audio mirror. */
   path?: string;
 };
+/** A described soundtrack in her Library (reference.ts), as a search lists it. */
+type Soundtrack = { book: string; track: number; title: string; path: string; seconds: number };
+type ReferenceSource = { book: string; track: number; key: string; bytes: number; title: string };
 type LibraryHooks = {
   folders?: (req: Request) => Promise<string[]>;
   open: (req: Request, book: string, track: number) => Promise<LibrarySource>;
+  /** One of her own Library audio tracks, to describe with; refused when it is not audio. */
+  openAudio?: (
+    req: Request,
+    book: string,
+    track: number,
+  ) => Promise<{ key: string; bytes: number; title: string; ownerIsActor: boolean }>;
+  /** Her own Library audio whose title or shelf has these words, described shelves first. */
+  soundtracks?: (req: Request, words: string) => Promise<Soundtrack[]>;
   save: (input: {
     id: string;
     owner: string;
@@ -284,6 +298,11 @@ type Job = {
   sourceKey?: string;
   sourcePrivacy?: SourcePrivacy;
   sourcePath?: string;
+  /**
+   * The described soundtrack a run describes with (`Settings.reference`), as the Library gave it
+   * when the run was asked for: where it is stored, its size and its title. reference.ts.
+   */
+  referenceSource?: ReferenceSource;
   context?: string;
   chapters?: Chapter[];
   about?: string;
@@ -438,6 +457,7 @@ const jobSchema = new mongoose.Schema<Job>(
     sourceKey: String,
     sourcePrivacy: { shared: Boolean, grownUpsOnly: Boolean, ownerIsActor: Boolean },
     sourcePath: String,
+    referenceSource: mongoose.Schema.Types.Mixed,
     context: String,
     chapters: mongoose.Schema.Types.Mixed,
     about: String,
@@ -772,6 +792,12 @@ const videoLabel = (model: string): string => {
  * otherwise the server's, and always standard for a model that is not Google's.
  */
 const tierOf = (settings: Pick<Settings, 'tier'>): Tier => tierFor({ tier: settings.tier });
+/**
+ * A run with a described soundtrack (reference.ts), per minute of video: hearing it with MiMo,
+ * Haiku's writing and checks, and Argon's looks at the quiet stretches it leaves empty. South Park
+ * S01E01 (22 min) cost 8.9 cents on Nov 18 2026: 1.3 hearing, 1.0 writing, 6.6 looks.
+ */
+const referenceRate = 0.006;
 /** Fixed overhead per run: prompts and joins for a description run, a re-voice, a correction. */
 const overhead = { describe: 0.03, revoice: 0, correction: 0 };
 const setAsideRule = { factor: 1.1, extraUSD: 0.05 };
@@ -831,7 +857,8 @@ function priceFor(work: Work, settings: Settings): Price {
   const looked = work.looks > 0;
   const rate = quoteRates(tierOf(settings));
   const breakdown: Breakdown = {
-    vision: per(work.looks, rate.vision) + (looked ? work.fixed : 0),
+    vision:
+      per(work.looks, settings.reference ? referenceRate : rate.vision) + (looked ? work.fixed : 0),
     closeLook: settings.closeLook ? per(work.looks, rate.closeLook) : 0,
     firstLook: settings.firstLook ? per(work.firstLook, rate.firstLook) : 0,
     speech:
@@ -1536,6 +1563,42 @@ export function createDescriptionRouter(hooks: Hooks): {
     return (await sizeOf(key, signal)) !== undefined;
   }
   /**
+   * The described soundtrack's lines for a run (reference.ts): kept beside the job once made, so a
+   * restart or a fresh version with the same soundtrack never pays to hear and write them again.
+   */
+  async function referenceFor(
+    job: Job,
+    found: ReferenceSource,
+    source: string,
+    directory: string,
+    signal: AbortSignal,
+    meter: Meter,
+    progress: Progress,
+  ): Promise<Reference> {
+    const key = `${folder(job)}/reference/${found.book}-${found.track}.json`;
+    const kept = await readJson<Reference>(key, signal).catch(() => undefined);
+    if (kept?.version === 1 && kept.book === found.book && kept.track === found.track) return kept;
+    const file = join(directory, 'reference-soundtrack');
+    await download(found.key, file, signal, { bytes: found.bytes || undefined, limit: maxSourceBytes() });
+    try {
+      const made = await prepareReference({
+        plainFile: source,
+        describedFile: file,
+        title: plainName(job.name),
+        book: found.book,
+        track: found.track,
+        signal,
+        meter,
+        log: (message) => hooks.log(line('dv.reference', { id: job._id, message: scrub(message) })),
+        progress: (stage) => progress(stage, 2),
+      });
+      await putText(key, JSON.stringify(made), signal);
+      return made;
+    } finally {
+      await rm(file, { force: true });
+    }
+  }
+  /**
    * Describing again reads the original kept here (a Library video's own file for one from the
    * Library). Refused only when storage says it is gone; a storage hiccup lets the run find out.
    */
@@ -1962,6 +2025,10 @@ export function createDescriptionRouter(hooks: Hooks): {
       etaSeconds: eta(job),
       error: job.error,
       settings: job.settings,
+      /** The described soundtrack the last run was written with, by its Library title. */
+      ...(job.referenceSource && job.settings?.reference
+        ? { referenceTitle: job.referenceSource.title }
+        : {}),
       /** Everything every run of this video has spent, settled only. */
       costUSD: shown((job.costUSD || 0) - pending),
       /** What this run has spent, settled only (the name the iPhone 2.2 build reads). */
@@ -2268,6 +2335,17 @@ export function createDescriptionRouter(hooks: Hooks): {
         );
       settings.range = start <= 0.5 && end >= seconds - 0.5 ? undefined : { start, end };
       if (!settings.range) delete settings.range;
+    }
+    if (settings.reference) {
+      if (settings.range)
+        throw new Problem(
+          'A described soundtrack is used for the whole video only. Clear Describe only part of it, or choose no described soundtrack.',
+          400,
+          'range',
+        );
+      /* The soundtrack already says what happens; the extra passes would pay for looks it replaces. */
+      settings.closeLook = false;
+      settings.firstLook = false;
     }
     const length = workingSeconds(seconds, settings.range);
     if (length > maxMinutes() * 60)
@@ -2794,6 +2872,24 @@ export function createDescriptionRouter(hooks: Hooks): {
       });
       if (exact) settings.speedModel = fishSpeedModel;
     }
+    /*
+     * A described soundtrack is opened here, where the request says who is asking: only her own
+     * Library audio may be described with. A rehearsal never uses one.
+     */
+    let referenceSource: ReferenceSource | undefined;
+    if (settings.reference && launch.kind !== 'rehearsal') {
+      if (!hooks.library?.openAudio)
+        throw new Problem('Described soundtracks from the Library are not available here.', 503);
+      const found = await hooks.library.openAudio(req, settings.reference.book, settings.reference.track);
+      if (!found.ownerIsActor)
+        throw new Problem('Only a described soundtrack in your own Library can be used.', 403);
+      referenceSource = {
+        ...settings.reference,
+        key: found.key,
+        bytes: found.bytes,
+        title: clip(cleanLabel(found.title), 200),
+      };
+    } else delete settings.reference;
     if (launch.from.includes(job.state)) await release(job.reservation, settledCost(job));
     if (price.estimateUSD > jobLimit())
       throw new Problem(
@@ -2865,6 +2961,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       /** A dead run's unsettled reserves leave the video's total when its next run starts. */
       costUSD: Math.max(0, (claimed.costUSD ?? 0) - (claimed.runPending ?? 0)),
       runKind: launch.kind,
+      referenceSource,
       runEstimateUSD: price.estimateUSD,
       approvedUSD,
       overQuote: undefined,
@@ -2988,6 +3085,7 @@ export function createDescriptionRouter(hooks: Hooks): {
       /* Tellavision (Nov 2026): the apps show Follow along with my TV only when this is true. */
       followAlong: followFor(req),
       library: !!hooks.library,
+      soundtracks: !!hooks.library?.soundtracks && !!hooks.library.openAudio,
       defaultLibraryPath,
       ...(await prefsView(hooks.actor(req).id, catalog)),
       suggested: await suggestedList(catalog),
@@ -3119,6 +3217,22 @@ export function createDescriptionRouter(hooks: Hooks): {
   route('get', '/library-folders', async (req, res) => {
     const folders = (await hooks.library?.folders?.(req)) ?? [];
     res.json({ folders: [...new Set([defaultLibraryPath, ...folders])].sort() });
+  });
+  /** Her own Library audio to describe with (reference.ts), found by words in its title or shelf. */
+  route('get', '/library-soundtracks', async (req, res) => {
+    whenConfigured();
+    if (!hooks.library?.soundtracks)
+      throw new Problem('Described soundtracks from the Library are not available here.', 503);
+    const words = z
+      .object({ q: z.string().max(200).default('') })
+      .parse(req.query ?? {})
+      .q.replace(/\s+/g, ' ')
+      .trim();
+    if (words.length < 2) {
+      res.json({ soundtracks: [] });
+      return;
+    }
+    res.json({ soundtracks: (await hooks.library.soundtracks(req, words)).slice(0, 20) });
   });
   route('get', '/jobs', async (req, res) => {
     const jobs = await Jobs.find({ owner: hooks.actor(req).id })
@@ -3863,7 +3977,10 @@ export function createDescriptionRouter(hooks: Hooks): {
     }
     const privacy = job.source === 'library' ? job.sourcePrivacy : undefined;
     const restricted = !!privacy && (!privacy.shared || !privacy.ownerIsActor);
-    const share = hooks.actor(req).role === 'ADMIN' ? (input.share ?? !restricted) : false;
+    /* A copy written with a described soundtrack stays private unless she shares it herself. */
+    const guided = !!job.settings?.reference;
+    const share =
+      hooks.actor(req).role === 'ADMIN' ? (input.share ?? (!restricted && !guided)) : false;
     const typed = libraryPathSchema.safeParse(
       input.path ??
         (job.source === 'library' ? describedShelf(job.sourcePath) : defaultLibraryPath),
@@ -5635,6 +5752,11 @@ export function createDescriptionRouter(hooks: Hooks): {
          * when that is more) plus the rest of the run.
          */
         const approvedRoom = () => (rehearsal ? 0 : Math.max(0, approved - spend.usd));
+        const baseProviders = rehearsal ? rehearsalProviders : (hooks.providers ?? productionProviders);
+        const reference =
+          !rehearsal && settings.reference && job.referenceSource
+            ? await referenceFor(job, job.referenceSource, source, directory, signal, meter, progress)
+            : undefined;
         const request: RunRequest = {
           source,
           directory,
@@ -5654,7 +5776,9 @@ export function createDescriptionRouter(hooks: Hooks): {
           approvedRoom,
           ...(rehearsal ? {} : { quotedUSD: quoted }),
           progress,
-          providers: rehearsal ? rehearsalProviders : (hooks.providers ?? productionProviders),
+          providers: reference
+            ? referenceProviders(baseProviders, reference, copyName(job, settings.range))
+            : baseProviders,
           keeper: state.keeper,
           voices: Math.min(4, Math.max(1, Number(process.env.KADE_DESCRIPTION_VOICES) || 2)),
           stopAfter: job.stopAfter,

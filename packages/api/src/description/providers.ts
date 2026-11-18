@@ -721,6 +721,8 @@ export function linesFrom(words: Word[], start: number = 0, end: number = Infini
 export type Look = {
   file: string;
   seconds: number;
+  /** Where the section starts on the working copy's clock (reference.ts places its lines by it). */
+  start?: number;
   brief: Brief;
   state: Continuity | null;
   lines: Line[];

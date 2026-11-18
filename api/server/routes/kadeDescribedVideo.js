@@ -205,6 +205,60 @@ const library = {
       path: String(book.path || ''),
     };
   },
+  /* A described soundtrack to describe with (reference.ts): one of her own Library audio tracks. */
+  openAudio: async (req, bookId, index) => {
+    const { _internals } = require('./kadeReadingRoom');
+    const book = await _internals.openBook(req, bookId);
+    const track = book && (book.tracks || [])[index];
+    if (!book || !track || !track.key) throw refused('That Library soundtrack was not found.', 404);
+    if (!/^audio\//.test(track.mime || ''))
+      throw refused('That Library item is not a soundtrack. Choose an audio item.', 400);
+    const title =
+      book.tracks.length > 1 && track.title ? `${book.title} — ${track.title}` : book.title;
+    return {
+      key: track.key,
+      bytes: track.bytes || 0,
+      title: cut(title || 'Library soundtrack', 200),
+      ownerIsActor: String(book.owner) === String(req.user.id || req.user._id),
+    };
+  },
+  /* Her own Library audio with every word in its title or shelf, described shelves first. */
+  soundtracks: async (req, words) => {
+    const { KadeBook } = require('~/models/kadeBook');
+    const owner = String(req.user.id || req.user._id);
+    const escape = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const terms = String(words).split(/\s+/).filter(Boolean).slice(0, 8);
+    const books = await KadeBook.find(
+      {
+        owner,
+        kind: 'audio',
+        state: 'ready',
+        $and: terms.map((word) => ({
+          $or: [
+            { title: { $regex: escape(word), $options: 'i' } },
+            { path: { $regex: escape(word), $options: 'i' } },
+          ],
+        })),
+      },
+      'title path tracks.title tracks.mime tracks.seconds',
+    )
+      .limit(60)
+      .lean();
+    const described = (book) => (/described/i.test(book.path || '') ? 0 : 1);
+    const found = [];
+    for (const book of books.sort((a, b) => described(a) - described(b) || String(a.title).localeCompare(String(b.title))))
+      (book.tracks || []).forEach((track, index) => {
+        if (!/^audio\//.test(track.mime || '')) return;
+        found.push({
+          book: String(book._id),
+          track: index,
+          title: cut(book.tracks.length > 1 && track.title ? `${book.title} — ${track.title}` : book.title, 200),
+          path: String(book.path || ''),
+          seconds: Math.round(track.seconds || 0),
+        });
+      });
+    return found.slice(0, 20);
+  },
   /* The router hands a book id it stored before calling, so a retry after a crash finds the
    * book it already made instead of making a second one. */
   save: async ({
