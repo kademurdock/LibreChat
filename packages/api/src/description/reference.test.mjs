@@ -104,9 +104,11 @@ test('copying is measured on words, with names folded and five-word runs refused
   assert.equal(closeness(['a', 'b', 'c', 'd'], ['a', 'b', 'x', 'd']), 0.75);
   assert.equal(copyRun(guard, 'Stan kicks Ike through a row of fences.'), 'kicks N through a row');
   assert.equal(copyRun(guard, 'Ike flies past the mailboxes after a kick from Kyle.'), '');
-  const line = (id, text) => ({ id, text, shortText: text, importance: 2, reading: false });
+  const line = (id, text) => ({ id, text, shortText: text.split(' ').slice(0, 3).join(' '), importance: 2, reading: false });
   assert.match(tooClose(guard, notes, line(1, 'Cartman shuffles toward the bus slowly.')), /too closely|copies/);
-  assert.equal(tooClose(guard, notes, line(1, 'The bus waits while Cartman drags his feet.')), '');
+  assert.equal(tooClose(guard, notes, line(1, 'Cartman drags his feet to it.')), '');
+  /* A line longer than the note it came from would not fit the note's pause. */
+  assert.match(tooClose(guard, notes, line(1, 'The big yellow bus waits while Cartman slowly drags his feet.')), /at most 5 to fit/);
   assert.equal(tooClose(guard, notes, { ...line(0, 'Text reads, Kyle kicks Ike through a row of mailboxes.'), reading: true }), '');
   assert.equal(tooClose(guard, notes, undefined), 'missing');
   assert.deepEqual(

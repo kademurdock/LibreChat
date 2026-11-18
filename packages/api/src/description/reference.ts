@@ -691,11 +691,33 @@ export function closeness(a: string[], b: string[]): number {
 
 type Written = { id: number; text: string; shortText: string; importance: number; reading: boolean };
 
+/**
+ * The most words a line written from `note` may have: the old describer's own count (at least 4),
+ * since the note fitted its pause and a longer line would not (South Park, Nov 18 2026: a 6-word
+ * note rewritten in 11 words found no gap and was left out). The short form gets 60 percent.
+ */
+export const wordBudget = (note: Pick<Note, 'text'>): { text: number; short: number } => {
+  const words = note.text.split(/\s+/).filter(Boolean).length;
+  return { text: Math.max(4, words), short: Math.max(3, Math.ceil(words * 0.6)) };
+};
+const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
 /** Why a written line may not be used, or '' when it may. */
 export function tooClose(guard: Guard, notes: Note[], line: Written | undefined): string {
   if (!line) return 'missing';
-  if (!line.text.trim() || line.reading) return '';
+  if (!line.text.trim()) return '';
   const me = notes.find((note) => note.id === line.id);
+  const long = (): string => {
+    if (!me) return '';
+    const budget = wordBudget(me);
+    const extra = line.reading ? 4 : 1;
+    if (countWords(line.text) > budget.text + extra)
+      return `its text has ${countWords(line.text)} words; it must have at most ${budget.text} to fit its pause`;
+    if (!line.reading && countWords(line.shortText) > budget.short + extra)
+      return `its shortText has ${countWords(line.shortText)} words; at most ${budget.short}`;
+    return '';
+  };
+  if (line.reading) return long();
   for (const [field, value] of [
     ['text', line.text],
     ['shortText', line.shortText],
@@ -711,7 +733,7 @@ export function tooClose(guard: Guard, notes: Note[], line: Written | undefined)
         return `its ${field} follows the note too closely; describe it in your own words and sentence shape`;
     }
   }
-  return '';
+  return long();
 }
 
 const rules = `You write audio description for a blind listener who watches a film with sighted family. Below are lines an earlier describer spoke, with their times. Treat them as notes about what is on screen. Write NEW lines from those facts, in your own words.
@@ -789,9 +811,9 @@ function partPrompt(title: string, part: Note[], dialogue: HeardLine[], header: 
   const b = part[part.length - 1].end;
   const out = [header, `Film: ${title}. ${clock(a)} to ${clock(b)}.`, 'Notes to rewrite:'];
   for (const note of part) {
-    const words = note.text.split(/\s+/).length;
+    const budget = wordBudget(note);
     out.push(
-      `[${note.id}] ${clock(note.start)}, ${(note.end - note.start).toFixed(1)} s long, text up to ${Math.max(4, words)} words, short up to ${Math.max(3, Math.round(words * 0.55))}: "${note.text}"`,
+      `[${note.id}] ${clock(note.start)}, ${(note.end - note.start).toFixed(1)} s long, text up to ${budget.text} words (never more: it must fit the pause), short up to ${budget.short}: "${note.text}"`,
     );
   }
   out.push('Dialogue around them, context only:');
@@ -873,7 +895,7 @@ export async function rewriteNotes(
             title,
             batch,
             dialogue,
-            'These notes still came back too close to their wording. For each id, write ONE short new sentence of at most 8 words that keeps the main fact, with a different verb and a different order from the note. Example: note "Charlie Brown crashes into Lucy." -> "Lucy gets knocked over by Charlie Brown." Keep exactly who does what to whom.',
+            'These notes still came back too close to their wording. For each id, write ONE short new sentence, within the word count given for it, that keeps the main fact, with a different verb and a different order from the note. Example: note "Charlie Brown crashes into Lucy." -> "Lucy gets knocked over by Charlie Brown." Keep exactly who does what to whom.',
           ),
           12000,
           signal,
@@ -1070,9 +1092,10 @@ export function referenceProviders(base: Providers, reference: Reference, title:
     analyze: async (look, signal, meter): Promise<Analysis> => {
       const start = look.start ?? 0;
       const end = start + look.seconds;
-      const inside = reference.cues.filter((cue) => cue.at >= start && cue.at < end);
+      /* A line that starts a moment before the film (an offset's rounding) belongs to the first section. */
+      const inside = reference.cues.filter((cue) => Math.max(0, cue.at) >= start && Math.max(0, cue.at) < end);
       const cues: Cue[] = inside.map((cue) => ({
-        at: cue.at - start,
+        at: Math.max(0, cue.at) - start,
         until: Math.min(look.seconds, Math.max(cue.until, cue.at + 0.5) - start),
         text: cue.text,
         shortText: cue.shortText,
