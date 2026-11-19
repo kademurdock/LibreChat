@@ -1,0 +1,1315 @@
+[
+  {
+    "id": "broadcast-movie-trailer-voice",
+    "name": "Movie trailer voice",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A deep, dense, rumbling voice that sells the next big film, with a dark cinema-sized room behind it.",
+    "tags": ["trailer", "deep", "movie", "announcer"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 25, "rough": 10, "grit": 5 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 80, "warmth": 5 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 2.8, "predelay": 40, "mix": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-epic-trailer-cathedral-boom",
+    "name": "Epic trailer, cathedral boom",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A giant low voice with an octave underneath, booming through stone and echoing back on the beat.",
+    "tags": ["trailer", "epic", "huge", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -3 } },
+      { "m": "pitch.octaver", "p": { "down1": 40, "timbre": 40 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 90, "warmth": 6 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 35 } },
+      { "m": "echo.delay", "p": { "division": "quarter", "tempo": 80, "feedback": 30, "stereo": "wide", "mix": 18 } }
+    ]
+  },
+  {
+    "id": "broadcast-horror-trailer-whisper",
+    "name": "Horror trailer whisper",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A breathy low narrator whose words are sucked in by backwards reverb before a cold, dark hall.",
+    "tags": ["trailer", "horror", "whisper", "creepy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "spec.whisper", "p": { "amount": 65 } },
+      { "m": "echo.preverb", "p": { "space": "cathedral", "mix": 40 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 4, "damping": 70, "mix": 25 } }
+    ],
+    "bed": { "b": "eerie-whine", "level": -27, "p": { "intensity": 30, "style": "tremble", "pitch": "low" } }
+  },
+  {
+    "id": "broadcast-documentary-narrator",
+    "name": "Documentary narrator",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A calm, measured, warm narrator in a quiet hall, the voice of a serious film.",
+    "tags": ["narrator", "documentary", "warm", "calm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -0.5 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.93 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 45, "warmth": 2 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 12 } }
+    ]
+  },
+  {
+    "id": "broadcast-nature-documentary-hush",
+    "name": "Nature documentary hush",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A soft, breathy, close narrator speaking quietly so the birds in the wood are not disturbed.",
+    "tags": ["narrator", "nature", "soft", "birds"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 25 } },
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 4 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 60 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -22, "p": { "intensity": 45 } }
+  },
+  {
+    "id": "broadcast-audiobook-narrator-warmth",
+    "name": "Audiobook narrator warmth",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A rich, smooth, gently levelled reading voice with soft s sounds, made for long listening.",
+    "tags": ["audiobook", "narrator", "warm", "reading"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 45, "warmth": 3 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 50 } }
+    ]
+  },
+  {
+    "id": "broadcast-true-crime-narrator",
+    "name": "True crime narrator",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A low, close, serious storyteller in a small room, a mantel clock ticking somewhere behind.",
+    "tags": ["narrator", "crime", "podcast", "dark"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -0.5 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 70, "warmth": 3, "presence": -1 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 12 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -22, "p": { "clock": "mantel", "intensity": 40 } }
+  },
+  {
+    "id": "broadcast-bedtime-story-by-the-fire",
+    "name": "Bedtime story by the fire",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A slow, warm storyteller in the living room while a log fire crackles in the hearth.",
+    "tags": ["story", "bedtime", "warm", "fire"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.9 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 70 } },
+      { "m": "space.room", "p": { "mix": 20 } }
+    ],
+    "bed": { "b": "fireplace", "level": -24 }
+  },
+  {
+    "id": "broadcast-museum-audio-guide",
+    "name": "Museum audio guide",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A polished guide voice from the little handset you hold to your ear in a hushed gallery.",
+    "tags": ["museum", "guide", "handset", "quiet"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 50 } },
+      { "m": "lofi.speaker", "p": { "size": "handheld", "push": 3, "rattle": 0 } }
+    ],
+    "bed": { "b": "library-hush", "level": -26, "p": { "intensity": 50 } }
+  },
+  {
+    "id": "broadcast-planetarium-dome-narrator",
+    "name": "Planetarium dome narrator",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A smooth voice floating under a huge dark dome, wide and slowly shimmering overhead.",
+    "tags": ["planetarium", "dome", "space", "wide"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 50 } },
+      { "m": "mod.chorus", "p": { "depth": 15, "mix": 15 } },
+      { "m": "space.reverb", "p": { "size": 95, "decay": 4.5, "damping": 30, "predelay": 60, "modulation": 50, "mix": 22 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ]
+  },
+  {
+    "id": "broadcast-rallying-speech-on-a-battlefield",
+    "name": "Rallying speech on a battlefield",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A commander's big, roughened call to the ranks, rolling back off the hills as the wind blows.",
+    "tags": ["trailer", "speech", "epic", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1.5, "formant": -1 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 35 } },
+      { "m": "tone.broadcast", "p": { "density": 80, "warmth": 3 } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 30 } }
+    ],
+    "bed": { "b": "wind", "level": -20, "duck": 2, "p": { "strength": 50, "gusts": 60 } }
+  },
+  {
+    "id": "broadcast-trailer-narration-over-a-swelling-drone",
+    "name": "Trailer narration over a drone",
+    "cat": "broadcast",
+    "sub": "Trailers and narrators",
+    "about": "A deep, slow trailer read with a dark drone underneath that swells up every time you speak.",
+    "tags": ["trailer", "drone", "deep", "cinematic"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1.5 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 80, "warmth": 4 } },
+      { "m": "mod.keyed", "p": { "source": "drone", "mode": "follow", "attack": 80, "release": 1500, "level": -10 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 3, "damping": 55, "mix": 18 } }
+    ]
+  },
+  {
+    "id": "broadcast-late-night-radio-host",
+    "name": "Late-night radio host",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "The deep, smooth, close voice keeping you company on the radio after midnight.",
+    "tags": ["radio", "dj", "late", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1.5, "formant": -1 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.95 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 85, "warmth": 6 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 40 } }
+    ]
+  },
+  {
+    "id": "broadcast-morning-show-dj",
+    "name": "Morning show DJ",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A bright, punchy, wide-awake breakfast radio voice with a quick slap of echo.",
+    "tags": ["radio", "dj", "morning", "bright"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 1 } },
+      { "m": "tone.broadcast", "p": { "density": 85, "presence": 5 } },
+      { "m": "echo.slapback", "p": { "time": 70, "level": 25, "character": "clean" } }
+    ]
+  },
+  {
+    "id": "broadcast-countdown-show-host",
+    "name": "Countdown show host",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A loud, doubled chart-show voice with echoes bouncing in time with the music.",
+    "tags": ["radio", "chart", "dj", "echo"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 90, "warmth": 3, "presence": 3 } },
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 12, "level": -9 } },
+      { "m": "echo.delay", "p": { "division": "eighth", "tempo": 118, "feedback": 25, "mix": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-slow-jams-night-host",
+    "name": "Slow jams night host",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A velvet-low love songs host, softly shimmering, with a warm plate of reverb.",
+    "tags": ["radio", "smooth", "deep", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1.5 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "warmth": 6 } },
+      { "m": "mod.chorus", "p": { "depth": 20, "mix": 25 } },
+      { "m": "space.reverb", "p": { "size": 45, "decay": 2.4, "damping": 60, "mix": 18 } }
+    ]
+  },
+  {
+    "id": "broadcast-college-radio-cheap-studio",
+    "name": "College radio, cheap studio",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A student show from a boxy little room, the compressor pumping on every word.",
+    "tags": ["radio", "college", "boxy", "pumping"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 60 } },
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 8, "attack": 1, "release": 60 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 30 } }
+    ]
+  },
+  {
+    "id": "broadcast-pirate-radio-station",
+    "name": "Pirate radio station",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A gritty, overdriven, squashed broadcast from an unlicensed transmitter, slightly off the dial.",
+    "tags": ["radio", "pirate", "gritty", "static"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 16, "character": "overdrive", "mix": 45 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 95 } },
+      { "m": "device.radio", "p": { "tuning": "off", "static": 40, "fading": 35, "whistle": 25, "era": "1960s" } }
+    ]
+  },
+  {
+    "id": "broadcast-rock-station-jock",
+    "name": "Rock station jock",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A loud, hot, tape-warmed rock radio voice with a quick slap of tape echo.",
+    "tags": ["radio", "rock", "loud", "tape"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 95, "warmth": 3, "presence": 6 } },
+      { "m": "lofi.saturate", "p": { "drive": 14, "bump": 4 } },
+      { "m": "echo.slapback", "p": { "time": 90, "level": 30 } }
+    ]
+  },
+  {
+    "id": "broadcast-overnight-jazz-host",
+    "name": "Overnight jazz host",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "An unhurried, mellow, slightly dark voice from a small club-like studio in the small hours.",
+    "tags": ["radio", "jazz", "mellow", "slow"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.92 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 50, "warmth": 3 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-talk-radio-host",
+    "name": "Talk radio host",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A booming, opinionated, tightly squeezed voice right up on the microphone.",
+    "tags": ["radio", "talk", "forward", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -0.5 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 85, "warmth": 5, "presence": 2 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 50 } }
+    ]
+  },
+  {
+    "id": "broadcast-caller-on-the-talk-show",
+    "name": "Caller on the talk show",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A listener phoning in from a mobile, squeezed through the station's processing on air.",
+    "tags": ["radio", "caller", "phone", "talk"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "cellular", "noise": 15 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 85 } }
+    ]
+  },
+  {
+    "id": "broadcast-station-id-with-a-swoosh",
+    "name": "Station ID with a swoosh",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A punchy station name read through a jet-like swoosh, echoes flying from ear to ear.",
+    "tags": ["radio", "jingle", "flanger", "echo"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 90, "presence": 4 } },
+      { "m": "mod.flanger", "p": { "rate": 0.5, "depth": 90, "feedback": 70, "mix": 40 } },
+      { "m": "echo.delay", "p": { "time": 260, "feedback": 45, "mix": 25 } }
+    ]
+  },
+  {
+    "id": "broadcast-podcast-intro-over-music",
+    "name": "Podcast intro over music",
+    "cat": "broadcast",
+    "sub": "Radio hosts and DJs",
+    "about": "A polished podcast host over a warm music pad that dips under your words and rises in the pauses.",
+    "tags": ["podcast", "music", "ducking", "host"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 65, "presence": 2 } },
+      { "m": "mod.keyed", "p": { "source": "pad", "mode": "duck", "attack": 40, "release": 700, "depth": 70, "level": -12 } }
+    ]
+  },
+  {
+    "id": "broadcast-evening-news-anchor",
+    "name": "Evening news anchor",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A clear, steady, trustworthy voice reading the headlines from a quiet studio desk.",
+    "tags": ["news", "anchor", "clear", "studio"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 55, "presence": 2 } },
+      { "m": "tone.character", "p": { "amount": 40 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 8, "distance": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-breaking-news-bulletin",
+    "name": "Breaking news bulletin",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "An urgent, faster, hard-edged newsreader cutting into the programme.",
+    "tags": ["news", "urgent", "bulletin", "fast"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.1 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 85, "presence": 5 } },
+      { "m": "tone.character", "p": { "shape": "forward", "amount": 60 } },
+      { "m": "echo.slapback", "p": { "time": 45, "level": 15, "character": "clean" } }
+    ]
+  },
+  {
+    "id": "broadcast-reporter-in-the-wind",
+    "name": "Reporter in the wind",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A field reporter on a windscreened mic, gusts tearing past while you keep talking.",
+    "tags": ["news", "reporter", "wind", "outdoors"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 160 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 70 } }
+    ],
+    "bed": { "b": "wind", "level": -13, "duck": 4, "p": { "strength": 80, "gusts": 80, "whistle": 45, "rumble": 60 } }
+  },
+  {
+    "id": "broadcast-reporter-in-the-pouring-rain",
+    "name": "Reporter in the pouring rain",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "Live on location in a downpour, rain hammering the pavement around the microphone.",
+    "tags": ["news", "reporter", "rain", "storm"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 75 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 25 } }
+    ],
+    "bed": { "b": "rain", "level": -14, "duck": 3, "p": { "intensity": 80, "surface": "pavement" } }
+  },
+  {
+    "id": "broadcast-live-from-a-busy-street",
+    "name": "Live from a busy street",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A reporter on the sidewalk downtown, traffic swishing by and horns going off.",
+    "tags": ["news", "reporter", "city", "street"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 65 } },
+      { "m": "tone.character", "p": { "shape": "presence", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "alley", "mix": 18 } }
+    ],
+    "bed": { "b": "city-street", "level": -19, "duck": 3, "p": { "intensity": 65, "horns": 60, "people": 70, "crossing": true } }
+  },
+  {
+    "id": "broadcast-satellite-link-from-overseas",
+    "name": "Satellite link from overseas",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A far-away correspondent on a thin digital link, a faint echo of the line coming back late.",
+    "tags": ["news", "satellite", "digital", "delay"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 16, "warble": 25 } },
+      { "m": "echo.delay", "p": { "time": 600, "feedback": 10, "damping": 60, "stereo": "mono", "mix": 14 } },
+      { "m": "tone.broadcast", "p": { "style": "news" } }
+    ]
+  },
+  {
+    "id": "broadcast-correspondent-on-a-satellite-phone",
+    "name": "Correspondent on a satellite phone",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A crackling, breaking satellite phone line from a far place, thunder rolling in the distance.",
+    "tags": ["news", "phone", "crackle", "thunder"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "cellular", "rough": 70, "signal": 60, "crackle": 40 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 80 } }
+    ],
+    "bed": { "b": "storm", "level": -22, "p": { "intensity": 30, "thunder": 6, "distance": 6000, "wind": 20 } }
+  },
+  {
+    "id": "broadcast-traffic-report-from-the-helicopter",
+    "name": "Traffic report from the helicopter",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "The traffic reporter on a headset mic, the rotor thumping through every word.",
+    "tags": ["traffic", "helicopter", "headset", "news"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "phone", "amount": 40 } },
+      { "m": "mod.chopper", "p": { "rate": 10, "depth": 30, "blade": "paddle", "wobble": 10 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 80 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -12, "duck": 3, "p": { "intensity": 70 } }
+  },
+  {
+    "id": "broadcast-press-conference-podium",
+    "name": "Press conference podium",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A statement read at a podium mic, bouncing round a bare briefing room.",
+    "tags": ["press", "podium", "room", "statement"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "forward", "amount": 40 } },
+      { "m": "space.room", "p": { "space": "classroom", "mix": 30 } },
+      { "m": "echo.slapback", "p": { "time": 60, "level": 30, "character": "room" } }
+    ]
+  },
+  {
+    "id": "broadcast-podium-speech-big-hall",
+    "name": "Podium speech, big hall",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A formal address at a podium, the speech rolling round a huge hall to a hushed audience.",
+    "tags": ["speech", "podium", "hall", "formal"],
+    "chain": [
+      { "m": "tone.character", "p": { "amount": 60 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 40 } },
+      { "m": "echo.slapback", "p": { "time": 180, "level": 25, "character": "stadium" } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -30, "p": { "intensity": 20, "excitement": 10 } }
+  },
+  {
+    "id": "broadcast-election-night-newsroom",
+    "name": "Election night newsroom",
+    "cat": "broadcast",
+    "sub": "News and reports",
+    "about": "A results anchor over a buzzing newsroom: phones ringing, keyboards rattling, producers talking.",
+    "tags": ["news", "newsroom", "election", "busy"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 70, "presence": 2 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 15, "distance": 20 } }
+    ],
+    "bed": { "b": "office", "level": -18, "duck": 3, "p": { "intensity": 70, "typing": 75, "phones": 65, "talk": 60, "printer": 40 } }
+  },
+  {
+    "id": "broadcast-weather-radio-monotone",
+    "name": "Weather radio monotone",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A flat, almost machine-like forecast voice on a tinny all-weather radio.",
+    "tags": ["weather", "monotone", "radio", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 85 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 50 } },
+      { "m": "device.radio", "p": { "era": "car", "static": 15, "fading": 5 } }
+    ]
+  },
+  {
+    "id": "broadcast-emergency-alert-broadcast",
+    "name": "Emergency alert broadcast",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A harsh, squeezed, tinny warning that takes over every radio station at once.",
+    "tags": ["emergency", "alert", "radio", "harsh"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 100, "presence": 6 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 40 } },
+      { "m": "device.radio", "p": { "era": "1960s", "static": 15, "fading": 5, "whistle": 0 } }
+    ]
+  },
+  {
+    "id": "broadcast-civil-defense-loudspeaker",
+    "name": "Civil defense loudspeaker",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A siren whoop, then a warning from a rooftop horn echoing across the whole town.",
+    "tags": ["siren", "warning", "loudspeaker", "town"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "siren": "start", "horn": 70, "push": 60, "outdoors": 70 } },
+      { "m": "space.distance", "p": { "distance": 150, "echoes": 80, "wind": 20 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 35 } }
+  },
+  {
+    "id": "broadcast-tornado-warning-on-the-radio",
+    "name": "Tornado warning on the radio",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A crackling, fading warning on the car radio while the storm rolls in overhead.",
+    "tags": ["storm", "warning", "radio", "thunder"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 80 } },
+      { "m": "device.radio", "p": { "era": "car", "static": 40, "fading": 30 } }
+    ],
+    "bed": { "b": "storm", "level": -16, "duck": 3, "p": { "intensity": 75, "thunder": 7, "distance": 2500, "wind": 60 } }
+  },
+  {
+    "id": "broadcast-police-loudspeaker",
+    "name": "Police loudspeaker",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A siren yelp and a squealing bullhorn order on a busy street.",
+    "tags": ["police", "bullhorn", "siren", "street"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "siren": "start", "push": 70, "squeal": 15, "outdoors": 50 } }
+    ],
+    "bed": { "b": "city-street", "level": -18, "p": { "sirens": 70, "horns": 40 } }
+  },
+  {
+    "id": "broadcast-wartime-air-raid-warning",
+    "name": "Wartime air raid warning",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A siren wail and a warning from the rooftop horns, heard on a crackling archive record.",
+    "tags": ["siren", "wartime", "warning", "record"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "siren": "start", "horn": 65, "push": 45, "outdoors": 80 } },
+      { "m": "space.distance", "p": { "distance": 250, "echoes": 75, "wind": 10 } },
+      { "m": "device.gramophone", "p": { "horn": "electric", "surface": 35, "crackle": 35, "wow": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-beach-warning-from-the-lifeguard-tower",
+    "name": "Beach warning from the lifeguard tower",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A bullhorn warning shouted down the beach from the tower, surf crashing all along the shore.",
+    "tags": ["beach", "bullhorn", "warning", "surf"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "horn": 55, "outdoors": 75 } },
+      { "m": "space.distance", "p": { "distance": 30, "echoes": 20, "wind": 40 } }
+    ],
+    "bed": { "b": "ocean", "level": -16, "duck": 3, "p": { "size": 70, "distance": 30 } }
+  },
+  {
+    "id": "broadcast-stairwell-evacuation-message",
+    "name": "Stairwell evacuation message",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "Three chimes and a calm recorded order to leave, echoing down a bare concrete stairwell.",
+    "tags": ["evacuation", "chime", "stairwell", "pa"],
+    "chain": [
+      { "m": "device.pa", "p": { "chime": "three", "ring": 20, "towers": 30, "distance": 25 } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 45 } }
+    ]
+  },
+  {
+    "id": "broadcast-hand-crank-radio-in-the-storm-cellar",
+    "name": "Hand-crank radio in the storm cellar",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A warning crackling from a little wind-up radio down in the cellar while the wind howls overhead.",
+    "tags": ["storm", "radio", "cellar", "warning"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 80 } },
+      { "m": "device.radio", "p": { "static": 30, "fading": 25, "whistle": 15 } },
+      { "m": "lofi.speaker", "p": { "size": "portable", "push": 8, "rattle": 25 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 30 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -20, "p": { "where": "inside", "strength": 75, "rattle": 50 } }
+  },
+  {
+    "id": "broadcast-highway-advisory-radio-loop",
+    "name": "Highway advisory radio loop",
+    "cat": "broadcast",
+    "sub": "Alerts and warnings",
+    "about": "A flat, looping roadside info message at the bottom of the car radio dial, tyres humming along.",
+    "tags": ["highway", "radio", "car", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 65 } },
+      { "m": "device.radio", "p": { "era": "car", "static": 35, "fading": 20, "whistle": 25 } }
+    ],
+    "bed": { "b": "car-highway", "level": -20, "p": { "intensity": 50 } }
+  },
+  {
+    "id": "broadcast-play-by-play-from-the-booth",
+    "name": "Play-by-play from the booth",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A sports caller on a headset in the press box, the crowd roaring through the glass.",
+    "tags": ["sports", "commentator", "crowd", "headset"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "phone", "amount": 25 } },
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 85 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -18, "duck": 3, "p": { "seat": "outside", "excitement": 70 } }
+  },
+  {
+    "id": "broadcast-stadium-pa-announcer",
+    "name": "Stadium PA announcer",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "Your voice over the big horns of a stadium, echoing off the far stands above the crowd.",
+    "tags": ["stadium", "pa", "crowd", "echo"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "stadium", "push": 50, "towers": 60, "distance": 30 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -20, "p": { "intensity": 60 } }
+  },
+  {
+    "id": "broadcast-boxing-ring-announcer",
+    "name": "Boxing ring announcer",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A huge, drawn-out introduction from the middle of the ring, the arena going wild.",
+    "tags": ["boxing", "announcer", "arena", "crowd"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } },
+      { "m": "tone.broadcast", "p": { "density": 90, "warmth": 4 } },
+      { "m": "space.room", "p": { "space": "arena", "mix": 40 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -16, "p": { "excitement": 85 } }
+  },
+  {
+    "id": "broadcast-horse-race-caller",
+    "name": "Horse race caller",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A rapid-fire race call through the grandstand horns, the crowd rising at the finish.",
+    "tags": ["race", "fast", "caller", "horn"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.4 } },
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 95, "presence": 4 } },
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 8 } },
+      { "m": "echo.slapback", "p": { "time": 220, "level": 30, "character": "stadium" } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -24, "p": { "intensity": 40, "excitement": 80, "seat": "outside" } }
+  },
+  {
+    "id": "broadcast-golf-commentator-hush",
+    "name": "Golf commentator hush",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A slow, murmured, close commentary on a sunny course, insects and birds all around.",
+    "tags": ["golf", "soft", "slow", "outdoors"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.88 } },
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 4 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 50 } }
+    ],
+    "bed": { "b": "summer-field", "level": -24, "p": { "intensity": 35, "cicadas": 20, "birds": 50 } }
+  },
+  {
+    "id": "broadcast-basketball-arena-announcer",
+    "name": "Basketball arena announcer",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A ringing arena PA introducing the home team, the hard court slapping your voice back.",
+    "tags": ["basketball", "arena", "pa", "crowd"],
+    "chain": [
+      { "m": "device.pa", "p": { "ring": 35, "push": 50 } },
+      { "m": "echo.slapback", "p": { "time": 150, "level": 35, "character": "stadium" } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -20, "p": { "seat": "field", "excitement": 60 } }
+  },
+  {
+    "id": "broadcast-wrestling-ring-announcer",
+    "name": "Wrestling ring announcer",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "An over-the-top, red-hot introduction in a roaring arena, echoing out over the chants.",
+    "tags": ["wrestling", "announcer", "arena", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "tone.broadcast", "p": { "density": 100, "warmth": 6, "presence": 6 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 30 } },
+      { "m": "space.room", "p": { "space": "arena", "mix": 35 } },
+      { "m": "echo.delay", "p": { "division": "quarter", "tempo": 90, "feedback": 30, "mix": 15 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -15, "p": { "excitement": 95, "chants": 70 } }
+  },
+  {
+    "id": "broadcast-ballpark-announcer-summer-evening",
+    "name": "Ballpark announcer, summer evening",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "The ballpark PA from far up the stands, delayed echoes drifting over a lazy crowd.",
+    "tags": ["baseball", "pa", "echo", "outdoors"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "stadium", "push": 25, "distance": 80, "towers": 75 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -22, "p": { "intensity": 25, "excitement": 20 } }
+  },
+  {
+    "id": "broadcast-post-game-interview",
+    "name": "Post-game interview",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "A pitchside interview on a handheld mic with the celebrating crowd right behind you.",
+    "tags": ["sports", "interview", "crowd", "loud"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 75, "presence": 3 } },
+      { "m": "tone.character", "p": { "shape": "presence", "amount": 40 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -14, "duck": 4, "p": { "seat": "field", "intensity": 70, "excitement": 70 } }
+  },
+  {
+    "id": "broadcast-ballgame-on-a-transistor-radio",
+    "name": "Ballgame on a transistor radio",
+    "cat": "broadcast",
+    "sub": "Sports",
+    "about": "The play-by-play crackling out of a little pocket radio on a hot summer afternoon.",
+    "tags": ["sports", "radio", "pocket", "summer"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 85 } },
+      { "m": "device.radio", "p": { "era": "1960s", "static": 20, "fading": 10 } },
+      { "m": "lofi.speaker", "p": { "size": "radio", "push": 8, "rattle": 25 } }
+    ],
+    "bed": { "b": "summer-field", "level": -24, "p": { "intensity": 40, "cicadas": 50, "birds": 20 } }
+  },
+  {
+    "id": "broadcast-airport-gate-announcement",
+    "name": "Airport gate announcement",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A two-note chime, then your voice from the ceiling speakers of a busy terminal.",
+    "tags": ["airport", "pa", "chime", "terminal"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "airport", "chime": "two" } }
+    ],
+    "bed": { "b": "airport-hall", "level": -20 }
+  },
+  {
+    "id": "broadcast-train-station-platform",
+    "name": "Train station platform",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "Three chimes and a platform announcement echoing off the tiles as a train rumbles in.",
+    "tags": ["train", "station", "pa", "chime"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "station", "chime": "three", "push": 40 } }
+    ],
+    "bed": { "b": "subway-platform", "level": -18 }
+  },
+  {
+    "id": "broadcast-shopping-mall-pa",
+    "name": "Shopping mall PA",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A friendly chime and a ceiling-speaker announcement over the food court chatter.",
+    "tags": ["mall", "shop", "pa", "chime"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "store", "chime": "two", "towers": 55 } }
+    ],
+    "bed": { "b": "cafe", "level": -24, "p": { "intensity": 40 } }
+  },
+  {
+    "id": "broadcast-school-principal-on-the-intercom",
+    "name": "School principal on the intercom",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "The morning announcements from the classroom speaker box, lockers banging in the hall.",
+    "tags": ["school", "intercom", "speaker", "hallway"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "school" } }
+    ],
+    "bed": { "b": "school-hall", "level": -22 }
+  },
+  {
+    "id": "broadcast-hospital-overhead-page",
+    "name": "Hospital overhead page",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A calm page from a small ceiling speaker down a long ward corridor, monitors beeping.",
+    "tags": ["hospital", "page", "intercom", "hallway"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "office", "distortion": 20, "noise": 10 } },
+      { "m": "space.room", "p": { "space": "hallway", "mix": 50 } }
+    ],
+    "bed": { "b": "hospital", "level": -24 }
+  },
+  {
+    "id": "broadcast-supermarket-staff-call",
+    "name": "Supermarket staff call",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A tinny, pushed staff call from the store ceiling, freezers humming down the aisle.",
+    "tags": ["store", "pa", "tinny", "shop"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 30 } },
+      { "m": "device.pa", "p": { "venue": "store", "push": 60, "distance": 30 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -21, "p": { "intensity": 70, "age": "old" } }
+  },
+  {
+    "id": "broadcast-cruise-ship-deck-announcement",
+    "name": "Cruise ship deck announcement",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A loudspeaker on the open deck, gulls calling and a foghorn sounding across the harbor.",
+    "tags": ["ship", "deck", "loudspeaker", "harbor"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "horn": 40, "push": 30, "outdoors": 60 } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -18, "p": { "foghorn": true, "wind": 60 } }
+  },
+  {
+    "id": "broadcast-ride-operator-spiel",
+    "name": "Ride operator spiel",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "The quick, crackly safety speech from a ride's speaker box at the fairground.",
+    "tags": ["fair", "ride", "speaker", "fast"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.2 } },
+      { "m": "device.intercom", "p": { "style": "drive", "distortion": 50 } }
+    ],
+    "bed": { "b": "carnival", "level": -18, "p": { "rides": 70 } }
+  },
+  {
+    "id": "broadcast-drive-in-movie-speaker",
+    "name": "Drive-in movie speaker",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "The rattling little speaker hung on your car window, crickets singing in the dark lot.",
+    "tags": ["drive-in", "speaker", "car", "night"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "handheld", "push": 10, "rattle": 40 } },
+      { "m": "space.room", "p": { "space": "car", "mix": 50 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -18 }
+  },
+  {
+    "id": "broadcast-factory-floor-announcement",
+    "name": "Factory floor announcement",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A pushed, ringing PA horn fighting the presses and conveyors on a factory floor.",
+    "tags": ["factory", "pa", "loud", "machines"],
+    "chain": [
+      { "m": "device.pa", "p": { "push": 70, "ring": 30 } }
+    ],
+    "bed": { "b": "factory", "level": -14, "duck": 5, "p": { "intensity": 70 } }
+  },
+  {
+    "id": "broadcast-parking-garage-pa",
+    "name": "Parking garage PA",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A ceiling speaker announcement smeared across the bare concrete of a parking garage.",
+    "tags": ["garage", "pa", "concrete", "echo"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "store", "towers": 60 } },
+      { "m": "space.room", "p": { "space": "parking-garage", "mix": 55 } }
+    ]
+  },
+  {
+    "id": "broadcast-church-hall-bingo-caller",
+    "name": "Church hall bingo caller",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "Numbers called on a cheap mic through the hall speakers, cups and chatter at the tables.",
+    "tags": ["bingo", "hall", "pa", "chatter"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 40 } },
+      { "m": "device.pa", "p": { "distance": 35, "towers": 20 } }
+    ],
+    "bed": { "b": "cafe", "level": -26, "p": { "intensity": 25, "espresso": 0 } }
+  },
+  {
+    "id": "broadcast-lifeguard-at-the-pool",
+    "name": "Lifeguard at the pool",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A bullhorn warning bouncing round a tiled indoor swimming pool.",
+    "tags": ["pool", "bullhorn", "echo", "tiles"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "push": 40, "outdoors": 0 } },
+      { "m": "space.room", "p": { "space": "pool", "mix": 50 } }
+    ]
+  },
+  {
+    "id": "broadcast-town-crier-in-the-square",
+    "name": "Town crier in the square",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A bellowing proclamation read slowly to the market square, bouncing off the old stone fronts.",
+    "tags": ["crier", "square", "shout", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1 } },
+      { "m": "time.drawl", "p": { "factor": 1.2 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm", "mix": 30 } },
+      { "m": "space.distance", "p": { "distance": 15, "echoes": 70, "wind": 10 } }
+    ],
+    "bed": { "b": "fountain", "level": -22, "p": { "place": "square", "flow": 40, "distance": 50 } }
+  },
+  {
+    "id": "broadcast-tour-bus-guide",
+    "name": "Tour bus guide",
+    "cat": "broadcast",
+    "sub": "Public address",
+    "about": "A cheerful guide on the coach's crackly handheld mic, the diesel rumbling along under you.",
+    "tags": ["tour", "bus", "guide", "speaker"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 55 } },
+      { "m": "lofi.speaker", "p": { "size": "portable", "push": 10, "rattle": 30 } },
+      { "m": "space.room", "p": { "space": "bus", "mix": 45 } }
+    ],
+    "bed": { "b": "bus", "level": -18, "duck": 3, "p": { "intensity": 50, "route": "highway", "rattles": 40 } }
+  },
+  {
+    "id": "broadcast-game-show-host",
+    "name": "Game show host",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A bright, beaming host on a studio stage, the audience buzzing in their seats.",
+    "tags": ["game show", "host", "bright", "audience"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 0.5 } },
+      { "m": "tone.broadcast", "p": { "density": 85, "presence": 5 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 20 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -24, "p": { "seat": "field", "intensity": 35, "excitement": 70 } }
+  },
+  {
+    "id": "broadcast-lightning-round-quiz",
+    "name": "Lightning round quiz",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A quizmaster racing through the questions, tight, wide and punchy.",
+    "tags": ["quiz", "fast", "host", "punchy"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.3 } },
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 90 } },
+      { "m": "echo.slapback", "p": { "time": 60, "level": 20, "character": "clean" } },
+      { "m": "stereo.width", "p": { "width": 1.6 } }
+    ]
+  },
+  {
+    "id": "broadcast-livestock-auctioneer",
+    "name": "Livestock auctioneer",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A lightning-fast auction chant through a horn speaker in a big wooden sale barn.",
+    "tags": ["auction", "fast", "barn", "horn"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.65 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 90 } },
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 10 } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 30 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -26, "p": { "rooster": false } }
+  },
+  {
+    "id": "broadcast-casino-lounge-host",
+    "name": "Casino lounge host",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A smooth lounge host on the casino floor mic, slot machines chiming all around.",
+    "tags": ["casino", "lounge", "smooth", "host"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 55 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 25 } }
+    ],
+    "bed": { "b": "casino", "level": -20 }
+  },
+  {
+    "id": "broadcast-award-show-announcer",
+    "name": "Award show announcer",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "The voice of the evening filling a grand concert hall, applause settling in the dark.",
+    "tags": ["awards", "hall", "announcer", "grand"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 75, "warmth": 3 } },
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 30 } },
+      { "m": "stereo.width", "p": { "width": 1.6 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -24, "p": { "seat": "field", "intensity": 30, "excitement": 30 } }
+  },
+  {
+    "id": "broadcast-ringmaster-under-the-big-top",
+    "name": "Ringmaster under the big top",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A grand, low ringmaster through a horn, ringing round a huge tent while the band plays.",
+    "tags": ["circus", "ringmaster", "horn", "tent"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "device.megaphone", "p": { "size": "cone", "horn": 30, "push": 25, "outdoors": 0 } },
+      { "m": "space.reverb", "p": { "size": 75, "decay": 2.6, "mix": 32 } }
+    ],
+    "bed": { "b": "carnival", "level": -20, "p": { "music": 70, "games": 20 } }
+  },
+  {
+    "id": "broadcast-carnival-barker",
+    "name": "Carnival barker",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A fast-talking barker on a megaphone calling the crowd over to the games.",
+    "tags": ["carnival", "megaphone", "fast", "fair"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.15 } },
+      { "m": "device.megaphone", "p": { "horn": 45, "push": 45, "outdoors": 50 } }
+    ],
+    "bed": { "b": "carnival", "level": -16 }
+  },
+  {
+    "id": "broadcast-childrens-tv-presenter",
+    "name": "Children's TV presenter",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A bouncy, bright, extra-friendly kids' show host in a colourful little studio.",
+    "tags": ["kids", "tv", "bright", "host"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2.5, "formant": 2 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.1 } },
+      { "m": "tone.broadcast", "p": { "density": 75, "presence": 4 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "classroom", "mix": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-cooking-show-in-a-busy-kitchen",
+    "name": "Cooking show in a busy kitchen",
+    "cat": "broadcast",
+    "sub": "Game shows and showbiz",
+    "about": "A chef host talking you through it on a clip-on mic while pans sizzle and pots clang.",
+    "tags": ["cooking", "kitchen", "host", "tv"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 70, "presence": 2 } },
+      { "m": "tone.character", "p": { "shape": "presence", "amount": 40 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 20, "distance": 15 } }
+    ],
+    "bed": { "b": "kitchen", "level": -19, "duck": 3, "p": { "intensity": 60, "sizzle": 70, "shouts": 20 } }
+  },
+  {
+    "id": "broadcast-commercial-smile-read",
+    "name": "Commercial smile read",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "A bright, buoyant advert voice that sounds like it is smiling on every word.",
+    "tags": ["advert", "voiceover", "bright", "smile"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 1 } },
+      { "m": "tone.broadcast", "p": { "density": 70, "presence": 5 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } }
+    ]
+  },
+  {
+    "id": "broadcast-shouty-weekend-sale-ad",
+    "name": "Shouty weekend sale ad",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "A fast, overdriven, wall-to-wall loud sale advert with echoes flying out of it.",
+    "tags": ["advert", "loud", "fast", "echo"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.25 } },
+      { "m": "tone.broadcast", "p": { "density": 100, "presence": 6 } },
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "overdrive", "mix": 30 } },
+      { "m": "echo.delay", "p": { "time": 300, "feedback": 45, "stereo": "wide", "mix": 22 } }
+    ]
+  },
+  {
+    "id": "broadcast-late-night-infomercial-pitch",
+    "name": "Late-night infomercial pitch",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "An eager, quick pitch on the living room TV for something you never knew you needed.",
+    "tags": ["advert", "infomercial", "bright", "fast"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 1 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.15 } },
+      { "m": "tone.broadcast", "p": { "density": 100, "presence": 7 } },
+      { "m": "device.tv", "p": { "era": "flat", "wall": "same", "room": 35 } }
+    ]
+  },
+  {
+    "id": "broadcast-fast-fine-print-disclaimer",
+    "name": "Fast fine-print disclaimer",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "The small print at the end of an advert, read at almost double speed.",
+    "tags": ["advert", "fast", "disclaimer", "funny"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.9 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 70 } }
+    ]
+  },
+  {
+    "id": "broadcast-on-hold-message",
+    "name": "On-hold message",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "A polished recorded message squeezed down a modern phone line while you wait.",
+    "tags": ["phone", "hold", "message", "recorded"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 50 } },
+      { "m": "device.phone", "p": { "era": "voip", "noise": 5, "hum": 0, "crackle": 0 } },
+      { "m": "lofi.mp3", "p": { "quality": "ok", "swirl": 30 } }
+    ]
+  },
+  {
+    "id": "broadcast-guided-meditation-voice",
+    "name": "Guided meditation voice",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "A slow, soft, warm guide in a spacious calm room, waves rolling in far away.",
+    "tags": ["meditation", "calm", "slow", "ocean"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 70 } },
+      { "m": "space.reverb", "p": { "size": 75, "decay": 3, "damping": 60, "mix": 22 } }
+    ],
+    "bed": { "b": "ocean", "level": -24, "p": { "size": 25, "distance": 60 } }
+  },
+  {
+    "id": "broadcast-cinema-preshow-announcement",
+    "name": "Cinema preshow announcement",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "The please-silence-your-phones voice filling a wide cinema from every speaker.",
+    "tags": ["cinema", "theater", "wide", "announcement"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 70, "warmth": 4 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 50 } },
+      { "m": "stereo.width", "p": { "width": 2 } }
+    ]
+  },
+  {
+    "id": "broadcast-battle-arena-announcer",
+    "name": "Battle arena announcer",
+    "cat": "broadcast",
+    "sub": "Ads and voiceover",
+    "about": "A huge, growling video game announcer with a burst of gated room on every word.",
+    "tags": ["game", "announcer", "huge", "gated"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 15 } },
+      { "m": "tone.broadcast", "p": { "density": 95 } },
+      { "m": "space.gated", "p": { "mix": 35 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ]
+  },
+  {
+    "id": "broadcast-1930s-radio-drama",
+    "name": "1930s radio drama",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "An actor on a theatre stage, heard through a crackling wooden radio set from the 1930s.",
+    "tags": ["old", "radio", "drama", "1930s"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 40 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 25 } },
+      { "m": "device.radio", "p": { "era": "1930s", "static": 30, "hum": 30 } }
+    ]
+  },
+  {
+    "id": "broadcast-wartime-radio-bulletin",
+    "name": "Wartime radio bulletin",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A grave news bulletin from across the sea, fading in and out on the shortwave.",
+    "tags": ["old", "news", "shortwave", "fading"],
+    "chain": [
+      { "m": "device.shortwave", "p": { "mode": "am", "detune": 0, "fading": 40, "noise": 35, "warble": 20 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 80 } }
+    ]
+  },
+  {
+    "id": "broadcast-1940s-newsreel",
+    "name": "1940s newsreel",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A brisk, punchy, honking narrator on a crackling old cinema soundtrack.",
+    "tags": ["old", "newsreel", "film", "crackle"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.08 } },
+      { "m": "tone.broadcast", "p": { "density": 90, "presence": 4 } },
+      { "m": "tone.eq", "p": { "band1Freq": 240, "band4Freq": 1800, "band4Gain": 5, "band6Type": "highcut", "band6Freq": 5500 } },
+      { "m": "lofi.saturate", "p": { "drive": 12 } },
+      { "m": "device.vinyl", "p": { "crackle": 45, "pops": 35, "rumble": 30, "wear": 50 } }
+    ]
+  },
+  {
+    "id": "broadcast-1950s-tv-announcer",
+    "name": "1950s TV announcer",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A smart announcer from the tiny speaker of a 1950s television set, humming in the room.",
+    "tags": ["old", "tv", "announcer", "1950s"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 70 } },
+      { "m": "device.tv", "p": { "era": "1950s", "wall": "same", "hum": 20, "room": 30 } }
+    ]
+  },
+  {
+    "id": "broadcast-1960s-pop-radio-jingle",
+    "name": "1960s pop radio jingle",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A peppy, squashed AM pop station voice with a splash of studio echo.",
+    "tags": ["old", "radio", "pop", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.broadcast", "p": { "density": 100 } },
+      { "m": "echo.delay", "p": { "time": 180, "feedback": 35, "stereo": "mono", "mix": 25 } },
+      { "m": "device.radio", "p": { "era": "1960s", "static": 10 } }
+    ]
+  },
+  {
+    "id": "broadcast-1970s-fm-underground-dj",
+    "name": "1970s FM underground DJ",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A mellow, warm, slightly swirling free-form FM voice from a smoky late studio.",
+    "tags": ["old", "fm", "mellow", "phaser"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -1 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 40, "warmth": 4 } },
+      { "m": "lofi.saturate", "p": { "drive": 10 } },
+      { "m": "mod.phaser", "p": { "rate": 0.15, "mix": 25 } },
+      { "m": "space.reverb", "p": { "size": 40, "decay": 1.5, "mix": 15 } }
+    ]
+  },
+  {
+    "id": "broadcast-1980s-fm-commercial",
+    "name": "1980s FM commercial",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A bright, dense, chorused advert voice with a burst of gated room and wide stereo.",
+    "tags": ["old", "fm", "advert", "1980s"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 100, "presence": 8 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } },
+      { "m": "space.gated", "p": { "mix": 20 } },
+      { "m": "mod.chorus", "p": { "depth": 20, "mix": 20 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ]
+  },
+  {
+    "id": "broadcast-radio-serial-cliffhanger",
+    "name": "Radio serial cliffhanger",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "A dramatic old radio serial with a twangy spring reverb on every line.",
+    "tags": ["old", "radio", "serial", "spring"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 50 } },
+      { "m": "space.spring", "p": { "drip": 70, "mix": 45 } },
+      { "m": "device.radio", "p": { "era": "1930s", "static": 20 } }
+    ]
+  },
+  {
+    "id": "broadcast-early-tv-test-broadcast",
+    "name": "Early TV test broadcast",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "An announcer on an early television in the next room, the screen hissing with snow.",
+    "tags": ["old", "tv", "static", "whine"],
+    "chain": [
+      { "m": "device.tv", "p": { "era": "1950s", "whine": 40 } }
+    ],
+    "bed": { "b": "tv-static", "level": -24, "p": { "intensity": 40 } }
+  },
+  {
+    "id": "broadcast-radio-set-by-the-fireplace",
+    "name": "Radio set by the fireplace",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "An old wireless across the living room, the fire crackling beside you as you listen.",
+    "tags": ["old", "radio", "fire", "room"],
+    "chain": [
+      { "m": "device.radio", "p": { "era": "1930s", "static": 15 } },
+      { "m": "space.room", "p": { "mix": 60, "distance": 70 } }
+    ],
+    "bed": { "b": "fireplace", "level": -22 }
+  },
+  {
+    "id": "broadcast-moon-broadcast-on-the-family-tv",
+    "name": "Moon broadcast on the family TV",
+    "cat": "broadcast",
+    "sub": "Old-time broadcasts",
+    "about": "Mission voices and their beeps, crackling all the way from the moon onto an old living room TV.",
+    "tags": ["old", "tv", "moon", "beeps"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "hiss": 40 } },
+      { "m": "device.tv", "p": { "era": "1950s", "wall": "same", "room": 35, "hum": 20 } }
+    ]
+  }
+]

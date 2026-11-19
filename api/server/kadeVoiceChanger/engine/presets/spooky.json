@@ -1,0 +1,1167 @@
+[
+  {
+    "id": "spooky-ghost-drifting-through-the-house",
+    "name": "Ghost drifting through the house",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A breathy, wavering ghost whose echo swells before each word as it drifts from ear to ear.",
+    "tags": ["ghost", "whisper", "reverse", "drifting"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 0.4 } },
+      { "m": "echo.preverb", "p": { "length": 2 } },
+      { "m": "mod.autopan", "p": { "rate": 0.1, "width": 70 } }
+    ],
+    "bed": { "b": "haunted-house", "level": -28, "p": { "intensity": 30 } },
+    "seed": 201
+  },
+  {
+    "id": "spooky-friendly-little-ghost",
+    "name": "Friendly little ghost",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A small, soft, shimmering ghost floating just above your head.",
+    "tags": ["ghost", "friendly", "shimmer", "above"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 3 } },
+      { "m": "space.shimmer", "p": { "amount": 40, "mix": 30 } },
+      { "m": "mod.chorus", "p": { "depth": 30, "mix": 30 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 40 } }
+    ],
+    "seed": 202
+  },
+  {
+    "id": "spooky-mourning-wraith",
+    "name": "Mourning wraith",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A slow, breathy moan of a voice that sags and drifts in pitch inside a cold cathedral.",
+    "tags": ["wraith", "moan", "slow", "cathedral"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "pitch.wobble", "p": { "depth": 150, "speed": 0.2, "randomness": 30 } },
+      { "m": "time.drawl", "p": { "factor": 1.5 } },
+      { "m": "echo.preverb", "p": { "length": 3, "space": "cathedral", "mix": 60 } }
+    ],
+    "seed": 203
+  },
+  {
+    "id": "spooky-apparition-down-the-hall",
+    "name": "Apparition down the hall",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A faint, smeared voice standing far off at the end of a long dark corridor.",
+    "tags": ["ghost", "far", "hallway", "smeared"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 1500 } },
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 12, "room": "hallway" } }
+    ],
+    "seed": 204
+  },
+  {
+    "id": "spooky-ghost-right-behind-you",
+    "name": "Ghost right behind you",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A cold whisper just behind your head, with backwards echoes creeping up under it.",
+    "tags": ["ghost", "behind", "whisper", "headphones"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 70 } },
+      { "m": "echo.reverse", "p": { "length": 400, "mix": 30 } },
+      { "m": "stereo.place", "p": { "angle": 180, "distance": 0.3, "room": "none" } }
+    ],
+    "seed": 205
+  },
+  {
+    "id": "spooky-ghost-through-the-ceiling",
+    "name": "Ghost floating through the ceiling",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A thin voice overhead, slowly sweeping in and out of focus as it passes through the ceiling.",
+    "tags": ["ghost", "above", "sweep", "thin"],
+    "chain": [
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 400, "resonance": 40, "sweep": "lfo", "rate": 0.15, "range": 70 } },
+      { "m": "spec.blur", "p": { "amount": 30 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 70, "distance": 2.5 } }
+    ],
+    "seed": 206
+  },
+  {
+    "id": "spooky-ghost-fading-away",
+    "name": "Ghost fading away",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A voice that lingers on its own words while it drifts further and further away.",
+    "tags": ["ghost", "fading", "frozen", "walking away"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "spec.freeze", "p": { "hold": 1500, "blend": 50 } },
+      { "m": "stereo.walkaway", "p": { "to": 25, "room": "big-hall" } }
+    ],
+    "seed": 207
+  },
+  {
+    "id": "spooky-ghost-in-the-attic",
+    "name": "Ghost in the attic",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A wavering whisper coming down through the attic floor while wind rattles the old house.",
+    "tags": ["ghost", "attic", "muffled", "house"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "pitch.wobble", "p": { "depth": 90, "speed": 0.6 } },
+      { "m": "space.muffle", "p": { "wall": "floor", "muffling": 40 } }
+    ],
+    "bed": { "b": "haunted-house", "level": -22, "p": { "wind": 70, "moans": 20 } },
+    "seed": 208
+  },
+  {
+    "id": "spooky-ghost-among-the-gravestones",
+    "name": "Ghost among the gravestones",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A trembling breathy voice somewhere out among the graves on a windy night.",
+    "tags": ["ghost", "graveyard", "far", "trembling"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "pitch.vibrato", "p": { "rate": 4, "depth": 90 } },
+      { "m": "space.distance", "p": { "distance": 25, "echoes": 40, "wind": 20 } }
+    ],
+    "bed": { "b": "graveyard", "level": -22 },
+    "seed": 209
+  },
+  {
+    "id": "spooky-phantom-twin",
+    "name": "Phantom twin a step behind",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "Your own voice, with a slightly wrong copy of you trailing just behind it.",
+    "tags": ["ghost", "double", "uncanny", "twin"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 1 } },
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 60, "pitch": 40, "level": -6, "spread": 100 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 210
+  },
+  {
+    "id": "spooky-mirror-spirit",
+    "name": "Mirror spirit echoing backwards",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "Every word is followed by its own reflection played backwards in a tiled room.",
+    "tags": ["ghost", "mirror", "reverse", "echo"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 20 } },
+      { "m": "echo.reverse", "p": { "length": 350, "smooth": 60, "spread": 80, "mix": 50 } },
+      { "m": "space.room", "p": { "space": "bathroom", "mix": 30 } }
+    ],
+    "seed": 211
+  },
+  {
+    "id": "spooky-old-horror-film-ghost",
+    "name": "Ghost from an old horror film",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A wobbling ghostly voice with the wavering electric whine of an old black and white scare film.",
+    "tags": ["ghost", "vintage", "whine", "film"],
+    "chain": [
+      { "m": "pitch.vibrato", "p": { "rate": 6, "depth": 60 } },
+      { "m": "tone.character", "p": { "amount": 60 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 35 } }
+    ],
+    "bed": { "b": "eerie-whine", "level": -20 },
+    "seed": 212
+  },
+  {
+    "id": "spooky-possessed-three-voices",
+    "name": "Possessed, three voices at once",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "Your voice with a deep one under it and a thin one over it, all a little out of tune.",
+    "tags": ["possessed", "layered", "octaves", "uneasy"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "up1": 50, "dry": 90 } },
+      { "m": "synth.freqshift", "p": { "shift": -15, "mix": 30 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm", "mix": 40 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 30 } }
+    ],
+    "seed": 213
+  },
+  {
+    "id": "spooky-possessed-child",
+    "name": "Possessed child",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "A small child's voice with something enormous speaking two octaves underneath it.",
+    "tags": ["possessed", "child", "deep", "bedroom"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "pitch.octaver", "p": { "down1": 40, "down2": 60, "dry": 80 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 35 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -26, "p": { "clock": "mantel" } },
+    "seed": 214
+  },
+  {
+    "id": "spooky-something-else-takes-over",
+    "name": "Something else takes over",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "You begin normally, then sink lower as some of your syllables start coming out backwards.",
+    "tags": ["possessed", "transform", "backwards", "glide"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": 3, "curve": "late", "timbre": 50 } },
+      { "m": "time.reversewords", "p": { "amount": 30 } },
+      { "m": "echo.preverb", "p": { "space": "church", "mix": 40 } }
+    ],
+    "seed": 215
+  },
+  {
+    "id": "spooky-two-spirits-fighting",
+    "name": "Two spirits fighting for one voice",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "A deep spirit in one ear and a high one in the other, snatching your words back and forth.",
+    "tags": ["possessed", "two voices", "stereo", "trembling"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "direction": "both", "size": 4, "tremble": 40 } },
+      { "m": "stereo.split", "p": { "leftPitch": -8, "leftTimbre": -4, "rightPitch": 4, "mode": "turns" } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 216
+  },
+  {
+    "id": "spooky-legion-whispering",
+    "name": "A legion whispering together",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "Many hoarse whispers saying your words almost together, spread wide around you.",
+    "tags": ["possessed", "whisper", "many", "wide"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 80, "size": "large" } },
+      { "m": "stereo.double", "p": { "copies": 4, "timing": 40, "pitch": 30, "spread": 100 } },
+      { "m": "echo.preverb", "p": { "length": 0.8, "mix": 35 } }
+    ],
+    "seed": 217
+  },
+  {
+    "id": "spooky-possessed-speaking-backwards",
+    "name": "Possessed, speaking backwards",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "A deeper voice running the whole message backwards, with your own words faint beneath it.",
+    "tags": ["possessed", "backwards", "reverse", "church"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } },
+      { "m": "time.reverse", "p": { "forward": 25 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 35 } }
+    ],
+    "seed": 218
+  },
+  {
+    "id": "spooky-exorcism-in-the-chapel",
+    "name": "Exorcism in the chapel",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "A raging, rasping voice with deep octaves under it, filling an old stone chapel.",
+    "tags": ["possessed", "rasp", "octaves", "chapel"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 60, "down2": 40, "dry": 90 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 70, "grit": 50 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 45 } }
+    ],
+    "seed": 219
+  },
+  {
+    "id": "spooky-demonic-choir",
+    "name": "Demonic choir",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "A rough choir made of you, singing every word on a dark, clashing chord in a cathedral.",
+    "tags": ["choir", "evil", "chord", "cathedral"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "diminished", "voices": 3, "mix": 60 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 40 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 40 } }
+    ],
+    "seed": 220
+  },
+  {
+    "id": "spooky-calm-voice-growl-beneath",
+    "name": "Calm voice, growl beneath",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "You sound perfectly calm, but a low buzzing growl two octaves down shadows every word.",
+    "tags": ["possessed", "growl", "deep", "calm"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 0, "down2": 75, "timbre": 80 } },
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "fuzz", "mix": 25 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 25 } }
+    ],
+    "seed": 221
+  },
+  {
+    "id": "spooky-stuttering-between-spirits",
+    "name": "Voice stuttering between spirits",
+    "cat": "spooky",
+    "sub": "Possession",
+    "about": "Words catch and repeat, each repeat a little lower, as if something keeps grabbing them.",
+    "tags": ["possessed", "stutter", "glitch", "uneasy"],
+    "chain": [
+      { "m": "time.stutter", "p": { "where": "random", "pitchStep": -2 } },
+      { "m": "pitch.octaver", "p": { "down1": 50 } },
+      { "m": "synth.freqshift", "p": { "shift": 25, "mix": 30 } },
+      { "m": "space.reverb", "p": { "decay": 2.2, "mix": 25 } }
+    ],
+    "seed": 222
+  },
+  {
+    "id": "spooky-haunted-radio",
+    "name": "Haunted radio between stations",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A whispering voice drifting in and out of the static between two stations late at night.",
+    "tags": ["radio", "static", "whisper", "haunted"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "pitch.wobble", "p": { "depth": 70, "speed": 0.3 } },
+      { "m": "device.radio", "p": { "tuning": "between", "static": 60, "fading": 50, "whistle": 30 } },
+      { "m": "echo.preverb", "p": { "mix": 30 } }
+    ],
+    "seed": 223
+  },
+  {
+    "id": "spooky-cursed-music-box",
+    "name": "Cursed music box",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A small voice ringing through the tines of an old music box that plays a broken waltz.",
+    "tags": ["music box", "child", "ringing", "broken"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "synth.resonator", "p": { "object": "music-box", "strike": 60 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 40 } }
+    ],
+    "bed": { "b": "music-box-broken", "level": -18 },
+    "seed": 224
+  },
+  {
+    "id": "spooky-call-from-a-dead-line",
+    "name": "Call from a dead line",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A crackling old phone call from nowhere, the words echoing back down the line.",
+    "tags": ["phone", "crackle", "echo", "haunted"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "device.phone", "p": { "noise": 50, "crackle": 60, "signal": 50 } },
+      { "m": "echo.delay", "p": { "time": 450, "feedback": 50, "damping": 60, "stereo": "mono", "mix": 30 } }
+    ],
+    "bed": { "b": "phone-line", "level": -24, "p": { "tone": "none", "crosstalk": 70 } },
+    "seed": 225
+  },
+  {
+    "id": "spooky-voice-in-the-tv-static",
+    "name": "Voice in the television snow",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A low voice coming out of a television in the next room that is tuned to nothing but snow.",
+    "tags": ["television", "static", "next room", "haunted"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "device.tv", "p": { "era": "1950s" } }
+    ],
+    "bed": { "b": "tv-static", "level": -16, "p": { "place": "next" } },
+    "seed": 226
+  },
+  {
+    "id": "spooky-possessed-cassette",
+    "name": "Possessed cassette tape",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A worn, warbling tape where some syllables have turned themselves backwards.",
+    "tags": ["tape", "warble", "backwards", "worn"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3 } },
+      { "m": "time.reversewords", "p": { "amount": 35 } },
+      { "m": "device.cassette", "p": { "tape": "worn", "wow": 70, "flutter": 50, "dropouts": 30, "chewed": 30 } }
+    ],
+    "seed": 227
+  },
+  {
+    "id": "spooky-old-photograph-speaks",
+    "name": "Old photograph speaking",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A faded voice from a century ago, hissing and wobbling, with a ghostly swell before each word.",
+    "tags": ["old", "cylinder", "hiss", "ghostly"],
+    "chain": [
+      { "m": "echo.preverb", "p": { "length": 0.8, "mix": 30 } },
+      { "m": "device.cylinder", "p": { "hiss": 60, "wobble": 50 } }
+    ],
+    "seed": 228
+  },
+  {
+    "id": "spooky-message-from-no-one",
+    "name": "Answering machine message from no one",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A slow whispered message on a wobbly answering machine tape that nobody remembers recording.",
+    "tags": ["answering machine", "tape", "whisper", "slow"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 55 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } },
+      { "m": "device.microcassette", "p": { "wobble": 60, "beep": "both", "age": 60 } }
+    ],
+    "seed": 229
+  },
+  {
+    "id": "spooky-ghost-on-the-baby-monitor",
+    "name": "Ghost on the baby monitor",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A soft whispering voice breaking through the hiss of the nursery monitor at night.",
+    "tags": ["baby monitor", "whisper", "hiss", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 1 } },
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "device.babymonitor", "p": { "hiss": 50, "interference": 60 } }
+    ],
+    "seed": 230
+  },
+  {
+    "id": "spooky-gramophone-winding-down",
+    "name": "Haunted gramophone winding down",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A crackling old record of a ghostly voice that slows and sinks as the spring runs down.",
+    "tags": ["gramophone", "record", "slowing", "crackle"],
+    "chain": [
+      { "m": "echo.preverb", "p": { "mix": 40 } },
+      { "m": "device.gramophone", "p": { "horn": "small", "crackle": 60, "speed": "rundown" } }
+    ],
+    "seed": 231
+  },
+  {
+    "id": "spooky-ghost-hunter-recorder",
+    "name": "Ghost hunter's voice recorder",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A smeared, crunchy whisper caught on a cheap recorder, trailed by backwards echoes and static.",
+    "tags": ["recorder", "whisper", "static", "reverse"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "echo.reverse", "p": { "length": 600, "mix": 40 } },
+      { "m": "lofi.mp3", "p": { "quality": "awful", "swirl": 70 } }
+    ],
+    "bed": { "b": "radio-static", "level": -20, "p": { "band": "shortwave", "intensity": 40 } },
+    "seed": 232
+  },
+  {
+    "id": "spooky-spirit-box",
+    "name": "Spirit box sweeping the dial",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "Chopped scraps of your voice flicking past as a radio sweeps through the static.",
+    "tags": ["radio", "chopped", "static", "sweep"],
+    "chain": [
+      { "m": "spec.dropout", "p": { "loss": 40, "burst": 120, "conceal": "silence" } },
+      { "m": "mod.gate", "p": { "pattern": "random", "tempo": 160, "depth": 80 } },
+      { "m": "device.radio", "p": { "tuning": "between", "static": 50 } }
+    ],
+    "bed": { "b": "radio-static", "level": -18, "p": { "tuning": true } },
+    "seed": 233
+  },
+  {
+    "id": "spooky-ghost-numbers-station",
+    "name": "Ghost numbers station",
+    "cat": "spooky",
+    "sub": "Haunted machines",
+    "about": "A flat, emotionless voice reading out of the shortwave fog with a strange pulse behind it.",
+    "tags": ["shortwave", "monotone", "radio", "eerie"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 90 } },
+      { "m": "device.shortwave", "p": { "fading": 70, "interference": "pulse" } },
+      { "m": "echo.delay", "p": { "time": 700, "feedback": 30, "stereo": "wide", "mix": 20 } }
+    ],
+    "seed": 234
+  },
+  {
+    "id": "spooky-voice-in-the-walls",
+    "name": "Voice in the walls",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A muffled whisper scattering inside the walls all around you, never in one place.",
+    "tags": ["walls", "whisper", "muffled", "scattered"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 900 } },
+      { "m": "echo.multitap", "p": { "pattern": "scatter", "spread": 100 } },
+      { "m": "space.muffle", "p": { "wall": "thick" } }
+    ],
+    "seed": 235
+  },
+  {
+    "id": "spooky-calling-from-the-grave",
+    "name": "Calling from the grave",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A creaking voice buried deep in the earth, while the graveyard wind blows overhead.",
+    "tags": ["grave", "buried", "muffled", "creak"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 40, "rough": 20 } },
+      { "m": "space.muffle", "p": { "wall": "floor", "muffling": 80, "room": "none" } }
+    ],
+    "bed": { "b": "graveyard", "level": -20, "p": { "wind": 70 } },
+    "seed": 236
+  },
+  {
+    "id": "spooky-buried-alive",
+    "name": "Buried alive",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "Your voice shut in a tiny wooden box, with your own heartbeat racing in your ears.",
+    "tags": ["buried", "boxed", "heartbeat", "panic"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "closet", "muffling": 85, "room": "none" } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "mix": 40 } }
+    ],
+    "bed": { "b": "heartbeat", "level": -16, "p": { "rate": 110, "intensity": 60, "place": "inside" } },
+    "seed": 237
+  },
+  {
+    "id": "spooky-under-the-floorboards",
+    "name": "Under the floorboards",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A breathy voice under the floor, next to a heart that will not stop beating.",
+    "tags": ["floor", "heartbeat", "whisper", "muffled"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "space.muffle", "p": { "wall": "floor" } }
+    ],
+    "bed": { "b": "heartbeat", "level": -20, "p": { "place": "room", "pattern": "faster" } },
+    "seed": 238
+  },
+  {
+    "id": "spooky-down-in-the-cellar",
+    "name": "Down in the cellar",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A whisper calling up the stairs from a dripping stone cellar below you.",
+    "tags": ["cellar", "below", "drips", "stone"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 6, "room": "cave" } }
+    ],
+    "bed": { "b": "dungeon", "level": -24, "p": { "size": "cell", "drips": 70, "chains": 0, "groans": 0 } },
+    "seed": 239
+  },
+  {
+    "id": "spooky-behind-the-locked-door",
+    "name": "Behind the locked door",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A pleading whisper from the far side of a locked door at the end of the hall.",
+    "tags": ["door", "locked", "whisper", "muffled"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "space.muffle", "p": { "muffling": 60, "room": "hallway" } }
+    ],
+    "bed": { "b": "haunted-house", "level": -24, "p": { "moans": 0, "wind": 30 } },
+    "seed": 240
+  },
+  {
+    "id": "spooky-trapped-inside-the-mirror",
+    "name": "Trapped inside the mirror",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A voice ringing like glass, sealed inside a tiny glassy space behind the mirror.",
+    "tags": ["mirror", "glass", "trapped", "ringing"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "spec.crystal", "p": { "mix": 30 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 60 } }
+    ],
+    "seed": 241
+  },
+  {
+    "id": "spooky-something-in-the-chimney",
+    "name": "Something in the chimney",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A hollow voice echoing down a narrow brick flue while the wind moans round the house.",
+    "tags": ["chimney", "hollow", "pipe", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "space.room", "p": { "space": "sewer-pipe", "mix": 70, "size": 0.7 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 30, "distance": 2, "room": "none" } }
+    ],
+    "bed": { "b": "wind-howl", "level": -22 },
+    "seed": 242
+  },
+  {
+    "id": "spooky-voice-from-the-well",
+    "name": "Voice from the deep well",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A whisper rising from far down a deep stone well, booming round the shaft as it climbs.",
+    "tags": ["well", "below", "whisper", "echo"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "space.room", "p": { "space": "well", "mix": 80 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 10, "room": "none" } }
+    ],
+    "bed": { "b": "cave-drips", "level": -26, "p": { "drips": 2 } },
+    "seed": 243
+  },
+  {
+    "id": "spooky-under-your-bed",
+    "name": "Under your bed",
+    "cat": "spooky",
+    "sub": "Walls, floors and graves",
+    "about": "A low whisper from right underneath you, close and muffled by the mattress.",
+    "tags": ["bed", "below", "close", "whisper"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 40 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 0.6, "room": "none" } }
+    ],
+    "seed": 244
+  },
+  {
+    "id": "spooky-witch-whisper",
+    "name": "Witch's whisper",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A sharp, nasal whisper hissed right into your left ear.",
+    "tags": ["witch", "whisper", "close", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 70, "brightness": 70 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 40 } },
+      { "m": "stereo.place", "p": { "angle": -70, "distance": 0.3 } }
+    ],
+    "seed": 245
+  },
+  {
+    "id": "spooky-cackling-witch",
+    "name": "Cackling witch at the cauldron",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A wobbling, nasal, cackling voice over a popping fire and a bubbling pot.",
+    "tags": ["witch", "cackle", "nasal", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 3 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 4, "direction": "both", "tremble": 40 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 30 } }
+    ],
+    "bed": { "b": "campfire", "level": -24, "p": { "pops": 60 } },
+    "seed": 246
+  },
+  {
+    "id": "spooky-seance-at-midnight",
+    "name": "Seance at midnight",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A spirit voice ringing out of the air above the table, with faint radio hiss around it.",
+    "tags": ["seance", "spirit", "ringing", "hiss"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "spec.comb", "p": { "chord": "eerie", "ring": 60, "mix": 50 } },
+      { "m": "echo.preverb", "p": { "space": "church", "mix": 40 } }
+    ],
+    "bed": { "b": "radio-static", "level": -26, "p": { "band": "shortwave", "intensity": 35 } },
+    "seed": 247
+  },
+  {
+    "id": "spooky-medium-channelling",
+    "name": "Medium channelling a spirit",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "You in one ear and a deeper spirit speaking through you in the other, both at once.",
+    "tags": ["medium", "two voices", "spirit", "stereo"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 0, "leftTimbre": 0, "rightPitch": -6, "rightTimbre": -3, "apart": 100 } },
+      { "m": "echo.preverb", "p": { "length": 1, "mix": 35 } }
+    ],
+    "seed": 248
+  },
+  {
+    "id": "spooky-coven-chanting",
+    "name": "Coven chanting in the woods",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A ring of whispering voices chanting your words on one note in a dark forest.",
+    "tags": ["coven", "chant", "crowd", "forest"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 70 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 3, "timing": 60, "loose": 30, "room": "outdoors" } }
+    ],
+    "bed": { "b": "owl-woods", "level": -24 },
+    "seed": 249
+  },
+  {
+    "id": "spooky-spell-cast-backwards",
+    "name": "Spell cast backwards",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "Every word of the spell is said backwards in its place and then echoes backwards again.",
+    "tags": ["spell", "backwards", "reverse", "echo"],
+    "chain": [
+      { "m": "time.reversewords", "p": { "unit": "words" } },
+      { "m": "echo.reverse", "p": { "repeats": "alternate", "mix": 40 } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 35 } }
+    ],
+    "seed": 250
+  },
+  {
+    "id": "spooky-spirit-board",
+    "name": "Spirit board spelling slowly",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A slow, dragging whisper that crawls through each word like a pointer across a board.",
+    "tags": ["spirit", "slow", "whisper", "clock"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "space.room", "p": { "mix": 40 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -24, "p": { "clock": "mantel" } },
+    "seed": 251
+  },
+  {
+    "id": "spooky-fortune-teller",
+    "name": "Fortune teller's warning",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A ringing, wavering voice inside a tent at a far-off night fairground.",
+    "tags": ["fortune teller", "fairground", "ringing", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 1 } },
+      { "m": "spec.comb", "p": { "base": 220, "chord": "minor", "ring": 60, "mix": 30 } },
+      { "m": "pitch.vibrato", "p": { "rate": 4.5, "depth": 40 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 40 } }
+    ],
+    "bed": { "b": "carnival", "level": -28, "p": { "music": 60, "intensity": 20 } },
+    "seed": 252
+  },
+  {
+    "id": "spooky-swamp-witch-in-her-hut",
+    "name": "Swamp witch in her hut",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A creaking, quavering old voice calling from her hut over the bubbling swamp.",
+    "tags": ["witch", "creak", "swamp", "old"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 50, "rough": 40 } },
+      { "m": "pitch.vibrato", "p": { "depth": 60, "shape": "random" } }
+    ],
+    "bed": { "b": "swamp", "level": -22 },
+    "seed": 253
+  },
+  {
+    "id": "spooky-witches-on-the-wind",
+    "name": "Witches flying past on the wind",
+    "cat": "spooky",
+    "sub": "Witches and seances",
+    "about": "A whispering, cackling voice swooping past your head twice on a howling night wind.",
+    "tags": ["witch", "flyby", "wind", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "stereo.flyby", "p": { "passes": 2, "height": 30 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -22, "p": { "where": "outside" } },
+    "seed": 254
+  },
+  {
+    "id": "spooky-wailing-spirit",
+    "name": "Wailing spirit",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A high, throbbing, sobbing wail whose echo rises an octave above it.",
+    "tags": ["wail", "high", "shimmer", "throb"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 2 } },
+      { "m": "pitch.vibrato", "p": { "rate": 4.5, "depth": 120, "throb": 50 } },
+      { "m": "space.shimmer", "p": { "amount": 50, "mix": 35 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -24 },
+    "seed": 255
+  },
+  {
+    "id": "spooky-banshee-on-the-moor",
+    "name": "Banshee on the moor",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A shrill, swooping, ragged keening carried a long way across an open moor in the wind.",
+    "tags": ["banshee", "wail", "far", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 3 } },
+      { "m": "pitch.wobble", "p": { "depth": 250, "speed": 0.5, "randomness": 20 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "overdrive", "mix": 30 } },
+      { "m": "space.distance", "p": { "echoes": 70 } }
+    ],
+    "bed": { "b": "wind", "level": -22, "p": { "strength": 70 } },
+    "seed": 256
+  },
+  {
+    "id": "spooky-moaning-in-the-wind",
+    "name": "Spoken by the moaning wind",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "Your words made of nothing but howling wind, moaning slowly around the house.",
+    "tags": ["wind", "morph", "moan", "slow"],
+    "chain": [
+      { "m": "spec.morph", "p": { "amount": 70, "clarity": 50 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -20 },
+    "seed": 257
+  },
+  {
+    "id": "spooky-lost-soul-calling",
+    "name": "Lost soul calling",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A thin, wandering voice calling from very far away across dry rustling woods.",
+    "tags": ["lost", "far", "whisper", "woods"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "pitch.wobble", "p": { "depth": 100, "speed": 0.3 } },
+      { "m": "space.distance", "p": { "distance": 120, "echoes": 60 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -22, "p": { "leaves": "dry" } },
+    "seed": 258
+  },
+  {
+    "id": "spooky-howling-down-the-hallway",
+    "name": "Howling down the hallway",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A smeared, wavering howl that walks away from you down a long echoing corridor.",
+    "tags": ["howl", "hallway", "walking away", "smeared"],
+    "chain": [
+      { "m": "pitch.vibrato", "p": { "rate": 3, "depth": 100 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 800 } },
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 20 } }
+    ],
+    "seed": 259
+  },
+  {
+    "id": "spooky-weeping-spirit",
+    "name": "Weeping spirit in the rain",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A trembling, sobbing, breathy voice in an echoing room while rain taps the window.",
+    "tags": ["weeping", "trembling", "rain", "breathy"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 3, "direction": "both", "tremble": 70 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "space.room", "p": { "space": "bathroom", "mix": 40 } }
+    ],
+    "bed": { "b": "rain-window", "level": -22 },
+    "seed": 260
+  },
+  {
+    "id": "spooky-hollow-moan-from-below",
+    "name": "Hollow moan from below",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A slow, droning moan ringing up from a crypt beneath a stone church.",
+    "tags": ["moan", "below", "drone", "church"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 80, "ring": 70 } },
+      { "m": "time.drawl", "p": { "factor": 1.6 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -30, "distance": 5, "room": "church" } }
+    ],
+    "seed": 261
+  },
+  {
+    "id": "spooky-ghost-sighing-every-word",
+    "name": "Ghost sighing every word",
+    "cat": "spooky",
+    "sub": "Wailing spirits",
+    "about": "A breathy voice that hangs on to each word and lets it ring out like a long sigh.",
+    "tags": ["sigh", "frozen", "whisper", "reverb"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "hold": 2000, "interval": 1200, "blend": 60 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "space.reverb", "p": { "decay": 5, "mix": 40 } }
+    ],
+    "seed": 262
+  },
+  {
+    "id": "spooky-creepy-child",
+    "name": "Creepy child in the empty house",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A small, slow, sing-song child's voice echoing through a big empty house.",
+    "tags": ["child", "slow", "echo", "house"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 40 } }
+    ],
+    "bed": { "b": "haunted-house", "level": -26, "p": { "moans": 0 } },
+    "seed": 263
+  },
+  {
+    "id": "spooky-haunted-doll",
+    "name": "Haunted doll",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A tiny, flat, gritty doll voice from a cheap speaker, with an uncanny shimmer behind it.",
+    "tags": ["doll", "toy", "flat", "shimmer"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 7 } },
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "device.toy", "p": { "chip": "sample", "speaker": 70 } },
+      { "m": "space.shimmer", "p": { "mix": 20 } }
+    ],
+    "seed": 264
+  },
+  {
+    "id": "spooky-nursery-ghost-singing",
+    "name": "Nursery ghost singing",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A fragile, high little voice singing your words in a minor key, echoing in an empty room.",
+    "tags": ["child", "singing", "minor", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 4 } },
+      { "m": "pitch.correct", "p": { "key": "A", "scale": "minor", "speed": 30 } },
+      { "m": "echo.delay", "p": { "time": 500, "feedback": 45, "damping": 60 } },
+      { "m": "space.reverb", "p": { "mix": 40 } }
+    ],
+    "seed": 265
+  },
+  {
+    "id": "spooky-twins-speaking-together",
+    "name": "Twins speaking together",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "Two flat little voices, one in each ear, saying every word in eerie step down a hallway.",
+    "tags": ["twins", "children", "stereo", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 40 } },
+      { "m": "stereo.split", "p": { "leftPitch": 5, "leftTimbre": 4, "rightPitch": 5.5, "rightTimbre": 3.5, "apart": 100 } },
+      { "m": "space.room", "p": { "space": "hallway", "mix": 40 } }
+    ],
+    "seed": 266
+  },
+  {
+    "id": "spooky-little-voice-in-the-closet",
+    "name": "Little voice in the closet",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A small breathy voice from inside the bedroom closet, asking you to open the door.",
+    "tags": ["child", "closet", "muffled", "whisper"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "space.muffle", "p": { "wall": "closet", "muffling": 45, "room": "bedroom" } }
+    ],
+    "seed": 267
+  },
+  {
+    "id": "spooky-child-on-the-swings",
+    "name": "Child on the swings at night",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A little voice swinging back and forth across an empty playground on a cricket-filled night.",
+    "tags": ["child", "swing", "night", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 4 } },
+      { "m": "space.distance", "p": { "distance": 30, "echoes": 40, "wind": 10 } },
+      { "m": "mod.autopan", "p": { "rate": 0.5, "width": 60 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -22 },
+    "seed": 268
+  },
+  {
+    "id": "spooky-toy-talking-at-night",
+    "name": "Toy that talks at night",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A battery toy in a dark bedroom that keeps talking, then slows to a stop mid-word.",
+    "tags": ["toy", "battery", "slowing", "bedroom"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3 } },
+      { "m": "device.toy", "p": { "battery": 60 } },
+      { "m": "time.tapestop", "p": { "when": "phrases", "chance": 40 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 50 } }
+    ],
+    "seed": 269
+  },
+  {
+    "id": "spooky-porcelain-doll-in-the-attic",
+    "name": "Porcelain doll in the attic",
+    "cat": "spooky",
+    "sub": "Creepy children and dolls",
+    "about": "A tiny glassy voice ringing down from somewhere high up in the attic.",
+    "tags": ["doll", "porcelain", "above", "glass"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 6 } },
+      { "m": "synth.resonator", "p": { "object": "glass", "mix": 25 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 60, "distance": 4 } }
+    ],
+    "seed": 270
+  },
+  {
+    "id": "spooky-shadow-figure",
+    "name": "Shadow figure in the doorway",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A dark, wispy voice made mostly of breath, standing in the doorway across the room.",
+    "tags": ["shadow", "dark", "wispy", "doorway"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "spec.thin", "p": { "threshold": -25, "keep": "quiet", "mix": 60 } },
+      { "m": "tone.tilt", "p": { "amount": -5 } },
+      { "m": "stereo.place", "p": { "angle": -30, "distance": 4 } }
+    ],
+    "seed": 271
+  },
+  {
+    "id": "spooky-cackling-crypt-host",
+    "name": "Cackling crypt host",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A gleeful, nasal, quavering storyteller welcoming you down into his dripping crypt.",
+    "tags": ["host", "cackle", "nasal", "crypt"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 1 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 50 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 5, "direction": "both" } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 35 } }
+    ],
+    "bed": { "b": "dungeon", "level": -26, "p": { "chains": 20, "groans": 20 } },
+    "seed": 272
+  },
+  {
+    "id": "spooky-cold-presence",
+    "name": "Cold presence in the room",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "Dark, chilly tails hang behind every word, as if the room itself is breathing.",
+    "tags": ["cold", "dark", "reverb", "breath"],
+    "chain": [
+      { "m": "spec.thin", "p": { "threshold": -30, "keep": "quiet", "mix": 40 } },
+      { "m": "tone.tilt", "p": { "amount": -4 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 5, "damping": 90, "mix": 35 } }
+    ],
+    "seed": 273
+  },
+  {
+    "id": "spooky-whispers-at-the-edge-of-sleep",
+    "name": "Whispers at the edge of sleep",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "Thin whispers in both ears at once, slightly out of step, as you drift off.",
+    "tags": ["whisper", "both ears", "close", "headphones"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 85 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 300 } },
+      { "m": "stereo.double", "p": { "timing": 50, "spread": 100 } }
+    ],
+    "seed": 274
+  },
+  {
+    "id": "spooky-narrator-of-nightmares",
+    "name": "Narrator of nightmares",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A deep, close, velvety late-night storyteller with a clock ticking in the dark room.",
+    "tags": ["narrator", "deep", "close", "clock"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -4 } },
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 70, "warmth": 6 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2, "mix": 20 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -24 },
+    "seed": 275
+  },
+  {
+    "id": "spooky-whispers-from-every-corner",
+    "name": "Whispers from every corner",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A handful of whispering copies of you murmuring from every corner of a small room.",
+    "tags": ["whisper", "many", "room", "surround"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 90 } },
+      { "m": "stereo.crowd", "p": { "people": 4, "timing": 250, "spread": 100, "room": "small-room", "you": 0 } }
+    ],
+    "seed": 276
+  },
+  {
+    "id": "spooky-haunted-house-tour",
+    "name": "Haunted house tour guide",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A spooky guide leading you down the creaking halls of an old mansion at night.",
+    "tags": ["tour", "house", "creaks", "walking"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "echo.slapback", "p": { "character": "room", "level": 35 } },
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 6 } }
+    ],
+    "bed": { "b": "haunted-house", "level": -18, "p": { "intensity": 60 } },
+    "seed": 277
+  },
+  {
+    "id": "spooky-watcher-in-the-trees",
+    "name": "Something watching from the trees",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A low whisper off behind your right shoulder, somewhere out among the dark trees.",
+    "tags": ["watcher", "woods", "behind", "whisper"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "stereo.place", "p": { "angle": 120, "distance": 15, "room": "outdoors" } }
+    ],
+    "bed": { "b": "owl-woods", "level": -22, "p": { "intensity": 40 } },
+    "seed": 278
+  },
+  {
+    "id": "spooky-heart-pounding-in-the-dark",
+    "name": "Heart pounding in the dark",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "Your own breathy voice right up close, over a racing heartbeat thumping in your head.",
+    "tags": ["heartbeat", "close", "breathy", "fear"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 0.3, "room": "none" } }
+    ],
+    "bed": { "b": "heartbeat", "level": -14, "p": { "rate": 130, "place": "inside" } },
+    "seed": 279
+  },
+  {
+    "id": "spooky-clock-strikes-midnight",
+    "name": "When the clock strikes midnight",
+    "cat": "spooky",
+    "sub": "Shadows and dread",
+    "about": "A deep, grave voice swelling out of a vast hall as a tall clock begins to strike.",
+    "tags": ["midnight", "clock", "deep", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -4 } },
+      { "m": "echo.preverb", "p": { "length": 1.8, "mix": 40 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 40 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -20, "p": { "clock": "tall", "size": "hall", "strike": true } },
+    "seed": 280
+  }
+]

@@ -1,0 +1,139 @@
+[
+  {
+    "id": "much-deeper-voice",
+    "name": "Much deeper voice",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "Your own voice, a big step lower and a little larger.",
+    "tags": ["deep", "lower", "bigger"],
+    "chain": [{ "m": "pitch.voice", "p": { "semitones": -6, "formant": -3 } }],
+    "seed": 1
+  },
+  {
+    "id": "giant-in-a-cave",
+    "name": "Giant in a cave",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A huge slow voice booming off wet stone.",
+    "tags": ["deep", "huge", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -6 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 70 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "tin-invader",
+    "name": "Tin invader",
+    "cat": "robots",
+    "sub": "Classic movie robots",
+    "about": "The ring-modulated metal voice of an old movie space invader.",
+    "tags": ["robot", "metal", "alien"],
+    "chain": [
+      { "m": "synth.ringmod", "p": { "freq": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "echo.slapback", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "walkie-talkie-low-battery",
+    "name": "Walkie-talkie, low battery",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A crackly handheld radio with a weak signal and a chirp when you let go.",
+    "tags": ["radio", "walkie", "crackle"],
+    "chain": [{ "m": "device.walkie", "p": { "signal": 45, "beep": "chirp" } }],
+    "seed": 1
+  },
+  {
+    "id": "singing-in-the-shower",
+    "name": "Singing in the shower",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Bright tiled walls close around you in a steamy shower.",
+    "tags": ["room", "tiles", "small"],
+    "chain": [{ "m": "space.room", "p": { "space": "shower" } }],
+    "seed": 1
+  },
+  {
+    "id": "caught-in-the-rain",
+    "name": "Caught in the rain",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Talking outside while steady rain falls all around.",
+    "tags": ["rain", "weather", "outdoors"],
+    "chain": [{ "m": "space.room", "p": { "space": "field", "mix": 60 } }],
+    "bed": { "b": "rain", "level": -14, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "circling-your-head-slow",
+    "name": "Circling your head, slow",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Your voice walks slowly around your head; best on headphones.",
+    "tags": ["3d", "headphones", "moving"],
+    "chain": [{ "m": "stereo.orbit", "p": { "period": 8 } }],
+    "seed": 1
+  },
+  {
+    "id": "backwards-words",
+    "name": "Backwards words",
+    "cat": "echo",
+    "sub": "Backwards",
+    "about": "Every syllable plays backwards in its own place, like a secret language.",
+    "tags": ["reverse", "backwards", "secret"],
+    "chain": [{ "m": "time.reversewords", "p": {} }],
+    "seed": 1
+  },
+  {
+    "id": "ghost-in-the-hall",
+    "name": "Ghost in the hall",
+    "cat": "spooky",
+    "sub": "Ghosts",
+    "about": "A breathy drifting voice whose echo swells up before every word.",
+    "tags": ["ghost", "whisper", "reverse"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "pitch.wobble", "p": { "depth": 40 } },
+      { "m": "echo.preverb", "p": { "space": "cathedral" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "eight-bit-console-voice",
+    "name": "8-bit console voice",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "Your voice squeezed through the sample chip of an old 8-bit game console.",
+    "tags": ["retro", "game", "chip"],
+    "chain": [{ "m": "lofi.console", "p": {} }],
+    "seed": 1
+  },
+  {
+    "id": "talk-box-funk-lead",
+    "name": "Talk box funk lead",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A smooth synth lead shaped by your mouth, following the tune of your voice.",
+    "tags": ["talk box", "synth", "funk"],
+    "chain": [{ "m": "synth.talkbox", "p": {} }],
+    "seed": 1
+  },
+  {
+    "id": "podcast-ready",
+    "name": "Podcast ready",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Less background noise, steadier level and a close, clear podcast sound.",
+    "tags": ["clean", "podcast", "studio"],
+    "chain": [
+      { "m": "tone.denoise", "p": {} },
+      { "m": "tone.compress", "p": {} },
+      { "m": "tone.broadcast", "p": { "style": "podcast" } }
+    ],
+    "seed": 1
+  }
+]

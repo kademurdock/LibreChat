@@ -1,0 +1,813 @@
+[
+  {
+    "id": "singing-studio-polish",
+    "name": "Studio polish",
+    "cat": "singing",
+    "sub": "Polish and tone",
+    "about": "A clean finished vocal: rumble cut, s sounds tamed, level evened out, and a breath of plate.",
+    "tags": [
+      "clean",
+      "polish",
+      "mix",
+      "vocal"
+    ],
+    "chain": [
+      {
+        "m": "tone.eq",
+        "p": {
+          "band1Freq": 90,
+          "band2Gain": -1.5,
+          "band4Gain": 1.5,
+          "band6Gain": 2
+        }
+      },
+      {
+        "m": "tone.deess",
+        "p": {
+          "range": 6
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -22,
+          "attack": 8,
+          "release": 140
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.4,
+          "mix": 12
+        }
+      },
+      {
+        "m": "tone.limit",
+        "p": {
+          "push": 2
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-radio-ready-vocal",
+    "name": "Radio-ready vocal",
+    "cat": "singing",
+    "sub": "Polish and tone",
+    "about": "Bright, dense and right up front, the way a lead vocal sits on a finished single.",
+    "tags": [
+      "bright",
+      "loud",
+      "pop",
+      "mix"
+    ],
+    "chain": [
+      {
+        "m": "tone.eq",
+        "p": {
+          "band1Freq": 100,
+          "band2Gain": -3,
+          "band4Gain": 3.5,
+          "band6Gain": 4.5
+        }
+      },
+      {
+        "m": "tone.deess",
+        "p": {
+          "threshold": -30,
+          "range": 9
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -26,
+          "ratio": 4,
+          "attack": 4,
+          "release": 100
+        }
+      },
+      {
+        "m": "lofi.saturate",
+        "p": {
+          "drive": 4,
+          "bump": 1
+        }
+      },
+      {
+        "m": "tone.limit",
+        "p": {
+          "push": 5
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-close-and-warm",
+    "name": "Close and warm",
+    "cat": "singing",
+    "sub": "Polish and tone",
+    "about": "A soft, close vocal with a full low end and no hard edges, for a quiet song.",
+    "tags": [
+      "warm",
+      "soft",
+      "close",
+      "ballad"
+    ],
+    "chain": [
+      {
+        "m": "tone.eq",
+        "p": {
+          "band1Freq": 60,
+          "band2Type": "lowshelf",
+          "band2Freq": 200,
+          "band2Gain": 2.5,
+          "band4Gain": -1,
+          "band6Gain": 0.5
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -20,
+          "ratio": 2.5,
+          "attack": 15,
+          "release": 200
+        }
+      },
+      {
+        "m": "lofi.saturate",
+        "p": {
+          "drive": 6,
+          "bump": 2
+        }
+      },
+      {
+        "m": "space.room",
+        "p": {
+          "space": "ambience",
+          "mix": 15
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-warm-plate",
+    "name": "Warm plate",
+    "cat": "singing",
+    "sub": "Reverbs and echoes",
+    "about": "A smooth, warm plate reverb behind the vocal, dense from the first instant.",
+    "tags": [
+      "plate",
+      "reverb",
+      "warm",
+      "classic"
+    ],
+    "chain": [
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -20,
+          "ratio": 2.5
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 2.2,
+          "tone": 45,
+          "predelay": 20,
+          "mix": 26
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-big-hall-ballad",
+    "name": "Big hall ballad",
+    "cat": "singing",
+    "sub": "Reverbs and echoes",
+    "about": "A long concert hall tail that blooms after every line, with the words kept in front.",
+    "tags": [
+      "hall",
+      "reverb",
+      "ballad",
+      "big"
+    ],
+    "chain": [
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -22,
+          "attack": 10
+        }
+      },
+      {
+        "m": "space.hall",
+        "p": {
+          "size": 80,
+          "decay": 3.6,
+          "predelay": 45,
+          "damping": 50,
+          "mix": 32
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-slapback-rock",
+    "name": "Slapback rock",
+    "cat": "singing",
+    "sub": "Reverbs and echoes",
+    "about": "One quick tape slap right behind the voice, the sound of early rock and roll records.",
+    "tags": [
+      "slapback",
+      "echo",
+      "rock",
+      "tape"
+    ],
+    "chain": [
+      {
+        "m": "lofi.saturate",
+        "p": {
+          "drive": 7
+        }
+      },
+      {
+        "m": "echo.slapback",
+        "p": {
+          "time": 125,
+          "level": 50
+        }
+      },
+      {
+        "m": "space.spring",
+        "p": {
+          "mix": 14,
+          "decay": 1.6
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-dotted-echo",
+    "name": "Dotted echo",
+    "cat": "singing",
+    "sub": "Reverbs and echoes",
+    "about": "Echoes on the dotted eighth note at 120 beats a minute, bouncing between your ears.",
+    "tags": [
+      "echo",
+      "dotted",
+      "tempo",
+      "ping-pong"
+    ],
+    "chain": [
+      {
+        "m": "echo.delay",
+        "p": {
+          "division": "dotted",
+          "feedback": 38,
+          "damping": 45,
+          "mix": 28
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.2,
+          "mix": 10
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-dream-wash",
+    "name": "Dream wash",
+    "cat": "singing",
+    "sub": "Reverbs and echoes",
+    "about": "The vocal dissolves into a glowing wash that climbs an octave as it fades.",
+    "tags": [
+      "shimmer",
+      "dreamy",
+      "ambient",
+      "wash"
+    ],
+    "chain": [
+      {
+        "m": "mod.chorus",
+        "p": {
+          "voices": 2,
+          "depth": 30,
+          "mix": 30
+        }
+      },
+      {
+        "m": "echo.delay",
+        "p": {
+          "time": 480,
+          "feedback": 45,
+          "damping": 55,
+          "stereo": "wide",
+          "mix": 24
+        }
+      },
+      {
+        "m": "space.shimmer",
+        "p": {
+          "amount": 50,
+          "decay": 6,
+          "mix": 38
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-hard-tune-pop",
+    "name": "Hard tune pop",
+    "cat": "singing",
+    "sub": "Tuning and harmony",
+    "about": "Every note snapped hard onto C major, the robotic pop vocal; set the key to your song.",
+    "tags": [
+      "pitch correction",
+      "hard tune",
+      "pop",
+      "robotic"
+    ],
+    "chain": [
+      {
+        "m": "pitch.correct",
+        "p": {
+          "scale": "major"
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "ratio": 4,
+          "attack": 3
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.3,
+          "mix": 14
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-soft-tune",
+    "name": "Soft tune",
+    "cat": "singing",
+    "sub": "Tuning and harmony",
+    "about": "A gentle pull toward the nearest note that keeps your slides and vibrato, too soft to hear working.",
+    "tags": [
+      "pitch correction",
+      "natural",
+      "subtle"
+    ],
+    "chain": [
+      {
+        "m": "pitch.correct",
+        "p": {
+          "speed": 90,
+          "humanize": 45
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -20,
+          "ratio": 2.5
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-doubled-chorus",
+    "name": "Doubled chorus",
+    "cat": "singing",
+    "sub": "Tuning and harmony",
+    "about": "Two more takes of you tucked either side, the thick doubled vocal of a big chorus.",
+    "tags": [
+      "double",
+      "wide",
+      "chorus",
+      "thick"
+    ],
+    "chain": [
+      {
+        "m": "stereo.double",
+        "p": {
+          "timing": 22,
+          "pitch": 12,
+          "level": -4
+        }
+      },
+      {
+        "m": "mod.chorus",
+        "p": {
+          "voices": 2,
+          "depth": 25,
+          "mix": 22
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.6,
+          "mix": 16
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-wide-harmonies",
+    "name": "Wide harmonies",
+    "cat": "singing",
+    "sub": "Tuning and harmony",
+    "about": "A third and a fifth above you that stay in C major, one in each ear; set the key to your song.",
+    "tags": [
+      "harmony",
+      "in key",
+      "wide",
+      "backing vocals"
+    ],
+    "chain": [
+      {
+        "m": "pitch.harmonizer",
+        "p": {
+          "part2": "fifth-up",
+          "spread": 90,
+          "level": -6
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "mix": 18
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-octave-below-shadow",
+    "name": "Octave below shadow",
+    "cat": "singing",
+    "sub": "Tuning and harmony",
+    "about": "A second singer an octave under you, quiet and in the middle, making the voice sound bigger.",
+    "tags": [
+      "octave",
+      "harmony",
+      "deep",
+      "thick"
+    ],
+    "chain": [
+      {
+        "m": "pitch.harmonizer",
+        "p": {
+          "part1": "octave-down",
+          "spread": 0,
+          "level": -9,
+          "snap": 30
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -22
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-telephone-verse",
+    "name": "Telephone verse",
+    "cat": "singing",
+    "sub": "Old machines and lo-fi",
+    "about": "The vocal squeezed down a phone line, for a verse that opens up when the chorus comes.",
+    "tags": [
+      "telephone",
+      "thin",
+      "filter",
+      "verse"
+    ],
+    "chain": [
+      {
+        "m": "device.phone",
+        "p": {
+          "era": "cordless",
+          "noise": 6,
+          "hum": 0,
+          "crackle": 0,
+          "rough": 30
+        }
+      },
+      {
+        "m": "echo.slapback",
+        "p": {
+          "time": 95,
+          "level": 22,
+          "character": "clean"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-lo-fi-tape",
+    "name": "Lo-fi tape",
+    "cat": "singing",
+    "sub": "Old machines and lo-fi",
+    "about": "A worn cassette: soft top, a slow wobble in the pitch, and a little hiss.",
+    "tags": [
+      "tape",
+      "lo-fi",
+      "cassette",
+      "wobble"
+    ],
+    "chain": [
+      {
+        "m": "device.cassette",
+        "p": {
+          "tape": "worn",
+          "hiss": 18,
+          "wow": 40,
+          "flutter": 30,
+          "dropouts": 4,
+          "highLoss": 40
+        }
+      },
+      {
+        "m": "lofi.saturate",
+        "p": {
+          "drive": 7,
+          "bump": 4
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-vinyl-old-soul",
+    "name": "Vinyl old soul",
+    "cat": "singing",
+    "sub": "Old machines and lo-fi",
+    "about": "A soul single off an old record: warm, a touch of crackle, and a spring reverb behind it.",
+    "tags": [
+      "vinyl",
+      "record",
+      "soul",
+      "crackle"
+    ],
+    "chain": [
+      {
+        "m": "tone.eq",
+        "p": {
+          "band1Freq": 110,
+          "band4Gain": 1,
+          "band6Type": "highcut",
+          "band6Freq": 9000
+        }
+      },
+      {
+        "m": "space.spring",
+        "p": {
+          "mix": 22,
+          "decay": 2
+        }
+      },
+      {
+        "m": "device.vinyl",
+        "p": {
+          "crackle": 28,
+          "pops": 12,
+          "rumble": 10,
+          "wow": 15,
+          "wear": 30,
+          "speed": "45"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-megaphone-shout",
+    "name": "Megaphone shout",
+    "cat": "singing",
+    "sub": "Old machines and lo-fi",
+    "about": "The vocal barked through a bullhorn, with its slap coming back off the street.",
+    "tags": [
+      "megaphone",
+      "bullhorn",
+      "distorted",
+      "shout"
+    ],
+    "chain": [
+      {
+        "m": "device.megaphone",
+        "p": {
+          "push": 65,
+          "outdoors": 35
+        }
+      },
+      {
+        "m": "tone.limit",
+        "p": {
+          "push": 3
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-bit-crushed",
+    "name": "Bit crushed",
+    "cat": "singing",
+    "sub": "Old machines and lo-fi",
+    "about": "Gritty and ringing, as if the vocal was sampled into a very old drum machine.",
+    "tags": [
+      "bit crusher",
+      "gritty",
+      "digital",
+      "sampler"
+    ],
+    "chain": [
+      {
+        "m": "lofi.downsample",
+        "p": {
+          "rate": 11000,
+          "mix": 85
+        }
+      },
+      {
+        "m": "lofi.crush",
+        "p": {
+          "bits": 8,
+          "rate": 22000,
+          "mix": 80
+        }
+      },
+      {
+        "m": "tone.limit",
+        "p": {
+          "push": 2
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-robot-hook",
+    "name": "Robot hook",
+    "cat": "singing",
+    "sub": "Hooks and tricks",
+    "about": "Your words sung by a synth chord in A minor, the vocoder hook; set the key to your song.",
+    "tags": [
+      "vocoder",
+      "robot",
+      "synth",
+      "hook"
+    ],
+    "chain": [
+      {
+        "m": "synth.vocoder",
+        "p": {
+          "carrier": "supersaw",
+          "chord": "minor7",
+          "key": "a",
+          "bands": 32,
+          "consonants": 70,
+          "mix": 90
+        }
+      },
+      {
+        "m": "mod.chorus",
+        "p": {
+          "voices": 2,
+          "mix": 25
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.5,
+          "mix": 15
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-stutter-build",
+    "name": "Stutter build",
+    "cat": "singing",
+    "sub": "Hooks and tricks",
+    "about": "Words catch and repeat faster and faster, like a build before the drop.",
+    "tags": [
+      "stutter",
+      "repeat",
+      "build",
+      "glitch"
+    ],
+    "chain": [
+      {
+        "m": "time.stutter",
+        "p": {
+          "where": "phrases",
+          "repeats": 6,
+          "pieceMs": 120,
+          "chance": 70,
+          "roll": "faster"
+        }
+      },
+      {
+        "m": "echo.delay",
+        "p": {
+          "division": "eighth",
+          "feedback": 25,
+          "mix": 18
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-reverse-swell",
+    "name": "Reverse swell",
+    "cat": "singing",
+    "sub": "Hooks and tricks",
+    "about": "A ghostly swell of reverb rises into each word before you sing it.",
+    "tags": [
+      "reverse reverb",
+      "swell",
+      "ghostly",
+      "intro"
+    ],
+    "chain": [
+      {
+        "m": "echo.preverb",
+        "p": {
+          "length": 1.8,
+          "space": "plate",
+          "mix": 55,
+          "after": 25
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -22
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "singing-chopped-tremolo",
+    "name": "Chopped tremolo",
+    "cat": "singing",
+    "sub": "Hooks and tricks",
+    "about": "The vocal chopped into even pulses, sixteen to the bar at 120 beats a minute.",
+    "tags": [
+      "tremolo",
+      "chopped",
+      "gate",
+      "rhythm"
+    ],
+    "chain": [
+      {
+        "m": "mod.gate",
+        "p": {
+          "pattern": "stutter",
+          "steps": "8",
+          "smooth": 8,
+          "depth": 90
+        }
+      },
+      {
+        "m": "space.plate",
+        "p": {
+          "decay": 1.4,
+          "mix": 14
+        }
+      }
+    ],
+    "seed": 1
+  }
+]

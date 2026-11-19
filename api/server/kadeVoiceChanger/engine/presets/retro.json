@@ -1,0 +1,1405 @@
+[
+  {
+    "id": "retro-wax-cylinder-1900",
+    "name": "Wax cylinder, 1900",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A voice cut into wax around 1900: narrow and honky, wobbling under a roar of hiss.",
+    "tags": ["cylinder", "1900", "hiss", "antique"],
+    "chain": [{ "m": "device.cylinder", "p": {} }],
+    "seed": 301
+  },
+  {
+    "id": "retro-worn-wax-cylinder",
+    "name": "Worn-out wax cylinder",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A cylinder played to death: frying crackle, heavy wobble and a voice almost lost in the roar.",
+    "tags": ["cylinder", "worn", "crackle", "antique"],
+    "chain": [{ "m": "device.cylinder", "p": { "wear": 90, "hiss": 80, "wobble": 70 } }],
+    "seed": 302
+  },
+  {
+    "id": "retro-phonograph-in-the-parlor",
+    "name": "Phonograph in the parlor",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A cylinder machine playing across an old-fashioned sitting room, its little horn filling the space.",
+    "tags": ["cylinder", "phonograph", "room", "antique"],
+    "chain": [
+      { "m": "device.cylinder", "p": { "band": 75, "hiss": 45 } },
+      { "m": "space.room", "p": { "mix": 45, "distance": 65 } }
+    ],
+    "seed": 303
+  },
+  {
+    "id": "retro-gramophone-78",
+    "name": "Gramophone 78",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A shellac record on a wind-up gramophone: horn honk, gritty hiss and a scratch going round.",
+    "tags": ["gramophone", "78", "shellac", "crackle"],
+    "chain": [{ "m": "device.gramophone", "p": {} }],
+    "seed": 304
+  },
+  {
+    "id": "retro-78-played-too-fast",
+    "name": "78 played too fast",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "An early record on a machine cranked far too fast, so the voice comes out quick and chirpy.",
+    "tags": ["gramophone", "fast", "high", "78"],
+    "chain": [
+      { "m": "device.gramophone", "p": { "speed": "90" } },
+      { "m": "pitch.speed", "p": { "speed": 1.2 } }
+    ],
+    "seed": 305
+  },
+  {
+    "id": "retro-78-played-too-slow",
+    "name": "78 played too slow",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "The same old disc on a sluggish turntable: lower, slower and a little drowsy.",
+    "tags": ["gramophone", "slow", "low", "78"],
+    "chain": [
+      { "m": "device.gramophone", "p": { "speed": "70", "wow": 45 } },
+      { "m": "pitch.speed", "p": { "speed": 0.8 } }
+    ],
+    "seed": 306
+  },
+  {
+    "id": "retro-gramophone-running-down",
+    "name": "Wind-up gramophone running down",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "The spring gives out near the end and the voice sags slowly into a groan.",
+    "tags": ["gramophone", "slowing", "spring", "78"],
+    "chain": [{ "m": "device.gramophone", "p": { "speed": "rundown" } }],
+    "seed": 307
+  },
+  {
+    "id": "retro-little-table-gramophone",
+    "name": "Little table gramophone",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A small portable machine with a tiny horn: thin, nasal and crackling hard.",
+    "tags": ["gramophone", "small", "nasal", "crackle"],
+    "chain": [{ "m": "device.gramophone", "p": { "horn": "small", "crackle": 70 } }],
+    "seed": 308
+  },
+  {
+    "id": "retro-electric-78-1930s",
+    "name": "Electric 78 from the 1930s",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A later electrical recording on a valve set: fuller and warmer, still hissing.",
+    "tags": ["78", "1930s", "warm", "shellac"],
+    "chain": [{ "m": "device.gramophone", "p": { "horn": "electric", "surface": 30 } }],
+    "seed": 309
+  },
+  {
+    "id": "retro-skipping-78",
+    "name": "Skipping 78 record",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A cracked old disc that jumps back a groove now and then and repeats itself.",
+    "tags": ["78", "skipping", "repeat", "shellac"],
+    "chain": [
+      { "m": "device.gramophone", "p": { "wear": 70 } },
+      { "m": "time.stutter", "p": { "where": "random", "repeats": 2, "pieceMs": 400, "chance": 35 } }
+    ],
+    "seed": 310
+  },
+  {
+    "id": "retro-wire-recorder-1940s",
+    "name": "Wire recorder, 1940s",
+    "cat": "retro",
+    "sub": "The earliest recordings",
+    "about": "A voice stored on spooled steel wire: narrow and honky, fluttering fast and hissing like steam.",
+    "tags": ["wire recorder", "1940s", "flutter", "hiss"],
+    "chain": [
+      { "m": "device.cassette", "p": { "tape": "worn", "flutter": 90, "wow": 30, "hiss": 70, "highLoss": 60, "saturation": 50, "dropouts": 30 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 60 } }
+    ],
+    "seed": 423
+  },
+
+  {
+    "id": "retro-dusty-vinyl-lp",
+    "name": "Dusty vinyl LP",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A long-player with dust in the grooves: soft crackle, pops and a low turntable rumble.",
+    "tags": ["vinyl", "record", "crackle", "warm"],
+    "chain": [{ "m": "device.vinyl", "p": {} }],
+    "seed": 311
+  },
+  {
+    "id": "retro-warped-record",
+    "name": "Warped record",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A record left in the sun: the pitch swings up and down on every turn.",
+    "tags": ["vinyl", "warped", "wobble", "pitch"],
+    "chain": [{ "m": "device.vinyl", "p": { "warp": 100, "wow": 60 } }],
+    "seed": 312
+  },
+  {
+    "id": "retro-suitcase-record-player",
+    "name": "Suitcase record player",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A 45 single on a cheap portable player with its own boxy little speaker in the lid.",
+    "tags": ["vinyl", "portable", "45", "small speaker"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "speed": "45" } },
+      { "m": "lofi.speaker", "p": { "size": "radio", "push": 10 } }
+    ],
+    "seed": 313
+  },
+  {
+    "id": "retro-brand-new-pressing",
+    "name": "Brand new pressing",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A fresh record straight from the sleeve: warm and round, with only a faint tick or two.",
+    "tags": ["vinyl", "clean", "warm", "new"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 8, "pops": 5, "wear": 0, "rumble": 10 } },
+      { "m": "lofi.saturate", "p": { "drive": 5 } }
+    ],
+    "seed": 314
+  },
+  {
+    "id": "retro-diner-jukebox",
+    "name": "Jukebox in a diner",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A worn single booming out of the jukebox while cups clink and people chat at the counter.",
+    "tags": ["jukebox", "diner", "vinyl", "crowd"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "speed": "45", "wear": 60, "pops": 40 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 35, "distance": 60 } }
+    ],
+    "bed": { "b": "cafe", "level": -22, "p": { "espresso": 15 } },
+    "seed": 315
+  },
+  {
+    "id": "retro-turntable-losing-power",
+    "name": "Turntable losing power",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "Someone pulls the plug and the record groans down to a stop at the end.",
+    "tags": ["vinyl", "power cut", "slowing", "stop"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 45 } },
+      { "m": "time.tapestop", "p": { "stopMs": 2500 } }
+    ],
+    "seed": 316
+  },
+  {
+    "id": "retro-needle-stuck-in-groove",
+    "name": "Needle stuck in the groove",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "The needle sticks at the start of each phrase and repeats it before it jumps free.",
+    "tags": ["vinyl", "stuck", "repeat", "loop"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "pops": 45 } },
+      { "m": "time.stutter", "p": { "where": "phrases", "repeats": 5, "pieceMs": 250, "chance": 70 } }
+    ],
+    "seed": 317
+  },
+  {
+    "id": "retro-record-at-half-speed",
+    "name": "Record at half speed",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "An album played at half its speed: a slow, sludgy giant with booming crackle.",
+    "tags": ["vinyl", "slow", "deep", "giant"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 50 } },
+      { "m": "pitch.speed", "p": { "speed": 0.5 } }
+    ],
+    "seed": 318
+  },
+  {
+    "id": "retro-single-at-the-wrong-speed",
+    "name": "Single at the wrong speed",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A slow record played on the fast setting, so the voice squeaks along at a sprint.",
+    "tags": ["vinyl", "fast", "squeaky", "45"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "speed": "45" } },
+      { "m": "pitch.speed", "p": { "speed": 1.35 } }
+    ],
+    "seed": 319
+  },
+  {
+    "id": "retro-twelve-bit-record-sample",
+    "name": "Record sampled at 12 bits",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "A voice lifted off vinyl into an old 12-bit drum machine: crunchy, dusty and punchy.",
+    "tags": ["sampler", "12-bit", "vinyl", "crunchy"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 45, "pops": 20 } },
+      { "m": "lofi.crush", "p": { "bits": 12, "rate": 26000, "smooth": true } },
+      { "m": "lofi.saturate", "p": { "drive": 15 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 5 } }
+    ],
+    "seed": 424
+  },
+  {
+    "id": "retro-last-groove-before-label",
+    "name": "Last groove before the label",
+    "cat": "retro",
+    "sub": "Vinyl records",
+    "about": "The very end of a record side: the needle distorts on the tight inner groove, dull and spitting.",
+    "tags": ["vinyl", "inner groove", "distorted", "dull"],
+    "chain": [
+      { "m": "device.vinyl", "p": { "wear": 80, "crackle": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 35 } },
+      { "m": "tone.filter", "p": { "freq": 5000, "slope": "gentle" } }
+    ],
+    "seed": 425
+  },
+
+  {
+    "id": "retro-1930s-cabinet-radio",
+    "name": "1930s cabinet radio",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A big wooden valve radio: warm and boomy, humming, a little static on the dial.",
+    "tags": ["radio", "1930s", "valve", "warm"],
+    "chain": [{ "m": "device.radio", "p": { "era": "1930s" } }],
+    "seed": 321
+  },
+  {
+    "id": "retro-radio-by-the-fireplace",
+    "name": "Radio by the fireplace",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "An evening talk on the family radio while logs crackle in the hearth.",
+    "tags": ["radio", "fireplace", "1930s", "cozy"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 40 } },
+      { "m": "device.radio", "p": { "era": "1930s", "static": 15 } }
+    ],
+    "bed": { "b": "fireplace", "level": -21 },
+    "seed": 322
+  },
+  {
+    "id": "retro-1940s-wartime-bulletin",
+    "name": "1940s wartime bulletin",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "An urgent news flash crackling out of a valve set, fading with the night signal.",
+    "tags": ["radio", "1940s", "news", "static"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 80 } },
+      { "m": "device.radio", "p": { "era": "1930s", "static": 50, "fading": 30 } }
+    ],
+    "seed": 323
+  },
+  {
+    "id": "retro-newsreel-in-a-theater",
+    "name": "1940s newsreel in a theater",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A punchy film narrator booming from the screen of a big old picture house.",
+    "tags": ["newsreel", "film", "1940s", "theater"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 85, "presence": 4 } },
+      { "m": "device.gramophone", "p": { "horn": "electric", "surface": 30, "crackle": 20 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 30 } }
+    ],
+    "seed": 324
+  },
+  {
+    "id": "retro-1940s-radio-drama",
+    "name": "1940s radio drama",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A spooky studio play with a twangy spring echo, heard on a big old set.",
+    "tags": ["radio drama", "spring", "1940s", "theater"],
+    "chain": [
+      { "m": "space.spring", "p": { "drip": 75, "mix": 30 } },
+      { "m": "tone.broadcast", "p": {} },
+      { "m": "device.radio", "p": { "era": "1930s", "static": 15 } }
+    ],
+    "seed": 325
+  },
+  {
+    "id": "retro-1950s-tv-next-room",
+    "name": "1950s TV in the next room",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A black and white set humming through the open doorway, warm and narrow.",
+    "tags": ["tv", "1950s", "next room", "hum"],
+    "chain": [{ "m": "device.tv", "p": { "era": "1950s" } }],
+    "seed": 326
+  },
+  {
+    "id": "retro-1980s-tv-through-the-wall",
+    "name": "1980s TV through the wall",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "The neighbors' television murmuring through the wall, only the boom getting through.",
+    "tags": ["tv", "1980s", "wall", "muffled"],
+    "chain": [{ "m": "device.tv", "p": { "wall": "wall" } }],
+    "seed": 327
+  },
+  {
+    "id": "retro-tv-signing-off",
+    "name": "TV signing off at night",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "The last words of the broadcast day, the high tube whine and snow taking over.",
+    "tags": ["tv", "static", "night", "whine"],
+    "chain": [{ "m": "device.tv", "p": { "era": "1950s", "wall": "same", "whine": 40 } }],
+    "bed": { "b": "tv-static", "level": -19 },
+    "seed": 328
+  },
+  {
+    "id": "retro-home-movie-projector",
+    "name": "Home movie projector",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A flickering family film with a thin, fluttering soundtrack in a dark living room.",
+    "tags": ["film", "projector", "flutter", "home movie"],
+    "chain": [
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1400, "resonance": 10, "slope": "gentle" } },
+      { "m": "synth.am", "p": { "rate": 24, "depth": 12 } },
+      { "m": "device.cassette", "p": { "hiss": 50 } },
+      { "m": "space.room", "p": { "mix": 30 } }
+    ],
+    "seed": 329
+  },
+  {
+    "id": "retro-portable-black-and-white-tv",
+    "name": "Portable black and white TV",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A little handle-top television on the counter, its speaker buzzing and whining.",
+    "tags": ["tv", "portable", "buzz", "whine"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "tv", "push": 18, "rattle": 50 } },
+      { "m": "device.tv", "p": { "era": "1950s", "wall": "same", "hum": 70, "whine": 55 } }
+    ],
+    "seed": 330
+  },
+  {
+    "id": "retro-crystal-radio-earphone",
+    "name": "Crystal radio, 1920s earphone",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A homemade crystal set with no batteries: a faint, thin voice in one tinny earphone.",
+    "tags": ["crystal radio", "1920s", "earphone", "faint"],
+    "chain": [
+      { "m": "device.radio", "p": { "era": "1930s", "static": 40, "fading": 30, "hum": 0 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1500, "resonance": 45, "slope": "gentle" } },
+      { "m": "lofi.speaker", "p": { "size": "earbud" } }
+    ],
+    "seed": 426
+  },
+  {
+    "id": "retro-taped-off-the-tv",
+    "name": "TV taped on a cassette recorder",
+    "cat": "retro",
+    "sub": "Old radio, film and TV",
+    "about": "A tape recorder held up to the TV speaker: the boxy set, the room around it and plenty of hiss.",
+    "tags": ["tv", "cassette", "recorded", "room"],
+    "chain": [
+      { "m": "device.tv", "p": { "wall": "same", "room": 75 } },
+      { "m": "device.cassette", "p": { "hiss": 50, "wow": 35 } }
+    ],
+    "seed": 429
+  },
+
+  {
+    "id": "retro-fresh-cassette",
+    "name": "Fresh cassette",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A good chrome tape on a decent deck: soft, warm and only a whisper of hiss.",
+    "tags": ["cassette", "tape", "clean", "warm"],
+    "chain": [{ "m": "device.cassette", "p": { "tape": "chrome", "hiss": 20, "wow": 10, "flutter": 10, "dropouts": 0 } }],
+    "seed": 331
+  },
+  {
+    "id": "retro-worn-out-cassette",
+    "name": "Worn-out cassette",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A tape played a thousand times: dull, hissing, wobbling and full of little holes.",
+    "tags": ["cassette", "worn", "hiss", "dull"],
+    "chain": [{ "m": "device.cassette", "p": { "tape": "worn" } }],
+    "seed": 332
+  },
+  {
+    "id": "retro-mixtape-copy-of-copy",
+    "name": "Mixtape, copy of a copy",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A tape dubbed from a dub: twice the hiss, half the treble, two wobbles and a level that pumps.",
+    "tags": ["cassette", "mixtape", "dub", "hiss"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -40, "ratio": 10, "release": 400 } },
+      { "m": "device.cassette", "p": { "tape": "dub", "saturation": 60, "highLoss": 50, "dropouts": 25 } },
+      { "m": "pitch.wobble", "p": { "depth": 25, "speed": 0.7, "randomness": 40 } }
+    ],
+    "seed": 333
+  },
+  {
+    "id": "retro-chewed-up-cassette",
+    "name": "Chewed-up cassette",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A tape that got crinkled in the deck, so the pitch lurches wildly as it plays.",
+    "tags": ["cassette", "chewed", "warble", "broken"],
+    "chain": [{ "m": "device.cassette", "p": { "chewed": 70 } }],
+    "seed": 334
+  },
+  {
+    "id": "retro-tape-player-dying-batteries",
+    "name": "Tape player, dying batteries",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A portable tape player on its last batteries: slow, sagging and seasick.",
+    "tags": ["cassette", "batteries", "slow", "wobble"],
+    "chain": [
+      { "m": "device.cassette", "p": {} },
+      { "m": "pitch.speed", "p": { "speed": 0.85, "wobble": 50 } }
+    ],
+    "seed": 335
+  },
+  {
+    "id": "retro-eight-track-1970s-car",
+    "name": "8-track in a 1970s car",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A thick, saturated cartridge tape playing through the dashboard as the car rolls along.",
+    "tags": ["8-track", "car", "1970s", "tape"],
+    "chain": [
+      { "m": "device.cassette", "p": { "saturation": 60, "highLoss": 40 } },
+      { "m": "lofi.saturate", "p": { "speed": "7.5" } },
+      { "m": "space.room", "p": { "space": "car", "mix": 45 } }
+    ],
+    "bed": { "b": "car-highway", "level": -24, "p": { "windows": "crack" } },
+    "seed": 336
+  },
+  {
+    "id": "retro-reel-to-reel-hot",
+    "name": "Reel-to-reel, recorded hot",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A studio tape machine pushed into the red: thick, squashed and glowing.",
+    "tags": ["reel-to-reel", "tape", "saturated", "warm"],
+    "chain": [{ "m": "lofi.saturate", "p": { "drive": 20, "bump": 6 } }],
+    "seed": 337
+  },
+  {
+    "id": "retro-reel-to-reel-slow",
+    "name": "Home reel-to-reel, slow speed",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A family tape recorder on its slowest speed: dark, soft and gently drifting.",
+    "tags": ["reel-to-reel", "home", "slow", "drift"],
+    "chain": [
+      { "m": "lofi.saturate", "p": { "speed": "7.5", "drive": 12 } },
+      { "m": "pitch.wobble", "p": { "depth": 25, "speed": 0.5, "randomness": 30 } },
+      { "m": "tone.filter", "p": { "freq": 4500, "slope": "gentle", "resonance": 10 } }
+    ],
+    "seed": 338
+  },
+  {
+    "id": "retro-pocket-dictation-recorder",
+    "name": "Pocket dictation recorder",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A boss dictating a letter into a palm-sized tape recorder in a quiet office.",
+    "tags": ["dictation", "microcassette", "office", "hiss"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "office", "mix": 30 } },
+      { "m": "device.microcassette", "p": { "line": false, "beep": "none" } }
+    ],
+    "seed": 339
+  },
+  {
+    "id": "retro-classroom-tape-player",
+    "name": "Classroom tape player",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A worn lesson tape on the teacher's portable player, echoing round the classroom.",
+    "tags": ["cassette", "school", "classroom", "portable"],
+    "chain": [
+      { "m": "device.cassette", "p": { "tape": "worn" } },
+      { "m": "lofi.speaker", "p": { "size": "portable" } },
+      { "m": "space.room", "p": { "space": "classroom", "mix": 45 } }
+    ],
+    "seed": 340
+  },
+  {
+    "id": "retro-recorder-in-coat-pocket",
+    "name": "Recorder hidden in a pocket",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A secret tape recorder buried in a coat: muffled, rustly and hissing.",
+    "tags": ["hidden", "recorder", "muffled", "secret"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "muffled" } },
+      { "m": "device.microcassette", "p": { "line": false, "beep": "none", "hiss": 60 } }
+    ],
+    "seed": 341
+  },
+  {
+    "id": "retro-deck-eating-the-tape",
+    "name": "Deck eating the tape",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "The deck tangles the tape mid-word: lurching pitch, holes and sudden slowdowns.",
+    "tags": ["cassette", "broken", "tape stop", "chewed"],
+    "chain": [
+      { "m": "device.cassette", "p": { "chewed": 100, "dropouts": 60 } },
+      { "m": "time.tapestop", "p": { "when": "random", "chance": 40, "stopMs": 600 } }
+    ],
+    "seed": 342
+  },
+  {
+    "id": "retro-boombox-on-the-sidewalk",
+    "name": "Boombox on the sidewalk",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A tape blasting out of a portable stereo on a city stoop, traffic going by.",
+    "tags": ["boombox", "cassette", "street", "loud"],
+    "chain": [
+      { "m": "device.cassette", "p": { "saturation": 50 } },
+      { "m": "lofi.speaker", "p": { "size": "portable", "push": 20, "rattle": 50 } }
+    ],
+    "bed": { "b": "city-street", "level": -21 },
+    "seed": 343
+  },
+  {
+    "id": "retro-tape-left-in-a-hot-car",
+    "name": "Tape left in a hot car",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "A cassette baked on the dashboard all summer: stretched, warbling and woozy.",
+    "tags": ["cassette", "stretched", "warble", "melted"],
+    "chain": [
+      { "m": "device.cassette", "p": { "wow": 90, "flutter": 60 } },
+      { "m": "pitch.wobble", "p": { "depth": 120, "speed": 0.6 } }
+    ],
+    "seed": 344
+  },
+  {
+    "id": "retro-two-tape-machines-flanging",
+    "name": "Two tape machines flanging",
+    "cat": "retro",
+    "sub": "Cassettes and reels",
+    "about": "The old studio trick of two tapes rubbing together: a slow jet-plane swoosh through your voice.",
+    "tags": ["tape", "flanging", "studio", "swoosh"],
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 12 } },
+      { "m": "mod.flanger", "p": { "rate": 0.08, "depth": 90, "feedback": 30, "delay": 6 } }
+    ],
+    "seed": 427
+  },
+
+  {
+    "id": "retro-camcorder-birthday-party",
+    "name": "Camcorder at a birthday party",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "An old family video: the camera mic hearing the whole room and the chatter of the party.",
+    "tags": ["camcorder", "video tape", "party", "family"],
+    "chain": [
+      { "m": "space.room", "p": { "mix": 40, "distance": 60 } },
+      { "m": "mod.keyed", "p": { "source": "crowd", "mode": "duck", "depth": 40, "level": -10 } },
+      { "m": "device.vhs", "p": {} }
+    ],
+    "seed": 351
+  },
+  {
+    "id": "retro-video-tape-long-play",
+    "name": "Video tape on long play",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "A tape recorded at the slower speed to fit more in: duller, hissier, more wobbly.",
+    "tags": ["video tape", "long play", "hiss", "dull"],
+    "chain": [{ "m": "device.vhs", "p": { "speed": "lp" } }],
+    "seed": 352
+  },
+  {
+    "id": "retro-worn-tape-extended-play",
+    "name": "Worn tape on extended play",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "The slowest speed on a tired old tape: murky, warbling and full of hiss.",
+    "tags": ["video tape", "worn", "murky", "warble"],
+    "chain": [{ "m": "device.vhs", "p": { "speed": "ep", "tracking": 60, "wobble": 60, "hiss": 55, "hum": 60 } }],
+    "seed": 353
+  },
+  {
+    "id": "retro-bad-tracking",
+    "name": "Bad tracking",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "The heads wander off the track: bursts of noise, dropouts and pitch hiccups.",
+    "tags": ["video tape", "tracking", "glitch", "noise"],
+    "chain": [{ "m": "device.vhs", "p": { "tracking": 90 } }],
+    "seed": 354
+  },
+  {
+    "id": "retro-rental-tape-played-to-death",
+    "name": "Rental tape played to death",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "The video shop copy everyone borrowed, humming on an old television speaker.",
+    "tags": ["video tape", "rental", "hum", "tv"],
+    "chain": [
+      { "m": "device.vhs", "p": { "speed": "ep", "hiss": 70, "hum": 50, "tracking": 40 } },
+      { "m": "lofi.speaker", "p": { "size": "tv" } }
+    ],
+    "seed": 355
+  },
+  {
+    "id": "retro-wedding-video-in-church",
+    "name": "Wedding video in a church",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "A camcorder at the back of a stone church catching the vows and the echo.",
+    "tags": ["video tape", "church", "echo", "wedding"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "church", "mix": 50, "distance": 65 } },
+      { "m": "device.vhs", "p": { "hum": 10 } }
+    ],
+    "seed": 356
+  },
+  {
+    "id": "retro-home-video-at-the-beach",
+    "name": "Home video at the beach",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "Vacation footage by the sea: an open-air voice on tape and the surf rolling in.",
+    "tags": ["video tape", "beach", "ocean", "vacation"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } },
+      { "m": "device.vhs", "p": { "wobble": 40 } }
+    ],
+    "bed": { "b": "ocean", "level": -17, "duck": 3 },
+    "seed": 357
+  },
+  {
+    "id": "retro-nature-film-on-video",
+    "name": "Nature film on video tape",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "A hushed wildlife narrator on a borrowed tape, played in a dim living room.",
+    "tags": ["video tape", "narrator", "documentary", "living room"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 50, "warmth": 5 } },
+      { "m": "device.vhs", "p": { "speed": "lp", "hiss": 40 } },
+      { "m": "space.room", "p": { "mix": 30 } }
+    ],
+    "seed": 428
+  },
+  {
+    "id": "retro-camcorder-windy-hill",
+    "name": "Camcorder on a windy hill",
+    "cat": "retro",
+    "sub": "Home video",
+    "about": "Family footage from a snowy sledding hill, the wind buffeting the little camera mic.",
+    "tags": ["camcorder", "video tape", "wind", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 25 } },
+      { "m": "device.vhs", "p": { "hiss": 40, "wobble": 35 } }
+    ],
+    "bed": { "b": "wind", "level": -16, "duck": 2, "p": { "strength": 60, "gusts": 70, "rumble": 60 } },
+    "seed": 433
+  },
+
+  {
+    "id": "retro-talking-toy-speech-chip",
+    "name": "Talking toy speech chip",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A gritty 1980s toy chip with a buzzy edge, out of a coin-sized speaker.",
+    "tags": ["toy", "speech chip", "gritty", "1980s"],
+    "chain": [{ "m": "device.toy", "p": {} }],
+    "seed": 361
+  },
+  {
+    "id": "retro-pull-string-doll",
+    "name": "Pull-string talking doll",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "The tiny record inside an old doll: fast when you pull the string, slowing as it unwinds.",
+    "tags": ["doll", "toy", "record", "pull string"],
+    "chain": [{ "m": "device.toy", "p": { "chip": "record" } }],
+    "seed": 362
+  },
+  {
+    "id": "retro-cheap-sampled-toy",
+    "name": "Cheap sampled toy",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A 1990s toy that plays a sample with no filtering, high sounds folding into metal.",
+    "tags": ["toy", "sample", "aliasing", "metallic"],
+    "chain": [{ "m": "device.toy", "p": { "chip": "sample" } }],
+    "seed": 363
+  },
+  {
+    "id": "retro-toy-dying-batteries",
+    "name": "Toy with dying batteries",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A talking toy on flat batteries: the pitch sags and wavers on every loud word.",
+    "tags": ["toy", "batteries", "sagging", "slow"],
+    "chain": [{ "m": "device.toy", "p": { "battery": 80, "crunch": 65 } }],
+    "seed": 364
+  },
+  {
+    "id": "retro-1970s-spelling-toy",
+    "name": "1970s talking spelling toy",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "Your voice rebuilt by a learning toy's speech chip: buzzy, stepped and sing-song.",
+    "tags": ["speech chip", "toy", "1970s", "robotic"],
+    "chain": [{ "m": "synth.lpc", "p": {} }],
+    "seed": 365
+  },
+  {
+    "id": "retro-spelling-toy-batteries-dying",
+    "name": "Spelling toy, batteries dying",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "The learning toy runs down while it talks, its voice sinking lower and rougher.",
+    "tags": ["speech chip", "toy", "batteries", "sinking"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "roughness": 40 } },
+      { "m": "pitch.glide", "p": { "to": -7, "curve": "late", "timbre": 0 } }
+    ],
+    "seed": 366
+  },
+  {
+    "id": "retro-speech-chip-monotone",
+    "name": "Speech chip in monotone",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A speech chip reading on one flat note, every word the same buzzy pitch.",
+    "tags": ["speech chip", "monotone", "robotic", "flat"],
+    "chain": [{ "m": "synth.lpc", "p": { "source": "monotone" } }],
+    "seed": 367
+  },
+  {
+    "id": "retro-whispering-speech-chip",
+    "name": "Whispering speech chip",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "The toy chip with its buzz switched off, so every word comes out as a gritty hiss.",
+    "tags": ["speech chip", "whisper", "noise", "eerie"],
+    "chain": [{ "m": "synth.lpc", "p": { "source": "noise" } }],
+    "seed": 368
+  },
+  {
+    "id": "retro-talking-calculator",
+    "name": "Talking calculator",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A pocket calculator reading out numbers in a high, crude chip voice from a tiny speaker.",
+    "tags": ["calculator", "speech chip", "tiny", "high"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "pitch": 4, "order": 6 } },
+      { "m": "lofi.speaker", "p": { "size": "toy" } }
+    ],
+    "seed": 369
+  },
+  {
+    "id": "retro-talking-bear-tape",
+    "name": "Talking bear, tape inside",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A stuffed bear with a cassette in its back, the speaker rattling under the fur.",
+    "tags": ["toy", "bear", "cassette", "muffled"],
+    "chain": [
+      { "m": "device.cassette", "p": { "tape": "worn" } },
+      { "m": "lofi.speaker", "p": { "size": "toy", "rattle": 60 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 50 } }
+    ],
+    "seed": 370
+  },
+  {
+    "id": "retro-talking-alarm-clock",
+    "name": "Talking alarm clock",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A bedside clock announcing the time in a crunchy chip voice over its own ticking.",
+    "tags": ["clock", "speech chip", "bedside", "ticking"],
+    "chain": [{ "m": "device.toy", "p": { "speaker": 80, "crunch": 70 } }],
+    "bed": { "b": "clock-tick", "level": -22, "p": { "clock": "mantel", "size": "close" } },
+    "seed": 371
+  },
+  {
+    "id": "retro-pocket-pet-toy",
+    "name": "Pocket pet toy",
+    "cat": "retro",
+    "sub": "Talking toys and speech chips",
+    "about": "A keychain virtual pet chirping your words through a pinhole speaker.",
+    "tags": ["toy", "virtual pet", "tiny", "chirpy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 5 } },
+      { "m": "lofi.crush", "p": { "bits": 3, "rate": 6000 } },
+      { "m": "lofi.speaker", "p": { "size": "toy", "push": 10, "rattle": 30 } }
+    ],
+    "seed": 430
+  },
+
+  {
+    "id": "retro-eight-bit-cheap-sample",
+    "name": "8-bit console, cheap sample",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "An 8-bit console sample squeezed to its lowest rate: fizzy, gritty and dull.",
+    "tags": ["8-bit", "console", "game", "gritty"],
+    "chain": [{ "m": "lofi.console", "p": { "quality": "cheap", "level": 6 } }],
+    "seed": 381
+  },
+  {
+    "id": "retro-eight-bit-console-on-tv",
+    "name": "8-bit console on the TV",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "The 8-bit sample chip played through a living-room television speaker.",
+    "tags": ["8-bit", "console", "tv", "game"],
+    "chain": [{ "m": "lofi.console", "p": { "speaker": "own", "quality": "best" } }],
+    "seed": 382
+  },
+  {
+    "id": "retro-sixteen-bit-smooth",
+    "name": "16-bit console, smooth",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "The soft, muffled sample sound of a 16-bit console, with its hardware echo behind.",
+    "tags": ["16-bit", "console", "smooth", "echo"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "brr" } }],
+    "seed": 383
+  },
+  {
+    "id": "retro-sixteen-bit-cave-level",
+    "name": "16-bit cave level",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "A 16-bit game voice in an underground stage, the console echo ringing long and dark.",
+    "tags": ["16-bit", "console", "cave", "echo"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "brr", "echo": 80, "echoTime": 160, "echoRepeats": 70 } }],
+    "seed": 384
+  },
+  {
+    "id": "retro-sixteen-bit-gritty",
+    "name": "16-bit console, gritty",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "The rival 16-bit sound: raw 8-bit samples, crunchy edges and a ring of aliasing.",
+    "tags": ["16-bit", "console", "gritty", "crunchy"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "dac8" } }],
+    "seed": 385
+  },
+  {
+    "id": "retro-handheld-game",
+    "name": "Handheld game",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "A 4-bit voice clip from a pocket game, buzzing out of its tiny speaker.",
+    "tags": ["handheld", "game", "4-bit", "tiny speaker"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "wave4", "speaker": "own" } }],
+    "seed": 386
+  },
+  {
+    "id": "retro-handheld-half-volume",
+    "name": "Handheld game, cheap clip",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "The handheld's voice clip at its crudest: fewer levels, lower rate, a coarse buzz.",
+    "tags": ["handheld", "game", "4-bit", "buzzy"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "wave4", "quality": "cheap" } }],
+    "seed": 387
+  },
+  {
+    "id": "retro-sixteen-bit-villain",
+    "name": "16-bit villain",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "The final boss of a 16-bit adventure: deep, huge and echoing from the console chip.",
+    "tags": ["16-bit", "villain", "deep", "boss"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -4 } },
+      { "m": "lofi.console", "p": { "system": "brr", "echo": 60, "echoTime": 128 } }
+    ],
+    "seed": 388
+  },
+  {
+    "id": "retro-tiny-handheld-hero",
+    "name": "Tiny handheld hero",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "A brave little game hero squeaking out of a pocket console speaker.",
+    "tags": ["handheld", "hero", "high", "game"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 4 } },
+      { "m": "lofi.console", "p": { "system": "wave4", "quality": "best" } }
+    ],
+    "seed": 389
+  },
+  {
+    "id": "retro-old-game-sage",
+    "name": "Wise old sage in a game",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "An ancient village elder in an 8-bit adventure: shaky, slow and crunchy.",
+    "tags": ["8-bit", "elder", "game", "shaky"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 2, "direction": "both", "tremble": 60 } },
+      { "m": "lofi.console", "p": {} }
+    ],
+    "seed": 390
+  },
+  {
+    "id": "retro-disc-console-cutscene",
+    "name": "Early disc console cutscene",
+    "cat": "retro",
+    "sub": "Game consoles",
+    "about": "A dramatic 1990s game cutscene off a disc: grainy, roomy and a little over-acted.",
+    "tags": ["console", "cutscene", "1990s", "grainy"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 70 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2.2, "mix": 25 } },
+      { "m": "lofi.adpcm", "p": { "rate": 18900 } }
+    ],
+    "seed": 431
+  },
+
+  {
+    "id": "retro-arcade-voice-chip",
+    "name": "Arcade voice chip",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "The gravelly sampled announcer of a 1980s arcade board.",
+    "tags": ["arcade", "voice chip", "1980s", "gravelly"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "arcade" } }],
+    "seed": 391
+  },
+  {
+    "id": "retro-cabinet-in-a-busy-arcade",
+    "name": "Cabinet in a busy arcade",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A machine shouting from its cabinet speaker while the whole arcade bleeps around you.",
+    "tags": ["arcade", "cabinet", "crowd", "noisy"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "arcade", "speaker": "own" } }],
+    "bed": { "b": "arcade-hall", "level": -15, "duck": 3 },
+    "seed": 392
+  },
+  {
+    "id": "retro-arcade-announcer-pushed",
+    "name": "Arcade announcer, pushed hard",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "The arcade chip recorded too loud, so every word crunches and splats.",
+    "tags": ["arcade", "loud", "crunchy", "voice chip"],
+    "chain": [
+      { "m": "lofi.console", "p": { "system": "arcade", "level": 10, "quality": "cheap" } },
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 14 } }
+    ],
+    "seed": 393
+  },
+  {
+    "id": "retro-fighting-game-announcer",
+    "name": "Fighting game announcer",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A deep arcade voice calling the next round, echoing out of the cabinet.",
+    "tags": ["arcade", "announcer", "deep", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "lofi.console", "p": { "system": "arcade" } },
+      { "m": "echo.delay", "p": { "time": 250, "feedback": 30, "stereo": "wide", "mix": 25 } }
+    ],
+    "seed": 394
+  },
+  {
+    "id": "retro-pinball-machine-voice",
+    "name": "Pinball machine voice",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A crude speech chip barking from the backbox of a pinball table.",
+    "tags": ["pinball", "speech chip", "arcade", "crude"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "arcade" } },
+      { "m": "lofi.speaker", "p": { "size": "cabinet" } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 20 } }
+    ],
+    "seed": 395
+  },
+  {
+    "id": "retro-fortune-teller-machine",
+    "name": "Fortune teller machine",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A coin-op mystic at the fairground, a low chip voice in a twangy glass box.",
+    "tags": ["fortune teller", "carnival", "speech chip", "spring"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "arcade", "pitch": -3 } },
+      { "m": "space.spring", "p": { "mix": 40 } }
+    ],
+    "bed": { "b": "carnival", "level": -22 },
+    "seed": 396
+  },
+  {
+    "id": "retro-space-shooter-warning",
+    "name": "Space shooter warning voice",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A flat chip voice warning you of danger, bouncing echoes left and right.",
+    "tags": ["arcade", "warning", "monotone", "echo"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "arcade", "source": "monotone" } },
+      { "m": "echo.delay", "p": { "time": 120, "feedback": 50, "mix": 30 } }
+    ],
+    "seed": 397
+  },
+  {
+    "id": "retro-coin-op-kiddie-ride",
+    "name": "Coin-op kiddie ride",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "The talking ride outside a supermarket: a cheery chip voice blaring from a cracked horn speaker.",
+    "tags": ["coin-op", "ride", "horn speaker", "outdoors"],
+    "chain": [
+      { "m": "device.toy", "p": { "chip": "sample", "speaker": 80, "crunch": 60 } },
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 18, "rattle": 60 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "street": "side", "people": 40, "horns": 10, "sirens": 0 } },
+    "seed": 432
+  },
+  {
+    "id": "retro-racing-cabinet-announcer",
+    "name": "Racing cabinet announcer",
+    "cat": "retro",
+    "sub": "Arcade cabinets",
+    "about": "A driving game shouting from the seat speakers, its engine sample roaring under every word.",
+    "tags": ["arcade", "racing", "engine", "announcer"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 40, "level": -8 } },
+      { "m": "lofi.console", "p": { "system": "arcade" } },
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 12 } }
+    ],
+    "seed": 434
+  },
+
+  {
+    "id": "retro-eight-bit-home-computer",
+    "name": "8-bit home computer sampler",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A home computer playing back an 8-bit sample on a bare converter, bright and buzzy.",
+    "tags": ["8-bit", "computer", "sample", "buzzy"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "pcm8" } }],
+    "seed": 401
+  },
+  {
+    "id": "retro-eight-bit-computer-cheap",
+    "name": "8-bit computer, cheap sampler",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A bargain add-on sampler at its lowest rate: dull, buzzing and full of aliasing.",
+    "tags": ["8-bit", "computer", "cheap", "aliasing"],
+    "chain": [{ "m": "lofi.console", "p": { "system": "pcm8", "quality": "cheap", "level": 8 } }],
+    "seed": 402
+  },
+  {
+    "id": "retro-computer-beeper-speaker",
+    "name": "Computer beeper speaker",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "Speech forced out of a one-bit beeper inside an old office computer: harsh and fizzing.",
+    "tags": ["computer", "beeper", "1-bit", "harsh"],
+    "chain": [
+      { "m": "tone.gain", "p": { "db": 12 } },
+      { "m": "lofi.crush", "p": { "bits": 1, "rate": 16000 } },
+      { "m": "lofi.speaker", "p": { "size": "toy", "rattle": 40 } }
+    ],
+    "seed": 403
+  },
+  {
+    "id": "retro-1980s-computer-reading-aloud",
+    "name": "1980s computer reading aloud",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A home computer's text reader buzzing your words on one robotic drone.",
+    "tags": ["computer", "robot", "1980s", "drone"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 95, "frame": "small" } },
+      { "m": "lofi.saturate", "p": { "drive": 15 } },
+      { "m": "lofi.console", "p": { "system": "pcm8" } }
+    ],
+    "seed": 404
+  },
+  {
+    "id": "retro-early-cd-rom-narrator",
+    "name": "Early CD-ROM narrator",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A boxy, grainy voice guiding you through a 1990s encyclopedia disc on desktop speakers.",
+    "tags": ["cd-rom", "computer", "1990s", "narrator"],
+    "chain": [
+      { "m": "lofi.adpcm", "p": { "rate": 22050 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 60 } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 405
+  },
+  {
+    "id": "retro-old-eight-bit-sound-card",
+    "name": "Old 8-bit sound card",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A voice clip at 11 kilohertz and 8 bits from an early computer game.",
+    "tags": ["sound card", "8-bit", "computer", "game"],
+    "chain": [
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 11000, "smooth": true } },
+      { "m": "lofi.speaker", "p": { "size": "laptop", "push": 8 } }
+    ],
+    "seed": 406
+  },
+  {
+    "id": "retro-dial-up-modem-robot",
+    "name": "Dial-up modem robot",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A voice squeezed down a dial-up line: buzzy robot tones and a crunchy screech.",
+    "tags": ["modem", "dial-up", "robot", "screech"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 300, "mix": 50 } },
+      { "m": "synth.ringmod", "p": { "freq": 1200, "mix": 25 } },
+      { "m": "lofi.companding", "p": { "bits": 5 } }
+    ],
+    "seed": 407
+  },
+  {
+    "id": "retro-mainframe-in-the-machine-room",
+    "name": "Mainframe in the machine room",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A room-sized computer droning its answers among roaring cooling fans.",
+    "tags": ["mainframe", "computer", "robot", "fans"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 70, "frame": "large", "mix": 70 } },
+      { "m": "lofi.saturate", "p": { "drive": 14 } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 35 } }
+    ],
+    "bed": { "b": "server-room", "level": -19 },
+    "seed": 408
+  },
+  {
+    "id": "retro-cheerful-desktop-helper",
+    "name": "Cheerful desktop helper",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A perky little on-screen helper popping up with advice, squashed into a tiny file.",
+    "tags": ["computer", "helper", "perky", "compressed"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 1.5 } },
+      { "m": "lofi.mp3", "p": { "quality": "poor" } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 409
+  },
+  {
+    "id": "retro-early-navigation-voice",
+    "name": "Early navigation voice",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A first-generation car navigator telling you to turn, flat and grainy over the road noise.",
+    "tags": ["navigation", "car", "flat", "grainy"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "lofi.adpcm", "p": { "rate": 16000 } },
+      { "m": "lofi.speaker", "p": {} },
+      { "m": "space.room", "p": { "space": "car", "mix": 40 } }
+    ],
+    "bed": { "b": "car-highway", "level": -25 },
+    "seed": 410
+  },
+  {
+    "id": "retro-library-computer-1985",
+    "name": "Library computer, 1985",
+    "cat": "retro",
+    "sub": "Old computers",
+    "about": "A talking program on the school library's computer, buzzing from its speaker in the hush.",
+    "tags": ["computer", "school", "library", "robotic"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 120, "frame": "small", "mix": 60 } },
+      { "m": "lofi.crush", "p": { "bits": 4, "rate": 11000 } },
+      { "m": "lofi.speaker", "p": { "size": "portable" } },
+      { "m": "space.room", "p": { "space": "classroom", "mix": 35 } }
+    ],
+    "bed": { "b": "library-hush", "level": -28, "p": { "intensity": 30 } },
+    "seed": 435
+  },
+
+  {
+    "id": "retro-mp3-from-1999",
+    "name": "MP3 from 1999",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A music file squeezed small for dial-up: swirly, watery, ghostly before every t.",
+    "tags": ["mp3", "1999", "swirly", "internet"],
+    "chain": [{ "m": "lofi.mp3", "p": {} }],
+    "seed": 411
+  },
+  {
+    "id": "retro-tiny-file-slow-modem",
+    "name": "Tiny file for a slow modem",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "The smallest file you could download in a minute: bubbling, hollow and underwater.",
+    "tags": ["mp3", "tiny", "underwater", "internet"],
+    "chain": [{ "m": "lofi.mp3", "p": { "quality": "awful" } }],
+    "seed": 412
+  },
+  {
+    "id": "retro-resaved-too-many-times",
+    "name": "Re-saved too many times",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A clip converted and passed around until the damage piled up on itself.",
+    "tags": ["mp3", "re-encoded", "artifacts", "internet"],
+    "chain": [{ "m": "lofi.mp3", "p": { "quality": "poor", "copies": 4 } }],
+    "seed": 413
+  },
+  {
+    "id": "retro-early-internet-video",
+    "name": "Early internet video clip",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A postage-stamp video from the early web, thin and swirly on laptop speakers.",
+    "tags": ["video", "internet", "2000s", "laptop"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 16, "warble": 20 } },
+      { "m": "lofi.mp3", "p": { "quality": "fair" } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 414
+  },
+  {
+    "id": "retro-internet-radio-buffering",
+    "name": "Internet radio, buffering",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A web radio host in 2001, the stream swirling and stalling into gaps.",
+    "tags": ["internet radio", "buffering", "stream", "gaps"],
+    "chain": [
+      { "m": "tone.broadcast", "p": {} },
+      { "m": "lofi.mp3", "p": { "quality": "poor", "swirl": 70 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "burst": 400, "conceal": "silence" } }
+    ],
+    "seed": 415
+  },
+  {
+    "id": "retro-ringtone-era-phone-speaker",
+    "name": "Ringtone-era phone speaker",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A clip played out loud on a 2005 phone: crunchy, tinny and rattling.",
+    "tags": ["phone", "2000s", "tinny", "speaker"],
+    "chain": [
+      { "m": "lofi.crush", "p": { "bits": 8 } },
+      { "m": "lofi.speaker", "p": { "push": 14, "rattle": 50 } }
+    ],
+    "seed": 416
+  },
+  {
+    "id": "retro-old-video-call-2005",
+    "name": "Old video call, 2005",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A webcam chat from a bedroom: warbling, swirly and thin through laptop speakers.",
+    "tags": ["video call", "webcam", "2000s", "swirly"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 30 } },
+      { "m": "spec.codec", "p": { "bitrate": 8, "warble": 70 } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 417
+  },
+  {
+    "id": "retro-early-game-voice-chat",
+    "name": "Early game voice chat",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A teammate on a cheap headset in a 2004 online match: hot, crushed and thin.",
+    "tags": ["voice chat", "headset", "game", "crushed"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 16, "character": "battery", "mix": 50 } },
+      { "m": "spec.codec", "p": { "bitrate": 6 } },
+      { "m": "tone.character", "p": { "shape": "thin" } }
+    ],
+    "seed": 418
+  },
+  {
+    "id": "retro-cd-skipping-on-a-bump",
+    "name": "CD skipping on a bump",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A portable disc player jolted on the bus: tiny scraps repeating in a rapid stutter.",
+    "tags": ["cd", "skipping", "stutter", "glitch"],
+    "chain": [{ "m": "time.stutter", "p": { "where": "random", "repeats": 10, "pieceMs": 40, "chance": 30 } }],
+    "seed": 419
+  },
+  {
+    "id": "retro-audiobook-slow-download",
+    "name": "Audiobook from a slow download",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A spoken book crammed into the smallest file: narrow, hollow and a little watery.",
+    "tags": ["audiobook", "download", "narrow", "compressed"],
+    "chain": [
+      { "m": "lofi.mp3", "p": { "quality": "awful", "swirl": 30 } },
+      { "m": "lofi.companding", "p": { "band": false, "rate": 11000 } }
+    ],
+    "seed": 420
+  },
+  {
+    "id": "retro-old-internet-cartoon",
+    "name": "Old internet cartoon voice",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "A squeaky character from an early web animation, grainy and squashed into a tiny file.",
+    "tags": ["cartoon", "internet", "squeaky", "grainy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "lofi.adpcm", "p": {} },
+      { "m": "lofi.mp3", "p": { "quality": "poor" } }
+    ],
+    "seed": 421
+  },
+  {
+    "id": "retro-streaming-over-dial-up",
+    "name": "Streaming over dial-up",
+    "cat": "retro",
+    "sub": "Early internet and digital",
+    "about": "Live audio on a phone-line connection: bubbling, freezing and repeating scraps.",
+    "tags": ["stream", "dial-up", "freeze", "internet"],
+    "chain": [
+      { "m": "lofi.mp3", "p": { "quality": "awful" } },
+      { "m": "spec.dropout", "p": { "loss": 25, "burst": 300, "conceal": "repeat" } }
+    ],
+    "seed": 422
+  }
+]

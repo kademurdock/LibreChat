@@ -1,0 +1,1081 @@
+[
+  {
+    "id": "asmr-whisper-left-ear",
+    "name": "Whisper in your left ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A soft whisper right up against your left ear; best on headphones.",
+    "tags": ["whisper","left","headphones"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.place","p":{"angle":-90,"distance":0.1,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-right-ear",
+    "name": "Whisper in your right ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A bright little whisper pressed close to your right ear; best on headphones.",
+    "tags": ["whisper","right","headphones"],
+    "chain": [
+      {"m":"pitch.voice","p":{"formant":2}},
+      {"m":"spec.whisper","p":{"brightness":60,"size":"small"}},
+      {"m":"tone.deess","p":{"range":12}},
+      {"m":"stereo.place","p":{"angle":90,"distance":0.1,"room":"none","height":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-soft-voice-left-ear",
+    "name": "Soft voice in your left ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "Your own soft voice, warm and close beside your left ear.",
+    "tags": ["soft","left","close"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"stereo.place","p":{"angle":-80,"distance":0.2,"room":"none"}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-low-voice-right-ear",
+    "name": "Low voice in your right ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A deeper, darker, hushed voice leaning in at your right ear.",
+    "tags": ["deep","right","close"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-3,"formant":-2}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":5,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"tone.tilt","p":{"amount":-3}},
+      {"m":"stereo.place","p":{"angle":85,"distance":0.2,"room":"none","height":-10}},
+      {"m":"tone.compress","p":{"threshold":-34,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whispers-take-turns",
+    "name": "Whispers take turns in each ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A low half-whisper and a light one trade lines, one in each ear.",
+    "tags": ["whisper","turns","both ears"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":75,"brightness":35}},
+      {"m":"stereo.split","p":{"leftPitch":-2.5,"leftTimbre":-1.5,"rightPitch":2.5,"rightTimbre":1,"mode":"turns","apart":100}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-two-whisperers",
+    "name": "Two whisperers, one each side",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A lower whisper on your left and a lighter one on your right, speaking together.",
+    "tags": ["whisper","twins","both ears"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":45}},
+      {"m":"stereo.split","p":{"leftPitch":-3,"leftTimbre":-1.5,"rightPitch":2,"rightTimbre":1.5,"apart":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-behind-head",
+    "name": "Whisper from behind your head",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A whisper just behind your head, duller and closer than you expect.",
+    "tags": ["whisper","behind","3d"],
+    "chain": [
+      {"m":"spec.whisper","p":{}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.place","p":{"angle":180,"distance":0.3,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-murmur-above",
+    "name": "Murmur from just above you",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A half-whispered murmur floating a little above your head.",
+    "tags": ["above","murmur","3d"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":40}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"stereo.place","p":{"angle":0,"height":70,"distance":0.4,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-over-left-shoulder",
+    "name": "Over your left shoulder",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "Someone leaning over your left shoulder, half whispering.",
+    "tags": ["shoulder","behind","close"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":55}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"stereo.place","p":{"angle":-135,"height":20,"distance":0.4,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-syllables-hop-ears",
+    "name": "Syllables hop ear to ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "Every syllable of a whisper hops to the other ear, a tingly left-right patter.",
+    "tags": ["whisper","bounce","tingles"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":65,"size":"small"}},
+      {"m":"stereo.pingpong","p":{"unit":"syllable","width":100,"glide":30}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-phrases-swap-ears",
+    "name": "Each phrase in the other ear",
+    "cat": "asmr",
+    "sub": "Whispers in your ears",
+    "about": "A warm close voice glides from ear to ear with every phrase.",
+    "tags": ["soft","ping-pong","close"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"stereo.pingpong","p":{"width":100,"glide":250}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-close-mic-breathy",
+    "name": "Close-mic breathy voice",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "Lips almost touching the microphone: breathy, warm and full in the low end.",
+    "tags": ["breathy","close","warm"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":45,"brightness":60}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"tone.compress","p":{"threshold":-34,"ratio":4,"attack":0.1,"release":180}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-half-voice-half-whisper",
+    "name": "Half voice, half whisper",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "Your words come out half sung and half breathed, very soft.",
+    "tags": ["whisper","half","soft"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":70,"size":"large","brightness":35}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-velvet-headphone-voice",
+    "name": "Velvet headphone voice",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A smooth, dark, even voice that sits right between your ears.",
+    "tags": ["smooth","warm","dry"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-30,"attack":12,"release":200}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":3,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"tone.tilt","p":{"amount":-3}},
+      {"m":"stereo.width","p":{"width":1.2,"fill":30}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-leaning-in-closer",
+    "name": "Leaning in a little closer",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "The voice starts across the room and leans right up to your face.",
+    "tags": ["closer","moving","room"],
+    "chain": [
+      {"m":"stereo.walkaway","p":{"from":3,"to":0.5,"room":"small-room","facing":"toward"}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-cotton-wrapped-voice",
+    "name": "Cotton-wrapped voice",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A voice with all the sharp edges wrapped in cotton.",
+    "tags": ["soft","dark","muffled"],
+    "chain": [
+      {"m":"tone.filter","p":{"freq":2200,"slope":"gentle","resonance":10}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-hand-cupped-mic",
+    "name": "Hand cupped over the mic",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "Cupped hands around the microphone make a small hollow hush.",
+    "tags": ["cupped","hollow","close"],
+    "chain": [
+      {"m":"tone.eq","p":{"band2Gain":0,"band3Freq":650,"band3Gain":6,"band3Q":40,"band4Gain":0,"band5Type":"highcut","band5Freq":2800,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"closet","mix":20,"distance":10}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-every-mouth-sound",
+    "name": "Every little mouth sound",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "Squeezed and brightened so every lip, tongue and breath sound comes forward.",
+    "tags": ["mouth sounds","crisp","tingles"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-42,"ratio":6,"attack":2,"release":80}},
+      {"m":"tone.eq","p":{"band4Freq":3800,"band4Gain":4,"band5Gain":3,"band6Freq":8000,"band6Gain":6}},
+      {"m":"stereo.place","p":{"angle":0,"distance":0.1,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-breath-layer",
+    "name": "Breath layered over your voice",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A soft layer of breath rides on top of your quiet voice.",
+    "tags": ["breath","airy","soft"],
+    "chain": [
+      {"m":"spec.thin","p":{"keep":"quiet","threshold":-30,"mix":50}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-deep-soft-close",
+    "name": "Deep, soft and close",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A deeper, larger, gentle voice with a warm close-mic glow.",
+    "tags": ["deep","warm","close"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-2,"formant":-1.5}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":6,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-light-airy-whisper-talk",
+    "name": "Light, airy whisper-talk",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A lighter voice with lots of air on every word.",
+    "tags": ["light","airy","whisper"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":1.5,"formant":1}},
+      {"m":"spec.whisper","p":{"amount":35,"brightness":70}},
+      {"m":"tone.eq","p":{"band6Freq":9000,"band6Gain":6}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-dry-tapping-voice",
+    "name": "Dry close voice for tapping",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "Bone-dry, close and steady, with silent pauses for tapping sounds.",
+    "tags": ["dry","tapping","clean"],
+    "chain": [
+      {"m":"tone.gate","p":{"reduce":50,"hold":30}},
+      {"m":"tone.compress","p":{"threshold":-28,"attack":0.1}},
+      {"m":"tone.eq","p":{"band4Gain":4}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-feather-light-voice",
+    "name": "Feather-light voice",
+    "cat": "asmr",
+    "sub": "Close and breathy",
+    "about": "A small, light, airy voice that barely touches the microphone.",
+    "tags": ["light","airy","delicate"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":3,"formant":2}},
+      {"m":"spec.whisper","p":{"amount":30,"size":"small","brightness":80}},
+      {"m":"tone.eq","p":{"band1Freq":150,"band6Freq":9000,"band6Gain":4}},
+      {"m":"tone.deess","p":{"range":12}},
+      {"m":"stereo.place","p":{"angle":0,"distance":0.2,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-bedtime-story",
+    "name": "Bedtime story voice",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A slower, darker, gentle reading voice in a quiet bedroom.",
+    "tags": ["bedtime","slow","gentle"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":0.88}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.tilt","p":{"amount":-2}},
+      {"m":"space.room","p":{"space":"bedroom","mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-into-pillow",
+    "name": "Whispering into the pillow",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A muffled whisper half buried in a soft pillow.",
+    "tags": ["pillow","muffled","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"tone.filter","p":{"freq":2600,"slope":"gentle"}},
+      {"m":"space.room","p":{"space":"under-blanket","mix":45}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-under-the-covers",
+    "name": "Talking under the covers",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A hushed voice under thick blankets, dead quiet all around.",
+    "tags": ["blanket","muffled","cosy"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"space.room","p":{"space":"under-blanket","mix":85}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-slow-motion-hush",
+    "name": "Slow-motion hush",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A whisper drawn out slowly, every vowel lingering.",
+    "tags": ["slow","whisper","stretched"],
+    "chain": [
+      {"m":"time.drawl","p":{"factor":1.6}},
+      {"m":"spec.whisper","p":{"brightness":35}},
+      {"m":"tone.deess","p":{"range":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-drifting-off",
+    "name": "Drifting off to sleep",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "The voice slows and sinks lower and darker, as if falling asleep mid-sentence.",
+    "tags": ["sleepy","slowing","sinking"],
+    "chain": [
+      {"m":"time.drawl","p":{"factor":1.5,"ramp":"slowing"}},
+      {"m":"pitch.glide","p":{"to":-3,"timbre":60}},
+      {"m":"tone.tilt","p":{"amount":-4}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-lullaby-lilt",
+    "name": "Lullaby lilt",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "Your speech gently tuned into a soft sing-song lullaby.",
+    "tags": ["lullaby","sing-song","gentle"],
+    "chain": [
+      {"m":"pitch.correct","p":{"key":"G","scale":"major","speed":90,"humanize":30}},
+      {"m":"pitch.vibrato","p":{"depth":25,"rate":4.5}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"space.room","p":{"space":"bedroom","mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whispered-affirmations",
+    "name": "Whispered affirmations",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A steady, kind whisper with a faint second voice beside it.",
+    "tags": ["whisper","calm","double"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":80}},
+      {"m":"tone.compress","p":{"threshold":-36,"ratio":5}},
+      {"m":"stereo.double","p":{"timing":8,"pitch":5,"level":-10,"spread":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-goodnight-doorway",
+    "name": "Goodnight from the doorway",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A whisper from across a dark bedroom, by the door.",
+    "tags": ["far","bedroom","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.place","p":{"angle":40,"distance":3}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-soft-spoken-narrator",
+    "name": "Soft-spoken narrator",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A calm, warm storyteller in a tiny padded booth.",
+    "tags": ["narrator","warm","calm"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-30,"ratio":3.5}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":3,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"space.room","p":{"space":"closet","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-sleepy-murmur",
+    "name": "Sleepy, slow murmur",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A slow, low, slightly breathy voice that sounds ready for bed.",
+    "tags": ["sleepy","low","slow"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":0.8}},
+      {"m":"pitch.voice","p":{"semitones":-1,"formant":-0.5}},
+      {"m":"spec.whisper","p":{"amount":25}},
+      {"m":"tone.tilt","p":{"amount":-4.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-night-flight-whisper",
+    "name": "Night flight whisper",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A whisper from the next seat on a dark night flight, the cabin roaring softly.",
+    "tags": ["plane","night","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":45}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.place","p":{"distance":0.3,"room":"none"}},
+      {"m":"space.room","p":{"space":"airplane-cabin","mix":15}}
+    ],
+    "bed": {"b":"airplane-cabin","level":-16,"p":{"intensity":45,"chimes":10,"turbulence":5,"seat":"back"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-sleeper-train-murmur",
+    "name": "Sleeper train murmur",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A slow sleepy murmur in a night train cabin, the wheels clacking underneath.",
+    "tags": ["train","night","sleepy"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":0.9}},
+      {"m":"spec.whisper","p":{"amount":35}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"space.room","p":{"space":"train-car","mix":25,"distance":20}}
+    ],
+    "bed": {"b":"train","level":-18,"p":{"intensity":35,"horn":5,"seat":"middle"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-snowed-in-soft-voice",
+    "name": "Snowed in, soft voice",
+    "cat": "asmr",
+    "sub": "Bedtime and soft-spoken",
+    "about": "A warm soft voice indoors while a blizzard howls against the house.",
+    "tags": ["snow","storm","cosy"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"tone.tilt","p":{"amount":-2}},
+      {"m":"space.room","p":{"mix":15,"distance":15}}
+    ],
+    "bed": {"b":"blizzard","level":-18,"p":{"where":"inside","strength":60}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-ear-to-ear-sweep",
+    "name": "Slow ear-to-ear sweep",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A whisper glides slowly from one ear to the other and back.",
+    "tags": ["sweep","whisper","headphones"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"mod.autopan","p":{"rate":0.15,"width":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-slow-close-circle",
+    "name": "Slow close circle",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A whisper circles slowly around your head, close enough to feel.",
+    "tags": ["circle","whisper","3d"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.orbit","p":{"period":10,"distance":0.4}},
+      {"m":"tone.compress","p":{"threshold":-30,"ratio":2.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-circling-over-head",
+    "name": "Circling over your head",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A soft voice circles you on a tilted path, rising over the top of your head.",
+    "tags": ["circle","over","3d"],
+    "chain": [
+      {"m":"stereo.orbit","p":{"period":7,"distance":0.7,"tilt":60}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-wandering-whisper",
+    "name": "Whisper wandering around you",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A whisper drifts at random from side to side, never where you expect.",
+    "tags": ["wandering","whisper","random"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":55}},
+      {"m":"mod.autopan","p":{"shape":"random","rate":0.3,"width":75}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-close-circle-other-way",
+    "name": "Close circle, the other way",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A deeper warm voice circles the other way round, a little above ear level.",
+    "tags": ["circle","warm","3d"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-2,"formant":-1.5}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":1,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"stereo.orbit","p":{"direction":"counterclockwise","period":5,"distance":0.8,"height":20}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-strolls-past-ears",
+    "name": "Strolls slowly past your ears",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A whisper walks slowly past you, side to side, three times.",
+    "tags": ["passing","whisper","3d"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.flyby","p":{"speed":"walk","closest":0.5,"passes":3,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-drifting-away",
+    "name": "Whisper drifting away",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A whisper at your ear wanders off into the far corner of the room.",
+    "tags": ["away","whisper","room"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.walkaway","p":{"from":0.5,"to":6,"room":"small-room"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-circle-the-room",
+    "name": "Slow circle around the room",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A soft voice paces a slow circle around you in a small room.",
+    "tags": ["circle","room","soft"],
+    "chain": [
+      {"m":"stereo.orbit","p":{"period":14,"distance":2,"room":"small-room"}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-fluttering-little-whisper",
+    "name": "Fluttering little whisper",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A tiny bright whisper flitting around your head like a moth.",
+    "tags": ["flutter","tiny","whisper"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":2,"formant":1.5}},
+      {"m":"spec.whisper","p":{"brightness":70,"size":"small"}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"mod.autopan","p":{"shape":"random","rate":2.5,"width":90}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-pacing-behind-you",
+    "name": "Pacing slowly behind you",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A soft voice paces back and forth behind your chair in a small room.",
+    "tags": ["pacing","behind","room"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.tilt","p":{"amount":-2}},
+      {"m":"stereo.flyby","p":{"from":-120,"to":120,"speed":"walk","closest":1,"passes":2,"room":"none"}},
+      {"m":"space.room","p":{"space":"bedroom","mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-rocking-side-to-side",
+    "name": "Rocking side to side",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A warm close voice gently rocking from ear to ear, like a slow cradle.",
+    "tags": ["rocking","gentle","sway"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"mod.autopan","p":{"rate":0.5,"width":65}},
+      {"m":"space.room","p":{"space":"bedroom","mix":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-inside-head",
+    "name": "Whisper inside your head",
+    "cat": "asmr",
+    "sub": "Around your head",
+    "about": "A dry whisper dead centre, so close it seems to come from inside your head.",
+    "tags": ["inside","centre","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":45}},
+      {"m":"tone.eq","p":{"band2Type":"lowshelf","band2Freq":200,"band2Gain":5,"band6Gain":-3}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.width","p":{"width":0}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-rain-on-window",
+    "name": "Rain on the window",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A close soft voice indoors while rain taps on the glass.",
+    "tags": ["rain","window","cosy"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"stereo.place","p":{"angle":-30,"distance":0.4,"room":"none"}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}}
+    ],
+    "bed": {"b":"rain-window","level":-20},
+    "seed": 1
+  },
+  {
+    "id": "asmr-by-the-fireplace",
+    "name": "By the fireplace",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A warm voice in a quiet living room with a log fire crackling.",
+    "tags": ["fire","warm","cosy"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.tilt","p":{"amount":-1.5}},
+      {"m":"space.room","p":{"mix":20,"distance":20}}
+    ],
+    "bed": {"b":"fireplace","level":-19},
+    "seed": 1
+  },
+  {
+    "id": "asmr-tent-in-the-rain",
+    "name": "Tent in the rain",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "Whispering inside a little tent while rain patters on the fabric.",
+    "tags": ["rain","tent","camping"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.place","p":{"angle":30,"distance":0.5,"room":"none"}}
+    ],
+    "bed": {"b":"rain-tent","level":-16},
+    "seed": 1
+  },
+  {
+    "id": "asmr-library-whisper",
+    "name": "Library whisper",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A careful whisper in a big hushed library, pages turning nearby.",
+    "tags": ["library","whisper","quiet"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"space.reverb","p":{"size":75,"decay":1.6,"mix":14,"damping":60}}
+    ],
+    "bed": {"b":"library-hush","level":-24},
+    "seed": 1
+  },
+  {
+    "id": "asmr-ticking-clock-night",
+    "name": "Ticking clock at night",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A slow gentle voice in a bedroom with a mantel clock ticking close by.",
+    "tags": ["clock","night","slow"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":0.9}},
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"space.room","p":{"space":"bedroom","mix":25}}
+    ],
+    "bed": {"b":"clock-tick","level":-24,"p":{"clock":"mantel","size":"close"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-midnight-kitchen",
+    "name": "Midnight kitchen whisper",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A whisper in a dark kitchen with the old fridge humming.",
+    "tags": ["kitchen","night","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":45}},
+      {"m":"space.room","p":{"space":"kitchen","mix":25,"distance":15}}
+    ],
+    "bed": {"b":"fridge-hum","level":-22,"p":{"age":"old"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-summer-night-porch",
+    "name": "Summer night on the porch",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A warm low voice outside on a summer night full of crickets.",
+    "tags": ["crickets","night","outdoors"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"space.room","p":{"space":"field","mix":15}}
+    ],
+    "bed": {"b":"night-crickets","level":-21,"p":{"distance":10}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-campfire-hush",
+    "name": "Campfire hush",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A half whisper beside a small crackling campfire in the woods.",
+    "tags": ["campfire","woods","hush"],
+    "chain": [
+      {"m":"spec.whisper","p":{"amount":55}},
+      {"m":"space.room","p":{"space":"forest","mix":20}}
+    ],
+    "bed": {"b":"campfire","level":-19,"p":{"size":35}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-tin-roof-rain",
+    "name": "Tin roof rain",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A whisper at your ear under a tin porch roof drumming with rain.",
+    "tags": ["rain","roof","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.place","p":{"angle":20,"distance":0.3,"room":"none"}}
+    ],
+    "bed": {"b":"rain-roof","level":-18,"p":{"ring":70}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-coffee-shop-corner",
+    "name": "Quiet corner of a coffee shop",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A close friendly voice at a corner table, cups clinking far off.",
+    "tags": ["cafe","close","chatter"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"tone.eq","p":{"band1Freq":50,"band2Type":"lowshelf","band2Freq":160,"band2Gain":4,"band4Freq":3500,"band4Gain":1,"band6Freq":11000}},
+      {"m":"stereo.place","p":{"angle":0,"distance":0.6,"room":"none"}}
+    ],
+    "bed": {"b":"cafe","level":-20,"p":{"intensity":30,"seat":"corner"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-calm-sea-whisper",
+    "name": "Whisper by a calm sea",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A whisper close to your ear with small waves lapping far down the beach.",
+    "tags": ["sea","waves","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.place","p":{"angle":-20,"distance":0.3,"room":"none"}}
+    ],
+    "bed": {"b":"ocean","level":-20,"p":{"size":20,"distance":55}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-creekside-murmur",
+    "name": "Creekside murmur",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A soft murmur in the woods beside a babbling creek.",
+    "tags": ["creek","water","murmur"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"spec.whisper","p":{"amount":30}},
+      {"m":"space.room","p":{"space":"forest","mix":15}}
+    ],
+    "bed": {"b":"creek","level":-22,"p":{"distance":35}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-parked-car-rain",
+    "name": "Parked car in the rain",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "Talking softly in a parked car while rain drums on the roof.",
+    "tags": ["car","rain","cosy"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"space.room","p":{"space":"car","mix":40}}
+    ],
+    "bed": {"b":"car-rain","level":-18,"p":{"motion":"parked","wipers":"off"}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-heartbeat-whisper",
+    "name": "Heartbeat and a whisper",
+    "cat": "asmr",
+    "sub": "Cosy places",
+    "about": "A whisper at your ear over a slow heartbeat heard from inside.",
+    "tags": ["heartbeat","whisper","calm"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.place","p":{"angle":-70,"distance":0.2,"room":"none"}}
+    ],
+    "bed": {"b":"heartbeat","level":-18,"p":{"place":"inside","rate":58}},
+    "seed": 1
+  },
+  {
+    "id": "asmr-layered-whispers",
+    "name": "Layered whispers",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "Four of your whispers stacked close around you, each a little different.",
+    "tags": ["layered","whisper","many"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.crowd","p":{"people":4,"pitchSpread":1.5,"timbreSpread":1,"timing":70,"room":"none","spread":90,"you":70}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-crinkly-radio-whisper",
+    "name": "Crinkly radio whisper",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper on an old radio, wrapped in soft crackle and drifting fades.",
+    "tags": ["radio","crackle","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":60}},
+      {"m":"device.radio","p":{"static":15,"fading":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-whisper-on-tape",
+    "name": "Whisper on an old tape",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper on a warm worn cassette with gentle hiss and wobble.",
+    "tags": ["tape","hiss","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"device.cassette","p":{"hiss":30,"wow":40,"flutter":20,"dropouts":0,"saturation":20,"highLoss":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-dusty-record-whisper",
+    "name": "Whisper on a dusty record",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper pressed on vinyl, soft crackle ticking around every word.",
+    "tags": ["vinyl","crackle","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"device.vinyl","p":{"crackle":45,"pops":15,"rumble":10,"wear":50,"warp":20}},
+      {"m":"tone.eq","p":{"band1Freq":180,"band5Type":"highcut","band5Freq":6000,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-dreamy-hazy-whisper",
+    "name": "Dreamy hazy whisper",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A wide whisper that smears into a soft lingering haze.",
+    "tags": ["dreamy","haze","wide"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"spec.blur","p":{"amount":45,"time":700}},
+      {"m":"stereo.width","p":{"width":1.8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-soft-double-voice",
+    "name": "Soft double voice",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "Your soft voice with a gentle second take sitting just behind it.",
+    "tags": ["double","soft","wide"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-32,"ratio":3.5,"attack":0.1,"release":180}},
+      {"m":"stereo.double","p":{"timing":12,"pitch":8,"level":-6}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-breath-in-glass-jar",
+    "name": "Breath in a glass jar",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper ringing softly inside a glass jar.",
+    "tags": ["jar","glass","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"space.room","p":{"space":"glass-jar","mix":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-distant-whisper-cloud",
+    "name": "Distant whisper cloud",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A cloud of far-off whispers hanging in a big hall.",
+    "tags": ["many","far","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.crowd","p":{"people":10,"you":0,"spread":100,"timing":250}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-huddle-of-whispers",
+    "name": "Huddle of whispers",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "You and two others whispering close together in a small room.",
+    "tags": ["huddle","whisper","group"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"stereo.crowd","p":{"people":3,"spread":50,"timing":160,"room":"small-room","you":85,"pitchSpread":3}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-secret-through-wall",
+    "name": "Secret through the wall",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper from the next room, muffled through a thin bedroom wall.",
+    "tags": ["wall","muffled","secret"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":55}},
+      {"m":"space.muffle","p":{"wall":"thin","room":"bedroom","yours":15,"gaps":65}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-phone-whisper-left-ear",
+    "name": "Late-night phone whisper",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper down the phone, the earpiece pressed against your left ear.",
+    "tags": ["phone","night","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":60}},
+      {"m":"device.phone","p":{"era":"cellular","noise":10,"crackle":5,"rough":20}},
+      {"m":"stereo.place","p":{"angle":-90,"distance":0.1,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-gravelly-whisper",
+    "name": "Gravelly whisper",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A low, rough, crackly whisper with grit in every breath.",
+    "tags": ["gravel","rough","whisper"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-2,"formant":-1.5}},
+      {"m":"pitch.subharmonic","p":{"sub":20,"rough":70,"fry":50,"grit":50}},
+      {"m":"spec.whisper","p":{"amount":70,"brightness":35}},
+      {"m":"stereo.place","p":{"angle":50,"distance":0.3,"room":"none"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-frosty-whisper",
+    "name": "Frosty whisper",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A thin icy whisper with a cold glassy sparkle hanging after each word.",
+    "tags": ["icy","cold","sparkle"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":85,"size":"small"}},
+      {"m":"tone.eq","p":{"band1Freq":250,"band6Freq":9000,"band6Gain":5}},
+      {"m":"space.reverb","p":{"size":30,"decay":1.4,"damping":0,"mix":18}},
+      {"m":"stereo.width","p":{"width":1.8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "asmr-hush-in-big-hall",
+    "name": "Hush in a big hall",
+    "cat": "asmr",
+    "sub": "Textured whispers",
+    "about": "A whisper close to your ear, its faint echo rolling round an empty hall.",
+    "tags": ["hall","echo","whisper"],
+    "chain": [
+      {"m":"spec.whisper","p":{"brightness":40}},
+      {"m":"tone.deess","p":{"range":10}},
+      {"m":"stereo.place","p":{"angle":30,"distance":0.3,"room":"none"}},
+      {"m":"space.reverb","p":{"size":95,"decay":3.5,"predelay":90,"damping":50,"mix":18}}
+    ],
+    "seed": 1
+  }
+]

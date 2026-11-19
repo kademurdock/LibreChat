@@ -1,0 +1,1229 @@
+[
+  {
+    "id": "disguise-anonymous-witness",
+    "name": "Anonymous witness",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "The classic hidden-identity voice: pitch pushed down while the timbre is pulled up.",
+    "tags": ["anonymous", "witness", "hidden"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-anonymous-tipster",
+    "name": "Anonymous tipster",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "The reverse trick: pitch lifted while the body grows, so the voice fits no one.",
+    "tags": ["anonymous", "tipster", "hidden"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": -3 } },
+      { "m": "tone.character", "p": { "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-witness-in-the-shadows",
+    "name": "Witness in the shadows",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A deep, dark, disguised voice from a dim back room.",
+    "tags": ["anonymous", "dark", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": 4 } },
+      { "m": "tone.character", "p": { "shape": "dark", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-protected-source",
+    "name": "Protected source",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "Pitch and timbre moved, and your telltale ups and downs ironed nearly flat.",
+    "tags": ["anonymous", "flat", "source"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2.5 } },
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-the-insider-hushed",
+    "name": "The insider, hushed",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A breathy, low-key voice with a bigger body and a lifted note, spilling secrets.",
+    "tags": ["anonymous", "breathy", "secret"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": -2.5 } },
+      { "m": "spec.whisper", "p": { "amount": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-voice-behind-the-curtain",
+    "name": "Voice behind the curtain",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A disguised voice muffled by a heavy stage curtain in an empty theater.",
+    "tags": ["curtain", "muffled", "theater"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2 } },
+      { "m": "tone.filter", "p": { "freq": 2800, "resonance": 10 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-hidden-source",
+    "name": "Hidden source",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A deep, small-throated voice whispering from inside a coat closet.",
+    "tags": ["hidden", "closet", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": 5 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-blurred-face-guest",
+    "name": "Blurred-face guest",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A low, disguised voice with every edge slightly smeared, like a pixelated face.",
+    "tags": ["blurred", "anonymous", "smeared"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": 3 } },
+      { "m": "spec.blur", "p": { "amount": 25, "time": 150 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-witness-on-the-doorstep",
+    "name": "Witness on the doorstep",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A disguised neighbour talking on the front step while traffic goes by.",
+    "tags": ["outdoors", "street", "witness"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 15 } }
+    ],
+    "bed": { "b": "city-street", "level": -22 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-confession-booth",
+    "name": "Through the confession screen",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A low, hushed voice through a wooden lattice in a quiet stone church.",
+    "tags": ["church", "hushed", "screen"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-mystery-caller",
+    "name": "Mystery caller",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A disguised voice on an old home phone line: low note, small throat.",
+    "tags": ["phone", "caller", "mystery"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 2 } },
+      { "m": "device.phone", "p": { "noise": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-midnight-caller",
+    "name": "Midnight caller",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A very deep, slow voice on a cordless phone in the middle of the night.",
+    "tags": ["phone", "deep", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": 1 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.88 } },
+      { "m": "device.phone", "p": { "era": "cordless" } }
+    ],
+    "bed": { "b": "phone-line", "level": -30, "p": { "tone": "none", "intensity": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-number-withheld",
+    "name": "Number withheld",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A lifted note in a bigger body on a patchy mobile call.",
+    "tags": ["phone", "mobile", "withheld"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": -3 } },
+      { "m": "device.phone", "p": { "era": "cellular", "signal": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-burner-phone",
+    "name": "Burner phone",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A cheap flip phone with words dropping out under a disguised voice.",
+    "tags": ["phone", "flip", "dropout"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 3 } },
+      { "m": "device.phone", "p": { "era": "flip" } },
+      { "m": "spec.dropout", "p": { "loss": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-pocket-voice-changer-box",
+    "name": "Pocket voice-changer box",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "The cheap gadget from the movies held up to a phone: very low and a little robotic.",
+    "tags": ["phone", "gadget", "robotic"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8 } },
+      { "m": "spec.robot", "p": { "pitch": 90, "mix": 25 } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 16000 } },
+      { "m": "device.phone", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-towel-over-the-phone",
+    "name": "Towel over the phone",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "The oldest trick: a towel over the mouthpiece and a put-on voice.",
+    "tags": ["phone", "muffled", "towel"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 1.5 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 70 } },
+      { "m": "device.phone", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-payphone-tip-line",
+    "name": "Payphone tip line",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A disguised tip from a humming street payphone, traffic all around.",
+    "tags": ["payphone", "street", "tip"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "device.phone", "p": { "rough": 60, "hum": 40 } }
+    ],
+    "bed": { "b": "city-street", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-speakerphone-in-a-stairwell",
+    "name": "Speakerphone in a stairwell",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A disguised voice on speakerphone, echoing in a concrete stairwell.",
+    "tags": ["speakerphone", "stairwell", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2.5 } },
+      { "m": "device.phone", "p": { "era": "speaker" } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-squeaky-prank-caller",
+    "name": "Squeaky prank caller",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A silly high put-on voice with a big body, on a mobile phone.",
+    "tags": ["phone", "high", "prank"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": -2 } },
+      { "m": "device.phone", "p": { "era": "cellular" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-masked-internet-call",
+    "name": "Masked internet call",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "A disguised voice on a choppy internet call, swirling and dropping out.",
+    "tags": ["internet", "call", "codec"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 3.5 } },
+      { "m": "device.phone", "p": { "era": "voip" } },
+      { "m": "spec.codec", "p": { "bitrate": 8, "warble": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-scrambled-line",
+    "name": "Scrambled line",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "An old phone scrambler: highs and lows swapped, so only a decoder could follow it.",
+    "tags": ["scrambled", "phone", "inverted"],
+    "chain": [
+      { "m": "spec.invert", "p": {} },
+      { "m": "device.phone", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-half-scrambled",
+    "name": "Half scrambled",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "A scrambler set halfway: your disguised words fighting through their inside-out twin.",
+    "tags": ["scrambled", "inverted"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "spec.invert", "p": { "hz": 2200, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-encrypted-call",
+    "name": "Encrypted call",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "A secure military phone rebuilding your voice from numbers: buzzy and featureless.",
+    "tags": ["encrypted", "secure", "military"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "secure" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-secure-line-losing-sync",
+    "name": "Secure line, losing sync",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "An encrypted line slipping out of sync: rough buzz and robot stutters.",
+    "tags": ["encrypted", "glitch", "dropout"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "secure", "roughness": 60 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "burst": 120 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-rolling-frequency-scramble",
+    "name": "Rolling frequency scramble",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "An inverted voice whose pitch keeps sliding around, never settling.",
+    "tags": ["scrambled", "sliding", "alien"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 2400 } },
+      { "m": "synth.freqshift", "p": { "shift": -300, "drift": 250 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-noise-band-mask",
+    "name": "Noise-band mask",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "Your words carved out of hiss in a few coarse bands, with nothing of you left.",
+    "tags": ["vocoder", "noise", "mask"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "noise", "bands": 16 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-garbled-field-radio",
+    "name": "Garbled field radio",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "A digital handheld radio squeezing your voice into warbling underwater bits.",
+    "tags": ["radio", "digital", "warble"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 6, "warble": 70 } },
+      { "m": "device.walkie", "p": { "band": "digital" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-squeezed-burst-transmission",
+    "name": "Squeezed burst transmission",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "A message sped up and crushed into a quick digital burst on a scanner.",
+    "tags": ["burst", "fast", "digital"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.6 } },
+      { "m": "lofi.crush", "p": { "bits": 5 } },
+      { "m": "device.scanner", "p": { "mode": "digital" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-mirror-band-scramble",
+    "name": "Mirror-band scramble",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "A narrow inverted band on a digital phone line: bubbling, chirping nonsense.",
+    "tags": ["scrambled", "inverted", "digital"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 900 } },
+      { "m": "lofi.companding", "p": { "bits": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-time-slice-scramble",
+    "name": "Time-slice scramble",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "Your speech chopped into slices, some flipped backwards, and pasted out of order.",
+    "tags": ["scrambled", "shuffled", "reverse"],
+    "chain": [
+      { "m": "time.shuffle", "p": { "unit": "slices", "sliceMs": 120, "amount": 80, "reverse": 40 } },
+      { "m": "device.phone", "p": { "era": "cordless" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-lower",
+    "name": "Gender flip, lower",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A lighter voice turned lower, with a frame larger than the note and a fuller chest.",
+    "tags": ["gender", "lower", "flip"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5.5, "formant": -4.5 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 40 } },
+      { "m": "tone.eq", "p": { "band2Gain": 1.5, "band4Gain": -2, "band6Gain": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-higher",
+    "name": "Gender flip, higher",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A lower voice turned into a higher, lighter one, note and body together.",
+    "tags": ["gender", "higher", "flip"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-lower-gruff",
+    "name": "Gender flip, lower and gruff",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A low, broad voice with a rough edge in the throat.",
+    "tags": ["gender", "lower", "rough"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -3.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 40, "grit": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-higher-breathy",
+    "name": "Gender flip, higher and breathy",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A high, light voice with soft breath and a bright top.",
+    "tags": ["gender", "higher", "breathy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 3.5 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-lower-soft",
+    "name": "Gender flip, lower and warm",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A gentle, warm low voice with a full chest and soft edges.",
+    "tags": ["gender", "lower", "warm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -2.5 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "tone.tilt", "p": { "amount": -3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gender-flip-higher-light",
+    "name": "Gender flip, higher and slender",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A higher voice from a slim, small frame with no chest boom.",
+    "tags": ["gender", "higher", "thin"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4.5, "formant": 4.5 } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-age-flip-much-younger",
+    "name": "Age flip, much younger",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "An adult turned into a quick, bright kid.",
+    "tags": ["age", "younger", "child"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 5 } },
+      { "m": "pitch.wobble", "p": { "depth": 120, "speed": 2.2 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-age-flip-much-older",
+    "name": "Age flip, much older",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A young voice aged by decades: trembling, rough and slower.",
+    "tags": ["age", "older", "tremble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.2, "size": 3, "tremble": 70, "jitter": 30 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 45 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-grown-up-from-a-child",
+    "name": "Grown-up from a child",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "For young talkers: a child's voice made into a full-grown adult.",
+    "tags": ["age", "older", "adult"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-child-from-a-grown-up",
+    "name": "Child from a grown-up",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A grown-up voice shrunk down to a small, careful child.",
+    "tags": ["age", "younger", "child"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 6 } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 0, "jitter": 20 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.92 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-twenty-years-younger",
+    "name": "Twenty years younger",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A fresher, brighter, firmer you, with the years taken off.",
+    "tags": ["age", "younger", "bright"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5, "formant": 1.5 } },
+      { "m": "tone.tilt", "p": { "amount": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-twenty-years-older",
+    "name": "Twenty years older",
+    "cat": "disguise",
+    "sub": "Gender and age flips",
+    "about": "A heavier, rougher you, with more weight in the chest.",
+    "tags": ["age", "older", "rough"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1.5, "formant": -1.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 30, "grit": 40 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-cant-place-the-voice",
+    "name": "Can't place the voice",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Pitch and timbre drift slowly the whole time, so the voice never settles into anyone.",
+    "tags": ["drifting", "uncanny", "shifting"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 2 } },
+      { "m": "pitch.wobble", "p": { "depth": 300, "speed": 0.2, "randomness": 100, "timbre": 100 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-shifting-stranger",
+    "name": "Shifting stranger",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Starts deep and slowly climbs higher while the throat stays small.",
+    "tags": ["gliding", "shifting", "uncanny"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": -6, "to": 3, "timbre": 0 } },
+      { "m": "pitch.voice", "p": { "formant": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-two-voices-at-once",
+    "name": "Two voices at once",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "A low big voice and a high small voice speaking together, close to the middle.",
+    "tags": ["double", "split", "uncanny"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftTimbre": 3, "rightPitch": 4, "rightTimbre": -3, "apart": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-a-new-voice-each-phrase",
+    "name": "A new voice each phrase",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Every phrase comes from a different disguised speaker, taking turns.",
+    "tags": ["turns", "split", "confusing"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": -6, "leftTimbre": 2, "rightPitch": 4, "rightTimbre": -2, "mode": "turns", "apart": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-smeared-identity",
+    "name": "Smeared identity",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Your voice ground into fine grains and smeared across a cloud of pitches.",
+    "tags": ["granular", "smeared", "blurred"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "synth.granular", "p": { "grain": 60, "density": 60, "spread": 300, "scatter": 40, "width": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-four-voices-none-of-them-you",
+    "name": "Four voices, none of them you",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Four different people say your words at once, and your own voice is gone.",
+    "tags": ["crowd", "unison", "hidden"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 6, "timbreSpread": 4, "timing": 25, "room": "none", "you": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-wandering-pitch-fixed-body",
+    "name": "Wandering pitch, fixed body",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "A big body whose note keeps roaming up and down at random.",
+    "tags": ["wandering", "pitch", "uncanny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -3 } },
+      { "m": "pitch.wobble", "p": { "depth": 350, "speed": 0.4, "randomness": 90 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-unidentifiable-whisper",
+    "name": "Unidentifiable whisper",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "A pure whisper from a smaller throat, with no note left to recognise.",
+    "tags": ["whisper", "hidden", "breath"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 4 } },
+      { "m": "spec.whisper", "p": { "size": "small" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-flattened-and-blurred",
+    "name": "Flattened and blurred",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Every word on one set note, its edges softly blurred together.",
+    "tags": ["monotone", "blurred", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "target": "set", "hz": 140 } },
+      { "m": "pitch.voice", "p": { "formant": 2 } },
+      { "m": "spec.blur", "p": { "amount": 30, "time": 120 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-wandering-notes",
+    "name": "Wandering notes",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "Your speech hops between odd floating notes that hide its natural tune.",
+    "tags": ["notes", "melody", "uncanny"],
+    "chain": [
+      { "m": "pitch.arp", "p": { "pattern": "random", "notes": "whole-tone", "rate": 2, "glide": 150 } },
+      { "m": "pitch.voice", "p": { "formant": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-robot-cover",
+    "name": "Robot cover",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A steady robot buzz laid over your words, enough to hide who is talking.",
+    "tags": ["robot", "buzz", "cover"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 2 } },
+      { "m": "spec.robot", "p": { "pitch": 100, "mix": 55 } },
+      { "m": "lofi.saturate", "p": { "drive": 12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-radio-cover",
+    "name": "Radio cover",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A disguised voice on a crackling citizens band radio, skipping in and out.",
+    "tags": ["radio", "static", "cover"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2 } },
+      { "m": "device.cb", "p": { "skip": 50, "static": 50, "roger": "beep" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-masked-stranger",
+    "name": "Masked stranger",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A low voice trapped inside a hard full-face mask.",
+    "tags": ["mask", "boxy", "low"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "space.room", "p": { "space": "helmet", "mix": 40 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-behind-a-respirator",
+    "name": "Behind a respirator",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A breathy voice through a filter mask, narrow and hollow.",
+    "tags": ["mask", "breath", "hollow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1500, "resonance": 40 } },
+      { "m": "space.room", "p": { "space": "helmet", "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-megaphone-cover",
+    "name": "Megaphone cover",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A disguised voice blared through a bullhorn so loud nobody hears the person behind it.",
+    "tags": ["megaphone", "loud", "street"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 3 } },
+      { "m": "device.megaphone", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-metal-mask",
+    "name": "Metal mask",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A faint metallic ring over a disguised voice, like talking through steel.",
+    "tags": ["metal", "ring", "mask"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 2 } },
+      { "m": "synth.ringmod", "p": { "freq": 140, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "tin-can", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-flat-machine-cover",
+    "name": "Flat machine cover",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A dead-flat note and a shimmering double, like a polite machine reading your words.",
+    "tags": ["monotone", "machine", "chorus"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "target": "set", "hz": 120 } },
+      { "m": "pitch.voice", "p": { "formant": 3 } },
+      { "m": "mod.chorus", "p": { "voices": 2, "depth": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-synth-note-mask",
+    "name": "Synth note mask",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "Your words played on one low synth note, so only the words survive.",
+    "tags": ["vocoder", "synth", "mask"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "single", "register": "low", "mix": 85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-hood-and-scarf",
+    "name": "Hood and scarf",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "Bundled up to the eyes: a muffled, disguised voice under a deep hood.",
+    "tags": ["muffled", "hood", "close"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 3 } },
+      { "m": "tone.filter", "p": { "freq": 1800, "resonance": 15 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-gas-balloon-mask",
+    "name": "Gas balloon mask",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A low note through a squeaky gassy throat, a disguise that sounds like nobody.",
+    "tags": ["helium", "gas", "uncanny"],
+    "chain": [
+      { "m": "pitch.helium", "p": { "amount": 70, "pitch": -4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-cloaked-in-wind",
+    "name": "Cloaked in wind",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "A disguised voice half melted into rushing wind, words carried on the gusts.",
+    "tags": ["wind", "cloaked", "blend"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "spec.blend", "p": { "source": "wind", "blend": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-distorted-interview",
+    "name": "Distorted interview",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A disguised interviewee with a gritty, squeezed edge on every word.",
+    "tags": ["interview", "distorted", "anonymous"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": 3 } },
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "overdrive", "mix": 40 } },
+      { "m": "lofi.mp3", "p": { "quality": "poor" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-silhouette-interview",
+    "name": "Silhouette interview",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A documentary guest lit from behind: a polished, deep, disguised studio voice.",
+    "tags": ["documentary", "studio", "anonymous"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": 3.5 } },
+      { "m": "tone.broadcast", "p": { "style": "talk" } },
+      { "m": "space.room", "p": { "space": "office", "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-hidden-camera-audio",
+    "name": "Hidden camera audio",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A tiny microphone hidden in a bag at a busy coffee shop, voice disguised.",
+    "tags": ["hidden", "camera", "cafe"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "tone.filter", "p": { "freq": 2500, "resonance": 10 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 50 } },
+      { "m": "lofi.crush", "p": { "bits": 10, "rate": 16000 } }
+    ],
+    "bed": { "b": "cafe", "level": -20 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-interview-room-tape",
+    "name": "Interview room tape",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A disguised voice on a long-play video tape from a bare interview room.",
+    "tags": ["tape", "video", "room"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 35 } },
+      { "m": "device.vhs", "p": { "speed": "lp" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-masked-courtroom-testimony",
+    "name": "Masked courtroom testimony",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A protected witness on the stand, heard through the courtroom microphone.",
+    "tags": ["court", "witness", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 3 } },
+      { "m": "tone.character", "p": { "amount": 50 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-evidence-cassette-worn",
+    "name": "Evidence cassette, worn",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A disguised voice on a tired old cassette from the evidence box.",
+    "tags": ["cassette", "tape", "hiss"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 3 } },
+      { "m": "device.cassette", "p": { "tape": "worn", "hiss": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-wire-under-the-shirt",
+    "name": "Wire under the shirt",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A hidden body microphone under clothing, muffled and cutting out.",
+    "tags": ["wire", "muffled", "dropout"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "tone.filter", "p": { "freq": 3500 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 35 } },
+      { "m": "spec.dropout", "p": { "loss": 8, "conceal": "silence" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-leaked-voicemail",
+    "name": "Leaked voicemail",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A disguised message on an old answering machine tape, beep and all.",
+    "tags": ["voicemail", "tape", "phone"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2.5 } },
+      { "m": "device.microcassette", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-secret-agent-on-a-bad-line",
+    "name": "Secret agent on a bad line",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised agent calling in over a fading shortwave link.",
+    "tags": ["spy", "shortwave", "fading"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "device.shortwave", "p": { "mode": "am", "fading": 70, "noise": 60 } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-dead-drop-message",
+    "name": "Dead drop message",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A whispered, disguised message left on a cassette under a park bench.",
+    "tags": ["spy", "whisper", "cassette"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 3 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "device.cassette", "p": { "tape": "chrome" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-field-agent-check-in",
+    "name": "Field agent check-in",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised agent on a field radio, out in the wind.",
+    "tags": ["spy", "radio", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 2 } },
+      { "m": "device.walkie", "p": { "band": "field" } }
+    ],
+    "bed": { "b": "wind", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-safehouse-call-in-the-rain",
+    "name": "Safehouse call in the rain",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised voice on a cordless phone while rain taps the safehouse window.",
+    "tags": ["spy", "phone", "rain"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "device.phone", "p": { "era": "cordless" } }
+    ],
+    "bed": { "b": "rain-window", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-codeword-in-your-ear",
+    "name": "Codeword in your ear",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised whisper right at your right ear; best on headphones.",
+    "tags": ["spy", "whisper", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 3 } },
+      { "m": "spec.whisper", "p": { "amount": 90 } },
+      { "m": "stereo.place", "p": { "angle": 90, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-undercover-in-a-crowd",
+    "name": "Undercover in a crowd",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised voice slipping through a busy airport terminal.",
+    "tags": ["spy", "crowd", "airport"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 25 } }
+    ],
+    "bed": { "b": "airport-hall", "level": -18 },
+    "seed": 1
+  },
+  {
+    "id": "disguise-rooftop-rendezvous",
+    "name": "Rooftop rendezvous",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A hushed, disguised meeting on a windy rooftop high above the city.",
+    "tags": ["spy", "rooftop", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2.5 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "stereo.place", "p": { "angle": 40, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wind", "level": -20, "p": { "strength": 55 } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-signal-under-the-static",
+    "name": "Signal under the static",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised voice buried between stations, waiting for the right listener.",
+    "tags": ["spy", "radio", "static"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 3 } },
+      { "m": "device.radio", "p": { "tuning": "between" } }
+    ],
+    "bed": { "b": "radio-static", "level": -22, "p": { "band": "shortwave" } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-behind-a-locked-door",
+    "name": "Behind a locked door",
+    "cat": "disguise",
+    "sub": "Anonymous voices",
+    "about": "A disguised voice that will not open up, heard through a closed door from the hall.",
+    "tags": ["door", "muffled", "hidden"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2.5 } },
+      { "m": "space.muffle", "p": { "room": "hallway", "muffling": 45, "gaps": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-stranger-at-the-gate-intercom",
+    "name": "Stranger at the gate intercom",
+    "cat": "disguise",
+    "sub": "Mystery callers",
+    "about": "An unknown visitor buzzing in through a crackly gate speaker, voice disguised.",
+    "tags": ["intercom", "gate", "buzz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 2.5 } },
+      { "m": "device.intercom", "p": { "buzz": 45, "distortion": 55 } }
+    ],
+    "bed": { "b": "wind", "level": -30, "p": { "strength": 25 } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-frequency-shifted-voice",
+    "name": "Frequency-shifted voice",
+    "cat": "disguise",
+    "sub": "Scrambled and encrypted",
+    "about": "Every overtone slid up by the same amount, so the voice rings slightly wrong and hides its owner.",
+    "tags": ["shifted", "inharmonic", "uncanny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 1.5 } },
+      { "m": "synth.freqshift", "p": { "shift": 140 } },
+      { "m": "tone.character", "p": { "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-slowed-tape-disguise",
+    "name": "Slowed-tape disguise",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "The tape slowed down to drop the voice, then its body lifted back up so it fits nobody.",
+    "tags": ["tape", "slow", "low"],
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.8, "wobble": 15 } },
+      { "m": "pitch.voice", "p": { "formant": 3.5 } },
+      { "m": "device.cassette", "p": { "hiss": 20, "wow": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-sped-up-tape-disguise",
+    "name": "Sped-up tape disguise",
+    "cat": "disguise",
+    "sub": "Can't place it",
+    "about": "The tape sped up to raise the voice, then its body pulled down so it sounds like a stranger.",
+    "tags": ["tape", "fast", "high"],
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 1.22, "wobble": 10 } },
+      { "m": "pitch.voice", "p": { "formant": -4 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-hooded-online-broadcast",
+    "name": "Hooded online broadcast",
+    "cat": "disguise",
+    "sub": "Masks and covers",
+    "about": "The faceless online video voice: very low, faintly robotic and gritty.",
+    "tags": ["online", "low", "robotic"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": 1 } },
+      { "m": "spec.robot", "p": { "pitch": 70, "mix": 30 } },
+      { "m": "lofi.drive", "p": { "drive": 9, "mix": 30 } },
+      { "m": "lofi.mp3", "p": { "quality": "fair" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-remote-witness-on-a-video-link",
+    "name": "Remote witness on a video link",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A protected witness speaking from a laptop over a shaky video link.",
+    "tags": ["video", "laptop", "witness"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": 3 } },
+      { "m": "spec.codec", "p": { "bitrate": 16, "warble": 30 } },
+      { "m": "spec.dropout", "p": { "loss": 6, "conceal": "repeat" } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-body-camera-clip",
+    "name": "Body camera clip, voice masked",
+    "cat": "disguise",
+    "sub": "Interviews and evidence",
+    "about": "A rough clip from a chest-worn camera out on the street, the speaker's voice masked.",
+    "tags": ["camera", "street", "rough"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 2.5 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 60 } },
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 8 } },
+      { "m": "lofi.crush", "p": { "bits": 10, "rate": 12000 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "street": "side", "sirens": 10 } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-voice-from-the-air-vent",
+    "name": "Voice from the air vent",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A disguised voice drifting up the heating duct from a room below.",
+    "tags": ["vent", "duct", "hidden"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 3 } },
+      { "m": "space.muffle", "p": { "wall": "vent", "muffling": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "disguise-hotel-room-bug",
+    "name": "Hotel room bug",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "A tiny listening device hidden in a lamp, picking up a disguised voice across the room.",
+    "tags": ["bug", "hidden", "room"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 45, "distance": 70 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1600, "resonance": 15, "slope": "gentle" } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 11000 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -32, "p": { "intensity": 35 } },
+    "seed": 1
+  },
+  {
+    "id": "disguise-handler-in-your-earpiece",
+    "name": "Handler in your earpiece",
+    "cat": "disguise",
+    "sub": "Spies and secret agents",
+    "about": "Your contact's disguised voice in a tiny earpiece, tinny and close in your right ear.",
+    "tags": ["earpiece", "spy", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 2.5 } },
+      { "m": "lofi.speaker", "p": { "size": "earbud", "push": 10 } },
+      { "m": "device.walkie", "p": { "band": "digital", "squelch": 30, "hiss": 15 } },
+      { "m": "stereo.place", "p": { "angle": 85, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 1
+  }
+]

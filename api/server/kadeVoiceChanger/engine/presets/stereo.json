@@ -1,0 +1,1133 @@
+[
+  {
+    "id": "stereo-circling-your-head-fast",
+    "name": "Circling your head, fast",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Your voice whips round and round your head about once a second; best on headphones.",
+    "tags": ["3d", "headphones", "spinning"],
+    "chain": [
+      { "m": "stereo.orbit", "p": { "period": 1.2, "distance": 1 } }
+    ],
+    "seed": 301
+  },
+  {
+    "id": "stereo-whisper-circling-close",
+    "name": "Whisper circling close",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A breathy whisper slowly walks round your head, almost touching each ear.",
+    "tags": ["3d", "whisper", "close"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 85 } },
+      { "m": "stereo.orbit", "p": { "period": 3.5, "distance": 0.3 } }
+    ],
+    "seed": 302
+  },
+  {
+    "id": "stereo-looping-over-your-head",
+    "name": "Looping over your head",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Your voice loops up over the top of your head and down behind, trailing soft echoes.",
+    "tags": ["3d", "above", "circling"],
+    "chain": [
+      { "m": "echo.delay", "p": { "time": 180, "feedback": 35, "damping": 50, "stereo": "mono", "mix": 30 } },
+      { "m": "stereo.orbit", "p": { "period": 5, "tilt": 70, "height": 10 } }
+    ],
+    "seed": 303
+  },
+  {
+    "id": "stereo-circling-in-a-big-hall",
+    "name": "Circling in a big hall",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Your voice walks a wide circle the other way round, echoing in a big hall.",
+    "tags": ["3d", "hall", "circling"],
+    "chain": [
+      { "m": "stereo.orbit", "p": { "period": 6, "distance": 3, "direction": "counterclockwise", "room": "big-hall" } }
+    ],
+    "seed": 304
+  },
+  {
+    "id": "stereo-wide-circle-in-a-field",
+    "name": "Wide circle in a field",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Someone strolls a big slow ring around you out in an open field.",
+    "tags": ["3d", "outdoors", "slow"],
+    "chain": [
+      { "m": "stereo.orbit", "p": { "period": 12, "distance": 5, "room": "outdoors" } }
+    ],
+    "bed": { "b": "summer-field", "level": -28 },
+    "seed": 305
+  },
+  {
+    "id": "stereo-dizzy-spin",
+    "name": "Dizzy spin",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "Spinning so fast round your head that the voice goes woozy and seasick.",
+    "tags": ["3d", "dizzy", "spinning"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 50, "speed": 1 } },
+      { "m": "stereo.orbit", "p": { "period": 0.6, "distance": 0.8 } }
+    ],
+    "seed": 306
+  },
+  {
+    "id": "stereo-buzzing-bee-circling-you",
+    "name": "Buzzing bee circling you",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A tiny buzzing voice zips round and round your ears like a bee.",
+    "tags": ["3d", "bee", "buzz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 160, "depth": 60, "shape": "triangle" } },
+      { "m": "stereo.orbit", "p": { "period": 1.8, "distance": 0.4 } }
+    ],
+    "seed": 307
+  },
+  {
+    "id": "stereo-giant-walking-around-you",
+    "name": "Giant walking around you",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A huge deep voice slowly circles you at a distance in a cavernous hall.",
+    "tags": ["3d", "giant", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } },
+      { "m": "stereo.orbit", "p": { "period": 14, "distance": 4, "room": "big-hall" } }
+    ],
+    "seed": 308
+  },
+  {
+    "id": "stereo-ghost-circling-the-room",
+    "name": "Ghost circling the room",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A ghostly whisper swells backwards out of nowhere as it drifts round the room.",
+    "tags": ["3d", "ghost", "whisper"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 70 } },
+      { "m": "echo.preverb", "p": { "mix": 40 } },
+      { "m": "stereo.orbit", "p": { "period": 7, "distance": 2, "height": 20, "room": "small-room" } }
+    ],
+    "seed": 309
+  },
+  {
+    "id": "stereo-radio-voice-orbiting-you",
+    "name": "Radio voice orbiting you",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A crackly walkie-talkie flies round your head like it is on a string.",
+    "tags": ["3d", "radio", "circling"],
+    "chain": [
+      { "m": "device.walkie", "p": {} },
+      { "m": "stereo.orbit", "p": { "period": 3, "distance": 1.5 } }
+    ],
+    "seed": 310
+  },
+  {
+    "id": "stereo-circling-around-your-feet",
+    "name": "Circling around your feet",
+    "cat": "stereo",
+    "sub": "Circling",
+    "about": "A small high voice scurries in a circle down low, round your ankles.",
+    "tags": ["3d", "below", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "stereo.orbit", "p": { "period": 2.5, "distance": 0.8, "height": -40 } }
+    ],
+    "seed": 311
+  },
+  {
+    "id": "stereo-right-behind-you",
+    "name": "Right behind you",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "Someone standing just behind your head, close enough to make you turn round.",
+    "tags": ["3d", "behind", "close"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 180, "distance": 0.8 } }
+    ],
+    "seed": 321
+  },
+  {
+    "id": "stereo-whisper-in-your-left-ear",
+    "name": "Whisper in your left ear",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A secret breathed right into your left ear and nowhere else.",
+    "tags": ["3d", "whisper", "left"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 90 } },
+      { "m": "stereo.place", "p": { "angle": -90, "distance": 0.1, "room": "none" } }
+    ],
+    "seed": 322
+  },
+  {
+    "id": "stereo-low-voice-in-your-right-ear",
+    "name": "Low voice in your right ear",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A deep, warm voice murmurs close to your right ear.",
+    "tags": ["3d", "deep", "right"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } },
+      { "m": "stereo.place", "p": { "angle": 90, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 323
+  },
+  {
+    "id": "stereo-floating-above-your-head",
+    "name": "Floating above your head",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A voice hovers just over the top of your head with a faint shimmer above it.",
+    "tags": ["3d", "above", "shimmer"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 0, "height": 80, "distance": 1 } },
+      { "m": "space.shimmer", "p": { "amount": 40, "mix": 20 } }
+    ],
+    "seed": 324
+  },
+  {
+    "id": "stereo-rising-up-from-below",
+    "name": "Rising up from below",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A voice calls up from somewhere below you, echoing in a dark space.",
+    "tags": ["3d", "below", "cave"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 2, "room": "cave" } }
+    ],
+    "seed": 325
+  },
+  {
+    "id": "stereo-over-your-left-shoulder",
+    "name": "Over your left shoulder",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "Someone leans in from behind your left shoulder to talk to you.",
+    "tags": ["3d", "behind", "left"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": -135, "height": 20, "distance": 0.5 } }
+    ],
+    "seed": 326
+  },
+  {
+    "id": "stereo-tiny-voice-at-your-feet",
+    "name": "Tiny voice at your feet",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A very small person calls up at you from down by your shoes.",
+    "tags": ["3d", "tiny", "below"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 5 } },
+      { "m": "stereo.place", "p": { "angle": 20, "height": -40, "distance": 0.6, "room": "none" } }
+    ],
+    "seed": 327
+  },
+  {
+    "id": "stereo-across-the-room-on-your-right",
+    "name": "Across the room on your right",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "Someone talks from the far side of the room, off to your right.",
+    "tags": ["3d", "room", "far"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 70, "distance": 6 } }
+    ],
+    "seed": 328
+  },
+  {
+    "id": "stereo-far-behind-you-in-a-church",
+    "name": "Far behind you in a church",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A voice from the back pews of a stone church, far behind you.",
+    "tags": ["3d", "church", "behind"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 180, "distance": 15, "room": "church" } }
+    ],
+    "seed": 329
+  },
+  {
+    "id": "stereo-beside-you-on-a-park-bench",
+    "name": "Beside you on a park bench",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A friend sits on your left on a bench in the park with birds singing around you.",
+    "tags": ["3d", "outdoors", "left"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": -80, "distance": 0.8, "room": "outdoors" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -26 },
+    "seed": 330
+  },
+  {
+    "id": "stereo-standing-in-the-doorway",
+    "name": "Standing in the doorway",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "Someone talks from a doorway behind you and to your right, the hall ringing behind them.",
+    "tags": ["3d", "hallway", "behind"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 120, "distance": 4, "room": "hallway" } }
+    ],
+    "seed": 331
+  },
+  {
+    "id": "stereo-calling-from-deep-in-a-cave",
+    "name": "Calling from deep in a cave",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "A far-off voice calls to you from the dark of a cave off to your left.",
+    "tags": ["3d", "cave", "far"],
+    "chain": [
+      { "m": "stereo.place", "p": { "distance": 20, "room": "cave" } }
+    ],
+    "bed": { "b": "cave-drips", "level": -28 },
+    "seed": 332
+  },
+  {
+    "id": "stereo-face-to-face-very-close",
+    "name": "Face to face, very close",
+    "cat": "stereo",
+    "sub": "Around your head",
+    "about": "Nose to nose with someone talking softly straight at you.",
+    "tags": ["3d", "close", "front"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -1 } },
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 0.3, "room": "none" } }
+    ],
+    "seed": 333
+  },
+  {
+    "id": "stereo-fly-by-left-to-right",
+    "name": "Fly-by, left to right",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "Your voice zooms across in front of you from left to right, dropping in pitch as it passes.",
+    "tags": ["3d", "flyby", "doppler"],
+    "chain": [
+      { "m": "stereo.flyby", "p": {} }
+    ],
+    "seed": 341
+  },
+  {
+    "id": "stereo-rushing-past-behind-you",
+    "name": "Rushing past behind you",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "A fast voice tears past behind your back from right to left.",
+    "tags": ["3d", "flyby", "behind"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "from": 90, "to": -90, "speed": "fastcar", "closest": 3 } }
+    ],
+    "seed": 342
+  },
+  {
+    "id": "stereo-walking-away-down-the-hall",
+    "name": "Walking away down the hall",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "The talker turns and walks off down a long hallway while still talking to you.",
+    "tags": ["3d", "away", "hallway"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": {} }
+    ],
+    "seed": 343
+  },
+  {
+    "id": "stereo-walking-up-to-you",
+    "name": "Walking up to you",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "A voice starts at the end of the hall and walks right up to your face.",
+    "tags": ["3d", "closer", "hallway"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 15, "to": 0.5, "facing": "toward" } }
+    ],
+    "seed": 344
+  },
+  {
+    "id": "stereo-walking-off-into-a-cave",
+    "name": "Walking off into a cave",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "Someone wanders deeper and deeper into a cave until the echoes swallow them.",
+    "tags": ["3d", "away", "cave"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "to": 30, "angle": 20, "room": "cave" } }
+    ],
+    "seed": 345
+  },
+  {
+    "id": "stereo-running-up-across-the-field",
+    "name": "Running up across the field",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "A distant voice from far across an open field gets closer and closer until it is beside you.",
+    "tags": ["3d", "closer", "outdoors"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 40, "to": 1, "angle": -40, "room": "outdoors" } }
+    ],
+    "bed": { "b": "meadow-dawn", "level": -28 },
+    "seed": 346
+  },
+  {
+    "id": "stereo-pacing-back-and-forth",
+    "name": "Pacing back and forth",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "Someone paces up and down in front of you, crossing from ear to ear.",
+    "tags": ["3d", "walking", "back and forth"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "walk", "passes": 4, "closest": 1.5, "room": "none" } }
+    ],
+    "seed": 347
+  },
+  {
+    "id": "stereo-swooping-over-your-head",
+    "name": "Swooping over your head",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "Your voice dives in from the front left, sweeps over the top of you and away behind on the right.",
+    "tags": ["3d", "above", "flyby"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "from": -45, "to": 135, "speed": "run", "closest": 1, "height": 70 } }
+    ],
+    "seed": 348
+  },
+  {
+    "id": "stereo-racing-through-a-tunnel",
+    "name": "Racing through a tunnel",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "Your voice blasts past three times at racing speed, booming in a concrete tunnel.",
+    "tags": ["3d", "flyby", "tunnel"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "race", "passes": 3, "closest": 3, "room": "tunnel" } }
+    ],
+    "seed": 349
+  },
+  {
+    "id": "stereo-strolling-past-behind-you",
+    "name": "Strolling past behind you",
+    "cat": "stereo",
+    "sub": "Passing and moving",
+    "about": "A chatty passer-by ambles along behind your back from one side to the other.",
+    "tags": ["3d", "walking", "behind"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "from": 135, "to": -135, "speed": "walk", "room": "alley" } }
+    ],
+    "seed": 350
+  },
+  {
+    "id": "stereo-ping-pong-phrases",
+    "name": "Ping-pong phrases",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Each thing you say jumps to the other ear, left, right, left.",
+    "tags": ["stereo", "bounce", "phrases"],
+    "chain": [
+      { "m": "stereo.pingpong", "p": {} }
+    ],
+    "seed": 361
+  },
+  {
+    "id": "stereo-chatterbox-bouncing-ear-to-ear",
+    "name": "Chatterbox bouncing ear to ear",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "A bright little voice hops to the other ear on every single syllable.",
+    "tags": ["stereo", "bounce", "syllables"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 2 } },
+      { "m": "stereo.pingpong", "p": { "unit": "syllable", "glide": 0, "width": 100 } }
+    ],
+    "seed": 362
+  },
+  {
+    "id": "stereo-slow-dreamy-sway",
+    "name": "Slow dreamy sway",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Your voice drifts gently from one ear to the other inside a soft reverb.",
+    "tags": ["stereo", "sway", "dreamy"],
+    "chain": [
+      { "m": "mod.autopan", "p": { "rate": 0.15, "width": 100 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 25 } }
+    ],
+    "seed": 363
+  },
+  {
+    "id": "stereo-ear-to-ear-strobe",
+    "name": "Ear-to-ear strobe",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Your voice snaps hard between your ears eight times a second like a strobe light.",
+    "tags": ["stereo", "fast", "chopped"],
+    "chain": [
+      { "m": "mod.autopan", "p": { "rate": 8, "width": 100, "shape": "square", "head": false } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 250 } }
+    ],
+    "seed": 364
+  },
+  {
+    "id": "stereo-teleporting-voice",
+    "name": "Teleporting voice",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Your voice blinks from place to place around your head with a sci-fi swirl.",
+    "tags": ["stereo", "jumps", "swirl"],
+    "chain": [
+      { "m": "mod.phaser", "p": { "rate": 2, "depth": 100, "mix": 40 } },
+      { "m": "mod.autopan", "p": { "rate": 1.5, "width": 100, "shape": "random" } }
+    ],
+    "seed": 365
+  },
+  {
+    "id": "stereo-pendulum-with-echoes",
+    "name": "Pendulum with echoes",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Your voice swings steadily side to side like a pendulum, leaving echoes behind.",
+    "tags": ["stereo", "pendulum", "echo"],
+    "chain": [
+      { "m": "echo.delay", "p": { "time": 500, "feedback": 30, "mix": 25, "stereo": "mono" } },
+      { "m": "mod.autopan", "p": { "rate": 0.5, "width": 100, "shape": "triangle" } }
+    ],
+    "seed": 366
+  },
+  {
+    "id": "stereo-throbbing-from-ear-to-ear",
+    "name": "Throbbing from ear to ear",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "One ear swells while the other fades, over and over, a warm stereo pulse.",
+    "tags": ["stereo", "pulse", "tremolo"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 60 } },
+      { "m": "mod.tremolo", "p": { "rate": 4, "depth": 100, "phase": 180 } }
+    ],
+    "seed": 367
+  },
+  {
+    "id": "stereo-echo-bouncing-ear-to-ear",
+    "name": "Echo bouncing ear to ear",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Every word echoes back and forth between your ears, fading as it goes.",
+    "tags": ["stereo", "echo", "ping-pong"],
+    "chain": [
+      { "m": "echo.delay", "p": { "time": 300, "feedback": 50, "mix": 40 } }
+    ],
+    "seed": 368
+  },
+  {
+    "id": "stereo-scattered-rhythm-echoes",
+    "name": "Scattered rhythm echoes",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "Echoes of your words land in a scattered rhythm all around your head.",
+    "tags": ["stereo", "echo", "rhythm"],
+    "chain": [
+      { "m": "echo.multitap", "p": { "pattern": "scatter", "spread": 100, "mix": 45 } }
+    ],
+    "seed": 369
+  },
+  {
+    "id": "stereo-leaning-hard-to-the-left",
+    "name": "Leaning hard to the left",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "A tiny delay in your right ear pulls the whole voice over to your left side.",
+    "tags": ["stereo", "left", "wide"],
+    "chain": [
+      { "m": "stereo.haas", "p": { "delay": 20, "level": -3 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 25 } }
+    ],
+    "seed": 370
+  },
+  {
+    "id": "stereo-doubled-voice-hopping-ears",
+    "name": "Doubled voice hopping ears",
+    "cat": "stereo",
+    "sub": "Ear to ear",
+    "about": "A thick double-tracked voice hops from ear to ear, syllable by syllable.",
+    "tags": ["stereo", "double", "bounce"],
+    "chain": [
+      { "m": "stereo.double", "p": { "timing": 30 } },
+      { "m": "stereo.pingpong", "p": { "unit": "syllable", "glide": 60 } }
+    ],
+    "seed": 371
+  },
+  {
+    "id": "stereo-twins-one-in-each-ear",
+    "name": "Twins, one in each ear",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Two nearly identical people, one in each ear, saying every word together.",
+    "tags": ["stereo", "twins", "split"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 1, "leftTimbre": 1, "rightPitch": -1, "rightTimbre": -0.5, "apart": 100 } }
+    ],
+    "seed": 381
+  },
+  {
+    "id": "stereo-low-you-high-you",
+    "name": "Low you, high you",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "A low you in your left ear and a high you in your right, talking at once.",
+    "tags": ["stereo", "split", "two voices"],
+    "chain": [
+      { "m": "stereo.split", "p": {} }
+    ],
+    "seed": 382
+  },
+  {
+    "id": "stereo-arguing-with-yourself",
+    "name": "Arguing with yourself",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Two of you take turns phrase by phrase, one hard left and one hard right.",
+    "tags": ["stereo", "argument", "turns"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": -4, "leftTimbre": -2, "rightPitch": 4, "rightTimbre": 2, "mode": "turns", "apart": 100 } }
+    ],
+    "seed": 383
+  },
+  {
+    "id": "stereo-little-and-large-taking-turns",
+    "name": "Little and large, taking turns",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "A booming giant on the left and a squeaky tiny one on the right swap lines.",
+    "tags": ["stereo", "giant", "tiny"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": -10, "leftTimbre": -6, "rightPitch": 10, "rightTimbre": 6, "mode": "turns" } }
+    ],
+    "seed": 384
+  },
+  {
+    "id": "stereo-your-shadow-an-octave-down",
+    "name": "Your shadow an octave down",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "You on one side and a dark twin a whole octave lower on the other, word for word.",
+    "tags": ["stereo", "octave", "double"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 0, "leftTimbre": 0, "rightPitch": -12, "rightTimbre": -4, "apart": 60 } }
+    ],
+    "seed": 385
+  },
+  {
+    "id": "stereo-wide-stereo-double",
+    "name": "Wide stereo double",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Your voice recorded twice and panned hard apart, wide and thick.",
+    "tags": ["stereo", "double", "wide"],
+    "chain": [
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 25, "spread": 100 } }
+    ],
+    "seed": 386
+  },
+  {
+    "id": "stereo-triple-tracked-voice",
+    "name": "Triple-tracked voice",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Three loose extra takes of you spread around, a little out of step and tune.",
+    "tags": ["stereo", "double", "thick"],
+    "chain": [
+      { "m": "stereo.double", "p": { "copies": 3, "timing": 40, "pitch": 18 } }
+    ],
+    "seed": 387
+  },
+  {
+    "id": "stereo-four-of-you-in-a-room",
+    "name": "Four of you in a room",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "A small group of different-sized yous all saying the same thing around a living room.",
+    "tags": ["crowd", "group", "room"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 5, "timbreSpread": 3, "timing": 80, "room": "small-room" } }
+    ],
+    "seed": 388
+  },
+  {
+    "id": "stereo-choir-of-you-in-a-church",
+    "name": "Choir of you in a church",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Sixteen of you chant together in a tight, ringing choir under a stone roof.",
+    "tags": ["crowd", "choir", "church"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 16, "pitchSpread": 3, "timing": 60, "loose": 30, "room": "church" } }
+    ],
+    "seed": 389
+  },
+  {
+    "id": "stereo-army-of-you",
+    "name": "Army of you",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Forty of you shout the same words across a huge stadium.",
+    "tags": ["crowd", "army", "stadium"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "stereo.crowd", "p": { "people": 40, "pitchSpread": 6, "timbreSpread": 4, "timing": 150, "room": "stadium" } }
+    ],
+    "seed": 390
+  },
+  {
+    "id": "stereo-crowd-of-whispers",
+    "name": "Crowd of whispers around you",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Ten whispering yous surround you, each a little out of step with the rest.",
+    "tags": ["crowd", "whisper", "eerie"],
+    "chain": [
+      { "m": "spec.whisper", "p": {} },
+      { "m": "stereo.crowd", "p": { "people": 10, "timing": 200, "room": "small-room" } }
+    ],
+    "seed": 391
+  },
+  {
+    "id": "stereo-echoing-mob-in-a-cave",
+    "name": "Echoing mob in a cave",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "A loose, rowdy crowd of you rumbling around the walls of a deep cave.",
+    "tags": ["crowd", "cave", "mob"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 20, "timing": 250, "loose": 80, "room": "cave" } }
+    ],
+    "seed": 392
+  },
+  {
+    "id": "stereo-tiny-voices-everywhere",
+    "name": "Tiny voices everywhere",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "A dozen squeaky little yous chatter all around your head at once.",
+    "tags": ["crowd", "tiny", "high"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 5 } },
+      { "m": "stereo.crowd", "p": { "room": "none" } }
+    ],
+    "seed": 393
+  },
+  {
+    "id": "stereo-giant-chorus-of-you",
+    "name": "Giant chorus of you",
+    "cat": "stereo",
+    "sub": "Many of you",
+    "about": "Eight huge deep yous boom together across a concert hall.",
+    "tags": ["crowd", "giant", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -4 } },
+      { "m": "stereo.crowd", "p": { "people": 8, "pitchSpread": 2 } }
+    ],
+    "seed": 394
+  },
+  {
+    "id": "stereo-super-wide-voice",
+    "name": "Super wide voice",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Your voice stretched as wide as it will go, filling both ears, still solid in the middle.",
+    "tags": ["stereo", "wide", "big"],
+    "chain": [
+      { "m": "stereo.width", "p": { "width": 2.5, "fill": 80 } }
+    ],
+    "seed": 401
+  },
+  {
+    "id": "stereo-phase-swirl-around-you",
+    "name": "Phase swirl around you",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "A slow liquid swirl sweeps through your voice and spreads it wide.",
+    "tags": ["stereo", "phaser", "swirl"],
+    "chain": [
+      { "m": "mod.phaser", "p": { "rate": 0.2, "depth": 100, "feedback": 60, "mix": 60 } },
+      { "m": "stereo.width", "p": { "width": 2, "fill": 70 } }
+    ],
+    "seed": 402
+  },
+  {
+    "id": "stereo-shimmering-wide-chorus",
+    "name": "Shimmering wide chorus",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Four shimmering copies drift around your voice from ear to ear.",
+    "tags": ["stereo", "chorus", "shimmer"],
+    "chain": [
+      { "m": "mod.chorus", "p": { "voices": 4, "depth": 60, "spread": 100, "mix": 60 } }
+    ],
+    "seed": 403
+  },
+  {
+    "id": "stereo-jet-swirl-in-stereo",
+    "name": "Jet swirl in stereo",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "A metallic jet whoosh sweeps through your voice, leaning wide across your ears.",
+    "tags": ["stereo", "flanger", "jet"],
+    "chain": [
+      { "m": "mod.flanger", "p": { "rate": 0.15, "feedback": 80 } },
+      { "m": "stereo.haas", "p": { "delay": 12, "lead": "right" } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 404
+  },
+  {
+    "id": "stereo-rotating-speaker-fast",
+    "name": "Rotating speaker, fast",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Your voice whirls through a fast-spinning speaker cabinet that throws it round the room.",
+    "tags": ["stereo", "rotating", "organ"],
+    "chain": [
+      { "m": "mod.rotary", "p": { "speed": "fast" } }
+    ],
+    "seed": 405
+  },
+  {
+    "id": "stereo-rotating-speaker-winding-down",
+    "name": "Rotating speaker winding down",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "A growling spinning speaker cabinet in a stone church slows from a whirl to a lazy turn.",
+    "tags": ["stereo", "rotating", "slowing"],
+    "chain": [
+      { "m": "mod.rotary", "p": { "speed": "down", "switchAt": 1.5, "drive": 65, "balance": -40 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 30 } }
+    ],
+    "seed": 406
+  },
+  {
+    "id": "stereo-shimmering-halo",
+    "name": "Shimmering halo",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "A heavenly octave-up tail blooms wide around every word.",
+    "tags": ["stereo", "shimmer", "heavenly"],
+    "chain": [
+      { "m": "space.shimmer", "p": { "mix": 50 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 407
+  },
+  {
+    "id": "stereo-grain-cloud-spread-wide",
+    "name": "Grain cloud spread wide",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Your voice breaks into a sparkling cloud of tiny grains scattered across both ears.",
+    "tags": ["stereo", "granular", "cloud"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 90, "density": 60, "spread": 40, "scatter": 200, "width": 100, "mix": 70 } }
+    ],
+    "seed": 408
+  },
+  {
+    "id": "stereo-wide-reverb-wash",
+    "name": "Wide reverb wash",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "A huge soft reverb spreads every word out past both of your ears.",
+    "tags": ["stereo", "reverb", "huge"],
+    "chain": [
+      { "m": "space.reverb", "p": { "size": 90, "decay": 6, "width": 1.5, "mix": 50 } }
+    ],
+    "seed": 409
+  },
+  {
+    "id": "stereo-dub-echoes-swirling-round",
+    "name": "Dub echoes swirling round",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Sound-system dub echoes sweep and drip in a wide space around you.",
+    "tags": ["stereo", "dub", "echo"],
+    "chain": [
+      { "m": "echo.dub", "p": { "mix": 50 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 410
+  },
+  {
+    "id": "stereo-octave-shimmer-spread-wide",
+    "name": "Octave shimmer spread wide",
+    "cat": "stereo",
+    "sub": "Wide and swirling",
+    "about": "Octaves above and below your voice shimmer and drift across your ears.",
+    "tags": ["stereo", "octave", "chorus"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 50, "up1": 50 } },
+      { "m": "mod.chorus", "p": { "spread": 100 } }
+    ],
+    "seed": 411
+  },
+  {
+    "id": "stereo-inside-your-head",
+    "name": "Inside your head",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "A dry voice sitting right in the middle of your head, as if you were thinking it.",
+    "tags": ["3d", "inside", "close"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 0.1, "room": "none" } },
+      { "m": "space.reverb", "p": { "size": 5, "decay": 0.3, "mix": 10 } }
+    ],
+    "seed": 421
+  },
+  {
+    "id": "stereo-your-own-thoughts",
+    "name": "Your own thoughts",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "A half-whispered inner voice smeared into a soft haze inside your skull.",
+    "tags": ["3d", "inside", "whisper"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 600 } },
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 0.1, "room": "none" } }
+    ],
+    "seed": 422
+  },
+  {
+    "id": "stereo-crowd-inside-your-head",
+    "name": "Crowd inside your head",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "Five hazy versions of you murmur at once, all crowded inside your head.",
+    "tags": ["3d", "inside", "crowd"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 5, "pitchSpread": 8, "timing": 400, "room": "none" } },
+      { "m": "spec.blur", "p": { "amount": 30 } },
+      { "m": "stereo.width", "p": { "width": 0.6 } }
+    ],
+    "seed": 423
+  },
+  {
+    "id": "stereo-echo-between-your-ears",
+    "name": "Echo between your ears",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "A quick, dark echo ricochets back and forth between your ears.",
+    "tags": ["stereo", "echo", "inside"],
+    "chain": [
+      { "m": "echo.delay", "p": { "time": 90, "feedback": 70, "damping": 60, "mix": 50 } }
+    ],
+    "seed": 424
+  },
+  {
+    "id": "stereo-glass-ringing-between-your-ears",
+    "name": "Glass ringing between your ears",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "Every word sets a wine glass ringing somewhere in the middle of your head.",
+    "tags": ["inside", "glass", "ringing"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "glass", "mix": 40 } },
+      { "m": "stereo.width", "p": { "width": 0.3 } }
+    ],
+    "seed": 425
+  },
+  {
+    "id": "stereo-through-your-own-skull",
+    "name": "Through your own skull",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "Your voice as you hear it through your own bones, dark and boomy and close.",
+    "tags": ["inside", "dark", "close"],
+    "chain": [
+      { "m": "tone.filter", "p": { "freq": 900, "slope": "gentle" } },
+      { "m": "tone.character", "p": { "shape": "boomy", "amount": 60 } },
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 0.1, "room": "none" } }
+    ],
+    "seed": 426
+  },
+  {
+    "id": "stereo-telepathic-message",
+    "name": "Telepathic message",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "A faint, glowing voice that seems to arrive straight in your mind.",
+    "tags": ["inside", "shimmer", "mind"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } },
+      { "m": "stereo.width", "p": { "width": 0.2 } }
+    ],
+    "seed": 427
+  },
+  {
+    "id": "stereo-left-brain-right-brain",
+    "name": "Left brain, right brain",
+    "cat": "stereo",
+    "sub": "Inside your head",
+    "about": "The same words in a dark timbre on the left and a bright one on the right.",
+    "tags": ["stereo", "split", "timbre"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 0, "leftTimbre": -4, "rightPitch": 0, "rightTimbre": 4, "apart": 100 } }
+    ],
+    "seed": 428
+  },
+  {
+    "id": "stereo-behind-the-door-on-your-left",
+    "name": "Behind the door on your left",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "Someone talks behind a closed door just off to your left.",
+    "tags": ["3d", "muffled", "left"],
+    "chain": [
+      { "m": "space.muffle", "p": { "room": "none" } },
+      { "m": "stereo.place", "p": { "angle": -90, "distance": 3 } }
+    ],
+    "seed": 441
+  },
+  {
+    "id": "stereo-talking-upstairs-above-you",
+    "name": "Talking upstairs above you",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A muffled voice comes through the ceiling from the room upstairs.",
+    "tags": ["3d", "above", "muffled"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "floor", "room": "none" } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 70, "distance": 3, "room": "none" } }
+    ],
+    "seed": 442
+  },
+  {
+    "id": "stereo-phone-on-the-table-beside-you",
+    "name": "Phone on the table beside you",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A speakerphone call coming from a phone lying on the table to your right.",
+    "tags": ["3d", "phone", "right"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "speaker" } },
+      { "m": "stereo.place", "p": { "angle": 60, "height": -30, "distance": 0.6 } }
+    ],
+    "seed": 443
+  },
+  {
+    "id": "stereo-radio-across-the-room",
+    "name": "Radio across the room",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "An old AM radio talking away on a shelf across the room to your left.",
+    "tags": ["3d", "radio", "room"],
+    "chain": [
+      { "m": "device.radio", "p": {} },
+      { "m": "stereo.place", "p": { "angle": -40, "distance": 4 } }
+    ],
+    "seed": 444
+  },
+  {
+    "id": "stereo-speaker-in-the-ceiling",
+    "name": "Speaker in the ceiling",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A little loudspeaker high in the ceiling of a corridor makes an announcement.",
+    "tags": ["3d", "above", "speaker"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "portable" } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 80, "distance": 2.5, "room": "hallway" } }
+    ],
+    "seed": 445
+  },
+  {
+    "id": "stereo-whisper-from-under-the-bed",
+    "name": "Whisper from under the bed",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A muffled whisper from somewhere underneath you, low and to the right.",
+    "tags": ["3d", "below", "whisper"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 90 } },
+      { "m": "space.muffle", "p": { "wall": "closet", "room": "none" } },
+      { "m": "stereo.place", "p": { "angle": 30, "height": -40, "distance": 0.6, "room": "none" } }
+    ],
+    "seed": 446
+  },
+  {
+    "id": "stereo-calling-from-down-the-street",
+    "name": "Calling from down the street",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A friend shouts to you from far down a busy street, off to your right.",
+    "tags": ["3d", "street", "far"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "stereo.place", "p": { "angle": 40, "distance": 25, "room": "outdoors" } }
+    ],
+    "bed": { "b": "city-street", "level": -22 },
+    "seed": 447
+  },
+  {
+    "id": "stereo-behind-you-in-a-busy-cafe",
+    "name": "Behind you in a busy cafe",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "Someone at the next table behind you talks over the clatter of a coffee shop.",
+    "tags": ["3d", "cafe", "behind"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 160, "distance": 2, "room": "big-hall" } }
+    ],
+    "bed": { "b": "cafe", "level": -18 },
+    "seed": 448
+  },
+  {
+    "id": "stereo-tv-playing-behind-you",
+    "name": "TV playing behind you",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "Your voice on a television somewhere behind you, through an open door.",
+    "tags": ["3d", "tv", "behind"],
+    "chain": [
+      { "m": "device.tv", "p": {} },
+      { "m": "stereo.place", "p": { "angle": 140, "distance": 5, "room": "hallway" } }
+    ],
+    "seed": 449
+  },
+  {
+    "id": "stereo-door-speaker-on-your-right",
+    "name": "Door speaker on your right",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "A buzzy door intercom at your right shoulder as you stand on the front step.",
+    "tags": ["3d", "intercom", "right"],
+    "chain": [
+      { "m": "device.intercom", "p": {} },
+      { "m": "stereo.place", "p": { "angle": 90, "distance": 0.5, "room": "outdoors" } }
+    ],
+    "bed": { "b": "city-street", "level": -30, "p": { "street": "side", "intensity": 30 } },
+    "seed": 450
+  },
+  {
+    "id": "stereo-voice-up-in-the-trees",
+    "name": "Voice up in the trees",
+    "cat": "stereo",
+    "sub": "3D scenes",
+    "about": "Someone calls down to you from high in the branches, up and to your left.",
+    "tags": ["3d", "above", "forest"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": -30, "height": 50, "distance": 10, "room": "outdoors" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -22, "p": { "wind": 50 } },
+    "seed": 451
+  }
+]

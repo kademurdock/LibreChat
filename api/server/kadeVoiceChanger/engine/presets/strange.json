@@ -1,0 +1,1490 @@
+[
+  {
+    "id": "strange-spoken-by-the-storm",
+    "name": "Spoken by the storm",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Your words made out of pouring rain, with thunder rolling all around.",
+    "tags": ["storm", "rain", "thunder", "weather"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "rain", "clarity": 50, "background": -14 } },
+      { "m": "stereo.width", "p": { "width": 1.6 } }
+    ],
+    "bed": { "b": "storm", "level": -16, "duck": 3, "p": { "thunder": 8 } },
+    "seed": 1
+  },
+  {
+    "id": "strange-spoken-by-fire",
+    "name": "Spoken by fire",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A crackling fire speaks your words in flickers and pops.",
+    "tags": ["fire", "crackle", "flames"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "fire", "clarity": 70 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm", "mix": 50 } }
+    ],
+    "bed": { "b": "campfire", "level": -18 },
+    "seed": 1
+  },
+  {
+    "id": "strange-spoken-by-the-ocean",
+    "name": "Spoken by the ocean",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Waves breaking on the sand form every word you say.",
+    "tags": ["ocean", "waves", "sea"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "ocean", "clarity": 30, "background": -10 } }
+    ],
+    "bed": { "b": "ocean", "level": -20, "p": { "size": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "strange-spoken-by-the-wind",
+    "name": "Spoken by the wind",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Your words carried and shaped by gusting wind.",
+    "tags": ["wind", "air", "weather"],
+    "chain": [
+      { "m": "spec.morph", "p": {} },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "bed": { "b": "wind", "level": -22, "p": { "strength": 55 } },
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-in-the-thunder",
+    "name": "Voice in the thunder",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Your voice poured into rolling thunder, rumbling off the hills.",
+    "tags": ["thunder", "deep", "rumble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "synth.crossconv", "p": { "source": "thunder", "amount": 60, "smoothing": 50 } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-words-made-of-raindrops",
+    "name": "Words made of raindrops",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Every word patters out of drops of rain on glass.",
+    "tags": ["rain", "drops", "patter"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "rain", "amount": 90, "smoothing": 10 } }
+    ],
+    "bed": { "b": "rain-window", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "strange-a-crowd-speaks-your-words",
+    "name": "A crowd speaks your words",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A murmuring crowd of strangers somehow says exactly what you say.",
+    "tags": ["crowd", "murmur", "people"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "crowd", "clarity": 65 } },
+      { "m": "space.room", "p": { "space": "arena", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-engine-for-a-throat",
+    "name": "Engine for a throat",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "An idling motor rumbles and chugs out your sentences.",
+    "tags": ["engine", "motor", "rumble"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "engine", "clarity": 60 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-whirlwind-voice",
+    "name": "Whirlwind voice",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Your voice melted into a little whirlwind that spins round and round your head.",
+    "tags": ["wind", "blend", "circling", "headphones"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "wind", "blend": 65, "envelope": "both" } },
+      { "m": "stereo.orbit", "p": { "period": 2, "distance": 0.8, "tilt": 30, "room": "outdoors" } }
+    ],
+    "bed": { "b": "mountain-top", "level": -28, "p": { "hawk": false } },
+    "seed": 1
+  },
+  {
+    "id": "strange-half-you-half-the-sea",
+    "name": "Half you, half the sea",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "Your voice and the surf blended so you can't tell where one stops.",
+    "tags": ["ocean", "blend", "waves"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "ocean", "blend": 60, "envelope": "both" } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-of-the-blizzard",
+    "name": "Voice of the blizzard",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A thin, icy voice made of the snowstorm itself, howling round you.",
+    "tags": ["blizzard", "snow", "wind", "cold"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 4 } },
+      { "m": "spec.morph", "p": { "clarity": 40 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 400 } }
+    ],
+    "bed": { "b": "blizzard", "level": -14 },
+    "seed": 1
+  },
+  {
+    "id": "strange-volcano-speaking",
+    "name": "Volcano speaking",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A deep, rumbling molten voice, half of it fire, growling up out of a volcano.",
+    "tags": ["volcano", "fire", "deep", "lava", "rumble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 50 } },
+      { "m": "spec.blend", "p": { "source": "fire", "blend": 55, "envelope": "both" } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 60 } }
+    ],
+    "bed": { "b": "blaze", "level": -18 },
+    "seed": 1
+  },
+  {
+    "id": "strange-church-organ-speaks",
+    "name": "Church organ speaks",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A pipe organ in a stone church plays the shape of every word.",
+    "tags": ["organ", "church", "chord"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "organ" } },
+      { "m": "space.room", "p": { "space": "church", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-words-of-a-floating-choir",
+    "name": "Words of a floating choir",
+    "cat": "strange",
+    "sub": "Made of other sounds",
+    "about": "A soft synth choir breathes out your words and lets them float away.",
+    "tags": ["choir", "pad", "dreamy"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "pad", "clarity": 50 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-voice-of-glass",
+    "name": "Voice of glass",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Every word rings like a wine glass, thin and shining.",
+    "tags": ["glass", "ringing", "bright"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "glass", "mix": 70, "decay": 1.5 } },
+      { "m": "spec.stretch", "p": { "factor": 1.2 } },
+      { "m": "space.reverb", "p": { "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-of-a-bell",
+    "name": "Voice of a bell",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "You speak and a church bell answers with the same words.",
+    "tags": ["bell", "church", "ringing"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "amount": 80 } },
+      { "m": "synth.resonator", "p": { "mix": 35 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-singing-bowl",
+    "name": "Singing bowl",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "A brass singing bowl hums and glows with every word.",
+    "tags": ["singing bowl", "hum", "calm"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "singing-bowl", "pitch": 12, "mix": 75, "decay": 0.8 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-inside-a-gong",
+    "name": "Voice inside a gong",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Your words shimmer and swell inside a huge bronze gong.",
+    "tags": ["gong", "metal", "shimmer"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "gong", "amount": 60, "mix": 85 } },
+      { "m": "space.room", "p": { "space": "hangar", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-wind-chime-mouth",
+    "name": "Wind chime mouth",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Each syllable knocks a set of wind chimes tinkling across both ears.",
+    "tags": ["chimes", "tinkle", "stereo"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wind-chimes", "strike": 80, "mix": 60 } },
+      { "m": "stereo.width", "p": { "width": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-music-box-throat",
+    "name": "Music box throat",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "A tiny music box comb plinks along inside your voice.",
+    "tags": ["music box", "plink", "tiny"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "music-box", "mix": 70 } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-steel-drum-speech",
+    "name": "Steel drum speech",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Your words struck out on a bright, bouncing steel drum.",
+    "tags": ["steel drum", "metal", "bright"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "steel-drum", "strike": 70, "mix": 65 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-struck-metal-sheet",
+    "name": "Struck metal sheet",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "A big sheet of steel rings and wobbles with every word in a factory hall.",
+    "tags": ["metal", "sheet", "ringing", "factory"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "metal-plate", "mix": 70, "decay": 2 } },
+      { "m": "space.room", "p": { "space": "factory", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-of-hollow-wood",
+    "name": "Voice of hollow wood",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Knocking, hollow wooden tones, like a talking marimba box.",
+    "tags": ["wood", "hollow", "knock", "marimba"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wood-box", "mix": 70 } },
+      { "m": "synth.resonator", "p": { "object": "wood-bars", "strike": 70, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-bell-mouth-vowels",
+    "name": "Bell-mouth vowels",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "The harmonics pulled out of tune, so every vowel clangs like a bell.",
+    "tags": ["bell", "clang", "inharmonic"],
+    "chain": [
+      { "m": "spec.stretch", "p": { "factor": 1.6, "formants": false } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-singing-wine-glasses",
+    "name": "Singing wine glasses",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Wet fingers on wine glass rims sing out the shape of your words.",
+    "tags": ["glass", "singing", "ethereal"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "glass", "amount": 80 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-crystal-voice",
+    "name": "Crystal voice",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Only the brightest notes of your voice stay, ringing like crystal.",
+    "tags": ["crystal", "ringing", "sparkle"],
+    "chain": [
+      { "m": "spec.crystal", "p": {} },
+      { "m": "space.shimmer", "p": { "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-of-ice",
+    "name": "Voice of ice",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "A brittle, glittering voice made of a few frozen notes in an ice cave.",
+    "tags": ["ice", "cold", "glitter", "cave"],
+    "chain": [
+      { "m": "spec.crystal", "p": { "peaks": 6, "sustain": 2500, "sparkle": 80 } },
+      { "m": "spec.thin", "p": { "threshold": -25 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-down-a-long-humming-pipe",
+    "name": "Down a long humming pipe",
+    "cat": "strange",
+    "sub": "Glass, metal and bells",
+    "about": "Your voice hums down a long metal pipe, the tube ringing low.",
+    "tags": ["pipe", "tube", "hum", "metal"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "long-tube", "pitch": -12, "mix": 70, "decay": 2 } },
+      { "m": "echo.delay", "p": { "time": 45, "feedback": 70, "stereo": "mono", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-strings-that-speak",
+    "name": "Strings that speak",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "A harp of tuned strings rings along and plucks with every word.",
+    "tags": ["strings", "harp", "chord"],
+    "chain": [
+      { "m": "synth.strings", "p": { "mix": 80, "pluck": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-buzzing-drone-strings",
+    "name": "Buzzing drone strings",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "Low drone strings with a buzzing bridge hum underneath your voice.",
+    "tags": ["drone", "buzz", "strings", "low"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "drone", "register": "low", "buzz": 80, "mix": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-piano-with-the-pedal-down",
+    "name": "Piano with the pedal down",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "Shouting into an open piano with the pedal held, every string answering.",
+    "tags": ["piano", "strings", "ringing"],
+    "chain": [
+      { "m": "synth.strings", "p": { "decay": 8, "brightness": 40, "pluck": 80, "mix": 60 } },
+      { "m": "space.reverb", "p": { "size": 60, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-comb-filter-choir",
+    "name": "Comb-filter choir",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "Your voice tuned into a major chord, like a choir singing your words.",
+    "tags": ["chord", "choir", "tuned"],
+    "chain": [
+      { "m": "spec.comb", "p": { "chord": "major", "sharpness": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-eerie-tuned-comb",
+    "name": "Eerie tuned comb",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "A low, uneasy chord rings through every word.",
+    "tags": ["eerie", "chord", "ringing"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 70, "chord": "eerie", "ring": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-whole-tone-dream-strings",
+    "name": "Whole-tone dream strings",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "High strings tuned in a floating dream scale shimmer around you.",
+    "tags": ["dreamy", "strings", "high"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "wholetone", "register": "high", "decay": 6, "mix": 65 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 4, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-ringing-metal-chord",
+    "name": "Ringing metal chord",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "A hard, clanging seventh chord rings out of every syllable.",
+    "tags": ["metal", "chord", "clang"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 220, "chord": "seventh", "sharpness": 95, "ring": 90 } },
+      { "m": "synth.ringmod", "p": { "freq": 220, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-harp-in-the-clouds",
+    "name": "Harp in the clouds",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "A high harp rings out your words and floats them up into a heavenly echo.",
+    "tags": ["harp", "heavenly", "shimmer"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "minor7", "register": "high", "decay": 6, "pluck": 90, "mix": 60 } },
+      { "m": "space.shimmer", "p": { "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-clashing-cluster-strings",
+    "name": "Clashing cluster strings",
+    "cat": "strange",
+    "sub": "Strings and combs",
+    "about": "Strings tuned a step apart clash and beat against your words.",
+    "tags": ["cluster", "dissonant", "strings"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "cluster", "buzz": 30, "mix": 60 } },
+      { "m": "mod.chorus", "p": {} }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-granular-swarm",
+    "name": "Granular swarm",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Your voice broken into a buzzing swarm of tiny pieces.",
+    "tags": ["grains", "swarm", "buzz"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 30, "density": 200, "spread": 400, "scatter": 300 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-pixel-rain",
+    "name": "Pixel rain",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Bright digital specks of your voice raining down all over.",
+    "tags": ["grains", "digital", "bright"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 12, "density": 150, "pitch": 12, "spread": 600, "scatter": 800 } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 16000 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-backwards-grain-mist",
+    "name": "Backwards grain mist",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "A haze of tiny backwards pieces of your voice drifting in a big space.",
+    "tags": ["grains", "backwards", "mist"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 120, "density": 60, "scatter": 500, "reverse": 100 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-cloud-of-syllables",
+    "name": "Cloud of syllables",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Whole syllables float around and overlap in a slow murmuring cloud.",
+    "tags": ["grains", "cloud", "syllables"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 200, "density": 30, "scatter": 1500, "spread": 100 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-gravel-shards",
+    "name": "Gravel shards",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Gritty little chips of your voice, like gravel pouring out of a bucket.",
+    "tags": ["grains", "gritty", "harsh"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 10, "density": 80, "scatter": 50, "spread": 200 } },
+      { "m": "lofi.drive", "p": { "drive": 20, "character": "hard" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-grain-harp",
+    "name": "Grain harp",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Fluttering pitched grains of your voice strum a high harp.",
+    "tags": ["grains", "harp", "flutter"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 60, "density": 60, "spread": 700, "scatter": 150 } },
+      { "m": "synth.strings", "p": { "chord": "sus", "register": "high", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-particles-circling-your-head",
+    "name": "Particles circling your head",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "A cloud of voice particles orbiting round your head on headphones.",
+    "tags": ["grains", "circling", "headphones"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 40, "density": 80, "scatter": 200, "width": 100 } },
+      { "m": "stereo.orbit", "p": { "period": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-deep-grain-sludge",
+    "name": "Deep grain sludge",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Big, slow, low lumps of your voice oozing over each other.",
+    "tags": ["grains", "deep", "slow", "sludge"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 400, "density": 20, "pitch": -12, "scatter": 600 } },
+      { "m": "tone.filter", "p": { "freq": 1500 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-hummingbird-particles",
+    "name": "Hummingbird particles",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Fast, high, darting specks of you, like hummingbirds zipping past.",
+    "tags": ["grains", "high", "fast"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 15, "density": 250, "pitch": 19, "spread": 300, "scatter": 200 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-grainstorm",
+    "name": "Storm of grains",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "A wild storm of grains flying forwards and backwards in every direction.",
+    "tags": ["grains", "chaos", "wide"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 40, "density": 400, "spread": 1200, "scatter": 2000, "reverse": 50, "width": 100 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-popcorn-syllables",
+    "name": "Popcorn syllables",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Little pitched pops of your voice bursting here and there like popcorn.",
+    "tags": ["grains", "pops", "sparse"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 20, "density": 25, "pitch": 7, "spread": 500, "scatter": 1000 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-talking-through-sand",
+    "name": "Talking through sand",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Your words trickle through as grains of sand blowing across a dune.",
+    "tags": ["sand", "grains", "desert"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 25, "density": 120, "scatter": 30, "spread": 50, "mix": 80 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "strange-swarm-of-tiny-yous",
+    "name": "Swarm of tiny yous",
+    "cat": "strange",
+    "sub": "Grains and swarms",
+    "about": "Eight tiny copies of you all talking at once, everywhere.",
+    "tags": ["swarm", "tiny", "crowd", "high"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 6 } },
+      { "m": "stereo.crowd", "p": { "people": 8, "pitchSpread": 12, "timbreSpread": 6, "timing": 400, "room": "none", "you": 0 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-frozen-voice",
+    "name": "Frozen voice",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Moments of your voice catch and hang in the air, frozen and ringing.",
+    "tags": ["freeze", "hold", "ringing"],
+    "chain": [
+      { "m": "spec.freeze", "p": {} },
+      { "m": "space.reverb", "p": { "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-endless-stretch",
+    "name": "Endless stretch",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "One sentence stretched four times longer into a slow, glowing cloud.",
+    "tags": ["stretch", "ambient", "slow"],
+    "chain": [
+      { "m": "space.reverb", "p": { "size": 80, "decay": 1.5, "mix": 35 } },
+      { "m": "spec.paul", "p": { "factor": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-smeared-dream",
+    "name": "Smeared dream",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Every word smears into the next like a voice heard in a dream.",
+    "tags": ["dream", "smear", "haze"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 85, "time": 2500, "spread": 40 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-frozen-vowel-dust",
+    "name": "Frozen vowel dust",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Held vowels crumble into a glittering dust of tiny grains.",
+    "tags": ["freeze", "grains", "dust"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "when": "steady", "hold": 2000 } },
+      { "m": "synth.granular", "p": { "grain": 20, "density": 150, "scatter": 400, "spread": 100 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-breath-stretched-into-fog",
+    "name": "Breath stretched into fog",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "A whisper drawn out so far it becomes a soft drifting fog.",
+    "tags": ["whisper", "stretch", "fog"],
+    "chain": [
+      { "m": "spec.whisper", "p": {} },
+      { "m": "spec.paul", "p": { "factor": 6, "window": 0.4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-moments-caught-in-ice",
+    "name": "Moments caught in ice",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Long frozen chords of your voice glinting like ice under the words.",
+    "tags": ["freeze", "crystal", "ice"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "interval": 1500, "hold": 3000, "blend": 90 } },
+      { "m": "spec.crystal", "p": { "peaks": 20, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-slow-shimmering-cloud",
+    "name": "Slow shimmering cloud",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Stretched three times slower, then lifted into a shimmering heavenly tail.",
+    "tags": ["stretch", "shimmer", "ambient"],
+    "chain": [
+      { "m": "space.shimmer", "p": { "decay": 2.5, "mix": 45 } },
+      { "m": "spec.paul", "p": { "factor": 3, "window": 0.12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-melting-voice",
+    "name": "Melting voice",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Your voice slows, sinks and smears like wax melting in the sun.",
+    "tags": ["melting", "slowing", "sinking"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": -12, "curve": "late", "timbre": 100 } },
+      { "m": "time.drawl", "p": { "factor": 1.6, "ramp": "slowing" } },
+      { "m": "spec.blur", "p": { "amount": 50, "time": 600 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-every-word-lingers",
+    "name": "Every word lingers",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "Each word hangs on for a moment after you've moved on to the next.",
+    "tags": ["smear", "linger", "trail"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 60, "time": 500, "spread": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-glacier-talking",
+    "name": "Glacier talking",
+    "cat": "strange",
+    "sub": "Frozen and stretched",
+    "about": "An enormous, impossibly slow voice groaning like moving ice.",
+    "tags": ["glacier", "deep", "slow", "stretch"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -6 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 2.5, "damping": 80, "mix": 35 } },
+      { "m": "spec.paul", "p": { "factor": 2 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-mirror-world",
+    "name": "Mirror world",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Your voice flipped inside out: lows become highs, like a scrambled radio.",
+    "tags": ["mirror", "inverted", "scrambled"],
+    "chain": [
+      { "m": "spec.invert", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-inside-out-voice",
+    "name": "Inside-out voice",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Mirrored high up, then dragged down, so your words sound turned inside out.",
+    "tags": ["inverted", "shifted", "alien"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 2600 } },
+      { "m": "spec.shift", "p": { "hz": -900 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-skeleton-voice",
+    "name": "Skeleton voice",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Only the strongest notes of your voice left standing, thin and bony.",
+    "tags": ["thin", "skeleton", "hollow"],
+    "chain": [
+      { "m": "spec.thin", "p": { "threshold": -8, "smooth": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-only-the-air-left",
+    "name": "Only the air left",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "The notes taken out and only the air around them left, wispy and faint.",
+    "tags": ["air", "wispy", "breath"],
+    "chain": [
+      { "m": "spec.thin", "p": { "keep": "quiet", "threshold": -20 } },
+      { "m": "space.reverb", "p": { "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-spectral-glitter",
+    "name": "Spectral glitter",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Sparkling flecks of high notes scattered over your words.",
+    "tags": ["glitter", "sparkle", "bright"],
+    "chain": [
+      { "m": "spec.crystal", "p": { "peaks": 30, "sustain": 200, "sparkle": 100 } },
+      { "m": "spec.shift", "p": { "hz": 800, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-hollow-combed-voice",
+    "name": "Hollow combed voice",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Regular gaps cut through your voice so it sounds hollow and tubey.",
+    "tags": ["hollow", "comb", "metallic"],
+    "chain": [
+      { "m": "mod.flanger", "p": { "rate": 0.02, "depth": 0, "feedback": -95, "delay": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-stained-glass-voice",
+    "name": "Stained glass voice",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Coloured bands of your voice held and glowing like light through a church window.",
+    "tags": ["chord", "glow", "freeze"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "blend": 50 } },
+      { "m": "spec.comb", "p": { "chord": "major", "base": 130, "mix": 70 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-slid-sideways",
+    "name": "Slid sideways",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Every frequency slid up by the same amount, so your voice turns metallic.",
+    "tags": ["shift", "metallic", "alien"],
+    "chain": [
+      { "m": "spec.shift", "p": { "hz": 400 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-sunk-below-itself",
+    "name": "Sunk below itself",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Every frequency dragged down, leaving a murky, rubbery, wrong-sounding voice.",
+    "tags": ["shift", "down", "murky"],
+    "chain": [
+      { "m": "spec.shift", "p": { "hz": -300 } },
+      { "m": "tone.tilt", "p": { "amount": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-squeezed-harmonics",
+    "name": "Squeezed harmonics",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "The notes inside your voice crushed closer together into a dull, odd hum.",
+    "tags": ["harmonics", "squeezed", "odd"],
+    "chain": [
+      { "m": "spec.stretch", "p": { "factor": 0.7 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-stretched-harmonics",
+    "name": "Stretched harmonics",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "The notes inside your voice pulled apart, still your words but strangely metallic.",
+    "tags": ["harmonics", "stretched", "metallic"],
+    "chain": [
+      { "m": "spec.stretch", "p": { "factor": 1.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-half-mirrored",
+    "name": "Half mirrored",
+    "cat": "strange",
+    "sub": "Spectral surgery",
+    "about": "Your normal voice and its upside-down mirror image talking together.",
+    "tags": ["mirror", "double", "inverted"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 2200, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-broken-memory",
+    "name": "Broken memory",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A worn recording of you, phrases out of order and parts gone missing.",
+    "tags": ["memory", "worn", "broken", "tape"],
+    "chain": [
+      { "m": "time.shuffle", "p": { "unit": "phrases", "amount": 40 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 400 } },
+      { "m": "device.cassette", "p": { "tape": "worn", "dropouts": 50 } },
+      { "m": "spec.dropout", "p": { "loss": 10, "conceal": "repeat" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-data-corruption",
+    "name": "Data corruption",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A file falling apart: glitches, crunch and chunks of sound gone missing.",
+    "tags": ["glitch", "corrupt", "digital"],
+    "chain": [
+      { "m": "time.glitch", "p": { "density": 60 } },
+      { "m": "lofi.crush", "p": { "bits": 4 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "conceal": "mixed" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-bad-video-call",
+    "name": "Bad video call",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A wobbly, swirly video call breaking up out of a laptop speaker.",
+    "tags": ["video call", "internet", "dropouts"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 8, "warble": 70 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "conceal": "mixed" } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-underwater-internet",
+    "name": "Underwater internet",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A starved internet call that sounds like it's coming from under the sea.",
+    "tags": ["internet", "underwater", "swirly"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 6, "warble": 90 } },
+      { "m": "mod.underwater", "p": { "depth": 40, "bubbles": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-packet-loss-puppet",
+    "name": "Packet loss puppet",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "Half the sound lost, the gaps filled with jerky repeats like a puppet on strings.",
+    "tags": ["dropouts", "repeat", "jerky"],
+    "chain": [
+      { "m": "spec.dropout", "p": { "loss": 45, "burst": 40, "conceal": "repeat" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-buffer-overflow",
+    "name": "Buffer overflow",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "Old pieces of sound spill over the new ones and roll faster and faster.",
+    "tags": ["glitch", "repeat", "digital"],
+    "chain": [
+      { "m": "time.glitch", "p": { "mode": "replace", "density": 50, "repeats": 12, "roll": 80 } },
+      { "m": "lofi.mp3", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-corrupt-music-file",
+    "name": "Corrupt music file",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "Squashed into the tiniest file possible four times over: swirling and watery.",
+    "tags": ["codec", "swirly", "watery"],
+    "chain": [
+      { "m": "lofi.mp3", "p": { "quality": "awful", "swirl": 100, "copies": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-copied-a-hundred-times",
+    "name": "Copied a hundred times",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A copy of a copy of a copy, on tape and file, until it barely holds together.",
+    "tags": ["copy", "tape", "worn", "codec"],
+    "chain": [
+      { "m": "lofi.mp3", "p": { "quality": "poor", "copies": 4 } },
+      { "m": "device.cassette", "p": { "tape": "dub" } },
+      { "m": "spec.codec", "p": { "bitrate": 16 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-one-bit-voice",
+    "name": "One-bit voice",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "Your voice squeezed down to just on and off, a raw buzzing outline.",
+    "tags": ["bit crush", "buzz", "harsh"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 6 } },
+      { "m": "tone.gain", "p": { "db": 18 } },
+      { "m": "lofi.crush", "p": { "bits": 1, "rate": 12000 } },
+      { "m": "tone.filter", "p": { "freq": 4000 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-skipping-disc",
+    "name": "Skipping disc",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A scratched disc that skips and sticks at random moments.",
+    "tags": ["skip", "repeat", "glitch"],
+    "chain": [
+      { "m": "time.stutter", "p": { "where": "random", "repeats": 4, "pieceMs": 120, "chance": 50, "gate": 0 } },
+      { "m": "spec.dropout", "p": { "loss": 10, "burst": 100, "conceal": "repeat" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-call-keeps-freezing",
+    "name": "Call keeps freezing",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "An internet call that keeps grinding to a halt and lurching back into speed.",
+    "tags": ["call", "freezing", "slowing"],
+    "chain": [
+      { "m": "time.tapestop", "p": { "when": "random", "motion": "both", "stopMs": 300, "chance": 40 } },
+      { "m": "spec.codec", "p": { "bitrate": 12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-tape-dying-as-it-plays",
+    "name": "Tape dying as it plays",
+    "cat": "strange",
+    "sub": "Broken signals",
+    "about": "A chewed tape slowly giving up, sinking and slowing as it goes.",
+    "tags": ["tape", "dying", "slowing", "sinking"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 1.4, "ramp": "slowing" } },
+      { "m": "pitch.glide", "p": { "to": -7, "curve": "late", "timbre": 60 } },
+      { "m": "device.cassette", "p": { "tape": "worn", "chewed": 40 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-radio-from-another-dimension",
+    "name": "Radio from another dimension",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "A broadcast leaking through from somewhere else, spiralling and mirrored.",
+    "tags": ["radio", "dimension", "spiral"],
+    "chain": [
+      { "m": "device.shortwave", "p": {} },
+      { "m": "spec.invert", "p": { "mix": 50 } },
+      { "m": "synth.freqshift", "p": { "shift": 30, "feedback": 60, "time": 250 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-your-parallel-universe-self",
+    "name": "Your parallel-universe self",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "You and a slightly wrong copy of you, never quite in step or in tune.",
+    "tags": ["double", "uncanny", "detuned"],
+    "chain": [
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 40, "pitch": 40 } },
+      { "m": "synth.freqshift", "p": { "shift": 7, "mix": 50 } },
+      { "m": "pitch.voice", "p": { "formant": 1.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-portal-interpreter",
+    "name": "Portal interpreter",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Two shifted voices translating you through a humming portal.",
+    "tags": ["portal", "shifted", "alien"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": -120, "mix": 50 } },
+      { "m": "spec.shift", "p": { "hz": 180, "mix": 40 } },
+      { "m": "space.reverb", "p": { "size": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-endless-spiral",
+    "name": "Endless spiral",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Each echo climbs a little higher, spiralling up and up forever.",
+    "tags": ["spiral", "rising", "echo"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 30, "feedback": 80, "time": 200 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-sideband-ghost",
+    "name": "Sideband ghost",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Your voice slid far up into a thin, glassy, inhuman ghost.",
+    "tags": ["shifted", "ghost", "thin"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 600 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-slow-beating-warp",
+    "name": "Slow beating warp",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Two copies of you a hair apart in tune, slowly beating like a warped tape.",
+    "tags": ["beating", "warp", "phasing"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 2, "drift": 5, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-behind-the-mirror",
+    "name": "Behind the mirror",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Mirrored sound and backwards syllables from the far side of the glass.",
+    "tags": ["mirror", "backwards", "inverted"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 1400 } },
+      { "m": "time.reversewords", "p": {} },
+      { "m": "space.reverb", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-coming-from-everywhere",
+    "name": "Coming from everywhere at once",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "The same voice coming from every direction at once, swirling.",
+    "tags": ["everywhere", "swirl", "stereo"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 6, "pitchSpread": 0, "timbreSpread": 0, "timing": 15, "spread": 100, "room": "none", "you": 0 } },
+      { "m": "mod.phaser", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-time-flowing-backward",
+    "name": "Time flowing backward",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Played backwards with echoes trailing after, as if time had turned around.",
+    "tags": ["backwards", "echo", "time"],
+    "chain": [
+      { "m": "time.reverse", "p": {} },
+      { "m": "echo.delay", "p": { "time": 250, "feedback": 50, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-static-from-the-void",
+    "name": "Static from the void",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "A breathy whisper hissing through a radio tuned between stations.",
+    "tags": ["static", "whisper", "radio"],
+    "chain": [
+      { "m": "spec.whisper", "p": {} },
+      { "m": "device.radio", "p": { "tuning": "between" } },
+      { "m": "synth.freqshift", "p": { "shift": -60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-upside-down-and-backwards",
+    "name": "Upside down and backwards",
+    "cat": "strange",
+    "sub": "Other dimensions",
+    "about": "Flipped inside out and played in reverse, a language from nowhere.",
+    "tags": ["backwards", "inverted", "gibberish"],
+    "chain": [
+      { "m": "spec.invert", "p": {} },
+      { "m": "time.reverse", "p": {} }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-insect-wings",
+    "name": "Insect wings",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "Your voice flutters at the speed of beating insect wings.",
+    "tags": ["insect", "wings", "buzz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3 } },
+      { "m": "synth.am", "p": { "rate": 220, "depth": 80, "shape": "triangle", "jitter": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-liquid-voice",
+    "name": "Liquid voice",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "A voice that pours and ripples like water running over glass.",
+    "tags": ["liquid", "watery", "ripple"],
+    "chain": [
+      { "m": "synth.fm", "p": { "rate": 12, "depth": 2, "shape": "watery" } },
+      { "m": "mod.phaser", "p": { "rate": 0.6, "feedback": 70 } },
+      { "m": "mod.underwater", "p": { "depth": 20, "bubbles": 20, "wobble": 60, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-electric-razor-throat",
+    "name": "Electric razor throat",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "A harsh electric buzz chopping through every word like a shaver.",
+    "tags": ["buzz", "electric", "harsh"],
+    "chain": [
+      { "m": "synth.am", "p": { "rate": 120, "depth": 100, "shape": "square" } },
+      { "m": "lofi.drive", "p": { "drive": 20, "character": "fuzz" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-buzzsaw-throat",
+    "name": "Buzzsaw throat",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "Folded and ringing until your voice snarls like a saw blade.",
+    "tags": ["saw", "harsh", "metal", "distortion"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 30, "character": "fold" } },
+      { "m": "synth.ringmod", "p": { "freq": 300, "shape": "square", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-folded-inside-itself",
+    "name": "Folded inside itself",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "Your voice folded over on itself again and again, swirling and tangled.",
+    "tags": ["fold", "tangled", "swirl"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 40, "character": "fold", "tone": 30, "mix": 70 } },
+      { "m": "mod.phaser", "p": { "stages": 12, "feedback": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-bubbling-tar-voice",
+    "name": "Bubbling tar voice",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "A deep, thick voice glooping and bubbling up from a tar pit.",
+    "tags": ["bubbles", "deep", "thick", "swamp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -3 } },
+      { "m": "synth.am", "p": { "rate": 15, "depth": 90, "shape": "bubbly" } }
+    ],
+    "bed": { "b": "swamp", "level": -24, "p": { "bubbles": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-made-of-static",
+    "name": "Voice made of static",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "Your words formed out of pure crackling noise.",
+    "tags": ["static", "noise", "crackle"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "noise", "bands": 32 } },
+      { "m": "lofi.crush", "p": { "bits": 4, "rate": 16000, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-fizzing-voice",
+    "name": "Fizzing voice",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "Your voice fizzing and spitting like a freshly opened soda.",
+    "tags": ["fizz", "crackle", "bubbly"],
+    "chain": [
+      { "m": "lofi.crush", "p": { "bits": 5, "rate": 16000, "jitter": 100 } },
+      { "m": "spec.thin", "p": { "keep": "quiet", "threshold": -30, "mix": 60 } },
+      { "m": "synth.am", "p": { "rate": 200, "depth": 60, "shape": "random" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-liquid-metal-throat",
+    "name": "Liquid metal throat",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "A ringing metal voice that ripples and flows like molten chrome.",
+    "tags": ["metal", "liquid", "ringing"],
+    "chain": [
+      { "m": "synth.fm", "p": { "rate": 20, "depth": 1.5, "shape": "watery" } },
+      { "m": "synth.ringmod", "p": { "freq": 180, "wobbleRate": 0.3, "wobbleDepth": 5 } },
+      { "m": "mod.phaser", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-rubber-band-voice",
+    "name": "Rubber band voice",
+    "cat": "strange",
+    "sub": "Buzz, fizz and liquid",
+    "about": "A voice stretched and twanged like a rubber band.",
+    "tags": ["twang", "wobble", "elastic"],
+    "chain": [
+      { "m": "pitch.vibrato", "p": { "rate": 9, "depth": 300, "delay": 0 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "harp", "rate": 9, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "strange-shape-shifting-voice",
+    "name": "Shape-shifting voice",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Pitch, size and vowels all drift slowly, never the same person twice.",
+    "tags": ["shifting", "drift", "morphing"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 400, "speed": 0.2, "randomness": 100, "timbre": 100 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "random", "rate": 0.4, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-vowel-carousel",
+    "name": "Vowel carousel",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Your mouth slowly turns through every vowel while the words go on.",
+    "tags": ["vowels", "filter", "slow"],
+    "chain": [
+      { "m": "synth.formantfilter", "p": { "pattern": "aeiou", "rate": 0.6, "resonance": 85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-every-vowel-wrong",
+    "name": "Every vowel wrong",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Vowels jump to random shapes many times a second, garbling every word.",
+    "tags": ["vowels", "random", "garbled"],
+    "chain": [
+      { "m": "synth.formantfilter", "p": { "pattern": "random", "rate": 8, "resonance": 90, "glide": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-voice-with-two-throats",
+    "name": "Voice with two throats",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "One throat two octaves down and another an octave up, talking together.",
+    "tags": ["octaves", "layered", "uncanny"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 0, "down2": 70, "up1": 70, "dry": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-sinking-through-the-floor",
+    "name": "Sinking through the floor",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Your voice slides down two octaves while sinking below you.",
+    "tags": ["sinking", "falling", "deep", "headphones"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": -24, "curve": "straight", "timbre": 50 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-rising-into-the-sky",
+    "name": "Rising into the sky",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Your voice climbs higher and higher, floating up over your head.",
+    "tags": ["rising", "high", "heavenly", "headphones"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": 18, "timbre": 70 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 80, "distance": 8, "room": "outdoors" } },
+      { "m": "space.shimmer", "p": { "decay": 3, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-staircase-of-notes",
+    "name": "Speech on a staircase of notes",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "Your words hop between random notes of a dreamy scale, twelve a second.",
+    "tags": ["notes", "melody", "random"],
+    "chain": [
+      { "m": "pitch.arp", "p": { "pattern": "random", "notes": "whole-tone", "rate": 12, "glide": 0, "range": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "strange-rubber-throat",
+    "name": "Rubber throat",
+    "cat": "strange",
+    "sub": "Shifting shapes",
+    "about": "A throat that slowly stretches into a big wide wow and back.",
+    "tags": ["vowels", "stretchy", "slow"],
+    "chain": [
+      { "m": "synth.formantfilter", "p": { "pattern": "wow", "rate": 0.3 } },
+      { "m": "pitch.voice", "p": { "formant": -2 } }
+    ],
+    "seed": 1
+  }
+]

@@ -1,0 +1,1165 @@
+[
+  {
+    "id": "critters-squeaky-little-critter",
+    "name": "Squeaky little critter",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A tiny furry thing squeaking and bouncing from one ear to the other.",
+    "tags": ["squeaky", "tiny", "high", "bouncing"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 7 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 4 } },
+      { "m": "stereo.pingpong", "p": { "unit": "syllable", "width": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-tiny-mouse",
+    "name": "Tiny mouse",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A very small, very quick mouse voice, thin and high.",
+    "tags": ["mouse", "tiny", "high", "quick"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 14, "formant": 9 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.15 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 500, "slope": "gentle" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-chipmunk-speed",
+    "name": "Chipmunk speed",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "Your voice played fast like a sped-up tape, higher and quicker together.",
+    "tags": ["fast", "high", "tape", "chipmunk"],
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 1.7 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-hamster-in-its-wheel",
+    "name": "Hamster running in its wheel",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A hamster talking while it runs, voice bouncing round and round a rattling wheel.",
+    "tags": ["hamster", "spinning", "high", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 7 } },
+      { "m": "mod.tremolo", "p": { "rate": 7, "depth": 55, "shape": "triangle" } },
+      { "m": "stereo.orbit", "p": { "period": 1.2, "distance": 0.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-baby-chick-peeping",
+    "name": "Baby chick peeping",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A fluffy chick peeping way up high in a farmyard morning.",
+    "tags": ["chick", "bird", "tiny", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 15, "formant": 10 } },
+      { "m": "pitch.jitter", "p": { "rate": 3, "size": 5 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "critters-guinea-pig-wheeking",
+    "name": "Guinea pig wheeking",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A hungry guinea pig in its hutch, words shooting up into excited squeals.",
+    "tags": ["guinea pig", "squeal", "high", "excited"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 13, "formant": 8 } },
+      { "m": "pitch.jitter", "p": { "rate": 2.5, "size": 10, "tremble": 50 } },
+      { "m": "pitch.vibrato", "p": { "rate": 12, "depth": 80 } },
+      { "m": "stereo.place", "p": { "angle": 60, "distance": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-mouse-in-the-walls",
+    "name": "Mouse in the walls",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A mouse squeaking away somewhere inside the bedroom wall.",
+    "tags": ["mouse", "wall", "muffled", "tiny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 8 } },
+      { "m": "space.muffle", "p": { "wall": "thin", "room": "bedroom" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-gerbil-in-a-box",
+    "name": "Gerbil in a cardboard box",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A busy little gerbil chattering quickly inside its cardboard box.",
+    "tags": ["gerbil", "box", "quick", "tiny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 11, "formant": 8 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.2 } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "mix": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-hyper-shrew-chatter",
+    "name": "Hyper shrew chatter",
+    "cat": "critters",
+    "sub": "Tiny squeakers",
+    "about": "A wired little shrew that rattles off the start of every word again and again.",
+    "tags": ["shrew", "stutter", "fast", "tiny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 15, "formant": 10 } },
+      { "m": "time.stutter", "p": { "where": "everywhere", "repeats": 4, "pieceMs": 40, "chance": 60, "roll": "faster" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-chirping-bird-voice",
+    "name": "Chirping bird voice",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A small bird voice that warbles fast through every word.",
+    "tags": ["bird", "chirp", "warble", "high"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 8 } },
+      { "m": "pitch.vibrato", "p": { "rate": 11, "depth": 150, "delay": 0 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 800, "slope": "gentle" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-songbird-at-dawn",
+    "name": "Songbird at dawn",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "Your words sung as a quick, hopping bird melody over a meadow waking up.",
+    "tags": ["bird", "song", "melody", "morning"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 7 } },
+      { "m": "pitch.arp", "p": { "pattern": "random", "notes": "pentatonic", "rate": 10, "glide": 15, "range": 2 } }
+    ],
+    "bed": { "b": "meadow-dawn", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-parrot-repeating-you",
+    "name": "Parrot repeating you",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A nasal, crackly parrot that squawks your words straight back a moment later.",
+    "tags": ["parrot", "repeat", "nasal", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 3 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 80 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "mix": 40 } },
+      { "m": "echo.delay", "p": { "time": 900, "feedback": 0, "stereo": "wide", "mix": 45 } }
+    ],
+    "bed": { "b": "jungle", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "critters-owl-in-the-night-woods",
+    "name": "Owl in the night woods",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A soft, round, hooting voice drawn out slow among the dark trees.",
+    "tags": ["owl", "night", "hoot", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -3 } },
+      { "m": "tone.filter", "p": { "freq": 800, "slope": "gentle" } },
+      { "m": "time.drawl", "p": { "factor": 1.4 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 50 } }
+    ],
+    "bed": { "b": "owl-woods", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-crow-cawing",
+    "name": "Crow cawing from a fence",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A raspy, harsh crow voice cawing across a yard.",
+    "tags": ["crow", "raspy", "harsh", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 50, "fry": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 14 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "space.distance", "p": { "distance": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-hummingbird-zipping-past",
+    "name": "Hummingbird zipping past",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A tiny, fast hummingbird voice fluttering past your face from one side to the other.",
+    "tags": ["hummingbird", "flutter", "fast", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 14, "formant": 8 } },
+      { "m": "synth.am", "p": { "rate": 50, "depth": 45 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.4 } },
+      { "m": "stereo.flyby", "p": { "speed": "run", "closest": 0.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-pigeon-cooing",
+    "name": "Pigeon cooing on the ledge",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A round, throbbing coo of a pigeon on a city window ledge.",
+    "tags": ["pigeon", "coo", "city", "soft"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "ou", "rate": 2.5, "resonance": 70 } },
+      { "m": "pitch.vibrato", "p": { "rate": 5, "depth": 90, "throb": 50 } },
+      { "m": "tone.filter", "p": { "freq": 1800, "slope": "gentle" } }
+    ],
+    "bed": { "b": "city-street", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "critters-honking-goose",
+    "name": "Honking goose",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A loud, buzzing, honking goose who will not get out of your way.",
+    "tags": ["goose", "honk", "buzz", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 3 } },
+      { "m": "synth.kazoo", "p": { "buzz": 60, "mix": 45 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-seagull-at-the-harbor",
+    "name": "Seagull squawking at the harbor",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A nasal, cracking seagull cry over lapping water and the other gulls.",
+    "tags": ["seagull", "squawk", "harbor", "sea"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 3 } },
+      { "m": "pitch.jitter", "p": { "rate": 3, "size": 10, "direction": "both", "tremble": 40 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "critters-rooster-at-sunrise",
+    "name": "Rooster at sunrise",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "A proud, brassy rooster voice that wavers wildly at the end of each word.",
+    "tags": ["rooster", "farm", "morning", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 2 } },
+      { "m": "pitch.vibrato", "p": { "rate": 9, "depth": 120, "delay": 400, "throb": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 50 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -24, "p": { "hens": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-woodpecker-tapping",
+    "name": "Woodpecker tapping your words",
+    "cat": "critters",
+    "sub": "Birds",
+    "about": "Every word rattles out in quick taps, like a woodpecker on a hollow tree.",
+    "tags": ["woodpecker", "tapping", "rattle", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 4 } },
+      { "m": "mod.tremolo", "p": { "rate": 16, "depth": 90, "shape": "square" } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 45 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "critters-swarm-of-bees",
+    "name": "Swarm of bees",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A whole buzzing swarm of you, every bee a little different, beside a busy hive.",
+    "tags": ["bees", "swarm", "buzz", "crowd"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 220, "depth": 70, "jitter": 50 } },
+      { "m": "stereo.crowd", "p": { "people": 8, "pitchSpread": 2, "timing": 60, "room": "outdoors", "you": 30 } }
+    ],
+    "bed": { "b": "beehive", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "critters-plump-bee-bumbling-by",
+    "name": "Plump bee bumbling by",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "One fat, fuzzy, buzzing bee drifting slowly past your head in a summer field.",
+    "tags": ["bee", "buzz", "flying", "summer"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 4 } },
+      { "m": "synth.am", "p": { "rate": 130, "depth": 60 } },
+      { "m": "stereo.flyby", "p": { "speed": "walk", "closest": 1.5 } }
+    ],
+    "bed": { "b": "summer-field", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "critters-mosquito-at-your-ear",
+    "name": "Mosquito at your ear",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A whining, needle-thin mosquito voice circling right around your head.",
+    "tags": ["mosquito", "whine", "tiny", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 14, "formant": 10 } },
+      { "m": "synth.am", "p": { "rate": 550, "depth": 60, "shape": "triangle" } },
+      { "m": "stereo.orbit", "p": { "period": 1.8, "distance": 0.4, "height": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-house-fly-on-the-window",
+    "name": "House fly on the window",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A buzzy fly voice darting about the room, bumping from side to side.",
+    "tags": ["fly", "buzz", "darting", "room"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 170, "depth": 50, "shape": "square" } },
+      { "m": "mod.autopan", "p": { "rate": 1.3, "shape": "random", "width": 90 } },
+      { "m": "space.room", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-cricket-in-the-grass",
+    "name": "Cricket chirping in the grass",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A thin, pulsing chirp of a voice down in the grass on a warm night.",
+    "tags": ["cricket", "chirp", "night", "pulse"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 8 } },
+      { "m": "synth.am", "p": { "rate": 45, "depth": 90, "shape": "square" } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 3500, "resonance": 40, "mix": 70 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-cicada-in-the-heat",
+    "name": "Cicada in the summer heat",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A sizzling, rasping cicada voice that swells and fades in the hot trees.",
+    "tags": ["cicada", "buzz", "summer", "rasp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 7 } },
+      { "m": "synth.am", "p": { "rate": 420, "depth": 80 } },
+      { "m": "mod.tremolo", "p": { "rate": 2.5, "depth": 50 } }
+    ],
+    "bed": { "b": "summer-field", "level": -24, "p": { "cicadas": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-big-clicking-beetle",
+    "name": "Big clicking beetle",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A chunky beetle whose words come out in hard, gritty clicks.",
+    "tags": ["beetle", "click", "gritty", "bug"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 3 } },
+      { "m": "synth.am", "p": { "rate": 70, "depth": 80, "shape": "square" } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 16000, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-angry-wasp",
+    "name": "Angry wasp",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A furious, fuzzy wasp buzzing back and forth in front of you.",
+    "tags": ["wasp", "angry", "buzz", "fuzz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 300, "depth": 70 } },
+      { "m": "lofi.drive", "p": { "character": "fuzz", "mix": 50 } },
+      { "m": "mod.autopan", "p": { "rate": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-marching-ant-colony",
+    "name": "Marching ant colony",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A long column of tiny ants saying your words together as they march along in step.",
+    "tags": ["ants", "crowd", "tiny", "marching"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 14, "formant": 10 } },
+      { "m": "stereo.crowd", "p": { "people": 10, "pitchSpread": 2, "timbreSpread": 1, "timing": 40, "loose": 20, "room": "none", "you": 20 } },
+      { "m": "mod.gate", "p": { "tempo": 110, "depth": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-dragonfly-over-the-pond",
+    "name": "Dragonfly over the pond",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A fluttering dragonfly voice skimming back and forth past you over a night pond.",
+    "tags": ["dragonfly", "flutter", "pond", "flying"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 5 } },
+      { "m": "synth.am", "p": { "depth": 50 } },
+      { "m": "stereo.flyby", "p": { "speed": "bike", "closest": 1, "passes": 3 } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "critters-moth-at-the-lamp",
+    "name": "Moth fluttering at the lamp",
+    "cat": "critters",
+    "sub": "Bugs and buzzers",
+    "about": "A papery, breathy moth voice fluttering softly right by your ear.",
+    "tags": ["moth", "flutter", "soft", "close"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 5 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "synth.am", "p": { "rate": 25, "depth": 60, "shape": "random" } },
+      { "m": "stereo.place", "p": { "angle": 20, "distance": 0.3, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-croaking-frog",
+    "name": "Croaking frog",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A gargling, ribbiting frog voice at the edge of a spring pond.",
+    "tags": ["frog", "croak", "pond", "gargle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -1 } },
+      { "m": "synth.am", "p": { "rate": 25, "depth": 80, "shape": "bubbly" } },
+      { "m": "tone.character", "p": { "shape": "honky" } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-warty-old-toad",
+    "name": "Warty old toad",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A low, creaky toad grumbling in slow, dull pulses.",
+    "tags": ["toad", "low", "creaky", "pulse"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -2 } },
+      { "m": "synth.am", "p": { "rate": 16, "depth": 70, "shape": "square" } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "fry": 40 } },
+      { "m": "tone.filter", "p": { "freq": 1500, "slope": "gentle" } },
+      { "m": "lofi.saturate", "p": { "drive": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-bullfrog-in-the-swamp",
+    "name": "Bullfrog in the swamp",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A huge booming bullfrog, deep and throaty, with the swamp bubbling around it.",
+    "tags": ["bullfrog", "deep", "swamp", "boom"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50 } },
+      { "m": "synth.am", "p": { "rate": 32, "depth": 75, "shape": "bubbly" } }
+    ],
+    "bed": { "b": "swamp", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-tiny-tree-frog",
+    "name": "Tiny tree frog",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A tiny frog trilling in sharp little pulses high up in a rainforest at night.",
+    "tags": ["tree frog", "trill", "rainforest", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 5 } },
+      { "m": "synth.am", "p": { "rate": 55, "shape": "pulse" } }
+    ],
+    "bed": { "b": "rainforest-night", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-turtle-inside-its-shell",
+    "name": "Turtle inside its shell",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A slow old turtle talking from inside its shell, hollow and close.",
+    "tags": ["turtle", "slow", "shell", "hollow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 1 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.6 } },
+      { "m": "space.room", "p": { "space": "helmet", "mix": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-alligator-under-the-water",
+    "name": "Alligator under the water",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A rumbling, rough alligator voice bubbling up from just under the swamp water.",
+    "tags": ["alligator", "deep", "rough", "water"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -11, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 70 } },
+      { "m": "mod.underwater", "p": { "depth": 30, "bubbles": 40, "mix": 50 } }
+    ],
+    "bed": { "b": "swamp", "level": -24, "p": { "bubbles": 70 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-tadpole-in-a-jar",
+    "name": "Tadpole in a jar",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A wiggly little tadpole bubbling away inside a jar of pond water.",
+    "tags": ["tadpole", "bubbles", "jar", "tiny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 13, "formant": 9 } },
+      { "m": "mod.underwater", "p": { "depth": 25, "bubbles": 80, "gurgle": 60, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-snail-in-the-rain",
+    "name": "Snail out in the rain",
+    "cat": "critters",
+    "sub": "Frogs and swamp",
+    "about": "A small snail voice stretched very, very slowly while the rain patters down.",
+    "tags": ["snail", "slow", "rain", "small"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 2.5 } },
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 4 } }
+    ],
+    "bed": { "b": "rain", "level": -28, "p": { "surface": "leaves" } },
+    "seed": 1
+  },
+  {
+    "id": "critters-cat-like-meow",
+    "name": "Cat-like meow voice",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A nasal, mewing voice whose vowels open and close like a meow.",
+    "tags": ["cat", "meow", "nasal"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 3 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "ou", "rate": 1.5, "mix": 60 } },
+      { "m": "pitch.vibrato", "p": { "rate": 6, "depth": 50, "delay": 300 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-little-kitten",
+    "name": "Little kitten",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A tiny kitten mewing high and wobbly by a crackling fire.",
+    "tags": ["kitten", "tiny", "mew", "cute"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 7 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "ai", "rate": 1.2, "mix": 50 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 4 } },
+      { "m": "space.room", "p": { "mix": 35 } }
+    ],
+    "bed": { "b": "fireplace", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "critters-purring-cat",
+    "name": "Purring cat on your lap",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A warm, rumbling purr running through every word, curled up right next to you.",
+    "tags": ["cat", "purr", "warm", "close"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 2 } },
+      { "m": "synth.am", "p": { "rate": 26, "depth": 55, "shape": "random" } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 30, "fry": 50 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "stereo.place", "p": { "angle": 30, "distance": 0.5, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-big-cat-growl",
+    "name": "Big cat growl",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A low, snarling growl of a great jungle cat under every word.",
+    "tags": ["big cat", "growl", "deep", "jungle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 75, "fry": 40, "grit": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "warm" } }
+    ],
+    "bed": { "b": "jungle", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "critters-excited-puppy",
+    "name": "Excited puppy",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A bouncy puppy whose words yip upward and trip over themselves with joy.",
+    "tags": ["puppy", "yip", "excited", "cute"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 5 } },
+      { "m": "pitch.jitter", "p": { "rate": 2.5, "tremble": 30 } },
+      { "m": "time.stutter", "p": { "repeats": 2, "pieceMs": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-hound-baying-at-the-moon",
+    "name": "Hound baying at the moon",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A long, mournful hound voice wavering out across the hills and echoing back.",
+    "tags": ["hound", "howl", "slow", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "time.drawl", "p": {} },
+      { "m": "pitch.vibrato", "p": { "rate": 5, "depth": 120 } },
+      { "m": "echo.canyon", "p": { "distance": 150, "place": "valley" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-yappy-little-dog",
+    "name": "Yappy little dog",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A tiny dog yapping out every word in sharp, crunchy bursts.",
+    "tags": ["dog", "yap", "small", "sharp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 6 } },
+      { "m": "time.stutter", "p": { "pieceMs": 60, "chance": 60, "gate": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "mix": 40 } },
+      { "m": "tone.character", "p": { "shape": "thin" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-wolf-howling-with-the-pack",
+    "name": "Wolf howling with the pack",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "Your long howl joined by the rest of the pack, out across a cold valley.",
+    "tags": ["wolf", "howl", "pack", "night"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 1.6 } },
+      { "m": "pitch.vibrato", "p": { "rate": 4, "depth": 100 } },
+      { "m": "stereo.crowd", "p": { "people": 3, "pitchSpread": 5, "timbreSpread": 3, "timing": 300, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wolves-far", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "critters-fox-yelping-in-the-snow",
+    "name": "Fox yelping in the snow",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A wild fox yelping and screaming up through its words out in a snowstorm.",
+    "tags": ["fox", "yelp", "snow", "wild"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 1 } },
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 10, "tremble": 30 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 40 } }
+    ],
+    "bed": { "b": "blizzard", "level": -26, "p": { "strength": 45 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-grumpy-old-bulldog",
+    "name": "Grumpy old bulldog",
+    "cat": "critters",
+    "sub": "Cats and dogs",
+    "about": "A wheezing, snuffling bulldog grumbling through its squashed nose.",
+    "tags": ["bulldog", "grumpy", "snuffle", "low"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 50, "fry": 50 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "synth.am", "p": { "rate": 12, "depth": 55, "shape": "random" } },
+      { "m": "lofi.saturate", "p": { "drive": 5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-goat-bleat-wobble",
+    "name": "Goat bleat wobble",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A nasal goat voice that bleats and wobbles wildly through every word.",
+    "tags": ["goat", "bleat", "wobble", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 3 } },
+      { "m": "pitch.vibrato", "p": { "rate": 8, "depth": 250, "throb": 80, "shape": "random", "delay": 0 } },
+      { "m": "synth.am", "p": { "rate": 9, "depth": 60 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-sheep-in-the-field",
+    "name": "Sheep in the field",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A soft, smooth bleating sheep voice out in a quiet farmyard.",
+    "tags": ["sheep", "bleat", "soft", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 2 } },
+      { "m": "pitch.vibrato", "p": { "rate": 6, "depth": 150, "throb": 60 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 50 } },
+      { "m": "space.distance", "p": { "distance": 12, "wind": 20 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -26, "p": { "rooster": false } },
+    "seed": 1
+  },
+  {
+    "id": "critters-cow-lowing-in-the-barn",
+    "name": "Cow lowing in the barn",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A deep, long, nasal moo of a voice filling a big wooden barn.",
+    "tags": ["cow", "moo", "deep", "barn"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -4 } },
+      { "m": "time.drawl", "p": { "factor": 1.7 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-snorting-pig",
+    "name": "Snorting pig",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A grunting, snorting pig voice snuffling its way through every word.",
+    "tags": ["pig", "snort", "grunt", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 60, "fry": 70, "grit": 50 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "synth.am", "p": { "rate": 18, "depth": 50, "shape": "random" } },
+      { "m": "lofi.saturate", "p": { "drive": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-horse-whinny",
+    "name": "Horse whinny across the paddock",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A high, shaking whinny of a horse voice, trembling fast across an open paddock.",
+    "tags": ["horse", "whinny", "shaking", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": -1 } },
+      { "m": "pitch.vibrato", "p": { "rate": 11, "depth": 220, "throb": 50 } },
+      { "m": "pitch.jitter", "p": { "rate": 1, "size": 6 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm", "mix": 60 } },
+      { "m": "space.distance", "p": { "distance": 20, "wind": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-donkey-hee-haw",
+    "name": "Donkey hee-haw",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "Your words see-saw between a high hee and a low haw, nasal and crunchy.",
+    "tags": ["donkey", "bray", "nasal", "funny"],
+    "chain": [
+      { "m": "pitch.arp", "p": { "notes": "octaves", "rate": 3, "glide": 60 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "lofi.drive", "p": { "drive": 10, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-quacking-duck",
+    "name": "Quacking duck",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A pinched, quacking duck-like voice with a metallic edge on every word.",
+    "tags": ["duck", "quack", "nasal", "funny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 5 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "synth.ringmod", "p": { "freq": 350, "mix": 35 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1500, "resonance": 40, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-gobbling-turkey",
+    "name": "Gobbling turkey",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A rattling, gobbling turkey voice that wobbles fast all the way through.",
+    "tags": ["turkey", "gobble", "rattle", "farm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "synth.am", "p": { "rate": 14, "shape": "random" } },
+      { "m": "pitch.vibrato", "p": { "rate": 12, "depth": 120, "delay": 0 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-clucking-hen",
+    "name": "Clucking hen",
+    "cat": "critters",
+    "sub": "Farm animals",
+    "about": "A busy hen clucking out her words in bits among the rest of the flock.",
+    "tags": ["hen", "cluck", "farm", "chatter"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 3 } },
+      { "m": "time.stutter", "p": { "repeats": 2, "pieceMs": 80, "chance": 50 } },
+      { "m": "pitch.jitter", "p": { "rate": 1, "size": 5 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 60 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -24, "p": { "rooster": false, "hens": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-grumpy-badger",
+    "name": "Grumpy badger",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A cranky, raspy, nasal badger grumbling from down in its burrow.",
+    "tags": ["badger", "grumpy", "raspy", "burrow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 25, "rough": 40, "fry": 55 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 70 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-big-brown-bear",
+    "name": "Big brown bear",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A huge, rough, growling bear voice in the windy pine woods.",
+    "tags": ["bear", "growl", "deep", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "rough": 60, "fry": 30 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 40 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -26, "p": { "leaves": "pine" } },
+    "seed": 1
+  },
+  {
+    "id": "critters-chattering-monkey",
+    "name": "Chattering monkey",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A wild, giddy monkey chattering and shrieking from the jungle trees.",
+    "tags": ["monkey", "chatter", "jungle", "wild"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 4 } },
+      { "m": "time.stutter", "p": { "where": "everywhere", "pieceMs": 50, "chance": 55, "roll": "faster" } },
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 8 } }
+    ],
+    "bed": { "b": "jungle", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "critters-bat-in-the-cave",
+    "name": "Bat in the cave",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A needle-high bat voice with quick clicking echoes bouncing off the cave walls.",
+    "tags": ["bat", "high", "echo", "cave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 16, "formant": 10 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 1500, "resonance": 40 } },
+      { "m": "echo.delay", "p": { "time": 90, "feedback": 50, "mix": 40 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-raccoon-in-the-trash-can",
+    "name": "Raccoon in the trash can",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A sneaky, chittering raccoon rummaging around inside a metal trash can.",
+    "tags": ["raccoon", "chitter", "metal", "sneaky"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 15, "fry": 40 } },
+      { "m": "time.stutter", "p": { "chance": 35 } },
+      { "m": "space.room", "p": { "space": "oil-drum", "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-squirrel-scolding",
+    "name": "Squirrel scolding from a branch",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A cross little squirrel rattling off a quick telling-off from up a tree.",
+    "tags": ["squirrel", "chatter", "quick", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 5 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.3 } },
+      { "m": "mod.tremolo", "p": { "rate": 12, "depth": 60, "shape": "square" } },
+      { "m": "stereo.place", "p": { "angle": -30, "height": 50, "distance": 4, "room": "outdoors" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "critters-hissing-snake",
+    "name": "Hissing snake",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A breathy, hissing snake voice low on the ground, every s sound sharpened.",
+    "tags": ["snake", "hiss", "breathy", "low"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 1 } },
+      { "m": "spec.whisper", "p": { "amount": 70 } },
+      { "m": "tone.eq", "p": { "band5Gain": 10, "band5Q": 20 } },
+      { "m": "stereo.place", "p": { "angle": -20, "height": -30, "distance": 0.6, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-trumpeting-elephant",
+    "name": "Trumpeting elephant",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A huge, brassy, buzzing elephant trumpet on every word.",
+    "tags": ["elephant", "trumpet", "huge", "brassy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -6 } },
+      { "m": "synth.kazoo", "p": { "type": "giant", "mix": 50 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "space.distance", "p": { "distance": 25, "wind": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-sloth-in-no-hurry",
+    "name": "Sloth in no hurry",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A warm, sleepy sloth taking a very long time over every single word.",
+    "tags": ["sloth", "slow", "sleepy", "jungle"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 2.6 } },
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "tone.character", "p": { "shape": "warm" } }
+    ],
+    "bed": { "b": "jungle", "level": -28, "p": { "calls": 10 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-laughing-hyena",
+    "name": "Pack of laughing hyenas",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A few cackling hyenas whose words keep breaking up into whooping giggles.",
+    "tags": ["hyena", "laugh", "cackle", "wild"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 2 } },
+      { "m": "pitch.jitter", "p": { "rate": 4, "size": 9, "tremble": 60 } },
+      { "m": "pitch.vibrato", "p": { "rate": 7, "depth": 150, "shape": "random" } },
+      { "m": "stereo.crowd", "p": { "people": 3, "timing": 250, "room": "outdoors" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-snuffling-hedgehog",
+    "name": "Snuffling hedgehog",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A small, snuffly hedgehog voice nosing about in dry autumn leaves.",
+    "tags": ["hedgehog", "snuffle", "small", "leaves"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 5 } },
+      { "m": "synth.am", "p": { "rate": 20, "depth": 45, "shape": "random" } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "spec.whisper", "p": { "amount": 25 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -28, "p": { "leaves": "dry", "strength": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-gorilla-beating-its-chest",
+    "name": "Gorilla beating its chest",
+    "cat": "critters",
+    "sub": "Woodland and wild",
+    "about": "A deep, powerful gorilla voice pounding in hard beats, deep in the jungle.",
+    "tags": ["gorilla", "deep", "pounding", "jungle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 45, "rough": 40 } },
+      { "m": "mod.tremolo", "p": { "rate": 7, "depth": 60, "shape": "square" } }
+    ],
+    "bed": { "b": "jungle", "level": -26, "p": { "calls": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-whale-song-in-the-deep",
+    "name": "Whale song in the deep",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A vast, slow, moaning whale voice sliding up and down far under the sea.",
+    "tags": ["whale", "song", "deep", "underwater"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 2, "pitch": "drop" } },
+      { "m": "pitch.wobble", "p": { "depth": 300, "speed": 0.4, "randomness": 80 } },
+      { "m": "mod.underwater", "p": { "depth": 40, "bubbles": 10 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 6, "mix": 50 } }
+    ],
+    "bed": { "b": "underwater", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-dolphin-clicks-and-whistles",
+    "name": "Dolphin clicks and whistles",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A high, whistling dolphin voice that clicks as it chatters under the waves.",
+    "tags": ["dolphin", "click", "whistle", "underwater"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 30, "depth": 80, "shape": "pulse" } },
+      { "m": "pitch.vibrato", "p": { "rate": 9, "depth": 250, "delay": 0 } },
+      { "m": "mod.underwater", "p": { "depth": 20, "bubbles": 30, "mix": 50 } }
+    ],
+    "bed": { "b": "underwater", "level": -26, "p": { "diver": 0 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-seal-barking-on-the-rocks",
+    "name": "Seal barking on the rocks",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A honking, barking seal voice on the rocks as the waves crash in.",
+    "tags": ["seal", "bark", "honk", "sea"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 2 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "time.stutter", "p": { "repeats": 2, "pieceMs": 120, "chance": 50, "gate": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm" } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "critters-octopus-with-eight-voices",
+    "name": "Octopus with eight voices",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "Eight wobbly, watery voices talking at once, one for every arm.",
+    "tags": ["octopus", "eight", "watery", "crowd"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2 } },
+      { "m": "synth.fm", "p": { "rate": 4, "depth": 1.5, "shape": "watery" } },
+      { "m": "mod.underwater", "p": { "depth": 35, "mix": 70 } },
+      { "m": "stereo.crowd", "p": { "people": 8, "pitchSpread": 3, "timing": 150, "room": "none", "you": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-snappy-little-crab",
+    "name": "Snappy little crab",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A crab clacking out its words in snappy little bits on a pebble beach.",
+    "tags": ["crab", "snappy", "clicky", "beach"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": -2 } },
+      { "m": "time.stutter", "p": { "repeats": 4, "pieceMs": 30, "chance": 50, "gate": 60 } },
+      { "m": "lofi.crush", "p": { "bits": 8, "mix": 30 } }
+    ],
+    "bed": { "b": "ocean", "level": -26, "p": { "shore": "pebbles", "size": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "critters-goldfish-in-a-bowl",
+    "name": "Goldfish in a bowl",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A little goldfish blowing bubbles as it talks inside a round glass bowl.",
+    "tags": ["goldfish", "bubbles", "glass", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 5 } },
+      { "m": "mod.underwater", "p": { "depth": 50, "bubbles": 85, "gurgle": 50 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-pufferfish-puffing-up",
+    "name": "Pufferfish puffing up",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A little fish that puffs up bigger and rounder with every word, bubbling under water.",
+    "tags": ["pufferfish", "growing", "underwater", "funny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "pitch.glide", "p": { "to": -9, "curve": "early", "timbre": 100 } },
+      { "m": "mod.underwater", "p": { "depth": 35, "bubbles": 60, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "critters-penguin-colony-on-the-ice",
+    "name": "Penguin colony on the ice",
+    "cat": "critters",
+    "sub": "Sea creatures",
+    "about": "A honking crowd of penguins all braying your words in an icy wind.",
+    "tags": ["penguin", "crowd", "honk", "ice"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 3 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "stereo.crowd", "p": { "people": 8, "pitchSpread": 3, "timing": 200, "room": "outdoors" } }
+    ],
+    "bed": { "b": "blizzard", "level": -24, "p": { "strength": 50 } },
+    "seed": 1
+  }
+]

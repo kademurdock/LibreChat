@@ -1,0 +1,1330 @@
+[
+  {
+    "id": "phones-candlestick-1920s",
+    "name": "1920s candlestick phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "A narrow, frying carbon-mic voice on a long crackly line from the 1920s.",
+    "tags": ["phone", "vintage", "1920s", "crackle"],
+    "chain": [{ "m": "device.phone", "p": { "era": "candlestick", "crackle": 35, "noise": 40 } }],
+    "seed": 101
+  },
+  {
+    "id": "phones-long-distance-1930s",
+    "name": "Long distance call, 1930s",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "A faint voice from across the country, thin and hissing, with its own echo trailing behind.",
+    "tags": ["phone", "vintage", "long distance", "echo"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "candlestick", "signal": 35, "noise": 60, "crackle": 45, "rough": 55 } },
+      { "m": "echo.delay", "p": { "time": 240, "feedback": 10, "damping": 75, "stereo": "mono", "mix": 16 } }
+    ],
+    "seed": 102
+  },
+  {
+    "id": "phones-party-line",
+    "name": "Party line with the neighbors",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "An old shared country line: clicks as neighbors pick up and their chatter murmuring under you.",
+    "tags": ["phone", "vintage", "crosstalk", "line"],
+    "chain": [{ "m": "device.phone", "p": { "era": "candlestick", "rough": 30, "noise": 45 } }],
+    "bed": { "b": "phone-line", "level": -20, "p": { "tone": "none", "crosstalk": 90, "clicks": 60, "intensity": 55 } },
+    "seed": 103
+  },
+  {
+    "id": "phones-rotary-desk-phone",
+    "name": "1950s rotary desk phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "The classic landline sound: a warm, boxy voice squeezed into the old telephone band.",
+    "tags": ["phone", "landline", "1950s", "rotary"],
+    "chain": [{ "m": "device.phone", "p": {} }],
+    "seed": 104
+  },
+  {
+    "id": "phones-kitchen-wall-phone",
+    "name": "Kitchen wall phone, long cord",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "Someone calling from a tiled kitchen, the room ringing around them on an old wall phone.",
+    "tags": ["phone", "landline", "kitchen", "room"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 35, "distance": 30 } },
+      { "m": "device.phone", "p": { "rough": 60, "hum": 35 } }
+    ],
+    "seed": 105
+  },
+  {
+    "id": "phones-cordless-1980s",
+    "name": "1980s cordless phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "An early cordless handset: hiss that breathes with each word and a swish now and then.",
+    "tags": ["phone", "cordless", "1980s", "hiss"],
+    "chain": [{ "m": "device.phone", "p": { "era": "cordless" } }],
+    "seed": 106
+  },
+  {
+    "id": "phones-cordless-out-of-range",
+    "name": "Cordless phone, out of range",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "Walked too far from the base: the voice sinks into rushing static and swishing dropouts.",
+    "tags": ["phone", "cordless", "static", "weak"],
+    "chain": [{ "m": "device.phone", "p": { "era": "cordless", "signal": 15, "noise": 55, "rough": 65 } }],
+    "seed": 107
+  },
+  {
+    "id": "phones-car-phone-1980s",
+    "name": "1980s car phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "A big analog car phone with the engine rumbling under every word and a hissing radio link.",
+    "tags": ["phone", "car", "1980s", "engine"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 35, "level": -12 } },
+      { "m": "device.phone", "p": { "era": "cordless", "signal": 60, "noise": 40 } }
+    ],
+    "seed": 108
+  },
+  {
+    "id": "phones-cell-phone-1990s",
+    "name": "1990s cell phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "An early digital mobile: coarse coded speech, a buzz from the radio and a gargle on weak moments.",
+    "tags": ["phone", "cell", "1990s", "digital"],
+    "chain": [{ "m": "device.phone", "p": { "era": "cellular" } }],
+    "seed": 109
+  },
+  {
+    "id": "phones-flip-phone-2000s",
+    "name": "2000s flip phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "A pocket flip phone: swirly coding, warbling noise cleanup and a level that pumps.",
+    "tags": ["phone", "cell", "2000s", "swirl"],
+    "chain": [{ "m": "device.phone", "p": { "era": "flip" } }],
+    "seed": 110
+  },
+  {
+    "id": "phones-tucked-under-the-chin",
+    "name": "Phone tucked under the chin",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "A cell phone squashed between shoulder and cheek, the mic half covered and muffled.",
+    "tags": ["phone", "cell", "muffled", "covered"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 75 } },
+      { "m": "device.phone", "p": { "era": "cellular", "rough": 30, "signal": 75 } }
+    ],
+    "seed": 111
+  },
+  {
+    "id": "phones-cheap-hotel-phone",
+    "name": "Cheap hotel room phone",
+    "cat": "phones",
+    "sub": "Phones through the years",
+    "about": "The bedside phone of a tired motel: boxy, buzzing and full of hiss.",
+    "tags": ["phone", "hotel", "hum", "boxy"],
+    "chain": [
+      { "m": "device.phone", "p": { "rough": 75, "noise": 60, "hum": 50 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 70 } }
+    ],
+    "seed": 112
+  },
+
+  {
+    "id": "phones-bad-cell-signal",
+    "name": "Bad cell signal",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "One bar of signal: the voice gargles, breaks into burbles and drops whole syllables.",
+    "tags": ["phone", "cell", "weak", "breaking up"],
+    "chain": [{ "m": "device.phone", "p": { "era": "flip", "signal": 0, "rough": 90, "noise": 45 } }],
+    "seed": 121
+  },
+  {
+    "id": "phones-call-dropping-out",
+    "name": "Call dropping out",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "A flip phone call that keeps cutting to silence mid-word, then coming back.",
+    "tags": ["phone", "dropout", "silence", "weak"],
+    "chain": [
+      { "m": "spec.dropout", "p": { "loss": 35, "burst": 180, "conceal": "silence" } },
+      { "m": "device.phone", "p": { "era": "flip", "signal": 35 } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } }
+    ],
+    "seed": 122
+  },
+  {
+    "id": "phones-basement-one-bar",
+    "name": "Calling from the basement",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "Down in a concrete stairwell with almost no signal, the echo and the gargle fighting.",
+    "tags": ["phone", "cell", "stairwell", "weak"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 40, "distance": 35 } },
+      { "m": "device.phone", "p": { "era": "cellular", "signal": 10, "rough": 75 } }
+    ],
+    "seed": 123
+  },
+  {
+    "id": "phones-robot-glitch-call",
+    "name": "Robot glitches on a weak call",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "An internet call where every lost moment turns into a buzzing metallic robot.",
+    "tags": ["phone", "internet", "robot", "glitch"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "voip", "signal": 40 } },
+      { "m": "spec.dropout", "p": { "loss": 30, "burst": 120 } }
+    ],
+    "seed": 124
+  },
+  {
+    "id": "phones-frozen-stutter-call",
+    "name": "Stuttering frozen call",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "The line freezes and repeats the same scrap of sound before jumping ahead.",
+    "tags": ["phone", "internet", "stutter", "freeze"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "voip", "signal": 55 } },
+      { "m": "spec.dropout", "p": { "loss": 30, "burst": 220, "conceal": "repeat" } }
+    ],
+    "seed": 125
+  },
+  {
+    "id": "phones-calling-from-a-tunnel",
+    "name": "Calling from a tunnel",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "Driving into a long tunnel: the voice gets boomy and hollow as the signal fades.",
+    "tags": ["phone", "tunnel", "echo", "weak"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 35, "distance": 40 } },
+      { "m": "device.phone", "p": { "era": "flip", "signal": 25 } }
+    ],
+    "seed": 126
+  },
+  {
+    "id": "phones-hands-free-driving",
+    "name": "Hands-free in a moving car",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "A driver on speaker in the car, the engine droning and the phone's level pumping.",
+    "tags": ["phone", "car", "hands-free", "engine"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "mix": 55 } },
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 40, "level": -10 } },
+      { "m": "device.phone", "p": { "era": "flip", "signal": 70 } }
+    ],
+    "seed": 127
+  },
+  {
+    "id": "phones-windy-hilltop-call",
+    "name": "Calling from a windy hill",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "Wind blasting the phone's mic while someone shouts from an exposed hilltop.",
+    "tags": ["phone", "wind", "outdoors", "cell"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "wind", "blend": 22, "envelope": "both" } },
+      { "m": "device.phone", "p": { "era": "cellular", "signal": 50 } }
+    ],
+    "seed": 128
+  },
+  {
+    "id": "phones-crossed-lines",
+    "name": "Crossed lines",
+    "cat": "phones",
+    "sub": "Bad signal and dropouts",
+    "about": "Another conversation has leaked onto your line and mumbles away under the voice.",
+    "tags": ["phone", "crosstalk", "landline", "noise"],
+    "chain": [{ "m": "device.phone", "p": { "noise": 45, "crackle": 40 } }],
+    "bed": { "b": "phone-line", "level": -14, "p": { "tone": "none", "crosstalk": 100, "intensity": 65, "clicks": 20 } },
+    "seed": 129
+  },
+
+  {
+    "id": "phones-internet-call",
+    "name": "Internet call",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "A typical computer call: clear enough, with noise cleanup and a hiccup now and then.",
+    "tags": ["internet", "call", "computer", "modern"],
+    "chain": [{ "m": "device.phone", "p": { "era": "voip" } }],
+    "seed": 131
+  },
+  {
+    "id": "phones-frozen-video-call",
+    "name": "Video call, frozen picture",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "A starving video call: swirly, watery voice that freezes and repeats when the picture stalls.",
+    "tags": ["video call", "codec", "freeze", "internet"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 8, "warble": 60 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "burst": 260, "conceal": "repeat" } }
+    ],
+    "seed": 132
+  },
+  {
+    "id": "phones-laptop-meeting",
+    "name": "Laptop meeting, far from the mic",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "Someone leaning back from their laptop in an office, roomy and thin through little speakers.",
+    "tags": ["meeting", "laptop", "office", "internet"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "office", "mix": 55, "distance": 75 } },
+      { "m": "device.phone", "p": { "era": "voip", "rough": 55 } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 133
+  },
+  {
+    "id": "phones-earbud-mic-call",
+    "name": "Cheap earbud mic",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "Talking through the little mic on a cheap earbud cable: thin, scratchy and squeezed.",
+    "tags": ["earbud", "mic", "thin", "internet"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "thin" } },
+      { "m": "spec.codec", "p": { "bitrate": 18, "warble": 20 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "battery", "mix": 40 } }
+    ],
+    "seed": 134
+  },
+  {
+    "id": "phones-wireless-headset-breakup",
+    "name": "Wireless headset breaking up",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "A wireless headset at the edge of its range: underwater swirl and tiny gaps.",
+    "tags": ["wireless", "headset", "codec", "dropout"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 12, "warble": 50 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "burst": 40, "conceal": "mixed" } }
+    ],
+    "seed": 135
+  },
+  {
+    "id": "phones-satellite-phone-delay",
+    "name": "Satellite phone with a delay",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "A rebuilt robotic voice bounced off a satellite, with your words echoing back late.",
+    "tags": ["satellite", "delay", "robotic", "remote"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "secure", "order": 12 } },
+      { "m": "echo.delay", "p": { "time": 620, "feedback": 0, "damping": 60, "stereo": "mono", "mix": 18 } }
+    ],
+    "seed": 136
+  },
+  {
+    "id": "phones-secure-line",
+    "name": "Secure scrambled phone",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "A coded military phone line: the voice rebuilt from a few numbers, buzzy and inhuman.",
+    "tags": ["secure", "military", "vocoder", "robotic"],
+    "chain": [
+      { "m": "synth.lpc", "p": { "chip": "secure", "roughness": 35 } },
+      { "m": "device.phone", "p": { "noise": 15, "crackle": 10 } }
+    ],
+    "seed": 137
+  },
+  {
+    "id": "phones-dialed-in-meeting",
+    "name": "Dialed into an online meeting",
+    "cat": "phones",
+    "sub": "Internet and video calls",
+    "about": "Someone joining a computer meeting from a cell phone: coded twice and twice as squeezed.",
+    "tags": ["meeting", "dial-in", "codec", "cell"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "cellular", "signal": 70 } },
+      { "m": "device.phone", "p": { "era": "voip", "rough": 60 } }
+    ],
+    "seed": 138
+  },
+
+  {
+    "id": "phones-speakerphone",
+    "name": "Desk speakerphone",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "A desk speakerphone: boxy, a little roomy, and it clips the start of every sentence.",
+    "tags": ["speakerphone", "office", "room", "boxy"],
+    "chain": [{ "m": "device.phone", "p": { "era": "speaker" } }],
+    "seed": 141
+  },
+  {
+    "id": "phones-speakerphone-big-room",
+    "name": "Speakerphone across a big room",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "Talking to the conference phone from the far end of a long, echoing meeting room.",
+    "tags": ["speakerphone", "conference", "echo", "distant"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "classroom", "mix": 50, "distance": 80 } },
+      { "m": "device.phone", "p": { "era": "speaker", "signal": 40 } }
+    ],
+    "seed": 142
+  },
+  {
+    "id": "phones-conference-call-busy-office",
+    "name": "Conference call from a busy office",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "A speakerphone in an open office, colleagues chattering behind the person talking.",
+    "tags": ["conference", "office", "crowd", "speakerphone"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "crowd", "mode": "duck", "depth": 25, "level": -7 } },
+      { "m": "device.phone", "p": { "era": "speaker", "signal": 60 } }
+    ],
+    "seed": 143
+  },
+  {
+    "id": "phones-conference-echo-leak",
+    "name": "Conference call with echo",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "A meeting line where your own words leak back a moment later from the far speaker.",
+    "tags": ["conference", "echo", "speakerphone", "meeting"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "speaker" } },
+      { "m": "echo.delay", "p": { "time": 320, "feedback": 20, "damping": 55, "stereo": "mono", "mix": 25 } }
+    ],
+    "seed": 144
+  },
+  {
+    "id": "phones-phone-on-the-table",
+    "name": "Phone face up on the table",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "A call on loudspeaker from a phone lying on the kitchen table, tinny and rattling.",
+    "tags": ["phone speaker", "kitchen", "loudspeaker", "tinny"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "voip", "rough": 50 } },
+      { "m": "lofi.speaker", "p": { "push": 12, "rattle": 40 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 40, "distance": 40 } }
+    ],
+    "seed": 145
+  },
+  {
+    "id": "phones-car-stereo-speakerphone",
+    "name": "Call through the car stereo",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "A phone call played through the car speakers while you cruise down the highway.",
+    "tags": ["car", "speakerphone", "highway", "phone"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "flip", "signal": 75 } },
+      { "m": "space.room", "p": { "space": "car", "mix": 60 } }
+    ],
+    "bed": { "b": "car-highway", "level": -22, "duck": 3 },
+    "seed": 146
+  },
+  {
+    "id": "phones-speakerphone-in-a-van",
+    "name": "Speakerphone in a crowded van",
+    "cat": "phones",
+    "sub": "Speakerphones and conference calls",
+    "about": "Everyone leaning toward one phone in a rattling van, the voice tinny over the crowd.",
+    "tags": ["speakerphone", "van", "crowd", "tinny"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "cellular", "signal": 65 } },
+      { "m": "lofi.speaker", "p": { "push": 16, "rattle": 55 } },
+      { "m": "mod.keyed", "p": { "source": "crowd", "mode": "duck", "depth": 30, "level": -16 } },
+      { "m": "space.room", "p": { "space": "van", "mix": 50 } }
+    ],
+    "seed": 147
+  },
+
+  {
+    "id": "phones-payphone-in-the-rain",
+    "name": "Payphone in the rain",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "A crackly street payphone pressed to your ear while rain pours on the pavement around you.",
+    "tags": ["payphone", "rain", "street", "crackle"],
+    "chain": [{ "m": "device.phone", "p": { "rough": 55, "noise": 40, "crackle": 35 } }],
+    "bed": { "b": "rain", "level": -15, "duck": 3, "p": { "surface": "pavement", "intensity": 65 } },
+    "seed": 151
+  },
+  {
+    "id": "phones-caller-at-payphone-storm",
+    "name": "Caller at a payphone, storm",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "Someone calling from a booth with rain hammering on it, the downpour coming down the line.",
+    "tags": ["payphone", "rain", "storm", "caller"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "rain", "mode": "duck", "depth": 25, "level": -5 } },
+      { "m": "device.phone", "p": { "rough": 60, "crackle": 40 } }
+    ],
+    "seed": 152
+  },
+  {
+    "id": "phones-airport-payphone",
+    "name": "Airport payphone",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "A payphone in a busy terminal, suitcases rolling and announcements echoing behind you.",
+    "tags": ["payphone", "airport", "crowd", "travel"],
+    "chain": [{ "m": "device.phone", "p": { "rough": 50, "hum": 30 } }],
+    "bed": { "b": "airport-hall", "level": -17, "duck": 3 },
+    "seed": 153
+  },
+  {
+    "id": "phones-subway-platform-payphone",
+    "name": "Payphone on the subway platform",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "A grimy underground payphone while trains rumble in and squeal along the platform.",
+    "tags": ["payphone", "subway", "train", "underground"],
+    "chain": [{ "m": "device.phone", "p": { "rough": 70, "hum": 45, "noise": 45 } }],
+    "bed": { "b": "subway-platform", "level": -15, "duck": 4 },
+    "seed": 154
+  },
+  {
+    "id": "phones-phone-booth-city-corner",
+    "name": "Phone booth on a city corner",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "A caller shut in a glass booth, the little box ringing around them, traffic outside.",
+    "tags": ["phone booth", "city", "traffic", "glass"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "phone-booth", "mix": 70 } },
+      { "m": "device.phone", "p": { "rough": 50 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "horns": 60 } },
+    "seed": 155
+  },
+  {
+    "id": "phones-truck-stop-collect-call",
+    "name": "Collect call from a truck stop",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "A late-night payphone call with idling rigs rumbling and a mains hum on the line.",
+    "tags": ["payphone", "truck stop", "engine", "hum"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 30, "level": -8 } },
+      { "m": "device.phone", "p": { "rough": 65, "hum": 65 } }
+    ],
+    "seed": 156
+  },
+  {
+    "id": "phones-laundromat-payphone",
+    "name": "Payphone in the laundromat",
+    "cat": "phones",
+    "sub": "Payphones and public phones",
+    "about": "Calling home from the wall phone while dryers tumble and a washer thumps through its spin.",
+    "tags": ["payphone", "laundromat", "machines", "public"],
+    "chain": [
+      { "m": "device.phone", "p": { "rough": 45, "noise": 40 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 50 } }
+    ],
+    "bed": { "b": "laundromat", "level": -16, "duck": 3, "p": { "spin": 70 } },
+    "seed": 157
+  },
+
+  {
+    "id": "phones-answering-machine",
+    "name": "Answering machine message",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "The beep, then your message on a tiny wobbly tape with hiss and a whining motor.",
+    "tags": ["answering machine", "tape", "beep", "message"],
+    "chain": [{ "m": "device.microcassette", "p": {} }],
+    "seed": 161
+  },
+  {
+    "id": "phones-worn-answering-machine",
+    "name": "Worn answering machine tape",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "An old message tape recorded over a hundred times, wobbling and buried in hiss.",
+    "tags": ["answering machine", "worn", "tape", "hiss"],
+    "chain": [{ "m": "device.microcassette", "p": { "age": 90, "wobble": 75, "hiss": 65, "motor": 50 } }],
+    "seed": 162
+  },
+  {
+    "id": "phones-digital-voicemail",
+    "name": "Digital voicemail",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "A cell message stored in a few coarse bits, grainy hiss riding every word.",
+    "tags": ["voicemail", "digital", "grainy", "cell"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "flip", "crackle": 5 } },
+      { "m": "lofi.adpcm", "p": { "rate": 8000, "chip": "oki" } }
+    ],
+    "seed": 163
+  },
+  {
+    "id": "phones-automated-phone-menu",
+    "name": "Automated phone menu",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "A flat, over-polished recorded menu voice asking you to press one.",
+    "tags": ["menu", "recording", "flat", "line"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 70 } },
+      { "m": "tone.broadcast", "p": {} },
+      { "m": "lofi.companding", "p": {} }
+    ],
+    "seed": 164
+  },
+  {
+    "id": "phones-message-played-too-fast",
+    "name": "Message played back too fast",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "The answering machine's motor races, so the message squeaks by at double speed.",
+    "tags": ["answering machine", "fast", "squeaky", "tape"],
+    "chain": [
+      { "m": "device.microcassette", "p": { "beep": "both" } },
+      { "m": "pitch.speed", "p": { "speed": 1.6 } }
+    ],
+    "seed": 165
+  },
+  {
+    "id": "phones-machine-slow-tape",
+    "name": "Machine with a dragging tape",
+    "cat": "phones",
+    "sub": "Answering machines and voicemail",
+    "about": "A tired machine whose tape drags, so the caller comes out slow, low and seasick.",
+    "tags": ["answering machine", "slow", "wobble", "tape"],
+    "chain": [
+      { "m": "device.microcassette", "p": { "motor": 70, "wobble": 60 } },
+      { "m": "pitch.speed", "p": { "speed": 0.8, "wobble": 35 } }
+    ],
+    "seed": 166
+  },
+
+  {
+    "id": "phones-family-walkie-talkie",
+    "name": "Family walkie-talkie",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A handheld radio: a click as you key up, faint hiss, and a burst of squelch when you let go.",
+    "tags": ["walkie-talkie", "radio", "squelch", "handheld"],
+    "chain": [{ "m": "device.walkie", "p": {} }],
+    "seed": 171
+  },
+  {
+    "id": "phones-toy-walkie-talkie",
+    "name": "Toy walkie-talkie",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A plastic toy radio from a birthday party: thin, hissy and crunchy.",
+    "tags": ["walkie-talkie", "toy", "hiss", "thin"],
+    "chain": [{ "m": "device.walkie", "p": { "band": "toy" } }],
+    "seed": 172
+  },
+  {
+    "id": "phones-soldiers-field-radio",
+    "name": "Soldier's field radio",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A rugged field radio, heavily squeezed and rough, with a low tone when the talker lets go.",
+    "tags": ["military", "field radio", "squelch", "rough"],
+    "chain": [{ "m": "device.walkie", "p": { "band": "field", "beep": "low", "clip": 60 } }],
+    "seed": 173
+  },
+  {
+    "id": "phones-guard-in-the-garage",
+    "name": "Night guard in the parking garage",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A security guard radioing in from an echoing concrete garage, a chirp after each call.",
+    "tags": ["security", "walkie-talkie", "garage", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "parking-garage", "mix": 35, "distance": 35 } },
+      { "m": "device.walkie", "p": { "beep": "chirp", "clip": 50 } }
+    ],
+    "seed": 174
+  },
+  {
+    "id": "phones-ski-patrol-blizzard",
+    "name": "Ski patrol in a blizzard",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A rescue radio crackling through a howling snowstorm on the mountain.",
+    "tags": ["walkie-talkie", "blizzard", "rescue", "wind"],
+    "chain": [{ "m": "device.walkie", "p": { "band": "field", "signal": 55 } }],
+    "bed": { "b": "blizzard", "level": -13, "duck": 4 },
+    "seed": 175
+  },
+  {
+    "id": "phones-construction-crew-radio",
+    "name": "Construction crew radio",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A foreman shouting into a clipped radio over jackhammers and a reversing digger.",
+    "tags": ["walkie-talkie", "construction", "loud", "clipped"],
+    "chain": [{ "m": "device.walkie", "p": { "clip": 80, "hiss": 40 } }],
+    "bed": { "b": "construction", "level": -17, "duck": 3 },
+    "seed": 176
+  },
+  {
+    "id": "phones-summer-camp-walkie",
+    "name": "Walkie-talkie at summer camp",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "A crackly radio from the next cabin over, crickets singing in the warm dark.",
+    "tags": ["walkie-talkie", "camp", "night", "crickets"],
+    "chain": [{ "m": "device.walkie", "p": { "signal": 55, "hiss": 50 } }],
+    "bed": { "b": "night-crickets", "level": -19 },
+    "seed": 177
+  },
+  {
+    "id": "phones-fishing-boat-radio",
+    "name": "Fishing boat radio",
+    "cat": "phones",
+    "sub": "Two-way radios",
+    "about": "Another boat calling on the marine handset while your engine chugs and waves slap the hull.",
+    "tags": ["marine", "radio", "boat", "waves"],
+    "chain": [{ "m": "device.walkie", "p": { "clip": 50, "beep": "two" } }],
+    "bed": { "b": "boat-engine", "level": -16, "duck": 3, "p": { "waves": 60 } },
+    "seed": 178
+  },
+
+  {
+    "id": "phones-cb-trucker",
+    "name": "CB trucker",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "A trucker on the citizens band: crackling static, a whistle on the channel and a hot mic.",
+    "tags": ["cb", "trucker", "static", "radio"],
+    "chain": [{ "m": "device.cb", "p": {} }],
+    "seed": 181
+  },
+  {
+    "id": "phones-cb-echo-mic",
+    "name": "CB with an echo mic",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "A driver with an echo box wired into the mic, every word repeating, then a sign-off tone.",
+    "tags": ["cb", "echo", "trucker", "beep"],
+    "chain": [{ "m": "device.cb", "p": { "echo": 70, "roger": "tones" } }],
+    "seed": 182
+  },
+  {
+    "id": "phones-cb-far-skip",
+    "name": "Far-off CB skip",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "A voice from a thousand miles away, fading in and out under static and whistles.",
+    "tags": ["cb", "skip", "fading", "far"],
+    "chain": [{ "m": "device.cb", "p": { "skip": 90, "static": 70, "squelch": 20, "whistle": 55 } }],
+    "seed": 183
+  },
+  {
+    "id": "phones-cb-overmodulated",
+    "name": "Overmodulated CB, big amplifier",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "A rig pushed way too hard: the voice splatters and crunches, then a sign-off beep.",
+    "tags": ["cb", "distorted", "loud", "splatter"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 14, "mix": 60 } },
+      { "m": "device.cb", "p": { "splatter": 100, "static": 30, "roger": "beep" } }
+    ],
+    "seed": 184
+  },
+  {
+    "id": "phones-cb-truck-cab-night",
+    "name": "CB in the truck cab",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "The CB speaker crackling in the cab while the truck roars down the highway.",
+    "tags": ["cb", "truck", "highway", "night"],
+    "chain": [{ "m": "device.cb", "p": { "squelch": 80 } }],
+    "bed": { "b": "car-highway", "level": -16, "duck": 3, "p": { "car": "truck" } },
+    "seed": 185
+  },
+  {
+    "id": "phones-cb-night-driver",
+    "name": "Deep-voiced night driver",
+    "cat": "phones",
+    "sub": "CB and truckers",
+    "about": "A low, gravelly long-haul voice on the CB with a touch of echo in the mic.",
+    "tags": ["cb", "deep", "trucker", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } },
+      { "m": "device.cb", "p": { "echo": 40, "squelch": 80 } }
+    ],
+    "seed": 186
+  },
+
+  {
+    "id": "phones-police-scanner",
+    "name": "Police scanner",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "Dispatch chatter on a desktop scanner: squeezed and harsh with a squelch tail on every call.",
+    "tags": ["scanner", "police", "dispatch", "squelch"],
+    "chain": [{ "m": "device.scanner", "p": {} }],
+    "seed": 191
+  },
+  {
+    "id": "phones-digital-police-radio",
+    "name": "Digital police radio",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "The watery robotic warble of a modern digital dispatch channel.",
+    "tags": ["scanner", "digital", "police", "robotic"],
+    "chain": [{ "m": "device.scanner", "p": { "mode": "digital" } }],
+    "seed": 192
+  },
+  {
+    "id": "phones-air-traffic-control",
+    "name": "Air traffic control tower",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "A crisp, squeezed controller on the aviation band, with a carrier thump on each call.",
+    "tags": ["aviation", "tower", "radio", "pilot"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -32, "ratio": 6 } },
+      { "m": "device.cb", "p": { "skip": 0, "whistle": 5, "splatter": 15, "squelch": 85, "static": 25 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 380 } }
+    ],
+    "seed": 193
+  },
+  {
+    "id": "phones-pilot-calling-the-tower",
+    "name": "Pilot calling the tower",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "A pilot on the radio from a small plane, the engine droning through the headset mic.",
+    "tags": ["aviation", "pilot", "cockpit", "radio"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 15, "level": -4 } },
+      { "m": "tone.character", "p": { "shape": "thin" } },
+      { "m": "device.cb", "p": { "skip": 0, "whistle": 0, "splatter": 30, "squelch": 85, "static": 35 } }
+    ],
+    "seed": 197
+  },
+  {
+    "id": "phones-taxi-dispatch",
+    "name": "Taxi dispatch radio",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "The cab's dash radio squawking out the next fare over the noise of the city.",
+    "tags": ["taxi", "dispatch", "city", "radio"],
+    "chain": [{ "m": "device.scanner", "p": { "chirps": false, "harsh": 75, "tail": 50 } }],
+    "bed": { "b": "city-street", "level": -20, "p": { "distance": 3 } },
+    "seed": 194
+  },
+  {
+    "id": "phones-scanner-hopping",
+    "name": "Scanner hopping channels",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "A scanner jumping from channel to channel, catching scraps of speech between squelch bursts.",
+    "tags": ["scanner", "hopping", "squelch", "chopped"],
+    "chain": [
+      { "m": "mod.gate", "p": { "pattern": "random", "tempo": 90 } },
+      { "m": "device.scanner", "p": { "tail": 90, "noise": 50 } }
+    ],
+    "seed": 195
+  },
+  {
+    "id": "phones-digital-radio-breakup",
+    "name": "Digital radio breaking up",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "A digital channel at the edge of range, the voice dissolving into bubbling robot errors.",
+    "tags": ["scanner", "digital", "errors", "robotic"],
+    "chain": [
+      { "m": "device.scanner", "p": { "mode": "digital", "warble": 100, "harsh": 80 } },
+      { "m": "spec.dropout", "p": { "loss": 25, "burst": 100, "conceal": "silence" } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4, "attack": 1 } }
+    ],
+    "seed": 196
+  },
+  {
+    "id": "phones-ambulance-crew-radio",
+    "name": "Ambulance crew radio",
+    "cat": "phones",
+    "sub": "Scanners and dispatch",
+    "about": "A paramedic calling in on a digital handset while a siren wails across the city.",
+    "tags": ["ambulance", "radio", "siren", "dispatch"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -34, "ratio": 8 } },
+      { "m": "device.walkie", "p": { "band": "digital", "beep": "two", "clip": 45 } }
+    ],
+    "bed": { "b": "city-street", "level": -18, "duck": 3, "p": { "sirens": 100, "horns": 50, "distance": 4 } },
+    "seed": 198
+  },
+
+  {
+    "id": "phones-ham-sideband",
+    "name": "Ham radio on sideband",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "A ham operator across the world: narrow sideband voice, deep fades and crackling air.",
+    "tags": ["ham radio", "shortwave", "sideband", "fading"],
+    "chain": [{ "m": "device.shortwave", "p": {} }],
+    "seed": 201
+  },
+  {
+    "id": "phones-sideband-squawk",
+    "name": "Mistuned sideband squawk",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "A sideband signal tuned too high, so the voice squawks like a sing-song duck.",
+    "tags": ["ham radio", "sideband", "squawk", "mistuned"],
+    "chain": [{ "m": "device.shortwave", "p": { "detune": 250, "warble": 40 } }],
+    "seed": 202
+  },
+  {
+    "id": "phones-sideband-tuned-low",
+    "name": "Sideband tuned too low",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "The receiver sits below the signal and the voice turns into a growling, muddy mumble.",
+    "tags": ["ham radio", "sideband", "low", "mistuned"],
+    "chain": [{ "m": "device.shortwave", "p": { "detune": -180, "fading": 35 } }],
+    "seed": 203
+  },
+  {
+    "id": "phones-numbers-station",
+    "name": "Numbers station at midnight",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "A flat, emotionless voice reading on shortwave, with a radar knocking in the static.",
+    "tags": ["shortwave", "numbers", "monotone", "mystery"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "target": "set", "hz": 150 } },
+      { "m": "device.shortwave", "p": { "mode": "am", "interference": "pulse", "fading": 70, "noise": 50 } },
+      { "m": "lofi.saturate", "p": { "drive": 12 } }
+    ],
+    "seed": 204
+  },
+  {
+    "id": "phones-shortwave-news-overseas",
+    "name": "Shortwave news from overseas",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "An international news broadcast swimming in and out, teletype tones chattering beside it.",
+    "tags": ["shortwave", "news", "broadcast", "fading"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news" } },
+      { "m": "device.shortwave", "p": { "mode": "am", "fading": 75, "speed": 0.15, "noise": 55, "interference": "teletype" } }
+    ],
+    "seed": 205
+  },
+  {
+    "id": "phones-ship-to-shore",
+    "name": "Ship-to-shore radio",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "A captain calling the harbor on a crackling marine set, gulls and a foghorn by the docks.",
+    "tags": ["marine", "radio", "harbor", "ship"],
+    "chain": [{ "m": "device.shortwave", "p": { "detune": 30, "fading": 40 } }],
+    "bed": { "b": "seagulls-harbor", "level": -21, "p": { "foghorn": true } },
+    "seed": 206
+  },
+  {
+    "id": "phones-polar-station-radio",
+    "name": "Polar research station radio",
+    "cat": "phones",
+    "sub": "Ham and shortwave",
+    "about": "A lonely voice from a station at the bottom of the world, a storm battering the hut.",
+    "tags": ["shortwave", "polar", "storm", "remote"],
+    "chain": [{ "m": "device.shortwave", "p": { "detune": -40, "noise": 60 } }],
+    "bed": { "b": "blizzard", "level": -19, "p": { "where": "inside" } },
+    "seed": 207
+  },
+
+  {
+    "id": "phones-kitchen-am-radio",
+    "name": "Kitchen table AM radio",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "A little table radio tuned to an AM talk station: dense, warm and a bit of static.",
+    "tags": ["am radio", "station", "static", "talk"],
+    "chain": [{ "m": "device.radio", "p": {} }],
+    "seed": 211
+  },
+  {
+    "id": "phones-pocket-transistor-radio",
+    "name": "Pocket transistor radio",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "A tiny 1960s transistor radio held to your ear, tinny and bright.",
+    "tags": ["am radio", "transistor", "tinny", "1960s"],
+    "chain": [{ "m": "device.radio", "p": { "era": "1960s" } }],
+    "seed": 212
+  },
+  {
+    "id": "phones-car-am-radio",
+    "name": "Car radio on the AM dial",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "An AM station on the dashboard radio, alternator whine and all, rolling down the road.",
+    "tags": ["am radio", "car", "road", "whine"],
+    "chain": [{ "m": "device.radio", "p": { "era": "car", "hum": 40 } }],
+    "bed": { "b": "car-highway", "level": -24 },
+    "seed": 213
+  },
+  {
+    "id": "phones-lost-between-stations",
+    "name": "Lost between stations",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "The dial between two stations: a faint voice drowning in static, whistles and another show.",
+    "tags": ["am radio", "static", "tuning", "faint"],
+    "chain": [{ "m": "device.radio", "p": { "tuning": "between" } }],
+    "seed": 214
+  },
+  {
+    "id": "phones-far-station-at-night",
+    "name": "Far-off station at night",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "A distant city's station skipping in after dark, swelling and fading with a whistle.",
+    "tags": ["am radio", "night", "fading", "distant"],
+    "chain": [{ "m": "device.radio", "p": { "fading": 85, "static": 55, "whistle": 45 } }],
+    "seed": 215
+  },
+  {
+    "id": "phones-talk-radio-caller",
+    "name": "Talk radio caller on air",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "A listener phoning in to a talk show, their cell call squashed again by the station.",
+    "tags": ["talk radio", "caller", "phone", "on air"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "flip", "crackle": 5 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 80 } },
+      { "m": "device.radio", "p": { "static": 12 } }
+    ],
+    "seed": 216
+  },
+  {
+    "id": "phones-weather-band-robot",
+    "name": "Weather band robot voice",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "The flat machine voice of a weather radio reading the forecast through a little speaker.",
+    "tags": ["weather radio", "robot", "monotone", "forecast"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "target": "set", "hz": 115, "amount": 90 } },
+      { "m": "lofi.companding", "p": { "bits": 6 } },
+      { "m": "device.scanner", "p": { "chirps": false, "tail": 30, "harsh": 30 } }
+    ],
+    "seed": 217
+  },
+  {
+    "id": "phones-pirate-radio-basement",
+    "name": "Pirate radio from a basement",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "An unlicensed station run from a cramped room: crunchy, crushed and barely holding on.",
+    "tags": ["pirate radio", "distorted", "underground", "am radio"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "closet", "mix": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 20 } },
+      { "m": "tone.broadcast", "p": { "density": 100 } },
+      { "m": "device.radio", "p": { "static": 40, "fading": 30 } }
+    ],
+    "seed": 218
+  },
+  {
+    "id": "phones-oldies-am-station",
+    "name": "Oldies station on AM",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "A golden-age disc jockey on the AM dial, the studio echo ringing behind every word.",
+    "tags": ["am radio", "oldies", "disc jockey", "echo"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 80, "warmth": 3 } },
+      { "m": "echo.slapback", "p": { "time": 90, "level": 45, "character": "room", "feedback": 25 } },
+      { "m": "device.radio", "p": { "static": 18 } }
+    ],
+    "seed": 219
+  },
+  {
+    "id": "phones-fm-fading-in-the-car",
+    "name": "FM fading in the car",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "An FM station at the edge of town: hiss rising and the voice fluttering as the car drives on.",
+    "tags": ["fm radio", "car", "flutter", "hiss"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 90, "presence": 4 } },
+      { "m": "spec.dropout", "p": { "loss": 12, "burst": 30, "conceal": "silence" } },
+      { "m": "space.room", "p": { "space": "car", "mix": 35 } }
+    ],
+    "bed": { "b": "radio-static", "level": -24, "p": { "band": "fm", "crackle": 0, "stations": 10, "intensity": 50 } },
+    "seed": 220
+  },
+  {
+    "id": "phones-emergency-broadcast-storm",
+    "name": "Emergency broadcast in a storm",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "An urgent bulletin crackling from the kitchen radio while thunder rolls outside the window.",
+    "tags": ["emergency", "radio", "storm", "thunder"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news", "density": 90 } },
+      { "m": "device.radio", "p": { "static": 45, "fading": 25 } }
+    ],
+    "bed": { "b": "storm", "level": -15, "duck": 3, "p": { "intensity": 60, "thunder": 6, "distance": 3000, "surface": "window" } },
+    "seed": 221
+  },
+  {
+    "id": "phones-spinning-the-dial",
+    "name": "Spinning the radio dial",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "Turning the knob past station after station, your voice flickering in and out of the static.",
+    "tags": ["radio", "tuning", "static", "flicker"],
+    "chain": [
+      { "m": "mod.gate", "p": { "pattern": "random", "tempo": 140, "steps": "8", "depth": 85, "smooth": 12 } },
+      { "m": "device.radio", "p": { "tuning": "between", "static": 50, "whistle": 40 } }
+    ],
+    "bed": { "b": "radio-static", "level": -20, "p": { "band": "am", "tuning": true, "intensity": 60 } },
+    "seed": 222
+  },
+  {
+    "id": "phones-radio-just-off-station",
+    "name": "Radio just off the station",
+    "cat": "phones",
+    "sub": "AM and FM radio",
+    "about": "The dial a hair off the station: the voice turns thin, edgy and buzzing.",
+    "tags": ["radio", "mistuned", "thin", "distorted"],
+    "chain": [{ "m": "device.radio", "p": { "tuning": "off", "static": 30 } }],
+    "seed": 223
+  },
+
+  {
+    "id": "phones-mission-control",
+    "name": "Mission control",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "Ground control talking to a spacecraft in orbit, a beep tone before and after each call.",
+    "tags": ["space", "mission", "beep", "radio"],
+    "chain": [{ "m": "device.spaceradio", "p": { "band": "orbit" } }],
+    "seed": 221
+  },
+  {
+    "id": "phones-calling-from-the-moon",
+    "name": "Calling from the moon",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "A voice from the lunar surface, narrow and hissing, the far echo coming back seconds later.",
+    "tags": ["space", "moon", "echo", "beep"],
+    "chain": [{ "m": "device.spaceradio", "p": { "echo": 50 } }],
+    "seed": 222
+  },
+  {
+    "id": "phones-deep-space-probe",
+    "name": "Signal from a deep space probe",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "A thin, fragile voice from the far edge of the solar system, breaking up in the hiss.",
+    "tags": ["space", "deep space", "faint", "hiss"],
+    "chain": [{ "m": "device.spaceradio", "p": { "band": "deep", "dropouts": 40, "hiss": 55 } }],
+    "seed": 223
+  },
+  {
+    "id": "phones-astronaut-helmet",
+    "name": "Astronaut in a helmet",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "Talking inside a closed space helmet, the visor ringing close around your mouth.",
+    "tags": ["space", "helmet", "astronaut", "beep"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 70 } },
+      { "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "start" } }
+    ],
+    "seed": 224
+  },
+  {
+    "id": "phones-launch-pad-countdown",
+    "name": "Launch pad countdown",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "The launch director on the loop while a rocket thunders off the pad in the distance.",
+    "tags": ["space", "launch", "rocket", "countdown"],
+    "chain": [{ "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "none" } }],
+    "bed": { "b": "rocket-launch", "level": -16, "duck": 4, "p": { "distance": "far" } },
+    "seed": 225
+  },
+  {
+    "id": "phones-video-call-from-orbit",
+    "name": "Video call from orbit",
+    "cat": "phones",
+    "sub": "Space and mission radio",
+    "about": "An astronaut calling home from the space station, the picture link swirling and catching.",
+    "tags": ["space", "video call", "codec", "astronaut"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "none", "echo": 15 } },
+      { "m": "spec.codec", "p": { "bitrate": 16, "warble": 35 } },
+      { "m": "spec.dropout", "p": { "loss": 10, "burst": 120, "conceal": "repeat" } }
+    ],
+    "seed": 226
+  },
+
+  {
+    "id": "phones-drive-through-speaker",
+    "name": "Drive-through speaker",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "The crushed, crackling order box at a fast food window.",
+    "tags": ["drive-through", "intercom", "speaker", "crushed"],
+    "chain": [{ "m": "device.intercom", "p": { "style": "drive" } }],
+    "seed": 231
+  },
+  {
+    "id": "phones-apartment-door-buzzer",
+    "name": "Apartment door buzzer",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "A visitor speaking from the metal box by the front door, buzzing and ringing.",
+    "tags": ["intercom", "door", "buzzer", "metal"],
+    "chain": [{ "m": "device.intercom", "p": {} }],
+    "seed": 232
+  },
+  {
+    "id": "phones-classroom-wall-speaker",
+    "name": "Classroom wall speaker",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "The morning announcements from the box above the blackboard, echoing round the room.",
+    "tags": ["intercom", "school", "classroom", "announcement"],
+    "chain": [{ "m": "device.intercom", "p": { "style": "school" } }],
+    "seed": 233
+  },
+  {
+    "id": "phones-baby-monitor",
+    "name": "Baby monitor",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "An old nursery monitor: hiss that breathes with every word and the soft room around you.",
+    "tags": ["baby monitor", "hiss", "nursery", "radio"],
+    "chain": [{ "m": "device.babymonitor", "p": {} }],
+    "seed": 234
+  },
+  {
+    "id": "phones-baby-monitor-neighbors",
+    "name": "Baby monitor hearing the neighbors",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "The monitor picks up a neighbor's cordless phone, garbled chatter crackling over you.",
+    "tags": ["baby monitor", "interference", "crackle", "neighbors"],
+    "chain": [{ "m": "device.babymonitor", "p": { "interference": 100, "crackle": 60, "hiss": 60, "vox": false } }],
+    "seed": 235
+  },
+  {
+    "id": "phones-elevator-emergency-phone",
+    "name": "Elevator emergency phone",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "Someone stuck in a lift, talking through the buzzing speaker grille in the steel box.",
+    "tags": ["elevator", "intercom", "metal", "emergency"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "elevator", "mix": 60 } },
+      { "m": "device.intercom", "p": { "box": 80, "buzz": 50 } }
+    ],
+    "seed": 236
+  },
+  {
+    "id": "phones-doorbell-camera",
+    "name": "Doorbell camera on the porch",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "A voice from the tiny speaker of a video doorbell, swirly and tinny, leaves rustling outside.",
+    "tags": ["doorbell", "camera", "tinny", "porch"],
+    "chain": [
+      { "m": "spec.codec", "p": { "bitrate": 12, "warble": 30 } },
+      { "m": "lofi.speaker", "p": { "size": "earbud", "push": 12, "rattle": 30 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -24 },
+    "seed": 237
+  },
+  {
+    "id": "phones-ship-engine-room-phone",
+    "name": "Ship's engine room phone",
+    "cat": "phones",
+    "sub": "Intercoms and little speakers",
+    "about": "A sailor shouting up to the bridge from below decks, the diesels roaring down the tinny line.",
+    "tags": ["ship", "intercom", "engine", "metal"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 30, "level": -4 } },
+      { "m": "device.intercom", "p": { "style": "office", "box": 70, "buzz": 15, "distortion": 55 } }
+    ],
+    "bed": { "b": "boat-engine", "level": -24, "p": { "boat": "ship", "seat": "bow", "waves": 50 } },
+    "seed": 238
+  },
+
+  {
+    "id": "phones-tin-can-phone",
+    "name": "Tin-can phone",
+    "cat": "phones",
+    "sub": "Homemade and toy phones",
+    "about": "Two soup cans and a taut string: thin, metallic and ringing, with a zing down the line.",
+    "tags": ["tin can", "string", "homemade", "metallic"],
+    "chain": [{ "m": "device.tincan", "p": {} }],
+    "seed": 241
+  },
+  {
+    "id": "phones-coffee-cans-long-string",
+    "name": "Coffee cans on a long string",
+    "cat": "phones",
+    "sub": "Homemade and toy phones",
+    "about": "Big coffee cans stretched across the yard, deeper and boomy, the string springing.",
+    "tags": ["tin can", "string", "long", "springy"],
+    "chain": [{ "m": "device.tincan", "p": { "can": "coffee", "length": 25 } }],
+    "seed": 242
+  },
+  {
+    "id": "phones-paper-cup-phone",
+    "name": "Paper cup phone",
+    "cat": "phones",
+    "sub": "Homemade and toy phones",
+    "about": "Two paper cups and a string: soft, papery and close.",
+    "tags": ["paper cup", "string", "homemade", "soft"],
+    "chain": [{ "m": "device.tincan", "p": { "can": "cup" } }],
+    "seed": 243
+  },
+  {
+    "id": "phones-garden-hose-phone",
+    "name": "Talking down a garden hose",
+    "cat": "phones",
+    "sub": "Homemade and toy phones",
+    "about": "Shouting into one end of a long hose: hollow, tubey and ringing.",
+    "tags": ["hose", "tube", "hollow", "homemade"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "sewer-pipe", "mix": 85, "size": 0.5 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 900, "resonance": 45 } },
+      { "m": "synth.resonator", "p": { "object": "long-tube", "mix": 35 } }
+    ],
+    "seed": 244
+  },
+  {
+    "id": "phones-plastic-toy-telephone",
+    "name": "Plastic toy telephone",
+    "cat": "phones",
+    "sub": "Homemade and toy phones",
+    "about": "A child's toy phone with a little speaker that rattles and crackles on loud words.",
+    "tags": ["toy", "phone", "rattle", "tiny"],
+    "chain": [
+      { "m": "device.toy", "p": { "chip": "sample", "rattle": 55 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 60 } }
+    ],
+    "seed": 245
+  }
+]

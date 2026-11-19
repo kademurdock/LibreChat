@@ -1,0 +1,979 @@
+[
+  {
+    "id": "studio-clean-up-my-recording",
+    "name": "Clean up my recording",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "One tap for a home recording: hum, hiss, clicks and harsh s sounds out, a gentle polish and steadier level.",
+    "tags": ["clean", "noise", "hum", "polish"],
+    "chain": [
+      { "m": "tone.dehum", "p": {} },
+      { "m": "tone.denoise", "p": { "reduce": 12 } },
+      { "m": "tone.declick", "p": {} },
+      { "m": "tone.deess", "p": {} },
+      { "m": "tone.eq", "p": {} },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 2.5 } }
+    ]
+  },
+  {
+    "id": "studio-remove-mains-hum",
+    "name": "Remove mains hum",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Notches out the 50 or 60 hertz hum and its harmonics, and trims the rumble underneath.",
+    "tags": ["hum", "mains", "clean", "rumble"],
+    "chain": [
+      { "m": "tone.dehum", "p": { "harmonics": 12 } },
+      { "m": "tone.eq", "p": { "band1Freq": 100, "band2Gain": 0, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-remove-buzz-from-lights-and-cables",
+    "name": "Remove buzz from lights and cables",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Takes out a raspy electrical buzz, many harmonics deep, and softens the fizzy top it leaves.",
+    "tags": ["buzz", "hum", "electrical", "clean"],
+    "chain": [
+      { "m": "tone.dehum", "p": { "harmonics": 40, "width": 3 } },
+      { "m": "tone.eq", "p": { "band1Freq": 120, "band2Freq": 180, "band2Gain": -3, "band4Gain": 0, "band6Freq": 7000, "band6Gain": -3 } }
+    ]
+  },
+  {
+    "id": "studio-reduce-background-noise-strongly",
+    "name": "Reduce background noise, strongly",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Deep noise reduction and quiet pauses, with a lift in presence to win back the clarity.",
+    "tags": ["noise", "hiss", "clean", "strong"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 30, "sensitivity": 70, "smoothing": 70 } },
+      { "m": "tone.gate", "p": { "reduce": 40, "hold": 100 } },
+      { "m": "tone.eq", "p": { "band4Freq": 3200, "band4Gain": 4, "band6Gain": 4 } }
+    ]
+  },
+  {
+    "id": "studio-noise-that-comes-and-goes",
+    "name": "Noise that comes and goes",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Keeps listening for traffic, rain or a changing room and removes it as it shifts.",
+    "tags": ["noise", "traffic", "changing", "clean"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 22, "learn": "follow", "sensitivity": 65 } },
+      { "m": "tone.eq", "p": { "band1Freq": 120, "band2Gain": 0, "band4Freq": 2500, "band4Gain": 4, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-fan-and-air-conditioner-noise",
+    "name": "Fan and air conditioner noise",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Removes the steady roar of a fan or air conditioner and the low drone under it.",
+    "tags": ["fan", "noise", "drone", "clean"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 22, "learn": "stretch" } },
+      { "m": "tone.eq", "p": { "band1Freq": 140, "band2Freq": 300, "band2Gain": -3, "band4Gain": 0, "band6Freq": 9000, "band6Gain": -2 } }
+    ]
+  },
+  {
+    "id": "studio-old-tape-hiss-removed",
+    "name": "Old tape hiss removed",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Takes the hiss off an old cassette or reel transfer, rolls off the fizzy top and gives back some body.",
+    "tags": ["hiss", "tape", "restore", "clean"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 22, "sensitivity": 60 } },
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Freq": 200, "band2Gain": 3, "band4Gain": 0, "band6Freq": 4500, "band6Gain": -7 } }
+    ]
+  },
+  {
+    "id": "studio-noisy-cafe-interview",
+    "name": "Noisy cafe interview",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Pulls a voice out of cafe chatter: changing noise removed, pauses quieted, words pushed forward.",
+    "tags": ["interview", "noise", "cafe", "clarity"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 24, "learn": "follow" } },
+      { "m": "tone.gate", "p": { "reduce": 20 } },
+      { "m": "tone.eq", "p": { "band1Freq": 180, "band2Gain": 0, "band4Freq": 2500, "band4Gain": 5, "band6Type": "highcut", "band6Freq": 9000 } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-wind-noise-on-an-outdoor-mic",
+    "name": "Wind noise on an outdoor mic",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "A steep low cut for the wind rumble and thumps of a recording made outside, then the gusty noise cleared.",
+    "tags": ["wind", "rumble", "outdoors", "clean"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 220, "band1Q": 60, "band2Gain": 0, "band4Gain": 0, "band6Gain": 0 } },
+      { "m": "tone.denoise", "p": { "reduce": 20, "learn": "follow" } }
+    ]
+  },
+  {
+    "id": "studio-tame-a-roomy-echo",
+    "name": "Tame a roomy echo",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Shortens the room ringing after each word and cuts the hollow boxiness and honk of a bare room.",
+    "tags": ["room", "echo", "dry", "clean"],
+    "chain": [
+      { "m": "tone.gate", "p": { "auto": false, "threshold": -38, "reduce": 18, "hold": 20, "release": 40 } },
+      { "m": "tone.eq", "p": { "band2Freq": 400, "band2Gain": -5, "band2Q": 40, "band3Freq": 1000, "band3Gain": -2, "band4Gain": 3 } },
+      { "m": "tone.compress", "p": { "threshold": -26, "ratio": 2 } }
+    ]
+  },
+  {
+    "id": "studio-reduce-background-noise-gently",
+    "name": "Reduce background noise, gently",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "A light touch of noise reduction and slightly quieter pauses that never sounds processed.",
+    "tags": ["noise", "gentle", "clean", "natural"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 9, "smoothing": 65 } },
+      { "m": "tone.gate", "p": { "reduce": 10, "release": 200 } }
+    ]
+  },
+  {
+    "id": "studio-record-crackle-removed",
+    "name": "Record crackle removed",
+    "cat": "studio",
+    "sub": "Cleanup",
+    "about": "Fills in record ticks, trims the turntable rumble and surface hiss, and brings the voice forward.",
+    "tags": ["vinyl", "crackle", "restore", "clean"],
+    "chain": [
+      { "m": "tone.declick", "p": { "sensitivity": 80 } },
+      { "m": "tone.denoise", "p": { "reduce": 12 } },
+      { "m": "tone.eq", "p": { "band1Freq": 150, "band2Gain": 0, "band3Freq": 1200, "band3Gain": 2.5, "band3Q": 20, "band4Gain": 0, "band6Type": "highcut", "band6Freq": 7500 } }
+    ]
+  },
+  {
+    "id": "studio-plosive-pops-softened",
+    "name": "Plosive pops softened",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Softens the bumps of p and b sounds hitting the mic with a steep low cut and a very fast catch.",
+    "tags": ["plosive", "pops", "mic", "clean"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 100, "band1Q": 70, "band2Gain": 0, "band4Gain": 0, "band6Gain": 0 } },
+      { "m": "tone.compress", "p": { "ratio": 6, "attack": 0.3, "release": 40 } }
+    ]
+  },
+  {
+    "id": "studio-mouth-clicks-and-lip-smacks",
+    "name": "Mouth clicks and lip smacks",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Fills in mouth clicks and lip smacks and smooths the sticky band they live in.",
+    "tags": ["clicks", "mouth", "voiceover", "clean"],
+    "chain": [
+      { "m": "tone.declick", "p": { "sensitivity": 75 } },
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Freq": 4500, "band4Gain": -2.5, "band4Q": 40, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-tame-harsh-s-sounds",
+    "name": "Tame harsh s sounds",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Turns down only the hiss of s and sh sounds, so they stop stabbing without a lisp.",
+    "tags": ["de-ess", "sibilance", "s sounds", "smooth"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -34, "range": 10 } }
+    ]
+  },
+  {
+    "id": "studio-strong-de-ess-for-bright-mics",
+    "name": "Strong de-ess for bright mics",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "A deep, wide de-ess from 5 kilohertz up and a notch on the whistle band, for mics that make every s whistle.",
+    "tags": ["de-ess", "sibilance", "bright", "strong"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -40, "freq": 5000, "range": 18, "mode": "top" } },
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Gain": 0, "band5Freq": 9000, "band5Gain": -6, "band5Q": 40, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-soft-s-sounds-for-whispers",
+    "name": "Soft s sounds for whispers",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "A lower, gentler de-ess and a slightly darker tone for quiet, breathy narration.",
+    "tags": ["de-ess", "whisper", "soft", "asmr"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -34, "freq": 5000, "range": 9 } },
+      { "m": "tone.tilt", "p": { "amount": -2.5, "pivot": 2500 } }
+    ]
+  },
+  {
+    "id": "studio-hear-what-the-de-esser-takes",
+    "name": "Hear what the de-esser takes",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Plays only the hiss the de-esser removes, so you can hear whether it is catching the right sounds.",
+    "tags": ["de-ess", "listen", "check", "sibilance"],
+    "chain": [
+      { "m": "tone.deess", "p": { "threshold": -36, "range": 14, "listen": true } }
+    ]
+  },
+  {
+    "id": "studio-bright-voice-smooth-s-sounds",
+    "name": "Bright voice, smooth s sounds",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Tips your whole voice brighter with sparkle on top, then keeps the s sounds from getting sharp.",
+    "tags": ["bright", "air", "de-ess", "polish"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": 4, "pivot": 2000 } },
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Gain": 0, "band6Freq": 12000, "band6Gain": 4 } },
+      { "m": "tone.deess", "p": { "threshold": -36, "range": 12 } }
+    ]
+  },
+  {
+    "id": "studio-headset-harshness-fix",
+    "name": "Headset harshness fix",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Takes the piercing edge off a gaming or office headset mic, calms its s sounds and steadies the level.",
+    "tags": ["headset", "harsh", "fix", "de-ess"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band3Freq": 2800, "band3Gain": -5, "band3Q": 50, "band4Freq": 6000, "band4Gain": -3, "band6Gain": 0 } },
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.compress", "p": { "threshold": -26, "ratio": 2 } }
+    ]
+  },
+  {
+    "id": "studio-breath-softener",
+    "name": "Breath softener",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Turns breaths and little noises between words down a bit without cutting them out.",
+    "tags": ["breath", "gate", "soft", "voiceover"],
+    "chain": [
+      { "m": "tone.gate", "p": { "auto": false, "threshold": -34, "reduce": 15, "hold": 30, "release": 180 } },
+      { "m": "tone.deess", "p": { "threshold": -32, "freq": 5000, "range": 6 } },
+      { "m": "tone.compress", "p": { "ratio": 2.5 } }
+    ]
+  },
+  {
+    "id": "studio-keyboard-clicks-under-your-voice",
+    "name": "Keyboard clicks under your voice",
+    "cat": "studio",
+    "sub": "Esses, clicks and breaths",
+    "about": "Picks out keyboard and mouse clicks between and under your words, and quiets the gaps.",
+    "tags": ["keyboard", "clicks", "stream", "clean"],
+    "chain": [
+      { "m": "tone.declick", "p": { "sensitivity": 65, "maxLen": 8 } },
+      { "m": "tone.denoise", "p": { "reduce": 16, "learn": "follow", "sensitivity": 65 } },
+      { "m": "tone.gate", "p": { "reduce": 30, "hold": 40, "release": 80 } }
+    ]
+  },
+  {
+    "id": "studio-warmth-boost",
+    "name": "Warmth boost",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "A gentle lift in the chest of your voice and a softer top for a fuller, cosier sound.",
+    "tags": ["warm", "eq", "full", "low"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Freq": 280, "band2Gain": 4, "band2Q": 30, "band4Gain": 0, "band6Gain": -1.5 } }
+    ]
+  },
+  {
+    "id": "studio-presence-boost",
+    "name": "Presence boost",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Lifts the consonant band so your words cut through and sound closer.",
+    "tags": ["presence", "eq", "clear", "forward"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Freq": 4000, "band4Gain": 5, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-air-on-top",
+    "name": "Air on top",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "A silky high shelf that adds breath and sparkle above the voice.",
+    "tags": ["air", "bright", "eq", "sparkle"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Gain": 0, "band6Freq": 6000, "band6Gain": 6 } }
+    ]
+  },
+  {
+    "id": "studio-less-boom-underneath",
+    "name": "Less boom underneath",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Clears out a boomy bottom end so the voice sits lighter and cleaner.",
+    "tags": ["boom", "low cut", "eq", "clean"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 160, "band2Freq": 220, "band2Gain": -3, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-de-mud-at-250-hertz",
+    "name": "De-mud at 250 hertz",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "A deep dip in the muddy low-mids, the most common fix for a cloudy voice.",
+    "tags": ["mud", "eq", "clarity", "low-mid"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": -7, "band2Q": 45, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-less-boxy-500-hertz",
+    "name": "Less boxy, 500 hertz",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Cuts the cardboard-box honk of a small room or a cheap mic.",
+    "tags": ["boxy", "eq", "room", "mid"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band3Freq": 500, "band3Gain": -7, "band3Q": 45, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-less-nasal-honk",
+    "name": "Less nasal honk",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "A narrow cut around 1 kilohertz that takes the nasal honk out of a voice.",
+    "tags": ["nasal", "eq", "honk", "mid"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band3Freq": 1000, "band3Gain": -6, "band3Q": 55, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-darker-for-a-harsh-mic",
+    "name": "Darker for a harsh mic",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Tips the whole voice darker and rounder when a mic sounds edgy or brittle.",
+    "tags": ["dark", "tilt", "smooth", "harsh"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -5 } }
+    ]
+  },
+  {
+    "id": "studio-brighter-for-a-dull-mic",
+    "name": "Brighter for a dull mic",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Tips the whole voice brighter when a recording sounds muffled or far away.",
+    "tags": ["bright", "tilt", "clear", "dull"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": 6, "pivot": 1200 } }
+    ]
+  },
+  {
+    "id": "studio-thin-recording-warm-up",
+    "name": "Thin recording warm-up",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Puts real body back into a thin, weedy recording with a big low lift and a touch of tape.",
+    "tags": ["thin", "warm", "body", "restore"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 50, "band2Type": "lowshelf", "band2Gain": 9, "band3Freq": 450, "band3Gain": 2, "band4Gain": 0 } },
+      { "m": "lofi.saturate", "p": { "drive": 6, "bump": 4, "speed": "30" } }
+    ]
+  },
+  {
+    "id": "studio-radio-mid-boost",
+    "name": "Radio mid boost",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Pushes the middle of the voice forward, the way radio voices cut through a car speaker.",
+    "tags": ["mid", "radio", "forward", "eq"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 120, "band2Gain": 0, "band3Freq": 1500, "band3Gain": 5, "band4Gain": 0, "band6Gain": 0 } }
+    ]
+  },
+  {
+    "id": "studio-too-close-to-the-mic",
+    "name": "Too close to the mic",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Undoes the boomy chest and spitty s sounds of talking right on the mic, and steps you back a little.",
+    "tags": ["proximity", "close", "boom", "fix"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Gain": -6, "band4Gain": 3, "band6Gain": 0 } },
+      { "m": "tone.deess", "p": { "threshold": -32 } },
+      { "m": "space.room", "p": { "space": "ambience", "mix": 10 } }
+    ]
+  },
+  {
+    "id": "studio-ribbon-mic-smoothness",
+    "name": "Ribbon mic smoothness",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "The soft, rounded top and gentle weight of a classic ribbon microphone.",
+    "tags": ["ribbon", "mic", "smooth", "vintage"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Freq": 200, "band2Gain": 3, "band4Gain": 0, "band5Freq": 3000, "band5Gain": -2, "band6Freq": 5500, "band6Gain": -8 } }
+    ]
+  },
+  {
+    "id": "studio-vintage-dynamic-mic",
+    "name": "Vintage dynamic mic",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "A stage mic sound: trimmed lows, a firm upper-middle peak and a top that stops short.",
+    "tags": ["dynamic", "mic", "presence", "vintage"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 150, "band2Gain": 0, "band4Freq": 2500, "band4Gain": 5, "band4Q": 30, "band6Type": "highcut", "band6Freq": 9000 } }
+    ]
+  },
+  {
+    "id": "studio-extra-clear-speech",
+    "name": "Extra clear speech",
+    "cat": "studio",
+    "sub": "Tone and EQ",
+    "about": "Strips the low rumble, lifts the consonants and evens the level so every word is easy to follow.",
+    "tags": ["clarity", "speech", "hearing", "clear"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 220, "band2Gain": 0, "band3Freq": 500, "band3Gain": -3, "band4Freq": 3200, "band4Gain": 6, "band6Gain": 0 } },
+      { "m": "tone.compress", "p": { "threshold": -30 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-gentle-compression",
+    "name": "Gentle compression",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "A light, slow touch that smooths the level without anyone hearing it work.",
+    "tags": ["compressor", "gentle", "level", "smooth"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -26, "ratio": 2, "attack": 15, "release": 250 } }
+    ]
+  },
+  {
+    "id": "studio-firm-voiceover-compression",
+    "name": "Firm voiceover compression",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "A tighter hold on your level for voiceover and narration that sits steady in a mix.",
+    "tags": ["compressor", "voiceover", "steady", "level"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4, "release": 100, "knee": 3 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-heavy-squash",
+    "name": "Heavy squash",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "Crushes the level flat with a fast, hard compressor, every breath and word the same size.",
+    "tags": ["compressor", "heavy", "squash", "loud"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -42, "ratio": 12, "attack": 0.5, "release": 60 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-parallel-punch",
+    "name": "Parallel punch",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "A crushed copy blended under your natural voice for density that keeps its life.",
+    "tags": ["compressor", "parallel", "punch", "dense"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -44, "ratio": 20, "attack": 0.1, "release": 40, "mix": 45 } }
+    ]
+  },
+  {
+    "id": "studio-slow-levelling",
+    "name": "Slow levelling",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "A slow, soft-kneed leveller that rides loud and quiet sentences toward each other.",
+    "tags": ["leveller", "slow", "level", "smooth"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -32, "attack": 60, "release": 900, "knee": 18 } }
+    ]
+  },
+  {
+    "id": "studio-whisper-booster",
+    "name": "Whisper booster",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "Brings quiet, soft-spoken words right up, adds warmth to the breath and softens the hiss of a whisper.",
+    "tags": ["whisper", "quiet", "lift", "compressor"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -48, "ratio": 6, "attack": 3, "release": 200 } },
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Freq": 220, "band2Gain": 4, "band4Gain": 0, "band6Freq": 8000, "band6Gain": -3 } },
+      { "m": "tone.deess", "p": { "threshold": -34, "freq": 6000 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-shout-proof-mic",
+    "name": "Shout-proof mic",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "Leaves normal talking alone and grabs sudden loud words and laughs before they overload.",
+    "tags": ["limiter", "loud", "peaks", "safety"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -16, "ratio": 20, "attack": 0.5, "release": 80 } }
+    ]
+  },
+  {
+    "id": "studio-broadcast-loud",
+    "name": "Broadcast loud",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "The full on-air squeeze: four-band compression and a limiter for a loud, dense voice.",
+    "tags": ["broadcast", "loud", "dense", "radio"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 90 } }
+    ]
+  },
+  {
+    "id": "studio-gentle-podcast-processor",
+    "name": "Gentle podcast processor",
+    "cat": "studio",
+    "sub": "Dynamics",
+    "about": "A light multiband polish that evens the level for a lean, clear and natural podcast voice.",
+    "tags": ["podcast", "gentle", "processor", "level"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 30, "warmth": -3, "presence": 5 } }
+    ]
+  },
+  {
+    "id": "studio-podcast-finish-full-chain",
+    "name": "Podcast finish, full chain",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Everything a podcast voice needs in order: noise, clicks, s sounds and mud out, then a warm, close broadcast finish.",
+    "tags": ["podcast", "chain", "clean", "finish"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 10 } },
+      { "m": "tone.declick", "p": {} },
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.eq", "p": { "band2Freq": 300, "band2Gain": -3, "band4Freq": 4000, "band4Gain": 3, "band6Gain": 0 } },
+      { "m": "tone.compress", "p": { "ratio": 2.5 } },
+      { "m": "tone.broadcast", "p": { "style": "podcast", "warmth": 4, "presence": 2 } }
+    ]
+  },
+  {
+    "id": "studio-warm-radio-voice",
+    "name": "Warm radio voice",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A deep, smooth, close radio sound with a warm chest and a soft top.",
+    "tags": ["radio", "warm", "deep", "finish"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 65, "warmth": 4 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 40 } }
+    ]
+  },
+  {
+    "id": "studio-audiobook-clean-and-even",
+    "name": "Audiobook, clean and even",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A transparent narration chain: quiet floor, no clicks, soft s sounds and a slow, even level.",
+    "tags": ["audiobook", "narration", "clean", "even"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 8 } },
+      { "m": "tone.declick", "p": { "sensitivity": 60 } },
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 2.5, "attack": 20, "release": 300 } },
+      { "m": "tone.eq", "p": { "band1Freq": 70, "band2Gain": -1.5, "band4Gain": 1, "band6Gain": 1.5 } }
+    ]
+  },
+  {
+    "id": "studio-commercial-voiceover-bright",
+    "name": "Commercial voiceover, bright",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A loud, crisp, airy advert finish that jumps out of a mix.",
+    "tags": ["commercial", "bright", "loud", "voiceover"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 75, "presence": 4 } },
+      { "m": "tone.eq", "p": { "band2Gain": 0, "band4Gain": 0, "band6Freq": 9000, "band6Gain": 5 } }
+    ]
+  },
+  {
+    "id": "studio-deep-narration",
+    "name": "Deep narration",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A weighty, warm narration sound: a fuller chest, a slightly bigger body and a steady level.",
+    "tags": ["narration", "deep", "warm", "weight"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 60 } },
+      { "m": "pitch.voice", "p": { "formant": -0.5 } },
+      { "m": "tone.compress", "p": { "threshold": -26, "attack": 10, "release": 200 } }
+    ]
+  },
+  {
+    "id": "studio-phone-recording-made-better",
+    "name": "Phone recording made better",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Rebuilds the missing chest and top of a phone voice memo and takes the honk out of the middle.",
+    "tags": ["phone", "restore", "eq", "memo"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 12 } },
+      { "m": "tone.eq", "p": { "band1Freq": 70, "band2Type": "lowshelf", "band2Freq": 200, "band2Gain": 7, "band3Freq": 1000, "band3Gain": -3, "band4Gain": 0, "band6Freq": 6000, "band6Gain": 6 } },
+      { "m": "tone.compress", "p": { "threshold": -26 } }
+    ]
+  },
+  {
+    "id": "studio-telephone-to-studio",
+    "name": "Telephone to studio",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A strong rescue for a call recording: big low and high shelves, harmonics to fill the gaps, soft s sounds.",
+    "tags": ["telephone", "restore", "rescue", "eq"],
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 60, "band2Type": "lowshelf", "band2Freq": 160, "band2Gain": 10, "band3Freq": 1700, "band3Gain": -4, "band4Gain": 0, "band6Freq": 4500, "band6Gain": 9 } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } },
+      { "m": "tone.deess", "p": { "threshold": -32 } }
+    ]
+  },
+  {
+    "id": "studio-laptop-mic-rescue",
+    "name": "Laptop mic rescue",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Fixes a laptop's built-in mic: fan noise down, boxy middle cut, words lifted forward.",
+    "tags": ["laptop", "mic", "rescue", "boxy"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 16 } },
+      { "m": "tone.eq", "p": { "band1Freq": 110, "band2Freq": 450, "band2Gain": -5, "band2Q": 40, "band4Gain": 3, "band6Gain": 2 } },
+      { "m": "tone.compress", "p": { "threshold": -28 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-earbud-mic-rescue",
+    "name": "Earbud mic rescue",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Fills out the thin, papery sound of an earbud microphone and calms its harsh middle.",
+    "tags": ["earbud", "mic", "rescue", "thin"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "reduce": 14, "learn": "follow" } },
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Gain": 5, "band4Freq": 2500, "band4Gain": -3, "band6Gain": 4 } },
+      { "m": "tone.compress", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-far-from-the-mic-rescue",
+    "name": "Far from the mic rescue",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Brings a voice recorded across the room closer: room tails cut, chest warmth back, mud out, presence up.",
+    "tags": ["distance", "rescue", "room", "closer"],
+    "chain": [
+      { "m": "tone.gate", "p": { "auto": false, "threshold": -40, "reduce": 20, "hold": 20, "release": 60 } },
+      { "m": "tone.eq", "p": { "band2Type": "lowshelf", "band2Freq": 150, "band2Gain": 3, "band3Freq": 400, "band3Gain": -4, "band4Freq": 2800, "band4Gain": 5 } },
+      { "m": "tone.compress", "p": { "threshold": -36, "ratio": 5 } },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-voice-memo-made-better",
+    "name": "Voice memo made better",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Tidies a quick voice memo: noise learned as it goes, rumble and honk cut, body added and a gentle podcast polish.",
+    "tags": ["memo", "phone", "polish", "clean"],
+    "chain": [
+      { "m": "tone.denoise", "p": { "learn": "follow" } },
+      { "m": "tone.eq", "p": { "band1Freq": 90, "band2Type": "lowshelf", "band2Freq": 180, "band2Gain": 4, "band3Freq": 1000, "band3Gain": -3, "band4Gain": 0, "band6Gain": 0 } },
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 50, "warmth": 2 } }
+    ]
+  },
+  {
+    "id": "studio-video-voiceover-clear-and-punchy",
+    "name": "Video voiceover, clear and punchy",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A close, forward, tightly levelled voice that stays clear over music and sound effects.",
+    "tags": ["video", "voiceover", "punchy", "clear"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 65, "presence": 3 } },
+      { "m": "tone.deess", "p": { "threshold": -30 } }
+    ]
+  },
+  {
+    "id": "studio-livestream-mic-chain",
+    "name": "Livestream mic chain",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "A quick live-friendly chain: quiet pauses, firm level, polish and soft s sounds.",
+    "tags": ["live", "stream", "chain", "mic"],
+    "chain": [
+      { "m": "tone.gate", "p": { "reduce": 20 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 4, "attack": 3 } },
+      { "m": "tone.eq", "p": {} },
+      { "m": "tone.deess", "p": {} },
+      { "m": "tone.loudness", "p": {} }
+    ]
+  },
+  {
+    "id": "studio-collar-mic-made-brighter",
+    "name": "Collar mic made brighter",
+    "cat": "studio",
+    "sub": "Voiceover finishes",
+    "about": "Opens up a clip-on mic buried under clothing: chesty boom down, clarity and air back on top.",
+    "tags": ["lapel", "mic", "rescue", "bright"],
+    "chain": [
+      { "m": "tone.declick", "p": { "sensitivity": 55 } },
+      { "m": "tone.eq", "p": { "band2Freq": 300, "band2Gain": -3, "band4Freq": 3500, "band4Gain": 5, "band6Freq": 6000, "band6Gain": 7 } },
+      { "m": "tone.deess", "p": { "threshold": -30 } },
+      { "m": "tone.compress", "p": { "threshold": -26 } }
+    ]
+  },
+  {
+    "id": "studio-tighten-pauses",
+    "name": "Tighten pauses",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Shortens long pauses to a comfortable breath so the read keeps moving.",
+    "tags": ["pauses", "edit", "trim", "pace"],
+    "chain": [
+      { "m": "time.trim", "p": { "longerThan": 400, "keepMs": 200 } }
+    ]
+  },
+  {
+    "id": "studio-tighten-pauses-hard",
+    "name": "Tighten pauses hard",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Cuts every gap down to a sliver for a fast, tightly edited read.",
+    "tags": ["pauses", "edit", "trim", "fast"],
+    "chain": [
+      { "m": "time.trim", "p": { "longerThan": 180, "keepMs": 50 } }
+    ]
+  },
+  {
+    "id": "studio-slow-down-clearly",
+    "name": "Slow down clearly",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Plays your speech a bit slower without changing your pitch, for easier listening.",
+    "tags": ["slow", "tempo", "clear", "pace"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } }
+    ]
+  },
+  {
+    "id": "studio-slow-down-a-lot-for-learning",
+    "name": "Slow down a lot for learning",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Much slower speech at your own pitch, for transcribing or learning words.",
+    "tags": ["slow", "tempo", "learning", "transcribe"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.7 } }
+    ]
+  },
+  {
+    "id": "studio-speed-up-a-little",
+    "name": "Speed up a little",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Nudges the pace up a touch without changing your pitch, to tighten a slow read.",
+    "tags": ["fast", "tempo", "pace", "tight"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.12 } }
+    ]
+  },
+  {
+    "id": "studio-fast-listening-speed",
+    "name": "Fast listening speed",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Half again as fast at your own pitch, for skimming long recordings.",
+    "tags": ["fast", "tempo", "skim", "speed"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 1.5 } }
+    ]
+  },
+  {
+    "id": "studio-tight-radio-edit",
+    "name": "Tight radio edit",
+    "cat": "studio",
+    "sub": "Timing and pace",
+    "about": "Pauses trimmed, pace nudged up and a light broadcast squeeze, like a radio producer's edit.",
+    "tags": ["edit", "radio", "trim", "fast"],
+    "chain": [
+      { "m": "time.trim", "p": { "longerThan": 200, "keepMs": 60 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.06 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 55 } }
+    ]
+  },
+  {
+    "id": "studio-a-touch-of-room",
+    "name": "A touch of room",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "A little natural living-room air behind a very dry voice, so it sounds less boxed in.",
+    "tags": ["room", "natural", "air", "space"],
+    "chain": [
+      { "m": "space.room", "p": { "mix": 12, "distance": 25 } }
+    ]
+  },
+  {
+    "id": "studio-small-vocal-booth",
+    "name": "Small vocal booth",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "The tight, padded sound of a small recording booth around your voice.",
+    "tags": ["booth", "small", "dry", "room"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "closet", "mix": 18, "distance": 20 } }
+    ]
+  },
+  {
+    "id": "studio-studio-plate-for-voice",
+    "name": "Studio plate for voice",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "A short, bright plate reverb that adds polish without pushing the voice back.",
+    "tags": ["plate", "reverb", "polish", "studio"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "plate", "mix": 15 } }
+    ]
+  },
+  {
+    "id": "studio-warm-hall-for-narration",
+    "name": "Warm hall for narration",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "A soft, dark hall tail for storytelling and trailers, kept low so words stay clear.",
+    "tags": ["hall", "reverb", "warm", "narration"],
+    "chain": [
+      { "m": "space.reverb", "p": { "size": 70, "decay": 2.2, "damping": 65, "mix": 14 } }
+    ]
+  },
+  {
+    "id": "studio-wide-stereo-double",
+    "name": "Wide stereo double",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "Two more takes of your voice, a hair late and off pitch, spread wide around the first.",
+    "tags": ["double", "stereo", "wide", "thick"],
+    "chain": [
+      { "m": "stereo.double", "p": { "timing": 24, "pitch": 14, "level": -6 } }
+    ]
+  },
+  {
+    "id": "studio-stereo-spread-mono-safe",
+    "name": "Stereo spread, mono safe",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "Spreads a mono voice into gentle stereo that still sounds right on one speaker.",
+    "tags": ["stereo", "wide", "mono", "spread"],
+    "chain": [
+      { "m": "stereo.width", "p": { "width": 1.6, "fill": 70 } }
+    ]
+  },
+  {
+    "id": "studio-tape-warmth",
+    "name": "Tape warmth",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "The soft squash, rounded highs and low bump of slow analogue tape: darker, rounder and warmer.",
+    "tags": ["tape", "warm", "analogue", "saturation"],
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 16, "bump": 8, "speed": "7.5" } },
+      { "m": "tone.tilt", "p": { "amount": -3 } }
+    ]
+  },
+  {
+    "id": "studio-tube-preamp-warmth",
+    "name": "Tube preamp warmth",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "A valve glow blended under your voice: richer harmonics with a brighter, forward edge.",
+    "tags": ["tube", "warm", "preamp", "harmonics"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "warm", "tone": 45, "mix": 45 } },
+      { "m": "tone.eq", "p": { "band2Freq": 200, "band2Gain": 2, "band4Freq": 3500, "band4Gain": 3 } }
+    ]
+  },
+  {
+    "id": "studio-console-glue",
+    "name": "Console glue",
+    "cat": "studio",
+    "sub": "Room, stereo and colour",
+    "about": "Mixing desk colour: a little transformer grit, a forward middle and slow compression that pulls it together.",
+    "tags": ["console", "glue", "warm", "compressor"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "warm", "mix": 35 } },
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Gain": 0, "band4Freq": 2500, "band4Gain": 2.5, "band4Q": 20 } },
+      { "m": "tone.compress", "p": { "threshold": -20, "ratio": 2, "attack": 30, "release": 300, "knee": 10 } }
+    ]
+  },
+  {
+    "id": "studio-a-touch-deeper",
+    "name": "A touch deeper",
+    "cat": "studio",
+    "sub": "Voice touch-ups",
+    "about": "Lowers your voice by one semitone with a slightly bigger body, still clearly you.",
+    "tags": ["deeper", "pitch", "subtle", "voiceover"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -0.5 } }
+    ]
+  },
+  {
+    "id": "studio-a-touch-lighter",
+    "name": "A touch lighter",
+    "cat": "studio",
+    "sub": "Voice touch-ups",
+    "about": "Lifts your voice by one semitone with a little more brightness, for a fresher read.",
+    "tags": ["lighter", "pitch", "subtle", "voiceover"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 0.5 } }
+    ]
+  },
+  {
+    "id": "studio-fuller-timbre-same-pitch",
+    "name": "Fuller timbre, same pitch",
+    "cat": "studio",
+    "sub": "Voice touch-ups",
+    "about": "Keeps your note exactly but gives your voice a larger, chestier body.",
+    "tags": ["timbre", "fuller", "subtle", "body"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -1.5 } }
+    ]
+  },
+  {
+    "id": "studio-leaner-timbre-same-pitch",
+    "name": "Leaner timbre, same pitch",
+    "cat": "studio",
+    "sub": "Voice touch-ups",
+    "about": "Keeps your note exactly but gives your voice a slimmer, lighter body.",
+    "tags": ["timbre", "leaner", "subtle", "light"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 1.5 } }
+    ]
+  },
+  {
+    "id": "studio-calmer-steadier-melody",
+    "name": "Calmer, steadier melody",
+    "cat": "studio",
+    "sub": "Voice touch-ups",
+    "about": "Gently evens out the ups and downs of your pitch and level for a calm, measured read.",
+    "tags": ["calm", "steady", "pitch", "narration"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 35 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 2, "attack": 20, "release": 300 } }
+    ]
+  }
+]
