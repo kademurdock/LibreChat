@@ -3370,6 +3370,68 @@
   "live": true
  },
  {
+  "id": "lofi.downsample",
+  "name": "Sample rate reducer",
+  "family": "lofi",
+  "about": "Stores the sound at a lower sample rate, like an early sampler: gritty and ringing, or clean and dull like an old voice recorder.",
+  "params": [
+   {
+    "id": "rate",
+    "name": "New sample rate",
+    "type": "number",
+    "min": 500,
+    "max": 48000,
+    "step": 50,
+    "def": 8000,
+    "unit": "hz",
+    "rand": [
+     2500,
+     14000
+    ]
+   },
+   {
+    "id": "style",
+    "name": "Sound",
+    "type": "choice",
+    "def": "steps",
+    "options": [
+     {
+      "v": "steps",
+      "name": "Gritty steps"
+     },
+     {
+      "v": "lines",
+      "name": "Straight lines, softer"
+     },
+     {
+      "v": "clean",
+      "name": "Clean and dull"
+     }
+    ]
+   },
+   {
+    "id": "mix",
+    "name": "Mix",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 100,
+    "unit": "percent",
+    "rand": [
+     70,
+     100
+    ]
+   }
+  ],
+  "stereo": "keep",
+  "warps": false,
+  "cost": 1,
+  "side": false,
+  "surprise": true,
+  "live": false
+ },
+ {
   "id": "lofi.drive",
   "name": "Distortion",
   "family": "lofi",
@@ -5605,6 +5667,290 @@
   "live": false
  },
  {
+  "id": "pitch.harmonizer",
+  "name": "Harmony in a key",
+  "family": "pitch",
+  "about": "Adds one or two harmony singers who stay in the key of the song: a third above in C major is sometimes four semitones and sometimes three, as a real singer would do it.",
+  "params": [
+   {
+    "id": "key",
+    "name": "Key",
+    "type": "choice",
+    "def": "C",
+    "options": [
+     {
+      "v": "C",
+      "name": "C"
+     },
+     {
+      "v": "C#",
+      "name": "C sharp"
+     },
+     {
+      "v": "D",
+      "name": "D"
+     },
+     {
+      "v": "D#",
+      "name": "E flat"
+     },
+     {
+      "v": "E",
+      "name": "E"
+     },
+     {
+      "v": "F",
+      "name": "F"
+     },
+     {
+      "v": "F#",
+      "name": "F sharp"
+     },
+     {
+      "v": "G",
+      "name": "G"
+     },
+     {
+      "v": "G#",
+      "name": "A flat"
+     },
+     {
+      "v": "A",
+      "name": "A"
+     },
+     {
+      "v": "A#",
+      "name": "B flat"
+     },
+     {
+      "v": "B",
+      "name": "B"
+     }
+    ]
+   },
+   {
+    "id": "scale",
+    "name": "Scale",
+    "type": "choice",
+    "def": "major",
+    "options": [
+     {
+      "v": "major",
+      "name": "Major"
+     },
+     {
+      "v": "minor",
+      "name": "Minor"
+     },
+     {
+      "v": "harmonic-minor",
+      "name": "Harmonic minor"
+     },
+     {
+      "v": "dorian",
+      "name": "Dorian"
+     },
+     {
+      "v": "mixolydian",
+      "name": "Mixolydian"
+     },
+     {
+      "v": "pentatonic",
+      "name": "Pentatonic major"
+     },
+     {
+      "v": "minor-pentatonic",
+      "name": "Pentatonic minor"
+     },
+     {
+      "v": "blues",
+      "name": "Blues"
+     }
+    ]
+   },
+   {
+    "id": "part1",
+    "name": "First harmony",
+    "type": "choice",
+    "def": "third-up",
+    "options": [
+     {
+      "v": "off",
+      "name": "Off"
+     },
+     {
+      "v": "third-up",
+      "name": "A third above"
+     },
+     {
+      "v": "fourth-up",
+      "name": "A fourth above"
+     },
+     {
+      "v": "fifth-up",
+      "name": "A fifth above"
+     },
+     {
+      "v": "sixth-up",
+      "name": "A sixth above"
+     },
+     {
+      "v": "octave-up",
+      "name": "An octave above"
+     },
+     {
+      "v": "third-down",
+      "name": "A third below"
+     },
+     {
+      "v": "fourth-down",
+      "name": "A fourth below"
+     },
+     {
+      "v": "fifth-down",
+      "name": "A fifth below"
+     },
+     {
+      "v": "sixth-down",
+      "name": "A sixth below"
+     },
+     {
+      "v": "octave-down",
+      "name": "An octave below"
+     },
+     {
+      "v": "unison",
+      "name": "The same note, a second singer"
+     }
+    ]
+   },
+   {
+    "id": "part2",
+    "name": "Second harmony",
+    "type": "choice",
+    "def": "off",
+    "options": [
+     {
+      "v": "off",
+      "name": "Off"
+     },
+     {
+      "v": "third-up",
+      "name": "A third above"
+     },
+     {
+      "v": "fourth-up",
+      "name": "A fourth above"
+     },
+     {
+      "v": "fifth-up",
+      "name": "A fifth above"
+     },
+     {
+      "v": "sixth-up",
+      "name": "A sixth above"
+     },
+     {
+      "v": "octave-up",
+      "name": "An octave above"
+     },
+     {
+      "v": "third-down",
+      "name": "A third below"
+     },
+     {
+      "v": "fourth-down",
+      "name": "A fourth below"
+     },
+     {
+      "v": "fifth-down",
+      "name": "A fifth below"
+     },
+     {
+      "v": "sixth-down",
+      "name": "A sixth below"
+     },
+     {
+      "v": "octave-down",
+      "name": "An octave below"
+     },
+     {
+      "v": "unison",
+      "name": "The same note, a second singer"
+     }
+    ]
+   },
+   {
+    "id": "snap",
+    "name": "Snap the harmony to the notes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "timbre",
+    "name": "Different singers",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     30,
+     80
+    ]
+   },
+   {
+    "id": "spread",
+    "name": "Stereo spread",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "level",
+    "name": "Harmony level",
+    "type": "number",
+    "min": -24,
+    "max": 6,
+    "step": 0.5,
+    "def": -4,
+    "unit": "db",
+    "rand": [
+     -9,
+     -2
+    ]
+   },
+   {
+    "id": "lead",
+    "name": "Keep your own voice",
+    "type": "bool",
+    "def": true
+   }
+  ],
+  "stereo": "make",
+  "warps": false,
+  "cost": 5,
+  "side": false,
+  "surprise": true,
+  "live": false
+ },
+ {
   "id": "pitch.harmony",
   "name": "Harmony voices",
   "family": "pitch",
@@ -6521,6 +6867,142 @@
   "live": true
  },
  {
+  "id": "space.hall",
+  "name": "Hall reverb",
+  "family": "space",
+  "about": "A concert hall around your voice: a short gap, wide early echoes, then a long warm tail. The classic reverb for a slow song.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Hall size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     35,
+     90
+    ]
+   },
+   {
+    "id": "decay",
+    "name": "Decay time",
+    "type": "number",
+    "min": 0.5,
+    "max": 12,
+    "step": 0.1,
+    "def": 2.6,
+    "unit": "seconds",
+    "rand": [
+     1.6,
+     5
+    ]
+   },
+   {
+    "id": "predelay",
+    "name": "Gap before the hall answers",
+    "type": "number",
+    "min": 0,
+    "max": 150,
+    "step": 1,
+    "def": 25,
+    "unit": "ms",
+    "rand": [
+     10,
+     60
+    ]
+   },
+   {
+    "id": "damping",
+    "name": "Darkness",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     25,
+     70
+    ]
+   },
+   {
+    "id": "warmth",
+    "name": "Low end bloom",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     20,
+     70
+    ]
+   },
+   {
+    "id": "early",
+    "name": "Early echoes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     75
+    ]
+   },
+   {
+    "id": "lowcut",
+    "name": "Low cut",
+    "type": "number",
+    "min": 20,
+    "max": 500,
+    "step": 5,
+    "def": 120,
+    "unit": "hz"
+   },
+   {
+    "id": "width",
+    "name": "Width",
+    "type": "number",
+    "min": 0,
+    "max": 1.5,
+    "step": 0.05,
+    "def": 1.1,
+    "unit": "x",
+    "rand": [
+     0.8,
+     1.4
+    ]
+   },
+   {
+    "id": "mix",
+    "name": "Mix",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 28,
+    "unit": "percent",
+    "rand": [
+     15,
+     40
+    ]
+   }
+  ],
+  "stereo": "make",
+  "warps": false,
+  "cost": 3,
+  "side": false,
+  "surprise": true,
+  "live": true
+ },
+ {
   "id": "space.muffle",
   "name": "Through a wall",
   "family": "space",
@@ -6660,6 +7142,128 @@
   "stereo": "make",
   "warps": false,
   "cost": 4,
+  "side": false,
+  "surprise": true,
+  "live": true
+ },
+ {
+  "id": "space.plate",
+  "name": "Plate reverb",
+  "family": "space",
+  "about": "The bright, smooth studio reverb from a ringing steel plate: dense from the first instant, with no echoes in it. A classic on singing.",
+  "params": [
+   {
+    "id": "decay",
+    "name": "Decay time",
+    "type": "number",
+    "min": 0.3,
+    "max": 8,
+    "step": 0.1,
+    "def": 1.8,
+    "unit": "seconds",
+    "rand": [
+     0.9,
+     3.5
+    ]
+   },
+   {
+    "id": "predelay",
+    "name": "Gap before the plate",
+    "type": "number",
+    "min": 0,
+    "max": 120,
+    "step": 1,
+    "def": 0,
+    "unit": "ms",
+    "rand": [
+     0,
+     40
+    ]
+   },
+   {
+    "id": "tone",
+    "name": "Brightness",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent",
+    "rand": [
+     40,
+     85
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Plate size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     80
+    ]
+   },
+   {
+    "id": "modulation",
+    "name": "Swirl",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent",
+    "rand": [
+     5,
+     40
+    ]
+   },
+   {
+    "id": "lowcut",
+    "name": "Low cut",
+    "type": "number",
+    "min": 20,
+    "max": 600,
+    "step": 5,
+    "def": 180,
+    "unit": "hz"
+   },
+   {
+    "id": "width",
+    "name": "Width",
+    "type": "number",
+    "min": 0,
+    "max": 1.5,
+    "step": 0.05,
+    "def": 1,
+    "unit": "x",
+    "rand": [
+     0.8,
+     1.3
+    ]
+   },
+   {
+    "id": "mix",
+    "name": "Mix",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     15,
+     45
+    ]
+   }
+  ],
+  "stereo": "make",
+  "warps": false,
+  "cost": 3,
   "side": false,
   "surprise": true,
   "live": true
@@ -13321,6 +13925,66 @@
   "side": false,
   "surprise": false,
   "live": true
+ },
+ {
+  "id": "tone.limit",
+  "name": "Limiter",
+  "family": "tone",
+  "about": "Stops the loudest moments at a ceiling so nothing clips. Push the sound into it to make everything louder and denser.",
+  "params": [
+   {
+    "id": "push",
+    "name": "Push into the limiter",
+    "type": "number",
+    "min": 0,
+    "max": 24,
+    "step": 0.5,
+    "def": 0,
+    "unit": "db"
+   },
+   {
+    "id": "ceiling",
+    "name": "Peak ceiling",
+    "type": "number",
+    "min": -12,
+    "max": 0,
+    "step": 0.1,
+    "def": -1,
+    "unit": "db"
+   },
+   {
+    "id": "release",
+    "name": "Release",
+    "type": "number",
+    "min": 10,
+    "max": 1000,
+    "step": 1,
+    "def": 80,
+    "unit": "ms"
+   },
+   {
+    "id": "lookahead",
+    "name": "Look ahead",
+    "type": "number",
+    "min": 0.5,
+    "max": 10,
+    "step": 0.5,
+    "def": 5,
+    "unit": "ms"
+   },
+   {
+    "id": "truePeak",
+    "name": "Catch peaks between samples",
+    "type": "bool",
+    "def": true
+   }
+  ],
+  "stereo": "keep",
+  "warps": false,
+  "cost": 1,
+  "side": false,
+  "surprise": false,
+  "live": false
  },
  {
   "id": "tone.loudness",

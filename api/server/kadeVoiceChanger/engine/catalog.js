@@ -45,6 +45,8 @@ export function catalogStatus() {
 // ---------------------------------------------------------------- categories
 
 export const CATEGORIES = [
+  { id: 'quick', name: 'Quick picks' },
+  { id: 'singing', name: 'Singing and mixing' },
   { id: 'everyday', name: 'Everyday voices' },
   { id: 'disguise', name: 'Disguises' },
   { id: 'robots', name: 'Robots and machines' },
@@ -243,7 +245,7 @@ export function validatePreset(preset, opts = {}) {
     say('the id must be lowercase words joined by hyphens (for example giant-in-a-cave), not ' + JSON.stringify(preset.id) + '.')
   }
   for (const s of nameProblems(preset.name)) say(s.charAt(0).toLowerCase() + s.slice(1))
-  if (!CAT_BY_ID.has(preset.cat)) say('the category ' + JSON.stringify(preset.cat) + ' is not one of the 26 categories.')
+  if (!CAT_BY_ID.has(preset.cat)) say('the category ' + JSON.stringify(preset.cat) + ' is not one of the 28 categories.')
   else if (preset.cat === 'mix' && !opts.mix) say('the Mix and match category is generated; put this preset in another category.')
   if (typeof preset.sub !== 'string' || !preset.sub.trim()) say('the group (sub) is missing.')
   else {

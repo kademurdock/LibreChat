@@ -251,6 +251,8 @@ const startServer = async () => {
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));
+  // Voice Changer engine, read-only at /vc-engine/<version>/ (kadeVoiceChanger/CONTRACT.md section 10).
+  require('./kadeVoiceChanger/serve').mountEngine(app, { logger });
 
   if (telemetry.enabled) {
     app.use(telemetry.telemetryMiddleware);
@@ -366,6 +368,9 @@ const startServer = async () => {
   app.use('/api/kade/approvals', require('./routes/kadeApprovals'));
   // Oct 18 2026: the Arcade: catalog, manifests and one-hour signed game packs (packages/api arcade/ARCADE.md).
   app.use('/api/kade/arcade', require('./routes/kadeArcade'));
+  // Nov 18 2026: the Voice Changer and its effects rack: config, saving to My Creations, presets,
+  // favourites, and the storage fetch the Sound Booth hand-off uses.
+  app.use('/api/kade/voice-changer', require('./routes/kadeVoiceChanger').build());
   app.use('/api/kade', routes.kadeLiveFace); // Oct 28 2026: sight flag + live video faces
   app.use('/api/kade', routes.kade);
 
@@ -384,6 +389,10 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/sound-booth', routes.kade.soundBoothPage);
+  // Nov 18 2026: the Voice Changer page, and the hidden engine page the phone apps load (no-store).
+  // KADE_VOICE_CHANGER=0 switches both pages off (routes/kadeVoiceChanger.js).
+  app.get('/voice-changer', require('./routes/kadeVoiceChanger').voiceChangerPage);
+  app.get('/voice-changer/engine', require('./routes/kadeVoiceChanger').enginePage);
   app.get('/agent-work', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(appConfig.paths.dist, 'assets/tasks/work.html'));

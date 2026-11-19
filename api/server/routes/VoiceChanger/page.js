@@ -10,12 +10,28 @@
  *
  * Sound: one AudioContext (made and resumed on the person's own gesture), one sound at a
  * time (every new sound stops the last), the engine only through host/client.js (its
- * Worker does the work). Saving goes to POST /save as a WAV. */
+ * Worker does the work). Saving goes to POST /save as a WAV.
+ *
+ * Nov 18 2026, the effects rack and the Sound Booth hand-off:
+ * - The Rack is its own part of the page. Every effect is a group under a level-three
+ *   heading; every numeric setting is a slider with its value in words (aria-valuetext
+ *   from the engine's speakValue) and a number box for an exact value; effects move with
+ *   Move up and Move down buttons, are switched off with Bypass, and can all be removed
+ *   (an empty rack plays the plain voice). After a move the same button keeps focus; after
+ *   a remove, focus goes to the heading of the effect now in that place. Each change is
+ *   said once through the one live region.
+ * - /voice-changer?src=<https link>&bed=<https link>&title=<words> opens src as the take
+ *   and bed as the backing track (see handoff() below). A backing track is the engine's
+ *   sound-file bed with sync on: lined up with the take from the start, never looped,
+ *   mixed under the changed voice at a level in decibels compared with the voice. */
 (function () {
   'use strict';
 
   var API = '/api/kade/voice-changer';
   var MAX_SECONDS = 180;
+  var MAX_FILE_SECONDS = 480; /* an opened file or a handed-over take: a whole song */
+  var BACK_ID = 'backing'; /* the backing track's sound-file bed id in the engine */
+  var BACK_LEVEL = { name: 'Backing track level', min: -40, max: 6, step: 0.5, def: -3, unit: 'db' };
   var PREFS_KEY = 'kadeVoiceChanger.prefs.v1';
   var MAX_STAGES = 12;
   var SEARCH_LIMIT = 150;
@@ -50,6 +66,8 @@
     full: new Map(), /* preset id -> full preset with chain */
     prefs: { favorites: [], recent: [], settings: { autoPreview: true, previewSeconds: 6, previewDelayMs: 450, whole: false }, updatedAt: null },
     take: null, takeSeconds: 0, takeFrom: '', takeKey: 0,
+    back: null, /* the backing track: { audio, seconds, label, key } */
+    backOn: false, backLevel: -3,
     side: { kind: 'none', key: '', label: '' },
     sideLoaded: '',
     bedLoaded: new Set(),
@@ -60,7 +78,7 @@
     listValue: '',
     searching: false,
     selGen: 0,
-    pvTimer: 0, pvReq: null, pvGen: 0, lastPv: null,
+    pvTimer: 0, pvReq: null, pvGen: 0, lastPv: null, lastNoted: '',
     making: false, makeReq: null, made: null, wavCache: null,
     titleTyped: false,
     ctx: null, playing: null,
@@ -187,6 +205,7 @@
   function showPlaying() {
     $('playTake').textContent = isPlaying('take') ? 'Stop your recording' : 'Play your recording';
     $('fullPlay').textContent = isPlaying('full') ? 'Stop' : 'Play';
+    $('backPlay').textContent = isPlaying('back') ? 'Stop the backing track' : 'Play the backing track';
   }
   /** Escape anywhere: every sound stops, and a preview still being made is dropped. */
   function stopEverything() {
@@ -498,7 +517,7 @@
     var v = S.searching ? 'search' : S.listValue;
     if (v === 'fav') return 'No favorites yet. Pick a voice and press Add to favorites.';
     if (v === 'recent') return 'Nothing used yet. Voices you hear land here.';
-    if (v === 'mine') return S.token ? 'No presets of your own yet. Save one under Effect chain.' : 'Sign in to keep presets of your own.';
+    if (v === 'mine') return S.token ? 'No presets of your own yet. Save one under Rack.' : 'Sign in to keep presets of your own.';
     if (v === 'shared') return S.token ? 'Nobody has shared a preset yet.' : 'Sign in to see presets other people share.';
     if (v === 'search') return 'No voices found.';
     return 'This list is empty.';
@@ -554,9 +573,11 @@
   function showCurrent() {
     var c = S.cur;
     if (!c) return;
-    var about = c.custom ? 'Custom, based on ' + (c.base.name || 'a voice') + '. ' : '';
-    $('about').textContent = (c.custom ? about : c.name + '. ') + (c.base.about || '');
-    $('chainName').textContent = 'Now: ' + c.name + ', ' + plural(c.chain.length, 'effect', 'effects') + '.';
+    var about = c.custom && !c.base.blank ? 'Custom, based on ' + (c.base.name || 'a voice') + '. ' : '';
+    $('about').textContent = (c.custom && !c.base.blank ? about : c.name + '. ') + (c.base.about || '');
+    $('chainName').textContent = c.chain.length
+      ? 'In the rack now: ' + c.name + ', ' + plural(c.chain.length, 'effect', 'effects') + '.'
+      : 'In the rack now: ' + c.name + '. It is empty, so the voice plays plain. Add an effect below.';
     if (!S.titleTyped) $('title').value = c.name;
     var fav = $('favBtn');
     var canFav = !c.custom && !!c.id && !!entryOf(c.id);
@@ -648,7 +669,10 @@
     if (bs.value !== bv) bs.value = 'none';
     var lv = $('bedLevel');
     lv.value = String(S.bed ? S.bed.level : BED_LEVEL.def);
-    lv.disabled = !S.bed;
+    var backing = backingActive();
+    bs.disabled = backing;
+    lv.disabled = !S.bed || backing;
+    $('bedNote').hidden = !backing;
     showSlider(lv, BED_LEVEL);
     var ss = $('sideSel');
     var sv = S.side.kind === 'lib' ? S.side.key : S.side.kind === 'rec' || S.side.kind === 'rec-wait' ? 'rec' : S.side.kind === 'file' || S.side.kind === 'file-wait' ? 'file' : 'none';
@@ -656,10 +680,13 @@
     if (ss.value !== sv) ss.value = 'none';
     showSideState();
   }
+  function backingActive() { return !!(S.back && S.backOn); }
   function macrosNow() {
     var m = {};
     Object.keys(MACROS).forEach(function (k) { m[k] = S.macros[k]; });
-    m.bed = S.bed ? bedSpec(S.bed) : null;
+    /* the engine mixes one sound under the voice: the backing track when it is on, else the
+     * background. sync lines the backing track up with the take instead of looping it. */
+    m.bed = backingActive() ? { file: BACK_ID, level: S.backLevel, sync: true } : S.bed ? bedSpec(S.bed) : null;
     return m;
   }
   function bedSpec(b) {
@@ -683,7 +710,7 @@
     var names = users.map(function (st) { return S.modById.get(st.m).name; });
     $('sideNote').textContent = on
       ? 'In this voice, ' + joinWords(names) + ' can use another sound. Pick one and your words come out of it, mixed with a storm, a song or a guitar.'
-      : 'None of the effects in this voice uses another sound. These do: ' + joinWords(list) + '. Add one in the Effect chain to mix your voice with a storm, a song or a guitar.';
+      : 'None of the effects in this voice uses another sound. These do: ' + joinWords(list) + '. Add one in the Rack to mix your voice with a storm, a song or a guitar.';
     $('sideSel').disabled = !on;
     $('sideRecBtn').disabled = !on;
     $('sideFile').disabled = !on;
@@ -692,7 +719,7 @@
     var line = 'No other sound.';
     if (S.side.kind === 'rec-wait') line = 'No second sound recorded yet. Press Record the other sound.';
     else if (S.side.kind === 'file-wait') line = 'No second file chosen yet.';
-    else if (sideActive()) line = 'Other sound: ' + S.side.label + '.' + (on ? '' : ' It is used once an effect that takes it is in the chain.');
+    else if (sideActive()) line = 'Other sound: ' + S.side.label + '.' + (on ? '' : ' It is used once an effect that takes it is in the rack.');
     $('sideLine').textContent = line;
   }
   function joinWords(a) {
@@ -782,9 +809,11 @@
   }
 
   /* ---------------------------------------------------------------- your voice */
-  async function setTake(audio, from) {
-    var long = audio.duration > MAX_SECONDS + 0.05;
-    var b = trimmed(audio, MAX_SECONDS);
+  /** The take. A recording keeps 3 minutes; an opened file or a handed-over sound keeps maxSec (8 minutes). */
+  async function setTake(audio, from, maxSec) {
+    var cap = maxSec || MAX_SECONDS;
+    var long = audio.duration > cap + 0.05;
+    var b = trimmed(audio, cap);
     stopAudio();
     await S.vc.load(b);
     S.take = b;
@@ -792,9 +821,82 @@
     S.takeFrom = from;
     S.takeKey++;
     S.lastPv = null;
-    $('takeLine').textContent = 'Your recording: ' + secondsWords(b.duration) + ' ' + from + '.' + (long ? ' Only the first 3 minutes are kept.' : '');
+    $('takeLine').textContent = 'Your recording: ' + secondsWords(b.duration) + ' ' + from + '.' + (long ? ' ' + keptWords(cap) : '');
     $('playTake').disabled = false;
     return long;
+  }
+  function keptWords(cap) { return 'Only the first ' + Math.round(cap / 60) + ' minutes are kept.'; }
+
+  /* ---------------------------------------------------------------- the backing track */
+  function showBacking() {
+    var has = !!S.back;
+    $('backOn').disabled = !has;
+    $('backOn').checked = backingActive();
+    var lv = $('backLevel'), num = $('backLevelNum');
+    lv.disabled = !has;
+    num.disabled = !has;
+    lv.value = String(S.backLevel);
+    num.value = String(S.backLevel);
+    showSlider(lv, BACK_LEVEL);
+    $('backPlay').disabled = !has;
+    $('backRemove').disabled = !has;
+    $('backLine').textContent = has
+      ? 'Backing track: ' + S.back.label + ', ' + secondsWords(S.back.seconds) + (S.backOn ? ', playing under the voice.' : ', switched off.')
+      : 'No backing track.';
+    syncFineTune();
+  }
+  /** Keep a decoded sound as the backing track and switch it on. Returns true when it was cut to 8 minutes. */
+  async function setBacking(audio, label) {
+    var long = audio.duration > MAX_FILE_SECONDS + 0.05;
+    var b = trimmed(audio, MAX_FILE_SECONDS);
+    await S.vc.load(b, 'bed:' + BACK_ID);
+    S.back = { audio: b, seconds: b.duration, label: label, key: 'back:' + Date.now() };
+    S.backOn = true;
+    S.lastPv = null;
+    showBacking();
+    return long;
+  }
+  function removeBacking() {
+    if (!S.back) return;
+    if (isPlaying('back')) stopAudio();
+    var label = S.back.label;
+    S.back = null;
+    S.backOn = false;
+    S.lastPv = null;
+    if (S.vc) S.vc.unload('bed:' + BACK_ID);
+    $('backFile').value = '';
+    showBacking();
+    say('Removed the backing track, ' + label + '.');
+    $('backFile').focus();
+    tweaked();
+  }
+  function setBackLevel(v, fromBox) {
+    var x = clampTo(BACK_LEVEL, v);
+    x = Math.round(x / BACK_LEVEL.step) * BACK_LEVEL.step;
+    var changed = fromBox && x !== Number(v);
+    S.backLevel = x;
+    $('backLevel').value = String(x);
+    if (fromBox || document.activeElement !== $('backLevelNum')) $('backLevelNum').value = String(x);
+    showSlider($('backLevel'), BACK_LEVEL);
+    if (changed) say('Backing track level set to ' + speak(BACK_LEVEL, x) + ', the nearest it goes.');
+    S.lastPv = null;
+    if (backingActive()) tweaked();
+  }
+  async function onBackFile() {
+    var input = $('backFile');
+    var f = input.files && input.files[0];
+    if (!f) return;
+    if (f.size > 400 * 1024 * 1024) { problem('That file is too big to open here. Pick one under 400 megabytes.', input); return; }
+    stopEverything();
+    say('Opening ' + f.name + ' as the backing track.');
+    try {
+      var audio = await decodeBlob(f);
+      var long = await setBacking(audio, f.name);
+      say('Backing track ready: ' + f.name + ', ' + secondsWords(S.back.seconds) + '.' + (long ? ' ' + keptWords(MAX_FILE_SECONDS) : '') + ' It plays under the voice in every preview and in the full version.');
+      tweaked();
+    } catch (e) {
+      problem('That file could not be read as sound. Try a different file: most sound files and videos work.', input);
+    }
   }
   function pickMime() {
     var opts = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/ogg;codecs=opus'];
@@ -879,13 +981,108 @@
         say('The other sound is now ' + f.name + ', ' + secondsWords(Math.min(audio.duration, MAX_SECONDS)) + '.');
         tweaked();
       } else {
-        var long = await setTake(audio, 'from ' + f.name);
-        say('Opened ' + f.name + ', ' + secondsWords(S.takeSeconds) + '.' + (long ? ' Only the first 3 minutes are kept.' : ''));
+        var long = await setTake(audio, 'from ' + f.name, MAX_FILE_SECONDS);
+        say('Opened ' + f.name + ', ' + secondsWords(S.takeSeconds) + '.' + (long ? ' ' + keptWords(MAX_FILE_SECONDS) : ''));
       }
     } catch (e) {
       problem('That file could not be read as sound. Try a different file: most sound files and videos work.', input);
     }
   }
+  /* ---------------------------------------------------------------- hand-off from the Sound Booth
+   * /voice-changer?src=<link>&bed=<link>&title=<words>
+   *   src    the sound to change: an https link, or a path on this site that starts with one slash
+   *   bed    optional: the backing track, the same kinds of link
+   *   title  optional: what to call it; it is shown, said, and used as the title of the result
+   * The page fetches each link itself first. When the browser may not read it (the storage
+   * sends no CORS header), a signed-in page asks GET /api/kade/voice-changer/fetch?url=, which
+   * only reads the site's own storage. Anything that cannot be opened is said in a sentence,
+   * and the page still works for recording and uploading. Nothing plays by itself. */
+  function handLink(raw) {
+    var v = String(raw || '').trim();
+    if (!v) return null;
+    if (v.length > 4096) return { bad: true };
+    if (v.charAt(0) === '/') return v.charAt(1) === '/' || v.indexOf('\\') >= 0 ? { bad: true } : { url: v, own: true };
+    var u;
+    try { u = new URL(v); } catch (e) { return { bad: true }; }
+    if (u.protocol !== 'https:' || u.username || u.password) return { bad: true };
+    if (u.origin === window.location.origin) return { url: u.pathname + u.search, own: true };
+    return { url: u.href, own: false };
+  }
+  async function fetchSound(link) {
+    var r = null;
+    try {
+      r = await fetch(link.url, link.own ? { credentials: 'same-origin' } : { mode: 'cors', credentials: 'omit' });
+    } catch (e) { r = null; }
+    if (r && r.ok) return await r.blob();
+    if (link.own) throw new Error(r ? 'It is not there any more.' : 'It could not be reached.');
+    if (!S.token) throw new Error('Its storage does not let this page read it while you are signed out. Sign in, then open the link again.');
+    var viaServer = API + '/fetch?url=' + encodeURIComponent(link.url);
+    var p;
+    try {
+      p = await fetch(viaServer, { headers: { Authorization: 'Bearer ' + S.token } });
+      if (p.status === 401) {
+        await refreshToken();
+        if (S.token) p = await fetch(viaServer, { headers: { Authorization: 'Bearer ' + S.token } });
+      }
+    } catch (e) {
+      throw new Error('The connection dropped while opening it. Check your internet and open the link again.');
+    }
+    if (!p.ok) {
+      var j = null;
+      try { j = await p.json(); } catch (e) { j = null; }
+      throw new Error((j && j.error) || 'It could not be opened just now.');
+    }
+    return await p.blob();
+  }
+  async function openLinked(link) {
+    var blob = await fetchSound(link);
+    try { return await decodeBlob(blob); } catch (e) { throw new Error('It could not be read as sound.'); }
+  }
+  /** Opens ?src= as the take and ?bed= as the backing track. Returns true when the address asked for either. */
+  async function handoff() {
+    var q;
+    try { q = new URLSearchParams(window.location.search); } catch (e) { return false; }
+    var src = handLink(q.get('src'));
+    var bed = handLink(q.get('bed'));
+    if (!src && !bed) return false;
+    var title = String(q.get('title') || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    var said = [];
+    var failed = false;
+    if (src) {
+      var name = title || 'the sound from the link';
+      if (src.bad) { failed = true; said.push('The link to the sound cannot be used here: it has to be an https link.'); }
+      else {
+        say('Opening ' + name + '.');
+        try {
+          var audio = await openLinked(src);
+          var long = await setTake(audio, title ? 'from ' + title : 'from the link', MAX_FILE_SECONDS);
+          if (title) { $('title').value = title; S.titleTyped = true; }
+          said.push('Opened ' + name + ', ' + secondsWords(S.takeSeconds) + '.' + (long ? ' ' + keptWords(MAX_FILE_SECONDS) : ''));
+        } catch (e) {
+          failed = true;
+          said.push(capital(name) + ' could not be opened. ' + ((e && e.message) || ''));
+        }
+      }
+    }
+    if (bed) {
+      if (bed.bad) { failed = true; said.push('The link to the backing track cannot be used here: it has to be an https link.'); }
+      else {
+        if (!src || failed) say('Opening the backing track.');
+        try {
+          var audio2 = await openLinked(bed);
+          var long2 = await setBacking(audio2, title ? 'the music for ' + title : 'the sound from the link');
+          said.push('Backing track ready, ' + secondsWords(S.back.seconds) + '.' + (long2 ? ' ' + keptWords(MAX_FILE_SECONDS) : ''));
+        } catch (e) {
+          failed = true;
+          said.push('The backing track could not be opened. ' + ((e && e.message) || ''));
+        }
+      }
+    }
+    said.push(S.take ? 'Pick a preset or build a rack, then press Preview.' : 'You can still record, or upload a file.');
+    say(said.join(' '), failed);
+    return true;
+  }
+
   function renderSamples() {
     var box = $('samples');
     box.textContent = '';
@@ -924,7 +1121,7 @@
     return o;
   }
   function previewKey() {
-    return JSON.stringify([S.takeKey, presetToSend(), macrosNow(), S.side.kind, S.side.key, previewSeconds()]);
+    return JSON.stringify([S.takeKey, presetToSend(), macrosNow(), S.side.kind, S.side.key, previewSeconds(), S.back ? S.back.key : '']);
   }
   function schedulePreview(delay, onlyIfAuto) {
     clearTimeout(S.pvTimer);
@@ -949,28 +1146,38 @@
     var secs = previewSeconds();
     var job = S.vc.preview(presetToSend(), { macros: macrosNow(), start: 0, seconds: secs || S.takeSeconds + 1 });
     S.pvReq = job.req;
+    /* a preview that is asked for and takes more than a moment says so once; a quick one just plays */
+    var slow = explicit ? setTimeout(function () { if (gen === S.pvGen) say('Making the preview.'); }, 1200) : 0;
     var r;
     try {
       r = await job;
     } catch (e) {
+      clearTimeout(slow);
       if (S.pvReq === job.req) S.pvReq = null;
       if (gen === S.pvGen && e.code !== 'cancelled') say(e.message || 'The preview could not be made.', true);
       return;
     }
+    clearTimeout(slow);
     if (S.pvReq === job.req) S.pvReq = null;
     if (gen !== S.pvGen) return;
     var audio;
     try { audio = toAudio(r); } catch (e) { problem(e.message); return; }
     S.lastPv = { key: key, audio: audio, lufs: r.report && typeof r.report.lufs === 'number' ? r.report.lufs : -16 };
-    showNotes(r.report);
+    var noted = showNotes(r.report);
+    /* a note from the engine (an effect fell back, the backing track no longer lines up) is
+     * said once when it is new, on a preview the person asked for; it stays on the page too */
+    if (explicit && noted && noted !== S.lastNoted) say(noted);
+    S.lastNoted = noted;
     if (S.cur.id) addRecent(S.cur.id);
     play(audio, 'preview');
   }
+  /** Shows the engine's notes under the preset; returns them as one string ('' when none). */
   function showNotes(report) {
     var notes = report && Array.isArray(report.notes) ? report.notes : [];
     var el = $('notes');
     el.textContent = notes.join(' ');
     el.hidden = !notes.length;
+    return notes.join(' ');
   }
   function togglePreview() {
     if (isPlaying('preview')) { stopEverything(); return; }
@@ -1021,14 +1228,14 @@
     if (!S.history.length) return;
     S.future.push({ chain: clone(S.cur.chain), custom: S.cur.custom, name: S.cur.name, id: S.cur.id });
     restore(S.history.pop());
-    say('Undone. ' + plural(S.cur.chain.length, 'effect', 'effects') + ' in the chain.');
+    say('Undone. ' + plural(S.cur.chain.length, 'effect', 'effects') + ' in the rack.');
     tweaked();
   }
   function redo() {
     if (!S.future.length) return;
     S.history.push({ chain: clone(S.cur.chain), custom: S.cur.custom, name: S.cur.name, id: S.cur.id });
     restore(S.future.pop());
-    say('Redone. ' + plural(S.cur.chain.length, 'effect', 'effects') + ' in the chain.');
+    say('Redone. ' + plural(S.cur.chain.length, 'effect', 'effects') + ' in the rack.');
     tweaked();
   }
   function paramValue(st, pr) {
@@ -1085,7 +1292,8 @@
       wrap.appendChild(sel);
       return wrap;
     }
-    wrap.className = 'slider';
+    /* a number: the slider (its value said in words) and, beside it, a box for an exact value */
+    wrap.className = 'slider exact';
     var l3 = document.createElement('label');
     l3.htmlFor = id;
     l3.textContent = pr.name;
@@ -1096,21 +1304,51 @@
     r.max = String(pr.max);
     r.step = String(pr.step > 0 ? pr.step : 'any');
     r.value = String(v);
+    var nb = document.createElement('input');
+    nb.type = 'number';
+    nb.className = 'num';
+    nb.id = id + '-n';
+    nb.min = String(pr.min);
+    nb.max = String(pr.max);
+    nb.step = String(pr.step > 0 ? pr.step : 'any');
+    nb.value = String(v);
+    nb.setAttribute('aria-label', pr.name + ', exact value' + unitWords(pr.unit) + ', from ' + pr.min + ' to ' + pr.max);
     var val = document.createElement('span');
     val.className = 'val';
     val.setAttribute('aria-hidden', 'true');
     wrap.appendChild(l3);
     wrap.appendChild(r);
+    wrap.appendChild(nb);
     wrap.appendChild(val);
     showSlider(r, pr);
     r.addEventListener('input', function () {
       var x;
       try { x = S.P.resolveValue(pr, Number(r.value)); } catch (e) { x = Number(r.value); }
       showSlider(r, pr);
+      nb.value = String(x);
       setParam(i, pr, x);
+    });
+    /* the box commits on Enter or on leaving it, never per keystroke; a value outside the
+     * range or off the step is moved to the nearest allowed one, and that is said */
+    nb.addEventListener('change', function () {
+      var typed = Number(nb.value);
+      if (nb.value.trim() === '' || !Number.isFinite(typed)) {
+        nb.value = r.value;
+        say(pr.name + ' needs a number from ' + pr.min + ' to ' + pr.max + '. It stays at ' + speak(pr, Number(r.value)) + '.', true);
+        return;
+      }
+      var x;
+      try { x = S.P.resolveValue(pr, typed); } catch (e) { x = clampTo(pr, typed); }
+      r.value = String(x);
+      nb.value = String(x);
+      showSlider(r, pr);
+      setParam(i, pr, x);
+      say(pr.name + ': ' + speak(pr, x) + (x !== typed ? ', the nearest it goes.' : '.'));
     });
     return wrap;
   }
+  var UNIT_WORDS = { semitones: 'semitones', cents: 'cents', percent: 'percent', ms: 'milliseconds', seconds: 'seconds', hz: 'hertz', db: 'decibels', bits: 'bits', degrees: 'degrees', meters: 'meters', bpm: 'beats per minute', steps: 'steps' };
+  function unitWords(u) { return UNIT_WORDS[u] ? ' in ' + UNIT_WORDS[u] : ''; }
   function stageButton(text, cls, fn, pressed) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -1125,13 +1363,25 @@
     ol.textContent = '';
     if (!S.cur) return;
     var n = S.cur.chain.length;
+    if (!n) {
+      var none = document.createElement('li');
+      none.className = 'empty';
+      none.textContent = 'The rack is empty. Pick an effect under Add an effect, just below, and press Add.';
+      ol.appendChild(none);
+    }
     S.cur.chain.forEach(function (st, i) {
       var m = S.modById.get(st.m);
       var li = document.createElement('li');
       if (st.off) li.className = 'off';
+      /* a group named by its legend; the heading inside the legend lets a screen reader
+       * jump from effect to effect with its heading key */
       var fs = document.createElement('fieldset');
       var lg = document.createElement('legend');
-      lg.textContent = (i + 1) + '. ' + (m ? m.name : st.m) + (st.off ? ', bypassed' : '');
+      var h = document.createElement('h3');
+      h.id = 'st' + i + '-h';
+      h.tabIndex = -1;
+      h.textContent = 'Effect ' + (i + 1) + ' of ' + n + ': ' + (m ? m.name : st.m) + (st.off ? ', bypassed' : '');
+      lg.appendChild(h);
       fs.appendChild(lg);
       if (m && m.about) {
         var ab = document.createElement('p');
@@ -1147,27 +1397,41 @@
       }
       var row = document.createElement('div');
       row.className = 'btnrow';
+      /* each button says which effect it acts on, so a list of buttons makes sense on its own;
+       * the words on the button come first in its name, for people who speak commands */
+      var nm = m ? m.name : st.m;
       var up = stageButton('Move up', '', function () { moveStage(i, -1); });
       up.disabled = i === 0;
       up.dataset.act = 'up';
+      up.setAttribute('aria-label', 'Move up, ' + nm);
       var down = stageButton('Move down', '', function () { moveStage(i, 1); });
       down.disabled = i === n - 1;
       down.dataset.act = 'down';
+      down.setAttribute('aria-label', 'Move down, ' + nm);
       var by = stageButton('Bypass', '', function () { bypassStage(i); }, !!st.off);
       by.dataset.act = 'bypass';
+      by.setAttribute('aria-label', 'Bypass ' + nm);
       var rm = stageButton('Remove', '', function () { removeStage(i); });
       rm.dataset.act = 'remove';
+      rm.setAttribute('aria-label', 'Remove ' + nm);
       [up, down, by, rm].forEach(function (b) { row.appendChild(b); });
       fs.appendChild(row);
       li.appendChild(fs);
       ol.appendChild(li);
     });
     if (focus) {
-      var li2 = ol.children[focus.i];
-      var target = li2 && li2.querySelector('button[data-act="' + focus.act + '"]');
-      if (target && target.disabled) target = li2.querySelector('button:not([disabled])');
-      if (!target) target = li2 ? li2.querySelector('input, select, button') : $('addSel');
-      if (focus.first && li2) target = li2.querySelector('input, select') || target;
+      /* where focus lands after a change: the same button after a move or a bypass (so it
+       * can be pressed again), the first setting of a new effect, and after a remove the
+       * heading of the effect now in that place, never its Remove button */
+      var li2 = n ? ol.children[focus.i] : null;
+      var target = null;
+      if (li2 && focus.act === 'heading') target = li2.querySelector('h3');
+      else if (li2) {
+        target = li2.querySelector('button[data-act="' + focus.act + '"]');
+        if (target && target.disabled) target = li2.querySelector('button[data-act="' + (focus.act === 'up' ? 'down' : 'up') + '"]:not([disabled])') || li2.querySelector('h3');
+        if (focus.first) target = li2.querySelector('input, select') || li2.querySelector('h3');
+      }
+      if (!target) target = $('addSel');
       if (target) target.focus();
     }
     showSideState();
@@ -1182,7 +1446,7 @@
     markCustom();
     renderChain({ i: j, act: d < 0 ? 'up' : 'down' });
     showCurrent();
-    say('Moved ' + stageName(t) + ' to position ' + (j + 1) + ' of ' + ch.length + '.');
+    say('Moved ' + stageName(t) + (d < 0 ? ' up' : ' down') + ', now effect ' + (j + 1) + ' of ' + ch.length + '.');
     tweaked();
   }
   function bypassStage(i) {
@@ -1196,27 +1460,50 @@
   }
   function removeStage(i) {
     var ch = S.cur.chain;
-    if (ch.length <= 1) { problem('A voice needs at least one effect. Add another before removing this one.', $('addSel')); return; }
     histTag('');
     var st = ch.splice(i, 1)[0];
     markCustom();
-    renderChain(ch.length ? { i: Math.min(i, ch.length - 1), act: 'remove' } : null);
+    renderChain({ i: Math.min(i, ch.length - 1), act: 'heading' });
     showCurrent();
-    say('Removed ' + stageName(st) + '. ' + plural(ch.length, 'effect', 'effects') + ' left.');
+    var next = ch.length ? ' Now on ' + stageName(ch[Math.min(i, ch.length - 1)]) + ', effect ' + (Math.min(i, ch.length - 1) + 1) + ' of ' + ch.length + '.' : ' The rack is empty, so the voice plays plain. Undo brings it back.';
+    say('Removed ' + stageName(st) + '.' + next);
     tweaked();
+  }
+  /** Customize: the preset as it stands becomes a rack of your own, and focus goes to its first effect. */
+  function customizePreset() {
+    if (!S.cur) { problem('Pick a preset first.', $('presetList')); return; }
+    var was = S.cur.base.name || 'this preset';
+    if (!S.cur.custom) {
+      S.cur.custom = true;
+      S.cur.name = 'Custom, based on ' + was;
+      S.cur.id = null;
+      showCurrent();
+    }
+    renderChain({ i: 0, act: 'heading' });
+    var n = S.cur.chain.length;
+    say('Customizing ' + was + ': ' + plural(n, 'effect', 'effects') + ' in the rack. Each effect is under its own heading, with its settings, then Move up, Move down, Bypass and Remove.');
+  }
+  /** A rack with nothing in it, to build from scratch. */
+  function newRack() {
+    S.selGen++;
+    stopEverything();
+    setCurrent({ id: null, name: 'My rack', about: 'A rack you are building yourself.', chain: [], blank: true }, { custom: true });
+    $('presetList').selectedIndex = -1;
+    say('Started an empty rack. Pick an effect under Add an effect and press Add.');
+    $('addSel').focus();
   }
   function addStage() {
     var id = $('addSel').value;
     var m = S.modById.get(id);
     if (!m) { problem('Pick an effect to add first.', $('addSel')); return; }
     if (!S.cur) { problem('Pick a voice first.', $('presetList')); return; }
-    if (S.cur.chain.length >= MAX_STAGES) { problem('A voice can hold up to ' + MAX_STAGES + ' effects. Remove one to add another.', $('addSel')); return; }
+    if (S.cur.chain.length >= MAX_STAGES) { problem('A rack can hold up to ' + MAX_STAGES + ' effects. Remove one to add another.', $('addSel')); return; }
     histTag('');
     S.cur.chain.push({ m: id });
     markCustom();
     renderChain({ i: S.cur.chain.length - 1, act: 'remove', first: true });
     showCurrent();
-    say('Added ' + m.name + ' at position ' + S.cur.chain.length + '.');
+    say('Added ' + m.name + ' as effect ' + S.cur.chain.length + ' of ' + S.cur.chain.length + '. Its settings come next.');
     tweaked();
   }
   function buildAddSelect() {
@@ -1263,18 +1550,18 @@
   function copyChain() {
     if (!S.cur) return;
     var text = JSON.stringify(exportObject(), null, 2);
-    var done = function () { say('Copied the chain as text. ' + plural(S.cur.chain.length, 'effect', 'effects') + '.'); };
+    var done = function () { say('Copied the rack as text. ' + plural(S.cur.chain.length, 'effect', 'effects') + '.'); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function () { $('ioText').value = text; problem('The clipboard is not available here, so the chain is in the Preset as text box instead.', $('ioText')); });
+      navigator.clipboard.writeText(text).then(done, function () { $('ioText').value = text; problem('The clipboard is not available here, so the rack is in the Preset as text box instead.', $('ioText')); });
     } else {
       $('ioText').value = text;
-      problem('The clipboard is not available here, so the chain is in the Preset as text box instead.', $('ioText'));
+      problem('The clipboard is not available here, so the rack is in the Preset as text box instead.', $('ioText'));
     }
   }
   function exportBox() {
     if (!S.cur) return;
     $('ioText').value = JSON.stringify(exportObject(), null, 2);
-    say('The current voice is in the Preset as text box.');
+    say('The current rack is in the Preset as text box.');
   }
   function importBox() {
     var box = $('ioText');
@@ -1320,6 +1607,7 @@
     var nameEl = $('presetName');
     var name = nameEl.value.replace(/\s+/g, ' ').trim();
     if (!name) { problem('Give the preset a name first.', nameEl); return; }
+    if (!S.cur.chain.length) { problem('A preset needs at least one effect. Add one to the rack first.', $('addSel')); return; }
     var o = exportObject();
     var body = { name: name, about: (S.cur.custom ? 'Based on ' + (S.cur.base.name || 'a voice') + '.' : o.about || '').slice(0, 160), chain: o.chain, bed: o.bed, shared: $('presetShare').checked };
     if (o.macros) body.macros = o.macros;
@@ -1402,7 +1690,7 @@
     var prog = $('makeProg');
     prog.value = 0;
     var step = 0;
-    say('Making the full version of ' + secondsWords(S.takeSeconds) + '.');
+    say('Making the full version, ' + secondsWords(S.takeSeconds) + ' of sound' + (backingActive() ? ', with the backing track' : '') + '.');
     var info = { presetId: S.cur.id || '', presetName: S.cur.name, macros: macrosNow(), chain: chainToSend() };
     try {
       await ensureSounds();
@@ -1411,8 +1699,10 @@
         onProgress: function (f) {
           var pct = Math.round(Math.max(0, Math.min(1, f)) * 100);
           prog.value = pct;
-          var s = Math.floor(pct / 25);
-          if (s > step && s < 4) { step = s; say(s * 25 + ' percent.'); }
+          /* a short take says the quarters; a long one (a song) says every ten percent */
+          var every = S.takeSeconds > 45 ? 10 : 25;
+          var s = Math.floor(pct / every);
+          if (s > step && s * every < 100) { step = s; say('Making it, ' + s * every + ' percent.'); }
         },
       });
       S.makeReq = job.req;
@@ -1421,14 +1711,20 @@
       S.made = { buf: r, audio: toAudio(r), seconds: secs, info: info };
       S.wavCache = null;
       prog.value = 100;
-      showNotes(r.report);
-      $('fullLine').textContent = 'Full version: ' + info.presetName + ', ' + secondsWords(secs) + '.';
+      var noted = showNotes(r.report);
+      $('fullLine').textContent = 'Full version: ' + info.presetName + ', ' + secondsWords(secs) + (info.macros.bed && info.macros.bed.file === BACK_ID ? ', with the backing track' : '') + '.';
       $('fullPlay').disabled = false;
       $('dlBtn').disabled = false;
-      $('saveBtn').disabled = !S.token;
+      /* My Creations keeps up to the server's limit (a little over 3 minutes); anything longer downloads */
+      var tooLong = secs > saveMaxSeconds();
+      $('saveBtn').disabled = !S.token || tooLong;
+      if (S.token) {
+        $('saveNote').hidden = !tooLong;
+        if (tooLong) $('saveNote').textContent = 'This is longer than My Creations keeps from the Voice Changer, which is ' + secondsWords(saveMaxSeconds()) + '. Download it instead.';
+      }
       $('savedLine').hidden = true;
       if (info.presetId) addRecent(info.presetId);
-      say('Done. ' + secondsWords(secs) + '. Press Play.');
+      say('Done, ' + secondsWords(secs) + '. Press Play to hear it' + (tooLong ? ', or Download to keep it. It is too long to save to My Creations.' : '.') + (noted ? ' ' + noted : ''));
     } catch (e) {
       prog.value = 0;
       if (e && e.code === 'cancelled') say('Stopped. Nothing was made.');
@@ -1440,6 +1736,7 @@
       $('makeCancel').hidden = true;
     }
   }
+  function saveMaxSeconds() { return S.cfg && typeof S.cfg.saveMaxSeconds === 'number' ? S.cfg.saveMaxSeconds : 190; }
   function cancelMake() {
     if (!S.making) return;
     if (S.makeReq !== null) S.vc.cancel(S.makeReq);
@@ -1607,6 +1904,38 @@
       S.lastPv = null;
       tweaked();
     });
+    $('backFile').addEventListener('change', onBackFile);
+    $('backOn').addEventListener('change', function () {
+      S.backOn = $('backOn').checked && !!S.back;
+      S.lastPv = null;
+      showBacking();
+      say(S.backOn ? 'The backing track plays under the voice, at ' + speak(BACK_LEVEL, S.backLevel) + '.' : 'The backing track is switched off.');
+      tweaked();
+    });
+    $('backLevel').addEventListener('input', function () { setBackLevel($('backLevel').value, false); });
+    $('backLevelNum').addEventListener('change', function () {
+      var el = $('backLevelNum');
+      if (el.value.trim() === '' || !Number.isFinite(Number(el.value))) {
+        el.value = String(S.backLevel);
+        say('Backing track level needs a number from ' + BACK_LEVEL.min + ' to ' + BACK_LEVEL.max + '. It stays at ' + speak(BACK_LEVEL, S.backLevel) + '.', true);
+        return;
+      }
+      var typed = Number(el.value);
+      setBackLevel(typed, true);
+      if (S.backLevel === typed) say('Backing track level: ' + speak(BACK_LEVEL, S.backLevel) + '.');
+    });
+    $('backPlay').addEventListener('click', function () {
+      if (isPlaying('back')) { stopAudio(); return; }
+      if (!S.back) return;
+      stopEverything();
+      play(S.back.audio, 'back');
+    });
+    $('backRemove').addEventListener('click', removeBacking);
+    $('customBtn').addEventListener('click', customizePreset);
+    $('newRackBtn').addEventListener('click', newRack);
+    $('rackPreview').addEventListener('click', function () { previewNow(true); });
+    $('rackStop').addEventListener('click', stopEverything);
+    $('resPreview').addEventListener('click', function () { previewNow(true); });
     $('undoBtn').addEventListener('click', undo);
     $('redoBtn').addEventListener('click', redo);
     $('copyBtn').addEventListener('click', copyChain);
@@ -1721,7 +2050,11 @@
       await pickPreset(box.value, 'none');
     }
     var total = S.catalog.presets.length;
-    say('Ready: ' + plural(total, 'voice', 'voices') + ' in ' + plural(S.lists.length, 'list', 'lists') + '. Record, upload a file or use a sample voice, then move through the voices.');
+    showBacking();
+    /* a link from the Sound Booth (?src=, ?bed=, ?title=) is opened once everything is ready */
+    var handed = false;
+    try { handed = await handoff(); } catch (e) { handed = false; }
+    if (!handed) say('Ready: ' + plural(total, 'voice', 'voices') + ' in ' + plural(S.lists.length, 'list', 'lists') + ', and ' + plural(S.modules.length, 'effect', 'effects') + ' for the rack. Record, upload a file or use a sample voice, then move through the presets.');
   }
   function buildBedSelect() {
     var sel = $('bedSel');

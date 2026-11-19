@@ -93,18 +93,104 @@ test('page: exactly one live region, the status line', () => {
   assert.doesNotMatch(bodyOf(pageHtml), /<output\b/i, 'an output element would be a second live region');
 });
 
-test('page: back link first, one h1, the four h2s in order', () => {
+test('page: back link first, one h1, the five h2s in order, each part a landmark', () => {
   const body = bodyOf(pageHtml);
   const firstLink = body.match(/<a\b[^>]*>/i)[0];
   assert.equal(attr(firstLink, 'href'), '/home');
   const h1 = [...body.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) => textOf(m[1]));
   assert.deepEqual(h1, ['Voice Changer']);
   const h2 = [...body.matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi)].map((m) => textOf(m[1]));
-  assert.deepEqual(h2, ['Your voice', 'Pick a voice', 'Fine-tune', 'Make it']);
+  assert.deepEqual(h2, ['Sound', 'Presets', 'Fine-tune', 'Rack', 'Result']);
   assert.ok(body.indexOf('<a class="back"') < body.indexOf('<h1'), 'the back link comes before the heading');
   assert.match(body, /Everything runs on your own device and is free\./);
   assert.match(body, /<details id="fineBox" open>\s*<summary><h2 id="h-fine">Fine-tune<\/h2><\/summary>/);
-  assert.match(body, /<details class="chain" id="chainBox">\s*<summary><h3 id="h-chain">Effect chain<\/h3><\/summary>/, 'the chain editor starts closed');
+  /* Nov 18 2026: the rack is its own part of the page, not folded away inside Fine-tune */
+  assert.match(body, /<section class="card" aria-labelledby="h-chain">\s*<h2 id="h-chain" tabindex="-1">Rack<\/h2>/);
+  assert.doesNotMatch(body, /Effect chain/);
+  /* one main landmark holding five sections, each named by its own h2 */
+  assert.equal((body.match(/<main\b/g) || []).length, 1);
+  const sections = [...body.matchAll(/<section class="card" aria-labelledby="([^"]+)">/g)].map((m) => m[1]);
+  assert.deepEqual(sections, ['h-voice', 'h-pick', 'h-fine', 'h-chain', 'h-make']);
+  for (const id of sections) assert.match(body, new RegExp(`<h2 id="${id}"[^>]*>`), `${id} is an h2`);
+  assert.ok(body.indexOf('<main') < body.indexOf('<section') && body.lastIndexOf('</section>') < body.indexOf('</main>'));
+  assert.ok(body.indexOf('id="status"') < body.indexOf('<main'), 'the status line is read before the parts');
+});
+
+test('page: the rack is worked with buttons and native controls, nothing is dragged or drawn', () => {
+  const body = bodyOf(pageHtml).replace(/<script[\s\S]*?<\/script>/gi, '');
+  assert.doesNotMatch(body, /<canvas\b|draggable|ondrag/i);
+  assert.doesNotMatch(PAGE_JS, /dragstart|dragover|draggable|getContext\(|createElement\('canvas'\)/);
+  for (const id of ['rackPreview', 'rackStop', 'undoBtn', 'redoBtn', 'copyBtn', 'newRackBtn', 'addBtn', 'customBtn', 'resPreview', 'makeBtn', 'fullPlay', 'dlBtn']) {
+    assert.match(body, new RegExp(`<button type="button"[^>]*\\sid="${id}"`), `${id} is a real button`);
+  }
+  assert.match(body, /<ol class="stages" id="chainList" aria-labelledby="h-chain"><\/ol>/);
+  assert.match(body, /<select id="addSel" aria-describedby="addAbout"><\/select>/);
+  /* what the script builds for each effect: a group with a heading, and four buttons that say which effect they act on */
+  assert.match(PAGE_JS, /document\.createElement\('fieldset'\)/);
+  assert.match(PAGE_JS, /document\.createElement\('legend'\)/);
+  assert.match(PAGE_JS, /var h = document\.createElement\('h3'\);/);
+  for (const [label, act] of [['Move up', 'up'], ['Move down', 'down'], ['Bypass', 'bypass'], ['Remove', 'remove']]) {
+    assert.ok(PAGE_JS.includes(`stageButton('${label}'`), `${label} button`);
+    assert.ok(PAGE_JS.includes(`dataset.act = '${act}'`));
+  }
+  assert.match(PAGE_JS, /setAttribute\('aria-label', 'Move up, ' \+ nm\)/, 'the visible words come first in the name');
+  assert.match(PAGE_JS, /setAttribute\('aria-pressed', pressed \? 'true' : 'false'\)/, 'Bypass is a toggle that says its state');
+  /* every numeric setting: a slider whose value is said in words, and a number box for an exact value */
+  assert.match(PAGE_JS, /el\.setAttribute\('aria-valuetext', words\)/);
+  assert.match(PAGE_JS, /nb\.type = 'number';/);
+  assert.match(PAGE_JS, /nb\.setAttribute\('aria-label', pr\.name \+ ', exact value'/);
+  assert.match(PAGE_JS, /nb\.addEventListener\('change'/, 'the box commits on Enter or on leaving it, not per key');
+  /* after a remove, focus goes to a heading, never to the next Remove button */
+  assert.match(PAGE_JS, /renderChain\(\{ i: Math\.min\(i, ch\.length - 1\), act: 'heading' \}\)/);
+});
+
+test('page: the backing track is a checkbox, a level in decibels with a number box, and a file choice', () => {
+  const body = bodyOf(pageHtml);
+  assert.match(body, /<legend>Backing track<\/legend>/);
+  assert.match(body, /<label class="check"><input type="checkbox" id="backOn" disabled> Play the backing track under the voice<\/label>/);
+  const range = body.match(/<input type="range" id="backLevel"[^>]*>/)[0];
+  assert.equal(Number(attr(range, 'min')), -40);
+  assert.equal(Number(attr(range, 'max')), 6);
+  assert.equal(attr(range, 'aria-describedby'), 'backLevelHint');
+  const num = body.match(/<input type="number"[^>]*id="backLevelNum"[^>]*>/)[0];
+  assert.match(attr(num, 'aria-label'), /Backing track level, exact value in decibels/);
+  assert.match(body, /<label class="field" for="backFile">Choose a backing track file<\/label>/);
+  assert.match(body, /<label for="backLevel">Backing track level<\/label>/);
+  /* what goes to the engine: the sound-file bed, lined up with the take (CONTRACT section 7) */
+  const from = PAGE_JS.indexOf('  function backingActive()');
+  const to = PAGE_JS.indexOf('  function bedSpec(b)');
+  assert.ok(from > 0 && to > from);
+  const ctx = { S: { back: { key: 'k' }, backOn: true, backLevel: -4.5, macros: { pitch: 0, timbre: 0, speed: 1, amount: 100, width: 100, volume: 0 }, bed: { b: 'rain', level: -20 } }, MACROS: { pitch: 1, timbre: 1, speed: 1, amount: 1, width: 1, volume: 1 }, BACK_ID: 'backing', bedSpec: (b) => ({ b: b.b, level: b.level }) };
+  vm.runInNewContext(PAGE_JS.slice(from, to) + '\nthis.macrosNow = macrosNow;', ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.macrosNow().bed)), { file: 'backing', level: -4.5, sync: true });
+  ctx.S.backOn = false;
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.macrosNow().bed)), { b: 'rain', level: -20 }, 'switched off, the background is back');
+  ctx.S.back = null;
+  ctx.S.bed = null;
+  assert.equal(ctx.macrosNow().bed, null);
+});
+
+test('page script: the hand-off takes src, bed and title, and only https or this site', () => {
+  const from = PAGE_JS.indexOf('  function handLink(raw)');
+  const to = PAGE_JS.indexOf('  async function fetchSound(link)');
+  assert.ok(from > 0 && to > from);
+  const ctx = { window: { location: { origin: 'https://site.example.test' } }, URL };
+  vm.runInNewContext(PAGE_JS.slice(from, to) + '\nthis.handLink = handLink;', ctx);
+  const link = (v) => JSON.parse(JSON.stringify(ctx.handLink(v)));
+  assert.equal(ctx.handLink(''), null);
+  assert.equal(ctx.handLink(null), null);
+  assert.deepEqual(link('https://bucket.storage.example.test/audios/a/take.mp3?X-Amz-Signature=abc'), { url: 'https://bucket.storage.example.test/audios/a/take.mp3?X-Amz-Signature=abc', own: false });
+  assert.deepEqual(link('/assets/sounds/x.m4a'), { url: '/assets/sounds/x.m4a', own: true });
+  assert.deepEqual(link('https://site.example.test/files/a.wav?v=2'), { url: '/files/a.wav?v=2', own: true }, 'a link to this site is fetched as a path');
+  for (const bad of ['http://bucket.storage.example.test/a.mp3', '//elsewhere.example.test/a.mp3', '/\\elsewhere.example.test/a', 'javascript:alert(1)', 'data:audio/wav;base64,AAAA', 'ftp://x.example.test/a', 'https://name:pw@x.example.test/a.mp3', 'not a link', 'x'.repeat(5000)]) {
+    assert.deepEqual(link(bad), { bad: true }, bad.slice(0, 40));
+  }
+  /* the three names in the address, and the server fetch only as the second try */
+  for (const k of ["q.get('src')", "q.get('bed')", "q.get('title')"]) assert.ok(PAGE_JS.includes(k), k);
+  assert.match(PAGE_JS, /API \+ '\/fetch\?url=' \+ encodeURIComponent\(link\.url\)/);
+  assert.ok(PAGE_JS.indexOf("mode: 'cors', credentials: 'omit'") < PAGE_JS.indexOf("API + '/fetch?url='"), 'the page tries the link itself first');
+  assert.match(PAGE_JS, /setTake\(audio, title \? 'from ' \+ title : 'from the link', MAX_FILE_SECONDS\)/);
+  assert.match(PAGE_JS, /S\.vc\.load\(b, 'bed:' \+ BACK_ID\)/);
 });
 
 test('page: every input, select and textarea has a label', () => {
@@ -154,13 +240,14 @@ test('page: the six fine-tune sliders have the ranges the engine clamps to', () 
   }
 });
 
-test('page script: the engine through host/client.js, a plain microphone, a 3-minute cap', () => {
+test('page script: the engine through host/client.js, a plain microphone, a 3-minute cap on recording', () => {
   const [, script] = scriptsOf(pageHtml);
   assert.equal(script, PAGE_JS);
   assert.match(script, /import\(S\.base \+ 'host\/client\.js'\)/);
   assert.match(script, /createEngine\(\{ base: S\.base \}\)/);
   assert.match(script, /echoCancellation: false, noiseSuppression: false, autoGainControl: false/);
   assert.match(script, /var MAX_SECONDS = 180;/);
+  assert.match(script, /var MAX_FILE_SECONDS = 480;/, 'an opened file or a handed-over take may be a whole song');
   assert.match(script, /'\/api\/kade\/voice-changer'/);
   assert.equal((script.match(/new C\(\)/g) || []).length, 1, 'one AudioContext');
   assert.doesNotMatch(script, /\.play\(\)/, 'nothing goes through a media element');

@@ -270,6 +270,14 @@ ducking under the voice.
   `bed: { file: '<id>', level, duck, fade }` with `opts.bedAudio` = the decoded buffer. render.js
   resamples it to the take's rate, loops it with an equal-power crossfade (0.6 s) when shorter than
   the take, starts at a seeded random offset, and mixes it exactly like a synthesized bed.
+- Backing tracks (Nov 18 2026): a sound-file bed with `sync: true`
+  (`bed: { file: '<id>', level, sync: true }`) is lined up with the take instead of looped. It
+  starts at the take's own start (a preview that begins at `opts.start` begins the track there
+  too: render.js passes that on as `opts.bedStart`), plays once and is silent after it ends, has
+  no fade unless `fade` is given, and never starts at a random place. `level` is still decibels
+  relative to the voice's loudness. This is how a changed vocal goes back over its music: the
+  effects never touch the track. When Speed is not 1 or a stage warps time, the report carries a
+  note that the two no longer line up. `report.bed.sync` is true for one.
 - `renderPreview(input, preset, opts)` — same, on `opts.start`..`opts.start+opts.seconds` (default 0..6).
 - `renderChain(input, chain, ctx)` for custom racks.
 - Unknown module ids or bad params throw `VCError` with a plain sentence.
@@ -287,6 +295,8 @@ plate, spring, small-hall, large-hall, ambience, infinite.
 
 | id | spoken name |
 |---|---|
+| quick | Quick picks (Nov 18 2026: the short starter list, first in every picker) |
+| singing | Singing and mixing (Nov 18 2026: starter racks for sung vocals) |
 | everyday | Everyday voices |
 | disguise | Disguises |
 | robots | Robots and machines |
@@ -343,3 +353,93 @@ search still covers everything.
   carrying that sound's id (req is null for `feed`), and `feed` returns false for it, so a native
   waiter for that id always resumes.
 - Node: `tools/render_cli.js in.wav preset-id out.wav` and `tools/listen.js` for listening folders.
+
+## 11. The effects rack (Nov 18 2026)
+
+The website page is also a rack: any chain of modules, each with every setting, built from
+nothing ("Start an empty rack") or from a preset ("Customize this preset"), up to 12 stages. An
+empty chain is allowed and plays the plain voice. What a mixing rack is expected to have, and the
+module that is it:
+
+| wanted | module |
+|---|---|
+| parametric EQ: six bands, each with shape, frequency, boost or cut, sharpness | `tone.eq` |
+| compressor: threshold, ratio, attack, release, makeup | `tone.compress` |
+| limiter | `tone.limit` (new) |
+| de-esser, noise gate | `tone.deess`, `tone.gate` |
+| saturation and distortion | `lofi.saturate`, `lofi.drive` |
+| bit crusher; sample rate reducer | `lofi.crush`; `lofi.downsample` (new) |
+| chorus, flanger, phaser, tremolo, auto-pan | `mod.chorus`, `mod.flanger`, `mod.phaser`, `mod.tremolo`, `mod.autopan` |
+| vibrato, ring modulator | `pitch.vibrato`, `synth.ringmod` |
+| slapback | `echo.slapback` |
+| ping-pong echo, tape echo (wobble, darker repeats), echo locked to a tempo and note value (dotted eighth and others) | `echo.delay`: Stereo "Bouncing between ears", Tape wobble with Darker repeats, Lock to a beat with Beat tempo. Also `echo.dub`, `echo.multitap` |
+| room and convolution reverb with the named spaces of section 8 | `space.room` |
+| hall, plate, spring reverb | `space.hall` (new), `space.plate` (new), `space.spring`; `space.reverb` is the general one |
+| pitch shift and formant shift | `pitch.voice` (Pitch, Timbre) |
+| hard tune and pitch correction to a key and scale, with speed | `pitch.correct` |
+| harmonizer with intervals in a key | `pitch.harmonizer` (new); `pitch.harmony` is fixed chords |
+| vocoder, robot | `synth.vocoder`, `spec.robot` |
+| granular: stutter, freeze, stretch, cloud | `time.stutter`, `spec.freeze`, `spec.stretch` (and `pitch.tempo`, `spec.paul`), `synth.granular` |
+| reverse | `time.reverse`, `time.reversewords`, `echo.reverse` |
+| telephone, radio, megaphone | `device.phone`, `device.radio`, `device.megaphone` |
+| stereo widener | `stereo.width`, `stereo.haas` |
+| tape and record wobble | `device.cassette` (Wow, Flutter), `device.vinyl` (Wow, Warp), `pitch.wobble` |
+
+The five new modules are tested in `test/rack.nodetest.mjs`. Two starter categories come first
+in every picker (section 9): `quick` (presets/quick.json, everyday favourites) and `singing`
+(presets/singing.json, racks for a sung vocal).
+
+## 12. Hand-off from the Sound Booth (Nov 18 2026)
+
+Another page hands a sound to the Voice Changer by opening one address:
+
+```
+/voice-changer?src=<link>&bed=<link>&title=<words>
+```
+
+Every value is URL-encoded (encodeURIComponent). All three are optional.
+
+- `src`: the sound to change. It becomes the take, exactly as if it had been uploaded.
+- `bed`: a second sound, the backing track (section 7). It is switched on at minus 3 decibels
+  against the voice, starts with the take, is never looped and never passes through the effects.
+  The page has a checkbox to switch it off, a level slider with a number box, and a file field,
+  so a backing track can also be chosen by hand.
+- `title`: up to 80 characters. It is said, shown beside the take, and put in the Title field,
+  so the saved or downloaded result carries it.
+
+A link is either an `https://` address with no name or password in it, or a path on this site
+that starts with one slash. Anything else is refused in a sentence and the page stays usable.
+Only the first 8 minutes of either sound are kept. Any format the browser can decode works
+(WAV, MP3, M4A, AAC, Ogg, FLAC, WebM, and the sound of a video).
+
+How a link is read: the page fetches it itself first (no cookies sent to other hosts). When the
+browser may not read it, because the storage sends no CORS header, a signed-in page asks
+
+```
+GET /api/kade/voice-changer/fetch?url=<link>        (Authorization: Bearer <token>)
+```
+
+which streams the file through and keeps nothing. It reads only:
+- the site's own storage: host `<bucket>.<endpoint>` or `<endpoint>/<bucket>/...`, where the
+  endpoint is the host of `AWS_ENDPOINT_URL` (Amazon's `s3.amazonaws.com` and
+  `s3.<AWS_REGION>.amazonaws.com` when that is not set) and the bucket is `AWS_BUCKET_NAME` or
+  `KADE_MEDIA_BUCKET`;
+- the site itself: the host of `DOMAIN_SERVER` or `DOMAIN_CLIENT`.
+
+It refuses, each in a plain sentence: anything not https or not on port 443, a link with a name
+or password, a bare IP address, any other host (403), a host that resolves to a private,
+loopback or link-local address (403), a redirect (502; they are never followed), a file that is
+not there or whose signed link has run out (404), anything that is not sound, video or a plain
+download by its type (415), more than 64 megabytes (413), and more than 120 fetches in 15
+minutes by one person (429). A signed link has to be valid when the page opens; the page reads
+it once.
+
+What comes back out: the person downloads a 16-bit WAV, or saves to My Creations (an MP3, kept
+as a `voice_changer` audio item with the title, the rack and the settings in its metadata). My
+Creations takes results up to 3 minutes 10 seconds; a longer one can only be downloaded, and
+the page says so. There is no automatic return to the page that handed the sound over.
+
+The switch: `KADE_VOICE_CHANGER=0` takes away the two pages (`/voice-changer` and
+`/voice-changer/engine` answer 404 with a sentence, read on every request) and the Create row
+on Home (read when the server starts). Unset, or any other value, leaves them on. The API and
+`/vc-engine/` stay mounted either way, and `GET /config` says `enabled: false` while it is off.

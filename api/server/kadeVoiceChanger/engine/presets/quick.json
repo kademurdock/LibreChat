@@ -1,0 +1,774 @@
+[
+  {
+    "id": "quick-phone-call",
+    "name": "Phone call",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "Your voice on an everyday phone call, thin and a little squeezed.",
+    "tags": [
+      "phone",
+      "call",
+      "telephone"
+    ],
+    "chain": [
+      {
+        "m": "device.phone",
+        "p": {
+          "era": "cellular",
+          "noise": 15,
+          "crackle": 5,
+          "rough": 25
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-old-radio",
+    "name": "Old radio",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "Your voice on an old AM radio, with a little static.",
+    "tags": [
+      "radio",
+      "am",
+      "old"
+    ],
+    "chain": [
+      {
+        "m": "device.radio",
+        "p": {}
+      }
+    ],
+    "seed": 211
+  },
+  {
+    "id": "quick-walkie-talkie",
+    "name": "Walkie-talkie radio",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "A handheld radio with a click when you talk and a chirp when you let go.",
+    "tags": [
+      "walkie",
+      "radio",
+      "handheld"
+    ],
+    "chain": [
+      {
+        "m": "device.walkie",
+        "p": {
+          "beep": "chirp"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-megaphone",
+    "name": "Street megaphone",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "Shouting through a bullhorn out on the street.",
+    "tags": [
+      "megaphone",
+      "bullhorn",
+      "loud"
+    ],
+    "chain": [
+      {
+        "m": "device.megaphone",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-drive-through",
+    "name": "Drive-through speaker",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "The crackly little speaker at a fast food drive-through.",
+    "tags": [
+      "drive-through",
+      "speaker",
+      "intercom"
+    ],
+    "chain": [
+      {
+        "m": "device.intercom",
+        "p": {
+          "style": "drive"
+        }
+      }
+    ],
+    "seed": 231
+  },
+  {
+    "id": "quick-stadium-announcer",
+    "name": "Stadium announcer",
+    "cat": "quick",
+    "sub": "Phones, radios and speakers",
+    "about": "Your voice over the big stadium speakers, echoing off the far stands.",
+    "tags": [
+      "stadium",
+      "announcer",
+      "echo"
+    ],
+    "chain": [
+      {
+        "m": "device.pa",
+        "p": {
+          "venue": "stadium",
+          "push": 50,
+          "towers": 60,
+          "distance": 30
+        }
+      }
+    ],
+    "bed": {
+      "b": "stadium-crowd",
+      "level": -20,
+      "p": {
+        "intensity": 60
+      }
+    },
+    "seed": 1
+  },
+  {
+    "id": "quick-deep-voice",
+    "name": "Deep voice",
+    "cat": "quick",
+    "sub": "Higher, lower, bigger, smaller",
+    "about": "Your own voice, a big step lower and a little larger.",
+    "tags": [
+      "deep",
+      "low",
+      "big"
+    ],
+    "chain": [
+      {
+        "m": "pitch.voice",
+        "p": {
+          "semitones": -6,
+          "formant": -3
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-chipmunk",
+    "name": "Chipmunk voice",
+    "cat": "quick",
+    "sub": "Higher, lower, bigger, smaller",
+    "about": "Fast and squeaky, like a tape played too quickly.",
+    "tags": [
+      "chipmunk",
+      "fast",
+      "squeaky"
+    ],
+    "chain": [
+      {
+        "m": "pitch.speed",
+        "p": {
+          "speed": 1.7
+        }
+      },
+      {
+        "m": "tone.character",
+        "p": {
+          "shape": "bright",
+          "amount": 50
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-helium",
+    "name": "Helium balloon",
+    "cat": "quick",
+    "sub": "Higher, lower, bigger, smaller",
+    "about": "One breath from a party balloon: the same notes, but a tiny squeaky throat.",
+    "tags": [
+      "helium",
+      "squeaky",
+      "funny"
+    ],
+    "chain": [
+      {
+        "m": "pitch.helium",
+        "p": {}
+      },
+      {
+        "m": "space.room",
+        "p": {
+          "mix": 20
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-giant",
+    "name": "Giant in a cave",
+    "cat": "quick",
+    "sub": "Higher, lower, bigger, smaller",
+    "about": "A huge slow voice booming off wet stone.",
+    "tags": [
+      "giant",
+      "huge",
+      "cave"
+    ],
+    "chain": [
+      {
+        "m": "pitch.voice",
+        "p": {
+          "semitones": -8,
+          "formant": -6
+        }
+      },
+      {
+        "m": "space.room",
+        "p": {
+          "space": "cave",
+          "mix": 70
+        }
+      }
+    ],
+    "bed": {
+      "b": "cave-drips",
+      "level": -24
+    },
+    "seed": 1
+  },
+  {
+    "id": "quick-cave-echo",
+    "name": "Cave echo",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "Your voice ringing off the rock walls of a big cave.",
+    "tags": [
+      "cave",
+      "echo",
+      "stone"
+    ],
+    "chain": [
+      {
+        "m": "space.room",
+        "p": {
+          "space": "cave",
+          "mix": 45
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-hall-echo",
+    "name": "Big hall echo",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "A grand concert hall that rings after every word.",
+    "tags": [
+      "hall",
+      "echo",
+      "concert"
+    ],
+    "chain": [
+      {
+        "m": "space.room",
+        "p": {
+          "space": "concert-hall",
+          "mix": 45
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-cathedral",
+    "name": "Stone cathedral",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "A huge stone cathedral where your words hang in the air.",
+    "tags": [
+      "cathedral",
+      "church",
+      "echo"
+    ],
+    "chain": [
+      {
+        "m": "space.room",
+        "p": {
+          "space": "cathedral",
+          "distance": 60
+        }
+      }
+    ],
+    "seed": 47
+  },
+  {
+    "id": "quick-canyon-echo",
+    "name": "Canyon echo",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "Shouting across a canyon and hearing your words come back.",
+    "tags": [
+      "canyon",
+      "echo",
+      "outdoors"
+    ],
+    "chain": [
+      {
+        "m": "echo.canyon",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-shower",
+    "name": "Singing in the shower",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "Bright tiled walls close around you in a steamy shower.",
+    "tags": [
+      "shower",
+      "bathroom",
+      "tiles"
+    ],
+    "chain": [
+      {
+        "m": "space.room",
+        "p": {
+          "space": "shower"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-underwater",
+    "name": "Under the water",
+    "cat": "quick",
+    "sub": "Echoes and places",
+    "about": "Talking from under the water, muffled and wobbly.",
+    "tags": [
+      "underwater",
+      "muffled",
+      "bubbles"
+    ],
+    "chain": [
+      {
+        "m": "mod.underwater",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-robot",
+    "name": "Tin robot",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "A buzzing tin robot from an old science fiction movie.",
+    "tags": [
+      "robot",
+      "machine",
+      "buzz"
+    ],
+    "chain": [
+      {
+        "m": "spec.robot",
+        "p": {
+          "pitch": 95,
+          "frame": "large"
+        }
+      },
+      {
+        "m": "synth.ringmod",
+        "p": {
+          "freq": 60,
+          "mix": 40
+        }
+      },
+      {
+        "m": "tone.character",
+        "p": {
+          "shape": "honky"
+        }
+      },
+      {
+        "m": "space.spring",
+        "p": {
+          "mix": 30
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-monster",
+    "name": "Growling monster",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "A huge growling monster, two octaves under your own voice.",
+    "tags": [
+      "monster",
+      "demon",
+      "growl"
+    ],
+    "chain": [
+      {
+        "m": "pitch.octaver",
+        "p": {
+          "down1": 85,
+          "down2": 50,
+          "dry": 70
+        }
+      },
+      {
+        "m": "pitch.subharmonic",
+        "p": {
+          "sub": 50,
+          "rough": 40
+        }
+      },
+      {
+        "m": "lofi.drive",
+        "p": {
+          "drive": 14,
+          "character": "warm"
+        }
+      },
+      {
+        "m": "space.room",
+        "p": {
+          "space": "cathedral",
+          "mix": 25
+        }
+      }
+    ],
+    "seed": 33
+  },
+  {
+    "id": "quick-alien",
+    "name": "Alien visitor",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "A small visitor from another world with a voice just off true.",
+    "tags": [
+      "alien",
+      "space",
+      "visitor"
+    ],
+    "chain": [
+      {
+        "m": "pitch.voice",
+        "p": {
+          "semitones": 3,
+          "formant": 5
+        }
+      },
+      {
+        "m": "synth.freqshift",
+        "p": {
+          "shift": -40
+        }
+      },
+      {
+        "m": "spec.whisper",
+        "p": {
+          "amount": 25
+        }
+      },
+      {
+        "m": "space.reverb",
+        "p": {
+          "decay": 2.4
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-ghost",
+    "name": "Drifting ghost",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "A breathy drifting voice whose echo swells up before every word.",
+    "tags": [
+      "ghost",
+      "spooky",
+      "echo"
+    ],
+    "chain": [
+      {
+        "m": "spec.whisper",
+        "p": {
+          "amount": 60
+        }
+      },
+      {
+        "m": "pitch.wobble",
+        "p": {
+          "depth": 40
+        }
+      },
+      {
+        "m": "echo.preverb",
+        "p": {
+          "space": "cathedral"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-whisper",
+    "name": "Breathy whisper",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "Every word turned into a breathy whisper.",
+    "tags": [
+      "whisper",
+      "breathy",
+      "quiet"
+    ],
+    "chain": [
+      {
+        "m": "spec.whisper",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-anonymous",
+    "name": "Anonymous witness",
+    "cat": "quick",
+    "sub": "Characters and disguises",
+    "about": "The hidden-identity voice from the news: lower, but nobody could say whose.",
+    "tags": [
+      "anonymous",
+      "disguise",
+      "hidden"
+    ],
+    "chain": [
+      {
+        "m": "pitch.voice",
+        "p": {
+          "semitones": -5,
+          "formant": 3
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-old-record",
+    "name": "Old record",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "A scratchy old 78 record on a wind-up gramophone.",
+    "tags": [
+      "record",
+      "gramophone",
+      "crackle"
+    ],
+    "chain": [
+      {
+        "m": "device.gramophone",
+        "p": {}
+      }
+    ],
+    "seed": 304
+  },
+  {
+    "id": "quick-talk-box",
+    "name": "Talk box",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "A smooth synth shaped by your mouth, following the tune of your voice.",
+    "tags": [
+      "talk box",
+      "synth",
+      "funk"
+    ],
+    "chain": [
+      {
+        "m": "synth.talkbox",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-hard-tune",
+    "name": "Hard pitch correction",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Your voice snapped to the nearest note, the robotic pop singing sound.",
+    "tags": [
+      "pitch correction",
+      "singing",
+      "tuned"
+    ],
+    "chain": [
+      {
+        "m": "pitch.correct",
+        "p": {}
+      },
+      {
+        "m": "tone.filter",
+        "p": {
+          "type": "highpass",
+          "freq": 140
+        }
+      },
+      {
+        "m": "tone.eq",
+        "p": {
+          "band4Gain": 3,
+          "band6Gain": 4.5
+        }
+      },
+      {
+        "m": "tone.compress",
+        "p": {
+          "threshold": -32,
+          "ratio": 6,
+          "attack": 0.5,
+          "release": 50
+        }
+      },
+      {
+        "m": "tone.deess",
+        "p": {}
+      },
+      {
+        "m": "echo.delay",
+        "p": {
+          "division": "sixteenth",
+          "feedback": 25,
+          "mix": 20
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-choir",
+    "name": "Choir made of you",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Twenty copies of you singing as one in a church.",
+    "tags": [
+      "choir",
+      "singing",
+      "church"
+    ],
+    "chain": [
+      {
+        "m": "stereo.crowd",
+        "p": {
+          "people": 10,
+          "pitchSpread": 0.5,
+          "timbreSpread": 3,
+          "timing": 40,
+          "room": "church"
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-8-bit",
+    "name": "8-bit game",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Your voice squeezed through the sound chip of an old game console.",
+    "tags": [
+      "8-bit",
+      "game",
+      "retro"
+    ],
+    "chain": [
+      {
+        "m": "lofi.console",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-backwards",
+    "name": "Backwards words",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Every syllable plays backwards in its own place, like a secret language.",
+    "tags": [
+      "backwards",
+      "reverse",
+      "secret"
+    ],
+    "chain": [
+      {
+        "m": "time.reversewords",
+        "p": {}
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-circling",
+    "name": "Circling your head",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Your voice walks slowly around your head, best heard on headphones.",
+    "tags": [
+      "3d",
+      "headphones",
+      "stereo"
+    ],
+    "chain": [
+      {
+        "m": "stereo.orbit",
+        "p": {
+          "period": 8
+        }
+      }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "quick-podcast",
+    "name": "Podcast clean-up",
+    "cat": "quick",
+    "sub": "Music and sound tricks",
+    "about": "Less background noise, a steadier level and a close, clear sound.",
+    "tags": [
+      "podcast",
+      "clean",
+      "studio"
+    ],
+    "chain": [
+      {
+        "m": "tone.denoise",
+        "p": {}
+      },
+      {
+        "m": "tone.compress",
+        "p": {}
+      },
+      {
+        "m": "tone.broadcast",
+        "p": {
+          "style": "podcast"
+        }
+      }
+    ],
+    "seed": 1
+  }
+]

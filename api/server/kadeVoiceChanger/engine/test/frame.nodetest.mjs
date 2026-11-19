@@ -434,9 +434,9 @@ test('works at 22.05 kHz and with stereo takes', () => {
 
 // ---------------------------------------------------------------- catalog
 
-test('catalog: the 26 categories in contract order', () => {
+test('catalog: the 28 categories in contract order', () => {
   const ids = C.CATEGORIES.map((c) => c.id)
-  assert.deepEqual(ids, ['everyday', 'disguise', 'robots', 'creatures', 'fantasy', 'scifi', 'critters', 'comedy', 'phones', 'retro', 'places', 'nature', 'vehicles', 'stereo', 'echo', 'music', 'broadcast', 'strange', 'spooky', 'studio', 'asmr', 'amps', 'beats', 'instruments', 'mastering', 'mix'])
+  assert.deepEqual(ids, ['quick', 'singing', 'everyday', 'disguise', 'robots', 'creatures', 'fantasy', 'scifi', 'critters', 'comedy', 'phones', 'retro', 'places', 'nature', 'vehicles', 'stereo', 'echo', 'music', 'broadcast', 'strange', 'spooky', 'studio', 'asmr', 'amps', 'beats', 'instruments', 'mastering', 'mix'])
   assert.equal(C.categoryShortName('mix'), 'Mix and match')
 })
 
@@ -507,7 +507,7 @@ test('catalog: validatePreset finds the plain problems', () => {
   assert.ok(has({ ...good, name: 'Deep like Michael' }, /michael/i))
   assert.ok(has({ ...good, name: 'Tiny smurf voice' }, /smurf/))
   assert.ok(has({ ...good, name: 'Starship voice jarvis' }, /jarvis/))
-  assert.ok(has({ ...good, cat: 'nope' }, /26 categories/))
+  assert.ok(has({ ...good, cat: 'nope' }, /28 categories/))
   assert.ok(has({ ...good, cat: 'mix' }, /generated/))
   assert.ok(has({ ...good, about: 'x'.repeat(130) }, /under 120/))
   assert.ok(has({ ...good, about: 'One. Two.' }, /one sentence/))
@@ -576,7 +576,7 @@ test('make_registry builds every generated file in a copy, atomically and repeat
     assert.ok(!manifest.files.some((f) => f.startsWith('test/')))
     const catalog = JSON.parse(readFileSync(join(dir, 'catalog.json'), 'utf8'))
     assert.equal(catalog.version, manifest.version)
-    assert.equal(catalog.categories.length, 26)
+    assert.equal(catalog.categories.length, 28)
     assert.ok(catalog.presets.some((p) => p.cat === 'mix'))
     assert.ok(catalog.presets.every((p) => typeof p.live === 'boolean'))
     const mods = JSON.parse(readFileSync(join(dir, 'modules.json'), 'utf8'))

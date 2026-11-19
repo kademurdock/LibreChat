@@ -265,6 +265,7 @@ function mixBed(buf, spec, opts, rng, notes) {
   if (!n) return { buf, info: null }
   let bedCh = null
   let what
+  let synced = false
   if (typeof spec.file === 'string' && spec.file) {
     what = 'file:' + spec.file
     const src = soundAt(pickBedAudio(opts.bedAudio, spec.file), sr)
@@ -272,9 +273,22 @@ function mixBed(buf, spec, opts, rng, notes) {
       notes.push('The background sound was not loaded, so the voice plays without it.')
       return { buf, info: null }
     }
-    const P = Math.max(1, src[0].length - Math.min(Math.round(LOOP_XFADE * sr), Math.floor(src[0].length / 3)))
-    const offset = rng.fork('bed-offset').int(P)
-    bedCh = loopTo(src, n, sr, offset)
+    if (spec.sync === true) {
+      // A backing track (Nov 18 2026): lined up with the take from its own start (a
+      // preview that starts part way in starts the track there too), played once,
+      // silent after it ends. Never looped, never started at a random place.
+      synced = true
+      const at = Math.max(0, Math.round(num(opts.bedStart, 0) * sr))
+      bedCh = src.map((s) => {
+        const y = new Float32Array(n)
+        if (at < s.length) y.set(s.subarray(at, Math.min(s.length, at + n)))
+        return y
+      })
+    } else {
+      const P = Math.max(1, src[0].length - Math.min(Math.round(LOOP_XFADE * sr), Math.floor(src[0].length / 3)))
+      const offset = rng.fork('bed-offset').int(P)
+      bedCh = loopTo(src, n, sr, offset)
+    }
   } else if (typeof spec.b === 'string' && spec.b) {
     what = spec.b
     const bed = lookupBed(opts, spec.b)
@@ -306,7 +320,8 @@ function mixBed(buf, spec, opts, rng, notes) {
   const bedL = lufs(bedBuf)
   if (!(bedL > -70)) return { buf, info: { bed: what, level, silent: true } }
   const g = dbToGain(ref + level - bedL)
-  const [fi, fo] = fadeSpec(spec.fade)
+  // a backing track keeps its own start and end unless a fade is asked for
+  const [fi, fo] = fadeSpec(synced && spec.fade === undefined ? false : spec.fade)
   fade(bedBuf, Math.min(fi, n / sr / 2), Math.min(fo, n / sr / 2))
   const duckDb = spec.duck === true ? 6 : clamp(num(spec.duck, 0), 0, 40)
   let duck = null
@@ -331,7 +346,9 @@ function mixBed(buf, spec, opts, rng, notes) {
     if (duck) for (let i = 0; i < n; i++) o[i] += s[i] * g * duck[i]
     else for (let i = 0; i < n; i++) o[i] += s[i] * g
   }
-  return { buf: out, info: { bed: what, level, duck: duckDb, gainDb: Math.round(gainToDb(g) * 10) / 10 } }
+  const info = { bed: what, level, duck: duckDb, gainDb: Math.round(gainToDb(g) * 10) / 10 }
+  if (synced) info.sync = true
+  return { buf: out, info }
 }
 
 function finish(buf, target, volume, report) {
@@ -556,6 +573,9 @@ function* renderGen(input, preset, opts) {
   }
 
   if (bedSpec && typeof bedSpec === 'object') {
+    if (bedSpec.sync === true && (speed !== 1 || warper)) {
+      note('The backing track no longer lines up with the voice, because ' + (speed !== 1 ? 'Speed is not at 1' : (warper.mod.name || warper.m) + ' changes the timing') + '.')
+    }
     const r = mixBed(buf, bedSpec, o, rng, notes)
     buf = r.buf
     report.bed = r.info
@@ -609,13 +629,15 @@ async function runAsync(gen) {
   return r.value
 }
 
-function previewSlice(input, opts) {
+/** The stretch of the take a preview plays, and the options for it: bedStart tells a
+ *  lined-up backing track (a sound-file bed with sync) where in the take the preview begins. */
+function previewParts(input, opts) {
   const o = opts || {}
   const b = takeIn(input)
   const total = bufLen(b) / b.sr
   const start = clamp(num(o.start, 0), 0, Math.max(0, total))
   const secs = clamp(num(o.seconds, 6), 0.05, 600)
-  return sliceBuf(b, start, Math.min(total, start + secs))
+  return { take: sliceBuf(b, start, Math.min(total, start + secs)), opts: { ...o, bedStart: num(o.bedStart, 0) + start } }
 }
 
 /** Render a whole take with a preset. Returns { buf, report }. */
@@ -625,7 +647,8 @@ export function renderPreset(input, preset, opts = {}) {
 
 /** Same as renderPreset on opts.start .. opts.start + opts.seconds (default 0 .. 6 s). */
 export function renderPreview(input, preset, opts = {}) {
-  return runSync(renderGen(previewSlice(input, opts), preset, opts))
+  const pv = previewParts(input, opts)
+  return runSync(renderGen(pv.take, preset, pv.opts))
 }
 
 /** A custom rack: the chain as an ad hoc preset, with the same finishing steps. */
@@ -645,7 +668,8 @@ export function renderPresetAsync(input, preset, opts = {}) {
 
 export function renderPreviewAsync(input, preset, opts = {}) {
   try {
-    return runAsync(renderGen(previewSlice(input, opts), preset, opts))
+    const pv = previewParts(input, opts)
+    return runAsync(renderGen(pv.take, preset, pv.opts))
   } catch (e) {
     return Promise.reject(e)
   }

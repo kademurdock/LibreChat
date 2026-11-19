@@ -17,8 +17,18 @@
  *                        show to everyone with the owner's first name only
  *   GET/PUT  /prefs      favourites, recent list and preview settings, shared between
  *                        the website and the iPhone
+ *   GET  /fetch?url=     (Nov 18 2026) the Sound Booth hand-off: the page opens
+ *                        /voice-changer?src=<link> and reads the link itself; when the
+ *                        browser may not (no CORS on the bucket), it asks here. Only https
+ *                        links into the site's own storage bucket or the site itself are
+ *                        fetched, never a private address, never a redirect, at most
+ *                        64 megabytes, streamed straight through, never kept.
  * Every route needs a signed-in person. Every refusal is a plain sentence,
  * because it is read aloud.
+ *
+ * KADE_VOICE_CHANGER=0 switches the two pages (and Home's Create row, kadeHome.js) off
+ * without a deploy revert; unset or anything else leaves them on. The API and the engine
+ * folder stay mounted either way.
  *
  * createRouter(deps) takes everything it touches (sign-in, models, storage,
  * ffmpeg) so kadeVoiceChanger.nodetest.js runs it with no database, no network
@@ -28,8 +38,12 @@
 
 const fs = require('fs');
 const os = require('os');
+const net = require('net');
+const dns = require('dns');
 const path = require('path');
+const https = require('https');
 const crypto = require('crypto');
+const { Transform, pipeline } = require('stream');
 const { execFile } = require('child_process');
 const express = require('express');
 const multer = require('multer');
@@ -38,8 +52,14 @@ const serve = require('../kadeVoiceChanger/serve');
 
 const VC_DIR = path.join(__dirname, '..', 'kadeVoiceChanger');
 
-const MAX_SECONDS = 180; /* what the pages promise: three minutes */
+const MAX_SECONDS = 180; /* what the pages promise for a recording: three minutes */
+const MAX_FILE_SECONDS = 480; /* an opened file or a Sound Booth take (a whole song): eight minutes */
 const HARD_SECONDS = 190; /* what a save may measure, with room for a tail */
+const FETCH_MAX_BYTES = 64 * 1024 * 1024; /* the most GET /fetch passes through */
+const FETCH_TIMEOUT_MS = 20000;
+const FETCHES_PER_WINDOW = 120;
+const FETCH_WINDOW_MS = 15 * 60 * 1000;
+const FETCH_URL_MAX = 4096;
 const PREVIEW_SECONDS = 6;
 const SAVE_MAX_BYTES = 40 * 1024 * 1024;
 const SAVES_PER_DAY = 300;
@@ -239,6 +259,156 @@ class Problem extends Error {
     super(message);
     this.status = status;
   }
+}
+
+/* ── The switch, and the storage fetch for the Sound Booth hand-off ─────── */
+
+/** KADE_VOICE_CHANGER=0 turns the pages and Home's Create row off; unset or anything else is on. */
+function voiceChangerOn(env = process.env) {
+  return String((env && env.KADE_VOICE_CHANGER) ?? '').trim() !== '0';
+}
+
+function hostOf(value) {
+  try {
+    return value ? new URL(String(value)).hostname.toLowerCase() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+/**
+ * Where GET /fetch may read from, built from the settings the server already stores with
+ * (the same ones kadeSoundBoothErrors.js inOurStorage reads): the S3 endpoint
+ * (AWS_ENDPOINT_URL, Backblaze here; Amazon's own hosts when it is not set) with our
+ * bucket in front of the host or first in the path, plus the site's own host
+ * (DOMAIN_SERVER, DOMAIN_CLIENT). With no bucket set, nothing in storage is allowed:
+ * a guess here would turn the server into an open fetcher.
+ * Returns { hosts: Set of whole hosts, pathBuckets: Map of endpoint host -> Set of buckets }.
+ */
+function fetchAllowList(env = process.env) {
+  const hosts = new Set();
+  const pathBuckets = new Map();
+  const region = String(env.AWS_REGION || '').toLowerCase();
+  const endpoints = (env.AWS_ENDPOINT_URL ? [hostOf(env.AWS_ENDPOINT_URL)] : ['s3.amazonaws.com', region && `s3.${region}.amazonaws.com`]).filter(Boolean);
+  const buckets = [env.AWS_BUCKET_NAME, env.KADE_MEDIA_BUCKET]
+    .filter(Boolean)
+    .map((b) => String(b).toLowerCase())
+    .filter((b) => /^[a-z0-9][a-z0-9.-]{1,62}$/.test(b));
+  for (const endpoint of endpoints) {
+    for (const bucket of buckets) {
+      hosts.add(`${bucket}.${endpoint}`);
+      if (!pathBuckets.has(endpoint)) pathBuckets.set(endpoint, new Set());
+      pathBuckets.get(endpoint).add(bucket);
+    }
+  }
+  for (const key of ['DOMAIN_SERVER', 'DOMAIN_CLIENT']) {
+    const h = hostOf(env[key]);
+    if (h && h.includes('.') && !net.isIP(h)) hosts.add(h);
+  }
+  return { hosts, pathBuckets };
+}
+
+/** True when this parsed https URL points at a host (and, path-style, a bucket) on the list. */
+function allowedFetchUrl(u, allow) {
+  const host = String(u.hostname || '').toLowerCase();
+  if (allow.hosts.has(host)) return true;
+  const buckets = allow.pathBuckets.get(host);
+  if (!buckets) return false;
+  let first = '';
+  try {
+    first = decodeURIComponent(u.pathname.split('/')[1] || '').toLowerCase();
+  } catch (_) {
+    return false;
+  }
+  return buckets.has(first);
+}
+
+/** Loopback, private, link-local, carrier-shared, multicast and reserved addresses: never fetched. */
+function isPrivateAddress(ip) {
+  const s = String(ip || '').toLowerCase();
+  if (net.isIPv4(s)) {
+    const [a, b] = s.split('.').map(Number);
+    return (
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && (b === 168 || b === 0)) ||
+      (a === 198 && (b === 18 || b === 19))
+    );
+  }
+  if (net.isIPv6(s)) {
+    if (s === '::' || s === '::1') return true;
+    const mapped = s.match(/^::ffff:(.+)$/);
+    if (mapped) return net.isIPv4(mapped[1]) ? isPrivateAddress(mapped[1]) : true;
+    if (s.startsWith('64:ff9b:')) return true; /* NAT64 can reach private IPv4 */
+    const first = parseInt(s.split(':')[0] || '0', 16);
+    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00;
+  }
+  return true;
+}
+
+/** The one public address a host resolves to; a Problem when any of its addresses is private. */
+async function resolvePublicHost(host) {
+  let found;
+  try {
+    found = await dns.promises.lookup(host, { all: true, verbatim: true });
+  } catch (_) {
+    throw new Problem('That link’s address could not be found just now. Try again in a moment.', 502);
+  }
+  if (!Array.isArray(found) || !found.length) throw new Problem('That link’s address could not be found just now. Try again in a moment.', 502);
+  if (found.some((a) => isPrivateAddress(a.address))) throw new Problem('That link points inside a private network, so it was not opened.', 403);
+  return { address: found[0].address, family: found[0].family };
+}
+
+/**
+ * Open the link with a plain GET that can only reach the address already checked (the
+ * request's own lookup is pinned to it, so a second DNS answer cannot move it somewhere
+ * private). Resolves to the response stream; redirects are never followed.
+ */
+function openUpstream(u, at) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      {
+        host: u.hostname,
+        servername: u.hostname,
+        port: 443,
+        path: `${u.pathname}${u.search}`,
+        headers: { accept: 'audio/*, video/*;q=0.9, application/octet-stream;q=0.8', 'user-agent': 'kade-voice-changer' },
+        lookup: (_h, opts, cb) => (opts && opts.all ? cb(null, [{ address: at.address, family: at.family }]) : cb(null, at.address, at.family)),
+        timeout: FETCH_TIMEOUT_MS,
+        agent: false,
+      },
+      resolve,
+    );
+    req.on('timeout', () => req.destroy(new Error('timed out')));
+    req.on('error', reject);
+  });
+}
+
+const FETCH_TYPES = /^(audio\/|video\/|application\/(octet-stream|ogg|x-ogg)$|binary\/octet-stream$)/;
+
+/** The link a page asked for, checked: an https URL on the allow-list, nothing else. */
+function checkFetchUrl(raw, allow) {
+  if (typeof raw !== 'string' || !raw.trim()) throw new Problem('Say which sound to open: send its https link as "url".');
+  if (raw.length > FETCH_URL_MAX) throw new Problem('That link is too long to open.');
+  let u;
+  try {
+    u = new URL(raw.trim());
+  } catch (_) {
+    throw new Problem('That link could not be read as a web address.');
+  }
+  if (u.protocol !== 'https:') throw new Problem('Only https links can be opened here.');
+  if (u.username || u.password) throw new Problem('A link with a name or password in it cannot be opened here.');
+  if (u.port && u.port !== '443') throw new Problem('A link to an unusual port cannot be opened here.');
+  const host = u.hostname.toLowerCase();
+  if (net.isIP(host.replace(/^\[|\]$/g, '')) || !host.includes('.')) {
+    throw new Problem('That link points at a bare address, not at this site’s storage, so it was not opened.', 403);
+  }
+  if (!allowedFetchUrl(u, allow)) {
+    throw new Problem('That link is not in this site’s own storage, so it was not opened. Download the sound and upload it here instead.', 403);
+  }
+  return u;
 }
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v) && [Object.prototype, null].includes(Object.getPrototypeOf(v));
@@ -584,6 +754,13 @@ function createRouter(deps) {
     filterShared: async (docs) => docs,
     savesPerDay: SAVES_PER_DAY,
     uuid: () => crypto.randomUUID(),
+    /* GET /fetch: where it may read (looked up per request, so the settings in force are the
+     * ones used), how a host becomes one public address, and how the link is opened */
+    fetchAllow: () => fetchAllowList(process.env),
+    resolveHost: resolvePublicHost,
+    openUpstream,
+    fetchesPerWindow: FETCHES_PER_WINDOW,
+    fetchMaxBytes: FETCH_MAX_BYTES,
     ...deps,
   };
   for (const k of ['auth', 'KadeAsset', 'KadeVoicePreset', 'KadeVoicePrefs', 'saveBufferToS3', 'probeSeconds', 'transcode']) {
@@ -613,7 +790,7 @@ function createRouter(deps) {
   };
 
   /* GET /config — where everything lives and what the limits are. */
-  router.get('/config', (_req, res) => {
+  router.get('/config', (req, res) => {
     const v = d.engine.version;
     const base = `/vc-engine/${v}/`;
     res.json({
@@ -627,7 +804,12 @@ function createRouter(deps) {
       soundBeds: d.soundBeds.beds,
       soundBedGroups: d.soundBeds.groups,
       samples: d.samples.map((s) => ({ id: s.id, name: s.name, url: `${base}${s.file}`, seconds: s.seconds })),
+      enabled: voiceChangerOn(),
       maxSeconds: MAX_SECONDS,
+      maxFileSeconds: MAX_FILE_SECONDS,
+      saveMaxSeconds: HARD_SECONDS,
+      fetchUrl: `${String(req.baseUrl || '/api/kade/voice-changer')}/fetch`,
+      fetchMaxBytes: d.fetchMaxBytes,
       previewSeconds: PREVIEW_SECONDS,
       saveMaxBytes: SAVE_MAX_BYTES,
       saveKinds: AUDIO_EXTS,
@@ -641,8 +823,76 @@ function createRouter(deps) {
         favorites: FAVORITES_MAX,
         recent: RECENT_MAX,
       },
-      features: { save: true, presets: true, aiBeds: false },
+      features: { save: true, presets: true, aiBeds: false, rack: true, backingTrack: true, fetch: true },
     });
+  });
+
+  /* GET /fetch?url= — one sound from the site's own storage, for the Sound Booth hand-off
+   * (the page tries the link itself first; this is for a bucket that sends no CORS header).
+   * Checked link, public address only, no redirects, a sound or video type only, at most
+   * fetchMaxBytes, streamed through and never kept. */
+  const fetchLimit = rateLimit({
+    windowMs: FETCH_WINDOW_MS,
+    limit: d.fetchesPerWindow,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => userIdOf(req),
+    handler: (_req, res) =>
+      res.status(429).set('Cache-Control', 'no-store').json({
+        error: 'That is a lot of sounds opened in a few minutes. Wait a little, then open it again.',
+      }),
+  });
+  const megabytes = (n) => Math.round(n / 1024 / 1024);
+
+  router.get('/fetch', fetchLimit, async (req, res) => {
+    let upstream = null;
+    try {
+      const u = checkFetchUrl(req.query && req.query.url, d.fetchAllow());
+      const at = await d.resolveHost(u.hostname.toLowerCase());
+      if (!at || !at.address || isPrivateAddress(at.address)) throw new Problem('That link points inside a private network, so it was not opened.', 403);
+      try {
+        upstream = await d.openUpstream(u, at);
+      } catch (err) {
+        d.logger.warn(`[voice-changer] fetch could not reach ${u.hostname}: ${(err && err.message) || err}`);
+        throw new Problem('The sound could not be reached just now. Try again in a moment.', 502);
+      }
+      const status = Number(upstream.statusCode) || 0;
+      if (status >= 300 && status < 400) throw new Problem('That link has moved, and moved links are not followed here. Open the sound again from where you made it.', 502);
+      if (status === 401 || status === 403 || status === 404 || status === 410) {
+        throw new Problem('That sound is not there any more, or its link has run out. Open it again from where you made it.', 404);
+      }
+      if (status !== 200) throw new Problem('The storage did not hand the sound over just now. Try again in a moment.', 502);
+      const headers = upstream.headers || {};
+      const type = String(headers['content-type'] || 'application/octet-stream').toLowerCase().split(';')[0].trim();
+      if (!FETCH_TYPES.test(type)) throw new Problem('That link is not a sound or video file, so it was not opened.', 415);
+      const declared = Number(headers['content-length']);
+      if (Number.isFinite(declared) && declared > d.fetchMaxBytes) {
+        throw new Problem(`That sound is too big to open this way: the most is ${megabytes(d.fetchMaxBytes)} megabytes. Download it and upload it here instead.`, 413);
+      }
+      res.status(200);
+      res.set('Content-Type', type);
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.set('Content-Disposition', 'attachment');
+      if (Number.isFinite(declared) && declared >= 0) res.set('Content-Length', String(declared));
+      let seen = 0;
+      const cap = new Transform({
+        transform(chunk, _enc, done) {
+          seen += chunk.length;
+          /* a body longer than it said, or one with no length at all: cut it off at the cap */
+          if (seen > d.fetchMaxBytes) return done(new Error('over the size cap'));
+          return done(null, chunk);
+        },
+      });
+      /* pipeline tears all three down together: when the listener goes away the read from
+       * storage stops, and when storage fails or the cap is passed the answer is cut off */
+      return pipeline(upstream, cap, res, (err) => {
+        if (err && !res.destroyed) res.destroy();
+      });
+    } catch (err) {
+      if (upstream && typeof upstream.destroy === 'function') upstream.destroy();
+      if (res.headersSent) return res.destroy();
+      return fail(res, err, 'opening that sound');
+    }
   });
 
   /* POST /save — one finished take into My Creations. */
@@ -888,6 +1138,14 @@ function lazyLogger() {
 function pageRoute(exportName, { cacheControl = 'no-cache', load = () => require('./VoiceChanger/pages'), logger } = {}) {
   let warned = false;
   return (req, res, next) => {
+    /* the switch, read on every request so a changed setting needs no new build */
+    if (!voiceChangerOn()) {
+      return res
+        .status(404)
+        .set('Cache-Control', 'no-store')
+        .type('text/plain')
+        .send('The Voice Changer is switched off just now.');
+    }
     let page;
     try {
       page = load()[exportName];
@@ -977,9 +1235,22 @@ try {
 const SAMPLES = loadSamples();
 
 let built = null;
-/** The real router, made once (index.js calls this at boot). */
+/** The real router, made once (index.js calls this at boot). If it cannot be made (a missing
+ *  dependency, a model that will not load), the site still boots: the reason goes to the log
+ *  and every Voice Changer API address answers 503 in a sentence. */
 function build() {
-  if (!built) built = createRouter(realDeps());
+  if (!built) {
+    try {
+      built = createRouter(realDeps());
+    } catch (err) {
+      lazyLogger().error(`[voice-changer] the API could not be set up, so it answers 503: ${(err && err.message) || err}`);
+      const closed = express.Router();
+      closed.use((_req, res) =>
+        res.status(503).set('Cache-Control', 'no-store').json({ error: 'The Voice Changer is not ready on the server just now. Nothing was changed; please try again later.' }),
+      );
+      built = closed;
+    }
+  }
   return built;
 }
 
@@ -993,10 +1264,17 @@ Object.assign(module.exports, {
   build,
   createRouter,
   pageRoute,
+  voiceChangerOn,
   voiceChangerPage: pageRoute('voiceChangerHtml'),
   enginePage: pageRoute('engineHostHtml', { cacheControl: 'no-store' }),
   _internals: {
     Problem,
+    fetchAllowList,
+    allowedFetchUrl,
+    checkFetchUrl,
+    isPrivateAddress,
+    resolvePublicHost,
+    openUpstream,
     checkChain,
     checkBed,
     checkMacros,
@@ -1017,6 +1295,6 @@ Object.assign(module.exports, {
     ENGINE,
     SOUND_BEDS,
     SAMPLES,
-    LIMITS: { MAX_SECONDS, HARD_SECONDS, SAVE_MAX_BYTES, SAVES_PER_DAY, PRESETS_PER_PERSON, SHARED_LIST, MAX_STAGES, FAVORITES_MAX, RECENT_MAX },
+    LIMITS: { MAX_SECONDS, MAX_FILE_SECONDS, HARD_SECONDS, SAVE_MAX_BYTES, SAVES_PER_DAY, PRESETS_PER_PERSON, SHARED_LIST, MAX_STAGES, FAVORITES_MAX, RECENT_MAX, FETCH_MAX_BYTES, FETCHES_PER_WINDOW },
   },
 });

@@ -77,10 +77,17 @@ const LIBRARY = [
 ];
 
 /* Described video shows once /api/kade/described-video/config answers, the
- * same rule as the phone's Create tab. */
+ * same rule as the phone's Create tab.
+ * Nov 18 2026: the Voice Changer row is there unless KADE_VOICE_CHANGER=0 (read when the
+ * server starts; the page itself checks the same switch in routes/kadeVoiceChanger.js),
+ * so it can be taken off the menu by changing one setting instead of reverting a deploy. */
+const VOICE_CHANGER_ON = String(process.env.KADE_VOICE_CHANGER ?? '').trim() !== '0';
+const VOICE_CHANGER = { id: 'voicechanger', href: '/voice-changer', title: 'Voice Changer', spoken: 'The Voice Changer', icon: '🎭',
+  hint: 'Record or upload a voice or a song, then flick through thousands of voices, places and devices, or build your own rack of effects. It all runs on your own device, free.' };
 const CREATE = [
   { id: 'soundbooth', href: '/sound-booth', title: 'Sound Booth', spoken: 'The Sound Booth', icon: '🎙️',
     hint: 'Write something and have it performed. One actor with real acting on Kade’s own machine, or a whole scene with several voices, music and sound effects.' },
+  ...(VOICE_CHANGER_ON ? [VOICE_CHANGER] : []),
   { id: 'creations', href: '/my-creations', title: 'My Creations', spoken: 'My Creations', icon: '🎨',
     hint: "Every picture, video, and song you've made — play them, save them, or put them on the family Wall of Fame." },
   { id: 'wall', href: '/wall-of-fame', title: 'Wall of Fame', spoken: 'Wall of Fame', icon: '🏆',

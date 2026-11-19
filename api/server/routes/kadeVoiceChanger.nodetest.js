@@ -13,6 +13,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
+const { Readable } = require('node:stream');
 const express = require('express');
 
 const vc = require('./kadeVoiceChanger');
@@ -241,7 +242,13 @@ test('config: sign-in required, never cached, and the shape both apps read', asy
   assert.equal(c.maxSeconds, 180);
   assert.equal(c.previewSeconds, 6);
   assert.equal(c.saveMaxBytes, 40 * 1024 * 1024);
-  assert.deepEqual(c.features, { save: true, presets: true, aiBeds: false });
+  assert.deepEqual(c.features, { save: true, presets: true, aiBeds: false, rack: true, backingTrack: true, fetch: true });
+  /* Nov 18 2026: the rack and the Sound Booth hand-off */
+  assert.equal(c.enabled, true, 'on unless KADE_VOICE_CHANGER is 0');
+  assert.equal(c.maxFileSeconds, 480, 'an opened file may be a whole song');
+  assert.equal(c.saveMaxSeconds, 190);
+  assert.equal(c.fetchUrl, '/api/kade/voice-changer/fetch');
+  assert.equal(c.fetchMaxBytes, 64 * 1024 * 1024);
   assert.deepEqual(c.saveKinds, ['wav', 'mp3', 'm4a', 'aac', 'webm', 'ogg', 'flac']);
   assert.equal(c.limits.savesPerDay, 300);
   assert.equal(c.limits.presetsPerPerson, 1000);
@@ -803,13 +810,334 @@ test('Home: the Voice Changer tile sits right after the Sound Booth, spoken and 
   assert.match(tile[0], /aria-describedby="h-voicechanger"/);
   assert.match(tile[0], /<span class="hicon" aria-hidden="true">🎭<\/span>/);
   assert.match(tile[0], /<strong>Voice Changer<\/strong>/);
-  assert.match(tile[0], /<small id="h-voicechanger">Record or upload your voice, then flick through thousands of voices, places, devices and effects\. It all runs on your own device, free\.<\/small>/);
+  assert.match(tile[0], /<small id="h-voicechanger">Record or upload a voice or a song, then flick through thousands of voices, places and devices, or build your own rack of effects\. It all runs on your own device, free\.<\/small>/);
   const at = (href) => home.indexOf(`<a class="hubitem" href="${href}"`);
   assert.ok(at('/sound-booth') > 0 && at('/sound-booth') < at('/voice-changer') && at('/voice-changer') < at('/my-creations'), 'Sound Booth, Voice Changer, My Creations');
-  const create = home.slice(home.indexOf('Create and explore'), home.indexOf('id="sec-talk"'));
-  assert.ok(create.includes('href="/voice-changer"'), 'under Create and explore');
-  assert.equal(await bannedIn('The Voice Changer. Record or upload your voice, then flick through thousands of voices, places, devices and effects.'), null);
+  /* Home follows the phone's five tabs now: the tile sits in the Create section */
+  const create = home.slice(home.indexOf('id="sec-create"'), home.indexOf('id="sec-play"'));
+  assert.ok(create.length > 0 && create.includes('href="/voice-changer"'), 'under Create');
+  assert.equal(await bannedIn('The Voice Changer. Record or upload a voice or a song, then flick through thousands of voices, places and devices, or build your own rack of effects.'), null);
   for (const s of [...home.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])) new Function(s);
+});
+
+test('the switch: KADE_VOICE_CHANGER=0 takes the Create row and both pages away, and nothing else', async () => {
+  assert.equal(vc.voiceChangerOn({}), true, 'unset is on');
+  assert.equal(vc.voiceChangerOn({ KADE_VOICE_CHANGER: '1' }), true);
+  assert.equal(vc.voiceChangerOn({ KADE_VOICE_CHANGER: '' }), true);
+  assert.equal(vc.voiceChangerOn({ KADE_VOICE_CHANGER: ' 0 ' }), false);
+  const before = process.env.KADE_VOICE_CHANGER;
+  const homePath = require.resolve('./kadeHome');
+  const kept = require.cache[homePath];
+  try {
+    process.env.KADE_VOICE_CHANGER = '0';
+    /* the pages read the switch on every request */
+    for (const p of ['/voice-changer', '/voice-changer/engine', '/page-string']) {
+      const res = await fetch(`${base}${p}`);
+      assert.equal(res.status, 404, p);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.equal(await res.text(), 'The Voice Changer is switched off just now.');
+    }
+    /* Home reads it when the server starts */
+    delete require.cache[homePath];
+    const off = require('./kadeHome').homeHtml;
+    assert.ok(!off.includes('href="/voice-changer"'), 'no Create row');
+    assert.ok(off.includes('href="/sound-booth"') && off.includes('href="/my-creations"'), 'its neighbours stay');
+    /* the API and the engine folder stay up, and config says it is off */
+    const c = await call(api('/config'), { user: ADA });
+    assert.equal(c.status, 200);
+    assert.equal(c.json.enabled, false);
+    assert.equal((await fetch(`${base}/vc-engine/${VERSION}/manifest.json`)).status, 200);
+  } finally {
+    if (before === undefined) delete process.env.KADE_VOICE_CHANGER;
+    else process.env.KADE_VOICE_CHANGER = before;
+    delete require.cache[homePath];
+    if (kept) require.cache[homePath] = kept;
+  }
+  const res = await fetch(`${base}/page-string`);
+  assert.equal(res.status, 200, 'back on');
+  await res.text();
+});
+
+/* ── GET /fetch: the Sound Booth hand-off's storage fetch ───────────────── */
+
+const { fetchAllowList, allowedFetchUrl, checkFetchUrl, isPrivateAddress, resolvePublicHost, Problem } = vc._internals;
+const STORAGE_ENV = {
+  AWS_ENDPOINT_URL: 'https://s3.us-west-000.storage.example.test',
+  AWS_BUCKET_NAME: 'Family-Media',
+  KADE_MEDIA_BUCKET: 'family-library',
+  DOMAIN_SERVER: 'https://site.example.test',
+  DOMAIN_CLIENT: 'https://www.site.example.test/',
+};
+const SOUND = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(2996, 7)]);
+
+/** A world whose /fetch never touches DNS or the network. */
+function fetchWorld(extra = {}) {
+  const seen = { resolved: [], opened: [] };
+  const w = makeWorld({
+    fetchAllow: () => fetchAllowList(STORAGE_ENV),
+    resolveHost: async (host) => {
+      seen.resolved.push(host);
+      return { address: '203.0.113.10', family: 4 };
+    },
+    openUpstream: async (u, at) => {
+      seen.opened.push({ href: u.href, at });
+      const body = Readable.from([SOUND.subarray(0, 1000), SOUND.subarray(1000)]);
+      body.statusCode = 200;
+      body.headers = { 'content-type': 'audio/mpeg', 'content-length': String(SOUND.length) };
+      return body;
+    },
+    ...extra,
+  });
+  w.seen = seen;
+  return w;
+}
+async function withApp(router, fn) {
+  const app = express();
+  app.use('/api/kade/voice-changer', router);
+  const srv = await new Promise((resolve) => {
+    const s2 = app.listen(0, '127.0.0.1', () => resolve(s2));
+  });
+  try {
+    return await fn((url) => `http://127.0.0.1:${srv.address().port}/api/kade/voice-changer/fetch?url=${encodeURIComponent(url)}`);
+  } finally {
+    await new Promise((resolve) => srv.close(resolve));
+  }
+}
+const GOOD = 'https://family-media.s3.us-west-000.storage.example.test/audios/6a00/take.mp3?X-Amz-Signature=abc';
+
+test('fetch: the allow-list is our bucket at our endpoint and the site itself, nothing else', () => {
+  const allow = fetchAllowList(STORAGE_ENV);
+  assert.deepEqual([...allow.hosts].sort(), ['family-library.s3.us-west-000.storage.example.test', 'family-media.s3.us-west-000.storage.example.test', 'site.example.test', 'www.site.example.test']);
+  const ok = (url) => allowedFetchUrl(new URL(url), allow);
+  assert.ok(ok(GOOD), 'bucket in front of the host');
+  assert.ok(ok('https://s3.us-west-000.storage.example.test/family-media/audios/a.wav'), 'bucket first in the path');
+  assert.ok(ok('https://s3.us-west-000.storage.example.test/Family-Library/a.wav'), 'bucket names are not case sensitive');
+  assert.ok(ok('https://site.example.test/assets/sounds/a.m4a'), 'the site itself');
+  assert.ok(!ok('https://s3.us-west-000.storage.example.test/someone-else/a.wav'), 'another bucket at the same endpoint');
+  assert.ok(!ok('https://other.s3.us-west-000.storage.example.test/a.wav'));
+  assert.ok(!ok('https://family-media.s3.us-west-000.storage.example.test.evil.example/a.wav'), 'a look-alike host');
+  assert.ok(!ok('https://evil.example/family-media/a.wav'));
+  /* Amazon's own hosts when no endpoint is set */
+  const aws = fetchAllowList({ AWS_REGION: 'us-east-2', AWS_BUCKET_NAME: 'media' });
+  assert.deepEqual([...aws.hosts].sort(), ['media.s3.amazonaws.com', 'media.s3.us-east-2.amazonaws.com']);
+  /* no bucket set: storage is closed rather than guessed at; a bare or numeric site host is never listed */
+  const none = fetchAllowList({ AWS_ENDPOINT_URL: 'https://s3.storage.example.test', DOMAIN_SERVER: 'http://localhost:3080', DOMAIN_CLIENT: 'http://10.0.0.5:3080' });
+  assert.equal(none.hosts.size, 0);
+  assert.equal(none.pathBuckets.size, 0);
+});
+
+test('fetch: only a plain https link on the list gets through the check', () => {
+  const allow = fetchAllowList(STORAGE_ENV);
+  assert.equal(checkFetchUrl(GOOD, allow).href, GOOD);
+  const refused = (url, status, re) => {
+    assert.throws(() => checkFetchUrl(url, allow), (e) => e instanceof Problem && e.status === status && re.test(e.message), String(url).slice(0, 60));
+  };
+  refused(undefined, 400, /Say which sound/);
+  refused('', 400, /Say which sound/);
+  refused(['a', 'b'], 400, /Say which sound/);
+  refused('nonsense', 400, /could not be read/);
+  refused(GOOD.replace('https:', 'http:'), 400, /Only https/);
+  refused('file:///etc/passwd', 400, /Only https/);
+  refused(GOOD.replace('https://', 'https://name:pw@'), 400, /name or password/);
+  refused(GOOD.replace('.test/', '.test:8443/'), 400, /unusual port/);
+  refused('https://203.0.113.10/family-media/a.wav', 403, /bare address/);
+  refused('https://[::1]/family-media/a.wav', 403, /bare address/);
+  refused('https://localhost/family-media/a.wav', 403, /bare address/);
+  refused('https://evil.example/a.wav', 403, /not in this site’s own storage/);
+  refused('https://x.example/' + 'a'.repeat(5000), 400, /too long/);
+});
+
+test('fetch: private, loopback and link-local addresses are never read', async () => {
+  for (const ip of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '224.0.0.1', '255.255.255.255', '::1', '::', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'ff02::1', '::ffff:127.0.0.1', '::ffff:10.0.0.1', '::ffff:7f00:1', '64:ff9b::a00:1', 'not-an-address', '']) {
+    assert.equal(isPrivateAddress(ip), true, ip);
+  }
+  for (const ip of ['203.0.113.10', '8.8.8.8', '172.15.0.1', '172.32.0.1', '100.63.0.1', '100.128.0.1', '2001:db8::1', '2606:4700::1111', '::ffff:8.8.8.8']) {
+    assert.equal(isPrivateAddress(ip), false, ip);
+  }
+  /* a name that resolves to this machine is refused by the real resolver */
+  await assert.rejects(() => resolvePublicHost('localhost'), (e) => e instanceof Problem && e.status === 403 && /private network/.test(e.message));
+});
+
+test('fetch: a sound in our storage is streamed straight through, signed in only', async () => {
+  const w = fetchWorld();
+  await withApp(w.router, async (at) => {
+    assert.equal((await fetch(at(GOOD))).status, 401, 'sign-in required');
+    assert.equal(w.seen.opened.length, 0);
+    const res = await fetch(at(GOOD), { headers: as(ADA) });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(res.headers.get('content-length'), String(SOUND.length));
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('content-disposition'), 'attachment');
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), SOUND);
+    assert.deepEqual(w.seen.resolved, ['family-media.s3.us-west-000.storage.example.test']);
+    assert.equal(w.seen.opened.length, 1);
+    assert.equal(w.seen.opened[0].href, GOOD, 'the signed link is passed on whole');
+    assert.deepEqual(w.seen.opened[0].at, { address: '203.0.113.10', family: 4 }, 'the request is pinned to the address that was checked');
+  });
+});
+
+test('fetch: refusals are plain sentences and nothing is opened', async () => {
+  const w = fetchWorld();
+  await withApp(w.router, async (at) => {
+    const get = async (url) => {
+      const res = await fetch(at(url), { headers: as(ADA) });
+      return { status: res.status, json: await res.json().catch(() => null) };
+    };
+    for (const [url, status, re] of [
+      ['https://evil.example/a.mp3', 403, /not in this site’s own storage/],
+      ['http://family-media.s3.us-west-000.storage.example.test/a.mp3', 400, /Only https/],
+      ['https://169.254.169.254/latest/meta-data/', 403, /bare address/],
+      ['https://s3.us-west-000.storage.example.test/another-bucket/a.mp3', 403, /not in this site’s own storage/],
+    ]) {
+      const r = await get(url);
+      assert.equal(r.status, status, url);
+      assert.match(r.json.error, re);
+    }
+    assert.equal(w.seen.resolved.length, 0, 'never even looked up');
+    assert.equal(w.seen.opened.length, 0);
+    /* no url at all */
+    const res = await fetch(at('').replace(/\?url=$/, ''), { headers: as(ADA) });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /Say which sound/);
+  });
+});
+
+test('fetch: a listed host that resolves somewhere private is refused before any request', async () => {
+  let opened = 0;
+  for (const resolveHost of [
+    async () => ({ address: '10.0.0.7', family: 4 }),
+    async () => {
+      throw new Problem('That link points inside a private network, so it was not opened.', 403);
+    },
+  ]) {
+    const w = fetchWorld({ resolveHost, openUpstream: async () => { opened += 1; throw new Error('must not be called'); } });
+    await withApp(w.router, async (at) => {
+      const res = await fetch(at(GOOD), { headers: as(ADA) });
+      assert.equal(res.status, 403);
+      assert.match((await res.json()).error, /private network/);
+    });
+  }
+  assert.equal(opened, 0);
+});
+
+test('fetch: redirects, missing files, pages and oversize files are refused in a sentence', async () => {
+  const upstream = (statusCode, headers, body = Buffer.from('x')) => async () => {
+    const b = Readable.from([body]);
+    b.statusCode = statusCode;
+    b.headers = headers;
+    return b;
+  };
+  const cases = [
+    [upstream(302, { location: 'https://169.254.169.254/' }), 502, /moved links are not followed/],
+    [upstream(404, {}), 404, /not there any more/],
+    [upstream(403, {}), 404, /link has run out/],
+    [upstream(500, {}), 502, /did not hand the sound over/],
+    [upstream(200, { 'content-type': 'text/html; charset=utf-8' }), 415, /not a sound or video file/],
+    [upstream(200, { 'content-type': 'audio/wav', 'content-length': String(64 * 1024 * 1024 + 1) }), 413, /too big to open this way: the most is 64 megabytes/],
+    [async () => { throw new Error('ECONNRESET'); }, 502, /could not be reached/],
+  ];
+  for (const [openUpstream, status, re] of cases) {
+    const w = fetchWorld({ openUpstream });
+    await withApp(w.router, async (at) => {
+      const res = await fetch(at(GOOD), { headers: as(ADA) });
+      assert.equal(res.status, status);
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      assert.match((await res.json()).error, re);
+    });
+  }
+  /* a file with no stated type is taken as a download; video is allowed (the page reads its sound) */
+  for (const type of [undefined, 'application/octet-stream', 'video/mp4', 'audio/x-m4a']) {
+    const w = fetchWorld({ openUpstream: upstream(200, type ? { 'content-type': type } : {}, SOUND) });
+    await withApp(w.router, async (at) => {
+      const res = await fetch(at(GOOD), { headers: as(ADA) });
+      assert.equal(res.status, 200, String(type));
+      assert.equal((await res.arrayBuffer()).byteLength, SOUND.length);
+    });
+  }
+});
+
+test('fetch: a body that runs past the size cap is cut off, whatever length it claimed', async () => {
+  const big = Buffer.alloc(20000, 1);
+  const w = fetchWorld({
+    fetchMaxBytes: 4096,
+    openUpstream: async () => {
+      const b = Readable.from([big.subarray(0, 2000), big.subarray(2000, 6000), big.subarray(6000)]);
+      b.statusCode = 200;
+      b.headers = { 'content-type': 'audio/wav' };
+      return b;
+    },
+  });
+  await withApp(w.router, async (at) => {
+    let got = 0;
+    let broke = false;
+    try {
+      const res = await fetch(at(GOOD), { headers: as(ADA) });
+      assert.equal(res.status, 200, 'the type looked fine, so it began');
+      got = (await res.arrayBuffer()).byteLength;
+    } catch (_) {
+      broke = true;
+    }
+    assert.ok(broke || got <= 4096, `the connection is cut at the cap (got ${got} bytes)`);
+  });
+});
+
+test('fetch: a big sound arriving slowly comes through whole, and leaving stops the read from storage', async () => {
+  const chunk = Buffer.alloc(256 * 1024, 5);
+  const total = 24; /* 6 megabytes */
+  let made = 0;
+  let upstream = null;
+  const slow = async () => {
+    made = 0;
+    upstream = Readable.from(
+      (async function* () {
+        for (let i = 0; i < total; i++) {
+          await new Promise((r) => setTimeout(r, 4));
+          made += 1;
+          yield chunk;
+        }
+      })(),
+    );
+    upstream.statusCode = 200;
+    upstream.headers = { 'content-type': 'audio/wav', 'content-length': String(chunk.length * total) };
+    return upstream;
+  };
+  const w = fetchWorld({ openUpstream: slow });
+  await withApp(w.router, async (at) => {
+    const res = await fetch(at(GOOD), { headers: as(ADA) });
+    assert.equal(res.status, 200);
+    const body = Buffer.from(await res.arrayBuffer());
+    assert.equal(body.length, chunk.length * total);
+    assert.ok(body.every((v) => v === 5));
+    /* the listener goes away after the first piece: the read from storage is torn down */
+    const ac = new AbortController();
+    const part = await fetch(at(GOOD), { headers: as(ADA), signal: ac.signal });
+    const reader = part.body.getReader();
+    await reader.read();
+    ac.abort();
+    await reader.read().catch(() => {});
+    for (let i = 0; i < 100 && !upstream.destroyed; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(upstream.destroyed, true, 'the upstream stream was destroyed');
+    assert.ok(made < total, `storage was not read to the end for nobody (${made} of ${total} pieces)`);
+  });
+});
+
+test('fetch: a per-person limit on how many sounds are opened in a few minutes', async () => {
+  const w = fetchWorld({ fetchesPerWindow: 2 });
+  await withApp(w.router, async (at) => {
+    for (let i = 0; i < 2; i++) {
+      const res = await fetch(at(GOOD), { headers: as(ADA) });
+      assert.equal(res.status, 200);
+      await res.arrayBuffer();
+    }
+    const third = await fetch(at(GOOD), { headers: as(ADA) });
+    assert.equal(third.status, 429);
+    assert.match((await third.json()).error, /a lot of sounds opened/);
+    const other = await fetch(at(GOOD), { headers: as(BEA) });
+    assert.equal(other.status, 200, 'someone else is not held up');
+    await other.arrayBuffer();
+  });
 });
 
 test('wiring: index.js mounts the engine, the API before /api/kade, and both pages', () => {
