@@ -3012,6 +3012,8 @@ router.creationsPage = sendHtml(CREATIONS_HTML);
  * phone got, against the same two routes (kadeSoundBooth.js). Her call when
  * asked phone-first or both: both tonight. */
 router.soundBoothPage = sendHtml(require('./kadeSoundBoothPage').soundBoothHtml);
+/* Nov 18 2026: the voice lab, where the owner of Sing it in my voice makes more voices (kadeSoundBoothVoicesPage.js). */
+router.voiceLabPage = sendHtml(require('./kadeSoundBoothVoicesPage').voiceLabHtml);
 router.wallPage = sendHtml(WALL_HTML);
 router.gameRoomPage = (_req, res) => res.redirect(302, '/parlor#gameroom');
 router.feedbackPage = sendHtml(FEEDBACK_HTML);

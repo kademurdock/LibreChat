@@ -61,6 +61,8 @@ export type MyVoiceModel = {
   range?: MyVoiceRange;
   source: 'env' | 'table';
 };
+/** One voice an account may sing with: its own ("My voice") or one made in the voice lab (music/voiceLab.ts). */
+export type MyVoiceChoice = { id: string; name: string; model: MyVoiceModel };
 const USER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const MODEL_KEY = /^voice-models\/([A-Za-z0-9_-]{1,64})\/[A-Za-z0-9._/-]{1,512}\.pth$/;
 const INDEX_KEY = /^voice-models\/([A-Za-z0-9_-]{1,64})\/[A-Za-z0-9._/-]{1,512}\.index$/;
@@ -223,6 +225,69 @@ export const myVoiceEffects: ReadonlyArray<{ key: string; label: string }> = [
   { key: 'echo', label: 'Echo' },
   { key: 'dreamy', label: 'Dreamy' },
 ];
+/* Nov 18 2026, her ask: "custom settings you can mess with, the diction the dynamics". What happens to the backing singers,
+ * how the melody is followed (the worker's f0_method; RVC's pinned CLI knows these two), and how the key is chosen. */
+export const myVoiceBackings: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'keep', label: 'Keep them as they are' },
+  { key: 'convert', label: 'Sing them in the voice too' },
+  { key: 'remove', label: 'Take them out' },
+];
+export const myVoicePitchMethods: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'rmvpe', label: 'Accurate' },
+  { key: 'pm', label: 'Simple' },
+];
+export const myVoicePitchModes: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'auto', label: 'Automatic: octaves only' },
+  { key: 'fit', label: 'Fit the voice: change the key' },
+];
+/* Presets, named by what they do, so nobody has to know what an index rate is. Each one fills the settings below it on the
+ * page (the guide setting's `fills`, in the words the screens show), and every filled setting can still be changed.
+ * For a client that only sends the preset's name, myVoiceInput applies the same values on the server. */
+export type MyVoicePreset = { key: string; label: string; about: string; fills: Record<string, string | number | boolean> };
+export const myVoicePresets: ReadonlyArray<MyVoicePreset> = [
+  {
+    key: 'natural',
+    label: 'Natural',
+    about: 'The balanced chain the listening tests chose.',
+    fills: { index_rate: 0.5, protect: 0.33, rms_mix_rate: 0.25, soft_s: false, dereverb: false, denoise: 0, formant: 0 },
+  },
+  {
+    key: 'clear',
+    label: 'Clear diction',
+    about: 'Words first: less of the voice pressed on, consonants and breaths protected, S sounds kept from the original.',
+    fills: { index_rate: 0.3, protect: 0.2, rms_mix_rate: 0.25, soft_s: true, dereverb: false, denoise: 0, formant: 0 },
+  },
+  {
+    key: 'phrasing',
+    label: 'Keep the original phrasing',
+    about: 'Loud and soft moments follow the original singer exactly, with breaths kept.',
+    fills: { index_rate: 0.4, protect: 0.25, rms_mix_rate: 0, soft_s: true, dereverb: false, denoise: 0, formant: 0 },
+  },
+  {
+    key: 'likeness',
+    label: 'Strongest likeness',
+    about: 'As much of the voice as possible. Words can blur a little.',
+    fills: { index_rate: 0.85, protect: 0.4, rms_mix_rate: 0.6, soft_s: false, dereverb: false, denoise: 0, formant: 0 },
+  },
+  {
+    key: 'smooth',
+    label: 'Smooth and even',
+    about: 'Evens out the loudness for ballads and soft songs.',
+    fills: { index_rate: 0.6, protect: 0.33, rms_mix_rate: 0.7, soft_s: false, dereverb: false, denoise: 0, formant: 0 },
+  },
+  {
+    key: 'echoey',
+    label: 'Echoey or live recording',
+    about: 'Takes most of the room off the singer first, then puts a matching room back.',
+    fills: { index_rate: 0.5, protect: 0.33, rms_mix_rate: 0.25, soft_s: false, dereverb: true, dereverb_strength: 0.8, denoise: 0.2, formant: 0 },
+  },
+  {
+    key: 'noisy',
+    label: 'Old or noisy recording',
+    about: 'Cleans hiss and some room off the singer before the voice sings it.',
+    fills: { index_rate: 0.4, protect: 0.3, rms_mix_rate: 0.25, soft_s: false, dereverb: true, dereverb_strength: 0.5, denoise: 0.6, formant: 0 },
+  },
+];
 /** The worker's lead vs backing models (voice_request.LEAD_MODELS). Not a screen choice: MY_VOICE_DEFAULTS can switch it. */
 const LEAD_MODELS = ['frazer', 'aufr33'] as const;
 
@@ -237,6 +302,15 @@ export type MyVoiceOptions = {
   rms_mix_rate: number;
   /** A myVoiceEffects key; 'none' (or missing, on a job saved before effects existed) sends nothing to the worker. */
   vocal_fx: string;
+  /* Nov 18 2026 (worker features dereverb-strength, denoise, backing-modes, formant, transpose). Each is missing on a job
+   * saved before it existed, and is sent to the worker only when it differs from the worker's own default, so a job that
+   * uses none of them sends exactly what it sent before. */
+  dereverb_strength?: number;
+  denoise?: number;
+  backing?: string;
+  formant?: number;
+  f0_method?: string;
+  transpose_song?: boolean;
 };
 /* The round 2 chain (Sep 27 2026, voice-persona RUNBOOK section 17), measured with Whisper against the lyrics on the three
  * songs with the most backing singers: HyperACE v2 vocals and the frazer & becruily lead split with no dereverb took the lead
@@ -254,8 +328,21 @@ const DEFAULTS: MyVoiceOptions = {
   protect: 0.33,
   rms_mix_rate: 0.25,
   vocal_fx: 'none',
+  dereverb_strength: 1,
+  denoise: 0,
+  backing: 'keep',
+  formant: 0,
+  f0_method: 'rmvpe',
+  transpose_song: true,
 };
-const RANGES = { index_rate: [0, 1], protect: [0, 0.5], rms_mix_rate: [0, 1] } as const;
+const RANGES = {
+  index_rate: [0, 1],
+  protect: [0, 0.5],
+  rms_mix_rate: [0, 1],
+  dereverb_strength: [0, 1],
+  denoise: [0, 1],
+  formant: [-6, 6],
+} as const;
 
 /** The round 2 chain with source-hiss restoration off, or explicit MY_VOICE_DEFAULTS. Bad values are ignored. */
 export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOptions {
@@ -275,8 +362,12 @@ export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOp
     (LEAD_MODELS as readonly string[]).includes(said.lead_model)
   )
     out.lead_model = said.lead_model;
-  for (const flag of ['lead_split', 'dereverb', 'soft_s'] as const)
+  for (const flag of ['lead_split', 'dereverb', 'soft_s', 'transpose_song'] as const)
     if (typeof said[flag] === 'boolean') out[flag] = said[flag] as boolean;
+  if (typeof said.backing === 'string' && myVoiceBackings.some((e) => e.key === said.backing))
+    out.backing = said.backing;
+  if (typeof said.f0_method === 'string' && myVoicePitchMethods.some((e) => e.key === said.f0_method))
+    out.f0_method = said.f0_method;
   if (typeof said.vocal_fx === 'string' && myVoiceEffects.some((e) => e.key === said.vocal_fx))
     out.vocal_fx = said.vocal_fx;
   for (const [key, [low, high]] of Object.entries(RANGES) as Array<
@@ -306,8 +397,11 @@ function sourceChoice(value: unknown): 'song' | 'vocal' {
     return 'vocal';
   throw new Error('Under What is in the file, choose Song with music or Just a vocal.');
 }
-function pitchChoice(value: unknown): 'auto' | number {
-  if (value == null || value === '' || ['auto', 'automatic'].includes(words(value))) return 'auto';
+function pitchChoice(value: unknown, mode?: unknown): 'auto' | 'fit' | number {
+  const fit = words(mode) === 'fit' || words(mode).startsWith('fit');
+  if (value == null || value === '' || ['auto', 'automatic'].includes(words(value)))
+    return fit ? 'fit' : 'auto';
+  if (words(value) === 'fit') return 'fit';
   const n = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isInteger(n) || n < -24 || n > 24)
     throw new Error(
@@ -345,6 +439,25 @@ function effectChoice(value: unknown, fallback: string): string {
   if (!found) throw new Error('Under Vocal effects, choose one of the listed effects, or None.');
   return found.key;
 }
+/** One of a short list, by its key, its label, or its label's first word. */
+function listChoice(
+  value: unknown,
+  fallback: string,
+  list: ReadonlyArray<{ key: string; label: string }>,
+  label: string,
+): string {
+  if (value == null || value === '') return fallback;
+  const said = words(value);
+  const first = (text: string) => words(text).split(/[ :]+/)[0];
+  const found = list.find((e) => e.key === said || words(e.label) === said || first(e.label) === said);
+  if (!found) throw new Error(`Under ${label}, choose one of the listed choices.`);
+  return found.key;
+}
+/** The preset a body names, by key or label; undefined for none or an unknown one (a preset is a convenience, never a refusal). */
+export function myVoicePreset(value: unknown): MyVoicePreset | undefined {
+  const said = words(value);
+  return said ? myVoicePresets.find((e) => e.key === said || words(e.label) === said) : undefined;
+}
 function numberChoice(
   value: unknown,
   fallback: number,
@@ -370,9 +483,11 @@ export type MyVoiceWorkerInput = {
   model_sha256?: string;
   index_key?: string;
   index_sha256?: string;
-  pitch: 'auto' | number;
+  pitch: 'auto' | 'fit' | number;
+  /** Sent only as true: the music moves with the voice when the key changes (worker feature transpose). */
+  transpose_song?: boolean;
   voice_range?: MyVoiceRange;
-  options: Omit<MyVoiceOptions, 'vocal_fx'> & {
+  options: Omit<MyVoiceOptions, 'vocal_fx' | 'transpose_song'> & {
     fallback: string;
     room: boolean;
     f0_method: string;
@@ -383,9 +498,15 @@ export type MyVoiceWorkerInput = {
 /** What the booth keeps on a voice job's input: her choices from the client, and the model the server looked up. */
 export type MyVoiceJob = {
   source: 'song' | 'vocal';
-  pitch: 'auto' | number;
+  pitch: 'auto' | 'fit' | number;
   options: MyVoiceOptions;
   seconds?: number;
+  /** The preset she picked (a myVoicePresets key), kept so the project reopens on it. */
+  preset?: string;
+  /** The voice she asked for, by name or id; the owner check turns it into voice_id, voice_name and the model. */
+  voice_asked?: string;
+  voice_id?: string;
+  voice_name?: string;
   model?: Pick<MyVoiceModel, 'model_key' | 'model_sha256' | 'index_key' | 'index_sha256' | 'range'>;
 };
 
@@ -400,9 +521,22 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
     throw new Error('Use a title up to 80 characters.');
   const defaults = myVoiceDefaults(env);
   const source = sourceChoice(body.voice_source);
+  /* A preset from a client that did not fill the settings itself (preset_filled is the web page saying it did): its
+   * values stand in wherever the body is empty or still on the default. */
+  const preset = myVoicePreset(body.preset);
+  if (preset && body.preset_filled !== true) {
+    const filled = body as Record<string, unknown>;
+    const plain = defaults as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(preset.fills))
+      if (filled[key] == null || filled[key] === '' || filled[key] === plain[key]) filled[key] = value;
+  }
   const voice: MyVoiceJob = {
     source,
-    pitch: pitchChoice(body.pitch),
+    pitch: pitchChoice(body.pitch, body.pitch_mode),
+    ...(preset ? { preset: preset.key } : {}),
+    ...(typeof body.voice === 'string' && body.voice.trim()
+      ? { voice_asked: body.voice.trim().slice(0, 80) }
+      : {}),
     options: {
       extractor: extractorChoice(body.extractor, defaults.extractor),
       lead_split: flagChoice(
@@ -427,6 +561,26 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
         'Loudness follows',
       ),
       vocal_fx: effectChoice(body.vocal_fx, defaults.vocal_fx),
+      dereverb_strength: numberChoice(
+        body.dereverb_strength,
+        defaults.dereverb_strength ?? 1,
+        'dereverb_strength',
+        'How much room to take off',
+      ),
+      denoise: numberChoice(body.denoise, defaults.denoise ?? 0, 'denoise', 'Clean up noise'),
+      backing: listChoice(body.backing, defaults.backing || 'keep', myVoiceBackings, 'Backing singers'),
+      formant: numberChoice(body.formant, defaults.formant ?? 0, 'formant', 'Voice size'),
+      f0_method: listChoice(
+        body.f0_method,
+        defaults.f0_method || 'rmvpe',
+        myVoicePitchMethods,
+        'Melody tracking',
+      ),
+      transpose_song: flagChoice(
+        body.transpose_song,
+        defaults.transpose_song !== false,
+        'Move the music with the voice',
+      ),
     },
   };
   const title = body.title?.trim() || 'Sung in my voice';
@@ -444,10 +598,23 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
 export function myVoicePrepare(
   find: (user: string) => Promise<MyVoiceModel | null>,
   seconds?: (user: string, url: string) => Promise<number | undefined>,
+  voices?: (user: string) => Promise<MyVoiceChoice[]>,
 ): (user: string, input: Input) => Promise<Input> {
   return async (user, input) => {
-    const model = await find(user);
-    if (!model || !input.voice) throw new Error('That engine is not available.');
+    const own = await find(user);
+    if (!own || !input.voice) throw new Error('That engine is not available.');
+    /* The voice she chose, among her own and the ones she made in the voice lab; every one of them sits in her own
+     * folder (checkMyVoiceModel), so a name can never reach somebody else's voice. No choice is her own voice. */
+    let model = own;
+    let chosen: MyVoiceChoice | undefined;
+    const asked = words(input.voice.voice_asked);
+    if (asked && asked !== 'my voice') {
+      const list = voices ? await voices(user).catch(() => []) : [];
+      chosen = list.find((v) => words(v.name) === asked || words(v.id) === asked);
+      if (!chosen) throw new Error('That voice is not in your voice list any more. Choose another voice.');
+      if (chosen.model.user !== user) throw new Error('That voice is not in your voice list.');
+      model = chosen.model;
+    }
     const length =
       seconds && input.reference_voice_url
         ? await seconds(user, input.reference_voice_url)
@@ -458,6 +625,7 @@ export function myVoicePrepare(
       voice: {
         ...input.voice,
         ...(typeof length === 'number' && length > 0 ? { seconds: length } : {}),
+        ...(chosen ? { voice_id: chosen.id, voice_name: chosen.name } : {}),
         model: { model_key, model_sha256, index_key, index_sha256, range },
       },
     };
@@ -465,14 +633,30 @@ export function myVoicePrepare(
 }
 
 function workerOptions(options: Omit<MyVoiceOptions, 'vocal_fx'>): MyVoiceWorkerInput['options'] {
-  return {
-    ...options,
+  const {
+    dereverb_strength,
+    denoise,
+    backing,
+    formant,
+    f0_method,
+    transpose_song: _transpose,
+    ...chain
+  } = options;
+  const out: MyVoiceWorkerInput['options'] = {
+    ...chain,
     /* Round 1's BS-RoFormer backs up every other extractor (and Demucs backs it up), so one extractor's failure never
      * ends the job. */
     fallback: options.extractor === 'bs_roformer' ? 'demucs' : 'bs_roformer',
     room: true, // used only when dereverb took a room off: a matching one goes back on
-    f0_method: 'rmvpe',
+    f0_method: f0_method === 'pm' ? 'pm' : 'rmvpe',
   };
+  /* The Nov 18 settings ride along only when they ask for something: a job at the defaults is the request it always was. */
+  if (options.dereverb && typeof dereverb_strength === 'number' && dereverb_strength < 1)
+    out.dereverb_strength = dereverb_strength;
+  if (typeof denoise === 'number' && denoise > 0) out.denoise = denoise;
+  if (backing && backing !== 'keep' && options.lead_split) out.backing = backing;
+  if (typeof formant === 'number' && formant !== 0) out.formant = formant;
+  return out;
 }
 function withModel(
   base: Omit<MyVoiceWorkerInput, 'model_key' | 'options'>,
@@ -486,6 +670,13 @@ function withModel(
     options: workerOptions(chain),
   };
   if (vocal_fx && vocal_fx !== 'none') out.vocal_fx = vocal_fx;
+  /* The music moves with the voice only when the key really changes: a fitted key, or semitones that are not whole octaves. */
+  if (
+    base.mode === 'song' &&
+    options.transpose_song !== false &&
+    (base.pitch === 'fit' || (typeof base.pitch === 'number' && base.pitch % 12 !== 0))
+  )
+    out.transpose_song = true;
   if (model.model_sha256) out.model_sha256 = model.model_sha256;
   if (model.index_key) out.index_key = model.index_key;
   if (model.index_sha256) out.index_sha256 = model.index_sha256;
@@ -517,7 +708,19 @@ export type MyVoiceProjectOptions = {
   protect: number;
   rms_mix_rate: number;
   vocal_fx: string;
+  preset?: string;
+  voice?: string;
+  pitch_mode?: string;
+  dereverb_strength?: number;
+  denoise?: number;
+  backing?: string;
+  formant?: number;
+  f0_method?: string;
+  transpose_song?: boolean;
 };
+function labelOf(list: ReadonlyArray<{ key: string; label: string }>, key: string | undefined): string {
+  return (list.find((e) => e.key === key) || list[0]).label;
+}
 export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
   const voice = input.voice;
   const options = voice?.options || DEFAULTS;
@@ -532,9 +735,19 @@ export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
     protect: options.protect,
     rms_mix_rate: options.rms_mix_rate,
     vocal_fx: (myVoiceEffects.find((e) => e.key === options.vocal_fx) || myVoiceEffects[0]).label,
+    pitch_mode: labelOf(myVoicePitchModes, voice?.pitch === 'fit' ? 'fit' : 'auto'),
+    dereverb_strength: options.dereverb_strength ?? 1,
+    denoise: options.denoise ?? 0,
+    backing: labelOf(myVoiceBackings, options.backing),
+    formant: options.formant ?? 0,
+    f0_method: labelOf(myVoicePitchMethods, options.f0_method),
+    transpose_song: options.transpose_song !== false,
   };
   if (input.reference_voice_url) out.reference_voice_url = input.reference_voice_url;
   if (typeof voice?.pitch === 'number') out.pitch = voice.pitch;
+  const preset = myVoicePresets.find((e) => e.key === voice?.preset);
+  if (preset) out.preset = preset.label;
+  if (voice?.voice_name) out.voice = voice.voice_name;
   return out;
 }
 /** A library row's reason line. */
@@ -578,9 +791,15 @@ export function myVoiceEstimate(input: Input): { spoken: string; costUSD: number
   const voice = input.voice;
   const mode = voice?.source || 'song';
   const effect = !!voice?.options?.vocal_fx && voice.options.vocal_fx !== 'none';
+  /* Singing the backing vocals too is a second pass of the voice model: about a fifth of a second for each second of song. */
+  const second =
+    mode === 'song' && voice?.options?.backing === 'convert'
+      ? 0.2 * (voice?.seconds && voice.seconds > 0 ? voice.seconds : 240)
+      : 0;
   const costUSD =
-    Math.round(myVoiceGpuSeconds(mode, voice?.seconds, effect) * USUAL_USD_PER_SECOND * 1000) /
-    1000;
+    Math.round(
+      (myVoiceGpuSeconds(mode, voice?.seconds, effect) + second) * USUAL_USD_PER_SECOND * 1000,
+    ) / 1000;
   const length = voice?.seconds ? 'for a recording this long' : 'for a song of about four minutes';
   return {
     costUSD,
@@ -610,8 +829,42 @@ export type MyVoiceOutput = Output & {
     tempo_source?: string | null;
     delay_ms?: number | null;
   } | null;
-  pitch?: { shift?: number; source?: string; why?: string; share_above_top?: number } | null;
+  pitch?: {
+    shift?: number;
+    source?: string;
+    why?: string;
+    share_above_top?: number;
+    transposed_song?: boolean;
+  } | null;
+  /* The stems (worker feature stems): the music without the singer, the backing singers, and the original lead singer. */
+  instrumental_url?: string;
+  instrumental_key?: string;
+  instrumental_wav_url?: string;
+  instrumental_wav_key?: string;
+  backing_url?: string;
+  backing_key?: string;
+  backing_wav_url?: string;
+  backing_wav_key?: string;
+  lead_original_url?: string;
+  lead_original_key?: string;
+  lead_original_wav_url?: string;
+  lead_original_wav_key?: string;
 };
+/** The stems a song job left, as the names a take's metadata keeps them under; {} for a vocal job or an older worker. */
+export function myVoiceStemLinks(output: MyVoiceOutput | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!output) return out;
+  const pairs: Array<[string, string | undefined]> = [
+    ['instrumentalUrl', output.instrumental_url],
+    ['instrumentalWavUrl', output.instrumental_wav_url],
+    ['backingUrl', output.backing_url],
+    ['backingWavUrl', output.backing_wav_url],
+    ['leadOriginalUrl', output.lead_original_url],
+    ['leadOriginalWavUrl', output.lead_original_wav_url],
+  ];
+  for (const [name, url] of pairs) if (typeof url === 'string' && url.startsWith('https://')) out[name] = url;
+  return out;
+}
 /** The take's link to the voice with its effect, beside the dry voice: only when it is a file of its own. In vocal mode the
  * take itself is the voice with the effect (the worker's key and vocal_fx_key are the same file), and a second link to it
  * would only be one more line for VoiceOver to read. */
@@ -648,18 +901,30 @@ export function myVoiceTakeNote(
   input?: Pick<Input, 'voice'>,
 ): string {
   if (!output) return '';
-  const notes: string[] = ['Sung in your voice.'];
+  const named = input?.voice?.voice_name;
+  const notes: string[] = [named ? `Sung in the voice ${named}.` : 'Sung in your voice.'];
   const shift = output.pitch?.shift;
   if (typeof shift === 'number' && shift !== 0)
     notes.push(
       Math.abs(shift) === 12
-        ? `Moved ${shift < 0 ? 'down' : 'up'} one octave to sit in your range.`
-        : `Moved ${Math.abs(shift)} semitones ${shift < 0 ? 'down' : 'up'}.`,
+        ? `Moved ${shift < 0 ? 'down' : 'up'} one octave to sit in ${named ? 'its' : 'your'} range.`
+        : `Moved ${Math.abs(shift)} semitone${Math.abs(shift) === 1 ? '' : 's'} ${shift < 0 ? 'down' : 'up'}${output.pitch?.transposed_song ? ', and the music moved with it' : ''}.`,
     );
   else if (typeof output.pitch?.share_above_top === 'number' && output.pitch.share_above_top >= 0.1)
     notes.push('Some high notes sit above your usual top, so listen to those.');
   const effect = effectNote(output, input);
   if (effect) notes.push(effect);
+  /* A setting from Nov 18 that a worker from before it could not use: say so once, so an unchanged sound is no mystery. */
+  const asked = input?.voice?.options;
+  const has = (feature: string) => (output.features || []).includes(feature);
+  if (
+    asked &&
+    (((asked.denoise || 0) > 0 && !has('denoise')) ||
+      ((asked.formant || 0) !== 0 && !has('formant')) ||
+      (!!asked.backing && asked.backing !== 'keep' && asked.lead_split && !has('backing-modes')) ||
+      (input?.voice?.pitch === 'fit' && !has('pitch-fit')))
+  )
+    notes.push('The voice worker is older than some of these settings, so they were not used.');
   for (const note of (output.worker_notes || []).slice(0, 3))
     if (typeof note === 'string') notes.push(note);
   if (typeof output.execution_ms === 'number') {
@@ -688,6 +953,12 @@ export type MyVoiceGuideSetting = {
   step?: number;
   /** Shown inside the page's one collapsed "More settings" group (Part 296), never hidden. */
   advanced?: boolean;
+  /** A slider's unit, said with its value ("2 semitones"). */
+  unit?: string;
+  /** A preset choice: for each option, the settings it fills (key -> the value the screen holds for it). */
+  fills?: Record<string, Record<string, string | number | boolean>>;
+  /** A preset choice: one sentence about each option, said when it is picked. */
+  about?: Record<string, string>;
 };
 export type MyVoiceGuideEngine = {
   name: string;
@@ -713,12 +984,28 @@ export type MyVoiceGuideEngine = {
     /** The voice with its vocal effect, offered beside the dry one when an effect was used. */
     vocalFx: string;
     clip: string;
+    /** The stems a song job leaves, and the way on to the effects rack and the voice lab (Nov 18 2026). */
+    instrumental?: string;
+    backing?: string;
+    leadOriginal?: string;
+    rack?: string;
+    voices?: string;
   };
 };
 
 /** The "Sing it in my voice" engine, at today's defaults (or MY_VOICE_DEFAULTS). */
-export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoiceGuideEngine {
+/** The settings a preset fills, in the values the page's controls hold (labels for choices). */
+function presetFills(): Record<string, Record<string, string | number | boolean>> {
+  const out: Record<string, Record<string, string | number | boolean>> = {};
+  for (const preset of myVoicePresets) out[preset.label] = { ...preset.fills };
+  return out;
+}
+export function myVoiceGuideEngine(
+  env: NodeJS.ProcessEnv = process.env,
+  voices: MyVoiceChoice[] = [],
+): MyVoiceGuideEngine {
   const d = myVoiceDefaults(env);
+  const voiceNames = ['My voice', ...voices.map((v) => v.name).filter((n) => words(n) !== 'my voice')];
   const extractor = myVoiceExtractors.find((e) => e.key === d.extractor) || myVoiceExtractors[0];
   const effect = myVoiceEffects.find((e) => e.key === d.vocal_fx) || myVoiceEffects[0];
   return {
@@ -736,7 +1023,7 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       'recordings over six minutes',
       'fixing words: it re-sings exactly what the recording sings, so a word the split garbled stays garbled',
       'choosing different diction: pronunciation and rhythm still follow the original singer',
-      "anybody else's voice",
+      'a voice you have no permission to use',
     ],
     howToWrite: [
       'Import the recording under Recording to sing. A whole song as an MP3 fits, up to twenty megabytes and six minutes.',
@@ -749,6 +1036,10 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         : 'Keep original singer’s S sounds is off: original S, SH, T and F hiss is not put back after conversion. If converted S sounds are robotic, this optional setting can soften them using the original singer’s sounds; it does not change pronunciation or rhythm.',
       'Vocal effects puts studio reverb or echo on your voice: Studio polish evens and brightens it, Plate reverb and Hall reverb add a room, Slapback is one quick repeat, Echo repeats in time with the song, and Dreamy is a wide wash of echo and reverb. None keeps it dry.',
       'You get two files: the song in your voice, and your voice on its own, always dry, ready for a DAW. With a vocal effect on a song you also get your voice with the effect; with just a vocal, the take itself is your voice with the effect.',
+      'Sound preset sets the knobs under More settings for you: Natural, Clear diction, Keep the original phrasing, Strongest likeness, Smooth and even, Echoey or live recording, Old or noisy recording. Pick one, then change any setting you like.',
+      'A song with music also gives you its stems as downloads: the music without the singer, the backing singers, and the original lead singer on their own.',
+      'To change the key, type semitones under Pitch, or set How the key is chosen to Fit the voice. With Move the music with the voice on, the band and backing singers move too, so everything stays in tune.',
+      'Open in the effects rack, under a finished take, takes the voice on its own into the Voice Changer with the music as its backing track, for reverb, echo, tuning, harmonies and the rest.',
     ],
     settings: [
       {
@@ -765,6 +1056,28 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         kind: 'choice',
         options: [myVoiceSources.song, myVoiceSources.vocal],
         default: myVoiceSources.song,
+      },
+      ...(voiceNames.length > 1
+        ? [
+            {
+              key: 'voice',
+              label: 'Voice',
+              hint: 'Whose voice sings it: your own, or a voice you made in the voice lab.',
+              kind: 'choice',
+              options: voiceNames,
+              default: voiceNames[0],
+            },
+          ]
+        : []),
+      {
+        key: 'preset',
+        label: 'Sound preset',
+        hint: 'Sets the knobs under More settings for you. Natural is the balanced one. You can still change any setting after picking.',
+        kind: 'choice',
+        options: myVoicePresets.map((e) => e.label),
+        default: myVoicePresets[0].label,
+        fills: presetFills(),
+        about: Object.fromEntries(myVoicePresets.map((e) => [e.label, e.about])),
       },
       /* A main choice, in view with the recording (her ask: effects if she wants them). */
       {
@@ -785,6 +1098,53 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         min: -24,
         max: 24,
         step: 1,
+        advanced: true,
+      },
+      {
+        key: 'pitch_mode',
+        label: 'How the key is chosen',
+        hint: 'Used when Pitch is empty. Automatic keeps the song in its key and only moves whole octaves. Fit the voice picks the key where the melody sits best in the voice, and moves the music with it.',
+        kind: 'choice',
+        options: myVoicePitchModes.map((e) => e.label),
+        default: myVoicePitchModes[0].label,
+        advanced: true,
+      },
+      {
+        key: 'transpose_song',
+        label: 'Move the music with the voice',
+        hint: 'On: when the key changes by anything but whole octaves, the band and the backing singers are moved the same amount, so the song stays in tune. Off: only the lead voice moves.',
+        kind: 'toggle',
+        default: d.transpose_song !== false,
+        advanced: true,
+      },
+      {
+        key: 'formant',
+        label: 'Voice size (semitones)',
+        hint: 'Changes how big or small the singer sounds without changing the notes. Below zero is bigger and darker, above zero is smaller and brighter. Zero leaves the voice as it is.',
+        kind: 'range',
+        min: -6,
+        max: 6,
+        step: 0.5,
+        unit: 'semitones',
+        default: d.formant ?? 0,
+        advanced: true,
+      },
+      {
+        key: 'backing',
+        label: 'Backing singers',
+        hint: 'Keep them as they are, sing them in the voice too so the whole choir is one voice, or take them out of the song. Needs Split the lead from the backing vocals on.',
+        kind: 'choice',
+        options: myVoiceBackings.map((e) => e.label),
+        default: labelOf(myVoiceBackings, d.backing),
+        advanced: true,
+      },
+      {
+        key: 'f0_method',
+        label: 'Melody tracking',
+        hint: 'How the tune is followed. Accurate is right for nearly every song. Simple is quicker and can help on a clean, dry vocal that Accurate makes warble.',
+        kind: 'choice',
+        options: myVoicePitchMethods.map((e) => e.label),
+        default: labelOf(myVoicePitchMethods, d.f0_method),
         advanced: true,
       },
       {
@@ -818,6 +1178,28 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
         hint: 'Off: the voice is sung with its echo, which kept the most words in tests. On: the echo is taken off before your voice sings it, and a matching room is put back after.',
         kind: 'toggle',
         default: d.dereverb,
+        advanced: true,
+      },
+      {
+        key: 'dereverb_strength',
+        label: 'How much room to take off',
+        hint: 'Only used when Take the room off the voice first is on. 1 takes all of it off, 0.5 takes half, 0 takes none.',
+        kind: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        default: d.dereverb_strength ?? 1,
+        advanced: true,
+      },
+      {
+        key: 'denoise',
+        label: 'Clean up noise',
+        hint: 'Takes hiss and background noise off the singer before the voice sings it. 0 is off. Start around 0.3; high numbers can dull the voice.',
+        kind: 'range',
+        min: 0,
+        max: 1,
+        step: 0.05,
+        default: d.denoise ?? 0,
         advanced: true,
       },
       {
@@ -867,6 +1249,11 @@ export function myVoiceGuideEngine(env: NodeJS.ProcessEnv = process.env): MyVoic
       vocal: 'Download my voice on its own',
       vocalFx: 'Download my voice with the effect',
       clip: 'Singing: ',
+      instrumental: 'Download the music without the singer',
+      backing: 'Download the backing singers',
+      leadOriginal: 'Download the original singer on their own',
+      rack: 'Open in the effects rack',
+      voices: 'Voice lab: make and manage voices',
     },
   };
 }
@@ -889,11 +1276,12 @@ export function withMyVoiceGuide<T extends Guide>(
   guide: T,
   model: MyVoiceModel | null,
   env: NodeJS.ProcessEnv = process.env,
+  voices: MyVoiceChoice[] = [],
 ): T {
   if (!model || !guide || !guide.engines) return guide;
   const engines: Record<string, unknown> = {
     ...guide.engines,
-    [myVoiceEngine]: myVoiceGuideEngine(env),
+    [myVoiceEngine]: myVoiceGuideEngine(env, voices),
   };
   const yue = guide.engines.yue2;
   if (
@@ -940,6 +1328,8 @@ export type MyVoiceRouterHooks = Hooks & {
   find: (user: string) => Promise<MyVoiceModel | null>;
   /** The imported recording's length in seconds, for the estimate. */
   seconds?: (user: string, url: string) => Promise<number | undefined>;
+  /** The voices the account made in the voice lab (music/voiceLab.ts), ready ones only. */
+  voices?: (user: string) => Promise<MyVoiceChoice[]>;
 };
 
 /** The "Sing it in my voice" engine: the booth's job lane (audio/jobs.ts) behind an owner gate. For an account with no voice
@@ -957,7 +1347,7 @@ export function createMyVoiceRouter(hooks: MyVoiceRouterHooks): Router {
   });
   router.use(
     createAudioRouter(
-      { ...hooks, prepare: myVoicePrepare(hooks.find, hooks.seconds) },
+      { ...hooks, prepare: myVoicePrepare(hooks.find, hooks.seconds, hooks.voices) },
       {
         engine: myVoiceEngine,
         prefix: 'voice_',

@@ -253,11 +253,21 @@ export {
   createMyVoiceFollowUps,
   myVoiceTakeNote,
   myVoiceEffectLinks,
+  myVoiceStemLinks,
+  myVoicePresets,
   myVoiceTakeCost,
   myVoiceProjectOptions,
   myVoiceProjectWhy,
 } from './music/myVoice';
-export type { MyVoiceModel, MyVoiceFollowUp } from './music/myVoice';
+export type { MyVoiceModel, MyVoiceFollowUp, MyVoiceChoice } from './music/myVoice';
+export {
+  createVoiceLab,
+  voiceLabEnabled,
+  voiceLabGuide,
+  voiceLabEpochs,
+  checkVoiceName,
+} from './music/voiceLab';
+export type { VoiceLab, VoiceLabHooks, VoiceLabVoice } from './music/voiceLab';
 
 export {
   createEffectsRouter,

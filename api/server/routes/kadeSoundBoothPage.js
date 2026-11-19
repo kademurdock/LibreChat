@@ -347,6 +347,15 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     var h = await get('/api/kade/sound-booth/health');
     if(!h.ok || !h.data.guide){ say('Could not open the Sound Booth right now. Try reloading in a moment.', true); return; }
     state.guide = h.data.guide;
+    /* Nov 18 2026: the effects rack (the Voice Changer page) is in this build and switched on. */
+    state.rack = !!h.data.rack;
+    /* A take's way into the rack: the voice on its own when the take has one (with the music as its backing track),
+     * otherwise the take itself. The links are the signed ones the take already shows. */
+    function rackLink(t, p){
+      var q='src='+encodeURIComponent(t.vocalUrl||t.url);
+      if(t.vocalUrl && t.instrumentalUrl) q+='&bed='+encodeURIComponent(t.instrumentalUrl);
+      return '/voice-changer?'+q+'&title='+encodeURIComponent((p&&p.title)||t.title||'Sound Booth take');
+    }
     var moodSel = document.getElementById('mood');
     (h.data.moods||[]).forEach(function(m){ var o=document.createElement('option'); o.value=m.key; o.textContent=m.label; moodSel.appendChild(o); });
     app.hidden = false;
@@ -611,6 +620,14 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
      * because every re-render rebuilds it. A slider's number beside it is aria-hidden: the slider
      * already says its value, and an output element is a live region that said it twice. */
     var moreOpen = {};
+    /* Nov 18 2026: a slider with a unit says its value in words ("2 semitones", "minus 1.5 semitones"). */
+    function unitText(v,unit){ var n=parseFloat(v); if(isNaN(n)) return String(v); var one=Math.abs(n)===1&&/s$/.test(unit)?unit.slice(0,-1):unit; return (n<0?'minus '+Math.abs(n):String(n))+' '+one; }
+    /* Nov 18 2026: a preset choice (a setting with fills) sets the settings it names and says so; each stays hers to change. */
+    function applyPreset(setting, name){
+      var fills=setting&&setting.fills&&setting.fills[name]; if(!fills) return 0;
+      var count=0; Object.keys(fills).forEach(function(k){ state.values[k]=fills[k]; count++; });
+      return count;
+    }
     function settingField(s){
         var id = 'set_'+s.key, v = state.values[s.key];
         var head = '<label class="field" for="'+id+'">'+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
@@ -618,7 +635,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.key==='words_kind' && v==='sung') head+='<p class="hint" id="'+id+'_sung">'+esc(SUNG_NOTE)+'</p>';
         if(s.key==='lyrics'||s.key==='instruction') return head+'<textarea id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" rows="8">'+esc(v||'')+'</textarea>';
         if(s.kind==='text') return head+'<input type="text" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" value="'+esc(v||'')+'">';
-        if(s.kind==='range') return head+'<input type="range" id="'+id+'" data-key="'+s.key+'" min="'+s.min+'" max="'+s.max+'" step="'+(s.step||1)+'" aria-describedby="'+id+'_h" value="'+(v!=null?esc(v):s.default)+'"><output id="'+id+'_value" for="'+id+'" aria-hidden="true">'+(v!=null?esc(v):s.default)+'</output>';
+        if(s.kind==='range') return head+'<input type="range" id="'+id+'" data-key="'+s.key+'" min="'+s.min+'" max="'+s.max+'" step="'+(s.step||1)+'" aria-describedby="'+id+'_h"'+(s.unit?' data-unit="'+esc(s.unit)+'" aria-valuetext="'+esc(unitText(v!=null?v:s.default,s.unit))+'"':'')+' value="'+(v!=null?esc(v):s.default)+'"><output id="'+id+'_value" for="'+id+'" aria-hidden="true">'+(v!=null?esc(v):s.default)+'</output>';
         if(s.kind==='number') return head+'<input type="number" id="'+id+'" data-key="'+s.key+'" aria-describedby="'+id+'_h" step="'+(s.step||'any')+'"'+(s.min!=null?' min="'+s.min+'"':'')+(s.max!=null?' max="'+s.max+'"':'')+' placeholder="'+(s.key==='takes'?esc('normal is '+takesDefault()):s.default!=null?esc('normal is '+s.default):'leave empty')+'" value="'+(v!=null?esc(v):'')+'">';
         if(s.kind==='toggle') return '<label class="field"><input type="checkbox" id="'+id+'" data-key="'+s.key+'"'+(((v!=null)?v:s.default)?' checked':'')+' aria-describedby="'+id+'_h"> '+esc(s.label)+'</label><p class="hint" id="'+id+'_h">'+esc(s.hint)+'</p>';
         /* Part 295: a Family feature pack choice outside the pack (the YuE2 Style) comes with
@@ -667,7 +684,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       });
       var advanced = show.filter(function(s){ return !!s.advanced; });
       box.innerHTML = show.filter(function(s){ return !s.advanced; }).map(settingField).join('') + '<div id="settingsExtras"></div>';
-      more.innerHTML = advanced.length ? '<details id="moreSettingsGroup"'+(moreOpen[engine]?' open':'')+'><summary>More settings</summary>'+advanced.map(settingField).join('')+'</details>' : '';
+      more.innerHTML = (advanced.length ? '<details id="moreSettingsGroup"'+(moreOpen[engine]?' open':'')+'><summary>More settings</summary>'+advanced.map(settingField).join('')+'</details>' : '') + (isUpload(engine) && uploadUi(engine).voices ? '<p class="hint"><a href="/sound-booth/voices">'+esc(uploadUi(engine).voices)+'</a></p>' : '');
       var group = document.getElementById('moreSettingsGroup');
       if(group) group.addEventListener('toggle', function(){ moreOpen[engine] = group.open; });
       var extras = document.getElementById('settingsExtras');
@@ -706,7 +723,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       /* Handlers over the whole panel: a setting may sit in More settings. */
       Array.prototype.forEach.call(panel.querySelectorAll('[data-key]'), function(el){
         if(state.transcribing && el.dataset.key==='lyrics')el.disabled=true;
-        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; invalidateQuote(); if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'||el.dataset.key==='words_kind'||el.dataset.key==='fix_task'){renderSettings();document.getElementById(el.id).focus();} if(el.dataset.key==='words_kind'&&el.value==='sung') say(SUNG_NOTE); if(el.dataset.key==='fix_task'&&fixNext()) say(fixNext()); if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
+        el.oninput = el.onchange = function(){ state.values[el.dataset.key] = (el.type==='checkbox') ? el.checked : el.value; var output=document.getElementById(el.id+'_value');if(output)output.textContent=el.value; if(el.dataset.unit) el.setAttribute('aria-valuetext', unitText(el.value, el.dataset.unit)); invalidateQuote(); var presetOf=state.guide.engines[state.engine].settings.filter(function(x){ return x.key===el.dataset.key && x.fills; })[0]; if(presetOf){ var filled=applyPreset(presetOf, el.value); if(filled){ renderSettings(); var again=document.getElementById(el.id); if(again) again.focus(); say(el.value+'. '+((presetOf.about&&presetOf.about[el.value])||'')+' '+filled+' settings were set for you under More settings. You can still change any of them.'); } } if(el.dataset.key==='instrumental'||el.dataset.key==='auk_task'||el.dataset.key==='words_kind'||el.dataset.key==='fix_task'){renderSettings();document.getElementById(el.id).focus();} if(el.dataset.key==='words_kind'&&el.value==='sung') say(SUNG_NOTE); if(el.dataset.key==='fix_task'&&fixNext()) say(fixNext()); if(isUpload() && el.dataset.key==='voice_source' && state.clips.length) quoteUpload(); };
       });
       Array.prototype.forEach.call(panel.querySelectorAll('input[type=file]'), function(el){
         el.onchange = function(){ if(el.files && el.files[0]) importClip(el.files[0]); };
@@ -963,6 +980,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(s.kind==='number'||s.kind==='range'){ var n = parseFloat(v); if(!isNaN(n)) b[s.key] = (s.key==='seed'||s.key==='pitch') ? Math.round(n) : n; return; }
         if(v!=null && String(v).trim()!=='') b[s.key] = v;
       });
+      /* The page has already filled a preset's settings (and she may have changed some): the server takes them as they are. */
+      if(isUpload() && g.settings.some(function(s){ return !!s.fills; })) b.preset_filled = true;
       if((state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='ace'&&state.engine!=='stable'&&!isUpload()) && !b.gender) b.gender = 'female';
       if((state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace') && b.instrumental){delete b.lyrics;delete b.keep_lyrics;}
       var mood = document.getElementById('mood').value; if(mood && (state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='ace'&&state.engine!=='stable'&&!isUpload())) b.mood = mood;
@@ -1404,7 +1423,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           (p.takes||[]).map(function(t, n){
             var lbl = 'Take ' + ((p.takes.length) - n) + (t.seconds ? ', ' + t.seconds + ' seconds' : '') + (t.description ? '. ' + t.description : '');
             return '<audio controls preload="none" aria-label="' + esc(lbl) + '"><source src="' + esc(t.url) + '">' + (t.backupUrl ? '<source src="' + esc(t.backupUrl) + '">' : '') + '</audio>' +
-                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.vocalUrl ? ' · <a href="'+esc(t.vocalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocal) || 'Download the voice on its own')+'</a>' : '') + (t.vocalFxUrl ? ' · <a href="'+esc(t.vocalFxUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocalFx) || 'Download the voice with its effect')+'</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
+                   '<p class="hint"><a href="' + esc(t.url) + '" download target="_blank" rel="noreferrer">Download this take</a>' + (t.masterUrl ? ' · <a href="' + esc(t.masterUrl) + '" download target="_blank" rel="noreferrer">Download WAV master</a>' : '') + (t.scoreUrl ? ' · <a href="'+esc(t.scoreUrl)+'" download target="_blank" rel="noreferrer">Download composition score</a>' : '') + (t.vocalUrl ? ' · <a href="'+esc(t.vocalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocal) || 'Download the voice on its own')+'</a>' : '') + (t.vocalFxUrl ? ' · <a href="'+esc(t.vocalFxUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).vocalFx) || 'Download the voice with its effect')+'</a>' : '') + (t.instrumentalUrl ? ' · <a href="'+esc(t.instrumentalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).instrumental) || 'Download the music without the singer')+'</a>' : '') + (t.backingUrl ? ' · <a href="'+esc(t.backingUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).backing) || 'Download the backing singers')+'</a>' : '') + (t.leadOriginalUrl ? ' · <a href="'+esc(t.leadOriginalUrl)+'" download target="_blank" rel="noreferrer">'+esc((ue && uploadUi(ue).leadOriginal) || 'Download the original singer on their own')+'</a>' : '') + (state.rack ? ' · <a href="'+esc(rackLink(t, p))+'">'+esc(t.vocalUrl && t.instrumentalUrl ? 'Open the voice in the effects rack, with the music as its backing track' : 'Open in the effects rack')+'</a>' : '') + (t.seconds ? ' \\u00b7 ' + t.seconds + ' seconds' : '') + '</p>' +
                    (t.note ? '<p class="hint">' + esc(t.note) + '</p>' : '') +
                    (t.voiceNote ? '<p class="hint">' + esc(t.voiceNote) + '</p>' : '') +
                    (ue && !t.voiceOf && (state.guide.engines[ue].takesFrom||[]).indexOf(p.engine)>=0 ? '<button type="button" class="act quiet" data-take-project="'+esc(p.id)+'" data-take="'+n+'" data-use="upload">'+esc(uploadUi(ue).useTake||'Use this take')+'</button> ' : '') +

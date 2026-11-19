@@ -96,6 +96,9 @@ const {
   myVoiceAutoOptions,
   myVoiceTakeNote,
   myVoiceEffectLinks,
+  myVoiceStemLinks,
+  createVoiceLab,
+  initializeS3,
   myVoiceProjectOptions,
   myVoiceProjectWhy,
   musicReferenceSpeedNote,
@@ -282,6 +285,57 @@ function myVoiceOwner(userId) {
   return MY_VOICE_READY ? findMyVoiceModel(String(userId || '')) : Promise.resolve(null);
 }
 const MY_VOICE_OFF = { queue: async () => ({ queued: false, reason: 'off' }), advance: async () => undefined, stop: () => undefined };
+/* ============== The voice lab (Nov 18 2026; packages/api music/voiceLab.ts) ==============
+ * Her ask: clone voices on the platform, with the person's permission, from a screen she can use herself. Only an account
+ * that already has Sing it in my voice reaches it (myVoiceOwner); for everyone else every route answers as a missing page.
+ * Recordings go to voice-samples/<user>/<voice>/ in the private bucket, the voice worker's train mode learns the voice into
+ * voice-models/<user>/<voice>/, and a ready voice appears under Voice in Sing it in my voice. VOICE_LAB_ENABLED=0 turns the
+ * lab off; voices already made keep working. */
+const voiceLabUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024, files: 1 } });
+function voiceLabStorage() {
+  const client = typeof initializeS3 === 'function' ? initializeS3() : null;
+  if (!client || !process.env.AWS_BUCKET_NAME) throw new Error('file storage is not configured');
+  return client;
+}
+const voiceLab = !(MY_VOICE_READY && typeof createVoiceLab === 'function') ? null : createVoiceLab({
+  auth: requireJwtAuth,
+  user: req => String(req.user.id),
+  allowed: async user => !!(await myVoiceOwner(user)),
+  upload: (req, res, next) => voiceLabUpload.single('clip')(req, res, error => {
+    if (error) return res.status(400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'That recording is over 60 megabytes. Use a shorter one, or an MP3.' : 'That recording could not be received. Try again.' });
+    return next();
+  }),
+  put: async (key, body, contentType) => {
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await voiceLabStorage().send(new PutObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+  },
+  remove: async keys => {
+    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    /* Only ever inside the two voice folders, whatever it is handed. */
+    for (const key of keys.filter(k => /^voice-(samples|models)\/[A-Za-z0-9_-]{1,64}\/v[0-9a-f]{15}\/[A-Za-z0-9._-]{1,200}$/.test(String(k))))
+      await voiceLabStorage().send(new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
+  },
+  seconds: async body => {
+    const seconds = await require('./kadeSoundBoothStitch').durationOf(body);
+    return typeof seconds === 'number' && seconds > 0 ? seconds : undefined;
+  },
+  notify: async (user, voice, ok) => {
+    if (!process.env.BRIDGE_SECRET) return;
+    const base = (process.env.BRIDGE_URL || 'https://kade-ai-bridge-production.up.railway.app').replace(/\/$/, '');
+    await axios.post(`${base}/notify`, {
+      userId: user, agentId: 'soundbooth', agentName: 'Sound Booth',
+      title: ok ? 'Your new voice is ready' : 'A voice did not finish learning',
+      body: ok ? `${voice.name} is ready. Choose it under Voice in Sing it in my voice.` : `${voice.name}: ${voice.status}`.slice(0, 300),
+      requested: true, urgent: false, route: 'sound-booth',
+    }, { headers: { 'x-bridge-secret': process.env.BRIDGE_SECRET, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' }, timeout: 20000 });
+  },
+  log: line => logger.info(line),
+});
+function effectsRackOn() {
+  if (process.env.KADE_VOICE_CHANGER === '0') return false;
+  try { require.resolve('./kadeVoiceChanger'); return true; } catch (_) { return false; }
+}
+const myVoiceChoices = user => (voiceLab ? voiceLab.voices(String(user || '')).catch(() => []) : Promise.resolve([]));
 /* A version in her voice is named after its project with this ending, so it never reads exactly like the take it came from.
  * Renaming the project (PATCH /projects/:id) keeps the ending on it. */
 const voiceVersionTitle = (title) => `${title} (in my voice)`.slice(0, 120);
@@ -556,10 +610,12 @@ router.use(createEffectsRouter({
 /* Sing it in my voice, the engine: she imports a song or a dry vocal and gets it back in her voice. Mounted before the main
  * /render, which would otherwise read the unknown engine as AuK; for an account with no voice model the request falls through
  * to it exactly as any unknown engine does. */
+if (voiceLab) router.use(voiceLab.router);
 if (MY_VOICE_READY) router.use(createMyVoiceRouter({
   auth: requireJwtAuth,
   user: req => String(req.user.id),
   find: myVoiceOwner,
+  voices: myVoiceChoices,
   seconds: (user, url) => musicReferenceSeconds(user, url),
   validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
   project: async (user, input, sourceText) => {
@@ -592,6 +648,9 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
           /* A vocal effect: the voice with it, beside the dry voice (vocalUrl), which is always kept; in vocal mode the take
            * itself is the voice with the effect, so no second link to the same file. */
           ...myVoiceEffectLinks(out),
+          /* Nov 18 2026: the stems of a song job (the music without the singer, the backing singers, the original lead). */
+          ...(typeof myVoiceStemLinks === 'function' ? myVoiceStemLinks(out) : {}),
+          ...(job.input.voice && job.input.voice.voice_name ? { voiceName: job.input.voice.voice_name } : {}),
           voiceSource: job.input.voice && job.input.voice.source, costScope: 'execution estimate; startup and idle are additional' } },
     }, { upsert: true, new: true });
     await KadeSoundBoothProject.updateOne({ _id: job.projectId, user: job.user }, { $addToSet: { assets: String(asset._id) } });
@@ -2026,6 +2085,9 @@ async function takesFor(projects, userId, paid = false) {
        * take a word about its automatic version. Only ever on the owner's own takes, and only when there is something to say. */
       ...(d.metadata?.vocalUrl ? { vocalUrl: await freshAssetUrl(d.metadata.vocalUrl) } : {}),
       ...(d.metadata?.vocalFxUrl ? { vocalFxUrl: await freshAssetUrl(d.metadata.vocalFxUrl) } : {}),
+      ...(d.metadata?.instrumentalUrl ? { instrumentalUrl: await freshAssetUrl(d.metadata.instrumentalUrl) } : {}),
+      ...(d.metadata?.backingUrl ? { backingUrl: await freshAssetUrl(d.metadata.backingUrl) } : {}),
+      ...(d.metadata?.leadOriginalUrl ? { leadOriginalUrl: await freshAssetUrl(d.metadata.leadOriginalUrl) } : {}),
       ...(d.metadata?.voiceOf ? { voiceOf: d.metadata.voiceOf } : {}),
       ...(d.metadata?.myVoice?.state === 'queued' ? { voiceNote: 'A version in your voice is being made.' }
         : d.metadata?.myVoice?.state === 'failed' ? { voiceNote: `The version in your voice did not finish. ${d.metadata.myVoice.error || ''}`.trim() } : {}),
@@ -4627,7 +4689,7 @@ router.post('/suggest', requireJwtAuth, express.json({ limit: '64kb' }), (req, r
 router.get('/health', requireJwtAuth, async (req, res) => {
   /* Sing it in my voice: null for every account without a voice model, and then nothing below mentions it. */
   const myVoice = await myVoiceOwner(req.user.id);
-  const guide = (MY_VOICE_READY ? withMyVoiceGuide : (g) => g)(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice);
+  const guide = (MY_VOICE_READY ? withMyVoiceGuide : (g) => g)(withStyleAccess(require('./kadeSoundBoothLink').guideFor(withYueCovers(guidePriced(GUIDE, priceFactor(req.user))), req.user, boothFeatures), req.user), myVoice, process.env, myVoice ? await myVoiceChoices(req.user.id) : []);
   return res.json({
     /* Part 293: per person. The YuE2 cover field carries `link` only with the
      * Family feature pack; everyone else gets `lockedLink`, shown greyed out
@@ -4642,6 +4704,9 @@ router.get('/health', requireJwtAuth, async (req, res) => {
     /* Nov 17 2026: last, so every engine card (ACE's too) carries its character limits for the page's boxes. */
     guide: withTextLimits(withSongPrice(ACE_READY ? withAceGuide(guide, req.user, process.env, aceStyleChoice(req.user)) : guide, req.user)),
     features: boothFeatures(req.user),
+    /* Nov 18 2026: the effects rack (the Voice Changer page) takes a finished take by link; false while it is switched off
+     * or not in this build, and the page then shows no link to it. */
+    rack: effectsRackOn(),
     engines: {
       scenema: { configured: !!process.env.BRIDGE_SECRET, queued: true, model: 'tencent/AuK' },
       seed: { configured: !!process.env.FAL_KEY, queued: false, usdPerMin: priced(SEED_USD_PER_MIN, priceFactor(req.user)) },

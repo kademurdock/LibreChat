@@ -263,6 +263,17 @@ export type InputBody = {
   protect?: number;
   rms_mix_rate?: number;
   vocal_fx?: string;
+  /* Nov 18 2026: the preset, the chosen voice and the newer knobs (music/myVoice.ts). */
+  preset?: string;
+  preset_filled?: boolean;
+  voice?: string;
+  pitch_mode?: string;
+  dereverb_strength?: number;
+  denoise?: number;
+  backing?: string;
+  formant?: number;
+  f0_method?: string;
+  transpose_song?: boolean | string;
 };
 /** Each finished take's note, said once when every finished take has the same one. Said once for
  * several takes, a note about "this take" (a YuE2 take cut at its length limit) speaks of each take. */

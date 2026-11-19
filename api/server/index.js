@@ -384,6 +384,7 @@ const startServer = async () => {
   app.get('/feed-the-server', routes.kade.feedPage);
   app.get('/my-creations', routes.kade.creationsPage);
   app.get('/sound-booth', routes.kade.soundBoothPage);
+  app.get('/sound-booth/voices', routes.kade.voiceLabPage);
   app.get('/agent-work', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(appConfig.paths.dist, 'assets/tasks/work.html'));

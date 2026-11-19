@@ -85,6 +85,12 @@ test('a render body becomes a voice job; her choices are read in the words the s
       protect: 0.33,
       rms_mix_rate: 0.25,
       vocal_fx: 'none',
+      dereverb_strength: 1,
+      denoise: 0,
+      backing: 'keep',
+      formant: 0,
+      f0_method: 'rmvpe',
+      transpose_song: true,
     },
   });
   assert.equal(job.title, 'Sung in my voice');
@@ -118,6 +124,12 @@ test('a render body becomes a voice job; her choices are read in the words the s
       protect: 0.2,
       rms_mix_rate: 1,
       vocal_fx: 'none',
+      dereverb_strength: 1,
+      denoise: 0,
+      backing: 'keep',
+      formant: 0,
+      f0_method: 'rmvpe',
+      transpose_song: true,
     },
   });
   assert.equal(
@@ -181,6 +193,12 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     protect: 0.2,
     rms_mix_rate: 0.25,
     vocal_fx: 'none',
+    dereverb_strength: 1,
+    denoise: 0,
+    backing: 'keep',
+    formant: 0,
+    f0_method: 'rmvpe',
+    transpose_song: true,
   });
   /* Round 1's chain, if her listening prefers it: one setting on Railway. */
   const round1 = {
@@ -297,6 +315,13 @@ test('the owner check adds her model and the recording length; the worker gets e
     protect: 0.33,
     rms_mix_rate: 0.25,
     vocal_fx: 'None',
+    pitch_mode: 'Automatic: octaves only',
+    dereverb_strength: 1,
+    denoise: 0,
+    backing: 'Keep them as they are',
+    formant: 0,
+    f0_method: 'Accurate',
+    transpose_song: true,
     reference_voice_url: url,
     pitch: 12,
   });
@@ -514,12 +539,20 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
     [
       'reference_voice_url',
       'voice_source',
+      'preset',
       'vocal_fx',
       'pitch',
+      'pitch_mode',
+      'transpose_song',
+      'formant',
+      'backing',
+      'f0_method',
       'extractor',
       'lead_split',
       'soft_s',
       'dereverb',
+      'dereverb_strength',
+      'denoise',
       'index_rate',
       'protect',
       'rms_mix_rate',
@@ -527,8 +560,8 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
   );
   assert.deepEqual(
     engine.settings.filter((s) => !s.advanced).map((s) => s.key),
-    ['reference_voice_url', 'voice_source', 'vocal_fx'],
-    'the recording, what is in it and the vocal effect stay in view; the rest waits in More settings',
+    ['reference_voice_url', 'voice_source', 'preset', 'vocal_fx'],
+    'the recording, what is in it, the preset and the vocal effect stay in view; the rest waits in More settings',
   );
   assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, false);
   assert.equal(engine.settings.find((s) => s.key === 'dereverb').default, false);
