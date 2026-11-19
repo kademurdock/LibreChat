@@ -1,0 +1,1202 @@
+[
+  {
+    "id": "nature-under-an-umbrella",
+    "name": "Under an umbrella",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Huddled under an umbrella while fat drops drum on the fabric just above you.",
+    "tags": ["rain", "umbrella", "close", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 50 } }
+    ],
+    "bed": { "b": "rain", "level": -14, "duck": 3, "p": { "surface": "tent", "intensity": 60, "distance": 0, "drips": 70 } },
+    "seed": 1
+  },
+  {
+    "id": "nature-downpour-on-pavement",
+    "name": "Downpour on the pavement",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Shouting through a sudden heavy downpour hammering the street.",
+    "tags": ["rain", "downpour", "heavy", "street"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "space.distance", "p": { "distance": 4, "wind": 25, "echoes": 70 } }
+    ],
+    "bed": { "b": "rain", "level": -10, "duck": 6, "p": { "surface": "pavement", "intensity": 95, "waves": 60 } },
+    "seed": 2
+  },
+  {
+    "id": "nature-drizzle-in-the-leaves",
+    "name": "Drizzle in the leaves",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "A soft drizzle pattering on the leaves of a quiet wood.",
+    "tags": ["rain", "drizzle", "forest", "soft"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 70 } }
+    ],
+    "bed": { "b": "rain", "level": -18, "p": { "surface": "leaves", "intensity": 20, "distance": 30 } },
+    "seed": 3
+  },
+  {
+    "id": "nature-splashing-through-puddles",
+    "name": "Splashing off through puddles",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "You talk as you walk off down the wet path, rain splashing into the puddles.",
+    "tags": ["rain", "puddles", "walking", "away"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 1.5, "to": 10, "room": "outdoors" } }
+    ],
+    "bed": { "b": "rain", "level": -15, "p": { "surface": "puddles", "intensity": 55, "waves": 80 } },
+    "seed": 4
+  },
+  {
+    "id": "nature-thunderstorm-overhead",
+    "name": "Thunderstorm right overhead",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Lashing rain and thunder cracking right above your head.",
+    "tags": ["thunder", "storm", "rain", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.distance", "p": { "distance": 3, "wind": 40, "echoes": 40 } }
+    ],
+    "bed": { "b": "storm", "level": -12, "duck": 4, "p": { "intensity": 80, "thunder": 6, "distance": 600 } },
+    "seed": 5
+  },
+  {
+    "id": "nature-distant-thunder",
+    "name": "Distant thunder rolling in",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Light rain starting while thunder rumbles low and long over the hills.",
+    "tags": ["thunder", "distant", "rain", "rumble"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 60 } }
+    ],
+    "bed": { "b": "storm", "level": -12, "p": { "intensity": 15, "thunder": 10, "distance": 9000, "wind": 10 } },
+    "seed": 6
+  },
+  {
+    "id": "nature-porch-tin-roof",
+    "name": "Porch under a tin roof",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Rain drumming and pinging on the metal porch roof above you.",
+    "tags": ["rain", "tin roof", "porch", "drumming"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 10, "echoes": 30 } }
+    ],
+    "bed": { "b": "rain-roof", "level": -14, "duck": 3 },
+    "seed": 7
+  },
+  {
+    "id": "nature-rain-on-the-tent",
+    "name": "Rain on the tent",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Snug in a small tent while the rain patters and thumps on the fabric.",
+    "tags": ["rain", "tent", "camping", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "size": 1.3, "tone": -20, "mix": 60 } }
+    ],
+    "bed": { "b": "rain-tent", "level": -14, "duck": 3 },
+    "seed": 8
+  },
+  {
+    "id": "nature-rain-at-the-window",
+    "name": "Rain at the bedroom window",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Indoors and dry while the rain taps the glass and runs down the gutter.",
+    "tags": ["rain", "window", "indoors", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bedroom", "distance": 40 } }
+    ],
+    "bed": { "b": "rain-window", "level": -16 },
+    "seed": 9
+  },
+  {
+    "id": "nature-hail-on-the-car",
+    "name": "Hail on the car roof",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Sheltering in the car as hailstones clatter on the roof and hood.",
+    "tags": ["hail", "car", "clatter", "storm"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car" } }
+    ],
+    "bed": { "b": "hail", "level": -14, "duck": 4, "p": { "surface": "car", "intensity": 70 } },
+    "seed": 10
+  },
+  {
+    "id": "nature-hailstorm-in-the-open",
+    "name": "Caught in a hailstorm",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Out in the open as big hailstones bounce off the ground all around you.",
+    "tags": ["hail", "outdoors", "storm", "bouncing"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 5, "wind": 50, "echoes": 30 } }
+    ],
+    "bed": { "b": "hail", "level": -12, "duck": 4, "p": { "size": 70, "rain": 40, "intensity": 70 } },
+    "seed": 11
+  },
+  {
+    "id": "nature-rain-off-the-gutter",
+    "name": "Rain pouring off the gutter",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Standing by the house as the downpipe gurgles into the rain barrel.",
+    "tags": ["rain", "gutter", "pipe", "house"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "alley", "mix": 50, "size": 0.7 } }
+    ],
+    "bed": { "b": "rain-gutter", "level": -15, "p": { "pipe": 80, "intensity": 70 } },
+    "seed": 12
+  },
+  {
+    "id": "nature-barn-in-the-rain",
+    "name": "Old barn in the rain",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "A big wooden barn, the rain drumming on the high metal roof.",
+    "tags": ["barn", "rain", "roof", "wood"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "warehouse", "size": 0.6, "tone": -35, "distance": 45 } }
+    ],
+    "bed": { "b": "rain-roof", "level": -16, "p": { "place": "barn", "ring": 40 } },
+    "seed": 13
+  },
+  {
+    "id": "nature-yelling-into-the-storm",
+    "name": "Yelling into the storm",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "A strained shout lost in howling wind, rain and thunder.",
+    "tags": ["storm", "shout", "wind", "thunder"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2 } },
+      { "m": "lofi.saturate", "p": { "drive": 14 } },
+      { "m": "space.distance", "p": { "distance": 12, "wind": 80, "echoes": 20 } }
+    ],
+    "bed": { "b": "storm", "level": -9, "duck": 8, "p": { "intensity": 100, "wind": 90, "thunder": 3, "distance": 2000 } },
+    "seed": 14
+  },
+  {
+    "id": "nature-lightning-cracking-close",
+    "name": "Lightning cracking close by",
+    "cat": "nature",
+    "sub": "Rain and storms",
+    "about": "Thunder splitting the air right beside you, each crack knocking out your words for a moment.",
+    "tags": ["lightning", "thunder", "storm", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "space.distance", "p": { "distance": 3, "wind": 30, "echoes": 70 } },
+      { "m": "spec.dropout", "p": { "loss": 8, "burst": 120, "conceal": "silence" } }
+    ],
+    "bed": { "b": "storm", "level": -9, "duck": 5, "p": { "intensity": 35, "thunder": 12, "distance": 300, "wind": 30 } },
+    "seed": 81
+  },
+  {
+    "id": "nature-windy-cliff",
+    "name": "On a windy cliff",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Gusts tearing past your ears at the edge of a high cliff, buffeting every word.",
+    "tags": ["wind", "cliff", "gusts", "high"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 80, "echoes": 20 } },
+      { "m": "tone.filter", "p": { "freq": 6000, "resonance": 10, "slope": "gentle", "sweep": "drift", "rate": 0.7, "range": 60 } },
+      { "m": "mod.tremolo", "p": { "rate": 5, "depth": 30, "shape": "random" } }
+    ],
+    "bed": { "b": "wind", "level": -11, "duck": 4, "p": { "strength": 85, "gusts": 80, "whistle": 55 } },
+    "seed": 15
+  },
+  {
+    "id": "nature-desert-wind",
+    "name": "Hot desert wind",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Dry wind hissing across open sand, grains rattling in every gust.",
+    "tags": ["desert", "wind", "sand", "hot"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 5, "wind": 60, "echoes": 10 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -14, "duck": 3, "p": { "strength": 70, "gusts": 35 } },
+    "seed": 18
+  },
+  {
+    "id": "nature-singing-sand-dunes",
+    "name": "Singing sand dunes",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "The low hum of a singing dune, your voice blurring into the blowing sand.",
+    "tags": ["desert", "dunes", "hum", "wind"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 30, "time": 800 } },
+      { "m": "space.room", "p": { "space": "field" } }
+    ],
+    "bed": { "b": "desert-wind", "level": -14, "p": { "strength": 40, "dunes": 90 } },
+    "seed": 19
+  },
+  {
+    "id": "nature-voice-in-a-hurricane",
+    "name": "Voice in a hurricane",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Shrieking wind rips whole words away as you try to be heard.",
+    "tags": ["hurricane", "wind", "storm", "shout"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 100, "echoes": 10 } },
+      { "m": "spec.dropout", "p": { "loss": 20, "burst": 180, "conceal": "silence" } }
+    ],
+    "bed": { "b": "wind-howl", "level": -8, "duck": 6, "p": { "where": "outside", "strength": 100, "gusts": 90 } },
+    "seed": 20
+  },
+  {
+    "id": "nature-wind-round-the-house",
+    "name": "Wind howling round the house",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Inside on a wild night, the wind moaning and rattling the windows.",
+    "tags": ["wind", "howl", "house", "night"],
+    "chain": [
+      { "m": "space.room", "p": {} }
+    ],
+    "bed": { "b": "wind-howl", "level": -15, "p": { "rattle": 60 } },
+    "seed": 21
+  },
+  {
+    "id": "nature-breeze-in-the-pines",
+    "name": "Breeze in the pines",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "A soft wind whispering through tall pine trees.",
+    "tags": ["wind", "pines", "forest", "soft"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest" } }
+    ],
+    "bed": { "b": "wind-trees", "level": -17, "p": { "leaves": "pine", "strength": 40 } },
+    "seed": 22
+  },
+  {
+    "id": "nature-dry-leaves-blowing",
+    "name": "Dry autumn leaves blowing",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "A gusty autumn day, crisp dead leaves skittering past through the trees.",
+    "tags": ["wind", "leaves", "autumn", "gusts"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 70, "distance": 60 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -14, "p": { "leaves": "dry", "strength": 70, "gusts": 80 } },
+    "seed": 23
+  },
+  {
+    "id": "nature-windy-mountain-summit",
+    "name": "Windy mountain summit",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Gusts roaring at the peak, a hawk crying and the valley calling back.",
+    "tags": ["mountain", "summit", "wind", "echo"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 60, "echoes": 10 } },
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 300, "count": 3, "mix": 30 } }
+    ],
+    "bed": { "b": "mountain-top", "level": -14, "duck": 3 },
+    "seed": 27
+  },
+  {
+    "id": "nature-storm-cellar-tornado",
+    "name": "Storm cellar in a tornado",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Huddled in a concrete cellar while the twister roars overhead and rattles the door.",
+    "tags": ["tornado", "cellar", "storm", "scared"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 40, "jitter": 25 } },
+      { "m": "space.room", "p": { "space": "parking-garage", "size": 0.5, "tone": -40, "distance": 25 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -11, "duck": 3, "p": { "where": "inside", "strength": 95, "gusts": 85, "pitch": 180, "rattle": 85 } },
+    "seed": 82
+  },
+  {
+    "id": "nature-heat-shimmer-desert",
+    "name": "Heat shimmer over the sand",
+    "cat": "nature",
+    "sub": "Wind and dust",
+    "about": "Far off across the baking flats, your voice wavering in the rising heat.",
+    "tags": ["desert", "heat", "far", "wavering"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 60, "wind": 20, "echoes": 5 } },
+      { "m": "pitch.wobble", "p": { "depth": 30, "speed": 0.5, "randomness": 90 } },
+      { "m": "tone.filter", "p": { "freq": 7000, "slope": "gentle", "sweep": "drift", "rate": 0.3, "range": 40 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -20, "p": { "strength": 15, "sand": 20, "gusts": 20 } },
+    "seed": 83
+  },
+  {
+    "id": "nature-shivering-in-a-blizzard",
+    "name": "Shivering in a blizzard",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Teeth-chattering trembling words, lost in a freezing whirl of snow.",
+    "tags": ["blizzard", "cold", "shiver", "snow"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 85, "jitter": 40 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 70, "echoes": 10 } }
+    ],
+    "bed": { "b": "blizzard", "level": -11, "duck": 4 },
+    "seed": 16
+  },
+  {
+    "id": "nature-cabin-in-a-blizzard",
+    "name": "Snug cabin in a blizzard",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Warm inside a little cabin while the snowstorm roars past the walls.",
+    "tags": ["blizzard", "cabin", "indoors", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "size": 0.7, "tone": -25, "distance": 40 } }
+    ],
+    "bed": { "b": "blizzard", "level": -16, "p": { "where": "inside" } },
+    "seed": 17
+  },
+  {
+    "id": "nature-hush-of-fresh-snow",
+    "name": "Hush of fresh snow",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Deep new snow muffles everything: soft, close and very still.",
+    "tags": ["snow", "quiet", "soft", "winter"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 8, "wind": 5, "echoes": 5 } },
+      { "m": "tone.tilt", "p": { "amount": -4 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 10, "gusts": 20, "whistle": 0, "rumble": 0 } },
+    "seed": 24
+  },
+  {
+    "id": "nature-across-a-frozen-lake",
+    "name": "Calling across a frozen lake",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Your call skims over the ice and comes back glassy from the far shore.",
+    "tags": ["ice", "lake", "echo", "winter"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 250, "darken": 20 } },
+      { "m": "spec.crystal", "p": { "mix": 15, "peaks": 8 } }
+    ],
+    "bed": { "b": "wind", "level": -20, "p": { "strength": 25 } },
+    "seed": 25
+  },
+  {
+    "id": "nature-down-a-glacier-crevasse",
+    "name": "Down a glacier crevasse",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "A deep crack of blue ice that rings cold and bright, the storm far above.",
+    "tags": ["glacier", "ice", "deep", "cold"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "well", "size": 1.5, "tone": 50 } },
+      { "m": "spec.crystal", "p": { "mix": 20 } }
+    ],
+    "bed": { "b": "blizzard", "level": -22, "p": { "strength": 30 } },
+    "seed": 26
+  },
+  {
+    "id": "nature-radio-check-in-a-blizzard",
+    "name": "Radio check in a blizzard",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "Calling base on a hissing field radio, teeth chattering while the snow roars past.",
+    "tags": ["blizzard", "radio", "cold", "snow"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 60, "jitter": 30 } },
+      { "m": "device.walkie", "p": { "band": "field", "signal": 60, "hiss": 45, "beep": "chirp" } }
+    ],
+    "bed": { "b": "blizzard", "level": -16, "p": { "strength": 85 } },
+    "seed": 84
+  },
+  {
+    "id": "nature-through-the-lake-ice",
+    "name": "Talking through the lake ice",
+    "cat": "nature",
+    "sub": "Snow and ice",
+    "about": "A muffled voice from under a frozen lake, the ice ringing faintly above it.",
+    "tags": ["ice", "frozen", "underwater", "muffled"],
+    "chain": [
+      { "m": "mod.underwater", "p": { "depth": 45, "bubbles": 25, "wobble": 20 } },
+      { "m": "space.muffle", "p": { "wall": "thick", "room": "none", "muffling": 55 } },
+      { "m": "synth.resonator", "p": { "object": "glass", "pitch": -5, "decay": 0.8, "brightness": 70, "strike": 20, "mix": 20 } }
+    ],
+    "bed": { "b": "wind", "level": -20, "p": { "strength": 20, "gusts": 30, "whistle": 10 } },
+    "seed": 85
+  },
+  {
+    "id": "nature-by-the-ocean",
+    "name": "By the ocean",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Standing on the sand as waves roll in, crash and fizz back out.",
+    "tags": ["ocean", "beach", "waves", "sea"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 30, "echoes": 10 } }
+    ],
+    "bed": { "b": "ocean", "level": -14, "duck": 3, "p": { "period": 7 } },
+    "seed": 28
+  },
+  {
+    "id": "nature-shouting-over-big-surf",
+    "name": "Shouting over big surf",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Huge breakers booming in on a windy beach as you yell to be heard.",
+    "tags": ["surf", "waves", "shout", "beach"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5 } },
+      { "m": "space.distance", "p": { "distance": 8, "wind": 50, "echoes": 10 } }
+    ],
+    "bed": { "b": "ocean", "level": -9, "duck": 6, "p": { "size": 95, "period": 7, "distance": 10 } },
+    "seed": 29
+  },
+  {
+    "id": "nature-sea-cliffs",
+    "name": "Sea cliffs and crashing waves",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Waves booming into the rocks below, your voice bouncing off the cliff face.",
+    "tags": ["cliffs", "waves", "rocks", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "canyon", "mix": 35 } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -12, "duck": 3 },
+    "seed": 30
+  },
+  {
+    "id": "nature-pebble-beach",
+    "name": "Pebble beach at low tide",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Small waves dragging pebbles back with a rattling hiss.",
+    "tags": ["beach", "pebbles", "waves", "calm"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 20, "echoes": 10 } }
+    ],
+    "bed": { "b": "ocean", "level": -16, "p": { "shore": "pebbles", "size": 30, "period": 6 } },
+    "seed": 31
+  },
+  {
+    "id": "nature-diving-the-reef",
+    "name": "Diving the coral reef",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Talking through your regulator underwater, the reef crackling all round.",
+    "tags": ["underwater", "reef", "diving", "bubbles"],
+    "chain": [
+      { "m": "mod.underwater", "p": { "depth": 70, "bubbles": 70 } }
+    ],
+    "bed": { "b": "underwater", "level": -14, "p": { "reef": 80 } },
+    "seed": 38
+  },
+  {
+    "id": "nature-snorkeling",
+    "name": "Snorkeling at the surface",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "A hollow voice through a snorkel tube, half in and half out of the water.",
+    "tags": ["snorkel", "water", "hollow", "bubbles"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bottle", "size": 1.5, "mix": 50 } },
+      { "m": "mod.underwater", "p": { "depth": 35, "bubbles": 60, "gurgle": 50 } }
+    ],
+    "bed": { "b": "underwater", "level": -16, "p": { "depth": 10, "diver": 80 } },
+    "seed": 39
+  },
+  {
+    "id": "nature-on-a-sinking-ship",
+    "name": "On a sinking ship",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "The deck tilting in a storm, water gurgling in, your voice swaying with the hull.",
+    "tags": ["ship", "sinking", "storm", "water"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "metal-tank", "size": 1.5, "mix": 35 } },
+      { "m": "mod.underwater", "p": { "depth": 20, "gurgle": 60, "bubbles": 40, "wobble": 30 } },
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 0.3 } }
+    ],
+    "bed": { "b": "storm", "level": -12, "duck": 4, "p": { "intensity": 90, "thunder": 2 } },
+    "seed": 40
+  },
+  {
+    "id": "nature-harbor-full-of-gulls",
+    "name": "Harbor full of gulls",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Gulls calling and laughing over a little harbor, water lapping at the boats.",
+    "tags": ["harbor", "gulls", "sea", "boats"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 30, "echoes": 40 } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -14 },
+    "seed": 41
+  },
+  {
+    "id": "nature-foggy-harbor-foghorn",
+    "name": "Foggy harbor with a foghorn",
+    "cat": "nature",
+    "sub": "By the sea",
+    "about": "Thick grey fog, dull and close, the foghorn moaning far out at sea.",
+    "tags": ["fog", "foghorn", "harbor", "grey"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 25, "wind": 10, "echoes": 30 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 2.5, "damping": 85, "mix": 25 } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -14, "p": { "foghorn": true, "intensity": 30, "distance": 60 } },
+    "seed": 42
+  },
+  {
+    "id": "nature-behind-the-waterfall",
+    "name": "Behind the waterfall",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "In a wet rock hollow with a curtain of roaring water right in front of you.",
+    "tags": ["waterfall", "cave", "roar", "spray"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "size": 0.5, "tone": 30, "mix": 70 } }
+    ],
+    "bed": { "b": "waterfall", "level": -10, "duck": 6, "p": { "size": 90, "distance": 0 } },
+    "seed": 32
+  },
+  {
+    "id": "nature-by-the-waterfall-pool",
+    "name": "By the waterfall pool",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "A little way from the falls, spray drifting over a forest pool.",
+    "tags": ["waterfall", "pool", "forest", "spray"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest" } }
+    ],
+    "bed": { "b": "waterfall", "level": -15, "p": { "distance": 55 } },
+    "seed": 33
+  },
+  {
+    "id": "nature-by-the-creek",
+    "name": "By the babbling creek",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "Sitting on a rock as a shallow creek gurgles over the stones.",
+    "tags": ["creek", "water", "forest", "calm"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 70 } }
+    ],
+    "bed": { "b": "creek", "level": -14 },
+    "seed": 34
+  },
+  {
+    "id": "nature-rafting-the-rapids",
+    "name": "Rafting the rapids",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "Bouncing through churning white water, shouting to the raft behind.",
+    "tags": ["rapids", "river", "shout", "wild"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "pitch.wobble", "p": { "depth": 40, "speed": 1.2 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 30, "echoes": 20 } }
+    ],
+    "bed": { "b": "river", "level": -10, "duck": 5, "p": { "flow": 90, "rapids": 95, "distance": 0 } },
+    "seed": 35
+  },
+  {
+    "id": "nature-lazy-riverbank",
+    "name": "Lazy afternoon riverbank",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "A wide, calm river sliding past the bank where you sit.",
+    "tags": ["river", "calm", "water", "afternoon"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field" } }
+    ],
+    "bed": { "b": "river", "level": -18, "p": { "flow": 25, "rapids": 0, "distance": 20 } },
+    "seed": 36
+  },
+  {
+    "id": "nature-garden-fountain",
+    "name": "Garden fountain",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "A fountain trickling and sparkling in a quiet walled garden.",
+    "tags": ["fountain", "garden", "water", "calm"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 60 } }
+    ],
+    "bed": { "b": "fountain", "level": -16, "p": { "place": "garden" } },
+    "seed": 37
+  },
+  {
+    "id": "nature-echo-across-the-lake",
+    "name": "Echo across the lake",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "Calling over still water and hearing the far shore answer back.",
+    "tags": ["lake", "echo", "calling", "calm"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 200 } }
+    ],
+    "bed": { "b": "river", "level": -22, "p": { "flow": 10, "rapids": 0, "distance": 90 } },
+    "seed": 43
+  },
+  {
+    "id": "nature-canoe-under-the-bluffs",
+    "name": "Canoe under the river bluffs",
+    "cat": "nature",
+    "sub": "Rivers, lakes and waterfalls",
+    "about": "Paddling a calm river past tall rock bluffs that clap your voice back as you drift.",
+    "tags": ["river", "canoe", "bluffs", "echo"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 15, "echoes": 20 } },
+      { "m": "echo.slapback", "p": { "time": 190, "level": 40, "character": "clean", "spread": 60 } },
+      { "m": "mod.autopan", "p": { "rate": 0.05, "width": 35 } }
+    ],
+    "bed": { "b": "river", "level": -15, "p": { "flow": 35, "rapids": 10, "distance": 15 } },
+    "seed": 86
+  },
+  {
+    "id": "nature-spring-morning-woods",
+    "name": "Spring morning in the woods",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "A leafy wood full of birdsong near and far, a dove cooing somewhere.",
+    "tags": ["forest", "birds", "morning", "spring"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -14 },
+    "seed": 44
+  },
+  {
+    "id": "nature-pine-forest-birdsong",
+    "name": "Pine forest birdsong",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Tall pines sighing in the breeze while small birds sing overhead.",
+    "tags": ["pines", "birds", "forest", "breeze"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 80, "size": 1.4 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -14, "p": { "trees": "pines", "woodpecker": false, "wind": 50 } },
+    "seed": 45
+  },
+  {
+    "id": "nature-meadow-at-dawn",
+    "name": "Meadow at dawn",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "First light in an open meadow, a skylark singing high above.",
+    "tags": ["meadow", "dawn", "skylark", "open"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 4, "wind": 15, "echoes": 20 } }
+    ],
+    "bed": { "b": "meadow-dawn", "level": -14 },
+    "seed": 46
+  },
+  {
+    "id": "nature-farmyard-morning",
+    "name": "Farmyard morning",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Roosters crowing and hens clucking around your feet in the yard.",
+    "tags": ["farm", "rooster", "hens", "morning"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 15 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -14 },
+    "seed": 47
+  },
+  {
+    "id": "nature-hot-summer-field",
+    "name": "Hot summer field",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Cicadas swelling in the trees and bees buzzing past in the heat.",
+    "tags": ["summer", "field", "cicadas", "hot"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field" } }
+    ],
+    "bed": { "b": "summer-field", "level": -14 },
+    "seed": 48
+  },
+  {
+    "id": "nature-beside-the-beehive",
+    "name": "Beside the beehive",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Leaning close to a busy hive, bees zipping right past your head.",
+    "tags": ["bees", "hive", "buzz", "garden"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 60 } }
+    ],
+    "bed": { "b": "beehive", "level": -14, "p": { "distance": 1 } },
+    "seed": 49
+  },
+  {
+    "id": "nature-inside-the-hive",
+    "name": "Inside the hive",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Your voice buzzing with a thousand wings inside a warm wooden hive.",
+    "tags": ["bees", "buzz", "hive", "wings"],
+    "chain": [
+      { "m": "synth.am", "p": { "rate": 220, "depth": 30 } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "size": 1.5, "mix": 70 } }
+    ],
+    "bed": { "b": "beehive", "level": -12, "p": { "place": "inside" } },
+    "seed": 50
+  },
+  {
+    "id": "nature-calling-through-the-woods",
+    "name": "Calling through the woods",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "A friend far off between the trees, calling your name through the birdsong.",
+    "tags": ["forest", "far", "calling", "birds"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 70, "echoes": 60 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 50 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -17, "p": { "distance": 30 } },
+    "seed": 51
+  },
+  {
+    "id": "nature-whispering-in-a-bird-hide",
+    "name": "Whispering in a bird hide",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "A careful whisper in a wooden hut so you don't scare the birds outside.",
+    "tags": ["whisper", "birds", "hide", "quiet"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 80 } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "size": 2, "mix": 60 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -15, "p": { "distance": 25 } },
+    "seed": 52
+  },
+  {
+    "id": "nature-down-from-the-treetops",
+    "name": "Calling down from the treetops",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Someone high up in a tree calling down to you among the birds.",
+    "tags": ["tree", "high", "birds", "calling"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 20, "height": 55, "distance": 7, "room": "outdoors" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -14, "p": { "intensity": 70, "distance": 8 } },
+    "seed": 53
+  },
+  {
+    "id": "nature-up-in-the-hayloft",
+    "name": "Up in the hayloft",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "Soft and dusty among the hay bales, the farmyard waking up below.",
+    "tags": ["hayloft", "barn", "farm", "soft"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "warehouse", "size": 0.5, "tone": -60, "distance": 35 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -18, "p": { "distance": 30 } },
+    "seed": 54
+  },
+  {
+    "id": "nature-whispering-with-the-leaves",
+    "name": "Whispering with the leaves",
+    "cat": "nature",
+    "sub": "Woods, fields and farms",
+    "about": "A soft whisper drifting side to side as the summer wind stirs the leaves.",
+    "tags": ["whisper", "leaves", "wind", "woods"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 75 } },
+      { "m": "mod.autopan", "p": { "rate": 0.2, "width": 55 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 55 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -14, "p": { "strength": 35, "gusts": 45 } },
+    "seed": 87
+  },
+  {
+    "id": "nature-summer-night-crickets",
+    "name": "Summer night crickets",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "A warm still night, crickets singing near and far all around you.",
+    "tags": ["crickets", "night", "summer", "warm"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 5, "echoes": 20 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -14 },
+    "seed": 55
+  },
+  {
+    "id": "nature-rainforest-at-night",
+    "name": "Rainforest at night",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "A wall of insects and two-note tree frogs in the dark tropical forest.",
+    "tags": ["rainforest", "night", "frogs", "insects"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest" } }
+    ],
+    "bed": { "b": "rainforest-night", "level": -12, "duck": 3 },
+    "seed": 56
+  },
+  {
+    "id": "nature-swamp-at-dusk",
+    "name": "Swamp at dusk",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "Deep frogs booming and mud bubbling as the light fades over the swamp.",
+    "tags": ["swamp", "frogs", "dusk", "mud"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 60, "tone": -30 } }
+    ],
+    "bed": { "b": "swamp", "level": -14 },
+    "seed": 57
+  },
+  {
+    "id": "nature-frog-pond-in-spring",
+    "name": "Frog pond in spring",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "Peepers ringing and toads trilling at the edge of a pond after dark.",
+    "tags": ["frogs", "pond", "spring", "night"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 5, "echoes": 20 } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -14 },
+    "seed": 58
+  },
+  {
+    "id": "nature-owls-in-the-dark-woods",
+    "name": "Owls in the dark woods",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "Owls hooting and answering through the trees on a still black night.",
+    "tags": ["owls", "night", "woods", "dark"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "distance": 65 } }
+    ],
+    "bed": { "b": "owl-woods", "level": -15 },
+    "seed": 59
+  },
+  {
+    "id": "nature-wolves-across-the-valley",
+    "name": "Wolves across the valley",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "A cold night, your call echoing off the hills as a wolf pack howls back.",
+    "tags": ["wolves", "valley", "echo", "night"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 300, "mix": 35 } }
+    ],
+    "bed": { "b": "wolves-far", "level": -14 },
+    "seed": 60
+  },
+  {
+    "id": "nature-katydids-in-the-trees",
+    "name": "Katydids in the trees",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "Late summer trees full of katydids rasping back and forth.",
+    "tags": ["katydids", "insects", "night", "trees"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 80 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -13, "p": { "kind": "tree", "katydids": 90 } },
+    "seed": 61
+  },
+  {
+    "id": "nature-night-porch-whisper",
+    "name": "Whisper on the night porch",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "A late-night whisper out on the porch, crickets close in the warm grass.",
+    "tags": ["whisper", "night", "crickets", "porch"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 65 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 40 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -16, "p": { "distance": 3, "warmth": 80 } },
+    "seed": 62
+  },
+  {
+    "id": "nature-mosquito-swamp",
+    "name": "Mosquitoes in the bayou",
+    "cat": "nature",
+    "sub": "Night sounds",
+    "about": "Rasping insects and whining mosquitoes in a hot, buzzing swamp.",
+    "tags": ["swamp", "mosquitoes", "insects", "night"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 4, "wind": 5, "echoes": 20 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 30 } }
+    ],
+    "bed": { "b": "swamp", "level": -13, "p": { "mosquitoes": true, "insects": 85, "bubbles": 10 } },
+    "seed": 63
+  },
+  {
+    "id": "nature-jungle-explorer-radio",
+    "name": "Jungle explorer's radio",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Reporting in on a crackly field radio from deep in the steaming jungle.",
+    "tags": ["jungle", "radio", "explorer", "birds"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "field", "signal": 70 } }
+    ],
+    "bed": { "b": "jungle", "level": -14 },
+    "seed": 64
+  },
+  {
+    "id": "nature-high-in-the-jungle-canopy",
+    "name": "High in the jungle canopy",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Up among the treetops, strange birds whooping and calling all around.",
+    "tags": ["jungle", "canopy", "birds", "high"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 70 } },
+      { "m": "stereo.place", "p": { "angle": -30, "height": 40, "distance": 5, "room": "outdoors" } }
+    ],
+    "bed": { "b": "jungle", "level": -12, "p": { "birds": 85, "calls": 70, "insects": 40 } },
+    "seed": 65
+  },
+  {
+    "id": "nature-deep-in-a-cave",
+    "name": "Deep in a dripping cave",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Water dripping into black pools and a hidden stream trickling in the dark.",
+    "tags": ["cave", "drips", "dark", "stream"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "distance": 55 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -16, "p": { "stream": 50 } },
+    "seed": 66
+  },
+  {
+    "id": "nature-underground-cave-lake",
+    "name": "Underground cave lake",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "A huge cavern over still black water, every drip ringing for seconds.",
+    "tags": ["cave", "lake", "huge", "drips"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "size": 1.6, "tone": 30, "distance": 55 } },
+      { "m": "echo.delay", "p": { "time": 520, "feedback": 30, "damping": 70, "stereo": "wide", "mix": 15 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -14, "p": { "drips": 8, "size": 95, "speed": 30 } },
+    "seed": 67
+  },
+  {
+    "id": "nature-desert-canyon",
+    "name": "Desert canyon",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Red rock walls answering your shout as hot wind sighs through the gorge.",
+    "tags": ["canyon", "desert", "echo", "wind"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "count": 5 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -18, "p": { "strength": 30 } },
+    "seed": 68
+  },
+  {
+    "id": "nature-mountain-top-echo",
+    "name": "Mountain top echo",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Calling out from a peak and hearing ridge after ridge call back.",
+    "tags": ["mountain", "echo", "valley", "calling"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 380, "count": 5, "mix": 55 } }
+    ],
+    "bed": { "b": "mountain-top", "level": -18, "p": { "gusts": 30 } },
+    "seed": 69
+  },
+  {
+    "id": "nature-edge-of-a-volcano",
+    "name": "Edge of a volcano",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Hot, roaring and rumbling at the crater rim, your voice baked by the heat.",
+    "tags": ["volcano", "fire", "roar", "heat"],
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 12 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 40, "echoes": 20 } },
+      { "m": "echo.canyon", "p": { "place": "gorge", "mix": 25 } }
+    ],
+    "bed": { "b": "blaze", "level": -12, "duck": 4, "p": { "size": 100, "flare": 80, "distance": 40 } },
+    "seed": 70
+  },
+  {
+    "id": "nature-down-in-the-river-gorge",
+    "name": "Down in the river gorge",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "Steep rock walls close on both sides and a river churning below.",
+    "tags": ["gorge", "river", "rock", "echo"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "place": "gorge", "mix": 40 } }
+    ],
+    "bed": { "b": "river", "level": -15, "p": { "rapids": 70 } },
+    "seed": 71
+  },
+  {
+    "id": "nature-tornado-siren-plains",
+    "name": "Tornado siren on the plains",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "A warning over a far loudspeaker as the wind picks up across open country.",
+    "tags": ["tornado", "siren", "wind", "warning"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "siren": "start", "outdoors": 60 } },
+      { "m": "space.distance", "p": { "distance": 200, "wind": 60 } }
+    ],
+    "bed": { "b": "wind", "level": -14, "p": { "strength": 75, "gusts": 70, "rumble": 60 } },
+    "seed": 72
+  },
+  {
+    "id": "nature-thick-fog-on-the-moor",
+    "name": "Thick fog on the moor",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "A soft, dark, diffused voice somewhere out in the drifting mist.",
+    "tags": ["fog", "moor", "dark", "soft"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 35, "time": 600 } },
+      { "m": "space.distance", "p": { "distance": 30, "wind": 15, "echoes": 20 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 3, "damping": 90, "mix": 35 } }
+    ],
+    "bed": { "b": "wind", "level": -22, "p": { "strength": 20, "whistle": 10 } },
+    "seed": 73
+  },
+  {
+    "id": "nature-jungle-downpour",
+    "name": "Jungle downpour",
+    "cat": "nature",
+    "sub": "Jungles, caves and wild places",
+    "about": "A sudden tropical cloudburst roaring on giant leaves as you shout from the trail.",
+    "tags": ["jungle", "rain", "downpour", "shout"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 65 } },
+      { "m": "tone.tilt", "p": { "amount": 1.5 } }
+    ],
+    "bed": { "b": "rain", "level": -10, "duck": 5, "p": { "surface": "leaves", "intensity": 95, "drips": 85, "distance": 0 } },
+    "seed": 88
+  },
+  {
+    "id": "nature-by-the-campfire",
+    "name": "By the campfire",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "Sitting close to a crackling campfire, logs popping and settling.",
+    "tags": ["campfire", "fire", "crackle", "outdoors"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 5, "echoes": 30 } }
+    ],
+    "bed": { "b": "campfire", "level": -14 },
+    "seed": 74
+  },
+  {
+    "id": "nature-hushed-campfire-story",
+    "name": "Hushed campfire story",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "A half-whispered tale by a small fire, the dark woods all around.",
+    "tags": ["campfire", "whisper", "story", "woods"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "pitch.voice", "p": { "semitones": -1.5 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 50 } }
+    ],
+    "bed": { "b": "campfire", "level": -17, "p": { "size": 30, "pops": 60 } },
+    "seed": 75
+  },
+  {
+    "id": "nature-bonfire-singalong",
+    "name": "Bonfire singalong",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "A whole circle of you joining in round a big roaring bonfire.",
+    "tags": ["bonfire", "crowd", "singing", "fire"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 8, "room": "outdoors", "you": 70 } }
+    ],
+    "bed": { "b": "blaze", "level": -15 },
+    "seed": 76
+  },
+  {
+    "id": "nature-fireside-log-cabin",
+    "name": "Fireside in a log cabin",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "A warm wooden room, a log fire crackling gently in the hearth.",
+    "tags": ["fireplace", "cabin", "cosy", "warm"],
+    "chain": [
+      { "m": "space.room", "p": { "size": 0.8, "tone": -20, "distance": 30 } }
+    ],
+    "bed": { "b": "fireplace", "level": -16 },
+    "seed": 77
+  },
+  {
+    "id": "nature-torch-lit-passage",
+    "name": "Torch-lit stone passage",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "A narrow rock passage, a burning torch fluttering and spitting beside you.",
+    "tags": ["torch", "fire", "passage", "stone"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "size": 0.5, "tone": -20 } }
+    ],
+    "bed": { "b": "torch", "level": -16, "p": { "place": "passage" } },
+    "seed": 78
+  },
+  {
+    "id": "nature-roaring-bonfire",
+    "name": "Shouting over a roaring bonfire",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "A huge fire roaring and flaring, timbers collapsing as you shout across it.",
+    "tags": ["bonfire", "roar", "shout", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "space.distance", "p": { "distance": 5, "wind": 20, "echoes": 20 } }
+    ],
+    "bed": { "b": "blaze", "level": -10, "duck": 5, "p": { "size": 100, "crackle": 90, "distance": 0 } },
+    "seed": 79
+  },
+  {
+    "id": "nature-embers-at-midnight",
+    "name": "Embers at midnight",
+    "cat": "nature",
+    "sub": "Fire",
+    "about": "The fire burned down to glowing embers, crickets taking over the night.",
+    "tags": ["embers", "fire", "night", "quiet"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 70 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "bed": { "b": "campfire", "level": -20, "p": { "size": 10, "crackle": 30, "pops": 15, "logs": 10 } },
+    "seed": 80
+  }
+]

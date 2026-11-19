@@ -1,0 +1,1192 @@
+[
+  {
+    "id": "amps-clean-combo",
+    "name": "Clean combo amp",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "Your voice through a clean little guitar combo, warm and a bit boxy.",
+    "tags": ["clean","combo","warm"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":6,"tone":10}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"closet","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-mellow-jazz-amp",
+    "name": "Mellow jazz amp",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A round, dark, clean amp with the treble rolled right off.",
+    "tags": ["jazz","dark","clean"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":4,"tone":-40}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band4Type":"highcut","band4Freq":3500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"bedroom","mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-surf-spring-amp",
+    "name": "Surf amp drenched in spring",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A bright clean amp with its spring reverb tank turned all the way up.",
+    "tags": ["surf","spring","twang"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":8,"tone":30}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}},
+      {"m":"space.spring","p":{"springs":3,"drip":85,"mix":45}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-glassy-chorus-clean",
+    "name": "Glassy chorus clean",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A sparkling clean tone with a gentle shimmering chorus.",
+    "tags": ["clean","chorus","sparkle"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":3,"tone":60}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3500,"band3Gain":4,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}},
+      {"m":"mod.chorus","p":{"depth":30,"mix":35,"rate":0.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-vintage-tremolo-amp",
+    "name": "Vintage tremolo amp",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "An old amp with its tremolo pulsing and a splash of spring.",
+    "tags": ["tremolo","vintage","pulse"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":7}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"mod.tremolo","p":{"rate":6,"depth":60}},
+      {"m":"space.spring","p":{"mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-twangy-slapback-clean",
+    "name": "Twangy slapback clean",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A squeezed, bright, twangy clean tone with a quick tape slap behind it.",
+    "tags": ["twang","slapback","country"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-30,"ratio":6,"attack":0.1}},
+      {"m":"lofi.drive","p":{"character":"warm","drive":5,"tone":50}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":5,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}},
+      {"m":"echo.slapback","p":{"time":120,"level":45}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-edge-of-breakup",
+    "name": "Small amp on the edge",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A little tube amp just starting to break up on your louder words.",
+    "tags": ["breakup","tube","warm"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":14,"tone":20}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":3,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-spinning-speaker-cabinet",
+    "name": "Spinning speaker cabinet",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A clean amp played through a fast spinning speaker cabinet.",
+    "tags": ["rotating","swirl","organ"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":8}},
+      {"m":"mod.rotary","p":{"speed":"fast"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-throbbing-vibe-pedal",
+    "name": "Throbbing vibe pedal",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "A warm, throbbing, seasick vibe pedal on a clean amp.",
+    "tags": ["vibe","throb","swirl"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":5}},
+      {"m":"mod.phaser","p":{"stages":4,"rate":0.9,"depth":60,"feedback":20,"mix":60}},
+      {"m":"pitch.vibrato","p":{"depth":15,"rate":5,"delay":0}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-acoustic-pickup-quack",
+    "name": "Acoustic pickup quack",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "The quacky, squeezed sound of an acoustic guitar pickup through a PA.",
+    "tags": ["acoustic","quack","bright"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":200,"band3Gain":-6,"band4Freq":3500,"band4Gain":6,"band6Gain":4}},
+      {"m":"tone.compress","p":{"threshold":-26,"ratio":4,"attack":1}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-reamped-in-the-room",
+    "name": "Played back through an amp",
+    "cat": "amps",
+    "sub": "Clean amps",
+    "about": "Your clean voice played out of a guitar cabinet and picked up by a mic across the room.",
+    "tags": ["reamp","room","clean"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":5,"mix":70}},
+      {"m":"lofi.speaker","p":{"size":"cabinet","push":4,"rattle":5}},
+      {"m":"space.room","p":{"mix":30,"distance":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-overdrive-pedal-bite",
+    "name": "Overdrive pedal bite",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A smooth overdrive pedal giving every word a bit of bite.",
+    "tags": ["overdrive","pedal","bite"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":16,"tone":10}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"closet","mix":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-mid-hump-overdrive",
+    "name": "Mid-hump overdrive",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A pushy overdrive that piles everything into a honking middle.",
+    "tags": ["overdrive","mids","honk"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":26,"tone":-10}},
+      {"m":"tone.eq","p":{"band2Gain":-4,"band3Freq":900,"band3Gain":5,"band6Gain":-3}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-classic-rock-crunch",
+    "name": "Classic rock crunch",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A tube stack set to a classic rock crunch, through a big closed cabinet.",
+    "tags": ["crunch","rock","stack"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":20}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"closet","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-cranked-tube-combo",
+    "name": "Small tube combo, cranked",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A tiny tube amp turned all the way up in a bedroom.",
+    "tags": ["tube","cranked","small"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":24,"tone":10}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":500,"band2Gain":4,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"bedroom","mix":18}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-smoky-blues-amp",
+    "name": "Smoky blues amp",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A dark, smoky overdrive with a little spring, in a small club.",
+    "tags": ["blues","smoky","warm"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":12,"tone":-25}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"space.spring","p":{"mix":20,"drip":40}},
+      {"m":"space.room","p":{"space":"small-hall","mix":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-rockabilly-crunch-slapback",
+    "name": "Rockabilly crunch slapback",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A bright crunchy amp with a loud quick slapback echo.",
+    "tags": ["rockabilly","slapback","crunch"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":14,"tone":20}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}},
+      {"m":"echo.slapback","p":{"time":95,"level":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-hot-rodded-crunch",
+    "name": "Hot-rodded crunch",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A modified amp with extra gain and a sharp cutting edge.",
+    "tags": ["crunch","hot","edge"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":30,"tone":30}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":5,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-arena-rock-lead",
+    "name": "Arena rock lead",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A singing crunch lead with a wide echo and a big arena reverb.",
+    "tags": ["lead","arena","echo"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":26}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"echo.delay","p":{"time":420,"feedback":35,"mix":25,"stereo":"wide"}},
+      {"m":"space.reverb","p":{"size":70,"decay":2.5,"mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-clean-dirty-edge",
+    "name": "Clean with a dirty edge",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "Your clean voice with an overdriven copy blended in underneath.",
+    "tags": ["parallel","edge","subtle"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":24,"mix":35}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-garage-band-rehearsal",
+    "name": "Garage band rehearsal",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A crunchy amp bouncing off the bare walls of a big empty garage.",
+    "tags": ["garage","crunch","room"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":28}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"warehouse","mix":22,"size":0.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-boosted-bright-crunch",
+    "name": "Boosted crunch, bright",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "A treble boost slamming a crunchy amp for a bright, biting edge.",
+    "tags": ["boost","bright","crunch"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":200,"band4Freq":2500,"band4Gain":6}},
+      {"m":"lofi.drive","p":{"drive":34,"tone":50}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-cranked-vintage-stack",
+    "name": "Cranked vintage stack",
+    "cat": "amps",
+    "sub": "Overdrive and crunch",
+    "about": "An old tube stack turned up loud enough to rattle the room.",
+    "tags": ["stack","vintage","loud"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":38,"tone":-10}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":4,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-pedal",
+    "name": "Fuzz pedal",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A thick, square, buzzing fuzz pedal through a closed cabinet.",
+    "tags": ["fuzz","buzz","thick"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":30}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-octave-up-fuzz",
+    "name": "Octave-up fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz with a ringing ghost an octave above your voice.",
+    "tags": ["fuzz","octave","ringing"],
+    "chain": [
+      {"m":"pitch.octaver","p":{"down1":0,"up1":60}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":28}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-woolly-dark-fuzz",
+    "name": "Woolly dark fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A soft, woolly, dark fuzz with the treble buried.",
+    "tags": ["fuzz","dark","woolly"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":36,"tone":-60}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":3800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-buzzsaw-fuzz",
+    "name": "Buzzsaw fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A bright, ripping buzzsaw fuzz turned all the way up.",
+    "tags": ["fuzz","bright","harsh"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":44,"tone":60}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-dying-battery-fuzz",
+    "name": "Dying battery fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz pedal on a nearly dead battery: quiet bits sputter, loud bits rip.",
+    "tags": ["fuzz","battery","sputter"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"battery","drive":28}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-sputtering-broken-fuzz",
+    "name": "Sputtering broken fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A starved fuzz into a rattling, crackling speaker that keeps cutting out.",
+    "tags": ["fuzz","broken","crackle"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"battery","drive":42,"tone":30}},
+      {"m":"lofi.blown","p":{"rattle":20,"buzz":30,"crackle":40,"mix":60}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-into-spring",
+    "name": "Fuzz into a spring tank",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz pedal crashing into a drippy spring reverb.",
+    "tags": ["fuzz","spring","surf"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":26,"tone":20}},
+      {"m":"space.spring","p":{"drip":90,"mix":40}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-sub-octave-fuzz",
+    "name": "Sub-octave fuzz",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A huge fuzz with an extra voice an octave below yours.",
+    "tags": ["fuzz","octave","low"],
+    "chain": [
+      {"m":"pitch.octaver","p":{"down1":85,"dry":80}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":30,"tone":-20}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":5,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-chopping-tremolo",
+    "name": "Fuzz with chopping tremolo",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz chopped on and off by a hard square tremolo.",
+    "tags": ["fuzz","tremolo","chop"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":32}},
+      {"m":"mod.tremolo","p":{"shape":"square","rate":9,"depth":90}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-psychedelic-fuzz-swirl",
+    "name": "Psychedelic fuzz swirl",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz swirling through a deep phaser into a wobbly tape echo.",
+    "tags": ["fuzz","phaser","psychedelic"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":30,"tone":10}},
+      {"m":"mod.phaser","p":{"rate":0.25,"depth":90,"feedback":60,"mix":60}},
+      {"m":"echo.delay","p":{"time":450,"feedback":45,"wobble":30,"mix":30}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-pocket-radio",
+    "name": "Fuzz through a pocket radio",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz pedal played out of a tiny transistor radio speaker.",
+    "tags": ["fuzz","tiny","radio"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":34}},
+      {"m":"lofi.speaker","p":{"size":"radio","push":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-through-bullhorn",
+    "name": "Fuzz through a bullhorn",
+    "cat": "amps",
+    "sub": "Fuzz pedals",
+    "about": "A fuzz pedal shouted out of a battered bullhorn across an empty lot.",
+    "tags": ["fuzz","bullhorn","outdoors"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":26,"tone":20}},
+      {"m":"device.megaphone","p":{"push":70,"horn":75,"outdoors":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-big-stack-growl",
+    "name": "Big stack growl",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A huge stack with the gain up, growling through a closed cabinet.",
+    "tags": ["high gain","stack","growl"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":44}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":4,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"closet","mix":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-sludgy-doom-amp",
+    "name": "Sludgy doom amp",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A lower, bigger voice through a dark, sludgy, crushing doom rig.",
+    "tags": ["doom","low","sludge"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-4,"formant":-2}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":40,"tone":-50}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":6,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4000,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"warehouse","mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-scooped-metal-rhythm",
+    "name": "Scooped metal rhythm",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A hard-clipped metal tone with the middle scooped out and the pauses gated.",
+    "tags": ["metal","scooped","tight"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"hard","drive":30}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":120,"band2Gain":4,"band3Freq":750,"band3Gain":-8,"band3Q":25,"band4Gain":4,"band5Type":"highcut","band5Freq":6000,"band6Type":"off"}},
+      {"m":"tone.gate","p":{"reduce":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-tight-modern-high-gain",
+    "name": "Tight modern high gain",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "Maximum gain kept tight: the lows trimmed first and a noise gate after.",
+    "tags": ["high gain","modern","tight"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":150}},
+      {"m":"lofi.drive","p":{"drive":48,"tone":20}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"tone.gate","p":{"reduce":50,"hold":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-drop-tuned-chug",
+    "name": "Drop-tuned chug",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "Your voice tuned down and chugging through a gated high-gain amp.",
+    "tags": ["metal","low","chug"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-5,"formant":-1}},
+      {"m":"lofi.drive","p":{"character":"hard","drive":34}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"tone.gate","p":{"reduce":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-thrash-metal-snarl",
+    "name": "Thrash metal snarl",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A bright, snarling, hard-clipped thrash tone with a tight slap.",
+    "tags": ["thrash","snarl","bright"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"hard","drive":40,"tone":40}},
+      {"m":"tone.eq","p":{"band1Freq":130,"band3Freq":1500,"band3Gain":4,"band4Type":"highcut","band4Freq":6000,"band6Type":"off"}},
+      {"m":"echo.slapback","p":{"time":60,"level":30,"character":"clean"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-wall-of-quad-amps",
+    "name": "Wall of quad-tracked amps",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "Four takes of a high-gain amp spread hard across both sides.",
+    "tags": ["wide","stacked","high gain"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":40}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"stereo.double","p":{"copies":3,"spread":100,"timing":25,"pitch":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-icy-buzzing-gain",
+    "name": "Icy buzzing high gain",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A thin, freezing, buzzing tone lost in a cold, huge reverb.",
+    "tags": ["icy","thin","reverb"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"hard","drive":44,"tone":40}},
+      {"m":"tone.eq","p":{"band1Freq":250,"band4Type":"highcut","band4Freq":6000,"band6Type":"off"}},
+      {"m":"space.reverb","p":{"size":85,"decay":4}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-industrial-rectifier-grind",
+    "name": "Industrial grind amp",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A rectified, buzzing distortion and a low ring modulator grinding like heavy machinery.",
+    "tags": ["industrial","metal","grind"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"rectifier","drive":30}},
+      {"m":"synth.ringmod","p":{"freq":80,"mix":35}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-wave-folder-snarl",
+    "name": "Wave folder snarl",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A wave folder bending loud words into bright, tangled overtones.",
+    "tags": ["folder","metallic","snarl"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fold","drive":24}},
+      {"m":"tone.filter","p":{"freq":3500}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-chugging-metal-riff",
+    "name": "Chugging metal riff",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A high-gain amp chopped into a tight galloping chug, like palm-muted riffing.",
+    "tags": ["metal","chug","gallop"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"hard","drive":36}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":5,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"mod.gate","p":{"pattern":"gallop","tempo":100,"smooth":3}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-slow-drone-metal-wall",
+    "name": "Slow drone metal wall",
+    "cat": "amps",
+    "sub": "High gain",
+    "about": "A huge, slow, deep voice crawling through a wall of fuzz into a dark hall.",
+    "tags": ["drone","slow","huge"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-7,"formant":-3}},
+      {"m":"time.drawl","p":{"factor":1.5}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":44,"tone":-40}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":5,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":3800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.reverb","p":{"size":90,"decay":3.5,"damping":70,"mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-wah-fuzz-talking-lead",
+    "name": "Wah and fuzz talking lead",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "An auto-wah opening on every word into a fuzz pedal: a talking guitar lead.",
+    "tags": ["wah","fuzz","talking"],
+    "chain": [
+      {"m":"mod.autowah","p":{"sensitivity":75}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":28}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-funky-envelope-filter",
+    "name": "Funky envelope filter",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A squeezed, quacking envelope filter on a clean funk amp.",
+    "tags": ["funk","quack","filter"],
+    "chain": [
+      {"m":"tone.compress","p":{"threshold":-30,"ratio":4,"attack":0.1}},
+      {"m":"mod.autowah","p":{"resonance":75,"high":3000}},
+      {"m":"lofi.drive","p":{"character":"warm","drive":8}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-half-cocked-wah",
+    "name": "Half-cocked wah",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A wah pedal parked halfway into a crunchy amp: nasal and vocal.",
+    "tags": ["wah","nasal","crunch"],
+    "chain": [
+      {"m":"tone.filter","p":{"type":"bandpass","freq":1100,"resonance":70,"mix":85}},
+      {"m":"lofi.drive","p":{"drive":24}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-rocking-wah-pedal",
+    "name": "Rocking wah pedal",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A foot rocking a wah pedal back and forth over an overdrive.",
+    "tags": ["wah","sweep","overdrive"],
+    "chain": [
+      {"m":"tone.filter","p":{"type":"bandpass","freq":900,"resonance":70,"sweep":"lfo","rate":1.5,"range":80,"mix":85}},
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":20}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-talk-box-lead",
+    "name": "Talk box lead",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A fuzz guitar talk box saying your words, with a little echo.",
+    "tags": ["talk box","lead","fuzz"],
+    "chain": [
+      {"m":"synth.talkbox","p":{"instrument":"fuzz"}},
+      {"m":"echo.delay","p":{"time":380,"feedback":30,"mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-vowel-wah-pedal",
+    "name": "Vowel wah pedal",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A pedal that sweeps oo to ah to oo over a crunchy amp.",
+    "tags": ["vowel","wah","crunch"],
+    "chain": [
+      {"m":"synth.formantfilter","p":{"pattern":"wow","rate":1.5}},
+      {"m":"lofi.drive","p":{"drive":22}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-backwards-envelope-filter",
+    "name": "Backwards envelope filter",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "An envelope filter that closes down as you get louder.",
+    "tags": ["filter","backwards","funk"],
+    "chain": [
+      {"m":"mod.autowah","p":{"direction":"down","resonance":70}},
+      {"m":"lofi.drive","p":{"character":"overdrive"}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-synth-filter-wobble",
+    "name": "Synth filter pedal wobble",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A fuzz through a resonant filter wobbling four times a second.",
+    "tags": ["filter","wobble","synth"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":26}},
+      {"m":"tone.filter","p":{"freq":900,"resonance":80,"sweep":"lfo","rate":4,"range":80}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-random-step-filter",
+    "name": "Random step filter",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A filter that jumps to a new vowel six times a second.",
+    "tags": ["filter","random","steps"],
+    "chain": [
+      {"m":"synth.formantfilter","p":{"pattern":"random","rate":6,"glide":10}},
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":16}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-low-wah-growl",
+    "name": "Low wah growl",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A deep low-pass wah opening on each word into a dark fuzz.",
+    "tags": ["wah","low","growl"],
+    "chain": [
+      {"m":"mod.autowah","p":{"sound":"low","sensitivity":70}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":30,"tone":-30}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-mouth-harp-boing-amp",
+    "name": "Mouth harp boing amp",
+    "cat": "amps",
+    "sub": "Wah and talking filters",
+    "about": "A twanging mouth-harp boing on every word, into a crunchy little amp.",
+    "tags": ["boing","twang","crunch"],
+    "chain": [
+      {"m":"synth.formantfilter","p":{"pattern":"harp","rate":3,"resonance":75}},
+      {"m":"lofi.drive","p":{"drive":20}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-tape-echo-small-amp",
+    "name": "Tape echo through a small amp",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A crunchy little amp with a warbling tape echo repeating behind you.",
+    "tags": ["tape echo","wobble","crunch"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":14}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"echo.delay","p":{"time":380,"feedback":45,"wobble":40,"damping":55,"stereo":"mono"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-dark-analog-delay",
+    "name": "Dark analog delay",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "Murky, darkening repeats from an old analog delay pedal.",
+    "tags": ["delay","dark","analog"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":14}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"echo.delay","p":{"time":300,"damping":75,"feedback":55}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-eighties-chorus-pedal",
+    "name": "Eighties chorus pedal",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A lush, wide, wobbling chorus on a clean amp.",
+    "tags": ["chorus","eighties","wide"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":10}},
+      {"m":"mod.chorus","p":{"depth":60,"rate":0.9,"mix":55}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}},
+      {"m":"space.reverb","p":{"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-jet-flanger-crunch",
+    "name": "Jet flanger on a crunch amp",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A slow jet-plane flanger sweeping through a crunchy amp.",
+    "tags": ["flanger","jet","crunch"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":22}},
+      {"m":"mod.flanger","p":{"rate":0.15,"feedback":70,"mix":60}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-four-stage-phaser",
+    "name": "Four-stage phaser swirl",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A creamy little phaser pedal swirling into a mild overdrive.",
+    "tags": ["phaser","swirl","overdrive"],
+    "chain": [
+      {"m":"mod.phaser","p":{"stages":4,"rate":0.5,"feedback":30,"mix":60}},
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":14}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-reverse-delay-pedal",
+    "name": "Reverse delay pedal",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "Every echo plays backwards, swelling up behind a clean amp.",
+    "tags": ["reverse","delay","swell"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":10}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}},
+      {"m":"echo.reverse","p":{"length":450}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-shoegaze-haze",
+    "name": "Shoegaze haze",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A soft fuzz melting into chorus and a rising, heavenly reverb.",
+    "tags": ["shoegaze","dreamy","fuzz"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":24,"tone":-20}},
+      {"m":"mod.chorus","p":{"depth":50,"mix":40}},
+      {"m":"space.shimmer","p":{"mix":45,"amount":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-twin-harmony-leads",
+    "name": "Twin harmony leads",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A pitch harmony pedal adds a second voice a third above, into a crunch amp.",
+    "tags": ["harmony","twin","lead"],
+    "chain": [
+      {"m":"pitch.harmony","p":{"chord":"third-up","voices":1}},
+      {"m":"lofi.drive","p":{"drive":24}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-ring-modulator-pedal",
+    "name": "Ring modulator pedal",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A clanging ring modulator into a fuzz: your voice turned to bells and metal.",
+    "tags": ["ring mod","metal","fuzz"],
+    "chain": [
+      {"m":"synth.ringmod","p":{"freq":220,"mix":60}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":24}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-freeze-pedal-sustain",
+    "name": "Freeze pedal sustain",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A freeze pedal holds bits of your voice ringing under an overdrive.",
+    "tags": ["freeze","sustain","drone"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":16}},
+      {"m":"spec.freeze","p":{"blend":50}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-bit-crusher-pedal",
+    "name": "Bit crusher pedal",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A bit crusher pedal grinding your voice into a crunchy digital amp.",
+    "tags": ["bitcrush","digital","crunch"],
+    "chain": [
+      {"m":"lofi.crush","p":{"bits":5,"rate":6000,"mix":60}},
+      {"m":"lofi.drive","p":{"drive":20}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-growling-rotating-speaker",
+    "name": "Growling rotating speaker",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "An overdriven voice through a spinning speaker that speeds up and slows down.",
+    "tags": ["rotating","growl","organ"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":22}},
+      {"m":"mod.rotary","p":{"speed":"toggle","switchAt":3,"drive":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-octave-bending-pitch-pedal",
+    "name": "Octave-bending pitch pedal",
+    "cat": "amps",
+    "sub": "Echo and modulation pedals",
+    "about": "A pitch pedal slowly rocked forward, bending your voice up a whole octave.",
+    "tags": ["pitch","bend","octave"],
+    "chain": [
+      {"m":"pitch.glide","p":{"to":12,"timbre":0}},
+      {"m":"lofi.drive","p":{"drive":24}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-broken-valve-amp",
+    "name": "Broken valve amp",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A dying tube amp: hot, crackling and rattling on every loud word.",
+    "tags": ["broken","tube","crackle"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"warm","drive":30}},
+      {"m":"lofi.blown","p":{"crackle":50,"rattle":30,"buzz":30}},
+      {"m":"tone.eq","p":{"band1Freq":110,"band2Freq":400,"band2Gain":2,"band3Freq":1800,"band3Gain":2,"band4Type":"highcut","band4Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-torn-speaker-cone",
+    "name": "Torn speaker cone",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A crunch amp through a speaker with a torn, flapping cone.",
+    "tags": ["torn","rattle","buzz"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":20}},
+      {"m":"lofi.blown","p":{"rattle":80,"buzz":60}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-punk-practice-amp",
+    "name": "Punk practice amp",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A tiny practice amp clipped flat out in a messy bedroom.",
+    "tags": ["punk","practice","tiny"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"hard","drive":28}},
+      {"m":"lofi.speaker","p":{"size":"portable","push":16}},
+      {"m":"space.room","p":{"space":"bedroom","mix":30}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-treble-booster-scream",
+    "name": "Treble booster scream",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A treble booster cutting the lows and screaming into an overdrive.",
+    "tags": ["treble","scream","bright"],
+    "chain": [
+      {"m":"tone.eq","p":{"band1Freq":300,"band4Freq":2800,"band4Gain":8,"band6Gain":6}},
+      {"m":"lofi.drive","p":{"character":"overdrive","drive":30,"tone":80}},
+      {"m":"tone.eq","p":{"band1Freq":100,"band2Freq":200,"band2Gain":1,"band3Freq":3000,"band3Gain":3,"band4Type":"highcut","band4Freq":6500,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-bass-amp-shout",
+    "name": "Bass amp shout",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A much lower voice shouting through a warm, booming bass rig.",
+    "tags": ["bass","low","boom"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-7,"formant":-3}},
+      {"m":"lofi.drive","p":{"character":"warm"}},
+      {"m":"tone.eq","p":{"band1Freq":45,"band2Type":"lowshelf","band2Freq":150,"band2Gain":5,"band3Gain":-3,"band4Type":"highcut","band4Freq":3500,"band5Type":"highcut","band5Freq":4000,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-fuzz-bass-growl",
+    "name": "Fuzz bass growl",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "An octave below you added in, then a fuzz and a bass cabinet.",
+    "tags": ["bass","fuzz","growl"],
+    "chain": [
+      {"m":"pitch.octaver","p":{"down1":90,"dry":60}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":32,"tone":-30}},
+      {"m":"tone.eq","p":{"band1Freq":45,"band2Type":"lowshelf","band2Freq":150,"band2Gain":5,"band3Gain":-3,"band4Type":"highcut","band4Freq":3500,"band5Type":"highcut","band5Freq":4000,"band6Type":"off"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-dub-bass-rig",
+    "name": "Dub bass rig",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A deep warm bass voice with a dub echo dripping off every phrase.",
+    "tags": ["dub","bass","echo"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-5,"formant":-2}},
+      {"m":"lofi.drive","p":{"character":"warm","drive":12,"tone":-50}},
+      {"m":"tone.eq","p":{"band1Freq":45,"band2Type":"lowshelf","band2Freq":150,"band2Gain":5,"band3Gain":-3,"band4Type":"highcut","band4Freq":2500,"band5Type":"highcut","band5Freq":4000,"band6Type":"off"}},
+      {"m":"echo.dub","p":{"mix":35}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-tiny-battery-amp",
+    "name": "Tiny battery amp",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A toy guitar amp running on tired batteries.",
+    "tags": ["toy","tiny","battery"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"battery","drive":20}},
+      {"m":"lofi.speaker","p":{"size":"toy","push":14}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-amp-behind-closet-door",
+    "name": "Amp behind the closet door",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "Someone practising through a crunch amp shut in the closet.",
+    "tags": ["muffled","closet","crunch"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":30}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.muffle","p":{"wall":"closet"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-band-practice-next-door",
+    "name": "Band practice next door",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A loud amp through the wall of the house next door.",
+    "tags": ["wall","neighbors","muffled"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":32}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.muffle","p":{"wall":"thin","room":"living-room"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-stadium-guitar-stack",
+    "name": "Stadium guitar stack",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A crunch stack filling a stadium, the crowd roaring around it.",
+    "tags": ["stadium","live","crowd"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":34}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"stadium","mix":30}}
+    ],
+    "bed": {"b":"stadium-crowd","level":-20},
+    "seed": 1
+  },
+  {
+    "id": "amps-four-track-demo-amp",
+    "name": "Four-track demo amp",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A crunchy amp bounced onto a worn home-recording cassette, hiss and wobble included.",
+    "tags": ["demo","cassette","crunch"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":22}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"device.cassette","p":{"tape":"worn","hiss":30,"saturation":45}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "amps-busking-amp-street",
+    "name": "Busking amp on the street",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A little battery amp on a busy city sidewalk, traffic rolling past.",
+    "tags": ["busking","street","battery"],
+    "chain": [
+      {"m":"lofi.drive","p":{"character":"battery","drive":16}},
+      {"m":"lofi.speaker","p":{"size":"portable","push":10}},
+      {"m":"stereo.place","p":{"angle":20,"distance":3,"room":"outdoors"}}
+    ],
+    "bed": {"b":"city-street","level":-21,"p":{"distance":8,"sirens":10}},
+    "seed": 1
+  },
+  {
+    "id": "amps-amp-in-parking-garage",
+    "name": "Amp in a parking garage",
+    "cat": "amps",
+    "sub": "Broken, bass and odd amps",
+    "about": "A crunch amp roaring round the bare concrete of an empty parking garage.",
+    "tags": ["garage","concrete","echo"],
+    "chain": [
+      {"m":"lofi.drive","p":{"drive":26}},
+      {"m":"tone.eq","p":{"band1Freq":90,"band2Freq":110,"band2Gain":3,"band3Freq":2200,"band3Gain":3,"band4Type":"highcut","band4Freq":4800,"band5Type":"highcut","band5Freq":5500,"band6Type":"off"}},
+      {"m":"space.room","p":{"space":"parking-garage","mix":35}}
+    ],
+    "seed": 1
+  }
+]

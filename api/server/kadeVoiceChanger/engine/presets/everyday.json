@@ -1,0 +1,1378 @@
+[
+  {
+    "id": "everyday-a-little-deeper",
+    "name": "A little deeper",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "Your own voice, a couple of steps lower and a touch fuller, still clearly you.",
+    "tags": ["deep", "lower", "subtle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-deeper-voice",
+    "name": "Deeper voice",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A clearly lower voice with a slightly bigger chest behind it.",
+    "tags": ["deep", "lower"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-a-lot-deeper",
+    "name": "A lot deeper and bigger",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "Way down low and much larger, like a very tall person with a huge chest.",
+    "tags": ["deep", "big", "lower"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -4.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-deeper-same-size",
+    "name": "Deeper, same size",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "Lower notes but the same size of person, like a singer reaching down for a low part.",
+    "tags": ["deep", "lower", "pitch only"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-deepest-natural",
+    "name": "Deepest natural voice",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A full octave down with a big full chest, as low as a person could really talk.",
+    "tags": ["deep", "lowest", "octave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -6 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-booming-baritone",
+    "name": "Booming baritone",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A rich, chesty low voice that fills a small hall when it speaks.",
+    "tags": ["deep", "rich", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -3 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 70 } },
+      { "m": "tone.broadcast", "p": { "density": 45 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 18 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-low-and-warm",
+    "name": "Low and warm",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A little lower, warm and close, with the soft thickness of analogue tape.",
+    "tags": ["deep", "warm", "close"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1.5 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-deep-bright-edge",
+    "name": "Deep with a bright edge",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "Low notes that keep every word crisp, with a shiny edge on top.",
+    "tags": ["deep", "bright", "clear"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -2 } },
+      { "m": "tone.character", "p": { "shape": "presence" } },
+      { "m": "tone.tilt", "p": { "amount": 5, "pivot": 1500 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-bass-singer-rumble",
+    "name": "Bass singer rumble",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A low voice with a soft rumble an octave under it, like a choir's bass row.",
+    "tags": ["deep", "rumble", "octave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -3.5 } },
+      { "m": "pitch.octaver", "p": { "down1": 35, "timbre": 40 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 25, "rough": 10, "grit": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-deep-and-soft-spoken",
+    "name": "Deep and soft-spoken",
+    "cat": "everyday",
+    "sub": "Deeper voices",
+    "about": "A gentle low voice, a little breathy and very calm.",
+    "tags": ["deep", "soft", "breathy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2.5 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-a-little-higher",
+    "name": "A little higher",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "Your own voice, a couple of steps up and a touch lighter.",
+    "tags": ["high", "higher", "subtle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-higher-voice",
+    "name": "Higher voice",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A clearly higher voice from a slightly smaller person.",
+    "tags": ["high", "higher"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-much-higher-voice",
+    "name": "Much higher voice",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "Way up high and much lighter, still a natural person talking.",
+    "tags": ["high", "light"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 3.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-higher-same-size",
+    "name": "Higher, same size",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "Higher notes from the same size of person, like talking up in your head voice.",
+    "tags": ["high", "pitch only"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-an-octave-up",
+    "name": "An octave up",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A whole octave higher with a smaller throat, bright and light.",
+    "tags": ["high", "octave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-light-tenor",
+    "name": "Light tenor",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A ringing, bright voice a little higher than yours, with a singer's gentle vibrato.",
+    "tags": ["high", "bright", "vibrato"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 0.5 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 70 } },
+      { "m": "pitch.vibrato", "p": { "depth": 90, "delay": 200, "throb": 40 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-high-bright-airy",
+    "name": "High, bright and airy",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A lifted voice full of air and sparkle, with breath around every word.",
+    "tags": ["high", "airy", "breathy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 30, "brightness": 80 } },
+      { "m": "tone.character", "p": { "shape": "bright" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-soft-falsetto",
+    "name": "Soft falsetto",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "Your voice flipped up into a soft, breathy falsetto.",
+    "tags": ["high", "falsetto", "breathy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 1 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-high-and-thin",
+    "name": "High and thin",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A higher, reedy voice with no chest at all.",
+    "tags": ["high", "thin"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "tone.character", "p": { "shape": "thin" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-high-and-sweet",
+    "name": "High and sweet",
+    "cat": "everyday",
+    "sub": "Higher voices",
+    "about": "A high, warm voice with a gentle shimmer, like someone smiling as they talk.",
+    "tags": ["high", "warm", "shimmer"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 3 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 50 } },
+      { "m": "mod.chorus", "p": { "depth": 20, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-bigger-same-note",
+    "name": "Bigger body, same note",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "The same notes from a bigger person, as if your throat and chest grew.",
+    "tags": ["bigger", "timbre"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-much-bigger-body",
+    "name": "Much bigger body",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "Your own notes from a huge, hollow-chested person.",
+    "tags": ["bigger", "huge", "timbre"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-smaller-same-note",
+    "name": "Smaller body, same note",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "The same notes from a smaller person, as if your throat shrank.",
+    "tags": ["smaller", "timbre"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-much-smaller-body",
+    "name": "Much smaller body",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "Your own notes from a tiny person with a little pinched throat.",
+    "tags": ["smaller", "tiny", "timbre"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-big-barrel-chest",
+    "name": "Big barrel chest",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "A wide, booming chest under your voice, every word thumping.",
+    "tags": ["bigger", "boomy", "chest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -4.5 } },
+      { "m": "tone.character", "p": { "shape": "boomy" } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-slight-and-small",
+    "name": "Slight and small",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "A slender little person, a touch higher and light as a feather.",
+    "tags": ["smaller", "thin", "light"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5, "formant": 4.5 } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-big-and-bright",
+    "name": "Big and bright",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "A big body with a crisp, shiny top, large but never muddy.",
+    "tags": ["bigger", "bright"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -4 } },
+      { "m": "tone.character", "p": { "shape": "presence" } },
+      { "m": "tone.tilt", "p": { "amount": 6, "pivot": 1200 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-small-and-dark",
+    "name": "Small and dark",
+    "cat": "everyday",
+    "sub": "Bigger and smaller",
+    "about": "A little person in a dark, velvety tone, like talking from under a hood.",
+    "tags": ["smaller", "dark"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 4 } },
+      { "m": "tone.character", "p": { "shape": "dark", "amount": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-little-toddler",
+    "name": "Little toddler",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A very small child, high and unsteady, taking each word slowly.",
+    "tags": ["child", "toddler", "young"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 7 } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 0, "jitter": 35 } },
+      { "m": "pitch.wobble", "p": { "depth": 150, "speed": 1, "randomness": 50 } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 30 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-young-child",
+    "name": "Young child",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A bright young child of about six, chatting away in a little playroom.",
+    "tags": ["child", "young"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 5 } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 0, "jitter": 20 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-excited-kid",
+    "name": "Excited kid",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A child bursting with news, quick and bouncing all over the place.",
+    "tags": ["child", "fast", "excited"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "pitch.wobble", "p": { "depth": 150, "speed": 2.5, "randomness": 70 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.15 } },
+      { "m": "tone.tilt", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-shy-child",
+    "name": "Shy child",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A small child half hiding, speaking softly into their sleeve.",
+    "tags": ["child", "soft", "shy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 4 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-about-ten-years-old",
+    "name": "About ten years old",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "An older kid, quick and bright, higher than an adult but no longer little.",
+    "tags": ["child", "kid"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4.5, "formant": 3 } },
+      { "m": "pitch.wobble", "p": { "depth": 70, "speed": 2, "randomness": 50 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.1 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-teen-voice-breaking",
+    "name": "Teen voice breaking",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A teenager whose voice keeps cracking up into a squeak or down into a croak.",
+    "tags": ["teen", "crack", "young"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 2.5 } },
+      { "m": "pitch.jitter", "p": { "rate": 3, "size": 10, "direction": "both" } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 35 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.05 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-mumbling-teenager",
+    "name": "Mumbling teenager",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "Flat, quick and muffled, barely bothering to open the mouth.",
+    "tags": ["teen", "mumble", "flat"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 1 } },
+      { "m": "pitch.flatten", "p": { "amount": 70 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.1 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-young-adult",
+    "name": "Young adult",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A brighter, quicker, younger version of you, in your early twenties.",
+    "tags": ["young", "bright"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5, "formant": 1.5 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.05 } },
+      { "m": "tone.tilt", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-middle-aged-and-settled",
+    "name": "Middle-aged and settled",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A confident, settled voice with more chest, taking its time.",
+    "tags": ["adult", "warm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -1.5 } },
+      { "m": "tone.character", "p": { "amount": 60 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 40 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.96 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-older-voice",
+    "name": "Older voice",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A voice in its sixties: lower, a touch rough, with a slight waver.",
+    "tags": ["older", "age"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2.5, "formant": -1 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.1, "size": 2, "direction": "down", "tremble": 50, "jitter": 25 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 45 } },
+      { "m": "spec.whisper", "p": { "amount": 20 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.9 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-elderly-voice",
+    "name": "Elderly voice",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A very senior voice, trembling and breathy, taking its time.",
+    "tags": ["elderly", "old", "tremble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.2, "size": 3, "tremble": 60, "jitter": 35 } },
+      { "m": "spec.whisper", "p": { "amount": 25 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.9 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-very-old-and-frail",
+    "name": "Very old and frail",
+    "cat": "everyday",
+    "sub": "Ages",
+    "about": "A thin, shaking voice of great age, slow and full of breath.",
+    "tags": ["elderly", "frail", "tremble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 0.5, "formant": 1 } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 90, "jitter": 50 } },
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 50 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-breathy-voice",
+    "name": "Breathy voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "Your voice with a soft cloud of breath wrapped around every word.",
+    "tags": ["breathy", "soft"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-half-whisper",
+    "name": "Half whisper",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "More breath than voice, with just a ghost of your note underneath.",
+    "tags": ["whisper", "breathy"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 52 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-full-whisper",
+    "name": "Full whisper",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "Every word turned into a true whisper, with no note left at all.",
+    "tags": ["whisper", "quiet"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "brightness": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-raspy-voice",
+    "name": "Raspy voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A rough, scratchy rasp riding on top of your words.",
+    "tags": ["raspy", "rough"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 70, "fry": 20, "grit": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-gravelly-voice",
+    "name": "Gravelly voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A low voice full of gravel and creak, like it has been shouting all weekend.",
+    "tags": ["gravel", "rough", "low"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 60, "fry": 30, "grit": 70 } },
+      { "m": "lofi.drive", "p": { "drive": 4, "character": "warm", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-hoarse-voice",
+    "name": "Hoarse voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A worn-out voice, rough and airy, half gone after a long night.",
+    "tags": ["hoarse", "rough", "breathy"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 40 } },
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "tone.character", "p": { "shape": "thin", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-smoky-low-voice",
+    "name": "Smoky low voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A low, husky late-night voice with a little creak at the bottom.",
+    "tags": ["husky", "low", "warm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -0.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 20 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "lofi.saturate", "p": { "drive": 5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-nasal-voice",
+    "name": "Nasal voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "Everything comes out through the nose, pinched and buzzy.",
+    "tags": ["nasal", "pinched"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "nasal" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-pinched-and-tight",
+    "name": "Pinched and tight",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A squeezed, honking voice held tight in the throat.",
+    "tags": ["pinched", "tight", "honky"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 1.5 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 70 } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-velvet-smooth",
+    "name": "Velvet smooth",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "Soft and rounded with a silky double behind it, every harsh edge sanded off.",
+    "tags": ["smooth", "warm", "soft"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": -0.5 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 70 } },
+      { "m": "tone.deess", "p": {} },
+      { "m": "mod.chorus", "p": { "depth": 15, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-croaky-voice",
+    "name": "Croaky voice",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "A voice that keeps dropping into a croak, creaking at the ends of words.",
+    "tags": ["croak", "creak", "rough"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 6, "direction": "down", "tremble": 0, "jitter": 25 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 10, "fry": 70 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-sleepy-and-slow",
+    "name": "Sleepy and slow",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Drowsy, dark and drawn out, nearly nodding off between words.",
+    "tags": ["sleepy", "slow", "dark"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1.5 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "tone.tilt", "p": { "amount": -4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-bored-monotone",
+    "name": "Bored monotone",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Every word on the same dull note, slow and utterly uninterested.",
+    "tags": ["monotone", "bored", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": {} },
+      { "m": "pitch.tempo", "p": { "tempo": 0.92 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-sing-song-voice",
+    "name": "Sing-song voice",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Your voice swooping up and down in big lilting curves, like talking to a puppy.",
+    "tags": ["melodic", "swoop", "playful"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 380, "speed": 1.3, "randomness": 10 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-excited-and-bubbly",
+    "name": "Excited and bubbly",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Bright, bouncy and a little faster, words tumbling out with a grin.",
+    "tags": ["excited", "fast", "bright"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 0.5 } },
+      { "m": "pitch.wobble", "p": { "depth": 160, "speed": 3, "randomness": 30 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.2 } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-nervous-and-shaky",
+    "name": "Nervous and shaky",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "A jittery, hurried voice that wobbles and slips, like speaking in front of a crowd.",
+    "tags": ["nervous", "shaky"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.5, "size": 4, "direction": "both", "tremble": 70, "jitter": 45 } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.1 } },
+      { "m": "spec.whisper", "p": { "amount": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-scared-stiff",
+    "name": "Scared stiff",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "High, breathless and trembling hard, too frightened to speak up.",
+    "tags": ["scared", "tremble", "breathy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 0.5 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.6, "size": 5, "tremble": 85, "jitter": 30 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-choked-up",
+    "name": "Choked up",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Fighting back tears: a tight, breaking, wavering voice.",
+    "tags": ["emotional", "tremble", "crack"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.6, "size": 3, "tremble": 60 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-trying-not-to-laugh",
+    "name": "Trying not to laugh",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Giggles bubbling up through every word, the voice wobbling with held-in laughter.",
+    "tags": ["laugh", "wobble", "playful"],
+    "chain": [
+      { "m": "mod.tremolo", "p": { "rate": 6, "depth": 40, "shape": "random" } },
+      { "m": "pitch.wobble", "p": { "depth": 150, "speed": 5, "randomness": 80 } },
+      { "m": "spec.whisper", "p": { "amount": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-grumpy-mutter",
+    "name": "Grumpy mutter",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Low, flat and growling under the breath.",
+    "tags": ["grumpy", "low", "mumble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1.5 } },
+      { "m": "pitch.flatten", "p": { "amount": 60 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 30, "fry": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-just-woke-up",
+    "name": "Just woke up",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "The first words of the morning: low, creaky and dark.",
+    "tags": ["morning", "creaky", "low"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -1.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 40, "fry": 60 } },
+      { "m": "pitch.flatten", "p": { "amount": 40 } },
+      { "m": "tone.tilt", "p": { "amount": -4 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.88 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-talking-through-a-yawn",
+    "name": "Talking through a yawn",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Your voice sags lower and breathier as a big yawn takes over.",
+    "tags": ["yawn", "sleepy", "falling"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": 1, "to": -5, "curve": "late", "timbre": 60 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-out-of-breath",
+    "name": "Out of breath",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Puffing and panting after running up the stairs.",
+    "tags": ["breath", "panting", "tired"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "mod.tremolo", "p": { "rate": 2.8, "depth": 30, "shape": "random" } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 30, "jitter": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-talking-while-jogging",
+    "name": "Talking while jogging",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Your voice bouncing with every stride, short of breath.",
+    "tags": ["jogging", "bounce", "breath"],
+    "chain": [
+      { "m": "mod.tremolo", "p": { "rate": 2.6, "depth": 35, "shape": "triangle" } },
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 2.6, "randomness": 20 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-shivering-with-cold",
+    "name": "Shivering with cold",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Teeth chattering in the wind, every word shaking.",
+    "tags": ["cold", "shiver", "wind"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 100, "jitter": 40 } },
+      { "m": "mod.tremolo", "p": { "rate": 8, "depth": 25, "shape": "random" } }
+    ],
+    "bed": { "b": "wind", "level": -28, "p": { "strength": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "everyday-laid-up-with-a-cold",
+    "name": "Laid up with a cold",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "A blocked-up, croaky voice, slow and sorry for itself.",
+    "tags": ["cold", "blocked", "hoarse"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 40 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 40 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 30 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.95 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-getting-over-a-cold",
+    "name": "Getting over a cold",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Nearly better: a little husky and nasal, with a scratch left in the throat.",
+    "tags": ["cold", "husky", "nasal"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -0.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 30 } },
+      { "m": "spec.whisper", "p": { "amount": 25 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-stuffy-nose",
+    "name": "Stuffy nose",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "A blocked nose: every m and n comes out dull and plugged.",
+    "tags": ["blocked", "nose"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 60 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-close-mic-intimate",
+    "name": "Close-mic and intimate",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Lips right at the microphone: warm, full and very close.",
+    "tags": ["close", "warm", "intimate"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 50 } },
+      { "m": "tone.deess", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-right-in-your-ear",
+    "name": "Right in your ear",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "A breathy voice an inch from your right ear; best on headphones.",
+    "tags": ["ear", "close", "headphones"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 25 } },
+      { "m": "stereo.place", "p": { "angle": 80, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-across-the-room",
+    "name": "Across the room",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Talking from the far side of a living room, the walls answering softly.",
+    "tags": ["room", "distance"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": -25, "distance": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-from-the-doorway",
+    "name": "From the doorway",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Someone leaning in the doorway off to your right, the hall behind them.",
+    "tags": ["hallway", "distance"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 50, "distance": 3, "room": "hallway" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-back-turned-to-you",
+    "name": "Back turned to you",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Talking while facing away from you, dull and behind your head.",
+    "tags": ["behind", "dull"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 160, "distance": 1.2, "room": "none" } },
+      { "m": "tone.character", "p": { "shape": "dark", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-shouting-from-far-away",
+    "name": "Shouting from far away",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "A strained shout from across a big open field.",
+    "tags": ["shout", "far", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "space.distance", "p": { "distance": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-calling-across-the-yard",
+    "name": "Calling across the yard",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Calling over the grass on a hot summer afternoon, insects buzzing.",
+    "tags": ["yard", "outdoors", "summer"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 25 } }
+    ],
+    "bed": { "b": "summer-field", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-calling-down-the-street",
+    "name": "Calling down the street",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "A voice from half a block away over the city traffic.",
+    "tags": ["street", "city", "far"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 120, "wind": 20 } }
+    ],
+    "bed": { "b": "city-street", "level": -20 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-hand-over-your-mouth",
+    "name": "Hand over your mouth",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Talking through your fingers, muffled and boxy.",
+    "tags": ["muffled", "hand"],
+    "chain": [
+      { "m": "tone.filter", "p": { "freq": 1400, "resonance": 20 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-face-in-a-pillow",
+    "name": "Face in a pillow",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Talking face down into a big soft pillow.",
+    "tags": ["muffled", "pillow", "soft"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "muffled" } },
+      { "m": "space.room", "p": { "space": "under-blanket", "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-through-a-winter-scarf",
+    "name": "Through a winter scarf",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Wrapped up against the wind, talking through a thick wool scarf.",
+    "tags": ["muffled", "winter", "wind"],
+    "chain": [
+      { "m": "tone.filter", "p": { "freq": 2200, "resonance": 10 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 40 } },
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 35 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 35 } },
+    "seed": 1
+  },
+  {
+    "id": "everyday-mumbling-to-yourself",
+    "name": "Mumbling to yourself",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "Thinking out loud under your breath, off to one side.",
+    "tags": ["mumble", "quiet"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 40 } },
+      { "m": "spec.whisper", "p": { "amount": 50 } },
+      { "m": "tone.character", "p": { "shape": "dark" } },
+      { "m": "pitch.tempo", "p": { "tempo": 1.12 } },
+      { "m": "stereo.place", "p": { "angle": -20, "distance": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-leaning-in-to-whisper",
+    "name": "Leaning in to whisper",
+    "cat": "everyday",
+    "sub": "Near and far",
+    "about": "A secret whispered right beside your left ear; best on headphones.",
+    "tags": ["whisper", "ear", "headphones"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 85 } },
+      { "m": "stereo.place", "p": { "angle": -70, "distance": 0.3, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-chatting-at-a-coffee-shop",
+    "name": "Chatting at a coffee shop",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Talking over cups and chatter at a busy coffee shop table.",
+    "tags": ["cafe", "chatter", "busy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 25, "distance": 35 } }
+    ],
+    "bed": { "b": "cafe", "level": -20 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-late-night-kitchen-chat",
+    "name": "Late-night kitchen chat",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "A hushed voice in a dark kitchen, the fridge humming beside you.",
+    "tags": ["kitchen", "night", "hushed"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 40 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-porch-summer-night",
+    "name": "On the porch, summer night",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Sitting out on a warm night while the crickets sing.",
+    "tags": ["porch", "night", "crickets"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-rainy-day-by-the-window",
+    "name": "Rainy day by the window",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "A cosy living room while rain taps on the glass.",
+    "tags": ["rain", "indoors", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "mix": 35 } }
+    ],
+    "bed": { "b": "rain-window", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-cosy-by-the-fireplace",
+    "name": "Cosy by the fireplace",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "A warm, close voice beside a crackling log fire.",
+    "tags": ["fire", "warm", "cosy"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "space.room", "p": { "mix": 30 } }
+    ],
+    "bed": { "b": "fireplace", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-down-the-school-hallway",
+    "name": "Down the school hallway",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Talking between classes, lockers slamming and kids everywhere.",
+    "tags": ["school", "hallway", "busy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "hallway", "mix": 45 } }
+    ],
+    "bed": { "b": "school-hall", "level": -20 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-at-the-laundromat",
+    "name": "At the laundromat",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Chatting by the dryers while the machines tumble and slosh.",
+    "tags": ["laundromat", "machines"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "classroom", "mix": 35 } }
+    ],
+    "bed": { "b": "laundromat", "level": -22 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-walk-in-the-park",
+    "name": "Walk in the park",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Strolling under the trees on a spring morning full of birdsong.",
+    "tags": ["park", "birds", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "forest", "mix": 25 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-morning-on-the-farm",
+    "name": "Morning on the farm",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Calling out across the farmyard as the roosters crow.",
+    "tags": ["farm", "morning", "outdoors"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 8 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -22 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-busy-office-desk",
+    "name": "Busy office desk",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Talking at your desk while keyboards clatter and phones ring.",
+    "tags": ["office", "work"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "office", "mix": 35 } }
+    ],
+    "bed": { "b": "office", "level": -22 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-waiting-at-the-bus-stop",
+    "name": "Waiting at the bus stop",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "A voice on a busy corner while cars swish past.",
+    "tags": ["street", "city", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "alley", "mix": 20 } }
+    ],
+    "bed": { "b": "city-street", "level": -18, "p": { "distance": 3 } },
+    "seed": 1
+  },
+  {
+    "id": "everyday-windows-down-on-the-highway",
+    "name": "Windows down on the highway",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Shouting over the wind in a car with every window open.",
+    "tags": ["car", "wind", "road"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 4, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "car", "mix": 50 } }
+    ],
+    "bed": { "b": "car-highway", "level": -16, "duck": 3, "p": { "windows": "open" } },
+    "seed": 1
+  },
+  {
+    "id": "everyday-talking-through-your-teeth",
+    "name": "Talking through your teeth",
+    "cat": "everyday",
+    "sub": "Voice textures",
+    "about": "Jaw clenched tight, every word squeezed out between your teeth.",
+    "tags": ["clenched", "tight", "narrow"],
+    "chain": [
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1900, "resonance": 25, "slope": "gentle" } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 50 } },
+      { "m": "pitch.flatten", "p": { "amount": 35 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 75 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-angry-shout",
+    "name": "Angry shout",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "Red-faced and yelling, the voice straining and cracking at the top.",
+    "tags": ["angry", "shout", "strained"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2.5, "formant": 0.5 } },
+      { "m": "pitch.jitter", "p": { "size": 3, "tremble": 10, "jitter": 20 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 45 } },
+      { "m": "tone.broadcast", "p": { "style": "sports", "density": 90 } },
+      { "m": "tone.character", "p": { "shape": "forward", "amount": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-whiny-and-pleading",
+    "name": "Whiny and pleading",
+    "cat": "everyday",
+    "sub": "Moods",
+    "about": "A high, nasal, drawn-out plea, the voice sliding around every word.",
+    "tags": ["whiny", "nasal", "pleading"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 1 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 65 } },
+      { "m": "pitch.wobble", "p": { "depth": 140, "speed": 0.7, "randomness": 30 } },
+      { "m": "time.drawl", "p": { "factor": 1.25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-lifting-something-heavy",
+    "name": "Lifting something heavy",
+    "cat": "everyday",
+    "sub": "Body and breath",
+    "about": "Talking mid-heave, strained and squeezed, the voice shaking with effort.",
+    "tags": ["strain", "effort", "tight"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1.5, "formant": 0.5 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.4, "size": 2, "direction": "both", "tremble": 55, "jitter": 20 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 45 } },
+      { "m": "tone.broadcast", "p": { "style": "talk", "density": 95, "presence": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "everyday-whispering-in-the-library",
+    "name": "Whispering in the library",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "A careful whisper between the shelves, pages turning and a clock ticking nearby.",
+    "tags": ["library", "whisper", "quiet"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "classroom", "mix": 25 } }
+    ],
+    "bed": { "b": "library-hush", "level": -24, "p": { "clock": true } },
+    "seed": 1
+  },
+  {
+    "id": "everyday-calling-orders-in-a-kitchen",
+    "name": "Calling orders in a kitchen",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Shouting orders over sizzling pans and clattering knives in a busy restaurant kitchen.",
+    "tags": ["kitchen", "shout", "busy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "lofi.drive", "p": { "drive": 5, "character": "warm", "mix": 60 } },
+      { "m": "tone.character", "p": { "shape": "forward", "amount": 60 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 30 } }
+    ],
+    "bed": { "b": "kitchen", "level": -18, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "everyday-parked-in-the-rain",
+    "name": "Parked in the rain",
+    "cat": "everyday",
+    "sub": "Out and about",
+    "about": "Sitting in a parked car while rain drums on the roof and the wipers tick.",
+    "tags": ["car", "rain", "cosy"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 40 } },
+      { "m": "space.room", "p": { "space": "car", "mix": 55 } }
+    ],
+    "bed": { "b": "car-rain", "level": -20, "p": { "motion": "parked" } },
+    "seed": 1
+  }
+]

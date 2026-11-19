@@ -1,0 +1,1332 @@
+[
+  {
+    "id": "instruments-talkbox-funk-lead",
+    "name": "Funk synth talk box lead",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A fat, slightly driven funk synth slides after your voice on dorian notes while your mouth shapes every word.",
+    "tags": ["talk box", "funk", "synth", "lead"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "scale": "dorian", "key": "d", "glide": 80, "drive": 35 } },
+      { "m": "echo.slapback", "p": { "time": 90, "level": 30, "character": "clean" } },
+      { "m": "space.reverb", "p": { "size": 35, "decay": 1.2, "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-held-chord",
+    "name": "Talk box on a chord",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A lush minor seventh chord says your words, held under every syllable.",
+    "tags": ["talk box", "chord", "smooth"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "notes": "chord", "key": "e" } },
+      { "m": "mod.chorus", "p": { "mix": 30 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-chord-changes",
+    "name": "Talk box chord changes",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "Your words ride a slow loop of jazzy ninth chords that change every bar.",
+    "tags": ["talk box", "chords", "jazz", "smooth"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "notes": "changes", "chord": "ninth", "key": "d", "tempo": 92, "brightness": 45 } },
+      { "m": "space.reverb", "p": { "size": 55, "decay": 2.2, "mix": 22 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-funk-riff",
+    "name": "Talk box funk riff with echo",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A busy funk riff plays in time while your mouth turns it into words, with an echo on the off beats.",
+    "tags": ["talk box", "riff", "funk", "groove"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "notes": "riff", "tempo": 108, "drive": 40 } },
+      { "m": "echo.delay", "p": { "division": "eighth", "tempo": 108, "feedback": 20, "mix": 18 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-arpeggio",
+    "name": "Talk box arpeggio",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A bright arpeggio climbs a major chord in time, bouncing between your ears as you talk.",
+    "tags": ["talk box", "arpeggio", "bright"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "notes": "arp", "chord": "major", "key": "c", "tempo": 120, "register": "high" } },
+      { "m": "echo.delay", "p": { "division": "dotted", "feedback": 35, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-fuzz-guitar",
+    "name": "Blues fuzz guitar talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A fuzzed-out guitar sings your words on blues notes, with a quick slap of echo right behind it.",
+    "tags": ["talk box", "guitar", "fuzz", "blues"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "fuzz", "scale": "blues", "key": "e", "drive": 55 } },
+      { "m": "echo.slapback", "p": { "time": 120, "level": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-church-organ",
+    "name": "Church organ talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A big low organ chord speaks your words and rings around the stone walls of a church.",
+    "tags": ["talk box", "organ", "church", "chord"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "organ", "notes": "chord", "chord": "sus", "key": "g", "register": "low" } },
+      { "m": "space.room", "p": { "space": "church", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-eight-bit",
+    "name": "Eight-bit talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A buzzing game console lead runs a quick arpeggio while your mouth makes the words.",
+    "tags": ["talk box", "8-bit", "chip", "game"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "chip", "notes": "arp", "chord": "minor", "tempo": 140, "register": "high" } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 16000 } },
+      { "m": "echo.delay", "p": { "time": 120, "feedback": 30, "stereo": "mono", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-bass",
+    "name": "Bass talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A round synth bass walks under your words, low and squashed like a funk record.",
+    "tags": ["talk box", "bass", "low", "funk"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "bass", "register": "low", "key": "e" } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4 } },
+      { "m": "lofi.saturate", "p": { "drive": 12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-square-lead",
+    "name": "Square lead talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A hollow square lead glides high between the notes of a major scale as you speak.",
+    "tags": ["talk box", "square", "lead", "glide"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "square", "scale": "major", "register": "high", "glide": 120 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-power-chord",
+    "name": "Fuzz power chord talk box",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "A low, roaring guitar power chord is shaped into your words in a garage.",
+    "tags": ["talk box", "guitar", "power chord", "loud"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "fuzz", "notes": "chord", "chord": "power", "register": "low", "drive": 80 } },
+      { "m": "space.room", "p": { "space": "parking-garage", "mix": 18 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-talkbox-one-note",
+    "name": "Talk box on one note",
+    "cat": "instruments",
+    "sub": "Talk box",
+    "about": "One deep held synth note mouths your words like a droning robot singer.",
+    "tags": ["talk box", "drone", "one note"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "notes": "held", "register": "low", "brightness": 70 } },
+      { "m": "space.shimmer", "p": { "mix": 20, "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-synth-lead",
+    "name": "Vocoder synth lead",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "The classic robot synth voice: a bright saw lead plays your words on one note.",
+    "tags": ["vocoder", "synth", "robot", "lead"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "single", "bands": 32 } },
+      { "m": "echo.delay", "p": { "division": "eighth", "feedback": 25, "mix": 18 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-strings",
+    "name": "Vocoder strings",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A wide string-machine chord sings your words in a soft shimmering hall.",
+    "tags": ["vocoder", "strings", "pad", "wide"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "supersaw", "chord": "major", "smoothing": 40 } },
+      { "m": "mod.chorus", "p": { "voices": 4, "depth": 60, "mix": 45 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 32 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-choir-pad",
+    "name": "Vocoder choir pad",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A choir of synthetic voices sings your words on a floating suspended chord.",
+    "tags": ["vocoder", "choir", "pad", "angelic"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "choir", "chord": "sus", "smoothing": 50 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-organ",
+    "name": "Vocoder organ",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A churchy organ seventh chord says your words, swirling slowly in a rotating speaker.",
+    "tags": ["vocoder", "organ", "chord"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "organ", "chord": "seventh", "key": "f" } },
+      { "m": "mod.rotary", "p": { "speed": "slow" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-robot-power",
+    "name": "Power chord robot vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A low hollow power chord speaks for you with a little grit, like an arena robot.",
+    "tags": ["vocoder", "robot", "power chord", "low"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "square", "chord": "power", "register": "low" } },
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "warm" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-whisper",
+    "name": "Wide breath vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "Your words carved out of rushing noise and spread wide, a breathy machine whisper with no pitch at all.",
+    "tags": ["vocoder", "whisper", "noise", "breathy"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "noise", "bands": 40, "consonants": 80 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-gated-pulse",
+    "name": "Gated pulse vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A thin pulse chord plays your words chopped into a trance rhythm.",
+    "tags": ["vocoder", "gate", "trance", "rhythm"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "pulse", "chord": "minor7", "key": "a" } },
+      { "m": "mod.gate", "p": { "steps": "8", "tempo": 128 } },
+      { "m": "echo.delay", "p": { "division": "dotted", "tempo": 128, "feedback": 30, "mix": 22 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-big-open-chord",
+    "name": "Big open chord vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A huge low stack of detuned saws sings your words like a film score.",
+    "tags": ["vocoder", "huge", "cinematic", "chord"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "supersaw", "chord": "stack", "register": "low", "smoothing": 60 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 5, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-deep-octaves",
+    "name": "Deep octave vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "A rumbling saw in low octaves, few bands and slow, like a giant speaking machine.",
+    "tags": ["vocoder", "deep", "octaves", "robot"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "octaves", "register": "low", "bands": 16, "smoothing": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-eight-band",
+    "name": "Eight-band retro vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "An early boxy vocoder with only eight bands: chunky, buzzy and only just readable.",
+    "tags": ["vocoder", "retro", "lo-fi"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "square", "chord": "single", "bands": 8, "smoothing": 40, "key": "g" } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-crisp-major",
+    "name": "Crisp hi-fi vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "Sixty-four bands and sharp consonants: a clean modern vocoder on a bright major chord.",
+    "tags": ["vocoder", "clear", "bright", "modern"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "major", "register": "high", "bands": 64, "smoothing": 10, "consonants": 80, "key": "d" } },
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 12 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-vocoder-wind",
+    "name": "Wind vocoder",
+    "cat": "instruments",
+    "sub": "Vocoder",
+    "about": "The wind itself howls your words, on a cold hilltop.",
+    "tags": ["vocoder", "wind", "eerie", "weather"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "wind", "bands": 32, "smoothing": 60 } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 25 } }
+    ],
+    "bed": { "b": "wind", "level": -24, "p": {"strength": 55} },
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-spoken-by-rain",
+    "name": "Spoken by the rain",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Falling rain forms your words, drop by drop, out in a downpour.",
+    "tags": ["rain", "weather", "texture", "morph"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "rain", "clarity": 60 } }
+    ],
+    "bed": { "b": "rain", "level": -22, "p": {"intensity": 45} },
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-spoken-by-crowd",
+    "name": "Spoken by a crowd",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "The murmur of a crowded hall shapes itself into your words.",
+    "tags": ["crowd", "murmur", "morph"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "crowd", "clarity": 65, "background": -26 } },
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-half-thunder",
+    "name": "Half you, half thunder",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Your voice poured into rolling thunder, half words and half storm.",
+    "tags": ["thunder", "storm", "huge"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "thunder", "amount": 60, "mix": 55 } }
+    ],
+    "bed": { "b": "storm", "level": -26, "p": {"intensity": 50, "thunder": 2} },
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-gong-swell",
+    "name": "Backwards gong swell",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Your words ring through a big gong, each one swelling in backwards before it lands.",
+    "tags": ["gong", "metal", "reverse", "swell"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "gong", "amount": 80 } },
+      { "m": "echo.preverb", "p": { "space": "church", "length": 1.2, "mix": 45 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-rain-swells",
+    "name": "Rain that swells with your words",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Rain grows heavier while you speak and eases off in every pause.",
+    "tags": ["rain", "follow", "weather"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "rain", "mode": "follow", "release": 900, "level": -4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-engine-ringmod",
+    "name": "Ring-modulated by an engine",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "An idling engine throbs through your voice, then a ring of metal clangs on top.",
+    "tags": ["engine", "ring mod", "machine"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "engine", "amount": 65, "mix": 70 } },
+      { "m": "synth.ringmod", "p": { "freq": 55, "wobbleRate": 3, "wobbleDepth": 2, "mix": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-spoken-by-fire",
+    "name": "Words roared by a bonfire",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Crackling flames roar your words beside a big bonfire.",
+    "tags": ["fire", "crackle", "morph"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "fire", "clarity": 45 } },
+      { "m": "lofi.saturate", "p": { "drive": 14 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } }
+    ],
+    "bed": { "b": "blaze", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-spoken-by-waves",
+    "name": "Spoken by the waves",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Breaking waves wash in and out in the shape of your words on a beach.",
+    "tags": ["ocean", "waves", "morph", "water"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "ocean", "clarity": 70 } },
+      { "m": "mod.phaser", "p": { "rate": 0.1, "depth": 60, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 20 } }
+    ],
+    "bed": { "b": "ocean", "level": -24, "p": {"size": 40} },
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-words-of-organ",
+    "name": "Words made of organ",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "A pipe organ chord is sculpted into your words, then fills a stone church.",
+    "tags": ["organ", "church", "morph"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "organ", "clarity": 70, "background": -30 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-words-on-bells",
+    "name": "Words rung on bells",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "A peal of bells shapes itself into each word and rings on after.",
+    "tags": ["bells", "ringing", "morph"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "bells", "clarity": 60, "background": -24 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-engine-gate",
+    "name": "Engine that runs while you talk",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "A rumbling motor starts up with every phrase and cuts out when you stop.",
+    "tags": ["engine", "gate", "machine"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "attack": 40, "release": 200, "level": -8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-pad-swells",
+    "name": "Warm pad that swells with you",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "A soft synth pad blooms behind your voice as you speak and fades in the gaps.",
+    "tags": ["pad", "warm", "follow", "music"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "pad", "mode": "follow", "attack": 150, "release": 1500, "level": -10 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2.5, "mix": 18 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-drone-ducks",
+    "name": "Drone that bows to your voice",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "A low drone hums all the time and dips politely under every word you say.",
+    "tags": ["drone", "duck", "low"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "drone", "mode": "duck", "depth": 80, "release": 600, "level": -8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-wind-harp",
+    "name": "Wind harp on a hilltop",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Wind blows through your words and across harp strings tuned to an open chord, so the gusts sing.",
+    "tags": ["wind", "harp", "chord", "outdoors"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "wind", "blend": 60, "envelope": "both" } },
+      { "m": "spec.comb", "p": { "base": 98, "chord": "sus", "sharpness": 70, "ring": 60, "mix": 65 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-another-half-bells",
+    "name": "Half you, half bells",
+    "cat": "instruments",
+    "sub": "Your voice and another sound",
+    "about": "Your voice and a ring of bells share one shape, so the bells seem to breathe.",
+    "tags": ["bells", "blend", "ringing"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "bells", "blend": 60, "envelope": "both" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-talkbox",
+    "name": "Talk box on your own sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Give it any recording and your mouth shapes it into words, like a talk box.",
+    "tags": ["talk box", "your sound", "side"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "side", "notes": "chord", "chord": "sus", "key": "f", "register": "high", "consonants": 65 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-vocoder",
+    "name": "Vocoder on your own sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Any sound you give it plays your words, through a forty-band vocoder.",
+    "tags": ["vocoder", "your sound", "side"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "side", "bands": 40, "consonants": 70 } },
+      { "m": "mod.chorus", "p": { "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-morph",
+    "name": "Your words made of your sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Your words spoken by the sound you choose, a song, a dog, a blender, anything.",
+    "tags": ["morph", "your sound", "side"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "side", "clarity": 70, "background": -30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-crossconv",
+    "name": "Voice poured into your sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Your voice rings through the sound you pick, as if it had its own body.",
+    "tags": ["convolution", "your sound", "side"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "source": "side", "amount": 85, "smoothing": 20 } },
+      { "m": "stereo.width", "p": { "width": 1.7 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-keyed",
+    "name": "Your sound swells as you talk",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "The sound you pick rises while you talk and sinks in every pause.",
+    "tags": ["keyed", "your sound", "side", "follow"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "mode": "follow", "attack": 60, "release": 700, "level": -8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-blend",
+    "name": "Half you, half your sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Your voice and the sound you choose melt into one, shaped by both.",
+    "tags": ["blend", "your sound", "side"],
+    "chain": [
+      { "m": "spec.blend", "p": { "envelope": "both", "blend": 45 } },
+      { "m": "space.reverb", "p": { "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-own-ringmod",
+    "name": "Ring-modulated by your sound",
+    "cat": "instruments",
+    "sub": "Your own other sound",
+    "about": "Your voice multiplied by the sound you choose, a clanging metallic mash of both.",
+    "tags": ["ring mod", "your sound", "side", "metal"],
+    "chain": [
+      { "m": "synth.ringmod", "p": { "shape": "side", "mix": 70 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 120, "resonance": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-church",
+    "name": "Church bells",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Every word strikes a big bronze bell that hums on into a stone church.",
+    "tags": ["bell", "church", "ringing", "bronze"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "pitch": -5, "decay": 1.2, "strike": 60, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-glass-harmonica",
+    "name": "Glass harmonica",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Your voice rubs the rims of singing glasses, pure and wavering, in a soft room.",
+    "tags": ["glass", "harmonica", "pure", "wavering"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "glass", "decay": 1.6, "strike": 5, "brightness": 65, "mix": 70 } },
+      { "m": "pitch.vibrato", "p": { "rate": 4.5, "depth": 15, "delay": 300 } },
+      { "m": "space.reverb", "p": { "decay": 3, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-singing-bowl",
+    "name": "Low singing bowl",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "A big, low brass singing bowl hums and beats slowly under every word you say.",
+    "tags": ["bowl", "meditation", "brass", "calm"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "singing-bowl", "pitch": -5, "decay": 3, "strike": 40, "mix": 70 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 4, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-temple-gong",
+    "name": "Struck temple gong",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Each syllable hits a deep gong that shimmers out across a cathedral.",
+    "tags": ["gong", "deep", "metal", "huge"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "gong", "pitch": -7, "decay": 1.5, "strike": 75, "mix": 65 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-wind-chimes",
+    "name": "Wind chimes on the porch",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Metal chimes tinkle with your words and drift side to side in a breeze.",
+    "tags": ["chimes", "breeze", "porch", "tinkle"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wind-chimes", "strike": 50, "mix": 60 } },
+      { "m": "mod.autopan", "p": { "rate": 0.2, "width": 60 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -28, "p": {"strength": 35} },
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-steel-drum",
+    "name": "Steel drum",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Bright steel pan notes ring out on every word with a quick slap of echo.",
+    "tags": ["steel drum", "island", "bright"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "steel-drum", "strike": 85, "decay": 0.7, "mix": 70 } },
+      { "m": "echo.slapback", "p": { "time": 140, "level": 30, "character": "clean" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-music-box",
+    "name": "Music box",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Tiny steel tines plink high along with your voice inside a little wooden box.",
+    "tags": ["music box", "tiny", "sweet"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "music-box", "pitch": 12, "strike": 70, "mix": 75 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-thunder-sheet",
+    "name": "Theatre thunder sheet",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "A huge stage thunder sheet rumbles and clangs with each word, a slow swirl running through it.",
+    "tags": ["metal", "thunder", "theatre", "clang"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "metal-plate", "pitch": -12, "decay": 3, "strike": 70, "mix": 60 } },
+      { "m": "mod.flanger", "p": { "rate": 0.1, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-handbells",
+    "name": "Handbell choir",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "A table of small high bells rung by several hands every time you speak.",
+    "tags": ["handbells", "high", "choir", "festive"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "pitch": 12, "decay": 0.8, "strike": 90, "mix": 65 } },
+      { "m": "stereo.double", "p": { "timing": 35, "pitch": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-ice-crystal",
+    "name": "Ice crystal chimes",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Only the brightest notes of your voice freeze into ringing ice that rises in a shimmer.",
+    "tags": ["ice", "crystal", "glass", "shimmer"],
+    "chain": [
+      { "m": "spec.crystal", "p": { "peaks": 16, "sustain": 1800, "sparkle": 70 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-bells-ringing-comb",
+    "name": "Ringing chord comb",
+    "cat": "instruments",
+    "sub": "Bells, glass and metal",
+    "about": "Your voice is tuned through a ringing major chord, a metallic choir in a soft hall.",
+    "tags": ["comb", "chord", "metallic"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 220, "chord": "major", "sharpness": 75, "ring": 70 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-marimba",
+    "name": "Wooden marimba bars",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "Warm wooden bars knock and hum under every syllable you speak.",
+    "tags": ["marimba", "wood", "warm", "percussion"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wood-bars", "strike": 85, "decay": 0.6, "mix": 70 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-box-drum",
+    "name": "Hollow wooden box drum",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "You talk into a box drum and every word thumps its hollow wooden body.",
+    "tags": ["box drum", "wood", "thump", "percussion"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wood-box", "strike": 90, "mix": 65 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "attack": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-long-tube",
+    "name": "Long hollow tube",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "Your voice hoots down a long open pipe that hums its own low notes.",
+    "tags": ["tube", "pipe", "hollow", "low"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "long-tube", "pitch": -12, "decay": 1.5, "mix": 70 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-bottle-blow",
+    "name": "Blowing across a bottle",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "Your words become breath whistling over the neck of a glass bottle.",
+    "tags": ["bottle", "breath", "whistle", "hollow"],
+    "chain": [
+      { "m": "spec.whisper", "p": {} },
+      { "m": "spec.comb", "p": { "base": 330, "chord": "one", "sharpness": 85, "ring": 85 } },
+      { "m": "space.reverb", "p": { "size": 25, "decay": 0.8, "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-didgeridoo",
+    "name": "Didgeridoo-like drone",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "A deep buzzing drone through a long wooden tube, your words riding on top.",
+    "tags": ["drone", "tube", "buzz", "deep"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 45, "rough": 25 } },
+      { "m": "synth.resonator", "p": { "object": "long-tube", "pitch": -19, "decay": 1.2, "strike": 10, "mix": 65 } },
+      { "m": "synth.am", "p": { "rate": 6, "depth": 25, "jitter": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-wood-tongue-drum",
+    "name": "Wooden tongue drum",
+    "cat": "instruments",
+    "sub": "Wood, tubes and drums",
+    "about": "Low round wooden tongues ring softly with your words in a big quiet room.",
+    "tags": ["tongue drum", "wood", "soft", "round"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wood-bars", "pitch": -7, "decay": 1.4, "strike": 70, "brightness": 35, "mix": 60 } },
+      { "m": "space.reverb", "p": { "size": 65, "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-harp",
+    "name": "Plucked harp strings",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "High harp strings are plucked with every word and ring along with your voice.",
+    "tags": ["harp", "strings", "pluck", "bright"],
+    "chain": [
+      { "m": "synth.strings", "p": { "register": "high", "decay": 4, "pluck": 85, "brightness": 70, "mix": 65 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-sitar",
+    "name": "Sitar-like buzzing strings",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Drone strings buzz against a curved bridge and shimmer around your voice.",
+    "tags": ["sitar", "drone", "buzz", "strings"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "drone", "key": "D", "decay": 6, "buzz": 70, "pluck": 60, "mix": 65 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-concert-grand",
+    "name": "Concert grand, pedal down",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "You talk into a concert grand with the sustain pedal held, and its low strings ring back in the hall.",
+    "tags": ["piano", "strings", "sustain", "hall"],
+    "chain": [
+      { "m": "synth.strings", "p": { "register": "low", "decay": 10, "pluck": 25, "brightness": 55, "mix": 55 } },
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-dark-minor-harp",
+    "name": "Dark minor harp",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Low, soft-plucked minor strings follow every word like a sad ballad.",
+    "tags": ["harp", "minor", "dark", "low"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "minor", "key": "A", "register": "low", "pluck": 90, "brightness": 40, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-open-fifths",
+    "name": "Open fifths drone strings",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Low open fifths ring on and on behind you and rise in a heavenly shimmer.",
+    "tags": ["drone", "fifths", "strings", "open"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "fifths", "register": "low", "decay": 7, "pluck": 15, "mix": 55 } },
+      { "m": "space.shimmer", "p": { "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-bright-zither",
+    "name": "Bright zither",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Sharp high strings snap with a hard pick and a little bridge buzz on every syllable.",
+    "tags": ["zither", "bright", "pluck", "strings"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "sus", "key": "G", "register": "high", "decay": 2, "brightness": 95, "pluck": 100, "buzz": 20, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-twelve-string",
+    "name": "Twelve-string shimmer",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Octave strings strummed in pairs, wide and chorused like a jangly guitar.",
+    "tags": ["guitar", "twelve string", "jangle", "chorus"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "octaves", "register": "high", "pluck": 70 } },
+      { "m": "mod.chorus", "p": { "depth": 55, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-minor-seventh",
+    "name": "Minor seventh strings",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "A mellow jazzy minor seventh chord rings and trembles under your words.",
+    "tags": ["jazz", "minor seventh", "mellow", "strings"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "minor7", "key": "Bb", "decay": 5, "brightness": 50 } },
+      { "m": "mod.tremolo", "p": { "rate": 4, "depth": 30, "phase": 90 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-bowed-minor",
+    "name": "Bowed minor strings",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "A section of bowed strings swells along with you on a minor chord, with gentle vibrato.",
+    "tags": ["strings", "bowed", "minor", "orchestra"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "strings-minor", "decay": 1.8, "strike": 0, "mix": 70 } },
+      { "m": "pitch.vibrato", "p": { "depth": 20 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-strings-spooky-cluster",
+    "name": "Spooky cluster harp",
+    "cat": "instruments",
+    "sub": "Strings and plucks",
+    "about": "Clashing harp strings in a tight cluster jangle eerily after every word.",
+    "tags": ["harp", "cluster", "eerie", "dissonant"],
+    "chain": [
+      { "m": "synth.strings", "p": { "chord": "cluster", "decay": 5, "pluck": 80, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-rotating-organ",
+    "name": "Organ through a rotating speaker",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "A drawbar organ plays your words while the speaker cabinet spins up to full speed.",
+    "tags": ["organ", "rotating speaker", "swirl"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "organ", "chord": "minor7" } },
+      { "m": "mod.rotary", "p": { "drive": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-cathedral-organ",
+    "name": "Cathedral pipe organ",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "A huge low organ chord speaks your words and rolls around a cathedral.",
+    "tags": ["organ", "cathedral", "huge", "church"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "organ", "chord": "stack", "register": "low", "smoothing": 50 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-fairground-organ",
+    "name": "Fairground organ",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "A bright wheezing band organ plays your words at a busy fair at night.",
+    "tags": ["organ", "carnival", "fair", "bright"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "organ", "chord": "major", "register": "high", "key": "g" } },
+      { "m": "mod.tremolo", "p": { "rate": 7, "depth": 35 } }
+    ],
+    "bed": { "b": "carnival", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-electric-piano",
+    "name": "Electric piano dream",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "Soft electric piano tines ring with your voice, wobbling gently from ear to ear.",
+    "tags": ["electric piano", "dreamy", "soft", "keys"],
+    "chain": [
+      { "m": "synth.strings", "p": { "decay": 3.5, "pluck": 70, "brightness": 50, "mix": 60 } },
+      { "m": "mod.tremolo", "p": { "rate": 4.5, "depth": 40, "phase": 180 } },
+      { "m": "mod.chorus", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-toy-piano",
+    "name": "Toy piano",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "Plinky little piano notes ring out of a tiny plastic speaker.",
+    "tags": ["toy", "piano", "tiny", "plinky"],
+    "chain": [
+      { "m": "synth.strings", "p": { "register": "high", "decay": 1.2, "brightness": 90, "pluck": 100, "mix": 65 } },
+      { "m": "lofi.speaker", "p": { "size": "toy" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-keys-squeezebox",
+    "name": "Wheezy squeezebox",
+    "cat": "instruments",
+    "sub": "Keys and organs",
+    "about": "A reedy accordion-like chord breathes in and out as it says your words.",
+    "tags": ["accordion", "reedy", "chord", "folk"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "pulse", "chord": "major", "key": "f" } },
+      { "m": "mod.tremolo", "p": { "rate": 6, "depth": 25 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-bass",
+    "name": "Bass synth",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A deep filtered saw bass plays your words like a low robot groove.",
+    "tags": ["bass", "synth", "deep", "low"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "single", "register": "low", "bands": 16 } },
+      { "m": "tone.filter", "p": { "freq": 700, "resonance": 50 } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-theremin",
+    "name": "Theremin-like glide",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A thin eerie tone swoops and wavers along with the tune of your voice.",
+    "tags": ["theremin", "glide", "eerie", "sci-fi"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12 } },
+      { "m": "spec.thin", "p": { "threshold": -8 } },
+      { "m": "pitch.vibrato", "p": { "rate": 6, "depth": 50, "delay": 200 } },
+      { "m": "tone.filter", "p": { "freq": 3000, "resonance": 10 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-trance-lead",
+    "name": "Trance supersaw lead",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "Huge detuned saws say your words on the offbeat with echoes trailing behind.",
+    "tags": ["trance", "supersaw", "dance", "lead"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "supersaw", "chord": "single", "register": "high" } },
+      { "m": "mod.gate", "p": { "pattern": "offbeat", "tempo": 138 } },
+      { "m": "echo.delay", "p": { "division": "dotted", "tempo": 138, "feedback": 45, "mix": 28 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 3, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-acid",
+    "name": "Squelchy acid bass",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A rubbery low saw squelches and squeals as a filter opens on your loud words.",
+    "tags": ["acid", "bass", "squelch", "dance"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "single", "register": "low" } },
+      { "m": "mod.autowah", "p": { "sensitivity": 80, "resonance": 90, "low": 200, "high": 3000 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-brass-stabs",
+    "name": "Synth brass stabs",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "Punchy saw-brass power chords stab out each word with a gated room burst.",
+    "tags": ["brass", "stabs", "eighties", "punchy"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "supersaw", "chord": "power", "smoothing": 10 } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 6, "attack": 2 } },
+      { "m": "space.gated", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-wobble-bass",
+    "name": "Wobbling bass synth",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A low octave saw bass wobbles as a resonant filter swings open and shut.",
+    "tags": ["wobble", "bass", "dance", "filter"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "chord": "octaves", "register": "low" } },
+      { "m": "tone.filter", "p": { "freq": 800, "resonance": 55, "sweep": "lfo", "rate": 3, "range": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-arcade-arpeggio",
+    "name": "Arcade arpeggio singer",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "Your speech races up and down a chord in crunchy four-bit sound, like an old arcade tune.",
+    "tags": ["arcade", "8-bit", "arpeggio", "game"],
+    "chain": [
+      { "m": "pitch.arp", "p": { "rate": 10, "range": 2, "glide": 0 } },
+      { "m": "lofi.crush", "p": { "bits": 4, "rate": 11000 } },
+      { "m": "echo.delay", "p": { "time": 90, "feedback": 20, "stereo": "mono", "mix": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-chip-lead",
+    "name": "Chip lead that follows you",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A buzzy game-console pulse sings your tune on a major scale, then gets crunched.",
+    "tags": ["chip", "8-bit", "game", "lead"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "chip", "scale": "major", "glide": 0, "register": "high" } },
+      { "m": "lofi.crush", "p": { "bits": 5, "rate": 22050 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-synth-musical-saw",
+    "name": "Singing musical saw",
+    "cat": "instruments",
+    "sub": "Synths and leads",
+    "about": "A pure bending tone slides between every note you speak with a wide, weepy vibrato.",
+    "tags": ["musical saw", "glide", "vibrato", "eerie"],
+    "chain": [
+      { "m": "synth.talkbox", "p": { "instrument": "square", "scale": "chromatic", "register": "high", "glide": 300, "brightness": 0, "consonants": 20 } },
+      { "m": "pitch.vibrato", "p": { "rate": 5, "depth": 60, "delay": 250 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-frozen",
+    "name": "Frozen voice pad",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Moments of your voice are caught and held ringing into a soft frozen pad.",
+    "tags": ["pad", "freeze", "ambient", "sustain"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "hold": 2000, "interval": 1500, "blend": 80 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 6, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-endless",
+    "name": "Endless ambient pad",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Your words stretched four times longer into a slow, glowing cloud of sound.",
+    "tags": ["ambient", "stretch", "pad", "slow"],
+    "chain": [
+      { "m": "spec.paul", "p": { "factor": 4, "window": 0.4 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 5, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-harmony-choir",
+    "name": "Four-part choir of you",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Four extra singers made from your voice fill out a big chord in a stone church.",
+    "tags": ["choir", "harmony", "church", "voices"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "big-choir", "voices": 4 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-angel",
+    "name": "Angel pad shimmer",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Your voice rises in octaves and fifths into a smeared, heavenly halo.",
+    "tags": ["angelic", "shimmer", "pad", "heavenly"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 40 } },
+      { "m": "space.shimmer", "p": { "interval": "octfifth", "amount": 85, "decay": 6, "mix": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-hum-drone",
+    "name": "Humming drone pad",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Your voice tuned to one low note and smeared into a humming drone.",
+    "tags": ["drone", "hum", "pad", "low"],
+    "chain": [
+      { "m": "spec.comb", "p": { "chord": "one", "sharpness": 80, "ring": 85 } },
+      { "m": "spec.blur", "p": { "amount": 60, "time": 2000 } },
+      { "m": "space.reverb", "p": { "decay": 4, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-pad-grain-cloud",
+    "name": "Grain cloud choir",
+    "cat": "instruments",
+    "sub": "Choirs and pads",
+    "about": "Your voice scattered into long overlapping grains that float like a soft choir.",
+    "tags": ["granular", "choir", "cloud", "ambient"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 220, "density": 60, "spread": 35, "scatter": 400 } },
+      { "m": "space.reverb", "p": { "decay": 4, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-kazoo-band",
+    "name": "Kazoo band",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "A whole buzzing kazoo band plays along with you in the living room.",
+    "tags": ["kazoo", "band", "buzz", "funny"],
+    "chain": [
+      { "m": "synth.kazoo", "p": {} },
+      { "m": "stereo.double", "p": { "copies": 3, "timing": 30, "pitch": 25 } },
+      { "m": "space.room", "p": { "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-comb-busker",
+    "name": "Comb and paper busker",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "Tissue paper on a comb buzzes out your tune on a street corner while the city goes by.",
+    "tags": ["comb", "paper", "busker", "street"],
+    "chain": [
+      { "m": "synth.kazoo", "p": { "type": "comb", "buzz": 60 } },
+      { "m": "tone.compress", "p": { "threshold": -26, "ratio": 4, "attack": 0.5, "release": 80 } },
+      { "m": "space.room", "p": { "space": "alley", "mix": 20 } }
+    ],
+    "bed": { "b": "city-street", "level": -22 },
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-kazoo-duet",
+    "name": "Big and small kazoo duet",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "A tuba-sized kazoo and a tiny one blart out your words together, an octave apart.",
+    "tags": ["kazoo", "duet", "octave", "funny"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "octaves", "mix": 55 } },
+      { "m": "synth.kazoo", "p": { "type": "giant" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-mouth-harp-drone",
+    "name": "Droning mouth harp",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "A twangy jaw harp holds one droning note and boings and wahs through everything you say.",
+    "tags": ["jaw harp", "drone", "twang", "funny"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 98, "chord": "one", "ring": 50, "mix": 40 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "harp", "rate": 4, "resonance": 65 } },
+      { "m": "synth.am", "p": { "rate": 110, "depth": 30, "shape": "triangle" } },
+      { "m": "tone.compress", "p": { "attack": 1, "release": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-rubber-band",
+    "name": "Twangy rubber band",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "Low slack strings boing and wobble like a rubber band plucked with every word.",
+    "tags": ["rubber band", "twang", "wobble", "funny"],
+    "chain": [
+      { "m": "synth.strings", "p": { "register": "low", "decay": 0.6, "pluck": 100, "brightness": 30, "mix": 65 } },
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "instruments-toy-jug-band",
+    "name": "Jug band blower",
+    "cat": "instruments",
+    "sub": "Toy and novelty instruments",
+    "about": "Your buzzing lips boom into a big clay jug like an old porch band.",
+    "tags": ["jug", "buzz", "low", "folk"],
+    "chain": [
+      { "m": "synth.kazoo", "p": { "type": "giant", "buzz": 40 } },
+      { "m": "synth.resonator", "p": { "object": "long-tube", "pitch": -14, "decay": 0.8, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 20 } }
+    ],
+    "seed": 1
+  }
+]

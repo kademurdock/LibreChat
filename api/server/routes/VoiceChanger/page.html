@@ -1,0 +1,251 @@
+<!doctype html><html lang="en"><head><title>Voice Changer — Kade-AI</title>
+<!-- KADE_SHARED_HEAD -->
+<meta name="vc-engine-base" content="__VC_ENGINE_BASE__">
+<style>
+  /* Voice Changer (Oct 22 2026). Screen reader first: real labelled controls, ONE live
+     region (#status), nothing plays until someone asks. Wide screens get two columns that
+     read in the same order they look (left column top to bottom, then the right). */
+  body { max-width: 1180px; }
+  .card h2 { margin-top: 0; }
+  .layout { display: block; }
+  @media (min-width: 960px) {
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 1.25rem; align-items: start; }
+  }
+  .status { position: sticky; top: .4rem; z-index: 20; margin: .8rem 0; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  .note { padding: .6rem .8rem; border-radius: 10px; background: #eef3ff; color: #1b3a7a; margin: .6rem 0; }
+  label.field, .fieldname { display: block; font-weight: 600; margin: .8rem 0 .25rem; }
+  .hint { font-size: .9rem; opacity: .82; margin: .2rem 0 .4rem; }
+  input[type=text], input[type=search], select, textarea {
+    width: 100%; font: inherit; padding: .6rem .7rem; border-radius: 10px;
+    border: 1px solid #b9bfc9; background: #fff; color: inherit; min-height: 2.75rem;
+  }
+  select[size] { min-height: 16rem; padding: .3rem; }
+  select[size] option { padding: .35rem .5rem; border-radius: 6px; }
+  select[size] optgroup { font-weight: 700; }
+  textarea { min-height: 7rem; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .88rem; }
+  input[type=file] { font: inherit; margin: .2rem 0 .4rem; max-width: 100%; }
+  button.act {
+    font: inherit; font-weight: 700; padding: .7rem 1.05rem; border-radius: 10px; min-height: 2.9rem;
+    border: 1px solid #1d55d0; background: #fff; color: #1d55d0; cursor: pointer; margin: .35rem .4rem .2rem 0;
+  }
+  button.act.primary { background: #1f7a49; border-color: #1f7a49; color: #fff; }
+  button.act.quiet { border-color: #8a919c; color: inherit; font-weight: 600; }
+  button.act.small { padding: .45rem .75rem; min-height: 2.4rem; font-size: .92rem; }
+  button.act[aria-pressed="true"] { background: #1d55d0; color: #fff; }
+  button.act.rec[aria-pressed="true"] { background: #b3261e; border-color: #b3261e; color: #fff; }
+  button.act[disabled] { opacity: .55; cursor: default; }
+  select[disabled], input[disabled] { opacity: .55; }
+  button.act:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+    outline: 3px solid #ffbf47; outline-offset: 2px;
+  }
+  .btnrow { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .1rem; }
+  .line { margin: .5rem 0; font-weight: 600; }
+  .about { min-height: 1.5em; margin: .6rem 0 .2rem; }
+  .notes { font-size: .9rem; opacity: .85; margin: .2rem 0; }
+  .elapsed { font-variant-numeric: tabular-nums; font-weight: 700; color: #b3261e; margin-left: .4rem; }
+  details > summary { cursor: pointer; list-style-position: outside; }
+  details > summary h2, details > summary h3 { display: inline; margin: 0; }
+  details.chain { margin-top: 1.2rem; border-top: 1px solid #e3e6ea; padding-top: .8rem; }
+  .slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .1rem .8rem; margin: .55rem 0; }
+  .slider label { font-weight: 600; grid-column: 1 / -1; }
+  .slider input[type=range] { width: 100%; min-height: 2.4rem; accent-color: #1d55d0; }
+  .slider .val { min-width: 9.5rem; text-align: right; font-variant-numeric: tabular-nums; font-size: .92rem; opacity: .85; }
+  fieldset { border: 1px solid #d9dde3; border-radius: 12px; padding: .7rem .9rem .9rem; margin: .9rem 0; min-width: 0; }
+  legend { font-weight: 700; padding: 0 .35rem; }
+  .check { display: flex; align-items: center; gap: .55rem; margin: .55rem 0; font-weight: 600; }
+  .check input { width: 1.3rem; height: 1.3rem; accent-color: #1d55d0; }
+  .twocol { display: grid; grid-template-columns: 1fr; gap: 0 1rem; }
+  @media (min-width: 560px) { .twocol { grid-template-columns: 1fr 1fr; } }
+  ol.stages { padding-left: 0; list-style: none; margin: .4rem 0; }
+  ol.stages > li > fieldset { background: #fafbfc; }
+  ol.stages > li.off > fieldset { opacity: .7; border-style: dashed; }
+  ol.stages .stageabout { font-size: .9rem; opacity: .82; margin: 0 0 .3rem; }
+  progress { width: 100%; height: 1.1rem; margin: .5rem 0; accent-color: #1f7a49; }
+  .saved a { font-weight: 700; }
+  @media (prefers-color-scheme: dark) {
+    input[type=text], input[type=search], select, textarea { background: #1e2127; border-color: #3a3f49; }
+    button.act { background: #1e2127; color: #8fb4ff; border-color: #5b8def; }
+    button.act.quiet { color: inherit; border-color: #5d6470; }
+    button.act.primary { background: #1f7a49; border-color: #1f7a49; color: #fff; }
+    button.act[aria-pressed="true"] { background: #2f5fc4; color: #fff; }
+    button.act.rec[aria-pressed="true"] { background: #b3261e; border-color: #b3261e; color: #fff; }
+    .note { background: #1b2a4a; color: #cfe0ff; }
+    fieldset { border-color: #3a3f49; }
+    ol.stages > li > fieldset { background: #1a1d22; }
+    details.chain { border-top-color: #2c2f37; }
+    .elapsed { color: #ff8a80; }
+  }
+</style>
+</head>
+<body>
+  <p><a class="back" href="/home" aria-label="Back to home">&larr; Home</a></p>
+  <h1>Voice Changer</h1>
+  <p class="muted">Everything runs on your own device and is free.</p>
+
+  <div id="status" class="status" role="status" aria-live="polite">Loading voices&hellip;</div>
+
+  <p id="signedOut" class="note" hidden>You are not signed in. The sample voices and every effect still work, and you can download what you make. To save to My Creations, keep favorites on every device or save your own presets, <a href="/login?redirect_to=%2Fvoice-changer">sign in</a> and come back.</p>
+
+  <div class="layout">
+    <div class="col">
+      <section class="card" aria-labelledby="h-voice">
+        <h2 id="h-voice">Your voice</h2>
+        <div class="btnrow">
+          <button type="button" class="act rec primary" id="recBtn" aria-pressed="false">Record</button>
+          <span class="elapsed" id="recElapsed" aria-hidden="true"></span>
+        </div>
+        <p class="hint" id="recHint">Press Record, talk, then press it again to stop. Up to 3 minutes. Your microphone is recorded plain, with no noise cleaning, so the effects hear your real voice.</p>
+        <label class="field" for="fileIn">Upload a file (sound or video)</label>
+        <input type="file" id="fileIn" accept="audio/*,video/*">
+        <p class="fieldname" id="samplesLabel">Use a sample voice</p>
+        <div class="btnrow" id="samples" role="group" aria-labelledby="samplesLabel"></div>
+        <p class="line" id="takeLine">No recording yet.</p>
+        <button type="button" class="act quiet" id="playTake" disabled>Play your recording</button>
+      </section>
+
+      <section class="card" aria-labelledby="h-pick">
+        <h2 id="h-pick">Pick a voice</h2>
+        <label class="field" for="search">Search voices</label>
+        <input type="search" id="search" autocomplete="off" spellcheck="false" aria-describedby="searchHint">
+        <p class="hint" id="searchHint">Type a word like robot, cave or radio. Press Enter to go to the voices found.</p>
+        <label class="field" for="listSel">List</label>
+        <select id="listSel" disabled><option value="">Loading voices&hellip;</option></select>
+        <label class="field" for="presetList" id="presetListLabel">Voices</label>
+        <select id="presetList" size="12" aria-describedby="presetKeys" disabled></select>
+        <p class="hint" id="presetKeys">Space plays or stops the preview. Enter makes the full version. Escape stops all sound.</p>
+        <p class="about" id="about">Loading voices&hellip;</p>
+        <p class="notes" id="notes" hidden></p>
+        <div class="btnrow">
+          <button type="button" class="act" id="pvPlay">Play preview</button>
+          <button type="button" class="act quiet" id="pvStop">Stop</button>
+          <button type="button" class="act quiet" id="surpriseBtn">Surprise me</button>
+          <button type="button" class="act quiet" id="freshBtn">Brand new random voice</button>
+          <button type="button" class="act quiet" id="favBtn" aria-pressed="false">Add to favorites</button>
+          <button type="button" class="act quiet" id="origBtn">Hear the original</button>
+        </div>
+        <fieldset>
+          <legend>Preview settings</legend>
+          <label class="check"><input type="checkbox" id="autoPv" checked> Play each voice as I move to it</label>
+          <div class="twocol">
+            <div>
+              <label class="field" for="pvLen">Preview length</label>
+              <select id="pvLen">
+                <option value="4">4 seconds</option>
+                <option value="6" selected>6 seconds</option>
+                <option value="10">10 seconds</option>
+                <option value="20">20 seconds</option>
+                <option value="whole">The whole take</option>
+              </select>
+            </div>
+            <div>
+              <label class="field" for="pvDelay">Pause before preview</label>
+              <select id="pvDelay">
+                <option value="0">None</option>
+                <option value="250">Short</option>
+                <option value="450" selected>Medium</option>
+                <option value="800">Long</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card" aria-labelledby="h-fine">
+        <details id="fineBox" open>
+          <summary><h2 id="h-fine">Fine-tune</h2></summary>
+          <p class="hint">These change whichever voice you pick. Reset all tweaks puts them back.</p>
+          <div class="slider"><label for="m-pitch">Pitch</label><input type="range" id="m-pitch" data-macro="pitch" min="-24" max="24" step="0.5" value="0"><span class="val" aria-hidden="true"></span></div>
+          <div class="slider"><label for="m-timbre">Timbre</label><input type="range" id="m-timbre" data-macro="timbre" min="-12" max="12" step="0.5" value="0"><span class="val" aria-hidden="true"></span></div>
+          <div class="slider"><label for="m-speed">Speed</label><input type="range" id="m-speed" data-macro="speed" min="0.5" max="2" step="0.05" value="1"><span class="val" aria-hidden="true"></span></div>
+          <div class="slider"><label for="m-amount">Effect strength</label><input type="range" id="m-amount" data-macro="amount" min="0" max="100" step="1" value="100"><span class="val" aria-hidden="true"></span></div>
+          <div class="slider"><label for="m-width">Stereo width</label><input type="range" id="m-width" data-macro="width" min="0" max="200" step="5" value="100"><span class="val" aria-hidden="true"></span></div>
+          <div class="slider"><label for="m-volume">Volume</label><input type="range" id="m-volume" data-macro="volume" min="-12" max="6" step="0.5" value="0"><span class="val" aria-hidden="true"></span></div>
+
+          <label class="field" for="bedSel">Background</label>
+          <select id="bedSel"><option value="none">None</option></select>
+          <div class="slider"><label for="bedLevel">Background level</label><input type="range" id="bedLevel" min="-40" max="0" step="1" value="-20" disabled><span class="val" aria-hidden="true"></span></div>
+
+          <fieldset id="sideBox">
+            <legend>Other sound</legend>
+            <p class="hint" id="sideNote">Some effects mix your voice with a second sound, so your words come out of a storm, a song or a guitar.</p>
+            <label class="field" for="sideSel">Other sound to mix with your voice</label>
+            <select id="sideSel" aria-describedby="sideNote">
+              <option value="none">None</option>
+              <option value="rec">Record a second sound</option>
+              <option value="file">Upload a second sound</option>
+            </select>
+            <div id="sideRecRow" class="btnrow" hidden>
+              <button type="button" class="act rec" id="sideRecBtn" aria-pressed="false">Record the other sound</button>
+              <span class="elapsed" id="sideElapsed" aria-hidden="true"></span>
+            </div>
+            <div id="sideFileRow" hidden>
+              <label class="field" for="sideFile">Choose the other sound file</label>
+              <input type="file" id="sideFile" accept="audio/*,video/*">
+            </div>
+            <p class="line" id="sideLine">No other sound.</p>
+          </fieldset>
+          <button type="button" class="act quiet" id="resetBtn">Reset all tweaks</button>
+
+          <details class="chain" id="chainBox">
+            <summary><h3 id="h-chain">Effect chain</h3></summary>
+            <p class="line" id="chainName"></p>
+            <div class="btnrow">
+              <button type="button" class="act quiet small" id="undoBtn" disabled>Undo</button>
+              <button type="button" class="act quiet small" id="redoBtn" disabled>Redo</button>
+              <button type="button" class="act quiet small" id="copyBtn">Copy chain</button>
+            </div>
+            <ol class="stages" id="chainList" aria-labelledby="h-chain"></ol>
+            <label class="field" for="addSel">Add an effect</label>
+            <select id="addSel"></select>
+            <p class="hint" id="addAbout"></p>
+            <button type="button" class="act small" id="addBtn">Add</button>
+
+            <fieldset>
+              <legend>Save as my preset</legend>
+              <label class="field" for="presetName">Preset name</label>
+              <input type="text" id="presetName" maxlength="60" autocomplete="off">
+              <label class="check"><input type="checkbox" id="presetShare"> Share with everyone</label>
+              <button type="button" class="act" id="presetSave" aria-describedby="presetSaveNote">Save</button>
+              <p class="hint" id="presetSaveNote" hidden>Saving presets needs you to be signed in.</p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Import or export a preset</legend>
+              <label class="field" for="ioText">Preset as text</label>
+              <textarea id="ioText" spellcheck="false" aria-describedby="ioHint"></textarea>
+              <p class="hint" id="ioHint">Export puts the current voice in this box as text you can copy. Paste a preset here and press Import to use it.</p>
+              <button type="button" class="act quiet small" id="exportBtn">Export to the box</button>
+              <button type="button" class="act quiet small" id="importBtn">Import from the box</button>
+            </fieldset>
+          </details>
+        </details>
+      </section>
+
+      <section class="card" aria-labelledby="h-make">
+        <h2 id="h-make">Make it</h2>
+        <div class="btnrow">
+          <button type="button" class="act primary" id="makeBtn">Make the full version</button>
+          <button type="button" class="act quiet" id="makeCancel" hidden>Stop making it</button>
+        </div>
+        <label class="field" for="makeProg">Progress</label>
+        <progress id="makeProg" max="100" value="0"></progress>
+        <p class="line" id="fullLine">Nothing made yet.</p>
+        <button type="button" class="act" id="fullPlay" disabled>Play</button>
+        <label class="field" for="title">Title</label>
+        <input type="text" id="title" maxlength="80" autocomplete="off">
+        <div class="btnrow">
+          <button type="button" class="act primary" id="saveBtn" disabled aria-describedby="saveNote">Save to My Creations</button>
+          <button type="button" class="act quiet" id="dlBtn" disabled>Download WAV</button>
+        </div>
+        <p class="hint" id="saveNote" hidden>Saving to My Creations needs you to be signed in. Download still works.</p>
+        <p class="saved" id="savedLine" hidden></p>
+      </section>
+    </div>
+  </div>
+
+  <footer class="muted">Saved takes land in <a href="/my-creations">My Creations</a>, where they can be downloaded and shared. &mdash; &copy; 2026 Kade Murdock &middot; Kade-AI</footer>
+
+  <script><!-- KADE_CLIENT_SCRIPT --></script>
+</body></html>

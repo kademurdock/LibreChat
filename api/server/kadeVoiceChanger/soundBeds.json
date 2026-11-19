@@ -1,0 +1,471 @@
+{
+  "about": "Recorded background sounds for the Voice Changer: the platform’s own ambience loops (made with AI sound models, or synthesized), one per place, the newest version of each. Names are plain descriptions; no town or shop names.",
+  "groups": [
+    {
+      "id": "weather",
+      "name": "Weather"
+    },
+    {
+      "id": "water",
+      "name": "Water"
+    },
+    {
+      "id": "fire",
+      "name": "Fire"
+    },
+    {
+      "id": "nature",
+      "name": "Nature"
+    },
+    {
+      "id": "places",
+      "name": "Places outdoors"
+    },
+    {
+      "id": "indoors",
+      "name": "Indoors"
+    }
+  ],
+  "beds": [
+    {
+      "id": "rain-from-a-shelter",
+      "name": "Rain dripping from a shelter",
+      "group": "weather",
+      "about": "Steady gentle rain pattering on a porch roof and dripping from the eaves.",
+      "url": "/assets/sounds/reverie/waterfront204/amb.weather.rain.m4a",
+      "seconds": 19.4,
+      "channels": 2,
+      "bytes": 319779,
+      "made": "ai"
+    },
+    {
+      "id": "river-spillway",
+      "name": "A river spillway",
+      "group": "water",
+      "about": "A broad soft rush of shallow water over worn stone, outdoors.",
+      "url": "/assets/sounds/reverie/canal299/amb.canal.water.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 608696,
+      "made": "ai"
+    },
+    {
+      "id": "park-fountain",
+      "name": "A park fountain up close",
+      "group": "water",
+      "about": "Water falling over stone into a basin, bright and splashy.",
+      "url": "/assets/sounds/reverie/places298/amb.fountain.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 492776,
+      "made": "ai"
+    },
+    {
+      "id": "dripping-alley",
+      "name": "Pipes dripping in a brick alley",
+      "group": "water",
+      "about": "Slow drips onto stone and into a puddle, with a close brick echo.",
+      "url": "/assets/sounds/reverie/places298/amb.coldpipe.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 492238,
+      "made": "ai"
+    },
+    {
+      "id": "river-dock",
+      "name": "Water at a river dock",
+      "group": "water",
+      "about": "Water lapping wooden pilings, reeds on the far bank, a loose rope tapping a post.",
+      "url": "/assets/sounds/reverie/waterfront204/amb.ropewalk.water.m4a",
+      "seconds": 19.4,
+      "channels": 2,
+      "bytes": 315649,
+      "made": "ai"
+    },
+    {
+      "id": "water-under-a-dock",
+      "name": "Gentle water under a dock",
+      "group": "water",
+      "about": "Quiet river water lapping beneath a wooden dock, a rope tapping now and then.",
+      "url": "/assets/sounds/reverie/waterfront204/amb.reeds.breeze.m4a",
+      "seconds": 19.4,
+      "channels": 2,
+      "bytes": 316921,
+      "made": "ai"
+    },
+    {
+      "id": "woodland-creek",
+      "name": "A woodland creek",
+      "group": "water",
+      "about": "A shallow creek trickling over stones, with a few birds.",
+      "url": "/assets/sounds/reverie/world153/amb.creek.bank.m4a",
+      "seconds": 29.25,
+      "channels": 1,
+      "bytes": 361972,
+      "made": "ai"
+    },
+    {
+      "id": "harbor-boats",
+      "name": "A harbor with boats creaking",
+      "group": "water",
+      "about": "Water on pilings and boats creaking at their moorings.",
+      "url": "/assets/sounds/reverie/levels173/amb.hook.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 490801,
+      "made": "ai"
+    },
+    {
+      "id": "small-campfire",
+      "name": "A small campfire",
+      "group": "fire",
+      "about": "A calm wood fire, soft crackles and small pops.",
+      "url": "/assets/sounds/reverie/world153/amb.camp.fire.m4a",
+      "seconds": 19.25,
+      "channels": 1,
+      "bytes": 268299,
+      "made": "ai"
+    },
+    {
+      "id": "woods-by-day",
+      "name": "Woods by day",
+      "group": "nature",
+      "about": "Leaves rustling overhead and small birds at different distances.",
+      "url": "/assets/sounds/reverie/world153/amb.woods.day.m4a",
+      "seconds": 29.25,
+      "channels": 1,
+      "bytes": 360705,
+      "made": "ai"
+    },
+    {
+      "id": "woods-at-night",
+      "name": "Woods at night",
+      "group": "nature",
+      "about": "Crickets and leaves in a light breeze, with an owl now and then.",
+      "url": "/assets/sounds/reverie/world153/amb.woods.night.m4a",
+      "seconds": 14.06,
+      "channels": 1,
+      "bytes": 172819,
+      "made": "ai"
+    },
+    {
+      "id": "riverbank-birds",
+      "name": "A riverbank with birds",
+      "group": "nature",
+      "about": "A river running past a grassy bank, wind in big trees, water birds calling.",
+      "url": "/assets/sounds/reverie/places298/amb.sweetwater.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487690,
+      "made": "ai"
+    },
+    {
+      "id": "tractor-far-off",
+      "name": "A tractor far across the fields",
+      "group": "nature",
+      "about": "One distant engine droning over open country.",
+      "url": "/assets/sounds/reverie/levels173/amb.longacre.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 492407,
+      "made": "ai"
+    },
+    {
+      "id": "pigeons-in-a-square",
+      "name": "Pigeons in a brick square",
+      "group": "places",
+      "about": "Pigeons cooing and fluttering on ledges, a breeze, distant town traffic.",
+      "url": "/assets/sounds/reverie/places298/amb.bellward.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 492994,
+      "made": "ai"
+    },
+    {
+      "id": "lawn-sprinklers",
+      "name": "Lawn sprinklers on a quiet street",
+      "group": "places",
+      "about": "Lawn sprinklers ticking round over an empty street, an air conditioner far off.",
+      "url": "/assets/sounds/reverie/levels173/amb.fairlawn.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 489401,
+      "made": "ai"
+    },
+    {
+      "id": "lantern-under-an-arch",
+      "name": "A lantern hissing under an arch",
+      "group": "places",
+      "about": "A gas lantern hissing under a stone arch, pigeons on the stonework, a draught.",
+      "url": "/assets/sounds/reverie/levels173/amb.gate.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 502647,
+      "made": "ai"
+    },
+    {
+      "id": "iron-gate-in-a-draught",
+      "name": "An old iron gate in a draught",
+      "group": "places",
+      "about": "A heavy iron gate creaking on its hinges in a slow draught, outdoors.",
+      "url": "/assets/sounds/reverie/places298/amb.gate.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487948,
+      "made": "ai"
+    },
+    {
+      "id": "lanterns-at-night",
+      "name": "Lanterns at night, almost silent",
+      "group": "places",
+      "about": "An oil lantern guttering close by and a thin cold draught in bare branches.",
+      "url": "/assets/sounds/reverie/levels173/amb.gravewalk.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 494405,
+      "made": "ai"
+    },
+    {
+      "id": "porch-talk",
+      "name": "Neighbors talking on porches",
+      "group": "places",
+      "about": "Many neighbors talking on porches, too far off to make out, and cicadas.",
+      "url": "/assets/sounds/reverie/levels173/amb.patch.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 492884,
+      "made": "ai"
+    },
+    {
+      "id": "busy-arcade",
+      "name": "A busy old video arcade",
+      "group": "places",
+      "about": "Game machines chirping and chiming on both sides, bells and an electric hum.",
+      "url": "/assets/sounds/reverie/places297/amb.arcade.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487708,
+      "made": "ai"
+    },
+    {
+      "id": "metal-workshop",
+      "name": "A metal workshop down the street",
+      "group": "places",
+      "about": "An angle grinder cutting steel behind a roller door, a compressor cycling.",
+      "url": "/assets/sounds/reverie/places298/amb.millrace.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488283,
+      "made": "ai"
+    },
+    {
+      "id": "street-food-window",
+      "name": "A street food window at night",
+      "group": "places",
+      "about": "A griddle sizzling through a sliding window, a cooler humming, alley echo.",
+      "url": "/assets/sounds/reverie/places298/amb.taco.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 506582,
+      "made": "ai"
+    },
+    {
+      "id": "bass-through-a-wall",
+      "name": "Bass through a brick wall at night",
+      "group": "places",
+      "about": "Club music thumping through brick walls, a neon sign buzzing, a quiet street.",
+      "url": "/assets/sounds/reverie/places298/amb.tanglefoot.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487471,
+      "made": "ai"
+    },
+    {
+      "id": "boat-engine-idling",
+      "name": "A boat engine idling at a dock",
+      "group": "places",
+      "about": "A low steady engine idling, heard from the dock.",
+      "url": "/assets/sounds/reverie/scenes171/amb.ferry.quiet.m4a",
+      "seconds": 19,
+      "channels": 1,
+      "bytes": 233280,
+      "made": "ai"
+    },
+    {
+      "id": "old-barbershop",
+      "name": "An old barbershop",
+      "group": "indoors",
+      "about": "Electric clippers buzzing on and off, an oscillating fan, a chair creaking.",
+      "url": "/assets/sounds/reverie/places298/amb.barber.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488007,
+      "made": "ai"
+    },
+    {
+      "id": "small-busy-bar",
+      "name": "A small busy bar",
+      "group": "indoors",
+      "about": "Crowd chatter you cannot make out, glasses and bottles, a jukebox faint in the corner.",
+      "url": "/assets/sounds/reverie/places298/amb.dezs.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488054,
+      "made": "ai"
+    },
+    {
+      "id": "diner-griddle",
+      "name": "A diner griddle",
+      "group": "indoors",
+      "about": "A flat-top griddle hissing, cups and cutlery on ceramic, a faint murmur.",
+      "url": "/assets/sounds/reverie/places298/amb.diner.quiet.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 489306,
+      "made": "ai"
+    },
+    {
+      "id": "truck-stop-diner",
+      "name": "A highway truck stop diner",
+      "group": "indoors",
+      "about": "A fryer hissing, a small radio half lost in static, trucks passing outside.",
+      "url": "/assets/sounds/reverie/places298/amb.truckstop.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 493552,
+      "made": "ai"
+    },
+    {
+      "id": "small-cafe",
+      "name": "A small cafe",
+      "group": "indoors",
+      "about": "Plates and cutlery clinking, cups on saucers and low chatter.",
+      "url": "/assets/sounds/reverie/places298/amb.kettle.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 489548,
+      "made": "ai"
+    },
+    {
+      "id": "corner-store",
+      "name": "A small corner store",
+      "group": "indoors",
+      "about": "Cooler compressors humming, glass bottles clinking in crates, a register now and then.",
+      "url": "/assets/sounds/reverie/places298/amb.cornerstore.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488657,
+      "made": "ai"
+    },
+    {
+      "id": "quiet-apartment",
+      "name": "A quiet apartment",
+      "group": "indoors",
+      "about": "A refrigerator humming in the next room, a clock ticking softly, a muffled street.",
+      "url": "/assets/sounds/reverie/places298/amb.home.quiet.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488992,
+      "made": "ai"
+    },
+    {
+      "id": "laundromat-washers",
+      "name": "Washers and dryers in a laundromat",
+      "group": "indoors",
+      "about": "Washing machines churning and dryers tumbling, with a fluorescent hum.",
+      "url": "/assets/sounds/reverie/places298/amb.laundry.quiet.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487683,
+      "made": "ai"
+    },
+    {
+      "id": "hospital-waiting-room",
+      "name": "A hospital waiting room",
+      "group": "indoors",
+      "about": "Slow soft monitor beeps and a ventilation hum in a quiet room.",
+      "url": "/assets/sounds/reverie/places298/amb.mercy.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488420,
+      "made": "ai"
+    },
+    {
+      "id": "bowling-alley",
+      "name": "An old bowling alley",
+      "group": "indoors",
+      "about": "Balls rolling down wooden lanes, pins crashing, the ball return rumbling.",
+      "url": "/assets/sounds/reverie/places298/amb.lanes.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488632,
+      "made": "ai"
+    },
+    {
+      "id": "bakery-kitchen",
+      "name": "A bakery kitchen",
+      "group": "indoors",
+      "about": "Metal trays and pans handled on a counter over a ventilation hum.",
+      "url": "/assets/sounds/reverie/places297/amb.bakery.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 489271,
+      "made": "ai"
+    },
+    {
+      "id": "indoor-pool",
+      "name": "An old indoor pool",
+      "group": "indoors",
+      "about": "Water sloshing at the edge of a pool under a tiled roof.",
+      "url": "/assets/sounds/reverie/places297/amb.bathhouse.pool.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 488211,
+      "made": "ai"
+    },
+    {
+      "id": "film-projector",
+      "name": "A film projector running",
+      "group": "indoors",
+      "about": "A projector motor whirring and the film clicking steadily through it.",
+      "url": "/assets/sounds/reverie/places297/amb.bijou.room.m4a",
+      "seconds": 30,
+      "channels": 2,
+      "bytes": 487762,
+      "made": "ai"
+    },
+    {
+      "id": "quiet-art-studio",
+      "name": "A quiet art studio",
+      "group": "indoors",
+      "about": "A quiet room with a clock, brush strokes, a jar set down, a street far off.",
+      "url": "/assets/sounds/reverie/places296/amb.easel.room.m4a",
+      "seconds": 20,
+      "channels": 2,
+      "bytes": 326179,
+      "made": "synthesized"
+    },
+    {
+      "id": "river-through-walls",
+      "name": "A river heard through wooden walls",
+      "group": "indoors",
+      "about": "River water outside a wooden boathouse, muffled by the walls.",
+      "url": "/assets/sounds/reverie/waterfront204/amb.netloft.room.m4a",
+      "seconds": 19.4,
+      "channels": 2,
+      "bytes": 316363,
+      "made": "ai"
+    },
+    {
+      "id": "quiet-room-hum",
+      "name": "A quiet room with a fan hum",
+      "group": "indoors",
+      "about": "A big quiet room with a low steady ventilation hum.",
+      "url": "/assets/sounds/reverie/world153/amb.archive.quiet.m4a",
+      "seconds": 19.25,
+      "channels": 1,
+      "bytes": 236260,
+      "made": "ai"
+    }
+  ]
+}

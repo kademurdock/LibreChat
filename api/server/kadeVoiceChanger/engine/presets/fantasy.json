@@ -1,0 +1,1395 @@
+[
+  {
+    "id": "fantasy-tiny-fairy-sparkle",
+    "name": "Tiny fairy with sparkles",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A thumb-sized fairy whose every word leaves glittering notes ringing in the air.",
+    "tags": ["fairy", "tiny", "high", "sparkle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 6 } },
+      { "m": "spec.crystal", "p": { "peaks": 16, "sparkle": 75, "mix": 30 } },
+      { "m": "space.shimmer", "p": { "mix": 30, "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-giggling-pixie",
+    "name": "Giggling pixie",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A mischievous pixie who trips over her own giggles and bounces from ear to ear.",
+    "tags": ["pixie", "tiny", "high", "playful"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 11, "formant": 7 } },
+      { "m": "pitch.vibrato", "p": { "rate": 9, "depth": 60 } },
+      { "m": "time.stutter", "p": { "repeats": 2, "pieceMs": 60, "chance": 30, "pitchStep": 1 } },
+      { "m": "stereo.pingpong", "p": { "unit": "syllable", "width": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fairy-inside-a-flower",
+    "name": "Fairy inside a flower",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A fairy calling from inside a bluebell, ringing small and close in a dawn meadow.",
+    "tags": ["fairy", "tiny", "meadow", "morning"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 5 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 45 } },
+      { "m": "synth.resonator", "p": { "object": "wind-chimes", "mix": 25, "pitch": 12 } }
+    ],
+    "bed": { "b": "meadow-dawn", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fairy-with-buzzing-wings",
+    "name": "Fairy with buzzing wings",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A fairy hovering by your ears, her tiny wings humming through every word.",
+    "tags": ["fairy", "wings", "buzz", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 190, "depth": 45, "jitter": 40 } },
+      { "m": "stereo.orbit", "p": { "period": 2.5, "distance": 0.6, "height": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fairy-ring-dance",
+    "name": "Fairy ring dance",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A ring of little fairies all speaking at once as they dance in a sunny wood.",
+    "tags": ["fairy", "crowd", "forest", "many"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 5 } },
+      { "m": "stereo.crowd", "p": { "people": 6, "pitchSpread": 3, "timbreSpread": 1, "timing": 90, "room": "outdoors", "you": 60 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-pixie-dust-trail",
+    "name": "Pixie dust trail",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A pixie voice that sheds a trail of tiny glittering grains as it flits past.",
+    "tags": ["pixie", "sparkle", "grains", "high"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 6 } },
+      { "m": "synth.granular", "p": { "grain": 35, "density": 90, "pitch": 12, "spread": 300, "scatter": 250, "mix": 35 } },
+      { "m": "space.shimmer", "p": { "interval": "octfifth", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fairy-queens-court",
+    "name": "Fairy queen's court",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "The fairy queen speaks with a shining echo of herself an octave above, in a great hall.",
+    "tags": ["fairy", "queen", "royal", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "pitch.harmony", "p": { "chord": "octave-up", "voices": 1, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wisp-over-the-marsh",
+    "name": "Wisp light over the marsh",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A breathy little marsh light drifting around you, luring you deeper into the swamp.",
+    "tags": ["wisp", "swamp", "whisper", "moving"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 4 } },
+      { "m": "spec.whisper", "p": { "amount": 55 } },
+      { "m": "stereo.orbit", "p": { "period": 7, "distance": 3, "room": "outdoors" } }
+    ],
+    "bed": { "b": "swamp", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fairy-bell-voice",
+    "name": "Fairy bell voice",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "Each fairy word strikes a little music box tune that rings on in a quick echo.",
+    "tags": ["fairy", "bell", "music box", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 5 } },
+      { "m": "synth.resonator", "p": { "object": "music-box", "mix": 45, "decay": 1.5 } },
+      { "m": "echo.delay", "p": { "time": 180, "feedback": 35, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sprite-in-a-dewdrop",
+    "name": "Sprite in a dewdrop",
+    "cat": "fantasy",
+    "sub": "Fairies and pixies",
+    "about": "A water sprite no bigger than a bead, her voice swirling inside a round drop of dew.",
+    "tags": ["sprite", "tiny", "water", "swirl"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 10, "formant": 8 } },
+      { "m": "space.room", "p": { "space": "bottle", "mix": 60 } },
+      { "m": "mod.phaser", "p": { "rate": 0.8, "feedback": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wood-elf",
+    "name": "Wood elf among the trees",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A light, clear elf voice with a soft shimmer, out among rustling trees.",
+    "tags": ["elf", "forest", "light"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 2.5 } },
+      { "m": "mod.chorus", "p": { "voices": 2, "depth": 25, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 50 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-high-elf-moonlit-hall",
+    "name": "High elf in a moonlit hall",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A noble elf whose words rise into a fifth above, ringing round a tall hall.",
+    "tags": ["elf", "noble", "hall", "shimmer"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 3 } },
+      { "m": "space.shimmer", "p": { "interval": "fifth", "mix": 30, "decay": 6 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 4, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dwarf-in-the-mines",
+    "name": "Dwarf in the mines",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A gruff, gravelly dwarf booming down a dripping mine tunnel.",
+    "tags": ["dwarf", "deep", "cave", "gruff"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -4.5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 30, "fry": 20 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 50 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dwarf-at-the-forge",
+    "name": "Dwarf at the forge",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A hot, saturated dwarf voice shouting over the roaring forge fire.",
+    "tags": ["dwarf", "fire", "forge", "gruff"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -4 } },
+      { "m": "lofi.saturate", "p": { "drive": 16 } },
+      { "m": "space.room", "p": { "space": "factory", "mix": 30 } }
+    ],
+    "bed": { "b": "blaze", "level": -20, "p": { "size": 50 }, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-garden-gnome",
+    "name": "Garden gnome",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A small, old, slightly shaky gnome chatting in a summer garden.",
+    "tags": ["gnome", "small", "old", "garden"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 6 } },
+      { "m": "pitch.jitter", "p": { "rate": 0.5, "size": 3, "tremble": 40 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 60 } }
+    ],
+    "bed": { "b": "summer-field", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-gnome-under-a-mushroom",
+    "name": "Gnome under a mushroom",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A tiny gnome tucked under a toadstool cap, close and boxy and a bit stuffy.",
+    "tags": ["gnome", "tiny", "boxy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 7 } },
+      { "m": "space.room", "p": { "space": "cardboard-box", "mix": 60 } },
+      { "m": "tone.character", "p": { "shape": "boxy" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-elven-song-across-the-valley",
+    "name": "Elven song across the valley",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "Your speech gently tuned to a minor key with a fifth above, echoing across a valley.",
+    "tags": ["elf", "song", "harmony", "echo"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "key": "D", "scale": "minor", "speed": 80 } },
+      { "m": "pitch.harmony", "p": { "chord": "fifth-up", "voices": 1, "mix": 40 } },
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 260, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dark-elf-whisper",
+    "name": "Dark elf's whisper",
+    "cat": "fantasy",
+    "sub": "Elves, dwarves and gnomes",
+    "about": "A cold whisper just behind your right shoulder, with backwards echoes creeping in.",
+    "tags": ["elf", "whisper", "behind", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 75 } },
+      { "m": "echo.reverse", "p": { "length": 400, "mix": 30 } },
+      { "m": "stereo.place", "p": { "angle": 130, "distance": 0.4, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-ancient-talking-tree",
+    "name": "Ancient talking tree",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "A slow, deep, woody voice creaking out of an old oak while the wind moves its leaves.",
+    "tags": ["tree", "deep", "slow", "wood"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -6 } },
+      { "m": "time.drawl", "p": { "factor": 1.5 } },
+      { "m": "synth.resonator", "p": { "object": "wood-box", "pitch": -12, "mix": 35 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -22, "p": { "strength": 55 }, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-enchanted-forest-spirit",
+    "name": "Enchanted forest spirit",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "An airy spirit circling slowly among birdsong, half breath and half shining voice.",
+    "tags": ["spirit", "forest", "airy", "moving"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } },
+      { "m": "space.shimmer", "p": { "mix": 30 } },
+      { "m": "stereo.orbit", "p": { "period": 10, "distance": 2.5, "room": "outdoors" } }
+    ],
+    "bed": { "b": "forest-birds", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-willow-by-the-river",
+    "name": "Weeping willow by the river",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "A sad, soft tree voice that trails into a hazy smear beside a flowing river.",
+    "tags": ["tree", "river", "soft", "dreamy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 900 } },
+      { "m": "mod.chorus", "p": { "depth": 50, "rate": 0.3, "mix": 40 } }
+    ],
+    "bed": { "b": "river", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-nymph-of-the-spring",
+    "name": "Nymph of the spring",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "A bright water nymph whose voice ripples like the creek she lives in.",
+    "tags": ["nymph", "water", "creek", "ripple"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 3 } },
+      { "m": "synth.fm", "p": { "rate": 3, "depth": 1, "shape": "watery" } },
+      { "m": "space.reverb", "p": { "size": 40, "decay": 1.5, "mix": 25 } }
+    ],
+    "bed": { "b": "creek", "level": -20, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-unicorn-in-a-moonlit-glade",
+    "name": "Unicorn in a moonlit glade",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "A gentle glassy voice glowing with a fifth above it, with owls calling in the night woods.",
+    "tags": ["unicorn", "night", "glass", "gentle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 1 } },
+      { "m": "synth.resonator", "p": { "object": "glass", "mix": 30 } },
+      { "m": "space.shimmer", "p": { "interval": "fifth", "mix": 35 } }
+    ],
+    "bed": { "b": "owl-woods", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-mushroom-circle-voices",
+    "name": "Mushroom circle voices",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "Four odd little forest folk, high and low, all answering you from the undergrowth.",
+    "tags": ["forest", "crowd", "odd", "small"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 8, "timbreSpread": 5, "timing": 220, "loose": 80, "room": "outdoors", "you": 20 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 50 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-moss-covered-stone",
+    "name": "Moss-covered standing stone",
+    "cat": "fantasy",
+    "sub": "Forest spirits",
+    "about": "A very old stone in a clearing speaking low and muffled, as if through moss.",
+    "tags": ["stone", "old", "muffled", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -3 } },
+      { "m": "tone.character", "p": { "shape": "muffled" } },
+      { "m": "spec.stretch", "p": { "factor": 0.85, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 35 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wizards-echoing-command",
+    "name": "Wizard's echoing command",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A deep commanding wizard whose words bounce back again and again around a great hall.",
+    "tags": ["wizard", "echo", "deep", "command"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "echo.delay", "p": { "time": 420, "feedback": 50, "stereo": "wide", "mix": 40 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wizard-in-the-tower",
+    "name": "Wizard atop the tower",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A wizard calling down a ringing stone stairwell while the wind howls at the windows.",
+    "tags": ["wizard", "tower", "stairwell", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 65 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-apprentice-spell-gone-wrong",
+    "name": "Apprentice spell gone wrong",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A spell backfires: the voice shoots up an octave while it sputters and rings like metal.",
+    "tags": ["spell", "funny", "glitch", "rising"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": 12, "curve": "late", "timbre": 70 } },
+      { "m": "time.glitch", "p": { "density": 40, "repeats": 4 } },
+      { "m": "synth.ringmod", "p": { "freq": 300, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sorceress-chamber",
+    "name": "Sorceress in her chamber",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A silky, hazy sorceress voice, slowly swirling, with a glowing fifth in the air.",
+    "tags": ["sorceress", "silky", "swirl", "magic"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 1.5 } },
+      { "m": "spec.blur", "p": { "amount": 30, "time": 600 } },
+      { "m": "mod.phaser", "p": { "rate": 0.15, "mix": 40 } },
+      { "m": "space.shimmer", "p": { "interval": "fifth", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-witch-over-a-cauldron",
+    "name": "Witch over a bubbling cauldron",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A cackling, crackly witch voice that gurgles as the brew bubbles beside her.",
+    "tags": ["witch", "cauldron", "bubbling", "cackle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 5, "direction": "both", "tremble": 35 } },
+      { "m": "synth.am", "p": { "rate": 14, "depth": 55, "shape": "bubbly" } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 70 } }
+    ],
+    "bed": { "b": "swamp", "level": -24, "p": { "bubbles": 90, "insects": 20 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-ancient-archmage",
+    "name": "Ancient archmage",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A towering old mage, an octave below and a faint octave above, filling a stone cathedral.",
+    "tags": ["wizard", "old", "powerful", "cathedral"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "pitch.octaver", "p": { "down1": 45, "up1": 20 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-whispering-spellbook",
+    "name": "Whispering spellbook",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "An old book reading itself aloud in a hushed library, whisper over a low shadow voice.",
+    "tags": ["book", "whisper", "library", "magic"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 45 } },
+      { "m": "pitch.harmony", "p": { "chord": "octave-down", "voices": 1, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 35 } }
+    ],
+    "bed": { "b": "library-hush", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-staff-of-thunder",
+    "name": "Staff of thunder",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A wizard's voice poured into rolling thunder, with a real storm raging around.",
+    "tags": ["wizard", "thunder", "storm", "power"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm" } },
+      { "m": "synth.crossconv", "p": { "source": "thunder", "amount": 45, "mix": 40 } }
+    ],
+    "bed": { "b": "storm", "level": -22, "p": { "thunder": 6, "distance": 1200 }, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-crystal-staff-incantation",
+    "name": "Crystal staff incantation",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "A chant that rings through a crystal staff, the bright notes hanging on like ice.",
+    "tags": ["crystal", "chant", "glass", "ringing"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 60 } },
+      { "m": "spec.crystal", "p": { "peaks": 24, "sustain": 1600, "sparkle": 50, "mix": 55 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wizards-duel",
+    "name": "Wizards' duel",
+    "cat": "fantasy",
+    "sub": "Wizards and witches",
+    "about": "Two rival wizards made from you, one low and one high, trading words across a hall.",
+    "tags": ["wizard", "two voices", "stereo", "duel"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": -6, "leftTimbre": -4, "rightPitch": 4, "rightTimbre": 2, "mode": "turns" } },
+      { "m": "synth.freqshift", "p": { "shift": 25, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-temple-oracle",
+    "name": "Temple oracle",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "An oracle speaking in octaves, her words swelling up out of the temple before she says them.",
+    "tags": ["oracle", "octaves", "temple", "swell"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "octaves", "mix": 40 } },
+      { "m": "echo.preverb", "p": { "length": 1, "space": "church", "mix": 40 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-voice-from-a-crystal-ball",
+    "name": "Voice from a crystal ball",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A small voice trapped inside a glass orb, ringing and swirling as the mist turns.",
+    "tags": ["crystal ball", "glass", "swirl", "trapped"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 70 } },
+      { "m": "spec.crystal", "p": { "mix": 35 } },
+      { "m": "mod.phaser", "p": { "rate": 0.25, "feedback": 70, "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-talking-mirror-on-the-wall",
+    "name": "Talking mirror on the wall",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A glassy, ringing mirror voice that answers with a backwards shadow of each word.",
+    "tags": ["mirror", "glass", "reverse", "ringing"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 1.5 } },
+      { "m": "spec.comb", "p": { "base": 220, "chord": "one", "sharpness": 40, "mix": 45 } },
+      { "m": "echo.reverse", "p": { "length": 350, "mix": 35 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fortune-teller-tent",
+    "name": "Fortune teller's tent",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A low, mysterious reader of fortunes in a draped tent, the fair going on outside.",
+    "tags": ["fortune", "mystery", "fair", "close"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 1 } },
+      { "m": "mod.chorus", "p": { "voices": 2, "depth": 35, "rate": 0.4, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "under-blanket", "mix": 40 } }
+    ],
+    "bed": { "b": "carnival", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-seer-lost-in-a-vision",
+    "name": "Seer lost in a vision",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A seer slowly sinking into a trance, the words smearing and sliding lower as she goes.",
+    "tags": ["seer", "trance", "smear", "sinking"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 50, "time": 2000 } },
+      { "m": "pitch.glide", "p": { "to": -4, "timbre": 20 } },
+      { "m": "space.shimmer", "p": { "interval": "down", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-prophecy-in-the-mist",
+    "name": "Prophecy in the mist",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A crowd of whispering seers repeating the prophecy all around you in a misty hall.",
+    "tags": ["whisper", "crowd", "prophecy", "mist"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 70 } },
+      { "m": "stereo.crowd", "p": { "people": 5, "pitchSpread": 2, "timing": 260, "room": "church", "you": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-voice-in-the-wishing-well",
+    "name": "Voice in the wishing well",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "The well answers your wish from far down its round stone shaft, dripping and echoing.",
+    "tags": ["well", "echo", "deep", "wish"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -1 } },
+      { "m": "space.room", "p": { "space": "well", "mix": 80 } },
+      { "m": "echo.delay", "p": { "time": 260, "feedback": 30, "stereo": "mono", "damping": 60, "mix": 25 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -26, "p": { "drips": 2 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-scrying-pool",
+    "name": "Scrying pool",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A face in the still water speaks up through ripples, rising into a shimmer.",
+    "tags": ["water", "ripple", "vision", "shimmer"],
+    "chain": [
+      { "m": "mod.underwater", "p": { "depth": 30, "bubbles": 15, "wobble": 30, "mix": 70 } },
+      { "m": "space.shimmer", "p": { "decay": 6 } },
+      { "m": "mod.phaser", "p": { "rate": 0.1, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-riddling-stone-guardian",
+    "name": "Riddling stone guardian",
+    "cat": "fantasy",
+    "sub": "Oracles and crystal balls",
+    "about": "A huge stone guardian at the gate, slow and grinding, its riddle rolling round a canyon.",
+    "tags": ["stone", "guardian", "slow", "huge"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -4 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.85 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "mix": 40 } },
+      { "m": "echo.canyon", "p": { "distance": 220, "count": 3, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-genie-inside-the-lamp",
+    "name": "Genie inside the lamp",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "A big voice squeezed inside a little brass lamp, hollow and ringing and swirling.",
+    "tags": ["genie", "lamp", "metal", "trapped"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "space.room", "p": { "space": "tin-can", "mix": 70 } },
+      { "m": "mod.flanger", "p": { "rate": 0.3, "feedback": 70, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-genie-bursting-free",
+    "name": "Genie bursting free",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "The genie swells out of the lamp, growing huge and deep as the words go on.",
+    "tags": ["genie", "growing", "huge", "deep"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": 3, "to": -7, "curve": "early", "timbre": 60 } },
+      { "m": "pitch.octaver", "p": { "down1": 45 } },
+      { "m": "space.reverb", "p": { "size": 95, "decay": 5, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-spirit-of-curling-smoke",
+    "name": "Spirit of curling smoke",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "A drifting smoke spirit, hazy and breathy, curling slowly around your head.",
+    "tags": ["smoke", "spirit", "haze", "moving"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 60, "time": 1500, "spread": 40 } },
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "stereo.orbit", "p": { "period": 12, "distance": 1.5, "tilt": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-fire-spirit",
+    "name": "Fire spirit",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "A voice half made of flame, hot and crackling, rising out of a roaring bonfire.",
+    "tags": ["fire", "spirit", "crackle", "hot"],
+    "chain": [
+      { "m": "spec.blend", "p": { "source": "fire", "blend": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "overdrive", "mix": 50 } },
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 1 } }
+    ],
+    "bed": { "b": "blaze", "level": -20, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wind-spirit",
+    "name": "Wind spirit",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "Your words spoken by the wind itself, sweeping from one ear to the other.",
+    "tags": ["wind", "spirit", "air", "moving"],
+    "chain": [
+      { "m": "spec.morph", "p": { "amount": 75, "clarity": 65 } },
+      { "m": "mod.autopan", "p": { "rate": 0.15, "width": 90 } }
+    ],
+    "bed": { "b": "wind", "level": -24, "p": { "strength": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-earth-spirit-under-the-hill",
+    "name": "Earth spirit under the hill",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "A rumbling voice from deep inside the ground, rolling like distant thunder.",
+    "tags": ["earth", "spirit", "rumble", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -7 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 20 } },
+      { "m": "synth.crossconv", "p": { "source": "thunder", "amount": 35, "mix": 25 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-frost-spirit",
+    "name": "Frost spirit",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "An icy spirit whose voice freezes into glittering crystals in a snowstorm.",
+    "tags": ["ice", "spirit", "cold", "crystal"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "spec.crystal", "p": { "peaks": 20, "sustain": 1500, "sparkle": 70, "mix": 60 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "damping": 10 } }
+    ],
+    "bed": { "b": "blizzard", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-lightning-spirit",
+    "name": "Lightning spirit",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "A buzzing, sizzling electric spirit with a spiral of metal echoes, thunder all around.",
+    "tags": ["lightning", "electric", "buzz", "storm"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 2 } },
+      { "m": "synth.freqshift", "p": { "shift": 300, "feedback": 45, "time": 60, "mix": 50 } },
+      { "m": "lofi.crush", "p": { "rate": 12000, "mix": 35 } }
+    ],
+    "bed": { "b": "storm", "level": -22, "p": { "thunder": 8, "distance": 800 }, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sea-spirit",
+    "name": "Spirit of the sea",
+    "cat": "fantasy",
+    "sub": "Genies and elementals",
+    "about": "Your words carried on the ocean waves, rolling in and fizzing back across the sand.",
+    "tags": ["sea", "spirit", "waves", "water"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "ocean", "amount": 70, "clarity": 60 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2.5, "mix": 25 } }
+    ],
+    "bed": { "b": "ocean", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-angelic-choir",
+    "name": "Angelic choir",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A full choir of you singing on a chord, rising into a bright octave halo.",
+    "tags": ["angel", "choir", "heavenly", "shimmer"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "big-choir", "voices": 3, "mix": 60 } },
+      { "m": "space.shimmer", "p": { "mix": 50, "decay": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-heavenly-messenger",
+    "name": "Heavenly messenger",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A bright, wide messenger from above, every word blooming into a fifth and an octave.",
+    "tags": ["angel", "messenger", "bright", "wide"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 2 } },
+      { "m": "tone.tilt", "p": { "amount": 5 } },
+      { "m": "space.shimmer", "p": { "interval": "octfifth", "decay": 8, "mix": 45 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-voice-from-above-the-clouds",
+    "name": "Voice from above the clouds",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A voice floating high over your head and far away, with a faint octave glow and the wind up there.",
+    "tags": ["above", "heavenly", "headphones", "distant"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 0, "up1": 25 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 75, "distance": 8, "room": "none" } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 5, "mix": 40 } }
+    ],
+    "bed": { "b": "wind", "level": -30, "p": { "strength": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-harp-of-the-heavens",
+    "name": "Harp of the heavens",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "Every word plucks a high golden harp chord that rings up into the sky.",
+    "tags": ["harp", "strings", "heavenly", "music"],
+    "chain": [
+      { "m": "synth.strings", "p": { "register": "high", "decay": 4, "pluck": 75 } },
+      { "m": "space.shimmer", "p": { "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-at-the-golden-gates",
+    "name": "At the golden gates",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A gatekeeper's voice ringing like a great bell, with a fifth above, in a vast cathedral.",
+    "tags": ["bell", "gate", "cathedral", "grand"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "decay": 0.5, "mix": 30 } },
+      { "m": "pitch.harmony", "p": { "chord": "fifth-up", "voices": 1, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-guardian-angel",
+    "name": "Guardian angel at your shoulder",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A soft, warm, breathy voice just above your right shoulder, glowing gently.",
+    "tags": ["angel", "close", "soft", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "space.shimmer", "p": { "mix": 25, "decay": 3 } },
+      { "m": "stereo.place", "p": { "angle": 40, "height": 30, "distance": 0.3, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-celestial-herald",
+    "name": "Celestial herald",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "A herald in octaves announcing from the stars, each word echoing up two octaves.",
+    "tags": ["herald", "octaves", "stars", "echo"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "octaves", "mix": 45 } },
+      { "m": "echo.delay", "p": { "time": 600, "feedback": 35, "mix": 30 } },
+      { "m": "space.shimmer", "p": { "interval": "twooct", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-choir-of-light",
+    "name": "Choir of light",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "Your words tuned into a glowing major chord, shimmering and wide like sunlight.",
+    "tags": ["chord", "light", "choir", "shimmer"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 220, "chord": "major", "sharpness": 70, "mix": 70 } },
+      { "m": "mod.chorus", "p": { "voices": 4, "mix": 45 } },
+      { "m": "space.shimmer", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sky-temple-bells",
+    "name": "Sky temple bells",
+    "cat": "fantasy",
+    "sub": "Angels and the heavens",
+    "about": "Your voice rung on temple bells high on a windy mountain.",
+    "tags": ["bells", "temple", "mountain", "ringing"],
+    "chain": [
+      { "m": "synth.crossconv", "p": { "amount": 65, "mix": 60 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 5, "mix": 35 } }
+    ],
+    "bed": { "b": "mountain-top", "level": -26, "p": { "hawk": false } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-underworld-guide",
+    "name": "Underworld guide",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A hollow guide leading you down through the caves, the dark rushing up before each word.",
+    "tags": ["underworld", "guide", "cave", "dark"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -3 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "echo.preverb", "p": { "space": "cave", "length": 1.2, "mix": 40 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 55 } }
+    ],
+    "bed": { "b": "dungeon", "level": -26, "p": { "groans": 20 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-ferryman-of-the-dark-river",
+    "name": "Ferryman of the dark river",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A slow, deep boatman drawling his toll in a long tunnel over black flowing water.",
+    "tags": ["ferryman", "river", "slow", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -4 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 60 } }
+    ],
+    "bed": { "b": "river", "level": -24, "p": { "rapids": 10 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-cursed-voice",
+    "name": "Cursed voice",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A voice split into a low and a high copy, sliding out of tune and dropping out in places.",
+    "tags": ["curse", "octaves", "uneasy", "broken"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 55, "up1": 30 } },
+      { "m": "synth.freqshift", "p": { "shift": -45, "mix": 50 } },
+      { "m": "spec.dropout", "p": { "loss": 12, "conceal": "repeat" } },
+      { "m": "echo.reverse", "p": { "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-cursed-treasure-chest",
+    "name": "Cursed treasure chest",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A warped, muttering curse locked inside a wooden treasure chest, knocking to get out.",
+    "tags": ["chest", "curse", "wood", "boxy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "spec.shift", "p": { "hz": -90, "mix": 45 } },
+      { "m": "synth.resonator", "p": { "object": "wood-box", "mix": 40 } },
+      { "m": "tone.character", "p": { "shape": "boxy" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-voice-from-the-shadow-realm",
+    "name": "Voice from the shadow realm",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "Only the breathy shadow of a voice comes through, smeared into an endless dark space.",
+    "tags": ["shadow", "breath", "endless", "dark"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "spec.thin", "p": { "keep": "quiet", "threshold": -20 } },
+      { "m": "spec.blur", "p": { "amount": 40 } },
+      { "m": "space.room", "p": { "space": "infinite", "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-bone-king-in-his-crypt",
+    "name": "Bone king in his crypt",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A thin, rattling skeleton king holding court in a stone crypt where chains shift.",
+    "tags": ["skeleton", "king", "crypt", "thin"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 2 } },
+      { "m": "spec.thin", "p": { "threshold": -20 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 55 } }
+    ],
+    "bed": { "b": "dungeon", "level": -24, "p": { "chains": 70, "size": "catacomb" } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-turning-to-stone",
+    "name": "Turning to stone",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "A curse takes hold: the voice goes flat and frozen, then grinds slowly to a stop.",
+    "tags": ["curse", "stone", "frozen", "stop"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 80 } },
+      { "m": "spec.freeze", "p": { "when": "steady", "hold": 1200, "interval": 1400, "blend": 50 } },
+      { "m": "time.tapestop", "p": { "stopMs": 2200, "curve": "late" } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-three-headed-gate-hound",
+    "name": "Three-headed gate hound",
+    "cat": "fantasy",
+    "sub": "Underworld and curses",
+    "about": "Three snarling heads of one great hound, all speaking your words a little apart.",
+    "tags": ["hound", "three", "growl", "gate"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -4 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 55, "fry": 30 } },
+      { "m": "stereo.crowd", "p": { "people": 3, "pitchSpread": 5, "timing": 50, "spread": 100, "room": "cave", "you": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dragons-whisper",
+    "name": "Dragon's whisper",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A huge dragon breathing its words right into your ear, smoke and embers crackling.",
+    "tags": ["dragon", "whisper", "close", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -6 } },
+      { "m": "spec.whisper", "p": { "amount": 55 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 45, "rough": 50 } },
+      { "m": "stereo.place", "p": { "angle": -70, "distance": 0.3, "room": "none" } }
+    ],
+    "bed": { "b": "campfire", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dragon-on-its-hoard",
+    "name": "Dragon on its gold hoard",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "An enormous rumbling dragon voice filling a cavern piled high with ringing gold.",
+    "tags": ["dragon", "huge", "cave", "growl"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -7 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 40, "grit": 30 } },
+      { "m": "synth.resonator", "p": { "object": "metal-plate", "pitch": -12, "mix": 15 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-giants-thought",
+    "name": "Giant's thought",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A giant thinking to itself, slow and deep and dark, heard from inside its huge head.",
+    "tags": ["giant", "thought", "deep", "slow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -6 } },
+      { "m": "spec.blur", "p": { "amount": 35, "time": 800 } },
+      { "m": "tone.filter", "p": { "freq": 2200 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 6, "damping": 80, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sleeping-giant",
+    "name": "Sleeping giant mumbling",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A colossal sleeper mumbling in a dream, very slow and very low, muffled by the hillside.",
+    "tags": ["giant", "sleepy", "slow", "muffled"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -8 } },
+      { "m": "pitch.tempo", "p": { "tempo": 0.7 } },
+      { "m": "tone.filter", "p": { "freq": 900, "slope": "gentle" } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-cloud-giant",
+    "name": "Cloud giant far away",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A giant calling from a distant mountain, the words echoing off peak after peak.",
+    "tags": ["giant", "distant", "mountain", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -5 } },
+      { "m": "space.distance", "p": { "distance": 300, "wind": 40 } },
+      { "m": "echo.canyon", "p": { "distance": 300, "mix": 40 } }
+    ],
+    "bed": { "b": "mountain-top", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sea-serpent-rising",
+    "name": "Sea serpent rising",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A hissing serpent voice surfacing from under the water as the sea breaks around it.",
+    "tags": ["serpent", "sea", "hiss", "water"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -3 } },
+      { "m": "mod.underwater", "p": { "depth": 45, "bubbles": 60, "mix": 60 } },
+      { "m": "spec.whisper", "p": { "amount": 25 } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -22, "duck": 3 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-wyvern-screech-overhead",
+    "name": "Wyvern screeching overhead",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A rasping winged beast screeching as it swoops over your head and away.",
+    "tags": ["wyvern", "screech", "flying", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": -2 } },
+      { "m": "lofi.drive", "p": { "drive": 20, "character": "fuzz", "mix": 50 } },
+      { "m": "stereo.flyby", "p": { "speed": "fastcar", "height": 60, "closest": 4, "passes": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-baby-dragon",
+    "name": "Baby dragon",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A cute little dragon with a crackly growl it is very proud of, by a small campfire.",
+    "tags": ["dragon", "baby", "cute", "growl"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "fry": 45 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm", "mix": 50 } }
+    ],
+    "bed": { "b": "campfire", "level": -28, "p": { "size": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-stone-golem",
+    "name": "Stone golem",
+    "cat": "fantasy",
+    "sub": "Dragons and giants",
+    "about": "A slab of living rock grinding out every word, crunchy and stiff, in a quarry.",
+    "tags": ["golem", "stone", "grinding", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } },
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 16, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-casting-a-spell",
+    "name": "Casting a spell",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Words wrapped in backwards echoes and a rising shimmer, sparkling as the spell takes hold.",
+    "tags": ["spell", "shimmer", "reverse", "sparkle"],
+    "chain": [
+      { "m": "echo.reverse", "p": { "length": 600, "feedback": 40, "mix": 40 } },
+      { "m": "synth.granular", "p": { "grain": 50, "density": 60, "pitch": 12, "spread": 200, "mix": 25 } },
+      { "m": "space.shimmer", "p": { "mix": 45, "decay": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-shrinking-potion",
+    "name": "Drinking a shrinking potion",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "One sip and you shrink as you talk, ending as a tiny squeak.",
+    "tags": ["potion", "shrinking", "rising", "funny"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": 12, "curve": "straight", "timbre": 90 } },
+      { "m": "space.room", "p": { "space": "bottle", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-growing-potion",
+    "name": "Drinking a growing potion",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "One sip and you grow as you talk, ending as a towering giant in a big hall.",
+    "tags": ["potion", "growing", "falling", "huge"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": -12, "curve": "straight", "timbre": 90 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 2.5, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-invisible-friend-circling",
+    "name": "Invisible friend circling you",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Someone you cannot see, breathy and quick, zipping round and round your head.",
+    "tags": ["invisible", "circling", "whisper", "headphones"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 55 } },
+      { "m": "stereo.orbit", "p": { "period": 1.5, "distance": 0.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-time-freeze-spell",
+    "name": "Time freeze spell",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Time stops on every syllable, the frozen sounds hanging and swirling in the air.",
+    "tags": ["spell", "frozen", "time", "swirl"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "hold": 2000, "interval": 1200, "blend": 70 } },
+      { "m": "mod.phaser", "p": { "rate": 0.2, "feedback": 60, "mix": 40 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-teleporting-spell",
+    "name": "Teleporting spell",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Each phrase blinks to the other ear with a metallic zap and a sparkling trail.",
+    "tags": ["teleport", "jump", "zap", "headphones"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 120, "feedback": 30, "time": 40, "mix": 35 } },
+      { "m": "stereo.pingpong", "p": { "width": 100, "glide": 10 } },
+      { "m": "space.shimmer", "p": { "interval": "twooct", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-charm-spell",
+    "name": "Charm spell, sweet and dreamy",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "A honeyed, wavering voice wrapped in a soft glowing chorus.",
+    "tags": ["charm", "sweet", "dreamy", "warm"],
+    "chain": [
+      { "m": "pitch.vibrato", "p": { "rate": 4, "depth": 45 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "mod.chorus", "p": { "depth": 55, "rate": 0.5 } },
+      { "m": "space.shimmer", "p": { "mix": 30, "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sleep-spell",
+    "name": "Falling under a sleep spell",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Your voice slows and sinks as the spell works, drifting off into a soft haze.",
+    "tags": ["sleep", "spell", "slowing", "haze"],
+    "chain": [
+      { "m": "time.drawl", "p": { "pitch": "drop", "ramp": "slowing" } },
+      { "m": "spec.blur", "p": { "amount": 30 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "damping": 70, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-glowing-rune-echo",
+    "name": "Glowing rune echo",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Your words tuned to a hovering chord that echoes on the beat, like a rune humming.",
+    "tags": ["rune", "chord", "echo", "humming"],
+    "chain": [
+      { "m": "spec.comb", "p": { "base": 165, "chord": "sus", "sharpness": 75, "ring": 65 } },
+      { "m": "echo.delay", "p": { "division": "dotted", "tempo": 90, "feedback": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-spell-turns-you-into-a-frog",
+    "name": "Spell turns you into a frog",
+    "cat": "fantasy",
+    "sub": "Spells and potions",
+    "about": "Mid-sentence the spell lands and your voice sinks into a gargling croak.",
+    "tags": ["frog", "spell", "croak", "funny"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": -6, "curve": "late", "timbre": 40 } },
+      { "m": "synth.am", "p": { "rate": 28, "depth": 70, "shape": "bubbly" } },
+      { "m": "tone.character", "p": { "shape": "honky" } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -26 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-arriving-through-time",
+    "name": "Arriving through time",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "A time traveller spinning up out of the whirl, the voice winding up to speed with a whoosh.",
+    "tags": ["time", "travel", "whoosh", "warp"],
+    "chain": [
+      { "m": "time.tapestop", "p": { "when": "phrases", "motion": "start", "stopMs": 700 } },
+      { "m": "mod.flanger", "p": { "rate": 1.2, "feedback": 75 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-message-from-the-far-future",
+    "name": "Message from the far future",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "A voice reaching back through the ages, wobbling, slipping and smeared by time.",
+    "tags": ["time", "future", "wobble", "smear"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 120, "speed": 0.4 } },
+      { "m": "spec.dropout", "p": { "loss": 10, "conceal": "mixed" } },
+      { "m": "spec.blur", "p": { "amount": 35, "time": 700 } },
+      { "m": "space.distance", "p": { "distance": 60, "outdoors": false, "wind": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dream-voice",
+    "name": "Dream voice",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "A soft, swaying voice from inside a dream, dark and far and endlessly echoing.",
+    "tags": ["dream", "soft", "sway", "echo"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 0.3, "randomness": 30 } },
+      { "m": "spec.blur", "p": { "amount": 45, "time": 1500 } },
+      { "m": "tone.filter", "p": { "freq": 3000, "slope": "gentle" } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 7, "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-dream-inside-a-dream",
+    "name": "Dream inside a dream",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "Slowed words with ghostly backwards swells and a doubled chorus, a dream folding in on itself.",
+    "tags": ["dream", "reverse", "slow", "layers"],
+    "chain": [
+      { "m": "pitch.tempo", "p": { "tempo": 0.8 } },
+      { "m": "echo.preverb", "p": { "length": 2, "mix": 45 } },
+      { "m": "mod.chorus", "p": { "depth": 60, "rate": 0.2, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-lullaby-from-the-moon",
+    "name": "Lullaby from the moon",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "Speech softly tuned into a lullaby, floating above you on a warm summer night.",
+    "tags": ["lullaby", "moon", "soft", "night"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "key": "F", "scale": "major", "speed": 120 } },
+      { "m": "space.shimmer", "p": { "mix": 35, "decay": 6 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 60, "distance": 5, "room": "outdoors" } }
+    ],
+    "bed": { "b": "night-crickets", "level": -28 },
+    "seed": 1
+  },
+  {
+    "id": "fantasy-sleepwalker-murmuring",
+    "name": "Sleepwalker murmuring",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "A drowsy murmur that wanders away from you down a dark hallway.",
+    "tags": ["sleepy", "murmur", "walking", "hallway"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 40 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } },
+      { "m": "stereo.walkaway", "p": { "to": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "fantasy-trapped-in-an-hourglass",
+    "name": "Trapped in an hourglass",
+    "cat": "fantasy",
+    "sub": "Dreams and time",
+    "about": "A tiny voice in a glass hourglass, its words trickling away like grains of sand.",
+    "tags": ["hourglass", "glass", "sand", "trapped"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 5 } },
+      { "m": "synth.granular", "p": { "grain": 25, "density": 120, "scatter": 400, "spread": 60, "mix": 45 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 60 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -28, "p": { "strength": 25 } },
+    "seed": 1
+  }
+]

@@ -1,0 +1,5868 @@
+[
+ {
+  "id": "airplane-cabin",
+  "name": "Airplane cabin",
+  "group": "vehicles",
+  "about": "Seated on an airliner at cruise: the steady roar, slow beating engines, air vents and the cabin chime.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "seat",
+    "name": "Seat",
+    "type": "choice",
+    "def": "wing",
+    "options": [
+     {
+      "v": "front",
+      "name": "Near the front"
+     },
+     {
+      "v": "wing",
+      "name": "Over the wing"
+     },
+     {
+      "v": "back",
+      "name": "At the back, by the engines"
+     }
+    ]
+   },
+   {
+    "id": "chimes",
+    "name": "Cabin chimes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "turbulence",
+    "name": "Turbulence",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "airport-hall",
+  "name": "Airport hall",
+  "group": "places",
+  "about": "A big airport terminal: rolling suitcases, footsteps, chimes and announcements over a crowd murmur.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Hall size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     100
+    ]
+   },
+   {
+    "id": "announcements",
+    "name": "Announcements",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "suitcases",
+    "name": "Rolling suitcases",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "jets",
+    "name": "Jets outside",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "arcade-hall",
+  "name": "Game arcade",
+  "group": "places",
+  "about": "A busy game arcade: machines bleeping and blasting, coins dropping, buttons mashed, and kids chattering.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Hall size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "machines",
+    "name": "Machines",
+    "type": "number",
+    "min": 2,
+    "max": 20,
+    "step": 1,
+    "def": 10,
+    "unit": "count",
+    "noun": [
+     "machine",
+     "machines"
+    ],
+    "rand": [
+     5,
+     16
+    ]
+   },
+   {
+    "id": "coins",
+    "name": "Coins and tickets",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "crowd",
+    "name": "Kids talking",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "beehive",
+  "name": "Beehive",
+  "group": "nature",
+  "about": "Beside a busy hive in a garden: a warm, beating hum, and bees zipping past your head.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the hive",
+    "type": "number",
+    "min": 0.5,
+    "max": 20,
+    "step": 0.5,
+    "def": 2.5,
+    "unit": "meters"
+   },
+   {
+    "id": "flybys",
+    "name": "Bees flying past",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent"
+   },
+   {
+    "id": "place",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "garden",
+    "options": [
+     {
+      "v": "garden",
+      "name": "At the hive in a garden"
+     },
+     {
+      "v": "inside",
+      "name": "Ear against the hive"
+     }
+    ]
+   },
+   {
+    "id": "breeze",
+    "name": "Breeze",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "blaze",
+  "name": "Roaring blaze",
+  "group": "fire",
+  "about": "A big bonfire roaring and flaring, crackling loudly all across, timbers collapsing into it.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Size of the fire",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 75,
+    "unit": "percent",
+    "rand": [
+     45,
+     100
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "flare",
+    "name": "Flare-ups",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     85
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     65
+    ]
+   }
+  ]
+ },
+ {
+  "id": "blizzard",
+  "name": "Blizzard",
+  "group": "weather",
+  "about": "A howling snowstorm: freezing gusts full of hissing, ticking snow, out in it or safe inside a cabin.",
+  "params": [
+   {
+    "id": "strength",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 80,
+    "unit": "percent",
+    "rand": [
+     55,
+     100
+    ]
+   },
+   {
+    "id": "snow",
+    "name": "Blowing snow",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "howl",
+    "name": "Howl",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     80
+    ]
+   },
+   {
+    "id": "where",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "outside",
+    "options": [
+     {
+      "v": "outside",
+      "name": "Out in the storm"
+     },
+     {
+      "v": "inside",
+      "name": "Inside a cabin"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "boat-engine",
+  "name": "Motor boat",
+  "group": "vehicles",
+  "about": "Out on the water in a motor boat: the engine, the hull slapping the waves and the wash along the side.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Throttle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "boat",
+    "name": "Boat",
+    "type": "choice",
+    "def": "fishing",
+    "options": [
+     {
+      "v": "outboard",
+      "name": "A small outboard motor"
+     },
+     {
+      "v": "fishing",
+      "name": "An old fishing boat"
+     },
+     {
+      "v": "ship",
+      "name": "A big ship, below deck"
+     }
+    ]
+   },
+   {
+    "id": "waves",
+    "name": "Waves",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     90
+    ]
+   },
+   {
+    "id": "seat",
+    "name": "Where you sit",
+    "type": "choice",
+    "def": "engine",
+    "options": [
+     {
+      "v": "engine",
+      "name": "Near the engine"
+     },
+     {
+      "v": "bow",
+      "name": "Up at the bow"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "bus",
+  "name": "City bus",
+  "group": "vehicles",
+  "about": "Riding a city bus: the diesel growling at the back, stops, hissing doors and brakes, rattling windows.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "route",
+    "name": "Route",
+    "type": "choice",
+    "def": "city",
+    "options": [
+     {
+      "v": "city",
+      "name": "Stopping around town"
+     },
+     {
+      "v": "highway",
+      "name": "Out on the highway"
+     }
+    ]
+   },
+   {
+    "id": "rattles",
+    "name": "Rattles",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "bells",
+    "name": "Bells and beeps",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "cafe",
+  "name": "Coffee shop",
+  "group": "places",
+  "about": "A busy coffee shop: chatter at the tables, cups and spoons clinking, the espresso machine hissing.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "dishes",
+    "name": "Cups and dishes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "espresso",
+    "name": "Espresso machine",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "seat",
+    "name": "Where you sit",
+    "type": "choice",
+    "def": "middle",
+    "options": [
+     {
+      "v": "middle",
+      "name": "In the middle of the room"
+     },
+     {
+      "v": "counter",
+      "name": "By the counter"
+     },
+     {
+      "v": "corner",
+      "name": "In a quiet corner"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "campfire",
+  "name": "Campfire",
+  "group": "fire",
+  "about": "A wood campfire crackling and popping, flames softly roaring, logs settling now and then.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Size of the fire",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "pops",
+    "name": "Pops and sparks",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "logs",
+    "name": "Logs settling",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "car-highway",
+  "name": "Car on the highway",
+  "group": "vehicles",
+  "about": "Riding in a car at highway speed: tyre roar, wind, the engine, and trucks passing by.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Speed",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "car",
+    "name": "Car",
+    "type": "choice",
+    "def": "family",
+    "options": [
+     {
+      "v": "family",
+      "name": "A quiet family car"
+     },
+     {
+      "v": "truck",
+      "name": "An old pickup truck"
+     },
+     {
+      "v": "small",
+      "name": "A small buzzy car"
+     },
+     {
+      "v": "electric",
+      "name": "An electric car"
+     }
+    ]
+   },
+   {
+    "id": "surface",
+    "name": "Road",
+    "type": "choice",
+    "def": "smooth",
+    "options": [
+     {
+      "v": "smooth",
+      "name": "Smooth new road"
+     },
+     {
+      "v": "seams",
+      "name": "Concrete with seams"
+     },
+     {
+      "v": "rough",
+      "name": "Worn rough road"
+     },
+     {
+      "v": "wet",
+      "name": "Wet road"
+     }
+    ]
+   },
+   {
+    "id": "windows",
+    "name": "Windows",
+    "type": "choice",
+    "def": "closed",
+    "options": [
+     {
+      "v": "closed",
+      "name": "All closed"
+     },
+     {
+      "v": "crack",
+      "name": "One open a crack"
+     },
+     {
+      "v": "open",
+      "name": "One rolled down"
+     }
+    ]
+   },
+   {
+    "id": "traffic",
+    "name": "Passing traffic",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "car-rain",
+  "name": "Car in the rain",
+  "group": "vehicles",
+  "about": "Inside a car in the rain: drumming on the roof, drops on the windscreen, wipers swishing and the heater fan.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "wipers",
+    "name": "Wipers",
+    "type": "choice",
+    "def": "slow",
+    "options": [
+     {
+      "v": "off",
+      "name": "Wipers off"
+     },
+     {
+      "v": "slow",
+      "name": "Slow wipers"
+     },
+     {
+      "v": "fast",
+      "name": "Fast wipers"
+     }
+    ]
+   },
+   {
+    "id": "motion",
+    "name": "The car",
+    "type": "choice",
+    "def": "idle",
+    "options": [
+     {
+      "v": "parked",
+      "name": "Parked, engine off"
+     },
+     {
+      "v": "idle",
+      "name": "Parked, engine running"
+     },
+     {
+      "v": "driving",
+      "name": "Driving slowly"
+     }
+    ]
+   },
+   {
+    "id": "fan",
+    "name": "Heater fan",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "carnival",
+  "name": "Carnival",
+  "group": "places",
+  "about": "A fairground at night: a band organ playing far off, crowd chatter, game bells, rides rumbling and distant screams.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "music",
+    "name": "Band organ",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "rides",
+    "name": "Rides",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "games",
+    "name": "Games",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   }
+  ]
+ },
+ {
+  "id": "casino",
+  "name": "Casino floor",
+  "group": "places",
+  "about": "A casino floor: slot machines chiming, coins and chips clattering, a roulette wheel, and a cheer from a table.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Floor size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "slots",
+    "name": "Slot machines",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "tables",
+    "name": "Game tables",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "jackpot",
+    "name": "Jackpots",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "cave-drips",
+  "name": "Dripping cave",
+  "group": "water",
+  "about": "Deep in a cave: water dripping into pools from several places, each with its own note, echoing in the dark.",
+  "params": [
+   {
+    "id": "drips",
+    "name": "Dripping places",
+    "type": "number",
+    "min": 1,
+    "max": 10,
+    "step": 1,
+    "def": 4,
+    "unit": "count",
+    "noun": [
+     "place",
+     "places"
+    ],
+    "rand": [
+     2,
+     8
+    ]
+   },
+   {
+    "id": "speed",
+    "name": "Drip speed",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Cave size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "stream",
+    "name": "Far-off stream",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "city-street",
+  "name": "City street",
+  "group": "places",
+  "about": "A busy city sidewalk: cars swishing past, horns, a far-off siren, and people walking by.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Traffic",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the road",
+    "type": "number",
+    "min": 2,
+    "max": 40,
+    "step": 1,
+    "def": 5,
+    "unit": "meters",
+    "rand": [
+     3,
+     15
+    ]
+   },
+   {
+    "id": "horns",
+    "name": "Horns",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     70
+    ]
+   },
+   {
+    "id": "sirens",
+    "name": "Sirens",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "people",
+    "name": "People walking by",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "wet",
+    "name": "Wet road",
+    "type": "bool",
+    "def": false
+   },
+   {
+    "id": "crossing",
+    "name": "Crossing signal ticking",
+    "type": "bool",
+    "def": false
+   },
+   {
+    "id": "street",
+    "name": "Street",
+    "type": "choice",
+    "def": "downtown",
+    "options": [
+     {
+      "v": "downtown",
+      "name": "Downtown between tall buildings"
+     },
+     {
+      "v": "avenue",
+      "name": "A wide avenue"
+     },
+     {
+      "v": "side",
+      "name": "A quiet side street"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "clock-tick",
+  "name": "Ticking clock",
+  "group": "spooky",
+  "about": "A clock ticking in a quiet room, from a pocket watch to a tall case clock that can strike the hour.",
+  "params": [
+   {
+    "id": "clock",
+    "name": "Clock",
+    "type": "choice",
+    "def": "wall",
+    "options": [
+     {
+      "v": "watch",
+      "name": "A pocket watch"
+     },
+     {
+      "v": "mantel",
+      "name": "A mantel clock"
+     },
+     {
+      "v": "wall",
+      "name": "A wall clock"
+     },
+     {
+      "v": "tall",
+      "name": "A tall case clock"
+     }
+    ]
+   },
+   {
+    "id": "intensity",
+    "name": "How loud it ticks",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room",
+    "type": "choice",
+    "def": "room",
+    "options": [
+     {
+      "v": "close",
+      "name": "Right beside it"
+     },
+     {
+      "v": "room",
+      "name": "A quiet room"
+     },
+     {
+      "v": "hall",
+      "name": "A big empty hall"
+     }
+    ]
+   },
+   {
+    "id": "strike",
+    "name": "Strikes the hour",
+    "type": "bool",
+    "def": false
+   }
+  ]
+ },
+ {
+  "id": "construction",
+  "name": "Construction site",
+  "group": "places",
+  "about": "A building site: a jackhammer, hammering, a circular saw, a diesel digger and a reversing beeper.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "jackhammer",
+    "name": "Jackhammer",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     10,
+     90
+    ]
+   },
+   {
+    "id": "saw",
+    "name": "Circular saw",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "hammering",
+    "name": "Hammering",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     10,
+     90
+    ]
+   },
+   {
+    "id": "machines",
+    "name": "Diesel machines",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     10,
+     90
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the work",
+    "type": "number",
+    "min": 5,
+    "max": 80,
+    "step": 1,
+    "def": 15,
+    "unit": "meters",
+    "rand": [
+     8,
+     40
+    ]
+   }
+  ]
+ },
+ {
+  "id": "creek",
+  "name": "Babbling creek",
+  "group": "water",
+  "about": "A shallow creek close by, gurgling and bubbling over the stones in several places.",
+  "params": [
+   {
+    "id": "flow",
+    "name": "How much water",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "babble",
+    "name": "Babbling",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "spots",
+    "name": "Gurgling spots",
+    "type": "number",
+    "min": 1,
+    "max": 8,
+    "step": 1,
+    "def": 4,
+    "unit": "count",
+    "noun": [
+     "spot",
+     "spots"
+    ],
+    "rand": [
+     2,
+     7
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "desert-wind",
+  "name": "Desert wind",
+  "group": "weather",
+  "about": "Hot dry wind across open sand, the grains hissing in every gust, with the odd low hum of a singing dune if you like.",
+  "params": [
+   {
+    "id": "strength",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "sand",
+    "name": "Blowing sand",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "gusts",
+    "name": "Gusts",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "dunes",
+    "name": "Singing dunes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 0,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "dungeon",
+  "name": "Dungeon",
+  "group": "spooky",
+  "about": "Deep under a castle: water dripping on stone, chains shifting, far groans and an iron door.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How much happens",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Dripping water",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     20,
+     100
+    ]
+   },
+   {
+    "id": "chains",
+    "name": "Chains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     0,
+     90
+    ]
+   },
+   {
+    "id": "groans",
+    "name": "Far groans",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room",
+    "type": "choice",
+    "def": "vault",
+    "options": [
+     {
+      "v": "cell",
+      "name": "A small cell"
+     },
+     {
+      "v": "vault",
+      "name": "A stone vault"
+     },
+     {
+      "v": "catacomb",
+      "name": "Long catacombs"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "eerie-whine",
+  "name": "Eerie wavering whine",
+  "group": "spooky",
+  "about": "The wavering electric whine of old horror and space films: ghostly swoops, a strange tune or a trembling note.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "style",
+    "name": "What it plays",
+    "type": "choice",
+    "def": "ghost",
+    "options": [
+     {
+      "v": "ghost",
+      "name": "Ghostly swoops"
+     },
+     {
+      "v": "tune",
+      "name": "A strange slow tune"
+     },
+     {
+      "v": "siren",
+      "name": "Slow rising and falling"
+     },
+     {
+      "v": "tremble",
+      "name": "A high trembling note"
+     }
+    ]
+   },
+   {
+    "id": "pitch",
+    "name": "Pitch",
+    "type": "choice",
+    "def": "middle",
+    "options": [
+     {
+      "v": "low",
+      "name": "Low and moaning"
+     },
+     {
+      "v": "middle",
+      "name": "Middle"
+     },
+     {
+      "v": "high",
+      "name": "High and thin"
+     }
+    ]
+   },
+   {
+    "id": "wobble",
+    "name": "Wobble",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "company",
+    "name": "Players",
+    "type": "choice",
+    "def": "alone",
+    "options": [
+     {
+      "v": "alone",
+      "name": "Just one"
+     },
+     {
+      "v": "pair",
+      "name": "Two answering each other"
+     }
+    ]
+   },
+   {
+    "id": "echo",
+    "name": "Tape echo",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room",
+    "type": "choice",
+    "def": "hall",
+    "options": [
+     {
+      "v": "close",
+      "name": "Right beside you"
+     },
+     {
+      "v": "room",
+      "name": "A dark room"
+     },
+     {
+      "v": "hall",
+      "name": "A big empty hall"
+     }
+    ]
+   },
+   {
+    "id": "hum",
+    "name": "Old amplifier hum",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "engine-room",
+  "name": "Engine room",
+  "group": "vehicles",
+  "about": "Deep in an engine room: huge machinery pounding in a steel hall, steam hissing, a pump and clanking tools.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it works",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "machine",
+    "name": "Machinery",
+    "type": "choice",
+    "def": "diesel",
+    "options": [
+     {
+      "v": "diesel",
+      "name": "A big ship diesel"
+     },
+     {
+      "v": "steam",
+      "name": "An old steam engine"
+     },
+     {
+      "v": "turbine",
+      "name": "Power station turbines"
+     }
+    ]
+   },
+   {
+    "id": "steam",
+    "name": "Steam hiss",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "clanks",
+    "name": "Clanks and tools",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room",
+    "type": "choice",
+    "def": "large",
+    "options": [
+     {
+      "v": "small",
+      "name": "A cramped compartment"
+     },
+     {
+      "v": "large",
+      "name": "A big steel hall"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "factory",
+  "name": "Factory floor",
+  "group": "places",
+  "about": "A factory floor: a pounding press, a rattling conveyor, motors humming, and bursts of compressed air.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "tempo",
+    "name": "Press beats",
+    "type": "number",
+    "min": 10,
+    "max": 120,
+    "step": 1,
+    "def": 40,
+    "unit": "bpm",
+    "rand": [
+     20,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Hall size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     100
+    ]
+   },
+   {
+    "id": "air",
+    "name": "Air bursts",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the machines",
+    "type": "number",
+    "min": 2,
+    "max": 30,
+    "step": 1,
+    "def": 6,
+    "unit": "meters",
+    "rand": [
+     3,
+     15
+    ]
+   }
+  ]
+ },
+ {
+  "id": "farm-morning",
+  "name": "Farmyard morning",
+  "group": "nature",
+  "about": "Early morning on a farm: roosters crowing, hens clucking nearby, sparrows, doves, a far cow.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Farm life",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the barnyard",
+    "type": "number",
+    "min": 4,
+    "max": 60,
+    "step": 1,
+    "def": 14,
+    "unit": "meters"
+   },
+   {
+    "id": "rooster",
+    "name": "Roosters",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "hens",
+    "name": "Hens",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "cows",
+    "name": "Cow far off",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "breeze",
+    "name": "Breeze",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "fireplace",
+  "name": "Fireplace",
+  "group": "fire",
+  "about": "A log fire in the hearth of a quiet room, crackling gently, the chimney drawing, logs shifting on the grate.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Size of the fire",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     20,
+     80
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "logs",
+    "name": "Logs settling",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     75
+    ]
+   },
+   {
+    "id": "room",
+    "name": "Room sound",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     75
+    ]
+   }
+  ]
+ },
+ {
+  "id": "forest-birds",
+  "name": "Forest birds",
+  "group": "nature",
+  "about": "A spring wood full of birdsong: singers near and far, soft chips, a far dove, wind in the leaves.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Birdsong",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the birds",
+    "type": "number",
+    "min": 4,
+    "max": 80,
+    "step": 1,
+    "def": 18,
+    "unit": "meters"
+   },
+   {
+    "id": "wind",
+    "name": "Wind in the trees",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent"
+   },
+   {
+    "id": "trees",
+    "name": "Trees",
+    "type": "choice",
+    "def": "leafy",
+    "options": [
+     {
+      "v": "leafy",
+      "name": "Leafy woods"
+     },
+     {
+      "v": "pines",
+      "name": "Pine woods"
+     }
+    ]
+   },
+   {
+    "id": "woodpecker",
+    "name": "Woodpecker",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "dove",
+    "name": "Far dove",
+    "type": "bool",
+    "def": true
+   }
+  ]
+ },
+ {
+  "id": "fountain",
+  "name": "Fountain",
+  "group": "water",
+  "about": "A fountain splashing and sparkling into its stone basin, in a quiet garden or a town square.",
+  "params": [
+   {
+    "id": "flow",
+    "name": "How much water",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "place",
+    "name": "Where it is",
+    "type": "choice",
+    "def": "square",
+    "options": [
+     {
+      "v": "square",
+      "name": "A town square"
+     },
+     {
+      "v": "garden",
+      "name": "A small garden"
+     }
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     65
+    ]
+   }
+  ]
+ },
+ {
+  "id": "fridge-hum",
+  "name": "Refrigerator hum",
+  "group": "places",
+  "about": "A refrigerator humming in a quiet kitchen at night, with clicks, gurgles and the odd drop of ice.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Hum",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "age",
+    "name": "Fridge",
+    "type": "choice",
+    "def": "new",
+    "options": [
+     {
+      "v": "new",
+      "name": "A quiet new one"
+     },
+     {
+      "v": "old",
+      "name": "A rattly old one"
+     }
+    ]
+   },
+   {
+    "id": "ice",
+    "name": "Ice maker",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the fridge",
+    "type": "number",
+    "min": 0.5,
+    "max": 6,
+    "step": 0.5,
+    "def": 2,
+    "unit": "meters",
+    "rand": [
+     1,
+     4
+    ]
+   }
+  ]
+ },
+ {
+  "id": "frogs-pond",
+  "name": "Frog pond",
+  "group": "nature",
+  "about": "A spring pond after dark: peepers ringing, trilling toads, twangy frogs, and the odd splash.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Frog chorus",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the water",
+    "type": "number",
+    "min": 2,
+    "max": 60,
+    "step": 1,
+    "def": 10,
+    "unit": "meters"
+   },
+   {
+    "id": "peepers",
+    "name": "Peepers",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 70,
+    "unit": "percent"
+   },
+   {
+    "id": "toads",
+    "name": "Trilling toads",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "croakers",
+    "name": "Deep croakers",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent"
+   },
+   {
+    "id": "water",
+    "name": "Splashes and lapping",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "graveyard",
+  "name": "Graveyard at night",
+  "group": "spooky",
+  "about": "An old graveyard after dark: wind in bare trees, crickets, an owl, a far bell and a creaking iron gate.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How much happens",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "wind",
+    "name": "Wind",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "bell",
+    "name": "Far bell",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "creatures",
+    "name": "Crickets and owl",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     10,
+     90
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Bell and owl distance",
+    "type": "number",
+    "min": 50,
+    "max": 2000,
+    "step": 10,
+    "def": 400,
+    "unit": "meters",
+    "rand": [
+     150,
+     1200
+    ]
+   }
+  ]
+ },
+ {
+  "id": "hail",
+  "name": "Hail",
+  "group": "weather",
+  "about": "Hailstones clattering and bouncing on the ground, a deck, a window, a tin roof or a car.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it hails",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Stone size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "surface",
+    "name": "What it hits",
+    "type": "choice",
+    "def": "ground",
+    "options": [
+     {
+      "v": "ground",
+      "name": "Grass and ground"
+     },
+     {
+      "v": "deck",
+      "name": "A wooden deck"
+     },
+     {
+      "v": "window",
+      "name": "A window"
+     },
+     {
+      "v": "roof",
+      "name": "A tin roof"
+     },
+     {
+      "v": "car",
+      "name": "A car"
+     }
+    ]
+   },
+   {
+    "id": "rain",
+    "name": "Rain with it",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "haunted-house",
+  "name": "Haunted house",
+  "group": "spooky",
+  "about": "An old house at night: creaking doors and floors, steps upstairs, wind at the windows and far-off moans.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How much happens",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "wind",
+    "name": "Wind outside",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "moans",
+    "name": "Distant moans",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "House",
+    "type": "choice",
+    "def": "mansion",
+    "options": [
+     {
+      "v": "small",
+      "name": "A small cottage"
+     },
+     {
+      "v": "mansion",
+      "name": "A big old mansion"
+     },
+     {
+      "v": "hall",
+      "name": "An empty great hall"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "heartbeat",
+  "name": "Heartbeat",
+  "group": "spooky",
+  "about": "A heartbeat, lub-dub, steady or racing or skipping, heard from inside, on a chest or under the floor.",
+  "params": [
+   {
+    "id": "rate",
+    "name": "Beats per minute",
+    "type": "number",
+    "min": 40,
+    "max": 180,
+    "step": 1,
+    "def": 66,
+    "unit": "bpm",
+    "rand": [
+     50,
+     130
+    ]
+   },
+   {
+    "id": "intensity",
+    "name": "How hard it beats",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "pattern",
+    "name": "Rhythm",
+    "type": "choice",
+    "def": "steady",
+    "options": [
+     {
+      "v": "steady",
+      "name": "Steady"
+     },
+     {
+      "v": "faster",
+      "name": "Speeding up"
+     },
+     {
+      "v": "slower",
+      "name": "Slowing down"
+     },
+     {
+      "v": "skipping",
+      "name": "Skipping beats"
+     }
+    ]
+   },
+   {
+    "id": "place",
+    "name": "Heard from",
+    "type": "choice",
+    "def": "chest",
+    "options": [
+     {
+      "v": "inside",
+      "name": "Inside your own head"
+     },
+     {
+      "v": "chest",
+      "name": "An ear on a chest"
+     },
+     {
+      "v": "room",
+      "name": "Under the floorboards"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "helicopter-cabin",
+  "name": "Helicopter cabin",
+  "group": "vehicles",
+  "about": "Inside a helicopter in flight: the deep rotor thump, the turbine whine, the gearbox and rushing wind.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "rate",
+    "name": "Rotor beat",
+    "type": "number",
+    "min": 3,
+    "max": 14,
+    "step": 0.1,
+    "def": 5.5,
+    "unit": "hz",
+    "rand": [
+     4.5,
+     9
+    ]
+   },
+   {
+    "id": "whine",
+    "name": "Turbine whine",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     80
+    ]
+   },
+   {
+    "id": "doors",
+    "name": "Doors",
+    "type": "choice",
+    "def": "closed",
+    "options": [
+     {
+      "v": "closed",
+      "name": "Doors closed"
+     },
+     {
+      "v": "open",
+      "name": "Doors open"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "hospital",
+  "name": "Hospital ward",
+  "group": "places",
+  "about": "A hospital ward: a heart monitor beeping, soft footsteps, a hushed nurses station and a distant page.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Activity",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     15,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Ward size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "heartRate",
+    "name": "Heart rate",
+    "type": "number",
+    "min": 40,
+    "max": 160,
+    "step": 1,
+    "def": 72,
+    "unit": "bpm",
+    "rand": [
+     55,
+     110
+    ]
+   },
+   {
+    "id": "monitors",
+    "name": "Monitors",
+    "type": "number",
+    "min": 1,
+    "max": 4,
+    "step": 1,
+    "def": 2,
+    "unit": "count",
+    "noun": [
+     "monitor",
+     "monitors"
+    ],
+    "rand": [
+     1,
+     3
+    ]
+   },
+   {
+    "id": "pages",
+    "name": "Pages and alarms",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "jungle",
+  "name": "Jungle by day",
+  "group": "nature",
+  "about": "A steamy rainforest by day: strange bird calls, whooping far off, winding cicadas, frogs and drips.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Wildlife",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "birds",
+    "name": "Birds",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "insects",
+    "name": "Insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "calls",
+    "name": "Distant whooping calls",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent"
+   },
+   {
+    "id": "drips",
+    "name": "Dripping leaves",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the animals",
+    "type": "number",
+    "min": 5,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "meters"
+   }
+  ]
+ },
+ {
+  "id": "kitchen",
+  "name": "Restaurant kitchen",
+  "group": "places",
+  "about": "A restaurant kitchen at full tilt: sizzling pans, chopping, clanging pots, the hood fan and shouted orders.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     95
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Kitchen size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "sizzle",
+    "name": "Frying",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "chopping",
+    "name": "Chopping",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "shouts",
+    "name": "Shouted orders",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "fan",
+    "name": "Hood fan",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "laundromat",
+  "name": "Laundromat",
+  "group": "places",
+  "about": "A laundromat: washers sloshing, dryers tumbling with buttons ticking, a spin cycle whining, coins and buzzers.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "washers",
+    "name": "Washers running",
+    "type": "number",
+    "min": 0,
+    "max": 6,
+    "step": 1,
+    "def": 3,
+    "unit": "count",
+    "noun": [
+     "washer",
+     "washers"
+    ],
+    "rand": [
+     1,
+     5
+    ]
+   },
+   {
+    "id": "dryers",
+    "name": "Dryers running",
+    "type": "number",
+    "min": 0,
+    "max": 6,
+    "step": 1,
+    "def": 3,
+    "unit": "count",
+    "noun": [
+     "dryer",
+     "dryers"
+    ],
+    "rand": [
+     1,
+     5
+    ]
+   },
+   {
+    "id": "spin",
+    "name": "Spin cycle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "library-hush",
+  "name": "Library",
+  "group": "places",
+  "about": "A quiet library: soft air, pages turning, a whisper now and then, and footsteps on carpet.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Activity",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     15,
+     80
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Room size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "pages",
+    "name": "Page turns",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "whispers",
+    "name": "Whispers",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "clock",
+    "name": "Wall clock",
+    "type": "bool",
+    "def": true
+   }
+  ]
+ },
+ {
+  "id": "meadow-dawn",
+  "name": "Meadow at dawn",
+  "group": "nature",
+  "about": "First light in an open meadow: a skylark high above, sweet whistles in the grass, doves far off.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Dawn chorus",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the birds",
+    "type": "number",
+    "min": 5,
+    "max": 100,
+    "step": 1,
+    "def": 28,
+    "unit": "meters"
+   },
+   {
+    "id": "lark",
+    "name": "Skylark overhead",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "doves",
+    "name": "Far doves",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "build",
+    "name": "Chorus builds up",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent"
+   },
+   {
+    "id": "breeze",
+    "name": "Breeze in the grass",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 15,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "mountain-top",
+  "name": "Mountain top",
+  "group": "nature",
+  "about": "A windy summit: gusts roaring past your ears, whistling rocks, a hawk crying far below, echoes.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "gusts",
+    "name": "Gustiness",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "whistle",
+    "name": "Whistling rocks",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent"
+   },
+   {
+    "id": "valley",
+    "name": "Valley size",
+    "type": "number",
+    "min": 200,
+    "max": 3000,
+    "step": 50,
+    "def": 900,
+    "unit": "meters"
+   },
+   {
+    "id": "hawk",
+    "name": "Hawk crying far off",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "bells",
+    "name": "Far herd with bells",
+    "type": "bool",
+    "def": false
+   }
+  ]
+ },
+ {
+  "id": "music-box-broken",
+  "name": "Broken music box",
+  "group": "spooky",
+  "about": "An old music box playing a sad little waltz, out of tune, missing notes, running down and wound again.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "broken",
+    "name": "How broken",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "tempo",
+    "name": "Tempo",
+    "type": "number",
+    "min": 50,
+    "max": 160,
+    "step": 1,
+    "def": 104,
+    "unit": "bpm",
+    "rand": [
+     80,
+     130
+    ]
+   },
+   {
+    "id": "winding",
+    "name": "Runs down and is wound again",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "size",
+    "name": "Room",
+    "type": "choice",
+    "def": "room",
+    "options": [
+     {
+      "v": "close",
+      "name": "In your hands"
+     },
+     {
+      "v": "room",
+      "name": "An attic room"
+     },
+     {
+      "v": "hall",
+      "name": "An empty hall"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "night-crickets",
+  "name": "Night crickets",
+  "group": "nature",
+  "about": "A warm summer night: crickets near and far, katydids answering each other, a still breeze.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How many crickets",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "warmth",
+    "name": "Warm night",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent"
+   },
+   {
+    "id": "kind",
+    "name": "Crickets",
+    "type": "choice",
+    "def": "mixed",
+    "options": [
+     {
+      "v": "mixed",
+      "name": "Field and tree crickets"
+     },
+     {
+      "v": "field",
+      "name": "Field crickets"
+     },
+     {
+      "v": "tree",
+      "name": "Tree crickets in time"
+     }
+    ]
+   },
+   {
+    "id": "katydids",
+    "name": "Katydids",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Nearest cricket",
+    "type": "number",
+    "min": 1,
+    "max": 40,
+    "step": 1,
+    "def": 6,
+    "unit": "meters"
+   },
+   {
+    "id": "breeze",
+    "name": "Breeze",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 10,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "ocean",
+  "name": "Ocean waves",
+  "group": "water",
+  "about": "Waves rolling onto a beach, crashing, washing up the sand and fizzing back, from calm lapping to big surf.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Wave size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     90
+    ]
+   },
+   {
+    "id": "period",
+    "name": "Time between waves",
+    "type": "number",
+    "min": 4,
+    "max": 16,
+    "step": 0.5,
+    "def": 9,
+    "unit": "seconds",
+    "rand": [
+     6,
+     13
+    ]
+   },
+   {
+    "id": "shore",
+    "name": "Beach",
+    "type": "choice",
+    "def": "sand",
+    "options": [
+     {
+      "v": "sand",
+      "name": "Sandy beach"
+     },
+     {
+      "v": "pebbles",
+      "name": "Pebble beach"
+     }
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "office",
+  "name": "Office",
+  "group": "places",
+  "about": "An open office: air conditioning, keyboards clicking, phones ringing far off, a printer and quiet talk.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How busy",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Office size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "typing",
+    "name": "Typing",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "phones",
+    "name": "Phones ringing",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     70
+    ]
+   },
+   {
+    "id": "talk",
+    "name": "People talking",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "printer",
+    "name": "Printer",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "hvac",
+    "name": "Air conditioning",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "owl-woods",
+  "name": "Owls in the woods",
+  "group": "nature",
+  "about": "Dark woods at night: owls hooting and answering, a slow wind in the trees, a few insects.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Owls calling",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the owls",
+    "type": "number",
+    "min": 10,
+    "max": 200,
+    "step": 5,
+    "def": 45,
+    "unit": "meters"
+   },
+   {
+    "id": "owls",
+    "name": "Owls",
+    "type": "choice",
+    "def": "mixed",
+    "options": [
+     {
+      "v": "mixed",
+      "name": "Mixed owls"
+     },
+     {
+      "v": "deep",
+      "name": "Deep hooting pair"
+     },
+     {
+      "v": "eight",
+      "name": "Eight-note callers"
+     },
+     {
+      "v": "small",
+      "name": "Small owls trilling and tooting"
+     }
+    ]
+   },
+   {
+    "id": "wind",
+    "name": "Wind in the trees",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent"
+   },
+   {
+    "id": "insects",
+    "name": "Night insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "phone-line",
+  "name": "Telephone line",
+  "group": "spooky",
+  "about": "An old phone line: a dial tone, ringing or busy signal, with hiss, hum, clicks and faint crosstalk.",
+  "params": [
+   {
+    "id": "tone",
+    "name": "Tone",
+    "type": "choice",
+    "def": "dial",
+    "options": [
+     {
+      "v": "none",
+      "name": "An open line, no tone"
+     },
+     {
+      "v": "dial",
+      "name": "Dial tone"
+     },
+     {
+      "v": "europe",
+      "name": "Dial tone, European"
+     },
+     {
+      "v": "ring",
+      "name": "Ringing"
+     },
+     {
+      "v": "busy",
+      "name": "Busy signal"
+     },
+     {
+      "v": "reorder",
+      "name": "Fast busy"
+     }
+    ]
+   },
+   {
+    "id": "intensity",
+    "name": "Line noise",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     85
+    ]
+   },
+   {
+    "id": "hum",
+    "name": "Hum",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "crosstalk",
+    "name": "Crosstalk voices",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "clicks",
+    "name": "Clicks and crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "radio-static",
+  "name": "Radio static",
+  "group": "spooky",
+  "about": "A radio between stations: hiss and crackle, whistling carriers and faded fragments of far stations.",
+  "params": [
+   {
+    "id": "band",
+    "name": "Band",
+    "type": "choice",
+    "def": "am",
+    "options": [
+     {
+      "v": "am",
+      "name": "Medium wave at night"
+     },
+     {
+      "v": "shortwave",
+      "name": "Shortwave"
+     },
+     {
+      "v": "fm",
+      "name": "Between FM stations"
+     }
+    ]
+   },
+   {
+    "id": "intensity",
+    "name": "Static",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle and lightning",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "stations",
+    "name": "Far stations and whistles",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "tuning",
+    "name": "Turning the dial",
+    "type": "bool",
+    "def": false
+   }
+  ]
+ },
+ {
+  "id": "rain-gutter",
+  "name": "Rain gutter",
+  "group": "water",
+  "about": "Rain running along the gutter, gurgling down the pipe and pouring out at the bottom.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "where",
+    "name": "Where it pours",
+    "type": "choice",
+    "def": "barrel",
+    "options": [
+     {
+      "v": "barrel",
+      "name": "Into a rain barrel"
+     },
+     {
+      "v": "stones",
+      "name": "Onto paving stones"
+     },
+     {
+      "v": "puddle",
+      "name": "Into a puddle"
+     }
+    ]
+   },
+   {
+    "id": "pipe",
+    "name": "Gurgling in the pipe",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     90
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Spilling over the edge",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rain-roof",
+  "name": "Rain on a tin roof",
+  "group": "weather",
+  "about": "Under a metal roof while rain drums and pings on it, with gutter drips outside.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "ring",
+    "name": "Metal ring",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "place",
+    "name": "Under what",
+    "type": "choice",
+    "def": "porch",
+    "options": [
+     {
+      "v": "porch",
+      "name": "A porch roof"
+     },
+     {
+      "v": "shed",
+      "name": "A small shed"
+     },
+     {
+      "v": "barn",
+      "name": "A big barn"
+     }
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Gutter drips",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rain-tent",
+  "name": "Rain on a tent",
+  "group": "weather",
+  "about": "Camping in the rain: drops patter and thump on the tent fabric, with bigger drips falling from the trees.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Tent size",
+    "type": "choice",
+    "def": "small",
+    "options": [
+     {
+      "v": "small",
+      "name": "Small tent"
+     },
+     {
+      "v": "big",
+      "name": "Big family tent"
+     }
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Drips from trees",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "where",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "inside",
+    "options": [
+     {
+      "v": "inside",
+      "name": "Inside the tent"
+     },
+     {
+      "v": "outside",
+      "name": "Just outside it"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rain-window",
+  "name": "Rain on a window",
+  "group": "weather",
+  "about": "Indoors by a window while rain taps the glass, runs off the frame and trickles down the gutter outside.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Drips off the frame",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "trickle",
+    "name": "Gutter trickle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "room",
+    "name": "Room sound",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rain",
+  "name": "Rain",
+  "group": "weather",
+  "about": "Steady rain, close enough to hear the drops, on the ground, puddles and leaves, or a surface you pick.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "surface",
+    "name": "What it falls on",
+    "type": "choice",
+    "def": "mixed",
+    "options": [
+     {
+      "v": "mixed",
+      "name": "Ground, puddles and leaves"
+     },
+     {
+      "v": "leaves",
+      "name": "Leaves"
+     },
+     {
+      "v": "puddles",
+      "name": "Puddles"
+     },
+     {
+      "v": "pavement",
+      "name": "Street and pavement"
+     },
+     {
+      "v": "window",
+      "name": "A window"
+     },
+     {
+      "v": "roof",
+      "name": "A tin roof"
+     },
+     {
+      "v": "tent",
+      "name": "A tent"
+     }
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Drips from above",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "waves",
+    "name": "Comes and goes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     10,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rainforest-night",
+  "name": "Rainforest at night",
+  "group": "nature",
+  "about": "A tropical rainforest after dark: a wall of insects, two-note tree frogs, drips, a lonely night bird.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Night chorus",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent"
+   },
+   {
+    "id": "frogs",
+    "name": "Tree frogs",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "insects",
+    "name": "Insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent"
+   },
+   {
+    "id": "nightBird",
+    "name": "Night bird",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "drips",
+    "name": "Dripping leaves",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the frogs",
+    "type": "number",
+    "min": 2,
+    "max": 60,
+    "step": 1,
+    "def": 12,
+    "unit": "meters"
+   }
+  ]
+ },
+ {
+  "id": "river",
+  "name": "River",
+  "group": "water",
+  "about": "A wide river flowing past, from a smooth steady current to churning rapids.",
+  "params": [
+   {
+    "id": "flow",
+    "name": "How much water",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     90
+    ]
+   },
+   {
+    "id": "rapids",
+    "name": "Rapids",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     85
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     75
+    ]
+   }
+  ]
+ },
+ {
+  "id": "rocket-launch",
+  "name": "Rocket launch",
+  "group": "vehicles",
+  "about": "A rocket launch: ignition, a crackling roar building to full thrust, then climbing away into the sky.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     35,
+     90
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Where you watch from",
+    "type": "choice",
+    "def": "viewing",
+    "options": [
+     {
+      "v": "near",
+      "name": "Close to the pad"
+     },
+     {
+      "v": "viewing",
+      "name": "The viewing stands"
+     },
+     {
+      "v": "far",
+      "name": "Miles away"
+     }
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "shape",
+    "name": "Shape",
+    "type": "choice",
+    "def": "launch",
+    "options": [
+     {
+      "v": "launch",
+      "name": "The whole launch"
+     },
+     {
+      "v": "steady",
+      "name": "A steady roar"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "sailboat",
+  "name": "Sailboat",
+  "group": "vehicles",
+  "about": "Aboard a sailboat: wind in the rigging, a flapping sail, creaking lines, a halyard tinking and water at the hull.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Wind",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "waves",
+    "name": "Waves",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     85
+    ]
+   },
+   {
+    "id": "creaks",
+    "name": "Creaking",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     90
+    ]
+   },
+   {
+    "id": "rigging",
+    "name": "Rigging and sail",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     90
+    ]
+   }
+  ]
+ },
+ {
+  "id": "school-hall",
+  "name": "School hallway",
+  "group": "places",
+  "about": "A school hallway between classes: kids chattering, lockers slamming, sneakers squeaking, and the bell.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How crowded",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Hallway size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "lockers",
+    "name": "Lockers",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     85
+    ]
+   },
+   {
+    "id": "bell",
+    "name": "School bell",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "age",
+    "name": "Who is in the hall",
+    "type": "choice",
+    "def": "teens",
+    "options": [
+     {
+      "v": "teens",
+      "name": "Teenagers"
+     },
+     {
+      "v": "young",
+      "name": "Young children"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "seagulls-harbor",
+  "name": "Seagulls in a harbor",
+  "group": "nature",
+  "about": "A small harbor: gulls calling and laughing, water lapping, rigging clinking, a bell buoy far out.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Gulls",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the gulls",
+    "type": "number",
+    "min": 5,
+    "max": 120,
+    "step": 1,
+    "def": 25,
+    "unit": "meters"
+   },
+   {
+    "id": "water",
+    "name": "Lapping water",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent"
+   },
+   {
+    "id": "rigging",
+    "name": "Rigging clinking",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent"
+   },
+   {
+    "id": "wind",
+    "name": "Sea breeze",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent"
+   },
+   {
+    "id": "boats",
+    "name": "Boats and bell buoy",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "foghorn",
+    "name": "Foghorn",
+    "type": "bool",
+    "def": false
+   }
+  ]
+ },
+ {
+  "id": "server-room",
+  "name": "Server room",
+  "group": "places",
+  "about": "A server room: a wall of fans roaring, air handlers rumbling, a faint electrical hum and drive clicks.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Fan speed",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "racks",
+    "name": "Racks",
+    "type": "number",
+    "min": 1,
+    "max": 12,
+    "step": 1,
+    "def": 6,
+    "unit": "count",
+    "noun": [
+     "rack",
+     "racks"
+    ],
+    "rand": [
+     3,
+     10
+    ]
+   },
+   {
+    "id": "hum",
+    "name": "Electrical hum",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "clicks",
+    "name": "Drive clicks",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "where",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "inside",
+    "options": [
+     {
+      "v": "inside",
+      "name": "Inside the room"
+     },
+     {
+      "v": "door",
+      "name": "Behind the door"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "shore-rocks",
+  "name": "Waves on rocks",
+  "group": "water",
+  "about": "Sea waves booming against rocks, spray falling back in a shower of drops and water gurgling out of the cracks.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Wave size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "period",
+    "name": "Time between waves",
+    "type": "number",
+    "min": 4,
+    "max": 16,
+    "step": 0.5,
+    "def": 8,
+    "unit": "seconds",
+    "rand": [
+     5,
+     12
+    ]
+   },
+   {
+    "id": "spray",
+    "name": "Spray and splashes",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "spaceship-bridge",
+  "name": "Spaceship bridge",
+  "group": "vehicles",
+  "about": "On the bridge of a starship: a deep engine drone, air humming, consoles chirping and beeping.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "hum",
+    "name": "Engine drone",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "beeps",
+    "name": "Console beeps",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "alert",
+    "name": "Alert",
+    "type": "choice",
+    "def": "off",
+    "options": [
+     {
+      "v": "off",
+      "name": "All calm"
+     },
+     {
+      "v": "soft",
+      "name": "A soft warning pulse"
+     },
+     {
+      "v": "siren",
+      "name": "Full alarm"
+     }
+    ]
+   },
+   {
+    "id": "size",
+    "name": "Ship",
+    "type": "choice",
+    "def": "cruiser",
+    "options": [
+     {
+      "v": "shuttle",
+      "name": "A small shuttle"
+     },
+     {
+      "v": "cruiser",
+      "name": "A cruiser"
+     },
+     {
+      "v": "flagship",
+      "name": "A giant flagship"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "stadium-crowd",
+  "name": "Stadium crowd",
+  "group": "places",
+  "about": "A big stadium crowd: a roaring murmur that swells, cheers, applause, whistles and chants.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Crowd size",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     100
+    ]
+   },
+   {
+    "id": "excitement",
+    "name": "Excitement",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     95
+    ]
+   },
+   {
+    "id": "chants",
+    "name": "Chants",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "seat",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "stands",
+    "options": [
+     {
+      "v": "stands",
+      "name": "In the stands"
+     },
+     {
+      "v": "field",
+      "name": "Down on the field"
+     },
+     {
+      "v": "outside",
+      "name": "Outside the gates"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "storm",
+  "name": "Thunderstorm",
+  "group": "weather",
+  "about": "Heavy rain and gusty wind with thunder, cracking overhead or rumbling far away.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How hard it rains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 70,
+    "unit": "percent",
+    "rand": [
+     40,
+     95
+    ]
+   },
+   {
+    "id": "thunder",
+    "name": "Thunder per minute",
+    "type": "number",
+    "min": 0,
+    "max": 12,
+    "step": 1,
+    "def": 4,
+    "unit": "count",
+    "noun": [
+     "roll",
+     "rolls"
+    ],
+    "rand": [
+     2,
+     8
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Thunder distance",
+    "type": "number",
+    "min": 300,
+    "max": 12000,
+    "step": 100,
+    "def": 2500,
+    "unit": "meters",
+    "rand": [
+     500,
+     8000
+    ]
+   },
+   {
+    "id": "wind",
+    "name": "Wind",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "surface",
+    "name": "What it falls on",
+    "type": "choice",
+    "def": "mixed",
+    "options": [
+     {
+      "v": "mixed",
+      "name": "Ground, puddles and leaves"
+     },
+     {
+      "v": "pavement",
+      "name": "Street and pavement"
+     },
+     {
+      "v": "window",
+      "name": "A window"
+     },
+     {
+      "v": "roof",
+      "name": "A tin roof"
+     },
+     {
+      "v": "tent",
+      "name": "A tent"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "submarine",
+  "name": "Submarine",
+  "group": "vehicles",
+  "about": "Inside a submarine: the low hum of the boat, sonar pings ringing into the deep, the hull groaning.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "pings",
+    "name": "Sonar pings",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "groans",
+    "name": "Hull groans",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "hum",
+    "name": "Machinery hum",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     15,
+     80
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Echo distance",
+    "type": "number",
+    "min": 200,
+    "max": 5000,
+    "step": 50,
+    "def": 1500,
+    "unit": "meters",
+    "rand": [
+     500,
+     4000
+    ]
+   }
+  ]
+ },
+ {
+  "id": "subway-car",
+  "name": "Subway car",
+  "group": "vehicles",
+  "about": "Inside an underground train: tunnel roar, motors whining up and down, squealing curves and door chimes.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How loud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "line",
+    "name": "Train",
+    "type": "choice",
+    "def": "modern",
+    "options": [
+     {
+      "v": "modern",
+      "name": "A modern train"
+     },
+     {
+      "v": "old",
+      "name": "An old rattling train"
+     }
+    ]
+   },
+   {
+    "id": "squeal",
+    "name": "Squealing curves",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "stops",
+    "name": "Stops at stations",
+    "type": "bool",
+    "def": true
+   }
+  ]
+ },
+ {
+  "id": "subway-platform",
+  "name": "Subway platform",
+  "group": "places",
+  "about": "An underground platform: trains rumble in and out, doors chime, announcements echo off the tiles.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "How crowded",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "trains",
+    "name": "Trains",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     30,
+     100
+    ]
+   },
+   {
+    "id": "announcements",
+    "name": "Announcements",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     80
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance from the track",
+    "type": "number",
+    "min": 1,
+    "max": 12,
+    "step": 0.5,
+    "def": 3,
+    "unit": "meters",
+    "rand": [
+     2,
+     6
+    ]
+   },
+   {
+    "id": "squeal",
+    "name": "Wheel squeal",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "summer-field",
+  "name": "Summer field",
+  "group": "nature",
+  "about": "A hot summer field: cicadas swelling in the trees, grasshoppers, bees buzzing past, a warm breeze.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "cicadas",
+    "name": "Cicadas",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent"
+   },
+   {
+    "id": "bees",
+    "name": "Bees flying past",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent"
+   },
+   {
+    "id": "birds",
+    "name": "Far birds",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the trees",
+    "type": "number",
+    "min": 10,
+    "max": 150,
+    "step": 5,
+    "def": 35,
+    "unit": "meters"
+   },
+   {
+    "id": "breeze",
+    "name": "Breeze in the grass",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent"
+   }
+  ]
+ },
+ {
+  "id": "swamp",
+  "name": "Swamp at night",
+  "group": "nature",
+  "about": "A warm swamp after dark: deep frogs booming, twangs and clicks, rasping insects, bubbling mud.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Frogs",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "insects",
+    "name": "Insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent"
+   },
+   {
+    "id": "bubbles",
+    "name": "Bubbling mud",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "Distance to the frogs",
+    "type": "number",
+    "min": 3,
+    "max": 80,
+    "step": 1,
+    "def": 15,
+    "unit": "meters"
+   },
+   {
+    "id": "mosquitoes",
+    "name": "Mosquitoes",
+    "type": "bool",
+    "def": false
+   }
+  ]
+ },
+ {
+  "id": "torch",
+  "name": "Crackling torch",
+  "group": "fire",
+  "about": "A burning torch fluttering and spitting, drips of burning pitch hissing out on the floor.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Size of the flame",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "crackle",
+    "name": "Crackle and spit",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "drips",
+    "name": "Burning drips",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "move",
+    "name": "Movement",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "place",
+    "name": "Where it burns",
+    "type": "choice",
+    "def": "hand",
+    "options": [
+     {
+      "v": "hand",
+      "name": "Held in your hand, outdoors"
+     },
+     {
+      "v": "wall",
+      "name": "On a stone wall"
+     },
+     {
+      "v": "passage",
+      "name": "A row down a stone passage"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "train",
+  "name": "Train ride",
+  "group": "vehicles",
+  "about": "Inside a train car: clickety-clack over the rails, the rumble of the wheels and a horn far ahead.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Speed",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     30,
+     85
+    ]
+   },
+   {
+    "id": "track",
+    "name": "Track",
+    "type": "choice",
+    "def": "jointed",
+    "options": [
+     {
+      "v": "jointed",
+      "name": "Old jointed rails"
+     },
+     {
+      "v": "welded",
+      "name": "Smooth welded rails"
+     }
+    ]
+   },
+   {
+    "id": "seat",
+    "name": "Seat",
+    "type": "choice",
+    "def": "wheels",
+    "options": [
+     {
+      "v": "wheels",
+      "name": "Over the wheels"
+     },
+     {
+      "v": "middle",
+      "name": "Middle of the car"
+     }
+    ]
+   },
+   {
+    "id": "horn",
+    "name": "Horn and crossings",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   }
+  ]
+ },
+ {
+  "id": "tv-static",
+  "name": "TV static",
+  "group": "spooky",
+  "about": "An old tube television tuned to nothing: the hiss of snow, the high whine and a buzz of sync.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Hiss",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "whine",
+    "name": "High whine",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   },
+   {
+    "id": "buzz",
+    "name": "Sync buzz",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 20,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   },
+   {
+    "id": "place",
+    "name": "Where it is",
+    "type": "choice",
+    "def": "close",
+    "options": [
+     {
+      "v": "close",
+      "name": "Right in front of it"
+     },
+     {
+      "v": "next",
+      "name": "In the next room"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "underwater",
+  "name": "Underwater",
+  "group": "water",
+  "about": "Under the sea: muffled pressure and swells, a crackling reef all round, and a diver breathing out streams of bubbles.",
+  "params": [
+   {
+    "id": "depth",
+    "name": "Depth",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     10,
+     85
+    ]
+   },
+   {
+    "id": "swell",
+    "name": "Waves above",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     15,
+     85
+    ]
+   },
+   {
+    "id": "reef",
+    "name": "Reef crackle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 40,
+    "unit": "percent",
+    "rand": [
+     0,
+     80
+    ]
+   },
+   {
+    "id": "diver",
+    "name": "Diver breathing",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     0,
+     90
+    ]
+   }
+  ]
+ },
+ {
+  "id": "waterfall",
+  "name": "Waterfall",
+  "group": "water",
+  "about": "The roar of a waterfall pouring into its pool, with drifting spray, from a small cascade to huge falls.",
+  "params": [
+   {
+    "id": "size",
+    "name": "Size of the falls",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     25,
+     95
+    ]
+   },
+   {
+    "id": "spray",
+    "name": "Spray",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent",
+    "rand": [
+     10,
+     75
+    ]
+   }
+  ]
+ },
+ {
+  "id": "wind-howl",
+  "name": "Howling wind",
+  "group": "weather",
+  "about": "Wind moaning and howling round the house in long gusts, with windows rattling when it blows hardest.",
+  "params": [
+   {
+    "id": "strength",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 65,
+    "unit": "percent",
+    "rand": [
+     40,
+     95
+    ]
+   },
+   {
+    "id": "gusts",
+    "name": "Gusts",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent",
+    "rand": [
+     30,
+     90
+    ]
+   },
+   {
+    "id": "pitch",
+    "name": "Howl pitch",
+    "type": "number",
+    "min": 120,
+    "max": 900,
+    "step": 10,
+    "def": 330,
+    "unit": "hz",
+    "rand": [
+     180,
+     600
+    ]
+   },
+   {
+    "id": "where",
+    "name": "Where you are",
+    "type": "choice",
+    "def": "inside",
+    "options": [
+     {
+      "v": "inside",
+      "name": "Inside the house"
+     },
+     {
+      "v": "outside",
+      "name": "Outside by the house"
+     }
+    ]
+   },
+   {
+    "id": "rattle",
+    "name": "Window rattle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "wind-trees",
+  "name": "Wind in the trees",
+  "group": "weather",
+  "about": "A breeze moving through the trees, leaves rustling as each gust passes from one tree to the next.",
+  "params": [
+   {
+    "id": "strength",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     20,
+     80
+    ]
+   },
+   {
+    "id": "gusts",
+    "name": "Gusts",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 55,
+    "unit": "percent",
+    "rand": [
+     25,
+     85
+    ]
+   },
+   {
+    "id": "leaves",
+    "name": "Kind of trees",
+    "type": "choice",
+    "def": "summer",
+    "options": [
+     {
+      "v": "summer",
+      "name": "Leafy summer trees"
+     },
+     {
+      "v": "dry",
+      "name": "Dry autumn leaves"
+     },
+     {
+      "v": "pine",
+      "name": "Pine trees"
+     }
+    ]
+   },
+   {
+    "id": "trees",
+    "name": "How many trees",
+    "type": "number",
+    "min": 1,
+    "max": 8,
+    "step": 1,
+    "def": 4,
+    "unit": "count",
+    "noun": [
+     "tree",
+     "trees"
+    ],
+    "rand": [
+     2,
+     7
+    ]
+   },
+   {
+    "id": "distance",
+    "name": "Distance",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     60
+    ]
+   }
+  ]
+ },
+ {
+  "id": "wind",
+  "name": "Wind",
+  "group": "weather",
+  "about": "Open-air wind that rises and falls in gusts, with a thin whistle and a low rumble in the strong ones.",
+  "params": [
+   {
+    "id": "strength",
+    "name": "Wind strength",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 45,
+    "unit": "percent",
+    "rand": [
+     20,
+     85
+    ]
+   },
+   {
+    "id": "gusts",
+    "name": "Gusts",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 50,
+    "unit": "percent",
+    "rand": [
+     20,
+     90
+    ]
+   },
+   {
+    "id": "whistle",
+    "name": "Whistle",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 25,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   },
+   {
+    "id": "rumble",
+    "name": "Low rumble",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 30,
+    "unit": "percent",
+    "rand": [
+     0,
+     70
+    ]
+   }
+  ]
+ },
+ {
+  "id": "wolves-far",
+  "name": "Wolves far off",
+  "group": "nature",
+  "about": "A cold night: a wolf pack howling across the valley, echoing off the far hills, wind in the dark.",
+  "params": [
+   {
+    "id": "intensity",
+    "name": "Howling",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 60,
+    "unit": "percent"
+   },
+   {
+    "id": "distance",
+    "name": "How far away",
+    "type": "number",
+    "min": 150,
+    "max": 3000,
+    "step": 50,
+    "def": 700,
+    "unit": "meters"
+   },
+   {
+    "id": "pack",
+    "name": "Pack size",
+    "type": "number",
+    "min": 1,
+    "max": 8,
+    "step": 1,
+    "def": 4,
+    "unit": "count",
+    "noun": [
+     "wolf",
+     "wolves"
+    ]
+   },
+   {
+    "id": "yips",
+    "name": "Pups yipping",
+    "type": "bool",
+    "def": true
+   },
+   {
+    "id": "wind",
+    "name": "Night wind",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 35,
+    "unit": "percent"
+   },
+   {
+    "id": "insects",
+    "name": "Night insects",
+    "type": "number",
+    "min": 0,
+    "max": 100,
+    "step": 1,
+    "def": 10,
+    "unit": "percent"
+   }
+  ]
+ }
+]

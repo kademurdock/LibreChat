@@ -1,0 +1,1374 @@
+[
+  {
+    "id": "mastering-warm-master",
+    "name": "Warm master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Rounds off the top, fills out the bottom and adds a little tape warmth to any song or voice.",
+    "tags": ["master", "warm", "song", "tape"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 110, "band2Gain": 2.5, "band2Q": 25, "band3Freq": 450, "band3Gain": 1, "band3Q": 25, "band4Freq": 3200, "band4Gain": -1, "band5Type": "off", "band6Freq": 9000, "band6Gain": -2.5 } },
+      { "m": "lofi.saturate", "p": { "drive": 6, "mix": 60 } },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 2, "attack": 25, "release": 220, "knee": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-bright-master",
+    "name": "Bright master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Lifts the top end and the presence so every word and cymbal sparkles, without getting thin.",
+    "tags": ["master", "bright", "clear", "song"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Gain": -1.5, "band3Type": "off", "band4Freq": 4500, "band4Gain": 3, "band4Q": 28, "band5Type": "off", "band6Freq": 8000, "band6Gain": 6 } },
+      { "m": "tone.compress", "p": { "threshold": -20, "ratio": 1.8, "attack": 30, "release": 150 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-loud-modern",
+    "name": "Loud modern master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "A punchy smile of an EQ, tape heat, extra width and a hard limiter, squeezed loud like a new pop single.",
+    "tags": ["master", "loud", "pop", "limiter"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 28, "band2Type": "lowshelf", "band2Freq": 90, "band2Gain": 3, "band2Q": 25, "band3Freq": 300, "band4Freq": 3500, "band4Gain": 1.5, "band5Type": "off", "band6Gain": 3.5 } },
+      { "m": "tone.compress", "p": { "threshold": -18, "attack": 10, "release": 100 } },
+      { "m": "lofi.saturate", "p": { "drive": 6, "mix": 50 } },
+      { "m": "stereo.width", "p": { "width": 1.25, "fill": 15 } },
+      { "m": "tone.loudness", "p": { "target": -8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-gentle-glue",
+    "name": "Gentle glue",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "A slow, soft compressor and a touch of width that pull a mix together without anyone noticing.",
+    "tags": ["master", "glue", "subtle", "compressor"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 120, "band2Gain": 1, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 11000, "band6Gain": 1 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 1.6, "attack": 30, "release": 300, "knee": 12 } },
+      { "m": "stereo.width", "p": { "width": 1.15, "fill": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-clean-loud",
+    "name": "Clean and loud, no colour",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Just louder: a flat EQ and a clean brick-wall limiter, nothing else changed.",
+    "tags": ["master", "loud", "transparent", "limiter"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "tone.loudness", "p": { "target": -9 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-punchy-drums",
+    "name": "Punchy drums master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "A slow-attack compressor lets every hit snap through while the low thump and the crack come forward.",
+    "tags": ["master", "punch", "drums", "transients"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Freq": 70, "band2Gain": 4, "band3Freq": 400, "band3Gain": -3.5, "band4Freq": 4000, "band4Gain": 3, "band5Type": "off", "band6Gain": 1 } },
+      { "m": "tone.compress", "p": { "threshold": -26, "ratio": 5, "attack": 45, "release": 50, "knee": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-quiet-listening",
+    "name": "Late-night quiet listening",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Rides the level and squeezes the loud parts down, with extra bass and treble so it stays full played softly.",
+    "tags": ["master", "quiet", "night", "compressed"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late", "density": 75 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 4, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 8000 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-clear-mids",
+    "name": "Clear midrange master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Opens up the middle so voices, guitars and lead parts step forward and stand apart.",
+    "tags": ["master", "clarity", "midrange", "vocal"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Freq": 1200, "band3Gain": 4, "band3Q": 25, "band4Gain": 2.5, "band5Type": "off", "band6Freq": 9000, "band6Gain": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-big-low-end",
+    "name": "Big low end master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "A deep, round bottom end with the tape head bump and a touch of width above it, for songs that need more weight.",
+    "tags": ["master", "bass", "deep", "heavy"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 120, "band2Gain": 8, "band2Q": 25, "band3Freq": 250, "band3Gain": -1.5, "band4Type": "off", "band5Type": "off", "band6Gain": -1.5 } },
+      { "m": "lofi.saturate", "p": { "drive": 6, "bump": 7 } },
+      { "m": "stereo.width", "p": { "width": 1.15, "fill": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-open-airy",
+    "name": "Open and airy master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "A silky high lift and a little extra width, like opening the windows on the mix.",
+    "tags": ["master", "air", "open", "wide"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band3Type": "off", "band4Freq": 5000, "band4Gain": 1.5, "band5Type": "off", "band6Freq": 9000, "band6Gain": 6, "band6Q": 21 } },
+      { "m": "stereo.width", "p": { "width": 1.3, "fill": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dense-club",
+    "name": "Dense club master",
+    "cat": "mastering",
+    "sub": "Finishing masters",
+    "about": "Fat sub bass, fast compression, warm drive and a hard limiter for a dense, pounding dance master.",
+    "tags": ["master", "club", "dance", "loud"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 28, "band2Freq": 55, "band2Gain": 4, "band2Q": 38, "band3Freq": 300, "band3Gain": -2.5, "band4Type": "off", "band5Type": "off", "band6Freq": 9000 } },
+      { "m": "tone.compress", "p": { "ratio": 4, "attack": 3, "release": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm", "mix": 25 } },
+      { "m": "tone.loudness", "p": { "target": -7 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-de-harsh",
+    "name": "De-harsh the top",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Takes the sting out of a harsh, shouty recording: softer upper mids and tamed hiss.",
+    "tags": ["fix", "harsh", "smooth", "de-ess"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Freq": 3000, "band3Gain": -4, "band3Q": 41, "band4Freq": 6500, "band4Gain": -3, "band5Type": "off", "band6Gain": -2 } },
+      { "m": "tone.deess", "p": { "threshold": -30, "freq": 6000, "mode": "top" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-de-mud",
+    "name": "De-mud the low mids",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Scoops out the woolly build-up around 250 hertz so a muddy mix comes clear.",
+    "tags": ["fix", "mud", "clarity", "low mids"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Gain": -6, "band3Freq": 450, "band3Gain": -3, "band3Q": 41, "band4Type": "off", "band5Type": "off", "band6Type": "off" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-de-boom",
+    "name": "De-boom the bass",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Tames boomy, overblown bass and rumble so the low end stops swamping everything.",
+    "tags": ["fix", "boom", "bass", "tighten"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 100, "band2Type": "lowshelf", "band2Gain": -4, "band2Q": 25, "band3Freq": 140, "band3Gain": -4, "band3Q": 41, "band4Type": "off", "band5Type": "off", "band6Gain": -1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-thin-warmup",
+    "name": "Warm up a thin recording",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Adds body and chest to a thin, tinny recording and fills it in with saturation, keeping the top end open.",
+    "tags": ["fix", "thin", "warm", "body"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 200, "band2Gain": 6, "band2Q": 25, "band3Freq": 350, "band3Gain": 2, "band4Type": "off", "band5Type": "off", "band6Gain": 1 } },
+      { "m": "lofi.saturate", "p": { "bump": 4, "mix": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dull-brighten",
+    "name": "Brighten a dull recording",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Brings back lost sparkle with a high lift and fresh harmonics from fast tape.",
+    "tags": ["fix", "dull", "bright", "exciter"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Gain": 3, "band5Type": "off", "band6Freq": 5000, "band6Gain": 7 } },
+      { "m": "lofi.saturate", "p": { "drive": 7, "speed": "30" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-boxy-fix",
+    "name": "Clear out the boxiness",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Cuts the hollow cardboard-box ring around 500 hertz that small rooms leave behind.",
+    "tags": ["fix", "boxy", "room", "clarity"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 500, "band2Gain": -6, "band2Q": 50, "band3Freq": 900, "band3Gain": -2, "band3Q": 41, "band4Type": "off", "band5Type": "off", "band6Type": "off" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-honk-fix",
+    "name": "Cut the nasal honk",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "A narrow cut at the nasal honk near one kilohertz, for horns, voices and cheap mics.",
+    "tags": ["fix", "nasal", "honk", "notch"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 1000, "band2Gain": -7, "band2Q": 60, "band3Freq": 2000, "band3Gain": -2, "band4Type": "off", "band5Type": "off", "band6Type": "off" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-cymbal-tamer",
+    "name": "Tame the cymbals",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "Rounds off splashy cymbals and spitty s sounds while the rest of the mix stays put.",
+    "tags": ["fix", "cymbals", "smooth", "top"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Freq": 8000, "band5Gain": -6, "band5Q": 41, "band6Freq": 12000, "band6Gain": -4 } },
+      { "m": "tone.deess", "p": { "threshold": -32, "freq": 9000, "range": 10, "mode": "top" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-smile-curve",
+    "name": "Smile curve",
+    "cat": "mastering",
+    "sub": "Tone fixes",
+    "about": "The classic smiley EQ: big lows, big highs and a dip in the middle.",
+    "tags": ["eq", "scooped", "bass", "treble"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 7, "band2Q": 25, "band3Freq": 1000, "band3Gain": -5, "band3Q": 17, "band4Type": "off", "band5Type": "off", "band6Freq": 7000, "band6Gain": 7 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-wide-stereo",
+    "name": "Wide stereo master",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "Spreads the mix wide across your ears while the bass stays solid in the middle.",
+    "tags": ["stereo", "wide", "master", "headphones"],
+    "cleanup": false,
+    "chain": [
+      { "m": "stereo.width", "p": { "width": 1.6, "fill": 40 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Gain": 1.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-extra-wide-dream",
+    "name": "Extra wide dream",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "A slow, lush chorus and huge width smear the sound right out past your ears.",
+    "tags": ["stereo", "wide", "dreamy", "chorus"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.chorus", "p": { "depth": 30, "mix": 35, "spread": 100 } },
+      { "m": "stereo.width", "p": { "width": 1.8, "fill": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-gentle-widening",
+    "name": "Gentle widening, mono safe",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "Just a little extra width that still folds down cleanly on a single speaker.",
+    "tags": ["stereo", "wide", "subtle", "mono safe"],
+    "cleanup": false,
+    "chain": [
+      { "m": "stereo.width", "p": { "width": 1.2, "fill": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-mono-one-speaker",
+    "name": "Mono check on one speaker",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "Folds everything to one channel through a single cabinet speaker, to hear what mono does to the mix.",
+    "tags": ["mono", "check", "speaker", "test"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.mono", "p": {} },
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 3, "rattle": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slow-stereo-drift",
+    "name": "Slow stereo drift",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "The whole mix leans gently from one side to the other and back, slow as breathing.",
+    "tags": ["stereo", "motion", "pan", "slow"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.autopan", "p": { "rate": 0.1, "width": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-chorus-wide",
+    "name": "Chorus-wide shimmer",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "A light stereo chorus that adds shimmer and spread, like a mix printed through a vintage rack unit.",
+    "tags": ["stereo", "chorus", "shimmer", "wide"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.chorus", "p": { "voices": 2, "depth": 25, "rate": 0.4, "mix": 30 } },
+      { "m": "stereo.width", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-big-room-around",
+    "name": "Big room around the mix",
+    "cat": "mastering",
+    "sub": "Stereo and width",
+    "about": "A wide, soft room wraps around the whole mix, as if it plays in a big empty space.",
+    "tags": ["stereo", "room", "space", "wide"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.reverb", "p": { "size": 85, "decay": 2.5, "predelay": 30, "width": 1.5, "mix": 18 } },
+      { "m": "stereo.width", "p": { "width": 1.5, "fill": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-vintage-vinyl",
+    "name": "Vintage vinyl master",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "Pressed to a record: soft top, quiet crackle and a gentle rumble under warm saturation.",
+    "tags": ["vinyl", "record", "vintage", "warm"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 1.5, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 9000, "band6Gain": -3 } },
+      { "m": "lofi.saturate", "p": { "drive": 5, "mix": 50 } },
+      { "m": "device.vinyl", "p": { "crackle": 25, "pops": 10, "rumble": 15, "wow": 10, "wear": 15 } },
+      { "m": "stereo.width", "p": { "width": 1, "fill": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dusty-jazz-record",
+    "name": "Dusty jazz record",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A well-loved old record: mellow and dark, with lots of dusty crackle and the odd pop.",
+    "tags": ["vinyl", "jazz", "dusty", "crackle"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 60, "pops": 30, "rumble": 25, "wear": 50 } },
+      { "m": "tone.tilt", "p": { "amount": -3.5 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 7500, "band6Gain": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-old-78",
+    "name": "Old 78 record",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A shellac 78 played on an electric record player: narrow, hissy and crackling.",
+    "tags": ["78", "record", "old", "shellac"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.gramophone", "p": { "horn": "electric", "surface": 50, "crackle": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-warped-record",
+    "name": "Song on a sun-warped record",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A record left in the sun: the song sags and swells every turn over a low rumble and crackle.",
+    "tags": ["vinyl", "warp", "wobble", "record"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.vinyl", "p": { "warp": 85, "wow": 50, "crackle": 25, "rumble": 35 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-cassette-mixtape",
+    "name": "Cassette mixtape",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A home-made mixtape on an ordinary cassette: soft hiss, a little wobble and warm tape squash.",
+    "tags": ["cassette", "tape", "mixtape", "hiss"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.cassette", "p": { "hiss": 30, "wow": 20, "saturation": 40 } },
+      { "m": "stereo.width", "p": { "width": 1, "fill": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-worn-cassette",
+    "name": "Mixtape played to death",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A tape played a thousand times and chewed by the deck: dull, hissy, wobbling and dropping out.",
+    "tags": ["cassette", "worn", "chewed", "dropouts"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.cassette", "p": { "tape": "worn", "hiss": 50, "wow": 45, "flutter": 40, "dropouts": 25, "highLoss": 55, "chewed": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-reel-to-reel",
+    "name": "Reel-to-reel warmth",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "Recorded hot on a studio tape machine running at full speed: thick, warm, gently squashed and slightly wavering.",
+    "tags": ["tape", "reel", "warm", "analogue"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 15, "bump": 6, "speed": "30" } },
+      { "m": "tone.compress", "p": { "threshold": -20, "ratio": 2, "attack": 15 } },
+      { "m": "pitch.wobble", "p": { "depth": 16, "speed": 0.4, "randomness": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slow-tape-heat",
+    "name": "Slow tape, hot and dark",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "Slow tape pushed hard: a big low bump, rounded highs and thick, sticky saturation.",
+    "tags": ["tape", "dark", "saturated", "slow"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 16, "bump": 6, "speed": "7.5" } },
+      { "m": "tone.tilt", "p": { "amount": -3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-home-video",
+    "name": "Home video soundtrack",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "Music on an old home video tape at the long-play speed: hiss, hum and a wobbly, dull sound.",
+    "tags": ["video tape", "retro", "hiss", "wobble"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.vhs", "p": { "speed": "lp", "wobble": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-eight-track",
+    "name": "Eight-track cartridge",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A car tape cartridge from the 1970s: boxy middle, soft top and a gently wandering pitch.",
+    "tags": ["tape", "1970s", "cartridge", "retro"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 70, "band2Type": "off", "band3Freq": 1000, "band3Gain": 2.5, "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 9000, "band6Gain": 0 } },
+      { "m": "lofi.saturate", "p": { "drive": 10 } },
+      { "m": "pitch.wobble", "p": { "depth": 15, "speed": 0.6, "randomness": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-file-from-1999",
+    "name": "Music file from 1999",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "A song squeezed into a tiny early music file: swirly, watery highs and smeared drums.",
+    "tags": ["digital", "old file", "internet", "swirly"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.mp3", "p": { "quality": "poor" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-wax-cylinder",
+    "name": "Song on a wax cylinder",
+    "cat": "mastering",
+    "sub": "Records and tape",
+    "about": "Your song squeezed into wax around 1900 and played through a horn, the hiss kept low so the tune comes through.",
+    "tags": ["cylinder", "1900", "antique", "horn"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4, "attack": 15, "release": 250 } },
+      { "m": "device.cylinder", "p": { "hiss": 25, "groove": 30, "wobble": 30, "band": 40, "wear": 20 } },
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 4, "rattle": 10 } },
+      { "m": "space.room", "p": { "mix": 25, "distance": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-lofi-beat-tape",
+    "name": "Lo-fi beat tape master",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Warm, dusty and rolled off: an old sampler and a worn tape for laid-back beats.",
+    "tags": ["lo-fi", "beats", "tape", "sampler"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Type": "lowshelf", "band2Freq": 120, "band2Gain": 3, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 6500, "band6Gain": 0 } },
+      { "m": "lofi.crush", "p": { "bits": 12, "rate": 22000 } },
+      { "m": "device.cassette", "p": { "tape": "worn", "hiss": 20, "wow": 15, "flutter": 15, "dropouts": 0, "highLoss": 30 } },
+      { "m": "tone.compress", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-lofi-study",
+    "name": "Lo-fi study stream",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Soft and sleepy: a dark filter, record crackle, a slow wobble and a hazy chorus.",
+    "tags": ["lo-fi", "study", "chill", "vinyl"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.vinyl", "p": { "crackle": 45, "pops": 5, "rumble": 10 } },
+      { "m": "tone.filter", "p": { "freq": 3800, "resonance": 10, "slope": "gentle" } },
+      { "m": "pitch.wobble", "p": { "depth": 12, "speed": 0.3, "randomness": 20 } },
+      { "m": "mod.chorus", "p": { "voices": 2, "depth": 20, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-twelve-bit-sampler",
+    "name": "Twelve-bit sampler crunch",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "The gritty, chunky sound of an old drum sampler with fewer bits and a lower sample rate.",
+    "tags": ["sampler", "crunch", "bits", "hip hop"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.crush", "p": { "bits": 10, "rate": 20000 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 110, "band2Gain": 3, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-bedroom-pop-haze",
+    "name": "Bedroom pop haze",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Soft and dreamy: a warm chorus, rounded highs and the small room it was recorded in.",
+    "tags": ["bedroom", "pop", "dreamy", "chorus"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.chorus", "p": { "depth": 35, "mix": 35 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slowed-mall-fog",
+    "name": "Slowed eighties mall fog",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Slowed down, chorused and drowned in reverb, like a shopping centre tape from another decade.",
+    "tags": ["slowed", "retro", "chorus", "dreamy"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.85 } },
+      { "m": "mod.chorus", "p": { "mix": 40 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 3.5, "mix": 35 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 9000, "band6Gain": 0 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dusty-loop",
+    "name": "Dusty sampled drum loop",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Sampled off an old record and squashed hard: crunchy bits, fat lows and dusty crackle.",
+    "tags": ["sampler", "loop", "boom bap", "vinyl"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.crush", "p": { "bits": 12, "rate": 22000 } },
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 4, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 8000, "band6Gain": 0 } },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 4, "attack": 1, "release": 60 } },
+      { "m": "device.vinyl", "p": { "crackle": 20, "pops": 5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-sped-soul-sample",
+    "name": "Sped-up soul sample",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "An old soul record sped up, thinned out and squashed, ready to loop under a beat.",
+    "tags": ["sample", "soul", "sped up", "vinyl"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 1.12 } },
+      { "m": "device.vinyl", "p": { "crackle": 30 } },
+      { "m": "tone.eq", "p": { "band1Freq": 120, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 8000, "band6Gain": 0 } },
+      { "m": "tone.compress", "p": { "threshold": -20, "ratio": 4, "attack": 1 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dub-tape",
+    "name": "Dub reggae tape",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Deep warm bass, a rolled-off top and swirling dub echoes trailing after every phrase.",
+    "tags": ["dub", "reggae", "echo", "tape"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 4, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "highcut", "band6Freq": 7000, "band6Gain": 0 } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } },
+      { "m": "echo.dub", "p": { "feedback": 55, "mix": 22 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-taped-off-fm",
+    "name": "Taped off FM radio",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "A song recorded off the radio onto cassette: squeezed by the station, then a little hiss.",
+    "tags": ["radio", "cassette", "squeezed", "retro"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 70 } },
+      { "m": "device.cassette", "p": { "hiss": 25, "wow": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-band-demo-phone",
+    "name": "Band demo on a phone",
+    "cat": "mastering",
+    "sub": "Lo-fi and beat tapes",
+    "about": "Recorded on a phone across the room: thin, pumping and a bit swirly, like a rehearsal demo.",
+    "tags": ["demo", "phone", "rehearsal", "lo-fi"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "mix": 40 } },
+      { "m": "tone.character", "p": { "shape": "thin" } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 6, "attack": 0.5, "release": 300 } },
+      { "m": "lofi.mp3", "p": { "quality": "ok", "swirl": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slowed-reverbed",
+    "name": "Slowed and reverbed",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Slowed down and lower, with a big soft reverb, the dreamy late-night remix sound.",
+    "tags": ["slowed", "reverb", "remix", "dreamy"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.8 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 4.5, "damping": 55, "mix": 35 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 8000, "band6Gain": -3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slowed-deep",
+    "name": "Slowed way down, deep",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Even slower and deeper, sinking into a huge dark reverb.",
+    "tags": ["slowed", "deep", "reverb", "heavy"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.68 } },
+      { "m": "space.reverb", "p": { "size": 95, "decay": 7, "damping": 60, "mix": 45 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 3, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-a-little-faster",
+    "name": "A little faster and brighter",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Sped up a touch, a little higher and brighter, with more bounce.",
+    "tags": ["sped up", "faster", "bright", "remix"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 1.15 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Gain": 2 } },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 2.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-sped-up-high-energy",
+    "name": "Sped-up high-energy remix",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Much faster and higher, squashed loud and wide, the hyper dance-remix sound.",
+    "tags": ["sped up", "high", "dance", "remix"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 1.33 } },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 4, "attack": 2, "release": 60 } },
+      { "m": "stereo.width", "p": { "width": 1.3, "fill": 40 } },
+      { "m": "tone.loudness", "p": { "target": -9 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-half-speed",
+    "name": "Song at half speed",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "The whole song at half speed: an octave down and twice as long, with a lift on top to keep some air.",
+    "tags": ["slowed", "half speed", "deep", "octave"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.5 } },
+      { "m": "tone.eq", "p": { "band1Freq": 35, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 6000, "band6Gain": 4 } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-single-too-slow",
+    "name": "Single played too slow",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "A 45 single played at 33: slow, low and lazy, with the record crackling along.",
+    "tags": ["record", "slow", "vinyl", "wrong speed"],
+    "cleanup": false,
+    "chain": [
+      { "m": "pitch.speed", "p": { "speed": 0.74 } },
+      { "m": "device.vinyl", "p": { "crackle": 30, "pops": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slower-same-key",
+    "name": "Slower, same key",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Slows the whole thing down to practise along to, while every note stays in the same key.",
+    "tags": ["slower", "practice", "tempo", "same pitch"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.mono", "p": {} },
+      { "m": "pitch.tempo", "p": { "tempo": 0.8 } },
+      { "m": "stereo.width", "p": { "width": 1.1, "fill": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-faster-same-key",
+    "name": "Faster, same key",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Speeds it up without the chipmunk sound: quicker, but every note stays put.",
+    "tags": ["faster", "tempo", "same pitch", "quick"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.mono", "p": {} },
+      { "m": "pitch.tempo", "p": { "tempo": 1.2 } },
+      { "m": "stereo.width", "p": { "width": 1.1, "fill": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-tape-stop-ending",
+    "name": "Song winds down at the end",
+    "cat": "mastering",
+    "sub": "Speed and slowed",
+    "about": "Plays normally to the last moment, then the song drags down and grinds to a halt, like the power just went off.",
+    "tags": ["tape stop", "ending", "slow down", "power off"],
+    "cleanup": false,
+    "chain": [
+      { "m": "time.tapestop", "p": { "stopMs": 2200, "curve": "late" } },
+      { "m": "tone.compress", "p": { "threshold": -22, "ratio": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-phone-speaker",
+    "name": "Phone speaker check",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "How your mix sounds on a phone held at arm's length: no bass, all middle.",
+    "tags": ["phone", "speaker", "check", "small"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "rattle": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-laptop-speakers",
+    "name": "Laptop speakers",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "Through the little speakers in a laptop: thin, boxy and a bit hollow.",
+    "tags": ["laptop", "speaker", "check", "small"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "laptop" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-cheap-earbuds",
+    "name": "Cheap earbuds",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "Through the free earbuds that came in the box: tinny, harsh and no low end.",
+    "tags": ["earbuds", "cheap", "check", "tinny"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "earbud" } },
+      { "m": "lofi.saturate", "p": { "drive": 6, "speed": "30" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-wireless-speaker",
+    "name": "Little wireless speaker",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "A small portable speaker with a fake bass bump and a limiter pumping when it gets loud.",
+    "tags": ["portable", "speaker", "bass bump", "pumping"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 90, "band2Freq": 150, "band2Gain": 6, "band2Q": 50, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "lofi.speaker", "p": { "size": "handheld", "push": 8 } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 6, "attack": 2, "release": 150 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-kitchen-radio",
+    "name": "Kitchen radio",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "Playing on the little radio on the kitchen counter, bouncing off the tiles and cupboards.",
+    "tags": ["radio", "kitchen", "speaker", "room"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "radio" } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-am-radio-song",
+    "name": "AM radio song",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "A song coming in on the AM dial: narrow, warm and fizzing with static.",
+    "tags": ["am radio", "oldies", "static", "narrow"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.radio", "p": { "static": 15 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-hold-music",
+    "name": "Telephone hold music",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "Your call is important: squashed flat and squeezed down a cell phone line.",
+    "tags": ["hold music", "phone", "squashed", "funny"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.broadcast", "p": { "density": 90 } },
+      { "m": "device.phone", "p": { "era": "cellular", "noise": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-shop-ceiling",
+    "name": "Shop ceiling speakers",
+    "cat": "mastering",
+    "sub": "Played on speakers",
+    "about": "Background music from the speakers in the ceiling of a big store.",
+    "tags": ["store", "ceiling", "speakers", "background"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "store" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-car-stereo",
+    "name": "Car stereo",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "Played in the car with the windows up: booming bass and the close, soft sound of the cabin.",
+    "tags": ["car", "stereo", "bass", "cabin"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 70, "band2Gain": 6, "band2Q": 25, "band3Freq": 200, "band3Gain": 2, "band4Type": "off", "band5Type": "off", "band6Freq": 8000, "band6Gain": -1 } },
+      { "m": "space.room", "p": { "space": "car", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-car-highway",
+    "name": "Car stereo on the highway",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "Cruising at highway speed with the music on: tyre roar and wind under the booming cabin.",
+    "tags": ["car", "highway", "road", "cabin"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 70, "band2Gain": 5, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "space.room", "p": { "space": "car", "mix": 30 } }
+    ],
+    "bed": { "b": "car-highway", "level": -14 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-club-system",
+    "name": "Club sound system",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "A big club rig in a concrete warehouse: chest-thumping sub, bite and a hard bare room.",
+    "tags": ["club", "sound system", "bass", "warehouse"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Freq": 60, "band2Gain": 6, "band3Type": "off", "band4Freq": 2500, "band5Type": "off", "band6Type": "off" } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-stadium-sound",
+    "name": "Stadium sound",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "Booming out of the towers of a stadium PA with the whole crowd around you.",
+    "tags": ["stadium", "pa", "crowd", "live"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "stadium", "towers": 60 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -16 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-drive-in-radio",
+    "name": "Drive-in on the car radio",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "A drive-in movie's music coming through an old car radio, crickets singing outside the open window.",
+    "tags": ["drive-in", "car radio", "summer", "night"],
+    "cleanup": false,
+    "chain": [
+      { "m": "device.radio", "p": { "era": "car", "static": 12, "fading": 8, "whistle": 0, "hum": 5 } },
+      { "m": "space.room", "p": { "space": "car", "mix": 30 } }
+    ],
+    "bed": { "b": "night-crickets", "level": -24 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-party-next-door",
+    "name": "Party through the wall",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "The neighbours are having a party: only the thumping bass and a murmur get through.",
+    "tags": ["party", "wall", "neighbours", "muffled"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 100, "band2Gain": 6, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "space.muffle", "p": { "wall": "thick", "room": "living-room", "muffling": 55 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-boombox-street",
+    "name": "Boombox on the street",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "A pushed portable stereo out on a city corner, bouncing off the buildings.",
+    "tags": ["boombox", "street", "city", "portable"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "portable", "push": 12 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 40 } },
+      { "m": "space.room", "p": { "space": "alley", "mix": 20 } }
+    ],
+    "bed": { "b": "city-street", "level": -20 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-cafe-speakers",
+    "name": "Background music in a cafe",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "Playing over the speakers of a busy coffee shop, under the chatter and the clinking cups.",
+    "tags": ["cafe", "background", "speakers", "busy"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "cabinet" } },
+      { "m": "space.room", "p": { "space": "office", "mix": 35 } }
+    ],
+    "bed": { "b": "cafe", "level": -8 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-rainy-window",
+    "name": "Listening by a rainy window",
+    "cat": "mastering",
+    "sub": "Out in the world",
+    "about": "Playing softly in your room while rain taps on the window beside you.",
+    "tags": ["rain", "cosy", "room", "calm"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -2.5 } },
+      { "m": "space.room", "p": { "space": "bedroom", "mix": 20 } }
+    ],
+    "bed": { "b": "rain-window", "level": -16 },
+    "seed": 1
+  },
+  {
+    "id": "mastering-live-small-club",
+    "name": "Live in a small club",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "Played live in a small club: a warm room, a little width and the walls close by.",
+    "tags": ["live", "club", "room", "warm"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 300, "band2Gain": 1.5, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 9000, "band6Gain": -1 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 30 } },
+      { "m": "stereo.width", "p": { "width": 1.2, "fill": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-concert-hall",
+    "name": "Concert hall",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "Heard from a good seat in a concert hall, with the long warm bloom of the room.",
+    "tags": ["hall", "concert", "classical", "reverb"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-cathedral",
+    "name": "Cathedral performance",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "Played in a stone cathedral, every note hanging in the air for seconds.",
+    "tags": ["cathedral", "church", "huge", "reverb"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-raw-basement",
+    "name": "Raw basement band",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "A band bashing away in a tiled basement: overdriven, dark and close.",
+    "tags": ["basement", "garage", "raw", "band"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 50 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.room", "p": { "space": "bathroom", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-arena-live",
+    "name": "Arena rock live",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "Live from a huge arena: a big hall sound with the slap of the far walls coming back.",
+    "tags": ["arena", "live", "rock", "echo"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "space": "arena", "mix": 40 } },
+      { "m": "echo.slapback", "p": { "character": "stadium", "level": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-stairwell-session",
+    "name": "Stairwell session",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "Recorded in a concrete stairwell for its tall, ringing natural echo.",
+    "tags": ["stairwell", "echo", "natural", "indie"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-plate-shine",
+    "name": "Plate reverb shine",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "A bright metal plate reverb glossing over the whole mix, the classic studio sheen.",
+    "tags": ["plate", "reverb", "studio", "shine"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.room", "p": { "space": "plate", "mix": 22 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Gain": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-smoky-jazz-club",
+    "name": "Smoky jazz club",
+    "cat": "mastering",
+    "sub": "Song in a room",
+    "about": "A dark, warm little theatre stage late at night, soft and close.",
+    "tags": ["jazz", "club", "warm", "night"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 8 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.room", "p": { "space": "theater", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-eighties-arena",
+    "name": "Eighties arena shine",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Bright, chorused and wrapped in that big gated room sound of the 1980s.",
+    "tags": ["1980s", "gated", "chorus", "bright"],
+    "cleanup": false,
+    "chain": [
+      { "m": "space.gated", "p": { "gate": 300, "mix": 25 } },
+      { "m": "mod.chorus", "p": { "mix": 25 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 9000 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-synth-night-drive",
+    "name": "Synth night drive",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Glossy chorus, dotted echoes and a long shiny reverb for a neon midnight drive.",
+    "tags": ["synth", "night", "retro", "echo"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.chorus", "p": { "depth": 45, "mix": 35 } },
+      { "m": "echo.delay", "p": { "division": "dotted", "tempo": 100, "feedback": 30, "mix": 18 } },
+      { "m": "space.reverb", "p": { "decay": 3, "mix": 22 } },
+      { "m": "tone.tilt", "p": { "amount": 1.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-chrome-hyper-pop",
+    "name": "Chrome-bright hyper pop",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Sharp, glassy and blown out on purpose: a sizzling top, clipped edges and no dynamics at all.",
+    "tags": ["pop", "bright", "clipped", "loud"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "off", "band3Type": "off", "band4Gain": 4, "band5Type": "off", "band6Freq": 7000, "band6Gain": 8 } },
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "hard", "mix": 45 } },
+      { "m": "tone.loudness", "p": { "target": -6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-fuzzy-grunge",
+    "name": "Fuzzy grunge mix",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "A layer of fuzz under the whole mix, scooped and dark, like a worn-out rock record.",
+    "tags": ["grunge", "fuzz", "rock", "dark"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "fuzz", "mix": 30 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 120, "band2Gain": 2, "band2Q": 25, "band3Type": "off", "band4Freq": 2000, "band4Gain": -3, "band5Type": "off", "band6Type": "off" } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-soul-satin",
+    "name": "Smooth soul satin",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Silky, warm low mids, a gentle top and soft width, smooth as an old soul ballad.",
+    "tags": ["soul", "smooth", "warm", "silky"],
+    "cleanup": false,
+    "chain": [
+      { "m": "lofi.saturate", "p": { "drive": 8 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 400, "band2Gain": 2, "band2Q": 17, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 9000, "band6Gain": -1.5 } },
+      { "m": "mod.chorus", "p": { "depth": 20, "mix": 15 } },
+      { "m": "stereo.width", "p": { "width": 1.2, "fill": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-disco-gloss",
+    "name": "Disco gloss",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Tight, bright and bouncing, with a slow phaser swirling over the top like a mirror ball.",
+    "tags": ["disco", "bright", "phaser", "dance"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -20, "ratio": 4, "attack": 3, "release": 60 } },
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 100, "band2Gain": 2, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Freq": 8000, "band6Gain": 4 } },
+      { "m": "mod.phaser", "p": { "rate": 0.15, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dark-ambient",
+    "name": "Dark ambient wash",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Everything blurred, darkened and drowned in an endless cavern of reverb.",
+    "tags": ["ambient", "dark", "reverb", "drone"],
+    "cleanup": false,
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 40, "time": 2000 } },
+      { "m": "space.reverb", "p": { "size": 95, "decay": 8, "mix": 40 } },
+      { "m": "tone.tilt", "p": { "amount": -6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-bright-drum-bass",
+    "name": "Crisp drum and bass shine",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Tight sub, scooped low mids, crisp fast highs and a wide spread for fast breakbeats.",
+    "tags": ["drum and bass", "crisp", "bright", "wide"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 30, "band2Freq": 60, "band2Gain": 3, "band3Freq": 400, "band3Gain": -3, "band4Type": "off", "band5Type": "off", "band6Gain": 5 } },
+      { "m": "tone.compress", "p": { "threshold": -22, "attack": 1, "release": 40 } },
+      { "m": "stereo.width", "p": {} }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-cinematic-lift",
+    "name": "Cinematic lift",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "A deep low end, an enormous width and a shimmering reverb that rises like a film score.",
+    "tags": ["cinematic", "shimmer", "wide", "epic"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Type": "lowshelf", "band2Freq": 80, "band2Gain": 3, "band2Q": 25, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "space.shimmer", "p": { "mix": 20 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dreamy-wall",
+    "name": "Dreamy wall of sound",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "Chorused, softly overdriven and buried in a huge reverb until it becomes one warm wall.",
+    "tags": ["dreamy", "wall", "reverb", "fuzz"],
+    "cleanup": false,
+    "chain": [
+      { "m": "mod.chorus", "p": { "depth": 50, "mix": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 16, "character": "warm", "mix": 35 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 5, "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-dance-pump",
+    "name": "Dance floor pump",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "The whole mix ducks and swells on every beat at 120, the pumping dance-floor sound.",
+    "tags": ["dance", "pump", "beat", "sidechain"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.eq", "p": { "band1Freq": 25, "band2Freq": 60, "band2Gain": 3, "band3Type": "off", "band4Type": "off", "band5Type": "off", "band6Type": "off" } },
+      { "m": "tone.compress", "p": { "threshold": -20 } },
+      { "m": "mod.tremolo", "p": { "rate": 2, "depth": 55, "shape": "ramp" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "mastering-slow-filter-sweep",
+    "name": "Slow filter sweep",
+    "cat": "mastering",
+    "sub": "Mix colours",
+    "about": "A resonant filter slowly opens and closes over the whole mix, like a DJ riding the knob.",
+    "tags": ["filter", "sweep", "dj", "build"],
+    "cleanup": false,
+    "chain": [
+      { "m": "tone.filter", "p": { "freq": 1800, "resonance": 45, "sweep": "lfo", "rate": 0.15, "range": 80 } }
+    ],
+    "seed": 1
+  }
+]

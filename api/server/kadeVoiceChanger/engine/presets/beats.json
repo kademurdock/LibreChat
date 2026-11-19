@@ -1,0 +1,1307 @@
+[
+  {
+    "id": "beats-trance-gate-sixteenths",
+    "name": "Trance gate, sixteenth notes",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "Your voice chopped into the classic sixteenth-note trance gate, with an echo on the eighths.",
+    "tags": ["gate","trance","chop"],
+    "chain": [
+      {"m":"mod.gate","p":{"tempo":138,"smooth":3}},
+      {"m":"echo.delay","p":{"division":"eighth","tempo":138,"feedback":30,"mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-trance-gate-eighths",
+    "name": "Trance gate, eighth notes",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A slower, chunkier trance gate cutting on eighth notes.",
+    "tags": ["gate","eighths","chop"],
+    "chain": [
+      {"m":"mod.gate","p":{"steps":"2","tempo":128}},
+      {"m":"space.reverb","p":{"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-offbeat-house-pump",
+    "name": "Offbeat house pump",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "Your words only come through on the offbeats, soft-edged like a house groove.",
+    "tags": ["house","offbeat","pump"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"offbeat","tempo":124,"smooth":20,"depth":85}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-galloping-gate",
+    "name": "Galloping gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A gritty galloping one-and-a-two gate rhythm across every word, in a club.",
+    "tags": ["gallop","gate","rhythm"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"gallop","tempo":132}},
+      {"m":"lofi.saturate","p":{"drive":8}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-triplet-gate-shuffle",
+    "name": "Triplet gate shuffle",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A loping triplet gate with triplet echoes that gives your speech a shuffle.",
+    "tags": ["triplet","shuffle","gate"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"triplet","tempo":96}},
+      {"m":"echo.delay","p":{"division":"triplet","tempo":96,"feedback":25,"mix":18}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-half-time-gate",
+    "name": "Half-time gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A heavy half-time gate with echoes landing on the beat.",
+    "tags": ["half time","gate","heavy"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"halftime","tempo":140}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":140,"feedback":25,"mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-swung-stutter-gate",
+    "name": "Swung stutter gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "An on-off gate with a lazy swing and gritty sampler crunch, like a drum machine shuffle.",
+    "tags": ["swing","gate","groove"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"stutter","swing":60,"tempo":100}},
+      {"m":"lofi.crush","p":{"bits":12,"rate":26000,"mix":60}},
+      {"m":"tone.filter","p":{"freq":6000,"slope":"gentle"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-random-thirty-second-gate",
+    "name": "Random thirty-second gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A fast gate firing in a random thirty-second-note pattern, with a digital crunch.",
+    "tags": ["random","fast","gate"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"random","steps":"8","tempo":130}},
+      {"m":"lofi.crush","p":{"bits":9,"mix":35}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-soft-breathing-gate",
+    "name": "Soft breathing gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A gentle, rounded gate that makes your voice breathe in rhythm inside a soft reverb.",
+    "tags": ["soft","gate","breathing"],
+    "chain": [
+      {"m":"mod.gate","p":{"smooth":40,"depth":70,"tempo":110}},
+      {"m":"space.reverb","p":{"size":60,"decay":2.2,"mix":22}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-sixteenth-triplet-gate",
+    "name": "Sixteenth triplet gate",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A rolling gate on sixteenth-note triplets, hopping between your ears.",
+    "tags": ["triplet","rolling","gate"],
+    "chain": [
+      {"m":"mod.gate","p":{"steps":"6","tempo":110}},
+      {"m":"mod.autopan","p":{"shape":"square","rate":0.9,"width":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-gated-stadium-chant",
+    "name": "Gated stadium chant",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A whole stadium of you chanting in a hard eighth-note gate.",
+    "tags": ["chant","crowd","gate"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"stutter","steps":"2"}},
+      {"m":"stereo.crowd","p":{"people":10,"room":"stadium"}}
+    ],
+    "bed": {"b":"stadium-crowd","level":-18,"p":{"chants":60}},
+    "seed": 1
+  },
+  {
+    "id": "beats-techno-gated-chant",
+    "name": "Techno gated chant",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A flat machine monotone, gated, phased and gritty, like a techno vocal.",
+    "tags": ["techno","monotone","gate"],
+    "chain": [
+      {"m":"pitch.flatten","p":{"amount":90}},
+      {"m":"mod.gate","p":{"tempo":130}},
+      {"m":"mod.phaser","p":{"rate":0.1,"depth":90,"feedback":70,"mix":60}},
+      {"m":"lofi.drive","p":{"character":"hard","drive":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-gate-with-rising-filter",
+    "name": "Gate with a rising filter",
+    "cat": "beats",
+    "sub": "Trance gates",
+    "about": "A trance gate under a resonant filter that slowly opens up and closes again.",
+    "tags": ["gate","filter","build"],
+    "chain": [
+      {"m":"mod.gate","p":{"tempo":128,"smooth":3}},
+      {"m":"tone.filter","p":{"freq":500,"resonance":60,"sweep":"lfo","rate":0.1,"range":100}},
+      {"m":"space.reverb","p":{"size":60,"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-edit",
+    "name": "Stutter edit",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "The start of a word fires off in short, clipped bursts with clear gaps before the word lands.",
+    "tags": ["stutter","edit","repeat"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":6,"pieceMs":60,"gate":45,"chance":55}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-machine-gun-stutter",
+    "name": "Machine-gun stutter",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Tiny gritty slices fired off eight times in a rapid burst.",
+    "tags": ["stutter","fast","burst"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":8,"pieceMs":40,"gate":10,"chance":45}},
+      {"m":"lofi.saturate","p":{"drive":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-roll-speeding-up",
+    "name": "Stutter roll speeding up",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "A repeat that gets faster and faster before the word arrives.",
+    "tags": ["roll","faster","build"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":7,"roll":"faster","chance":50,"pieceMs":120}},
+      {"m":"echo.delay","p":{"division":"sixteenth","feedback":20,"mix":12,"stereo":"wide"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-roll-slowing-down",
+    "name": "Stutter roll slowing down",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "A repeat that drags slower and slower into the word.",
+    "tags": ["roll","slower","drag"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":5,"roll":"slower","pieceMs":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-climbing-pitch",
+    "name": "Stutter climbing in pitch",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Each repeat steps a semitone higher, climbing into the word.",
+    "tags": ["stutter","rising","pitch"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":5,"pitchStep":1,"chance":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-falling-pitch",
+    "name": "Stutter falling in pitch",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Each repeat drops lower and a little quieter, tumbling down into the word.",
+    "tags": ["stutter","falling","pitch"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":5,"pieceMs":110,"pitchStep":-2.5,"level":-1,"chance":55}},
+      {"m":"space.reverb","p":{"size":40,"mix":14}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-beat-repeat-glitch",
+    "name": "Beat repeat glitch",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Slices of your voice repeat on the beat, flip backwards and jump in pitch.",
+    "tags": ["beat repeat","glitch","slices"],
+    "chain": [
+      {"m":"time.glitch","p":{"tempo":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-skipping-cd",
+    "name": "Skipping CD",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Your voice sticks and skips like a scratched disc, keeping its timing.",
+    "tags": ["skip","disc","stuck"],
+    "chain": [
+      {"m":"time.glitch","p":{"mode":"replace","density":50,"reverse":0,"pitch":0,"roll":0}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-snare-roll-glitches",
+    "name": "Snare-roll glitches",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Bits of words roll faster and faster like a snare build.",
+    "tags": ["roll","build","glitch"],
+    "chain": [
+      {"m":"time.glitch","p":{"roll":90,"density":30,"pitch":0,"reverse":0}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-first-word-three-times",
+    "name": "First word, three times",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "The first word of every phrase fires three times before you carry on.",
+    "tags": ["repeat","phrase","hook"],
+    "chain": [
+      {"m":"time.stutter","p":{"where":"phrases","pieceMs":250,"gate":30,"chance":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-echoing-away",
+    "name": "Stutter echoing away",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Repeats that fade a little more each time, trailing a quick echo.",
+    "tags": ["stutter","fade","echo"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":6,"level":-4,"chance":50}},
+      {"m":"echo.delay","p":{"division":"sixteenth","feedback":20,"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-building-up",
+    "name": "Stutter building up",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "A speeding roll that grows louder with every repeat.",
+    "tags": ["build","roll","louder"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":6,"level":3,"roll":"faster","chance":45}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-stutter-on-everything",
+    "name": "Stutter on everything",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Short double-takes scattered all through the sentence.",
+    "tags": ["stutter","everywhere","scattered"],
+    "chain": [
+      {"m":"time.stutter","p":{"where":"everywhere","chance":35,"pieceMs":60,"repeats":2}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-breakbeat-ratchet",
+    "name": "Fast breakbeat ratchet",
+    "cat": "beats",
+    "sub": "Stutters and repeats",
+    "about": "Rapid ratcheting syllable rolls over a pumping gate at breakneck dance tempo.",
+    "tags": ["ratchet","fast","breakbeat"],
+    "chain": [
+      {"m":"time.stutter","p":{"repeats":4,"pieceMs":30,"chance":60,"gate":30}},
+      {"m":"mod.gate","p":{"tempo":174,"depth":60,"smooth":4}},
+      {"m":"lofi.saturate","p":{"drive":8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-tape-stop-end",
+    "name": "Tape stop at the end",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "The tape slows to a dead stop on your last words.",
+    "tags": ["tape stop","ending","slow"],
+    "chain": [
+      {"m":"time.tapestop","p":{"stopMs":1200}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-tape-stop-every-phrase",
+    "name": "Tape stop every phrase",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "Every phrase grinds to a halt like someone hit the turntable brake.",
+    "tags": ["tape stop","phrases","brake"],
+    "chain": [
+      {"m":"time.tapestop","p":{"when":"phrases","stopMs":700}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-power-cut-restart",
+    "name": "Power cut and restart",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "The power cuts out mid-sentence and the deck spins back up.",
+    "tags": ["power cut","restart","tape"],
+    "chain": [
+      {"m":"time.tapestop","p":{"when":"random","curve":"quick","stopMs":500,"motion":"both","chance":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-spins-up-from-standstill",
+    "name": "Spins up from standstill",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "Each phrase starts from a dead stop and winds up to speed.",
+    "tags": ["spin up","start","tape"],
+    "chain": [
+      {"m":"time.tapestop","p":{"motion":"start","when":"phrases","stopMs":600}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-heavy-reel-giving-up",
+    "name": "Heavy reel giving up",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "A big tape reel fights to keep going, then slowly gives up.",
+    "tags": ["reel","slow","stop"],
+    "chain": [
+      {"m":"time.tapestop","p":{"curve":"late","stopMs":2000,"when":"phrases","chance":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-backspin-outro",
+    "name": "Backspin outro",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "A pumping house groove, then the DJ spins the record back on your last word and it echoes out.",
+    "tags": ["backspin","outro","record"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"offbeat","tempo":124,"depth":70,"smooth":12}},
+      {"m":"time.scratch","p":{"pattern":"backspin","where":"end","tempo":124,"beats":4}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":124,"feedback":45,"damping":60,"mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-rewind-pull-up",
+    "name": "Rewind and pull up",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "Now and then the record is yanked back in a fast rewind, echoes ringing after.",
+    "tags": ["rewind","backspin","record"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"backspin","chance":60,"hand":1.8}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":92,"feedback":30,"mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-tape-stop-into-dub",
+    "name": "Tape stop into dub echo",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "Phrases brake to a stop and splash into a swirling dub echo.",
+    "tags": ["tape stop","dub","echo"],
+    "chain": [
+      {"m":"time.tapestop","p":{"when":"phrases","stopMs":800,"chance":60}},
+      {"m":"echo.dub","p":{"feedback":75,"mix":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-hand-dragging-platter",
+    "name": "Hand dragging the platter",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "A hand drags and lets go of the record, so the pitch sags and lurches.",
+    "tags": ["turntable","wobble","vinyl"],
+    "chain": [
+      {"m":"pitch.wobble","p":{"depth":150,"speed":0.7,"randomness":30}},
+      {"m":"device.vinyl","p":{"crackle":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-winding-down-all-the-way",
+    "name": "Winding down the whole way",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "The whole take sinks lower and lower, like a turntable losing power.",
+    "tags": ["wind down","sinking","slow"],
+    "chain": [
+      {"m":"pitch.glide","p":{"to":-12,"curve":"late","timbre":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-brake-and-echo-out",
+    "name": "Brake and echo out",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "The record brakes to a stop on your last words and the echoes ring on after.",
+    "tags": ["brake","echo","outro"],
+    "chain": [
+      {"m":"time.tapestop","p":{"stopMs":1600,"curve":"late"}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":100,"feedback":50,"damping":70}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-rocking-the-tape-reels",
+    "name": "Rocking the tape reels",
+    "cat": "beats",
+    "sub": "Tape stops and spinbacks",
+    "about": "A hand rocks the tape reels back and forth, so the pitch sways slowly up and down.",
+    "tags": ["tape","sway","wobble"],
+    "chain": [
+      {"m":"pitch.wobble","p":{"depth":250,"speed":0.4,"randomness":10,"timbre":60}},
+      {"m":"device.cassette","p":{"tape":"worn","hiss":25,"dropouts":0}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-baby-scratch",
+    "name": "Baby scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "The first word of each phrase rubbed back and forth on a 96 beat, with eighth-note echoes.",
+    "tags": ["scratch","turntable","dj"],
+    "chain": [
+      {"m":"time.scratch","p":{"tempo":96}},
+      {"m":"echo.delay","p":{"division":"eighth","tempo":96,"feedback":20,"stereo":"wide","mix":18}},
+      {"m":"lofi.saturate","p":{"drive":6}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-chirp-scratch",
+    "name": "Chirp scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Short bird-like chirps cut with the crossfader in a small club.",
+    "tags": ["scratch","chirp","dj"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"chirp"}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-fader-chop-scratch",
+    "name": "Fader chop scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Slow strokes chopped up fast by the crossfader.",
+    "tags": ["scratch","fader","chop"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"transformer"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-scribble-scratch",
+    "name": "Scribble scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "A tense hand shaking the record in tiny fast moves.",
+    "tags": ["scratch","fast","shake"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"scribble"}},
+      {"m":"lofi.drive","p":{"character":"warm","drive":8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-tear-scratch",
+    "name": "Tear scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Each push broken in two by a short stall, a ragged tearing scratch.",
+    "tags": ["scratch","tear","broken"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"tear"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-flare-scratch",
+    "name": "Flare scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Quick clicks of the fader in the middle of every stroke, with a short echo.",
+    "tags": ["scratch","flare","clicks"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"flare"}},
+      {"m":"echo.delay","p":{"division":"eighth","tempo":92,"feedback":20,"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-full-scratch-routine",
+    "name": "Full scratch routine",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "A four-beat mix of every scratch on the start of each phrase.",
+    "tags": ["scratch","routine","mixed"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"mixed","beats":4}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-scratching-every-word",
+    "name": "Scratching every word",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Quick one-beat scratches on lots of single words.",
+    "tags": ["scratch","words","busy"],
+    "chain": [
+      {"m":"time.scratch","p":{"where":"words","chance":40,"beats":1}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-fast-hand-scratch",
+    "name": "Fast-hand scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Deep, fast strokes from a very quick hand, four beats long.",
+    "tags": ["scratch","fast","deep"],
+    "chain": [
+      {"m":"time.scratch","p":{"hand":2.5,"beats":4}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slow-drag-scratch",
+    "name": "Slow drag scratch",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Lazy, shallow, slow strokes dragging the word out.",
+    "tags": ["scratch","slow","drag"],
+    "chain": [
+      {"m":"time.scratch","p":{"hand":0.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-dusty-vinyl-scratch",
+    "name": "Scratching dusty vinyl",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "A scratch routine on an old crackling, popping record.",
+    "tags": ["scratch","vinyl","crackle"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"mixed","tempo":88}},
+      {"m":"device.vinyl","p":{"crackle":60,"pops":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-two-deck-scratch-battle",
+    "name": "Two-deck scratch battle",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Scratched words flipping between a left deck and a right deck.",
+    "tags": ["scratch","battle","stereo"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"mixed","where":"words","chance":35,"beats":1}},
+      {"m":"mod.autopan","p":{"shape":"square","width":90}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-cutback-scratches",
+    "name": "Cutback scratches",
+    "cat": "beats",
+    "sub": "Scratching",
+    "about": "Quick little backspins snapped onto single words all through the sentence.",
+    "tags": ["backspin","words","cut"],
+    "chain": [
+      {"m":"time.scratch","p":{"pattern":"backspin","where":"words","chance":30,"beats":1,"hand":2}},
+      {"m":"space.room","p":{"space":"small-hall","mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slowed-low-and-chopped",
+    "name": "Slowed, low and chopped",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Slowed way down and deep, with phrase starts chopped and repeated.",
+    "tags": ["slowed","chopped","low"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":0.75}},
+      {"m":"time.stutter","p":{"where":"phrases","repeats":2,"pieceMs":300,"gate":0,"chance":70}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":70,"feedback":20,"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slowed-with-reverb",
+    "name": "Slowed with reverb",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Your voice slowed down like a tape and soaked in a dreamy reverb.",
+    "tags": ["slowed","reverb","dreamy"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":0.82}},
+      {"m":"space.reverb","p":{"size":70,"decay":3,"mix":35}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-half-time-talk",
+    "name": "Half-time talk",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "You talk at half speed, your pitch kept where it was.",
+    "tags": ["half time","slow","stretch"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":0.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-double-time-talk",
+    "name": "Double-time talk",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "You talk twice as fast, your pitch kept where it was.",
+    "tags": ["double time","fast","rapid"],
+    "chain": [
+      {"m":"pitch.tempo","p":{"tempo":2}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-sped-up-remix-voice",
+    "name": "Sped-up remix voice",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Your voice sped up like a tape, higher and brighter, with a little shine.",
+    "tags": ["sped up","high","remix"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":1.3}},
+      {"m":"space.reverb","p":{"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-tight-no-gaps-edit",
+    "name": "Tight, no-gaps edit",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Every pause cut out and the pace nudged up, a breathless tight edit.",
+    "tags": ["tight","edit","fast"],
+    "chain": [
+      {"m":"time.trim","p":{"longerThan":150,"keepMs":20}},
+      {"m":"pitch.tempo","p":{"tempo":1.15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-syrupy-slowed-drawl",
+    "name": "Syrupy slowed drawl",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Very slow and low, sagging in pitch, with a lazy echo.",
+    "tags": ["slowed","syrup","wobble"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":0.65}},
+      {"m":"pitch.wobble","p":{"depth":40,"speed":0.5}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":65,"mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slow-then-catching-up",
+    "name": "Slow, then catching up",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "A slow, low turntable that drags, then catches up to speed, with quarter-note echoes.",
+    "tags": ["slow","speeding","turntable"],
+    "chain": [
+      {"m":"time.drawl","p":{"ramp":"catching","factor":2.5,"pitch":"drop"}},
+      {"m":"echo.delay","p":{"division":"quarter","tempo":90,"feedback":25,"mix":18}},
+      {"m":"device.vinyl","p":{"crackle":20,"pops":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slowing-to-a-crawl",
+    "name": "Slowing to a crawl",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "You slow down and sink lower like a film in slow motion.",
+    "tags": ["slowing","slow motion","low"],
+    "chain": [
+      {"m":"time.drawl","p":{"ramp":"slowing","pitch":"drop","factor":2.5}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-low-chopped-hook",
+    "name": "Low chopped hook",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "An octave down and chopped into a heavy half-time hook.",
+    "tags": ["low","chopped","hook"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-12,"formant":-3}},
+      {"m":"mod.gate","p":{"pattern":"halftime","tempo":75}},
+      {"m":"echo.delay","p":{"division":"eighth","tempo":75,"feedback":20,"mix":15}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-lofi-beat-tape",
+    "name": "Lo-fi beat tape",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Slowed a touch, swung on the offbeats and bounced to a dusty worn cassette.",
+    "tags": ["lo-fi","tape","chill"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":0.9}},
+      {"m":"mod.gate","p":{"pattern":"offbeat","swing":40,"depth":55,"smooth":25,"tempo":85}},
+      {"m":"device.cassette","p":{"tape":"worn","hiss":30,"wow":30}},
+      {"m":"tone.filter","p":{"freq":3500,"slope":"gentle"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-sped-up-and-chopped",
+    "name": "Sped up and chopped",
+    "cat": "beats",
+    "sub": "Slowed, sped and chopped",
+    "about": "Fast and high like a sped-up tape, with the first word of each phrase fired twice.",
+    "tags": ["sped up","chopped","high"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":1.45}},
+      {"m":"time.stutter","p":{"where":"phrases","repeats":2,"pieceMs":160,"chance":80}},
+      {"m":"space.reverb","p":{"size":40,"mix":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-morse-code-pulse",
+    "name": "Morse code pulse",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice beeps through a radio filter in dots and dashes.",
+    "tags": ["morse","dots","signal"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"morse","tempo":150,"smooth":2}},
+      {"m":"tone.filter","p":{"type":"bandpass","freq":900,"resonance":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-heartbeat-pulse",
+    "name": "Heartbeat pulse",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice throbs in a lub-dub rhythm over a beating heart.",
+    "tags": ["heartbeat","pulse","throb"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"heartbeat","tempo":66}}
+    ],
+    "bed": {"b":"heartbeat","level":-14},
+    "seed": 1
+  },
+  {
+    "id": "beats-sidechain-pump",
+    "name": "Sidechain pump",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice ducks on every beat and swells back, like a dance-track pump.",
+    "tags": ["pump","sidechain","dance"],
+    "chain": [
+      {"m":"mod.tremolo","p":{"shape":"ramp","rate":2,"depth":90}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-machine-gun-tremolo",
+    "name": "Machine-gun tremolo",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "A hard, fast square tremolo rattling every word.",
+    "tags": ["tremolo","fast","rattle"],
+    "chain": [
+      {"m":"mod.tremolo","p":{"shape":"square","rate":12,"depth":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-fan-blade-chop",
+    "name": "Fan blade chop rhythm",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Thin spinning blades chopping your voice in a steady sixteenth beat.",
+    "tags": ["chop","blades","rhythm"],
+    "chain": [
+      {"m":"mod.chopper","p":{"rate":8,"blade":"thin"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-talking-to-metronome",
+    "name": "Talking to the metronome",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice cut to a slow one-a-second pulse with a clock ticking along.",
+    "tags": ["metronome","tick","slow"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"stutter","steps":"2","tempo":60,"smooth":15}}
+    ],
+    "bed": {"b":"clock-tick","level":-18,"p":{"clock":"watch","size":"close"}},
+    "seed": 1
+  },
+  {
+    "id": "beats-factory-floor-groove",
+    "name": "Factory floor groove",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "A galloping gate locked to the pounding press of a factory floor.",
+    "tags": ["factory","industrial","groove"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"gallop","tempo":100}},
+      {"m":"space.room","p":{"space":"factory","mix":25}}
+    ],
+    "bed": {"b":"factory","level":-16,"p":{"tempo":100}},
+    "seed": 1
+  },
+  {
+    "id": "beats-riding-the-rails",
+    "name": "Riding the rail rhythm",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "A loping triplet pulse inside a rattling train car.",
+    "tags": ["train","rhythm","triplet"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"triplet","tempo":90,"depth":70}},
+      {"m":"space.room","p":{"space":"train-car","mix":30}}
+    ],
+    "bed": {"b":"train","level":-16},
+    "seed": 1
+  },
+  {
+    "id": "beats-ping-pong-pulse",
+    "name": "Ping-pong pulse",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice pulses back and forth between your ears.",
+    "tags": ["pulse","stereo","tremolo"],
+    "chain": [
+      {"m":"mod.tremolo","p":{"shape":"triangle","rate":4,"depth":90,"phase":180}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-ratchet-roll",
+    "name": "Ratchet roll",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "A rapid ratcheting roll buzzing through every syllable.",
+    "tags": ["ratchet","roll","buzz"],
+    "chain": [
+      {"m":"synth.am","p":{"rate":16,"shape":"pulse","depth":95,"jitter":0}},
+      {"m":"lofi.saturate","p":{"drive":12}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slow-swelling-pulse",
+    "name": "Slow swelling pulse",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "Your voice swells up and fades away twice a second, like a tide.",
+    "tags": ["swell","slow","tide"],
+    "chain": [
+      {"m":"mod.tremolo","p":{"rate":0.5,"depth":90}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-disco-floor-pump",
+    "name": "Disco floor pump",
+    "cat": "beats",
+    "sub": "Pulses and signals",
+    "about": "A four-on-the-floor pump with a swirling phaser, out on a big dance floor.",
+    "tags": ["disco","pump","phaser"],
+    "chain": [
+      {"m":"mod.tremolo","p":{"shape":"ramp","rate":2}},
+      {"m":"mod.phaser","p":{"rate":0.2,"depth":70,"feedback":40}},
+      {"m":"space.room","p":{"space":"small-hall","mix":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-glitch-hop",
+    "name": "Glitch hop",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Repeats, rolls and pitch jumps over a gritty galloping gate.",
+    "tags": ["glitch","hop","gritty"],
+    "chain": [
+      {"m":"time.glitch","p":{"density":55,"pitch":60,"tempo":95}},
+      {"m":"lofi.crush","p":{"bits":8,"rate":16000,"mix":50}},
+      {"m":"mod.gate","p":{"pattern":"gallop","tempo":95,"depth":60}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-vocal-chop-riff",
+    "name": "Vocal chop riff",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Your words sung up a minor chord eight notes a second, then chopped.",
+    "tags": ["chop","riff","melody"],
+    "chain": [
+      {"m":"pitch.arp","p":{"pattern":"up","notes":"minor","rate":8,"glide":5}},
+      {"m":"mod.gate","p":{"pattern":"stutter","steps":"2"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-syncopated-pitched-chops",
+    "name": "Syncopated pitched chops",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Random notes of a scale, cut by a trance gate into catchy stabs.",
+    "tags": ["chop","pitched","stabs"],
+    "chain": [
+      {"m":"pitch.arp","p":{"pattern":"random","notes":"major-scale","rate":6}},
+      {"m":"mod.gate","p":{"smooth":3}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-sliced-and-reshuffled",
+    "name": "Sliced and reshuffled",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "The take cut into short even slices and dealt back out of order.",
+    "tags": ["slices","shuffle","cut-up"],
+    "chain": [
+      {"m":"time.shuffle","p":{"unit":"slices","sliceMs":120,"amount":60,"scope":"whole"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-slices-flipped-backwards",
+    "name": "Slices flipped backwards",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Half the eighth-note slices play backwards in their own place.",
+    "tags": ["reverse","slices","glitch"],
+    "chain": [
+      {"m":"time.reversewords","p":{"unit":"slices","sliceMs":125,"amount":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-ping-pong-chops",
+    "name": "Ping-pong chops",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Eighth-note chops that jump hard from ear to ear.",
+    "tags": ["chop","stereo","bounce"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"stutter","steps":"2"}},
+      {"m":"mod.autopan","p":{"shape":"square","rate":1,"width":100}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-pitch-skipping-chops",
+    "name": "Pitch-skipping chops",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Fast rolls and octave jumps skipping through your words.",
+    "tags": ["pitch","skip","fast"],
+    "chain": [
+      {"m":"time.glitch","p":{"pitch":90,"roll":60,"density":60,"tempo":160}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-hyperpop-vocal-dice",
+    "name": "Hyperpop vocal dice",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Sped up, snapped to a key and diced into pitch-jumping glitches.",
+    "tags": ["hyperpop","tuned","glitch"],
+    "chain": [
+      {"m":"pitch.speed","p":{"speed":1.25}},
+      {"m":"pitch.correct","p":{"key":"D","scale":"major"}},
+      {"m":"time.glitch","p":{"density":60,"pitch":70}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-triplet-roll-cuts",
+    "name": "Triplet roll cuts",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Triple-tap rolls on words under a fast triplet gate.",
+    "tags": ["triplet","roll","cuts"],
+    "chain": [
+      {"m":"time.stutter","p":{"pieceMs":60}},
+      {"m":"mod.gate","p":{"pattern":"triplet","tempo":140,"depth":80}},
+      {"m":"lofi.saturate","p":{"drive":8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-two-step-shuffle-chops",
+    "name": "Two-step shuffle chops",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Swung offbeat chops with a few syllables swapped around.",
+    "tags": ["two-step","swing","chop"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"offbeat","swing":50,"tempo":130,"depth":85}},
+      {"m":"time.shuffle","p":{"unit":"syllables","amount":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-every-word-there-and-back",
+    "name": "Every word there and back, gated",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Each word plays forward then straight back, chopped on a sixteenth-note gate at 120.",
+    "tags": ["palindrome","reverse","gate"],
+    "chain": [
+      {"m":"time.palindrome","p":{"unit":"words","gapMs":0}},
+      {"m":"mod.gate","p":{"pattern":"stutter","depth":75,"smooth":4}},
+      {"m":"lofi.saturate","p":{"drive":7}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-broken-beat-stumble",
+    "name": "Broken beat stumble",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Syllables shuffled, glitched and gated on an uneven, stumbling beat.",
+    "tags": ["broken beat","uneven","glitch"],
+    "chain": [
+      {"m":"time.shuffle","p":{"unit":"syllables","amount":25}},
+      {"m":"time.glitch","p":{"density":40,"tempo":110}},
+      {"m":"mod.gate","p":{"pattern":"random","tempo":110,"depth":80}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-beat-juggled-words",
+    "name": "Beat-juggled words",
+    "cat": "beats",
+    "sub": "Glitches and chops",
+    "about": "Words swapped around and phrase starts doubled, like a DJ juggling two records.",
+    "tags": ["juggle","words","dj"],
+    "chain": [
+      {"m":"time.shuffle","p":{"amount":45}},
+      {"m":"time.stutter","p":{"where":"phrases","repeats":2,"pieceMs":220,"chance":70,"gate":10}},
+      {"m":"mod.gate","p":{"pattern":"stutter","tempo":96,"depth":70,"smooth":8}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-syllables-bounce-on-beat",
+    "name": "Syllables bounce on the beat",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "Each syllable jumps sides while eighth-note echoes bounce behind it.",
+    "tags": ["bounce","echo","stereo"],
+    "chain": [
+      {"m":"stereo.pingpong","p":{"unit":"syllable","width":100,"glide":0}},
+      {"m":"echo.delay","p":{"division":"eighth","feedback":30,"mix":25}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-dub-echo-throws",
+    "name": "Dub echo throws",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "Long dub echoes that feed back and swirl through a sweeping filter.",
+    "tags": ["dub","echo","swirl"],
+    "chain": [
+      {"m":"echo.dub","p":{"feedback":85,"mix":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-dotted-eighth-echo-groove",
+    "name": "Dotted-eighth echo groove",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A dotted-eighth echo that turns plain speech into a rolling groove.",
+    "tags": ["delay","dotted","groove"],
+    "chain": [
+      {"m":"echo.delay","p":{"division":"dotted","feedback":50,"mix":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-galloping-echo-rhythm",
+    "name": "Galloping echo rhythm",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A galloping pattern of echoes scattered around your head.",
+    "tags": ["gallop","echo","pattern"],
+    "chain": [
+      {"m":"echo.multitap","p":{"tempo":120}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-bouncing-ball-echoes",
+    "name": "Bouncing ball echoes",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "Echoes that come faster and faster like a dropped ball bouncing.",
+    "tags": ["bounce","echo","faster"],
+    "chain": [
+      {"m":"echo.multitap","p":{"pattern":"bounce"}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-talking-wobble-bass",
+    "name": "Talking wobble bass",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "An octave down, fuzzed, and pushed through a filter wobbling three times a second.",
+    "tags": ["wobble","bass","filter"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-12,"formant":-2}},
+      {"m":"tone.filter","p":{"freq":600,"resonance":85,"sweep":"lfo","rate":3,"range":90}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":24}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-dj-filter-sweep-up",
+    "name": "DJ filter sweep up",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A resonant high-pass filter slowly sweeping up and down, like a DJ building a drop.",
+    "tags": ["filter","sweep","dj"],
+    "chain": [
+      {"m":"tone.filter","p":{"type":"highpass","freq":300,"sweep":"lfo","rate":0.05,"range":100,"resonance":50}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-gated-eighties-shout",
+    "name": "Gated eighties shout",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A doubled voice with a huge burst of room that stops dead after each word.",
+    "tags": ["gated","eighties","room"],
+    "chain": [
+      {"m":"space.gated","p":{"mix":60}},
+      {"m":"stereo.double","p":{}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-talking-yoy-wobble",
+    "name": "Talking wobble, yoy-yoy",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A lower, fuzzed voice whose vowels go yoy-yoy-yoy three times a second.",
+    "tags": ["wobble","vowel","bass"],
+    "chain": [
+      {"m":"pitch.voice","p":{"semitones":-5,"formant":-2}},
+      {"m":"synth.formantfilter","p":{"pattern":"yoy","rate":3,"resonance":80}},
+      {"m":"lofi.drive","p":{"character":"fuzz","drive":20}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-dj-echo-out",
+    "name": "DJ echo-out",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "Long feeding echoes on the beat, thinning out as a high-pass filter sweeps.",
+    "tags": ["echo","dj","filter"],
+    "chain": [
+      {"m":"echo.delay","p":{"division":"quarter","feedback":60,"mix":45,"stereo":"wide"}},
+      {"m":"tone.filter","p":{"type":"highpass","freq":400,"sweep":"lfo","rate":0.1,"range":80,"resonance":40}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-phone-filter-breakdown",
+    "name": "Phone filter breakdown",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "Your gated voice squeezed into a tiny band like the breakdown before a drop.",
+    "tags": ["filter","breakdown","thin"],
+    "chain": [
+      {"m":"mod.gate","p":{"tempo":126,"smooth":4}},
+      {"m":"tone.filter","p":{"type":"bandpass","freq":1500,"resonance":45}},
+      {"m":"lofi.saturate","p":{"drive":10}}
+    ],
+    "seed": 1
+  },
+  {
+    "id": "beats-club-through-the-door",
+    "name": "Club beat through the door",
+    "cat": "beats",
+    "sub": "Echo rhythms and DJ filters",
+    "about": "A pumping offbeat gate heard from the corridor, through the shut club door.",
+    "tags": ["club","muffled","door"],
+    "chain": [
+      {"m":"mod.gate","p":{"pattern":"offbeat","tempo":124,"smooth":15}},
+      {"m":"pitch.octaver","p":{"down1":40,"dry":90}},
+      {"m":"space.muffle","p":{"room":"gym","yours":0}}
+    ],
+    "seed": 1
+  }
+]

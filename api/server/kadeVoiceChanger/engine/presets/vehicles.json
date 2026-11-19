@@ -1,0 +1,1379 @@
+[
+  {
+    "id": "vehicles-helicopter-headset",
+    "name": "Helicopter headset",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "A pilot on the cabin intercom, the rotor thumping right through the headset.",
+    "tags": ["helicopter", "intercom", "pilot"],
+    "chain": [
+      { "m": "tone.character", "p": {} },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive" } },
+      { "m": "mod.chopper", "p": { "rate": 22, "depth": 20, "blade": "smooth" } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -18, "duck": 4 },
+    "seed": 101
+  },
+  {
+    "id": "vehicles-shouting-over-the-rotors",
+    "name": "Shouting over the rotors",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "Yelling beside a running helicopter with the doors open and the wind tearing past.",
+    "tags": ["helicopter", "shout", "wind"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "warm" } },
+      { "m": "mod.chopper", "p": { "rate": 11, "depth": 60 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -12, "duck": 2, "p": { "doors": "open", "intensity": 85 } },
+    "seed": 102
+  },
+  {
+    "id": "vehicles-traffic-report-from-the-sky",
+    "name": "Traffic report from the sky",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "A news reporter high over the freeway, punchy and squeezed, blades beating under every word.",
+    "tags": ["helicopter", "news", "radio"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news" } },
+      { "m": "device.walkie", "p": { "band": "field", "squelch": 50 } },
+      { "m": "mod.chopper", "p": { "depth": 35 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -20, "p": { "intensity": 50 } },
+    "seed": 103
+  },
+  {
+    "id": "vehicles-rotor-spinning-up",
+    "name": "Rotor spinning up",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "The blades start slowly and wind up to full speed while you talk right through them.",
+    "tags": ["helicopter", "chopped", "rising"],
+    "chain": [
+      { "m": "mod.chopper", "p": { "rate": 20, "depth": 90, "blade": "paddle", "spin": "up" } },
+      { "m": "space.room", "p": { "space": "field", "mix": 25 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -20, "p": { "whine": 80 } },
+    "seed": 104
+  },
+  {
+    "id": "vehicles-rescue-crew-on-the-winch",
+    "name": "Rescue crew on the winch",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "A rescuer hanging from the winch line, radio clipping, rotor wash roaring through the open door.",
+    "tags": ["helicopter", "rescue", "radio"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "digital", "clip": 50 } },
+      { "m": "mod.chopper", "p": { "rate": 9, "depth": 45, "blade": "thin", "noise": 30 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -14, "p": { "doors": "open", "intensity": 75, "rate": 4.5 } },
+    "seed": 105
+  },
+  {
+    "id": "vehicles-talking-into-a-drone",
+    "name": "Talking into a buzzing drone",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "A little drone hovers over your head and your voice buzzes through its tiny propellers.",
+    "tags": ["drone", "buzz", "above"],
+    "chain": [
+      { "m": "mod.chopper", "p": { "rate": 75, "depth": 70, "blade": "thin", "colour": 70 } },
+      { "m": "stereo.place", "p": { "angle": 30, "height": 30, "distance": 2, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 20 } },
+    "seed": 106
+  },
+  {
+    "id": "vehicles-big-twin-rotor-transport",
+    "name": "Big twin-rotor transport",
+    "cat": "vehicles",
+    "sub": "Helicopters",
+    "about": "Slow heavy rotor beats under a harsh crew radio in a huge transport helicopter.",
+    "tags": ["helicopter", "military", "radio"],
+    "chain": [
+      { "m": "device.scanner", "p": { "harsh": 70, "chirps": false } },
+      { "m": "mod.chopper", "p": { "rate": 6, "depth": 50, "wobble": 60 } }
+    ],
+    "bed": { "b": "helicopter-cabin", "level": -15, "p": { "rate": 4, "intensity": 70 } },
+    "seed": 107
+  },
+  {
+    "id": "vehicles-captain-speaking",
+    "name": "Captain speaking from the cockpit",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "The calm announcement over the cabin speakers, chime and engine hum included.",
+    "tags": ["airplane", "captain", "announcement"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 4 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 60 } },
+      { "m": "space.room", "p": { "space": "airplane-cabin", "mix": 60 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -20, "duck": 3, "p": { "chimes": 80 } },
+    "seed": 111
+  },
+  {
+    "id": "vehicles-seatmate-on-a-long-flight",
+    "name": "Seatmate on a long flight",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "The person beside you leans over to talk above the steady roar of the cabin.",
+    "tags": ["airplane", "close", "cabin"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "airplane-cabin", "mix": 35, "distance": 20 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -14, "duck": 2, "p": { "intensity": 60 } },
+    "seed": 112
+  },
+  {
+    "id": "vehicles-safety-talk-before-takeoff",
+    "name": "Safety talk before takeoff",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "A squashed, rattly cabin speaker far up the aisle runs through the safety talk.",
+    "tags": ["airplane", "announcement", "speaker"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 6 } },
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 10, "rattle": 40 } },
+      { "m": "space.room", "p": { "space": "airplane-cabin", "distance": 85 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -24, "p": { "seat": "back", "intensity": 45, "turbulence": 0, "chimes": 60 } },
+    "seed": 113
+  },
+  {
+    "id": "vehicles-small-plane-cockpit",
+    "name": "Small plane cockpit",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "A pilot's headset in a little propeller plane, the buzz of the prop riding on the voice.",
+    "tags": ["airplane", "propeller", "radio"],
+    "chain": [
+      { "m": "mod.chopper", "p": { "rate": 45, "depth": 25, "blade": "smooth", "colour": 30 } },
+      { "m": "device.walkie", "p": { "band": "field", "squelch": 30, "clip": 50, "hiss": 40 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -14, "duck": 3, "p": { "seat": "back", "intensity": 85 } },
+    "seed": 114
+  },
+  {
+    "id": "vehicles-pilot-calling-the-tower",
+    "name": "Pilot calling the tower",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "A harsh, squeezed radio call to the control tower with a squelch tail on every line.",
+    "tags": ["airplane", "radio", "pilot"],
+    "chain": [
+      { "m": "device.scanner", "p": { "tail": 90, "harsh": 70, "noise": 40, "chirps": false } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -22, "p": { "seat": "front", "intensity": 70 } },
+    "seed": 115
+  },
+  {
+    "id": "vehicles-fighter-pilot-oxygen-mask",
+    "name": "Fighter pilot oxygen mask",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "Talking into a tight rubber mask on a clipped radio while the jet roars around you.",
+    "tags": ["jet", "mask", "radio"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bottle", "mix": 45 } },
+      { "m": "device.walkie", "p": { "band": "digital", "clip": 60, "hiss": 20 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "hard" } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -18, "p": { "seat": "front", "intensity": 95, "turbulence": 50, "chimes": 0 } },
+    "seed": 116
+  },
+  {
+    "id": "vehicles-cargo-plane-hold",
+    "name": "Cargo plane hold",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "Shouting in the bare metal hold of a cargo plane, the engines roaring all around.",
+    "tags": ["airplane", "shout", "metal"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "hangar", "mix": 40, "size": 0.6 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -12, "duck": 3, "p": { "seat": "back", "intensity": 95, "turbulence": 40, "chimes": 0 } },
+    "seed": 117
+  },
+  {
+    "id": "vehicles-announcement-in-rough-air",
+    "name": "Announcement in rough air",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "The seatbelt chime rings and the captain's voice shakes with every bump.",
+    "tags": ["airplane", "turbulence", "shaky"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "cabinet" } },
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 2, "direction": "both", "tremble": 70 } },
+      { "m": "mod.tremolo", "p": { "rate": 6, "depth": 25, "shape": "random" } },
+      { "m": "space.room", "p": { "space": "airplane-cabin", "mix": 70 } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -18, "p": { "turbulence": 100, "chimes": 70 } },
+    "seed": 118
+  },
+  {
+    "id": "vehicles-glider-in-silent-air",
+    "name": "Glider in silent air",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "Gliding high above the fields with only the wind whistling over the canopy.",
+    "tags": ["glider", "wind", "quiet"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "mix": 35, "size": 0.6 } }
+    ],
+    "bed": { "b": "wind", "level": -18, "p": { "strength": 40, "whistle": 70, "rumble": 10 } },
+    "seed": 119
+  },
+  {
+    "id": "vehicles-jumping-out-the-plane-door",
+    "name": "Jumping out the plane door",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "Shouting at the open door of a plane, the wind battering every word.",
+    "tags": ["skydive", "wind", "shout"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm" } },
+      { "m": "mod.tremolo", "p": { "rate": 12, "depth": 35, "shape": "random" } }
+    ],
+    "bed": { "b": "wind", "level": -10, "duck": 2, "p": { "strength": 100, "gusts": 90, "rumble": 80 } },
+    "seed": 120
+  },
+  {
+    "id": "vehicles-old-propeller-airliner",
+    "name": "Old propeller airliner",
+    "cat": "vehicles",
+    "sub": "Planes and jets",
+    "about": "A honky little loudspeaker on a 1950s propeller airliner with the engines droning.",
+    "tags": ["airplane", "vintage", "propeller"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 70 } },
+      { "m": "lofi.speaker", "p": { "size": "radio" } },
+      { "m": "mod.chopper", "p": { "rate": 30, "depth": 15, "blade": "smooth" } },
+      { "m": "space.room", "p": { "space": "airplane-cabin" } }
+    ],
+    "bed": { "b": "airplane-cabin", "level": -18, "p": { "intensity": 70, "turbulence": 25 } },
+    "seed": 121
+  },
+  {
+    "id": "vehicles-train-conductor",
+    "name": "Train conductor over the speaker",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "The conductor's voice crackles from a little speaker above the seats as the wheels clatter.",
+    "tags": ["train", "announcement", "speaker"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "radio", "push": 8 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "train-car", "mix": 55 } }
+    ],
+    "bed": { "b": "train", "level": -18 },
+    "seed": 131
+  },
+  {
+    "id": "vehicles-next-stop-announcement",
+    "name": "Next stop announcement",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "A squashed, rattling speaker calls the next stop over the roar of an underground train.",
+    "tags": ["subway", "announcement", "underground"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 5 } },
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "rattle": 40 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 400 } },
+      { "m": "space.room", "p": { "space": "train-car", "mix": 70, "distance": 70 } }
+    ],
+    "bed": { "b": "subway-car", "level": -16, "duck": 3, "p": { "squeal": 60 } },
+    "seed": 132
+  },
+  {
+    "id": "vehicles-rattling-old-subway-car",
+    "name": "Rattling old subway car",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "Talking to a friend over the screech and roar of an old underground train.",
+    "tags": ["subway", "noisy", "close"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "train-car", "mix": 40, "distance": 25 } }
+    ],
+    "bed": { "b": "subway-car", "level": -12, "duck": 4, "p": { "line": "old", "intensity": 80, "squeal": 80 } },
+    "seed": 133
+  },
+  {
+    "id": "vehicles-sleeper-train-at-night",
+    "name": "Sleeper train at night",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "A soft voice in a tiny sleeping compartment while the train rocks through the night.",
+    "tags": ["train", "night", "soft"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 40 } }
+    ],
+    "bed": { "b": "train", "level": -18, "p": { "track": "welded", "seat": "middle", "intensity": 30, "horn": 20 } },
+    "seed": 134
+  },
+  {
+    "id": "vehicles-from-the-next-carriage",
+    "name": "From the next carriage",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "Someone calls to you through the connecting door from the next carriage along.",
+    "tags": ["train", "muffled", "door"],
+    "chain": [
+      { "m": "space.muffle", "p": { "room": "hallway", "muffling": 60 } }
+    ],
+    "bed": { "b": "train", "level": -14, "p": { "intensity": 65, "horn": 50 } },
+    "seed": 135
+  },
+  {
+    "id": "vehicles-steam-train-all-aboard",
+    "name": "Steam train, all aboard",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "A conductor calls along the platform while the steam engine hisses and clanks.",
+    "tags": ["train", "steam", "platform"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm" } },
+      { "m": "space.distance", "p": { "distance": 8, "echoes": 60, "wind": 10 } }
+    ],
+    "bed": { "b": "engine-room", "level": -16, "p": { "machine": "steam", "steam": 90, "clanks": 50, "size": "small" } },
+    "seed": 136
+  },
+  {
+    "id": "vehicles-high-speed-train-cabin",
+    "name": "High-speed train cabin",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "A smooth modern announcement gliding over the hush of a very fast train.",
+    "tags": ["train", "modern", "announcement"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "podcast", "density": 40 } },
+      { "m": "lofi.speaker", "p": { "size": "laptop" } },
+      { "m": "space.room", "p": { "space": "train-car", "mix": 40 } }
+    ],
+    "bed": { "b": "train", "level": -20, "p": { "track": "welded", "seat": "middle", "intensity": 75, "horn": 0 } },
+    "seed": 137
+  },
+  {
+    "id": "vehicles-runaway-mine-cart",
+    "name": "Runaway mine cart",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "Bouncing through a rocky tunnel in a rattling cart, your voice shaking at every bump.",
+    "tags": ["cart", "tunnel", "shaky"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 3, "tremble": 70 } },
+      { "m": "mod.tremolo", "p": { "rate": 9, "depth": 40, "shape": "random" } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 55 } }
+    ],
+    "bed": { "b": "train", "level": -12, "p": { "intensity": 95, "horn": 0 } },
+    "seed": 138
+  },
+  {
+    "id": "vehicles-riding-a-city-tram",
+    "name": "Riding a city tram",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "Chatting on a rattling street tram as its bell clangs at every crossing.",
+    "tags": ["tram", "city", "bell"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "train-car", "mix": 35, "size": 0.7 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } }
+    ],
+    "bed": { "b": "bus", "level": -16, "p": { "intensity": 45, "rattles": 70, "bells": 90 } },
+    "seed": 139
+  },
+  {
+    "id": "vehicles-platform-speaker-echo",
+    "name": "Platform speaker echo",
+    "cat": "vehicles",
+    "sub": "Trains and subways",
+    "about": "Your voice booms from the platform speakers as a train rumbles in under the tiles.",
+    "tags": ["subway", "platform", "announcement"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "station", "chime": "two", "distance": 60 } }
+    ],
+    "bed": { "b": "subway-platform", "level": -16, "p": { "trains": 70, "announcements": 0 } },
+    "seed": 140
+  },
+  {
+    "id": "vehicles-taxi-in-city-traffic",
+    "name": "Taxi in city traffic",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "Chatting from the front seat of a cab as it noses through busy traffic.",
+    "tags": ["taxi", "car", "city"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "mix": 60 } }
+    ],
+    "bed": { "b": "car-highway", "level": -18, "p": { "car": "small", "surface": "seams", "intensity": 45, "traffic": 80 } },
+    "seed": 151
+  },
+  {
+    "id": "vehicles-bus-driver-on-the-speaker",
+    "name": "Bus driver on the speaker",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "The driver's handset buzzes through a rattly speaker over the growling diesel.",
+    "tags": ["bus", "announcement", "speaker"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "handheld", "push": 10, "rattle": 50 } },
+      { "m": "space.room", "p": { "space": "bus", "mix": 60, "distance": 60 } }
+    ],
+    "bed": { "b": "bus", "level": -16, "duck": 3, "p": { "intensity": 60 } },
+    "seed": 152
+  },
+  {
+    "id": "vehicles-back-seat-of-the-bus",
+    "name": "Back seat of the bus",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "Talking right over the engine at the very back of a bus bouncing down the highway.",
+    "tags": ["bus", "noisy", "highway"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bus", "mix": 55, "distance": 30 } },
+      { "m": "mod.tremolo", "p": { "rate": 3, "depth": 15, "shape": "random" } }
+    ],
+    "bed": { "b": "bus", "level": -13, "duck": 3, "p": { "route": "highway", "intensity": 70, "rattles": 80, "bells": 10 } },
+    "seed": 153
+  },
+  {
+    "id": "vehicles-windows-down-on-the-highway",
+    "name": "Windows down on the highway",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "Raising your voice over the wind blasting through open car windows at speed.",
+    "tags": ["car", "wind", "highway"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "mod.tremolo", "p": { "rate": 8, "depth": 20, "shape": "random" } },
+      { "m": "space.room", "p": { "space": "car", "mix": 30 } }
+    ],
+    "bed": { "b": "car-highway", "level": -11, "duck": 2, "p": { "windows": "open", "intensity": 85 } },
+    "seed": 154
+  },
+  {
+    "id": "vehicles-rainy-drive-home",
+    "name": "Rainy drive home",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "A cosy car at night, wipers swishing while the rain drums on the roof.",
+    "tags": ["car", "rain", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "mix": 65, "distance": 30 } },
+      { "m": "tone.tilt", "p": { "amount": -2 } }
+    ],
+    "bed": { "b": "car-rain", "level": -15, "p": { "motion": "driving", "intensity": 60 } },
+    "seed": 155
+  },
+  {
+    "id": "vehicles-turn-by-turn-navigation",
+    "name": "Turn-by-turn navigation voice",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "A flat, even direction-giving voice from the phone on the dashboard.",
+    "tags": ["car", "navigation", "flat"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 70 } },
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4 } },
+      { "m": "lofi.speaker", "p": {} },
+      { "m": "space.room", "p": { "space": "car", "mix": 45 } }
+    ],
+    "bed": { "b": "car-highway", "level": -22, "p": { "car": "electric", "intensity": 40, "traffic": 30 } },
+    "seed": 156
+  },
+  {
+    "id": "vehicles-long-haul-truck-cab",
+    "name": "Long-haul truck cab",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "A boomy big cab rolling down rough highway, tyres roaring under you.",
+    "tags": ["truck", "highway", "boomy"],
+    "chain": [
+      { "m": "tone.character", "p": { "shape": "boomy", "amount": 40 } },
+      { "m": "space.room", "p": { "space": "van", "mix": 50 } }
+    ],
+    "bed": { "b": "car-highway", "level": -14, "duck": 3, "p": { "car": "truck", "surface": "rough", "intensity": 75 } },
+    "seed": 157
+  },
+  {
+    "id": "vehicles-police-car-roof-speaker",
+    "name": "Police car roof speaker",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "Orders blare from the roof speaker of a patrol car after a quick whoop of the siren.",
+    "tags": ["police", "loudspeaker", "siren"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "siren": "start", "push": 60, "outdoors": 60 } }
+    ],
+    "bed": { "b": "city-street", "level": -18, "p": { "sirens": 60 } },
+    "seed": 158
+  },
+  {
+    "id": "vehicles-through-a-closed-car-window",
+    "name": "Through a closed car window",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "Someone in a parked car talks to you through the glass on a busy street.",
+    "tags": ["car", "muffled", "street"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "window", "muffling": 55 } }
+    ],
+    "bed": { "b": "city-street", "level": -14, "p": { "intensity": 60 } },
+    "seed": 159
+  },
+  {
+    "id": "vehicles-ambulance-crew-radio",
+    "name": "Ambulance crew radio",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "A paramedic radios in from the back of an ambulance racing through traffic, siren wailing.",
+    "tags": ["ambulance", "radio", "siren"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "digital", "clip": 45, "beep": "two" } },
+      { "m": "space.room", "p": { "space": "van", "mix": 30 } }
+    ],
+    "bed": { "b": "city-street", "level": -16, "p": { "sirens": 100, "horns": 50, "intensity": 70 } },
+    "seed": 160
+  },
+  {
+    "id": "vehicles-school-bus-field-trip",
+    "name": "School bus field trip",
+    "cat": "vehicles",
+    "sub": "Cars, buses and taxis",
+    "about": "A whole busload of you chattering away on a bumpy ride to somewhere fun.",
+    "tags": ["bus", "crowd", "chatter"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 6, "pitchSpread": 6, "timing": 250, "room": "small-room", "you": 70 } },
+      { "m": "space.room", "p": { "space": "bus", "mix": 30 } }
+    ],
+    "bed": { "b": "bus", "level": -16, "p": { "route": "highway", "rattles": 70, "bells": 0 } },
+    "seed": 161
+  },
+  {
+    "id": "vehicles-race-car-team-radio",
+    "name": "Race car team radio",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "A driver radios the pit wall, digital and distorted, the engine screaming behind the words.",
+    "tags": ["racing", "radio", "engine"],
+    "chain": [
+      { "m": "device.scanner", "p": { "mode": "digital", "warble": 50, "harsh": 60, "chirps": false } },
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "hard" } },
+      { "m": "mod.chopper", "p": { "rate": 70, "depth": 25, "blade": "smooth", "colour": 20 } }
+    ],
+    "bed": { "b": "car-highway", "level": -16, "p": { "car": "small", "surface": "rough", "intensity": 100 } },
+    "seed": 171
+  },
+  {
+    "id": "vehicles-motorcycle-helmet",
+    "name": "Motorcycle helmet",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "Talking inside a full-face helmet at speed, wind roaring round the shell.",
+    "tags": ["motorbike", "helmet", "wind"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 70 } },
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "mod.tremolo", "p": { "rate": 10, "depth": 15, "shape": "random" } }
+    ],
+    "bed": { "b": "wind", "level": -14, "duck": 2, "p": { "strength": 75, "gusts": 70, "rumble": 60 } },
+    "seed": 172
+  },
+  {
+    "id": "vehicles-rider-to-passenger-intercom",
+    "name": "Rider to passenger intercom",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "A helmet-to-helmet radio between rider and passenger on an open road.",
+    "tags": ["motorbike", "intercom", "radio"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "digital", "squelch": 20, "clip": 40 } },
+      { "m": "space.room", "p": { "space": "helmet", "mix": 40 } }
+    ],
+    "bed": { "b": "car-highway", "level": -18, "p": { "windows": "open", "car": "small", "intensity": 70 } },
+    "seed": 173
+  },
+  {
+    "id": "vehicles-racetrack-announcer",
+    "name": "Racetrack announcer",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "The track speakers call the race over a crowd on its feet.",
+    "tags": ["racing", "announcer", "crowd"],
+    "chain": [
+      { "m": "device.pa", "p": { "venue": "stadium", "push": 60, "distance": 40 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -14, "p": { "excitement": 80, "intensity": 70 } },
+    "seed": 174
+  },
+  {
+    "id": "vehicles-words-made-of-engine-noise",
+    "name": "Words made of engine noise",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "Your words come out of a growling engine instead of your mouth.",
+    "tags": ["engine", "morph", "machine"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "engine", "clarity": 65, "background": -14 } }
+    ],
+    "seed": 175
+  },
+  {
+    "id": "vehicles-engine-revs-as-you-talk",
+    "name": "Engine revs as you talk",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "A motor revs up under every word you say and drops back to idle in the pauses.",
+    "tags": ["engine", "keyed", "revving"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "follow", "level": -4 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm" } }
+    ],
+    "seed": 176
+  },
+  {
+    "id": "vehicles-dirt-bike-on-a-forest-trail",
+    "name": "Dirt bike on a forest trail",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "A rider zips back and forth through the trees, the engine snarling under each pass.",
+    "tags": ["motorbike", "forest", "passing"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "follow", "level": -10 } },
+      { "m": "mod.doppler", "p": { "speed": "bike", "closest": 5, "direction": "alternate" } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 30 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -24 },
+    "seed": 177
+  },
+  {
+    "id": "vehicles-go-kart-laps",
+    "name": "Go-kart laps",
+    "cat": "vehicles",
+    "sub": "Racing and motorbikes",
+    "about": "A buzzing little kart whips past you lap after lap.",
+    "tags": ["racing", "kart", "passing"],
+    "chain": [
+      { "m": "mod.chopper", "p": { "rate": 55, "depth": 30, "blade": "smooth" } },
+      { "m": "stereo.flyby", "p": { "speed": "fastcar", "passes": 4, "closest": 3 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -24, "p": { "intensity": 30 } },
+    "seed": 178
+  },
+  {
+    "id": "vehicles-ship-captain-on-deck",
+    "name": "Ship captain on deck",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Calling orders across an open deck with gulls, clinking rigging and a foghorn.",
+    "tags": ["ship", "captain", "harbor"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -18, "p": { "wind": 70, "foghorn": true } },
+    "seed": 181
+  },
+  {
+    "id": "vehicles-bridge-to-engine-room",
+    "name": "Bridge to engine room",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "A buzzing ship's intercom squawks orders down into a steel engine room.",
+    "tags": ["ship", "intercom", "engine"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "office", "buzz": 40, "distortion": 50 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 40 } }
+    ],
+    "bed": { "b": "engine-room", "level": -14, "duck": 3, "p": { "machine": "turbine", "intensity": 70 } },
+    "seed": 182
+  },
+  {
+    "id": "vehicles-fishing-boat-radio",
+    "name": "Fishing boat radio",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "A hissy marine radio call from a fishing boat chugging through the swell.",
+    "tags": ["boat", "radio", "sea"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "field", "squelch": 80, "beep": "low", "hiss": 50, "signal": 65 } }
+    ],
+    "bed": { "b": "boat-engine", "level": -16, "p": { "waves": 70 } },
+    "seed": 183
+  },
+  {
+    "id": "vehicles-ferry-crossing-announcement",
+    "name": "Ferry crossing announcement",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "A horn speaker on the open deck of a big ferry, its words slapping back off the cabins.",
+    "tags": ["ferry", "announcement", "sea"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 10 } },
+      { "m": "space.room", "p": { "space": "field", "mix": 40 } },
+      { "m": "echo.slapback", "p": { "time": 180, "level": 30, "character": "clean" } }
+    ],
+    "bed": { "b": "boat-engine", "level": -16, "p": { "boat": "ship", "seat": "bow" } },
+    "seed": 184
+  },
+  {
+    "id": "vehicles-below-deck-engine-room",
+    "name": "Below deck in the engine room",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Shouting over pounding steam machinery deep in the belly of an old ship.",
+    "tags": ["ship", "engine", "shout"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "factory", "mix": 55 } }
+    ],
+    "bed": { "b": "engine-room", "level": -12, "duck": 4, "p": { "machine": "steam", "steam": 70, "clanks": 70, "size": "small" } },
+    "seed": 185
+  },
+  {
+    "id": "vehicles-sailing-at-sunset",
+    "name": "Sailing at sunset",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Relaxing aboard a small sailboat, rigging tinking and water lapping at the hull.",
+    "tags": ["sailboat", "calm", "sea"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 20 } },
+      { "m": "tone.tilt", "p": { "amount": 1 } }
+    ],
+    "bed": { "b": "sailboat", "level": -20, "p": { "waves": 40, "rigging": 70 } },
+    "seed": 186
+  },
+  {
+    "id": "vehicles-lifeboat-in-rough-seas",
+    "name": "Lifeboat in rough seas",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Shouting from a little lifeboat tossed on huge crashing waves.",
+    "tags": ["boat", "waves", "shout"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 12, "character": "warm" } },
+      { "m": "mod.tremolo", "p": { "rate": 4, "depth": 30, "shape": "random" } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 70, "echoes": 10 } }
+    ],
+    "bed": { "b": "ocean", "level": -10, "duck": 3, "p": { "size": 100, "period": 5, "distance": 0 } },
+    "seed": 187
+  },
+  {
+    "id": "vehicles-speedboat-bouncing-on-waves",
+    "name": "Speedboat bouncing on waves",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Hanging on in a roaring speedboat as it slams over the chop.",
+    "tags": ["boat", "fast", "bumpy"],
+    "chain": [
+      { "m": "mod.tremolo", "p": { "rate": 6, "depth": 35, "shape": "random" } },
+      { "m": "pitch.wobble", "p": { "depth": 40, "speed": 3 } }
+    ],
+    "bed": { "b": "boat-engine", "level": -12, "duck": 3, "p": { "boat": "outboard", "intensity": 90, "waves": 90 } },
+    "seed": 188
+  },
+  {
+    "id": "vehicles-creaking-wooden-ship-hold",
+    "name": "Creaking wooden ship hold",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Below deck on an old wooden ship, the timbers groaning with every wave.",
+    "tags": ["ship", "wooden", "creaky"],
+    "chain": [
+      { "m": "synth.resonator", "p": { "object": "wood-box", "mix": 25 } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 35, "size": 0.6 } }
+    ],
+    "bed": { "b": "sailboat", "level": -16, "p": { "creaks": 100, "rigging": 20, "waves": 60, "intensity": 40 } },
+    "seed": 189
+  },
+  {
+    "id": "vehicles-rowing-on-a-still-lake",
+    "name": "Rowing on a still lake",
+    "cat": "vehicles",
+    "sub": "Boats and ships",
+    "about": "Calling out from a rowboat, your voice coming back off the far shore.",
+    "tags": ["boat", "lake", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 30 } },
+      { "m": "echo.canyon", "p": { "place": "valley", "distance": 300, "count": 2, "mix": 25 } }
+    ],
+    "bed": { "b": "river", "level": -24, "p": { "flow": 15, "rapids": 0, "distance": 20 } },
+    "seed": 190
+  },
+  {
+    "id": "vehicles-submarine-captain",
+    "name": "Submarine captain",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "Orders over the boat's speakers ring through a steel hull while sonar pings outside.",
+    "tags": ["submarine", "captain", "metal"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 10, "rattle": 30 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 60 } }
+    ],
+    "bed": { "b": "submarine", "level": -16 },
+    "seed": 201
+  },
+  {
+    "id": "vehicles-quiet-in-the-sonar-room",
+    "name": "Quiet in the sonar room",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "Talking in hushed tones in a small steel room while sonar pings ring into the deep.",
+    "tags": ["submarine", "sonar", "quiet"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -2 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 35, "size": 0.6 } }
+    ],
+    "bed": { "b": "submarine", "level": -16, "p": { "pings": 100, "hum": 40, "groans": 30 } },
+    "seed": 202
+  },
+  {
+    "id": "vehicles-hull-groaning-under-pressure",
+    "name": "Hull groaning under pressure",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "Deep down in a narrow steel passage, your voice wavering as the hull groans.",
+    "tags": ["submarine", "deep", "eerie"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 30, "speed": 0.4 } },
+      { "m": "space.room", "p": { "space": "sewer-pipe", "mix": 60 } }
+    ],
+    "bed": { "b": "submarine", "level": -14, "p": { "groans": 100, "pings": 20, "distance": 4000 } },
+    "seed": 203
+  },
+  {
+    "id": "vehicles-deep-sea-diving-helmet",
+    "name": "Deep-sea diving helmet",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "A diver in a brass helmet talks up the line, bubbles streaming past the glass.",
+    "tags": ["diver", "helmet", "underwater"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 70 } },
+      { "m": "mod.underwater", "p": { "depth": 30, "bubbles": 60, "wobble": 20, "mix": 50 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1300 } }
+    ],
+    "bed": { "b": "underwater", "level": -16, "p": { "diver": 80 } },
+    "seed": 204
+  },
+  {
+    "id": "vehicles-inside-a-diving-bell",
+    "name": "Inside a diving bell",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "Breathing a helium mix inside a cramped metal bell on the sea floor.",
+    "tags": ["diver", "helium", "metal"],
+    "chain": [
+      { "m": "pitch.helium", "p": { "gas": "heliox", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 80, "size": 0.6 } }
+    ],
+    "bed": { "b": "underwater", "level": -20, "p": { "depth": 80 } },
+    "seed": 205
+  },
+  {
+    "id": "vehicles-underwater-telephone",
+    "name": "Underwater telephone to the ship",
+    "cat": "vehicles",
+    "sub": "Submarines and divers",
+    "about": "The warbling through-water phone between a small sub and the ship above.",
+    "tags": ["submarine", "warble", "phone"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 30, "drift": 40 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1000, "resonance": 50 } },
+      { "m": "echo.delay", "p": { "time": 300, "feedback": 30, "mix": 25, "stereo": "mono" } }
+    ],
+    "bed": { "b": "underwater", "level": -22 },
+    "seed": 206
+  },
+  {
+    "id": "vehicles-launch-control-countdown",
+    "name": "Launch control countdown",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "Mission radio with beep tones as the rocket roars off the pad.",
+    "tags": ["rocket", "launch", "radio"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "orbit", "hiss": 30 } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -16, "duck": 4 },
+    "seed": 211
+  },
+  {
+    "id": "vehicles-shaking-cockpit-at-liftoff",
+    "name": "Shaking cockpit at liftoff",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "Strapped in on top of the rocket, your radio voice rattling as the engines light.",
+    "tags": ["rocket", "shaky", "astronaut"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "beeps": "none", "band": "orbit" } },
+      { "m": "mod.tremolo", "p": { "rate": 14, "depth": 40, "shape": "random" } },
+      { "m": "pitch.jitter", "p": { "rate": 3, "size": 1, "direction": "both", "tremble": 80, "jitter": 30 } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -12, "duck": 3, "p": { "distance": "near", "intensity": 90, "crackle": 80 } },
+    "seed": 212
+  },
+  {
+    "id": "vehicles-starship-bridge-captain",
+    "name": "Starship bridge captain",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "Speaking from the captain's chair on a vast humming bridge full of chirping consoles.",
+    "tags": ["starship", "bridge", "captain"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 25, "size": 1.5 } },
+      { "m": "tone.character", "p": { "shape": "warm", "amount": 60 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -18, "p": { "size": "flagship", "beeps": 60 } },
+    "seed": 213
+  },
+  {
+    "id": "vehicles-red-alert-on-the-bridge",
+    "name": "Red alert on the bridge",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "The ship-wide speakers crackle with orders as the alarm whoops.",
+    "tags": ["starship", "alarm", "speaker"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "cabinet", "push": 12 } },
+      { "m": "echo.slapback", "p": { "character": "room" } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -16, "p": { "alert": "siren", "intensity": 70 } },
+    "seed": 214
+  },
+  {
+    "id": "vehicles-escape-pod-drifting",
+    "name": "Escape pod drifting",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "A faint, breaking-up call from a cramped pod drifting away from the ship.",
+    "tags": ["space", "pod", "radio"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 50 } },
+      { "m": "device.spaceradio", "p": { "band": "deep", "beeps": "start", "dropouts": 40 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -20, "p": { "size": "shuttle", "hum": 30, "beeps": 80, "alert": "soft" } },
+    "seed": 215
+  },
+  {
+    "id": "vehicles-moon-buggy-ride",
+    "name": "Moon buggy ride",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "Bouncing across the moon in a little rover, your radio voice jolting on every bump.",
+    "tags": ["moon", "rover", "radio"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "echo": 30 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.5, "size": 2, "direction": "both", "tremble": 50 } },
+      { "m": "mod.tremolo", "p": { "rate": 3, "depth": 25, "shape": "random" } }
+    ],
+    "seed": 216
+  },
+  {
+    "id": "vehicles-starship-captains-log",
+    "name": "Starship captain's log",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "A close, late-night personal log recorded on a quiet, humming bridge.",
+    "tags": ["starship", "log", "close"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "late" } },
+      { "m": "space.reverb", "p": { "size": 30, "decay": 0.8, "mix": 15 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -24, "p": { "hum": 80, "beeps": 20 } },
+    "seed": 217
+  },
+  {
+    "id": "vehicles-jump-to-light-speed",
+    "name": "Jump to light speed",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "Your voice stretches upward and swirls as the ship surges into a jump.",
+    "tags": ["starship", "rising", "whoosh"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": 12, "curve": "late" } },
+      { "m": "mod.flanger", "p": { "rate": 0.1, "depth": 90, "feedback": 70 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -20, "p": { "intensity": 70 } },
+    "seed": 218
+  },
+  {
+    "id": "vehicles-reentry-radio-blackout",
+    "name": "Re-entry radio blackout",
+    "cat": "vehicles",
+    "sub": "Rockets and starships",
+    "about": "The capsule radio breaks up in the roaring heat of coming home.",
+    "tags": ["capsule", "radio", "dropout"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "orbit", "dropouts": 70, "hiss": 70 } },
+      { "m": "spec.dropout", "p": { "loss": 30, "conceal": "silence" } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -14, "p": { "shape": "steady", "crackle": 90, "distance": "far" } },
+    "seed": 219
+  },
+  {
+    "id": "vehicles-passing-car",
+    "name": "Passing car",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "Someone shouts from a car window as it whooshes past, again and again.",
+    "tags": ["car", "doppler", "passing"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "mix": 40 } },
+      { "m": "mod.doppler", "p": { "speed": "highway", "closest": 3, "direction": "alternate" } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "intensity": 40 } },
+    "seed": 221
+  },
+  {
+    "id": "vehicles-siren-passing-by",
+    "name": "Siren passing by",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A loudspeaker car wails past you, siren and voice both dropping in pitch.",
+    "tags": ["siren", "doppler", "loudspeaker"],
+    "chain": [
+      { "m": "device.megaphone", "p": { "size": "roof", "siren": "each", "push": 60 } },
+      { "m": "mod.doppler", "p": { "speed": "town", "passes": "once" } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "sirens": 0 } },
+    "seed": 222
+  },
+  {
+    "id": "vehicles-express-train-roaring-past",
+    "name": "Express train roaring past",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A voice blares from a speeding train as it thunders by the crossing.",
+    "tags": ["train", "doppler", "passing"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 12 } },
+      { "m": "mod.doppler", "p": { "speed": "train", "closest": 8, "passes": "once", "fade": 80 } }
+    ],
+    "bed": { "b": "wind", "level": -20, "p": { "strength": 50, "rumble": 90 } },
+    "seed": 223
+  },
+  {
+    "id": "vehicles-jet-flyover",
+    "name": "Jet flyover",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "Your voice screams overhead like a low jet, whooshing as it goes.",
+    "tags": ["jet", "flyby", "whoosh"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "jet", "closest": 20, "height": 70 } },
+      { "m": "mod.flanger", "p": { "rate": 0.08, "depth": 90, "feedback": 60 } }
+    ],
+    "bed": { "b": "wind", "level": -26 },
+    "seed": 224
+  },
+  {
+    "id": "vehicles-cyclist-rolling-by",
+    "name": "Cyclist rolling by",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A chatty cyclist rides past you, turns round and rides back again.",
+    "tags": ["bike", "passing", "street"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "bike", "closest": 1.5, "passes": 3 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "people": 70, "intensity": 40 } },
+    "seed": 225
+  },
+  {
+    "id": "vehicles-race-cars-down-the-straight",
+    "name": "Race cars down the straight",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "Lap after lap your voice tears past the grandstand at racing speed.",
+    "tags": ["racing", "flyby", "stadium"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive" } },
+      { "m": "stereo.flyby", "p": { "speed": "race", "closest": 4, "passes": 4, "room": "stadium" } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -18, "p": { "excitement": 90 } },
+    "seed": 226
+  },
+  {
+    "id": "vehicles-bus-pulling-away",
+    "name": "Bus pulling away",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "Someone calls from inside a bus as it pulls off down the street.",
+    "tags": ["bus", "away", "street"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bus", "mix": 40 } },
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 30, "room": "outdoors", "facing": "away" } }
+    ],
+    "bed": { "b": "city-street", "level": -20 },
+    "seed": 227
+  },
+  {
+    "id": "vehicles-skateboarder-rolling-past",
+    "name": "Skateboarder rolling past",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A skater rolls by you twice down a narrow alley, words bouncing off the walls.",
+    "tags": ["skateboard", "alley", "passing"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "run", "closest": 1, "passes": 2, "room": "alley" } }
+    ],
+    "seed": 228
+  },
+  {
+    "id": "vehicles-motorbike-zooming-past",
+    "name": "Motorbike zooming past",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A snarling motorbike rips past from right to left with every phrase.",
+    "tags": ["motorbike", "doppler", "engine"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 14 } },
+      { "m": "mod.chopper", "p": { "rate": 60, "depth": 40, "blade": "smooth" } },
+      { "m": "mod.doppler", "p": { "closest": 2, "direction": "rtl", "fade": 80 } }
+    ],
+    "bed": { "b": "city-street", "level": -24, "p": { "intensity": 30 } },
+    "seed": 229
+  },
+  {
+    "id": "vehicles-ice-cream-van-crawling-past",
+    "name": "Ice cream van crawling past",
+    "cat": "vehicles",
+    "sub": "Passing by",
+    "about": "A tinny van loudspeaker calls out to the kids as it crawls slowly past down your street.",
+    "tags": ["van", "loudspeaker", "street"],
+    "chain": [
+      { "m": "lofi.speaker", "p": { "size": "horn", "push": 12, "rattle": 40 } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 60 } },
+      { "m": "mod.doppler", "p": { "speed": "town", "passes": "once", "closest": 4, "fade": 70 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "street": "side", "intensity": 30, "people": 40 } },
+    "seed": 230
+  },
+  {
+    "id": "vehicles-roller-coaster-drop",
+    "name": "Roller coaster drop",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Screaming on a coaster as it hurtles past you over and over.",
+    "tags": ["coaster", "scream", "doppler"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 1 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm" } },
+      { "m": "mod.doppler", "p": { "closest": 3, "direction": "alternate" } }
+    ],
+    "bed": { "b": "carnival", "level": -16, "p": { "rides": 100, "intensity": 70 } },
+    "seed": 231
+  },
+  {
+    "id": "vehicles-hot-air-balloon-basket",
+    "name": "Hot air balloon basket",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Floating high and calm, with the burner roaring above you now and then.",
+    "tags": ["balloon", "sky", "burner"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "field", "mix": 15 } }
+    ],
+    "bed": { "b": "blaze", "level": -20, "p": { "size": 40, "crackle": 5, "flare": 90, "distance": 10 } },
+    "seed": 232
+  },
+  {
+    "id": "vehicles-riding-the-carousel",
+    "name": "Riding the carousel",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "You circle round and round on a painted horse while the band organ plays.",
+    "tags": ["carousel", "circling", "fair"],
+    "chain": [
+      { "m": "stereo.orbit", "p": { "period": 7, "distance": 3, "room": "outdoors" } }
+    ],
+    "bed": { "b": "carnival", "level": -18, "p": { "music": 100, "rides": 30 } },
+    "seed": 233
+  },
+  {
+    "id": "vehicles-spinning-teacups-ride",
+    "name": "Spinning teacups ride",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Whirling round in a giant teacup, your voice dizzy and wobbling.",
+    "tags": ["ride", "dizzy", "spinning"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 60, "speed": 0.8 } },
+      { "m": "stereo.orbit", "p": { "period": 1.5, "distance": 1, "tilt": 20 } }
+    ],
+    "bed": { "b": "carnival", "level": -22, "p": { "intensity": 50 } },
+    "seed": 234
+  },
+  {
+    "id": "vehicles-bumper-car-crashes",
+    "name": "Bumper car crashes",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Jolted from side to side as the bumper cars slam into you.",
+    "tags": ["ride", "jolts", "fair"],
+    "chain": [
+      { "m": "time.stutter", "p": { "where": "random", "repeats": 2, "pieceMs": 60, "chance": 30 } },
+      { "m": "pitch.jitter", "p": { "rate": 1, "size": 2, "direction": "both" } },
+      { "m": "mod.autopan", "p": { "rate": 1.5, "shape": "random" } }
+    ],
+    "bed": { "b": "carnival", "level": -16, "p": { "games": 80, "rides": 80 } },
+    "seed": 235
+  },
+  {
+    "id": "vehicles-zip-line-over-the-valley",
+    "name": "Zip line over the valley",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Whizzing past you on a zip line, your shout echoing down the valley.",
+    "tags": ["zip line", "flyby", "echo"],
+    "chain": [
+      { "m": "stereo.flyby", "p": { "speed": "bike", "from": -150, "to": 30, "closest": 3, "height": 20 } },
+      { "m": "echo.canyon", "p": { "place": "valley", "count": 3, "mix": 30 } }
+    ],
+    "bed": { "b": "wind", "level": -22, "p": { "strength": 40 } },
+    "seed": 236
+  },
+  {
+    "id": "vehicles-sledding-down-a-snowy-hill",
+    "name": "Sledding down a snowy hill",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Shrieking with joy as you slide away down a long snowy hill.",
+    "tags": ["sled", "snow", "away"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 2, "size": 2, "direction": "both", "tremble": 60 } },
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 30, "room": "outdoors" } }
+    ],
+    "bed": { "b": "blizzard", "level": -24, "p": { "strength": 20, "snow": 30 } },
+    "seed": 237
+  },
+  {
+    "id": "vehicles-top-of-the-big-wheel",
+    "name": "Top of the big wheel",
+    "cat": "vehicles",
+    "sub": "Rides and thrills",
+    "about": "Calling down from the top of the big wheel, the fair glittering far below.",
+    "tags": ["fair", "high", "above"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 0, "height": 50, "distance": 6, "room": "outdoors" } }
+    ],
+    "bed": { "b": "carnival", "level": -24, "p": { "intensity": 35, "music": 30 } },
+    "seed": 238
+  },
+  {
+    "id": "vehicles-tank-crew-intercom",
+    "name": "Tank crew intercom",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "A crew member on a throat mic inside a clanking steel tank, the diesel roaring all round.",
+    "tags": ["tank", "intercom", "metal"],
+    "chain": [
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 900, "resonance": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "hard" } },
+      { "m": "device.walkie", "p": { "band": "field", "squelch": 40, "clip": 60, "hiss": 25 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 30, "size": 0.5 } }
+    ],
+    "bed": { "b": "engine-room", "level": -14, "duck": 3, "p": { "machine": "diesel", "intensity": 80, "clanks": 80, "size": "small" } },
+    "seed": 241
+  },
+  {
+    "id": "vehicles-tractor-cab-at-dawn",
+    "name": "Tractor cab at dawn",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "Chatting from a rattling tractor cab as the old engine chugs and the farmyard wakes up.",
+    "tags": ["tractor", "farm", "engine"],
+    "chain": [
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 40, "level": -8 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "mod.tremolo", "p": { "rate": 7, "depth": 15, "shape": "random" } },
+      { "m": "space.room", "p": { "space": "van", "mix": 40, "size": 0.6 } }
+    ],
+    "bed": { "b": "farm-morning", "level": -24 },
+    "seed": 242
+  },
+  {
+    "id": "vehicles-digger-driver-on-site",
+    "name": "Digger driver on the building site",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "A digger driver radios the crew over the hammering and sawing of a busy building site.",
+    "tags": ["digger", "radio", "construction"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 5 } },
+      { "m": "device.walkie", "p": { "squelch": 60, "beep": "chirp", "clip": 45 } },
+      { "m": "space.room", "p": { "space": "van", "mix": 25 } }
+    ],
+    "bed": { "b": "construction", "level": -16, "p": { "intensity": 70, "distance": 10 } },
+    "seed": 243
+  },
+  {
+    "id": "vehicles-crane-driver-shouting-down",
+    "name": "Crane driver shouting down",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "The crane driver leans out of a tiny cab high above you and shouts down to the ground.",
+    "tags": ["crane", "above", "shout"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "warm" } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 300, "slope": "gentle" } },
+      { "m": "stereo.place", "p": { "angle": 20, "height": 60, "distance": 25, "room": "outdoors" } }
+    ],
+    "bed": { "b": "construction", "level": -20, "p": { "intensity": 50, "distance": 40, "jackhammer": 20 } },
+    "seed": 244
+  },
+  {
+    "id": "vehicles-tow-truck-on-the-cb-radio",
+    "name": "Tow truck on the CB radio",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "A tow truck driver calls in on a crackling CB radio while rolling down a rough highway.",
+    "tags": ["truck", "radio", "highway"],
+    "chain": [
+      { "m": "device.cb", "p": { "roger": "beep", "skip": 40, "echo": 30 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "van", "mix": 20 } }
+    ],
+    "bed": { "b": "car-highway", "level": -20, "p": { "car": "truck", "surface": "rough", "intensity": 60 } },
+    "seed": 245
+  },
+  {
+    "id": "vehicles-snowplow-cab-at-night",
+    "name": "Snowplow cab at night",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "Talking low in a warm plow cab, the engine grumbling as snow blows hard against the glass.",
+    "tags": ["snowplow", "snow", "night"],
+    "chain": [
+      { "m": "tone.tilt", "p": { "amount": -3 } },
+      { "m": "space.room", "p": { "space": "van", "mix": 45, "size": 0.7 } },
+      { "m": "mod.keyed", "p": { "source": "engine", "mode": "duck", "depth": 30, "level": -14 } }
+    ],
+    "bed": { "b": "blizzard", "level": -20, "p": { "strength": 70, "where": "inside" } },
+    "seed": 246
+  },
+  {
+    "id": "vehicles-forklift-round-the-warehouse",
+    "name": "Forklift round the warehouse",
+    "cat": "vehicles",
+    "sub": "Work and heavy vehicles",
+    "about": "Calling out from a forklift as it zips back and forth across a huge echoing warehouse.",
+    "tags": ["forklift", "warehouse", "passing"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "warm" } },
+      { "m": "stereo.flyby", "p": { "speed": "run", "passes": 2, "closest": 3, "room": "none" } },
+      { "m": "space.room", "p": { "space": "warehouse", "mix": 45 } }
+    ],
+    "bed": { "b": "factory", "level": -22, "p": { "intensity": 45, "tempo": 30 } },
+    "seed": 247
+  }
+]

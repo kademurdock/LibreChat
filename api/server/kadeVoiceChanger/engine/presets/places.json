@@ -1,0 +1,1546 @@
+[
+  {
+    "id": "places-tiled-bathroom",
+    "name": "Tiled bathroom",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Bright tiles ring around every word in a small bathroom.",
+    "tags": ["bathroom", "tiles", "small", "room"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bathroom", "distance": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "places-shower-water-running",
+    "name": "Shower with the water running",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Close glass and tile walls, with the shower spray hissing right beside you.",
+    "tags": ["shower", "water", "tiles", "small"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "shower", "distance": 25, "tone": 20 } }
+    ],
+    "bed": { "b": "fountain", "level": -17, "duck": 3, "p": { "flow": 85, "place": "garden", "distance": 0 } },
+    "seed": 2
+  },
+  {
+    "id": "places-coat-closet",
+    "name": "Inside the coat closet",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Coats all around you soak up your voice in a tiny dead box.",
+    "tags": ["closet", "muffled", "small", "dead"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "closet" } }
+    ],
+    "seed": 3
+  },
+  {
+    "id": "places-carpeted-bedroom",
+    "name": "Carpeted bedroom",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "A soft, quiet bedroom with carpet and curtains, talking from the far side.",
+    "tags": ["bedroom", "soft", "room", "home"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bedroom", "distance": 70 } }
+    ],
+    "seed": 4
+  },
+  {
+    "id": "places-kitchen-at-midnight",
+    "name": "Kitchen at midnight",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Hard counters bounce your voice while the old fridge hums and drops ice.",
+    "tags": ["kitchen", "night", "fridge", "home"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "kitchen", "distance": 45 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -24, "p": { "age": "old", "ice": 60, "distance": 1.5 } },
+    "seed": 5
+  },
+  {
+    "id": "places-empty-classroom",
+    "name": "Empty classroom after school",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Hard walls slap your words back while the wall clock ticks in the quiet.",
+    "tags": ["classroom", "school", "echo", "clock"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "classroom", "distance": 60 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -26, "p": { "intensity": 40 } },
+    "seed": 7
+  },
+  {
+    "id": "places-in-the-pantry",
+    "name": "In the pantry",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "A narrow cupboard of shelves and tins, close and a little rattly.",
+    "tags": ["pantry", "small", "boxy", "home"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "closet", "size": 1.4, "tone": 60, "distance": 25 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 50 } }
+    ],
+    "seed": 8
+  },
+  {
+    "id": "places-locker-room-showers",
+    "name": "Locker room showers",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "A long tiled shower room with the water running at the far end.",
+    "tags": ["showers", "tiles", "gym", "water"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "shower", "size": 2, "distance": 70 } }
+    ],
+    "bed": { "b": "fountain", "level": -22, "p": { "flow": 60, "place": "garden", "distance": 60 } },
+    "seed": 10
+  },
+  {
+    "id": "places-family-dinner-table",
+    "name": "Family dinner table",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Talking across the dinner table while plates and forks clink around you.",
+    "tags": ["dinner", "home", "dishes", "room"],
+    "chain": [
+      { "m": "space.room", "p": { "distance": 40, "size": 0.8 } }
+    ],
+    "bed": { "b": "cafe", "level": -24, "p": { "intensity": 20, "dishes": 80, "espresso": 0, "seat": "corner" } },
+    "seed": 11
+  },
+  {
+    "id": "places-public-restroom",
+    "name": "Public restroom",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "A big echoing restroom of tile and steel stalls, talking from the sinks.",
+    "tags": ["restroom", "tiles", "echo", "public"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bathroom", "size": 1.7, "distance": 75, "tone": 30 } },
+      { "m": "tone.eq", "p": { "band4Freq": 2500, "band4Gain": 3, "band2Gain": -4 } }
+    ],
+    "seed": 12
+  },
+  {
+    "id": "places-stuck-in-the-elevator",
+    "name": "Stuck in the elevator",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "A small steel car hanging between floors, the motor humming as your voice shakes a little.",
+    "tags": ["elevator", "metal", "small", "stuck"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "rate": 0, "tremble": 35, "jitter": 10 } },
+      { "m": "space.room", "p": { "space": "elevator", "distance": 30 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 35 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -20, "p": { "age": "old", "ice": 0, "intensity": 70, "distance": 3 } },
+    "seed": 127
+  },
+  {
+    "id": "places-parked-car-windows-up",
+    "name": "Parked car, windows up",
+    "cat": "places",
+    "sub": "Small rooms",
+    "about": "Talking from the driver's seat of a parked car, the street hushed behind the glass.",
+    "tags": ["car", "parked", "close", "street"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "car", "distance": 20 } },
+      { "m": "stereo.place", "p": { "angle": -35, "distance": 0.8, "room": "none" } }
+    ],
+    "bed": { "b": "city-street", "level": -24, "p": { "distance": 35, "horns": 20, "people": 10, "street": "side" } },
+    "seed": 128
+  },
+  {
+    "id": "places-inside-a-tin-can",
+    "name": "Inside a tin can",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A small, nasal, metallic voice from inside an empty can.",
+    "tags": ["tin", "can", "metal", "tiny"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "tin-can" } }
+    ],
+    "seed": 13
+  },
+  {
+    "id": "places-into-a-glass-jar",
+    "name": "Into a glass jar",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Talking with your mouth in a glass jar: hollow, close and glassy.",
+    "tags": ["jar", "glass", "hollow", "tiny"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "glass-jar" } }
+    ],
+    "seed": 14
+  },
+  {
+    "id": "places-hooting-into-a-bottle",
+    "name": "Hooting into a bottle",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A deep hollow hum with an odd nasal ring, like talking into an empty bottle.",
+    "tags": ["bottle", "hollow", "hum", "tiny"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "bottle" } }
+    ],
+    "seed": 15
+  },
+  {
+    "id": "places-head-in-a-box",
+    "name": "Head in a cardboard box",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A short, papery honk from a voice inside a cardboard box.",
+    "tags": ["box", "cardboard", "honk", "tiny"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cardboard-box" } }
+    ],
+    "seed": 16
+  },
+  {
+    "id": "places-shouting-into-oil-drum",
+    "name": "Shouting into an oil drum",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A booming steel ring as you yell into an empty drum.",
+    "tags": ["drum", "metal", "boom", "shout"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "warm", "drive": 8 } },
+      { "m": "space.room", "p": { "space": "oil-drum" } }
+    ],
+    "seed": 17
+  },
+  {
+    "id": "places-blanket-fort",
+    "name": "Under the blanket fort",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Smothered, warm and muffled, hiding under a heap of blankets.",
+    "tags": ["blanket", "muffled", "warm", "cosy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "under-blanket" } }
+    ],
+    "seed": 18
+  },
+  {
+    "id": "places-padded-helmet",
+    "name": "Inside a padded helmet",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Your voice right at your ears, boxy and close inside a helmet.",
+    "tags": ["helmet", "boxy", "close", "padded"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet" } }
+    ],
+    "seed": 19
+  },
+  {
+    "id": "places-shut-in-a-locker",
+    "name": "Shut in a school locker",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A tinny metal box with only the little vent slits to talk through.",
+    "tags": ["locker", "metal", "muffled", "school"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "elevator", "size": 0.5 } },
+      { "m": "space.muffle", "p": { "wall": "closet", "room": "hallway", "muffling": 35 } }
+    ],
+    "seed": 20
+  },
+  {
+    "id": "places-goldfish-bowl",
+    "name": "Inside a goldfish bowl",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A round glass bowl of water: glassy ring, a wobble and little bubbles.",
+    "tags": ["bowl", "glass", "water", "bubbles"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "glass-jar", "size": 2 } },
+      { "m": "mod.underwater", "p": { "depth": 25, "bubbles": 40, "wobble": 25 } }
+    ],
+    "seed": 21
+  },
+  {
+    "id": "places-zipped-in-a-suitcase",
+    "name": "Zipped in a suitcase",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Packed in among the clothes, your words come out dull and stuffy.",
+    "tags": ["suitcase", "muffled", "stuffy", "box"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cardboard-box", "size": 1.5 } },
+      { "m": "tone.filter", "p": { "freq": 1400, "resonance": 10 } }
+    ],
+    "seed": 22
+  },
+  {
+    "id": "places-inside-a-piano",
+    "name": "Inside a piano, pedal down",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Head under the lid of a big piano, the strings humming along with every word.",
+    "tags": ["piano", "strings", "wood", "ringing"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cardboard-box", "size": 2, "tone": 30 } },
+      { "m": "synth.strings", "p": { "register": "low", "decay": 6, "mix": 40 } }
+    ],
+    "seed": 23
+  },
+  {
+    "id": "places-inside-a-bass-drum",
+    "name": "Inside a bass drum",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "A big round boom with a dull skin, like crawling into a drum.",
+    "tags": ["drum", "boom", "round", "dull"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "oil-drum", "size": 2, "tone": -60 } },
+      { "m": "tone.eq", "p": { "band2Freq": 120, "band2Gain": 4 } }
+    ],
+    "seed": 24
+  },
+  {
+    "id": "places-glass-phone-booth",
+    "name": "Glass phone booth on the corner",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Shut in a glass booth on a busy corner, every word ringing off the panes.",
+    "tags": ["phone booth", "glass", "street", "small"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "phone-booth" } },
+      { "m": "tone.character", "p": { "shape": "bright", "amount": 25 } }
+    ],
+    "bed": { "b": "city-street", "level": -17, "duck": 3, "p": { "distance": 6, "people": 60, "horns": 40 } },
+    "seed": 129
+  },
+  {
+    "id": "places-whispering-under-the-bed",
+    "name": "Whispering from under the bed",
+    "cat": "places",
+    "sub": "Boxes, jars and tight spots",
+    "about": "Squeezed flat under the bed and whispering, the mattress smothering every word.",
+    "tags": ["under the bed", "hiding", "whisper", "muffled"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 55 } },
+      { "m": "space.room", "p": { "space": "closet", "size": 0.5, "tone": -50, "distance": 15 } },
+      { "m": "tone.filter", "p": { "freq": 3000, "resonance": 15, "slope": "gentle" } }
+    ],
+    "seed": 130
+  },
+  {
+    "id": "places-behind-a-closed-door",
+    "name": "Behind a closed door",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "Someone in the living room on the other side of a shut door.",
+    "tags": ["door", "muffled", "next room", "home"],
+    "chain": [
+      { "m": "space.muffle", "p": { "room": "living-room" } }
+    ],
+    "seed": 26
+  },
+  {
+    "id": "places-through-the-bedroom-wall",
+    "name": "Through the bedroom wall",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "A voice in the next bedroom, dull and boomy through a thin wall.",
+    "tags": ["wall", "next room", "muffled", "neighbor"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "thin", "room": "bedroom" } }
+    ],
+    "seed": 27
+  },
+  {
+    "id": "places-thick-stone-wall",
+    "name": "Through a thick stone wall",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "Only the low murmur of a voice gets through a heavy wall from the hallway.",
+    "tags": ["wall", "thick", "muffled", "murmur"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "thick", "room": "hallway", "muffling": 70 } }
+    ],
+    "seed": 28
+  },
+  {
+    "id": "places-upstairs-through-ceiling",
+    "name": "Upstairs, through the ceiling",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "The neighbors upstairs, a boomy voice coming down through the floorboards.",
+    "tags": ["upstairs", "ceiling", "neighbor", "boomy"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "floor", "room": "living-room" } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 60, "distance": 2.5, "room": "none" } }
+    ],
+    "seed": 29
+  },
+  {
+    "id": "places-through-the-heating-vent",
+    "name": "Through the heating vent",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "A hollow, ducted voice from another room, coming out of the vent.",
+    "tags": ["vent", "duct", "hollow", "house"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "vent", "room": "bedroom" } }
+    ],
+    "seed": 31
+  },
+  {
+    "id": "places-outside-the-window",
+    "name": "Outside the closed window",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "Someone talking out on the street, heard through the glass with traffic behind.",
+    "tags": ["window", "outside", "street", "glass"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "window", "room": "field" } }
+    ],
+    "bed": { "b": "city-street", "level": -28, "p": { "distance": 30, "people": 20, "street": "side" } },
+    "seed": 32
+  },
+  {
+    "id": "places-from-inside-the-wall",
+    "name": "From inside the wall",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "A thick, boomy voice that seems to come from inside the hollow wall itself.",
+    "tags": ["wall", "hollow", "boomy", "hidden"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "inside-a-wall" } }
+    ],
+    "seed": 33
+  },
+  {
+    "id": "places-door-ajar-down-hall",
+    "name": "Down the hall, door ajar",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "A door left open a crack: the words leak out clear but thin from the hallway.",
+    "tags": ["door", "hallway", "leak", "thin"],
+    "chain": [
+      { "m": "space.muffle", "p": { "room": "hallway", "muffling": 20, "gaps": 100 } }
+    ],
+    "seed": 34
+  },
+  {
+    "id": "places-outside-church-doors",
+    "name": "Outside the church doors",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "A sermon in a long stone hall, heard through the heavy front doors.",
+    "tags": ["church", "doors", "muffled", "echo"],
+    "chain": [
+      { "m": "space.muffle", "p": { "wall": "thick", "room": "church", "muffling": 35, "gaps": 70 } }
+    ],
+    "seed": 35
+  },
+  {
+    "id": "places-just-around-the-corner",
+    "name": "Just around the corner",
+    "cat": "places",
+    "sub": "Through walls and doors",
+    "about": "Someone talking just round a corner of the corridor: dull, indirect and off to one side.",
+    "tags": ["corner", "hallway", "indirect", "side"],
+    "chain": [
+      { "m": "tone.filter", "p": { "freq": 2400, "resonance": 10, "slope": "gentle" } },
+      { "m": "space.room", "p": { "space": "hallway", "distance": 85 } },
+      { "m": "stereo.place", "p": { "angle": 70, "distance": 3, "room": "none" } }
+    ],
+    "seed": 131
+  },
+  {
+    "id": "places-dusty-attic",
+    "name": "Up in the dusty attic",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "A low wooden attic under the roof, wind moaning softly round the eaves.",
+    "tags": ["attic", "wood", "wind", "house"],
+    "chain": [
+      { "m": "space.room", "p": { "size": 0.7, "tone": -45, "distance": 45 } }
+    ],
+    "bed": { "b": "wind-howl", "level": -28, "p": { "strength": 30, "gusts": 40, "rattle": 10 } },
+    "seed": 38
+  },
+  {
+    "id": "places-down-in-the-basement",
+    "name": "Down in the basement",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "Bare concrete and a low ceiling, with the old furnace humming in the corner.",
+    "tags": ["basement", "concrete", "hum", "house"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "parking-garage", "size": 0.5, "tone": -25, "distance": 40 } }
+    ],
+    "bed": { "b": "fridge-hum", "level": -26, "p": { "age": "old", "intensity": 70, "ice": 0, "distance": 4 } },
+    "seed": 39
+  },
+  {
+    "id": "places-calling-down-from-upstairs",
+    "name": "Calling down from upstairs",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "Someone at the top of the stairs calling down to you, high and far.",
+    "tags": ["upstairs", "stairs", "calling", "house"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "size": 0.5, "distance": 85 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 50, "distance": 5, "room": "none" } }
+    ],
+    "seed": 41
+  },
+  {
+    "id": "places-calling-from-down-hall",
+    "name": "Calling from down the hall",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "A voice from the far end of the hallway, slapping between the walls.",
+    "tags": ["hallway", "far", "calling", "house"],
+    "chain": [
+      { "m": "stereo.place", "p": { "angle": 0, "distance": 10, "room": "hallway" } }
+    ],
+    "seed": 42
+  },
+  {
+    "id": "places-calling-from-the-backyard",
+    "name": "Calling from the backyard",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "Someone out in the yard shouting in through the kitchen window.",
+    "tags": ["backyard", "outside", "window", "far"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 20, "wind": 15 } },
+      { "m": "space.muffle", "p": { "wall": "window", "room": "none", "muffling": 30, "yours": 50 } }
+    ],
+    "seed": 43
+  },
+  {
+    "id": "places-speakerphone-in-the-kitchen",
+    "name": "Speakerphone in the kitchen",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "A call on speaker from a phone lying on the counter across the kitchen.",
+    "tags": ["phone", "speaker", "kitchen", "home"],
+    "chain": [
+      { "m": "device.phone", "p": { "era": "speaker", "noise": 15 } },
+      { "m": "space.room", "p": { "space": "kitchen", "size": 1.2, "distance": 75 } }
+    ],
+    "seed": 124
+  },
+  {
+    "id": "places-apartment-stairwell",
+    "name": "Apartment stairwell",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "Bare concrete stairs ringing up and down five floors as you call out.",
+    "tags": ["stairwell", "stairs", "concrete", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "size": 1.4, "distance": 40 } }
+    ],
+    "seed": 132
+  },
+  {
+    "id": "places-garage-workshop",
+    "name": "Garage workshop",
+    "cat": "places",
+    "sub": "Around the house",
+    "about": "A cluttered garage of concrete and tools, someone hammering and sawing at the bench.",
+    "tags": ["garage", "workshop", "tools", "concrete"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "warehouse", "size": 0.5, "tone": 10, "distance": 35 } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 25 } }
+    ],
+    "bed": { "b": "construction", "level": -17, "duck": 3, "p": { "distance": 8, "jackhammer": 0, "saw": 40, "hammering": 60, "machines": 0, "intensity": 40 } },
+    "seed": 133
+  },
+  {
+    "id": "places-vast-cathedral",
+    "name": "Vast cathedral",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A huge dark cathedral where your words hang for many seconds.",
+    "tags": ["cathedral", "huge", "reverb", "stone"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cathedral", "distance": 60 } }
+    ],
+    "seed": 47
+  },
+  {
+    "id": "places-front-pew",
+    "name": "Front pew of a stone church",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "Close and clear in a warm stone church, the long tail rising behind you.",
+    "tags": ["church", "stone", "close", "warm"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "church", "distance": 15 } }
+    ],
+    "seed": 48
+  },
+  {
+    "id": "places-back-of-the-church",
+    "name": "Back of the church",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "The preacher far away at the front, washed over by the stone hall.",
+    "tags": ["church", "far", "reverb", "stone"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "church", "distance": 100, "predelay": 30 } }
+    ],
+    "seed": 49
+  },
+  {
+    "id": "places-concert-hall-stage",
+    "name": "Concert hall stage",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "Standing on stage in a rich, smooth concert hall.",
+    "tags": ["concert hall", "stage", "rich", "reverb"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "concert-hall", "distance": 30 } }
+    ],
+    "seed": 50
+  },
+  {
+    "id": "places-from-the-theater-balcony",
+    "name": "From the theater balcony",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "An actor far below on the stage, heard from high up in the balcony.",
+    "tags": ["theater", "balcony", "far", "stage"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "theater", "distance": 90 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -30, "distance": 12, "room": "none" } }
+    ],
+    "seed": 51
+  },
+  {
+    "id": "places-small-recital-hall",
+    "name": "Small recital hall",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A sweet, even little hall for a solo singer or a speech.",
+    "tags": ["hall", "recital", "sweet", "reverb"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "small-hall", "distance": 45 } }
+    ],
+    "seed": 52
+  },
+  {
+    "id": "places-castle-throne-room",
+    "name": "Castle throne room",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A cold, high stone hall lit by torches spitting on the walls.",
+    "tags": ["castle", "stone", "torch", "hall"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "church", "size": 1.3, "tone": -35, "distance": 60 } }
+    ],
+    "bed": { "b": "torch", "level": -28, "p": { "place": "wall", "size": 40 } },
+    "seed": 54
+  },
+  {
+    "id": "places-marble-lobby",
+    "name": "Marble lobby",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A bright, hard entrance hall of marble floors and tall glass.",
+    "tags": ["lobby", "marble", "bright", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "concert-hall", "size": 0.6, "tone": 70, "predelay": 8 } }
+    ],
+    "seed": 55
+  },
+  {
+    "id": "places-hushed-museum-gallery",
+    "name": "Hushed museum gallery",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A big hard gallery where every voice carries, and visitors whisper around you.",
+    "tags": ["museum", "gallery", "quiet", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "large-hall", "size": 0.6, "tone": 35, "distance": 40 } }
+    ],
+    "bed": { "b": "library-hush", "level": -26, "p": { "whispers": 60, "pages": 10, "clock": false } },
+    "seed": 56
+  },
+  {
+    "id": "places-up-in-the-bell-tower",
+    "name": "Up in the bell tower",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A tall stone tower where the big bell hums along with your voice.",
+    "tags": ["bell", "tower", "ringing", "stone"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "size": 1.3, "tone": 20 } },
+      { "m": "synth.resonator", "p": { "pitch": -12, "mix": 25, "strike": 20 } }
+    ],
+    "seed": 57
+  },
+  {
+    "id": "places-choir-practice-cathedral",
+    "name": "Choir practice in the cathedral",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A whole choir of you rehearsing far up the nave of a huge stone cathedral.",
+    "tags": ["choir", "cathedral", "crowd", "reverb"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 14, "pitchSpread": 7, "timing": 60, "room": "none", "you": 30 } },
+      { "m": "space.room", "p": { "space": "cathedral", "distance": 75 } }
+    ],
+    "seed": 125
+  },
+  {
+    "id": "places-empty-arena",
+    "name": "Empty arena",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "A huge roofed arena with nobody in it: a boomy wash and a late slap.",
+    "tags": ["arena", "huge", "empty", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "arena", "distance": 60 } }
+    ],
+    "seed": 58
+  },
+  {
+    "id": "places-indoor-swimming-pool",
+    "name": "Indoor swimming pool",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "Bright, splashy and very long, with water lapping at the pool edge.",
+    "tags": ["pool", "splashy", "echo", "water"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "pool", "distance": 60 } }
+    ],
+    "bed": { "b": "fountain", "level": -28, "p": { "flow": 15, "place": "garden", "distance": 70 } },
+    "seed": 59
+  },
+  {
+    "id": "places-school-gym",
+    "name": "School gym",
+    "cat": "places",
+    "sub": "Halls, churches and theaters",
+    "about": "Big, hard and boomy, with a long slap between the gym walls.",
+    "tags": ["gym", "school", "boomy", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "gym" } }
+    ],
+    "seed": 60
+  },
+  {
+    "id": "places-rock-cave",
+    "name": "Rock cave",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Dark, irregular rock walls throwing your voice back in uneven echoes.",
+    "tags": ["cave", "rock", "echo", "dark"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "distance": 40 } }
+    ],
+    "seed": 61
+  },
+  {
+    "id": "places-long-road-tunnel",
+    "name": "Long road tunnel",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Rolling echoes running away along a curved concrete tube.",
+    "tags": ["tunnel", "echo", "concrete", "long"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "tunnel" } }
+    ],
+    "seed": 62
+  },
+  {
+    "id": "places-down-in-the-sewer",
+    "name": "Down in the sewer",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Wet, hollow and rumbling away into the dark, water trickling past your feet.",
+    "tags": ["sewer", "pipe", "wet", "hollow"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "sewer-pipe" } }
+    ],
+    "bed": { "b": "creek", "level": -26, "p": { "flow": 25, "babble": 40, "spots": 2, "distance": 40 } },
+    "seed": 63
+  },
+  {
+    "id": "places-calling-down-a-well",
+    "name": "Calling down a well",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "A tight stone flutter and the answer from the water far below.",
+    "tags": ["well", "stone", "echo", "deep"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "well" } }
+    ],
+    "seed": 64
+  },
+  {
+    "id": "places-concrete-bunker",
+    "name": "Concrete bunker",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "A dull, heavy concrete room deep underground, the air vents droning.",
+    "tags": ["bunker", "concrete", "underground", "hum"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "parking-garage", "size": 0.5, "tone": -45, "distance": 30 } }
+    ],
+    "bed": { "b": "server-room", "level": -30, "p": { "racks": 1, "hum": 70, "clicks": 0, "where": "door" } },
+    "seed": 65
+  },
+  {
+    "id": "places-subway-station",
+    "name": "Subway station",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "A tiled underground platform, trains rumbling in and doors chiming.",
+    "tags": ["subway", "station", "tiles", "trains"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "subway-station", "distance": 45 } }
+    ],
+    "bed": { "b": "subway-platform", "level": -20, "duck": 3 },
+    "seed": 66
+  },
+  {
+    "id": "places-street-singer-subway",
+    "name": "Street singer in the subway",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "A busker singing along to a strummed chord down the tiled station tunnel.",
+    "tags": ["busker", "subway", "singing", "strings"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "scale": "major", "speed": 60 } },
+      { "m": "synth.strings", "p": { "pluck": 75, "brightness": 70, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "subway-station", "distance": 60 } }
+    ],
+    "bed": { "b": "subway-platform", "level": -20, "p": { "trains": 30 } },
+    "seed": 126
+  },
+  {
+    "id": "places-underground-parking",
+    "name": "Underground parking garage",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Concrete and a low ceiling: a hard, zingy echo off every pillar.",
+    "tags": ["garage", "parking", "concrete", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "parking-garage", "distance": 55 } }
+    ],
+    "seed": 67
+  },
+  {
+    "id": "places-down-the-mine-shaft",
+    "name": "Down the mine shaft",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Calling down a deep, dark rock shaft, water dripping somewhere below.",
+    "tags": ["mine", "shaft", "deep", "drips"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "well", "size": 2, "tone": -40 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -26, "p": { "drips": 3, "speed": 30 } },
+    "seed": 68
+  },
+  {
+    "id": "places-catacombs",
+    "name": "Deep in the catacombs",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Narrow stone passages under the city, chains shifting somewhere in the dark.",
+    "tags": ["catacombs", "stone", "underground", "dark"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cave", "size": 0.6, "tone": -40 } }
+    ],
+    "bed": { "b": "dungeon", "level": -26, "p": { "size": "catacomb", "groans": 0 } },
+    "seed": 69
+  },
+  {
+    "id": "places-storm-drain",
+    "name": "Storm drain",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "A round concrete drain under the road, rainwater pouring in from a grate.",
+    "tags": ["drain", "pipe", "rain", "concrete"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "sewer-pipe", "size": 0.6, "tone": 25 } }
+    ],
+    "bed": { "b": "rain-gutter", "level": -22, "p": { "where": "stones", "pipe": 80, "distance": 30 } },
+    "seed": 70
+  },
+  {
+    "id": "places-shouting-down-a-sinkhole",
+    "name": "Shouting down a sinkhole",
+    "cat": "places",
+    "sub": "Underground",
+    "about": "Leaning over a deep round pit in the woods, your shout slapping back from far below.",
+    "tags": ["sinkhole", "pit", "echo", "outdoors"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 25, "echoes": 20 } },
+      { "m": "echo.slapback", "p": { "time": 240, "level": 45, "character": "room", "feedback": 35 } },
+      { "m": "space.reverb", "p": { "size": 60, "decay": 2.2, "damping": 70, "mix": 25 } }
+    ],
+    "bed": { "b": "wind-trees", "level": -22, "p": { "strength": 20 } },
+    "seed": 134
+  },
+  {
+    "id": "places-empty-warehouse",
+    "name": "Empty warehouse",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "A big, bare hall with a metal roof, your voice booming off the far wall.",
+    "tags": ["warehouse", "boom", "empty", "metal"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "warehouse", "distance": 55 } }
+    ],
+    "seed": 72
+  },
+  {
+    "id": "places-factory-floor",
+    "name": "Factory floor",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "Shouting over pounding presses and rattling belts in a hard metal hall.",
+    "tags": ["factory", "machines", "metal", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "factory", "distance": 40 } }
+    ],
+    "bed": { "b": "factory", "level": -18, "duck": 4 },
+    "seed": 73
+  },
+  {
+    "id": "places-aircraft-hangar",
+    "name": "Aircraft hangar",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "An enormous metal space, deep and slow, built to hold airplanes.",
+    "tags": ["hangar", "huge", "metal", "deep"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "hangar", "distance": 55 } }
+    ],
+    "seed": 74
+  },
+  {
+    "id": "places-inside-a-steel-tank",
+    "name": "Inside a steel tank",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "Clanging metal flutter that rings for seconds inside a big steel tank.",
+    "tags": ["tank", "steel", "ringing", "metal"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "metal-tank" } }
+    ],
+    "seed": 75
+  },
+  {
+    "id": "places-shipping-container",
+    "name": "Inside a shipping container",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "A long, hollow steel box that booms and rattles with every word.",
+    "tags": ["container", "steel", "hollow", "boom"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "van", "size": 2, "tone": 20 } }
+    ],
+    "seed": 76
+  },
+  {
+    "id": "places-rooftop-water-tower",
+    "name": "Rooftop water tower",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "Inside a big round tank on the roof, the wind whistling past outside.",
+    "tags": ["tower", "tank", "metal", "wind"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "metal-tank", "size": 1.6, "tone": -25, "distance": 45 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 35, "whistle": 50 } },
+    "seed": 77
+  },
+  {
+    "id": "places-boiler-room",
+    "name": "Boiler room",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "A cramped room of pipes and tanks, steam hissing and pumps thudding.",
+    "tags": ["boiler", "steam", "pipes", "machines"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "factory", "size": 0.5, "distance": 35 } }
+    ],
+    "bed": { "b": "engine-room", "level": -22, "duck": 3, "p": { "machine": "steam", "size": "small", "steam": 60 } },
+    "seed": 78
+  },
+  {
+    "id": "places-server-room",
+    "name": "Server room",
+    "cat": "places",
+    "sub": "Industrial and metal",
+    "about": "Talking over a wall of roaring fans in a cold, bright machine room.",
+    "tags": ["servers", "fans", "computers", "hum"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "office", "size": 1.2, "tone": 45, "distance": 35 } }
+    ],
+    "bed": { "b": "server-room", "level": -18, "duck": 3 },
+    "seed": 79
+  },
+  {
+    "id": "places-corner-coffee-shop",
+    "name": "Corner coffee shop",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "A table in a busy coffee shop: chatter, cups clinking and the espresso machine.",
+    "tags": ["cafe", "coffee", "chatter", "busy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "kitchen", "size": 1.4, "distance": 35 } }
+    ],
+    "bed": { "b": "cafe", "level": -16, "duck": 3 },
+    "seed": 80
+  },
+  {
+    "id": "places-airport-terminal",
+    "name": "Airport terminal",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "A huge glass hall of rolling suitcases, footsteps and gate chimes.",
+    "tags": ["airport", "terminal", "busy", "hall"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "large-hall", "size": 0.8, "tone": 30, "distance": 40 } }
+    ],
+    "bed": { "b": "airport-hall", "level": -18, "duck": 3 },
+    "seed": 81
+  },
+  {
+    "id": "places-casino-floor",
+    "name": "Casino floor",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Slot machines chiming and chips clattering on a big carpeted floor.",
+    "tags": ["casino", "slots", "busy", "carpet"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "large-hall", "size": 0.6, "tone": -40, "distance": 30 } }
+    ],
+    "bed": { "b": "casino", "level": -18, "duck": 3 },
+    "seed": 82
+  },
+  {
+    "id": "places-game-arcade",
+    "name": "Game arcade",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Yelling over bleeping machines and dropping coins in a packed arcade.",
+    "tags": ["arcade", "games", "busy", "loud"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "warehouse", "size": 0.5, "tone": 20, "distance": 30 } }
+    ],
+    "bed": { "b": "arcade-hall", "level": -16, "duck": 4 },
+    "seed": 83
+  },
+  {
+    "id": "places-night-at-the-carnival",
+    "name": "Night at the carnival",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Out on the fairground among the rides, game bells and a band organ far off.",
+    "tags": ["carnival", "fair", "outdoors", "night"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 4, "wind": 10, "echoes": 30 } }
+    ],
+    "bed": { "b": "carnival", "level": -16, "duck": 3 },
+    "seed": 84
+  },
+  {
+    "id": "places-stadium-stands",
+    "name": "In the stadium stands",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Shouting to your friend in the stands as the crowd roars and chants.",
+    "tags": ["stadium", "crowd", "cheering", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "stadium", "distance": 25 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -14, "duck": 4 },
+    "seed": 85
+  },
+  {
+    "id": "places-school-hallway",
+    "name": "School hallway between classes",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Lockers slamming, sneakers squeaking and kids chattering all around you.",
+    "tags": ["school", "hallway", "lockers", "busy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "hallway", "distance": 35 } }
+    ],
+    "bed": { "b": "school-hall", "level": -16, "duck": 3 },
+    "seed": 86
+  },
+  {
+    "id": "places-whispering-in-the-library",
+    "name": "Whispering in the library",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "A careful whisper between the shelves, pages turning and the clock ticking.",
+    "tags": ["library", "whisper", "quiet", "books"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 75 } },
+      { "m": "space.room", "p": { "space": "large-hall", "size": 0.5, "tone": -20, "distance": 25 } }
+    ],
+    "bed": { "b": "library-hush", "level": -24 },
+    "seed": 87
+  },
+  {
+    "id": "places-hospital-ward",
+    "name": "Hospital ward",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "A hushed ward with a heart monitor beeping and soft steps in the corridor.",
+    "tags": ["hospital", "ward", "monitor", "quiet"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "office", "tone": 25, "distance": 40 } }
+    ],
+    "bed": { "b": "hospital", "level": -22 },
+    "seed": 88
+  },
+  {
+    "id": "places-restaurant-kitchen",
+    "name": "Busy restaurant kitchen",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Calling orders over sizzling pans, chopping and clanging pots.",
+    "tags": ["kitchen", "restaurant", "busy", "cooking"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.room", "p": { "space": "kitchen", "size": 1.3, "distance": 30 } }
+    ],
+    "bed": { "b": "kitchen", "level": -14, "duck": 4 },
+    "seed": 89
+  },
+  {
+    "id": "places-laundromat",
+    "name": "Laundromat on a Sunday",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Washers sloshing and dryers tumbling in a bright tiled laundromat.",
+    "tags": ["laundromat", "washers", "dryers", "tiles"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "kitchen", "size": 1.6, "tone": 40, "distance": 35 } }
+    ],
+    "bed": { "b": "laundromat", "level": -18, "duck": 3 },
+    "seed": 90
+  },
+  {
+    "id": "places-building-site",
+    "name": "Building site",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Shouting over a jackhammer, a saw and a reversing digger.",
+    "tags": ["construction", "loud", "outdoors", "machines"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1 } },
+      { "m": "tone.tilt", "p": { "amount": 2 } },
+      { "m": "space.distance", "p": { "distance": 6, "wind": 20, "echoes": 60 } }
+    ],
+    "bed": { "b": "construction", "level": -16, "duck": 4 },
+    "seed": 91
+  },
+  {
+    "id": "places-open-plan-office",
+    "name": "Open-plan office",
+    "cat": "places",
+    "sub": "Busy public places",
+    "about": "Keyboards clicking, phones ringing far off and the air conditioning humming.",
+    "tags": ["office", "work", "typing", "phones"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "office", "distance": 40 } }
+    ],
+    "bed": { "b": "office", "level": -22 },
+    "seed": 92
+  },
+  {
+    "id": "places-brick-alley",
+    "name": "Brick alley",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "A quick fluttering slap between tall brick walls, with open sky above.",
+    "tags": ["alley", "brick", "slap", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "alley" } }
+    ],
+    "seed": 93
+  },
+  {
+    "id": "places-under-the-overpass",
+    "name": "Under the overpass",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "A hard concrete underside, traffic thundering by on the road above.",
+    "tags": ["bridge", "concrete", "traffic", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "parking-garage", "size": 0.7, "tone": 20, "distance": 45, "mix": 70 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "distance": 15, "street": "avenue", "people": 0, "horns": 20 } },
+    "seed": 94
+  },
+  {
+    "id": "places-city-rooftop-night",
+    "name": "City rooftop at night",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "Up on a roof in the night breeze, the city humming and sirens far below.",
+    "tags": ["rooftop", "city", "night", "wind"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 45, "echoes": 70 } }
+    ],
+    "bed": { "b": "city-street", "level": -22, "p": { "distance": 40, "horns": 20, "sirens": 70, "people": 0 } },
+    "seed": 95
+  },
+  {
+    "id": "places-stone-amphitheater",
+    "name": "Stone amphitheater",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "An open-air bowl of stone steps that throws your voice back from all around.",
+    "tags": ["amphitheater", "stone", "outdoors", "echo"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stadium", "size": 0.6, "tone": 25, "distance": 55 } }
+    ],
+    "seed": 96
+  },
+  {
+    "id": "places-empty-schoolyard",
+    "name": "Empty schoolyard",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "An open yard with a quick bounce off the school wall behind you.",
+    "tags": ["schoolyard", "outdoors", "slap", "empty"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 15, "wind": 20, "echoes": 90 } },
+      { "m": "echo.slapback", "p": { "time": 90, "level": 35, "character": "room" } }
+    ],
+    "seed": 97
+  },
+  {
+    "id": "places-harbor-dock",
+    "name": "Harbor dock",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "On a wooden dock, the warehouse wall slapping back and gulls calling overhead.",
+    "tags": ["dock", "harbor", "gulls", "outdoors"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 3, "wind": 30 } },
+      { "m": "echo.slapback", "p": { "time": 160, "level": 30, "character": "clean" } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -20, "p": { "distance": 40 } },
+    "seed": 98
+  },
+  {
+    "id": "places-city-courtyard",
+    "name": "City courtyard",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "A square of tall buildings that flutters your voice between hard walls.",
+    "tags": ["courtyard", "city", "flutter", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "alley", "size": 1.6, "tone": 30, "distance": 35 } }
+    ],
+    "seed": 99
+  },
+  {
+    "id": "places-across-the-parking-lot",
+    "name": "Across the parking lot",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "Calling to someone at the far end of a big lot, cars passing on the road.",
+    "tags": ["parking lot", "far", "outdoors", "calling"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 45, "echoes": 70 } }
+    ],
+    "bed": { "b": "city-street", "level": -26, "p": { "street": "side", "people": 10, "distance": 30 } },
+    "seed": 100
+  },
+  {
+    "id": "places-shouting-down-the-street",
+    "name": "Shouting down the street",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "A voice from a whole block away, thin and wavering in the open air.",
+    "tags": ["street", "far", "shout", "outdoors"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 120 } }
+    ],
+    "seed": 101
+  },
+  {
+    "id": "places-town-square-fountain",
+    "name": "Town square fountain",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "Sitting on the rim of a splashing fountain in an open stone square.",
+    "tags": ["fountain", "square", "water", "outdoors"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "alley", "size": 2, "mix": 45, "distance": 60 } }
+    ],
+    "bed": { "b": "fountain", "level": -17, "duck": 3 },
+    "seed": 102
+  },
+  {
+    "id": "places-rainy-crosswalk",
+    "name": "Rainy crosswalk",
+    "cat": "places",
+    "sub": "Outdoors in town",
+    "about": "Waiting at a beeping crossing on a wet street, cars hissing past.",
+    "tags": ["crosswalk", "rain", "street", "city"],
+    "chain": [
+      { "m": "space.distance", "p": { "distance": 2, "wind": 20, "echoes": 70 } }
+    ],
+    "bed": { "b": "city-street", "level": -16, "duck": 3, "p": { "wet": true, "crossing": true } },
+    "seed": 103
+  },
+  {
+    "id": "places-walking-off-down-hallway",
+    "name": "Walking off down the hallway",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "You talk as you walk away down a long hallway, fading into the echo.",
+    "tags": ["walking", "hallway", "moving", "away"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "to": 15 } }
+    ],
+    "seed": 104
+  },
+  {
+    "id": "places-coming-up-the-hallway",
+    "name": "Coming up the hallway to you",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "A voice far down the hall walks right up until it is next to you.",
+    "tags": ["walking", "hallway", "closer", "moving"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 16, "to": 1 } }
+    ],
+    "seed": 105
+  },
+  {
+    "id": "places-stepping-out-the-door",
+    "name": "Stepping out the door",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "You head out of the room as the street noise swells up through the open door.",
+    "tags": ["walking", "outside", "street", "door"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "to": 7, "room": "small-room", "facing": "away" } }
+    ],
+    "bed": { "b": "city-street", "level": -18, "fade": { "in": 6, "out": 1 } },
+    "seed": 106
+  },
+  {
+    "id": "places-walking-into-the-cave",
+    "name": "Walking into the cave",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "You walk deeper into a dripping cave as the dark swallows your voice.",
+    "tags": ["walking", "cave", "away", "drips"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 25, "room": "cave" } }
+    ],
+    "bed": { "b": "cave-drips", "level": -26 },
+    "seed": 107
+  },
+  {
+    "id": "places-coming-up-the-stairwell",
+    "name": "Coming up the stairwell",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "Footsteps up a concrete stairwell: a ringing voice climbing toward you.",
+    "tags": ["stairs", "closer", "echo", "moving"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "stairwell", "mix": 55 } },
+      { "m": "stereo.walkaway", "p": { "from": 12, "to": 1.5, "room": "none" } }
+    ],
+    "seed": 108
+  },
+  {
+    "id": "places-walking-across-the-gym",
+    "name": "Walking away across a big hall",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "You walk off across a huge hall until your words are mostly echo.",
+    "tags": ["walking", "hall", "away", "echo"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 2, "to": 30, "room": "big-hall" } }
+    ],
+    "seed": 109
+  },
+  {
+    "id": "places-pacing-back-and-forth",
+    "name": "Pacing back and forth",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "Someone pacing across the living room as they talk, left, right, left.",
+    "tags": ["pacing", "room", "moving", "stereo"],
+    "chain": [
+      { "m": "space.room", "p": { "distance": 60 } },
+      { "m": "mod.autopan", "p": { "rate": 0.15, "width": 70, "shape": "triangle" } }
+    ],
+    "seed": 110
+  },
+  {
+    "id": "places-toward-you-through-tunnel",
+    "name": "Toward you through a tunnel",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "A voice deep in a tunnel slowly walks out of the echoes to meet you.",
+    "tags": ["tunnel", "closer", "echo", "moving"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "from": 35, "to": 2, "room": "tunnel" } }
+    ],
+    "seed": 112
+  },
+  {
+    "id": "places-leaving-down-the-alley",
+    "name": "Leaving down the alley",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "You talk over your shoulder while walking off down a brick alley.",
+    "tags": ["alley", "away", "walking", "outdoors"],
+    "chain": [
+      { "m": "stereo.walkaway", "p": { "to": 25, "room": "alley" } }
+    ],
+    "seed": 113
+  },
+  {
+    "id": "places-past-an-open-door",
+    "name": "Walking past an open door",
+    "cat": "places",
+    "sub": "Walking through places",
+    "about": "Someone talking in a room you walk past: in one ear, in front, then gone.",
+    "tags": ["door", "passing", "room", "moving"],
+    "chain": [
+      { "m": "space.room", "p": { "mix": 70 } },
+      { "m": "stereo.flyby", "p": { "speed": "walk", "from": -80, "to": 80, "room": "none" } }
+    ],
+    "seed": 114
+  },
+  {
+    "id": "places-hall-that-never-ends",
+    "name": "A hall that never ends",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "A wash of reverb that almost never stops, your words hanging in the air.",
+    "tags": ["endless", "reverb", "dream", "huge"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "infinite" } }
+    ],
+    "seed": 115
+  },
+  {
+    "id": "places-cathedral-for-giants",
+    "name": "Cathedral built for giants",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "A cathedral twice the size of any real one, slow and dark and endless.",
+    "tags": ["cathedral", "giant", "huge", "dark"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "cathedral", "size": 2, "distance": 75 } }
+    ],
+    "seed": 116
+  },
+  {
+    "id": "places-inside-a-dollhouse",
+    "name": "Inside a dollhouse",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "A tiny you in a tiny living room, every echo shrunk to match.",
+    "tags": ["dollhouse", "tiny", "small", "cute"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 4 } },
+      { "m": "space.room", "p": { "size": 0.5, "tone": 30 } }
+    ],
+    "seed": 117
+  },
+  {
+    "id": "places-hall-of-mirrors",
+    "name": "Hall of mirrors",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "Glassy echoes scatter in every direction and shimmer like reflections.",
+    "tags": ["mirrors", "glass", "echo", "shimmer"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "hallway", "size": 0.7, "tone": 60, "mix": 70 } },
+      { "m": "echo.multitap", "p": { "pattern": "scatter", "spread": 100, "feedback": 30, "mix": 35 } },
+      { "m": "mod.flanger", "p": { "depth": 40, "mix": 25, "rate": 0.1 } }
+    ],
+    "seed": 118
+  },
+  {
+    "id": "places-hallway-forever",
+    "name": "Hallway that goes on forever",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "Every echo comes from further down a corridor with no end.",
+    "tags": ["hallway", "endless", "echo", "dream"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "hallway", "size": 2, "distance": 60 } },
+      { "m": "echo.delay", "p": { "time": 260, "feedback": 70, "damping": 60, "stereo": "wide", "mix": 30 } }
+    ],
+    "seed": 119
+  },
+  {
+    "id": "places-held-to-a-seashell",
+    "name": "Held up to a seashell",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "Your voice curled inside a shell, the sea rushing faintly behind it.",
+    "tags": ["seashell", "hollow", "ocean", "dream"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "glass-jar", "size": 1.5, "tone": -40 } }
+    ],
+    "bed": { "b": "ocean", "level": -18, "p": { "size": 20, "distance": 100 } },
+    "seed": 120
+  },
+  {
+    "id": "places-inside-a-snow-globe",
+    "name": "Inside a snow globe",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "A sparkling glass dome where your words glitter like falling snow.",
+    "tags": ["snow globe", "glass", "sparkle", "dream"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "glass-jar", "size": 2, "tone": 40 } },
+      { "m": "spec.crystal", "p": { "mix": 25 } },
+      { "m": "space.shimmer", "p": { "mix": 25 } }
+    ],
+    "seed": 121
+  },
+  {
+    "id": "places-sunken-ballroom",
+    "name": "Sunken ballroom",
+    "cat": "places",
+    "sub": "Dream and impossible spaces",
+    "about": "A grand old ballroom at the bottom of the sea, every word bubbling.",
+    "tags": ["underwater", "ballroom", "dream", "bubbles"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "large-hall", "size": 0.8 } },
+      { "m": "mod.underwater", "p": { "depth": 45, "bubbles": 35 } }
+    ],
+    "seed": 122
+  }
+]

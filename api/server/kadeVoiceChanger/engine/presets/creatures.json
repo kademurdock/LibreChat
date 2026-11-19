@@ -1,0 +1,1524 @@
+[
+  {
+    "id": "creatures-hill-giant",
+    "name": "Hill giant calling out",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A slow, enormous voice rolling across open hills and coming back off the far slopes.",
+    "tags": ["giant", "deep", "huge", "outdoors"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -6 } },
+      { "m": "time.drawl", "p": { "factor": 1.25 } },
+      { "m": "echo.canyon", "p": { "distance": 240, "count": 2, "place": "valley", "mix": 30 } }
+    ],
+    "bed": { "b": "wind", "level": -28, "p": { "strength": 35 } },
+    "seed": 11
+  },
+  {
+    "id": "creatures-sleepy-giant",
+    "name": "Sleepy giant in the woods",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A drowsy giant drawling slower and slower among the trees.",
+    "tags": ["giant", "slow", "sleepy", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -7 } },
+      { "m": "time.drawl", "p": { "factor": 1.5, "ramp": "slowing" } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 45 } }
+    ],
+    "bed": { "b": "forest-birds", "level": -30, "p": { "intensity": 35 } },
+    "seed": 12
+  },
+  {
+    "id": "creatures-ogre-chef",
+    "name": "Ogre chef in a busy kitchen",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A gravelly ogre barking orders over sizzling pans and clanging pots.",
+    "tags": ["ogre", "gravel", "kitchen", "funny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 55, "fry": 35 } },
+      { "m": "lofi.saturate", "p": { "drive": 14 } },
+      { "m": "space.room", "p": { "space": "kitchen", "mix": 40 } }
+    ],
+    "bed": { "b": "kitchen", "level": -20, "p": { "shouts": 20 } },
+    "seed": 13
+  },
+  {
+    "id": "creatures-ogre-stuffy-nose",
+    "name": "Ogre with a stuffy nose",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A big blocked-up ogre honking every word through his nose.",
+    "tags": ["ogre", "nasal", "funny", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -4 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 60 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 45 } }
+    ],
+    "seed": 14
+  },
+  {
+    "id": "creatures-giant-looking-down",
+    "name": "Giant looking down at you",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A towering voice coming from high above your head, out in the open air.",
+    "tags": ["giant", "above", "3d", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -7 } },
+      { "m": "tone.character", "p": { "shape": "deep", "amount": 70 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 70, "distance": 5, "room": "outdoors" } }
+    ],
+    "seed": 15
+  },
+  {
+    "id": "creatures-two-headed-ogre",
+    "name": "Two-headed ogre arguing",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "Two grumbling ogre heads, one in each ear, taking turns to talk.",
+    "tags": ["ogre", "two voices", "stereo", "funny"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 35, "rough": 50, "grit": 30 } },
+      { "m": "stereo.split", "p": { "leftPitch": -7, "leftTimbre": -5, "rightPitch": -3, "rightTimbre": -6, "mode": "turns" } },
+      { "m": "lofi.saturate", "p": { "drive": 10 } }
+    ],
+    "seed": 16
+  },
+  {
+    "id": "creatures-one-eyed-giant",
+    "name": "One-eyed giant in a sea cave",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A rumbling one-eyed giant in a huge sea cave while waves boom on the rocks.",
+    "tags": ["giant", "cave", "sea", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 20 } },
+      { "m": "space.room", "p": { "space": "cave", "size": 1.2, "mix": 50 } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -22 },
+    "seed": 17
+  },
+  {
+    "id": "creatures-gentle-giant",
+    "name": "Gentle giant by the fire",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A warm, soft-hearted giant telling a story beside a crackling hearth.",
+    "tags": ["giant", "warm", "story", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -5 } },
+      { "m": "tone.character", "p": { "shape": "warm" } },
+      { "m": "lofi.saturate", "p": { "drive": 6 } },
+      { "m": "space.reverb", "p": { "size": 65, "decay": 2.4, "mix": 20 } }
+    ],
+    "bed": { "b": "fireplace", "level": -27 },
+    "seed": 18
+  },
+  {
+    "id": "creatures-titan-in-the-clouds",
+    "name": "Titan in the storm clouds",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A colossal voice an octave under thunder, filling the whole sky.",
+    "tags": ["titan", "huge", "storm", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -9 } },
+      { "m": "pitch.octaver", "p": { "down1": 40, "dry": 90 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 7, "damping": 60, "mix": 40 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "bed": { "b": "storm", "level": -22, "p": { "thunder": 3, "distance": 1200 } },
+    "seed": 19
+  },
+  {
+    "id": "creatures-young-giant",
+    "name": "Young giant, voice breaking",
+    "cat": "creatures",
+    "sub": "Giants and ogres",
+    "about": "A huge teenage giant whose voice keeps cracking up and squeaking.",
+    "tags": ["giant", "young", "funny", "cracking"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -7 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.2, "size": 8, "tremble": 15 } },
+      { "m": "space.room", "p": { "space": "gym", "mix": 30 } }
+    ],
+    "seed": 20
+  },
+  {
+    "id": "creatures-troll-under-the-bridge",
+    "name": "Troll under the bridge",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A rough, gravelly troll growling from a stone arch over rushing water.",
+    "tags": ["troll", "gravel", "bridge", "river"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -4 } },
+      { "m": "pitch.subharmonic", "p": { "rough": 65, "grit": 45, "sub": 40 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 45, "size": 0.7 } }
+    ],
+    "bed": { "b": "river", "level": -20, "p": { "rapids": 50 } },
+    "seed": 21
+  },
+  {
+    "id": "creatures-mountain-troll",
+    "name": "Mountain troll bellowing",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A craggy troll roaring from a windy peak, its echoes rolling down the valley.",
+    "tags": ["troll", "mountain", "echo", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 9, "character": "warm" } },
+      { "m": "echo.canyon", "p": { "distance": 300, "count": 3, "mix": 35 } }
+    ],
+    "bed": { "b": "mountain-top", "level": -22 },
+    "seed": 22
+  },
+  {
+    "id": "creatures-old-troll-granny",
+    "name": "Old troll grandmother",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A creaky, wobbling old troll muttering by her smoky fire.",
+    "tags": ["troll", "old", "creaky", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -5 } },
+      { "m": "pitch.vibrato", "p": { "rate": 6.5, "depth": 45, "shape": "random", "delay": 0 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 10, "fry": 45, "rough": 30 } },
+      { "m": "space.room", "p": { "mix": 35 } }
+    ],
+    "bed": { "b": "campfire", "level": -28, "p": { "size": 30 } },
+    "seed": 23
+  },
+  {
+    "id": "creatures-sneaky-goblin",
+    "name": "Sneaky goblin up close",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A nasal, scratchy goblin leaning right up to your left ear.",
+    "tags": ["goblin", "nasal", "close", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": 4 } },
+      { "m": "tone.character", "p": { "shape": "nasal" } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 40, "grit": 35 } },
+      { "m": "stereo.place", "p": { "angle": -75, "distance": 0.5 } }
+    ],
+    "seed": 24
+  },
+  {
+    "id": "creatures-goblin-bazaar",
+    "name": "Crowd of haggling goblins",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A whole market of squabbling goblins, every one of them you, at a noisy fair.",
+    "tags": ["goblin", "crowd", "market", "funny"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 3 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 60 } },
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 3, "timing": 220, "room": "outdoors", "you": 60 } }
+    ],
+    "bed": { "b": "carnival", "level": -24, "p": { "music": 25 } },
+    "seed": 25
+  },
+  {
+    "id": "creatures-goblin-chief",
+    "name": "Goblin chief in his hall",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A thick, sneering goblin boss holding court in a torch-lit stone hall.",
+    "tags": ["goblin", "boss", "hall", "torch"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 25, "rough": 50, "grit": 40 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 50 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 40 } }
+    ],
+    "bed": { "b": "torch", "level": -26, "p": { "place": "wall" } },
+    "seed": 26
+  },
+  {
+    "id": "creatures-imp-darting-around",
+    "name": "Imp darting around your head",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A tiny quivering imp zipping in circles around you on headphones.",
+    "tags": ["imp", "tiny", "circling", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 5 } },
+      { "m": "synth.fm", "p": { "rate": 7, "depth": 0.8 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "fuzz", "mix": 35 } },
+      { "m": "stereo.orbit", "p": { "period": 1.8, "distance": 0.8 } }
+    ],
+    "seed": 27
+  },
+  {
+    "id": "creatures-imp-on-your-shoulder",
+    "name": "Imp on your shoulder",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A mischievous little imp half-whispering bad ideas right by your right ear.",
+    "tags": ["imp", "whisper", "close", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 8, "formant": 6 } },
+      { "m": "spec.whisper", "p": { "amount": 45, "size": "small" } },
+      { "m": "stereo.place", "p": { "angle": 70, "height": 30, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 28
+  },
+  {
+    "id": "creatures-gremlin-in-the-engine",
+    "name": "Gremlin in the engine room",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A crackly little gremlin chattering away among pounding machinery.",
+    "tags": ["gremlin", "machine", "crunchy", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 6, "formant": 4 } },
+      { "m": "tone.character", "p": { "shape": "honky" } },
+      { "m": "lofi.crush", "p": { "bits": 8, "rate": 12000, "mix": 45 } },
+      { "m": "space.room", "p": { "space": "factory", "mix": 35 } }
+    ],
+    "bed": { "b": "engine-room", "level": -22, "p": { "size": "small" } },
+    "seed": 29
+  },
+  {
+    "id": "creatures-gremlins-chattering",
+    "name": "Gremlins chattering in the dark",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A pack of giggling gremlins all talking over each other in a small room.",
+    "tags": ["gremlin", "crowd", "tiny", "mischief"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 22, "depth": 50, "shape": "random" } },
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 5, "timbreSpread": 3, "timing": 260, "room": "small-room", "you": 35 } }
+    ],
+    "seed": 30
+  },
+  {
+    "id": "creatures-hobgoblin-in-the-cupboard",
+    "name": "Hobgoblin in the cupboard",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A creaky, grumpy hobgoblin complaining from inside a cramped cupboard.",
+    "tags": ["hobgoblin", "creaky", "boxy", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 4 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 55, "rough": 30 } },
+      { "m": "tone.character", "p": { "shape": "boxy" } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 70 } }
+    ],
+    "seed": 31
+  },
+  {
+    "id": "creatures-kobold-in-the-mine",
+    "name": "Kobold deep in the mine",
+    "cat": "creatures",
+    "sub": "Trolls and goblins",
+    "about": "A small, quick mine spirit calling down a long dripping tunnel.",
+    "tags": ["kobold", "mine", "tunnel", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": 2 } },
+      { "m": "echo.slapback", "p": { "time": 180, "character": "room", "feedback": 25 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 60 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -24, "p": { "drips": 6 } },
+    "seed": 32
+  },
+  {
+    "id": "creatures-demon-of-the-pit",
+    "name": "Demon of the pit",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "The classic demon: your words with two octaves underneath, a growl and a burning edge.",
+    "tags": ["demon", "evil", "octaves", "growl"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 85, "down2": 50, "dry": 70 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "rough": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 14, "character": "warm" } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 25 } }
+    ],
+    "seed": 33
+  },
+  {
+    "id": "creatures-lesser-demon",
+    "name": "Hissing lesser demon",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A small, spiteful demon whose rasping words come out half hiss.",
+    "tags": ["demon", "hiss", "rasp", "small"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 40, "grit": 45 } },
+      { "m": "spec.whisper", "p": { "amount": 35, "brightness": 70 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "mix": 50 } }
+    ],
+    "seed": 34
+  },
+  {
+    "id": "creatures-archdemon",
+    "name": "Archdemon over the flames",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A colossal ruler of demons, deep and distorted, in a vast hall of roaring fire.",
+    "tags": ["demon", "huge", "fire", "distorted"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -8 } },
+      { "m": "pitch.octaver", "p": { "down1": 60, "up1": 20 } },
+      { "m": "synth.am", "p": { "rate": 50, "depth": 30, "shape": "random" } },
+      { "m": "lofi.drive", "p": { "drive": 16, "character": "fuzz", "mix": 55 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 6, "mix": 35 } }
+    ],
+    "bed": { "b": "blaze", "level": -24 },
+    "seed": 35
+  },
+  {
+    "id": "creatures-demon-below-the-floor",
+    "name": "Demon below the floorboards",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A huge growling voice coming up muffled through the floor beneath you.",
+    "tags": ["demon", "muffled", "below", "deep"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 75, "dry": 80 } },
+      { "m": "pitch.subharmonic", "p": { "rough": 50 } },
+      { "m": "space.muffle", "p": { "wall": "floor", "muffling": 60 } }
+    ],
+    "seed": 36
+  },
+  {
+    "id": "creatures-ice-demon",
+    "name": "Ice demon in a blizzard",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A cold, brittle demon whose words ring like ice while a snowstorm howls.",
+    "tags": ["demon", "ice", "cold", "snow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 30 } },
+      { "m": "spec.crystal", "p": { "peaks": 16, "sustain": 1200, "mix": 40 } },
+      { "m": "space.reverb", "p": { "decay": 4, "damping": 10, "mix": 35 } }
+    ],
+    "bed": { "b": "blizzard", "level": -24 },
+    "seed": 37
+  },
+  {
+    "id": "creatures-fire-demon",
+    "name": "Fire demon in the bonfire",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A demon speaking out of the flames themselves, its words crackling and roaring.",
+    "tags": ["demon", "fire", "crackle", "growl"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 50, "grit": 50 } },
+      { "m": "spec.blend", "p": { "source": "fire", "blend": 30 } }
+    ],
+    "bed": { "b": "blaze", "level": -18, "p": { "distance": 10 } },
+    "seed": 38
+  },
+  {
+    "id": "creatures-chained-demon",
+    "name": "Chained demon in the dungeon",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A creaking, chained demon groaning deep under a castle as its chains shift.",
+    "tags": ["demon", "dungeon", "chains", "creak"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "fry": 50, "rough": 40, "sub": 45 } },
+      { "m": "space.reverb", "p": { "size": 70, "decay": 3, "damping": 70, "mix": 35 } }
+    ],
+    "bed": { "b": "dungeon", "level": -22, "p": { "chains": 80, "groans": 20 } },
+    "seed": 39
+  },
+  {
+    "id": "creatures-demon-whisper",
+    "name": "Demon whispering in your ear",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A deep, breathy demon voice right at your ear, all air and menace.",
+    "tags": ["demon", "whisper", "close", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -5 } },
+      { "m": "spec.whisper", "p": { "amount": 70, "size": "large" } },
+      { "m": "stereo.place", "p": { "angle": 80, "distance": 0.2, "room": "none" } }
+    ],
+    "seed": 40
+  },
+  {
+    "id": "creatures-infernal-herald",
+    "name": "Infernal herald",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A clanging, metallic demon voice in three octaves, announcing doom in a great hall.",
+    "tags": ["demon", "metal", "octaves", "hall"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 65, "down2": 30, "up1": 30, "dry": 80 } },
+      { "m": "synth.ringmod", "p": { "freq": 55, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "cathedral", "mix": 35 } }
+    ],
+    "seed": 41
+  },
+  {
+    "id": "creatures-demon-lord",
+    "name": "Demon lord on his throne",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A smooth, regal, impossibly deep voice in a torch-lit throne hall.",
+    "tags": ["demon", "regal", "deep", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -7 } },
+      { "m": "pitch.octaver", "p": { "down1": 50, "dry": 90, "timbre": 50 } },
+      { "m": "tone.character", "p": { "shape": "deep" } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 45 } }
+    ],
+    "bed": { "b": "torch", "level": -28, "p": { "place": "passage" } },
+    "seed": 42
+  },
+  {
+    "id": "creatures-hissing-little-demon",
+    "name": "Little demon spitting sparks",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "A small, dark, fizzing demon racing around your head.",
+    "tags": ["demon", "small", "fuzz", "circling"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 5, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 60, "grit": 70 } },
+      { "m": "lofi.drive", "p": { "drive": 16, "character": "fuzz", "mix": 40 } },
+      { "m": "stereo.orbit", "p": { "period": 1.5, "distance": 1 } }
+    ],
+    "seed": 43
+  },
+  {
+    "id": "creatures-demon-taking-over",
+    "name": "Demon taking over your voice",
+    "cat": "creatures",
+    "sub": "Demons",
+    "about": "You start out as yourself and sink, word by word, into a growling demon.",
+    "tags": ["demon", "transform", "glide", "growl"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "to": -11, "curve": "late", "timbre": 60 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 45 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "warm", "mix": 60 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 30 } }
+    ],
+    "seed": 44
+  },
+  {
+    "id": "creatures-groaning-zombie",
+    "name": "Groaning zombie",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A slow, creaking, gargling zombie dragging every word out of a rotten throat.",
+    "tags": ["zombie", "creak", "gargle", "slow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 60, "fry": 70 } },
+      { "m": "synth.am", "p": { "rate": 28, "depth": 45, "shape": "bubbly" } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 50 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } }
+    ],
+    "seed": 45
+  },
+  {
+    "id": "creatures-zombie-horde",
+    "name": "Zombie horde in the wind",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A whole shambling crowd of creaking zombies, all moaning your words out of step.",
+    "tags": ["zombie", "crowd", "horde", "outdoors"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 50, "fry": 60 } },
+      { "m": "stereo.crowd", "p": { "people": 5, "pitchSpread": 5, "timing": 420, "loose": 85, "room": "outdoors", "you": 30 } }
+    ],
+    "bed": { "b": "wind", "level": -24, "p": { "strength": 55 } },
+    "seed": 46
+  },
+  {
+    "id": "creatures-ghoul-down-the-well",
+    "name": "Hungry ghoul down the well",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A thin, raw, hungry voice scraping up from the bottom of a stone well.",
+    "tags": ["ghoul", "thin", "rasp", "well"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 70, "fry": 30, "grit": 50 } },
+      { "m": "tone.character", "p": { "shape": "thin" } },
+      { "m": "space.room", "p": { "space": "well", "mix": 45 } }
+    ],
+    "seed": 47
+  },
+  {
+    "id": "creatures-mummy-in-the-tomb",
+    "name": "Mummy waking in the tomb",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A dry, dusty, creaking breath of a voice, thousands of years old, under desert sand.",
+    "tags": ["mummy", "dry", "creak", "desert"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "spec.whisper", "p": { "amount": 55, "brightness": 30 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 60, "rough": 20 } },
+      { "m": "time.drawl", "p": { "factor": 1.4 } },
+      { "m": "space.reverb", "p": { "size": 40, "decay": 2.2, "damping": 80, "mix": 35 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -30, "p": { "strength": 30 } },
+    "seed": 48
+  },
+  {
+    "id": "creatures-rattling-skeleton",
+    "name": "Rattling skeleton",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A bony, hollow voice with nothing left but the loudest notes, its jaw clacking as it talks.",
+    "tags": ["skeleton", "bones", "hollow", "clack"],
+    "chain": [
+      { "m": "spec.thin", "p": { "threshold": -12, "smooth": 10 } },
+      { "m": "synth.am", "p": { "rate": 14, "depth": 50, "shape": "random" } },
+      { "m": "synth.resonator", "p": { "object": "wood-bars", "strike": 70, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "hallway", "mix": 35 } }
+    ],
+    "seed": 49
+  },
+  {
+    "id": "creatures-lich-frozen-crypt",
+    "name": "Lich in a frozen crypt",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A skeletal sorcerer's voice whose echo sinks an octave into the cold.",
+    "tags": ["lich", "cold", "skeleton", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -1 } },
+      { "m": "spec.thin", "p": { "threshold": -25, "mix": 45 } },
+      { "m": "space.shimmer", "p": { "interval": "down", "amount": 50, "decay": 6, "mix": 35 } },
+      { "m": "stereo.width", "p": { "width": 1.7 } }
+    ],
+    "seed": 50
+  },
+  {
+    "id": "creatures-zombie-at-the-window",
+    "name": "Zombie at the window",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A creaking zombie moaning through the glass while rain streams down it.",
+    "tags": ["zombie", "window", "rain", "muffled"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 10, "rough": 50, "fry": 65 } },
+      { "m": "space.muffle", "p": { "wall": "window", "muffling": 45 } }
+    ],
+    "bed": { "b": "rain-window", "level": -20 },
+    "seed": 51
+  },
+  {
+    "id": "creatures-revenant",
+    "name": "Revenant on the battlefield",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A gritty, vengeful dead warrior whose shouts echo across a windswept field.",
+    "tags": ["undead", "warrior", "gritty", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 50, "grit": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 12, "mix": 40 } },
+      { "m": "echo.delay", "p": { "time": 600, "feedback": 30, "stereo": "wide", "mix": 25 } }
+    ],
+    "bed": { "b": "wind", "level": -24, "p": { "strength": 65, "gusts": 70 } },
+    "seed": 52
+  },
+  {
+    "id": "creatures-skeleton-choir",
+    "name": "Choir of skeletons",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "Half a dozen hollow, bony voices chanting your words together in a stone chapel.",
+    "tags": ["skeleton", "choir", "crowd", "church"],
+    "chain": [
+      { "m": "spec.thin", "p": { "threshold": -14, "smooth": 20 } },
+      { "m": "stereo.crowd", "p": { "people": 5, "pitchSpread": 5, "timing": 80, "room": "church", "you": 20 } }
+    ],
+    "seed": 53
+  },
+  {
+    "id": "creatures-drowned-sailor",
+    "name": "Drowned sailor risen",
+    "cat": "creatures",
+    "sub": "Undead",
+    "about": "A waterlogged sailor back from the deep, gurgling words through a throat full of sea.",
+    "tags": ["undead", "water", "gurgle", "sea"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 40, "rough": 50 } },
+      { "m": "mod.underwater", "p": { "depth": 35, "bubbles": 70, "gurgle": 60, "mix": 60 } }
+    ],
+    "bed": { "b": "ocean", "level": -24, "p": { "size": 40 } },
+    "seed": 54
+  },
+  {
+    "id": "creatures-werewolf-mid-change",
+    "name": "Werewolf in mid-change",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A person turning into a wolf as they speak, the voice sinking into a snarl under the moon.",
+    "tags": ["werewolf", "transform", "snarl", "wolves"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": 2, "to": -6, "timbre": 50 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 80, "grit": 60 } },
+      { "m": "synth.formantfilter", "p": { "pattern": "wow", "rate": 0.6, "mix": 40 } }
+    ],
+    "bed": { "b": "wolves-far", "level": -22 },
+    "seed": 55
+  },
+  {
+    "id": "creatures-snarling-wolf-beast",
+    "name": "Snarling wolf beast",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A raspy, snapping beast growling every word just off to your right in the night woods.",
+    "tags": ["wolf", "snarl", "rasp", "forest"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 90, "grit": 70, "fry": 20 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 40 } },
+      { "m": "stereo.place", "p": { "angle": 35, "distance": 1.2, "room": "outdoors" } }
+    ],
+    "bed": { "b": "owl-woods", "level": -26 },
+    "seed": 56
+  },
+  {
+    "id": "creatures-bear-brute",
+    "name": "Bear-chested brute",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A huge furry brute with a booming barrel chest and a low rumbling growl.",
+    "tags": ["beast", "boomy", "growl", "huge"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -8 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 70, "rough": 50 } },
+      { "m": "tone.character", "p": { "shape": "boomy" } },
+      { "m": "space.room", "p": { "space": "forest", "mix": 30 } }
+    ],
+    "seed": 57
+  },
+  {
+    "id": "creatures-minotaur-labyrinth",
+    "name": "Bull-headed beast in the maze",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A snorting bull-headed giant whose voice bounces down endless stone corridors.",
+    "tags": ["minotaur", "maze", "echo", "snort"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -5 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 45, "rough": 60 } },
+      { "m": "tone.character", "p": { "shape": "honky", "amount": 70 } },
+      { "m": "echo.multitap", "p": { "pattern": "scatter", "mix": 25 } },
+      { "m": "space.room", "p": { "space": "tunnel", "mix": 40 } }
+    ],
+    "seed": 58
+  },
+  {
+    "id": "creatures-wild-man-of-the-woods",
+    "name": "Wild man of the woods",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A big hairy forest giant calling from somewhere far off among the swaying trees.",
+    "tags": ["beast", "forest", "far", "huge"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 70 } },
+      { "m": "time.drawl", "p": { "factor": 1.2 } },
+      { "m": "stereo.place", "p": { "angle": -40, "distance": 18, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wind-trees", "level": -22 },
+    "seed": 59
+  },
+  {
+    "id": "creatures-yeti-in-the-snow",
+    "name": "Yeti in the snowstorm",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A shaggy snow beast roaring across a frozen pass, its echo lost in the blizzard.",
+    "tags": ["yeti", "snow", "roar", "echo"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -7 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 60, "rough": 60 } },
+      { "m": "echo.canyon", "p": { "distance": 200, "count": 2, "mix": 25 } }
+    ],
+    "bed": { "b": "blizzard", "level": -20, "p": { "howl": 70 } },
+    "seed": 60
+  },
+  {
+    "id": "creatures-gargoyle-on-the-roof",
+    "name": "Gargoyle on the cathedral roof",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A stony, scraping voice ringing down from a carved beast high above you.",
+    "tags": ["gargoyle", "stone", "above", "scrape"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 50, "grit": 60 } },
+      { "m": "spec.comb", "p": { "base": 70, "chord": "eerie", "sharpness": 50, "mix": 40 } },
+      { "m": "stereo.place", "p": { "angle": 20, "height": 55, "distance": 8, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wind", "level": -26 },
+    "seed": 61
+  },
+  {
+    "id": "creatures-hellhound",
+    "name": "Hellhound at the gate",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A savage fire-breathing hound, all snarl and fizz, with flames roaring behind it.",
+    "tags": ["hound", "snarl", "fire", "fizz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "rough": 85, "grit": 60 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "rectifier", "mix": 30 } },
+      { "m": "echo.slapback", "p": { "character": "room" } }
+    ],
+    "bed": { "b": "blaze", "level": -26, "p": { "distance": 60 } },
+    "seed": 62
+  },
+  {
+    "id": "creatures-shapeshifter",
+    "name": "Shapeshifter changing shape",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "A voice that never settles, its pitch and size bending and melting as it talks.",
+    "tags": ["shapeshifter", "wobble", "uncanny", "phaser"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -3 } },
+      { "m": "pitch.wobble", "p": { "depth": 300, "speed": 0.3, "randomness": 80, "timbre": 80 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 40 } },
+      { "m": "mod.phaser", "p": { "rate": 0.2, "feedback": 60, "mix": 40 } }
+    ],
+    "seed": 63
+  },
+  {
+    "id": "creatures-three-headed-hound",
+    "name": "Three-headed guard dog",
+    "cat": "creatures",
+    "sub": "Beasts",
+    "about": "Three snarling heads at once, left, middle and right, each a different size.",
+    "tags": ["hound", "three voices", "stereo", "snarl"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 30, "rough": 70, "grit": 40 } },
+      { "m": "stereo.crowd", "p": { "people": 3, "pitchSpread": 6, "timbreSpread": 4, "timing": 60, "spread": 100, "room": "none", "you": 40 } }
+    ],
+    "seed": 64
+  },
+  {
+    "id": "creatures-vampire-cold-and-close",
+    "name": "Vampire, cold and close",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A smooth, chilly voice leaning in close, with a vast dark hall behind it.",
+    "tags": ["vampire", "cold", "close", "reverb"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "tone.character", "p": { "shape": "forward" } },
+      { "m": "tone.tilt", "p": { "amount": 4.5, "pivot": 1500 } },
+      { "m": "stereo.place", "p": { "angle": 25, "distance": 0.4, "room": "big-hall" } }
+    ],
+    "seed": 65
+  },
+  {
+    "id": "creatures-old-count-castle",
+    "name": "Old count in his castle",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A deep, velvety aristocrat welcoming you into a huge stone hall as a tall clock ticks.",
+    "tags": ["vampire", "castle", "clock", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } },
+      { "m": "lofi.saturate", "p": { "drive": 8 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 45, "tone": -30 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -24, "p": { "clock": "tall", "size": "hall" } },
+    "seed": 66
+  },
+  {
+    "id": "creatures-ancient-vampire",
+    "name": "Ancient vampire awakening",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A dusty, creaking voice that has not spoken in centuries, slowly finding its words.",
+    "tags": ["vampire", "ancient", "dusty", "slow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -2 } },
+      { "m": "spec.whisper", "p": { "amount": 35 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 40, "rough": 15 } },
+      { "m": "time.drawl", "p": { "factor": 1.3, "ramp": "catching" } },
+      { "m": "space.room", "p": { "space": "church", "mix": 40 } }
+    ],
+    "seed": 67
+  },
+  {
+    "id": "creatures-vampire-bride",
+    "name": "Vampire bride hissing",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A pale, airy voice doubled and drifting, hissing softly in a long dark corridor.",
+    "tags": ["vampire", "hiss", "airy", "doubled"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2, "formant": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 50, "brightness": 70 } },
+      { "m": "stereo.double", "p": { "copies": 3, "pitch": 20 } },
+      { "m": "space.reverb", "p": { "decay": 3, "mix": 35 } }
+    ],
+    "seed": 68
+  },
+  {
+    "id": "creatures-vampire-in-the-coffin",
+    "name": "Vampire inside the coffin",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A low voice shut inside a wooden box, muffled and boxy, demanding to be let out.",
+    "tags": ["vampire", "coffin", "muffled", "boxy"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 25, "rough": 20, "grit": 10 } },
+      { "m": "space.muffle", "p": { "wall": "closet", "muffling": 70, "room": "none" } }
+    ],
+    "seed": 69
+  },
+  {
+    "id": "creatures-vampire-turning-to-bats",
+    "name": "Vampire turning into bats",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A voice that breaks apart into a flapping, squeaking cloud of bats.",
+    "tags": ["vampire", "bats", "granular", "flutter"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3 } },
+      { "m": "synth.granular", "p": { "grain": 30, "density": 120, "pitch": 12, "spread": 300, "scatter": 400, "width": 100, "mix": 55 } },
+      { "m": "synth.am", "p": { "rate": 40, "depth": 70, "shape": "random", "mix": 70 } },
+      { "m": "stereo.width", "p": { "width": 2 } }
+    ],
+    "seed": 70
+  },
+  {
+    "id": "creatures-vampire-at-the-window",
+    "name": "Vampire asking to come in",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A soft, polite voice outside your window on a windy night, asking to be let in.",
+    "tags": ["vampire", "window", "whisper", "wind"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "space.muffle", "p": { "wall": "window", "muffling": 35, "room": "bedroom" } }
+    ],
+    "bed": { "b": "wind-howl", "level": -22 },
+    "seed": 71
+  },
+  {
+    "id": "creatures-hypnotic-vampire",
+    "name": "Hypnotic vampire voice",
+    "cat": "creatures",
+    "sub": "Vampires",
+    "about": "A flattened, swaying, multiplied voice that drifts slowly from ear to ear.",
+    "tags": ["vampire", "hypnotic", "monotone", "swaying"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -1 } },
+      { "m": "pitch.flatten", "p": { "amount": 60 } },
+      { "m": "mod.chorus", "p": { "depth": 30, "rate": 0.2, "mix": 40 } },
+      { "m": "mod.autopan", "p": { "rate": 0.15, "width": 60 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 5 } }
+    ],
+    "seed": 72
+  },
+  {
+    "id": "creatures-dragon-breathing-fire",
+    "name": "Dragon breathing fire",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "An enormous rumbling dragon in its cave, with fire roaring and crackling around it.",
+    "tags": ["dragon", "huge", "fire", "cave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -8 } },
+      { "m": "pitch.octaver", "p": { "down1": 60, "dry": 90 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 55, "grit": 45 } },
+      { "m": "space.room", "p": { "space": "cave", "size": 1.3, "mix": 35 } }
+    ],
+    "bed": { "b": "blaze", "level": -20 },
+    "seed": 73
+  },
+  {
+    "id": "creatures-baby-dragon",
+    "name": "Baby dragon learning to roar",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A small, scratchy dragon trying very hard to sound fierce by a little fire.",
+    "tags": ["dragon", "small", "cute", "rasp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": -1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 20, "rough": 70, "grit": 50 } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "fuzz", "mix": 30 } }
+    ],
+    "bed": { "b": "campfire", "level": -26, "p": { "size": 20 } },
+    "seed": 74
+  },
+  {
+    "id": "creatures-ice-dragon",
+    "name": "Ice dragon on the glacier",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A vast frosty dragon whose voice glints like ice and sinks down into its own echo.",
+    "tags": ["dragon", "ice", "shimmer", "snow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -7 } },
+      { "m": "spec.crystal", "p": { "peaks": 24, "mix": 25 } },
+      { "m": "space.shimmer", "p": { "interval": "down", "amount": 40, "decay": 6, "mix": 25 } }
+    ],
+    "bed": { "b": "blizzard", "level": -26, "p": { "strength": 50 } },
+    "seed": 75
+  },
+  {
+    "id": "creatures-sleeping-dragon",
+    "name": "Dragon dozing on its gold",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A drowsy dragon mumbling in its treasure cave, its giant heart slowly thumping.",
+    "tags": ["dragon", "sleepy", "slow", "heartbeat"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -8 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 20, "fry": 30 } },
+      { "m": "time.drawl", "p": { "factor": 1.4 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 50, "size": 1.2 } }
+    ],
+    "bed": { "b": "heartbeat", "level": -22, "p": { "rate": 40, "place": "room", "intensity": 40 } },
+    "seed": 76
+  },
+  {
+    "id": "creatures-sea-serpent",
+    "name": "Sea serpent rising",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A long hissing serpent lifting its head out of rolling waves to speak.",
+    "tags": ["serpent", "sea", "hiss", "waves"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -4 } },
+      { "m": "spec.whisper", "p": { "amount": 30, "brightness": 65 } },
+      { "m": "mod.underwater", "p": { "depth": 25, "bubbles": 40, "mix": 40 } }
+    ],
+    "bed": { "b": "ocean", "level": -20, "p": { "size": 80 } },
+    "seed": 77
+  },
+  {
+    "id": "creatures-wyvern-overhead",
+    "name": "Wyvern screeching past",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A shrieking winged beast swooping over your head from left to right, twice.",
+    "tags": ["wyvern", "shriek", "flyby", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 4, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 50, "grit": 60 } },
+      { "m": "lofi.drive", "p": { "drive": 10, "character": "overdrive", "mix": 40 } },
+      { "m": "stereo.flyby", "p": { "speed": "race", "height": 40, "passes": 2 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 60 } },
+    "seed": 78
+  },
+  {
+    "id": "creatures-dragon-circling",
+    "name": "Dragon circling overhead",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A huge dragon wheeling slowly around and above you in the open sky.",
+    "tags": ["dragon", "circling", "sky", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -7 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "rough": 25 } },
+      { "m": "stereo.orbit", "p": { "period": 8, "distance": 4, "height": 50, "room": "outdoors" } }
+    ],
+    "bed": { "b": "wind", "level": -22, "p": { "strength": 70, "gusts": 70 } },
+    "seed": 79
+  },
+  {
+    "id": "creatures-dragon-behind-the-falls",
+    "name": "Ancient dragon behind the falls",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A slow, wise, impossibly old dragon speaking from a vast hall behind a waterfall.",
+    "tags": ["dragon", "ancient", "waterfall", "huge"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -11, "formant": -9 } },
+      { "m": "pitch.octaver", "p": { "down1": 40, "up1": 15, "dry": 90 } },
+      { "m": "spec.blur", "p": { "amount": 30, "time": 400 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 8, "mix": 40 } }
+    ],
+    "bed": { "b": "waterfall", "level": -22, "p": { "distance": 70 } },
+    "seed": 80
+  },
+  {
+    "id": "creatures-two-headed-dragon",
+    "name": "Two-headed dragon",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "Two dragon heads speaking together, a deeper one on the left and a sharper one on the right.",
+    "tags": ["dragon", "two voices", "stereo", "fire"],
+    "chain": [
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "rough": 50 } },
+      { "m": "stereo.split", "p": { "leftPitch": -10, "leftTimbre": -6, "rightPitch": -6, "rightTimbre": -3 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 30 } }
+    ],
+    "bed": { "b": "blaze", "level": -24 },
+    "seed": 81
+  },
+  {
+    "id": "creatures-dragon-hatchlings",
+    "name": "Dragon hatchlings squabbling",
+    "cat": "creatures",
+    "sub": "Dragons",
+    "about": "A nest of scratchy little dragons all squawking your words at once in a cave.",
+    "tags": ["dragon", "small", "crowd", "cave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 7, "formant": 1 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "rough": 60, "grit": 50 } },
+      { "m": "stereo.crowd", "p": { "people": 4, "pitchSpread": 3.5, "timing": 150, "room": "cave", "you": 30 } }
+    ],
+    "seed": 82
+  },
+  {
+    "id": "creatures-swamp-beast",
+    "name": "Swamp beast rising from the mud",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A bubbling, muddy monster heaving up out of a warm swamp at night.",
+    "tags": ["swamp", "mud", "bubbles", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -6 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 60 } },
+      { "m": "synth.am", "p": { "rate": 9, "depth": 55, "shape": "bubbly" } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 50 } }
+    ],
+    "bed": { "b": "swamp", "level": -20, "p": { "bubbles": 70 } },
+    "seed": 83
+  },
+  {
+    "id": "creatures-gargling-bog-monster",
+    "name": "Bog monster gargling",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A slimy thing talking through a mouthful of pond water by a chorus of frogs.",
+    "tags": ["bog", "gargle", "water", "frogs"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -5 } },
+      { "m": "synth.am", "p": { "rate": 30, "depth": 60, "shape": "bubbly" } },
+      { "m": "mod.underwater", "p": { "depth": 30, "gurgle": 70, "bubbles": 40, "mix": 50 } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -22 },
+    "seed": 84
+  },
+  {
+    "id": "creatures-kraken-from-the-deep",
+    "name": "Kraken from the deep",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A colossal sea monster booming up from the black water far below the waves.",
+    "tags": ["kraken", "underwater", "huge", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -10 } },
+      { "m": "pitch.octaver", "p": { "down1": 50 } },
+      { "m": "mod.underwater", "p": { "depth": 70, "bubbles": 30, "wobble": 50 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 6, "damping": 85, "mix": 40 } }
+    ],
+    "bed": { "b": "underwater", "level": -22, "p": { "depth": 80 } },
+    "seed": 85
+  },
+  {
+    "id": "creatures-lagoon-dweller",
+    "name": "Fish-headed lagoon dweller",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A wet, gulping amphibian voice, slightly out of tune, among tropical night frogs.",
+    "tags": ["amphibian", "watery", "uneasy", "jungle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 2 } },
+      { "m": "synth.fm", "p": { "rate": 4, "depth": 1.5, "shape": "watery" } },
+      { "m": "spec.shift", "p": { "hz": 80, "mix": 35 } },
+      { "m": "tone.character", "p": { "shape": "nasal", "amount": 50 } }
+    ],
+    "bed": { "b": "rainforest-night", "level": -24 },
+    "seed": 86
+  },
+  {
+    "id": "creatures-lake-monster-in-the-fog",
+    "name": "Lake monster in the fog",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "Something huge calling from far out across foggy water as a foghorn moans.",
+    "tags": ["lake", "far", "fog", "huge"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -7 } },
+      { "m": "pitch.octaver", "p": { "down1": 45 } },
+      { "m": "space.distance", "p": { "distance": 150, "echoes": 60, "wind": 15 } }
+    ],
+    "bed": { "b": "seagulls-harbor", "level": -24, "p": { "foghorn": true, "intensity": 30 } },
+    "seed": 87
+  },
+  {
+    "id": "creatures-sewer-mutant",
+    "name": "Sewer mutant",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A croaking, crunchy mutant echoing up the drainpipes as water pours past.",
+    "tags": ["mutant", "sewer", "croak", "pipe"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 60, "rough": 40 } },
+      { "m": "lofi.drive", "p": { "drive": 14, "mix": 50 } },
+      { "m": "space.room", "p": { "space": "sewer-pipe", "mix": 60 } }
+    ],
+    "bed": { "b": "rain-gutter", "level": -24, "p": { "pipe": 80 } },
+    "seed": 88
+  },
+  {
+    "id": "creatures-thing-in-the-well",
+    "name": "Tentacled thing in the well",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A deep, wavering, gurgling voice welling up from the water at the bottom of a well.",
+    "tags": ["tentacles", "well", "watery", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -8 } },
+      { "m": "synth.fm", "p": { "rate": 2, "depth": 3, "shape": "watery" } },
+      { "m": "spec.blur", "p": { "amount": 25, "time": 300 } },
+      { "m": "space.room", "p": { "space": "well", "mix": 60 } }
+    ],
+    "seed": 89
+  },
+  {
+    "id": "creatures-crab-king",
+    "name": "Crab king clicking",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A hard-shelled crustacean lord clicking and clacking every word on the rocks.",
+    "tags": ["crab", "click", "shell", "sea"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": 4 } },
+      { "m": "synth.am", "p": { "rate": 12, "depth": 70, "shape": "pulse" } },
+      { "m": "tone.character", "p": { "shape": "tinny", "amount": 60 } }
+    ],
+    "bed": { "b": "shore-rocks", "level": -24, "p": { "size": 40 } },
+    "seed": 90
+  },
+  {
+    "id": "creatures-giant-swamp-toad",
+    "name": "Giant swamp toad",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A monstrous croaking toad booming from the reeds while the frogs sing.",
+    "tags": ["toad", "croak", "deep", "swamp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -8, "formant": -2 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 50, "fry": 80, "rough": 30 } },
+      { "m": "synth.am", "p": { "rate": 6, "depth": 40 } }
+    ],
+    "bed": { "b": "frogs-pond", "level": -22, "p": { "croakers": 90 } },
+    "seed": 91
+  },
+  {
+    "id": "creatures-oozing-slime",
+    "name": "Oozing slime monster",
+    "cat": "creatures",
+    "sub": "Swamp and sea",
+    "about": "A gooey blob of a voice that slides, swirls and drips as it speaks.",
+    "tags": ["slime", "gooey", "swirl", "watery"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -3 } },
+      { "m": "synth.fm", "p": { "rate": 10, "depth": 2, "shape": "watery" } },
+      { "m": "mod.phaser", "p": { "rate": 0.3, "feedback": 70, "mix": 60 } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 60 } }
+    ],
+    "seed": 92
+  },
+  {
+    "id": "creatures-insect-queen",
+    "name": "Insect queen in the hive",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A regal buzzing queen with her many voices around her, deep inside a humming hive.",
+    "tags": ["insect", "buzz", "queen", "hive"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 4 } },
+      { "m": "synth.am", "p": { "rate": 220, "depth": 55, "shape": "square" } },
+      { "m": "stereo.double", "p": { "copies": 3, "spread": 100 } },
+      { "m": "space.room", "p": { "space": "closet", "mix": 40 } }
+    ],
+    "bed": { "b": "beehive", "level": -22, "p": { "place": "inside" } },
+    "seed": 93
+  },
+  {
+    "id": "creatures-hive-mind",
+    "name": "Hive mind speaking as one",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "Dozens of tight, buzzing copies of you saying every word in perfect step.",
+    "tags": ["hive", "swarm", "unison", "buzz"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 3 } },
+      { "m": "synth.am", "p": { "rate": 120, "depth": 40 } },
+      { "m": "stereo.double", "p": { "copies": 4, "timing": 8, "pitch": 15, "spread": 100 } },
+      { "m": "mod.chorus", "p": { "voices": 6, "depth": 25, "spread": 100, "mix": 60 } }
+    ],
+    "seed": 94
+  },
+  {
+    "id": "creatures-giant-spider",
+    "name": "Giant spider above you",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A thin, hissing, ticking voice from a huge spider hanging in its web over your head.",
+    "tags": ["spider", "hiss", "above", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 1, "formant": 5 } },
+      { "m": "spec.whisper", "p": { "amount": 40, "brightness": 85 } },
+      { "m": "synth.am", "p": { "rate": 60, "depth": 55, "shape": "random" } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": 60, "distance": 1 } }
+    ],
+    "seed": 95
+  },
+  {
+    "id": "creatures-mantis-knight",
+    "name": "Praying mantis knight",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A thin, clicking insect warrior whose words knock like hollow wooden sticks.",
+    "tags": ["mantis", "click", "wood", "insect"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 6 } },
+      { "m": "synth.am", "p": { "rate": 25, "depth": 60, "shape": "pulse" } },
+      { "m": "tone.character", "p": { "shape": "thin" } },
+      { "m": "synth.resonator", "p": { "object": "wood-bars", "strike": 70, "mix": 25 } }
+    ],
+    "seed": 96
+  },
+  {
+    "id": "creatures-locust-swarm",
+    "name": "Voice of the locust swarm",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "Your words broken into a crackling cloud of tiny wings over a hot buzzing field.",
+    "tags": ["locust", "swarm", "granular", "field"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 15, "density": 300, "pitch": 5, "spread": 200, "scatter": 300, "width": 100 } },
+      { "m": "synth.am", "p": { "rate": 90, "depth": 50, "shape": "random" } }
+    ],
+    "bed": { "b": "summer-field", "level": -22, "p": { "cicadas": 90 } },
+    "seed": 97
+  },
+  {
+    "id": "creatures-wasp-warrior",
+    "name": "Wasp warrior zipping by",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A buzzing, angry wasp soldier darting past your ears again and again.",
+    "tags": ["wasp", "buzz", "flyby", "angry"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "synth.am", "p": { "rate": 250, "depth": 70, "shape": "triangle", "jitter": 30 } },
+      { "m": "lofi.drive", "p": { "drive": 6, "character": "fuzz", "mix": 30 } },
+      { "m": "stereo.flyby", "p": { "speed": "bike", "closest": 0.5, "passes": 3, "room": "none" } }
+    ],
+    "seed": 98
+  },
+  {
+    "id": "creatures-armoured-beetle",
+    "name": "Armoured beetle grinding",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A big, hard-shelled beetle whose words scrape and click like plates of armour.",
+    "tags": ["beetle", "click", "scrape", "shell"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": 2 } },
+      { "m": "synth.am", "p": { "rate": 45, "depth": 60, "shape": "random" } },
+      { "m": "lofi.drive", "p": { "drive": 8, "character": "rectifier", "mix": 30 } },
+      { "m": "tone.character", "p": { "shape": "boxy" } }
+    ],
+    "seed": 99
+  },
+  {
+    "id": "creatures-ant-colony",
+    "name": "Ant colony in the walls",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "Dozens of tiny voices chattering your words from somewhere inside the wall.",
+    "tags": ["ants", "tiny", "crowd", "wall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 8 } },
+      { "m": "mod.chorus", "p": { "voices": 6, "depth": 70, "delay": 30, "spread": 100, "mix": 70 } },
+      { "m": "echo.multitap", "p": { "pattern": "scatter", "feedback": 30, "mix": 45 } },
+      { "m": "space.muffle", "p": { "wall": "thin", "muffling": 40 } }
+    ],
+    "seed": 100
+  },
+  {
+    "id": "creatures-giant-moth",
+    "name": "Giant moth at the lamp",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A soft, fluttering, papery voice beating around you on a summer night.",
+    "tags": ["moth", "flutter", "papery", "night"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 2 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "synth.am", "p": { "rate": 30, "depth": 70, "shape": "random" } },
+      { "m": "mod.autopan", "p": { "rate": 3, "shape": "random" } }
+    ],
+    "bed": { "b": "night-crickets", "level": -24 },
+    "seed": 101
+  },
+  {
+    "id": "creatures-desert-scorpion",
+    "name": "Desert scorpion beast",
+    "cat": "creatures",
+    "sub": "Insects and hives",
+    "about": "A dry, ticking, hissing creature talking low across the hot desert wind.",
+    "tags": ["scorpion", "desert", "hiss", "tick"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": 3 } },
+      { "m": "synth.am", "p": { "rate": 16, "depth": 50, "shape": "pulse" } },
+      { "m": "spec.whisper", "p": { "amount": 25 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -22 },
+    "seed": 102
+  },
+  {
+    "id": "creatures-stone-golem",
+    "name": "Stone golem grinding awake",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A slow, grinding, resonant voice of living rock, rumbling into life.",
+    "tags": ["golem", "stone", "grind", "slow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -9, "formant": -6 } },
+      { "m": "synth.am", "p": { "rate": 40, "depth": 40, "shape": "random" } },
+      { "m": "lofi.drive", "p": { "drive": 10 } },
+      { "m": "spec.comb", "p": { "base": 55, "chord": "one", "sharpness": 30, "mix": 40 } },
+      { "m": "time.drawl", "p": { "factor": 1.3 } }
+    ],
+    "seed": 103
+  },
+  {
+    "id": "creatures-angry-boulder",
+    "name": "Angry boulder",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A crunchy, boomy lump of rock shouting across a canyon.",
+    "tags": ["rock", "crunchy", "boomy", "canyon"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -4 } },
+      { "m": "lofi.drive", "p": { "drive": 20, "character": "fuzz", "tone": -50, "mix": 60 } },
+      { "m": "tone.character", "p": { "shape": "boomy" } },
+      { "m": "space.room", "p": { "space": "canyon", "mix": 20 } }
+    ],
+    "seed": 104
+  },
+  {
+    "id": "creatures-earthquake-beneath",
+    "name": "Earthquake beneath your feet",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A shaking, rumbling voice from deep under the ground below you.",
+    "tags": ["earthquake", "below", "shaking", "deep"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -10 } },
+      { "m": "pitch.octaver", "p": { "down2": 40 } },
+      { "m": "mod.tremolo", "p": { "rate": 9, "depth": 40, "shape": "random" } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -40, "distance": 3, "room": "cave" } }
+    ],
+    "seed": 105
+  },
+  {
+    "id": "creatures-lava-monster",
+    "name": "Lava monster bubbling",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A molten, gritty voice popping and bubbling like boiling rock.",
+    "tags": ["lava", "bubbles", "gritty", "fire"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -5 } },
+      { "m": "synth.am", "p": { "rate": 7, "depth": 45, "shape": "bubbly" } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 50, "grit": 50 } },
+      { "m": "lofi.saturate", "p": { "drive": 18 } }
+    ],
+    "bed": { "b": "blaze", "level": -24, "p": { "flare": 80, "distance": 40 } },
+    "seed": 106
+  },
+  {
+    "id": "creatures-living-statue",
+    "name": "Bronze statue in the square",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A metal statue suddenly speaking, its bronze body ringing beside a splashing fountain.",
+    "tags": ["statue", "bronze", "ring", "fountain"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -2 } },
+      { "m": "synth.resonator", "p": { "pitch": -12, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "alley", "mix": 30 } }
+    ],
+    "bed": { "b": "fountain", "level": -24 },
+    "seed": 107
+  },
+  {
+    "id": "creatures-clockwork-ogre",
+    "name": "Clockwork ogre ticking",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A huge wind-up ogre whose words grind out in jerky steps of gears and springs.",
+    "tags": ["clockwork", "ogre", "gears", "ticking"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -6 } },
+      { "m": "mod.gate", "p": { "pattern": "stutter", "tempo": 140, "depth": 45 } },
+      { "m": "synth.ringmod", "p": { "freq": 28, "mix": 25 } }
+    ],
+    "bed": { "b": "clock-tick", "level": -22, "p": { "clock": "mantel", "size": "close" } },
+    "seed": 108
+  },
+  {
+    "id": "creatures-cave-creature",
+    "name": "Cave creature behind you",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "Something breathy and creaking whispering from the dark behind you in a dripping cave.",
+    "tags": ["cave", "behind", "creak", "headphones"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -4 } },
+      { "m": "spec.whisper", "p": { "amount": 30 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 0, "fry": 40, "rough": 40 } },
+      { "m": "stereo.place", "p": { "angle": 150, "distance": 3, "room": "cave" } }
+    ],
+    "bed": { "b": "cave-drips", "level": -24 },
+    "seed": 109
+  },
+  {
+    "id": "creatures-worm-under-the-dunes",
+    "name": "Giant worm under the dunes",
+    "cat": "creatures",
+    "sub": "Caves, stone and earth",
+    "about": "A colossal muffled rumble rising up through the sand beneath you as the wind hisses.",
+    "tags": ["worm", "desert", "below", "rumble"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -12, "formant": -12 } },
+      { "m": "pitch.octaver", "p": { "down1": 60 } },
+      { "m": "tone.filter", "p": { "freq": 600 } },
+      { "m": "stereo.place", "p": { "angle": 0, "height": -30, "distance": 6, "room": "outdoors" } }
+    ],
+    "bed": { "b": "desert-wind", "level": -20, "p": { "dunes": 60 } },
+    "seed": 110
+  }
+]

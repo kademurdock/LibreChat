@@ -1,0 +1,1490 @@
+[
+  {
+    "id": "scifi-grey-alien-visitor",
+    "name": "Grey alien visitor",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A small, big-headed visitor with a gentle voice shifted just off true.",
+    "tags": ["alien", "small", "strange", "soft"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 5 } },
+      { "m": "synth.freqshift", "p": { "shift": -40 } },
+      { "m": "spec.whisper", "p": { "amount": 25 } },
+      { "m": "space.reverb", "p": { "decay": 2.4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-insectoid-alien",
+    "name": "Insectoid alien",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A clicking, buzzing bug-like alien whose mandibles flutter through every word.",
+    "tags": ["alien", "insect", "buzz", "clicks"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 4 } },
+      { "m": "synth.am", "p": { "rate": 95, "depth": 70, "shape": "pulse", "jitter": 40 } },
+      { "m": "spec.shift", "p": { "hz": 180 } },
+      { "m": "mod.chorus", "p": { "voices": 4, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-gas-giant-alien",
+    "name": "Gas giant alien",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A vast floating creature from a gas giant, slow and deep as rolling storm clouds.",
+    "tags": ["alien", "huge", "deep", "slow"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -10, "formant": -8 } },
+      { "m": "time.drawl", "p": { "factor": 1.4 } },
+      { "m": "spec.blur", "p": { "amount": 40, "time": 600 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 6, "mix": 40 } }
+    ],
+    "bed": { "b": "storm", "level": -28, "p": { "intensity": 15, "thunder": 3, "distance": 9000, "wind": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-crystal-being",
+    "name": "Crystal being",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A being made of living crystal, its words ringing out like struck glass.",
+    "tags": ["alien", "crystal", "glass", "ringing"],
+    "chain": [
+      { "m": "spec.crystal", "p": { "peaks": 16, "sustain": 1400, "sparkle": 60 } },
+      { "m": "synth.resonator", "p": { "object": "glass", "mix": 35 } },
+      { "m": "space.shimmer", "p": { "interval": "fifth", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-chirpy-little-martian",
+    "name": "Chirpy little martian",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A squeaky little red-planet visitor whose words chirp and squeal at the ends.",
+    "tags": ["alien", "squeaky", "tiny", "chirp"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 9, "formant": 7 } },
+      { "m": "synth.freqshift", "p": { "shift": 90 } },
+      { "m": "pitch.jitter", "p": { "rate": 1.2 } },
+      { "m": "echo.delay", "p": { "time": 120, "feedback": 20, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-tentacled-oracle",
+    "name": "Tentacled oracle",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A many-armed sea creature from another world, gurgling wisdom from deep water.",
+    "tags": ["alien", "water", "deep", "gurgle"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -5 } },
+      { "m": "mod.underwater", "p": { "depth": 40, "gurgle": 70, "bubbles": 30 } },
+      { "m": "synth.fm", "p": { "rate": 3, "depth": 4, "shape": "watery" } },
+      { "m": "space.reverb", "p": { "decay": 3, "damping": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-alien-diplomat",
+    "name": "Alien diplomat",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A calm, polished envoy with a shadow voice an octave below and a slightly wrong shape.",
+    "tags": ["alien", "smooth", "calm", "octave"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": 3 } },
+      { "m": "spec.stretch", "p": { "factor": 1.18 } },
+      { "m": "pitch.harmony", "p": { "chord": "octave-down", "voices": 1, "mix": 35 } },
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-frog-like-telepath",
+    "name": "Frog-like telepath",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "An amphibian mind-reader whose watery throat pulses slowly as it speaks.",
+    "tags": ["alien", "watery", "pulse", "throat"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -3, "formant": -2 } },
+      { "m": "synth.fm", "p": { "rate": 5, "depth": 3, "shape": "watery" } },
+      { "m": "mod.tremolo", "p": { "rate": 3, "depth": 55 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-alien-hive-queen",
+    "name": "Alien hive queen",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A towering hive ruler speaking in buzzing layers while her brood echoes every word.",
+    "tags": ["alien", "hive", "layers", "buzz"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 50, "up1": 50 } },
+      { "m": "synth.am", "p": { "rate": 70, "depth": 70, "shape": "bubbly" } },
+      { "m": "stereo.crowd", "p": { "people": 6, "pitchSpread": 5, "timing": 40, "room": "cave" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-galactic-council",
+    "name": "Galactic council",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A ring of very different alien ambassadors all speaking your words at once.",
+    "tags": ["alien", "crowd", "council", "hall"],
+    "chain": [
+      { "m": "stereo.crowd", "p": { "people": 7, "pitchSpread": 12, "timbreSpread": 6, "timing": 200, "you": 30 } },
+      { "m": "synth.freqshift", "p": { "shift": 25, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-slime-creature",
+    "name": "Slime creature",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A dripping blob of living goo burbling its words through bubbles of slime.",
+    "tags": ["alien", "slime", "bubbles", "gross"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -6 } },
+      { "m": "mod.underwater", "p": { "depth": 30, "bubbles": 80, "wobble": 70, "gurgle": 60 } },
+      { "m": "synth.fm", "p": { "rate": 2, "depth": 5, "shape": "wander" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-two-headed-alien",
+    "name": "Two-headed alien",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "Two heads on one body, a high voice in one ear and a low one in the other.",
+    "tags": ["alien", "split", "stereo", "two"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 7, "leftTimbre": 5, "rightPitch": -7, "rightTimbre": -4 } },
+      { "m": "synth.freqshift", "p": { "shift": -30, "mix": 60 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-choir-of-tiny-microbes",
+    "name": "Choir of tiny microbes",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "Thousands of microscopic beings squeaking your words together in a tiny, loose chorus.",
+    "tags": ["alien", "tiny", "crowd", "squeaky"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 7 } },
+      { "m": "stereo.crowd", "p": { "people": 10, "pitchSpread": 3, "timbreSpread": 1, "timing": 70, "loose": 70, "room": "none", "you": 20 } },
+      { "m": "synth.freqshift", "p": { "shift": 45, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-whistling-alien",
+    "name": "Whistling alien",
+    "cat": "scifi",
+    "sub": "Aliens",
+    "about": "A visitor who talks in pure whistles, every vowel turned into a thin sliding tone.",
+    "tags": ["alien", "whistle", "thin", "strange"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 12, "formant": 4 } },
+      { "m": "spec.crystal", "p": { "peaks": 3, "sustain": 120, "sparkle": 0 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 700, "slope": "gentle" } },
+      { "m": "space.reverb", "p": { "decay": 1.5, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-starship-computer",
+    "name": "Starship computer",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A calm, crisp ship's computer voice speaking over the hum of the bridge.",
+    "tags": ["computer", "starship", "calm", "bridge"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "scale": "pentatonic", "speed": 20 } },
+      { "m": "spec.robot", "p": { "pitch": 210, "smooth": 90, "mix": 30 } },
+      { "m": "tone.character", "p": { "shape": "bright" } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 20 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -26, "p": { "intensity": 35 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-space-station-announcement",
+    "name": "Space station announcement",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A chime and an echoing announcement ringing through the corridors of an orbital station.",
+    "tags": ["station", "announcement", "chime", "echo"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "device.pa", "p": { "venue": "station", "chime": "three" } },
+      { "m": "synth.ringmod", "p": { "freq": 500, "mix": 12 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -26, "p": { "size": "flagship", "beeps": 20 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-captain-on-the-bridge",
+    "name": "Captain on the bridge",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A commanding captain's voice on a busy starship bridge, consoles chirping all round.",
+    "tags": ["captain", "starship", "bridge", "beeps"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "news" } },
+      { "m": "space.room", "p": { "space": "office", "mix": 25 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -18, "p": { "beeps": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-red-alert",
+    "name": "Red alert on the bridge",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "An urgent officer on the ship's intercom while the alarm whoops across the bridge.",
+    "tags": ["alarm", "intercom", "urgent", "starship"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "office", "distortion": 55 } },
+      { "m": "space.room", "p": { "space": "hallway", "mix": 30 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -16, "duck": 6, "p": { "alert": "siren", "intensity": 65 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-engineer-below-decks",
+    "name": "Ship's engineer below decks",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "An engineer shouting up from the roaring engine core over a crackling radio.",
+    "tags": ["engineer", "radio", "engine", "loud"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "overdrive", "drive": 10 } },
+      { "m": "device.walkie", "p": { "band": "digital" } }
+    ],
+    "bed": { "b": "engine-room", "level": -18, "p": { "machine": "turbine" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-mothership-announcement",
+    "name": "Mothership over the city",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A colossal ship hovering over the city, its voice booming down from the sky.",
+    "tags": ["mothership", "huge", "deep", "distant"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -6, "formant": -4 } },
+      { "m": "pitch.octaver", "p": { "down1": 60, "down2": 30 } },
+      { "m": "synth.freqshift", "p": { "shift": -15, "mix": 50 } },
+      { "m": "space.distance", "p": { "distance": 400, "echoes": 90 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 30 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-airlock-warning",
+    "name": "Airlock warning voice",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A cold warning voice inside a steel airlock just before the outer door opens.",
+    "tags": ["airlock", "warning", "metal", "cold"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "target": "set", "hz": 180 } },
+      { "m": "spec.robot", "p": { "pitch": 180, "smooth": 85, "mix": 50 } },
+      { "m": "lofi.saturate", "p": { "drive": 10 } },
+      { "m": "space.room", "p": { "space": "metal-tank", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-cargo-bay-intercom",
+    "name": "Cargo bay intercom",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A buzzing loudspeaker voice echoing round a vast empty cargo bay.",
+    "tags": ["intercom", "echo", "hangar", "buzz"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "school", "buzz": 50 } },
+      { "m": "space.room", "p": { "space": "hangar", "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-escape-pod-radio",
+    "name": "Escape pod radio",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A frightened voice from a tiny escape pod drifting further from the ship.",
+    "tags": ["pod", "radio", "drifting", "lonely"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "deep", "dropouts": 30 } },
+      { "m": "space.room", "p": { "space": "phone-booth", "mix": 30 } },
+      { "m": "pitch.wobble", "p": { "depth": 40, "speed": 0.5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-cryosleep-wake-up",
+    "name": "Cryosleep wake-up",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A frozen sleeper thawing out: slow, low and groggy at first, then catching up to normal.",
+    "tags": ["sleep", "slow", "rising", "groggy"],
+    "chain": [
+      { "m": "pitch.glide", "p": { "from": -6, "to": 0, "curve": "early", "timbre": 50 } },
+      { "m": "time.drawl", "p": { "factor": 1.3, "ramp": "catching" } },
+      { "m": "space.room", "p": { "space": "bathroom", "mix": 25 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -26, "p": { "hum": 80, "beeps": 20, "size": "shuttle" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-docking-control",
+    "name": "Docking bay control",
+    "cat": "scifi",
+    "sub": "Starships and stations",
+    "about": "A clipped digital voice guiding ships into dock over the rumble of distant thrusters.",
+    "tags": ["control", "digital", "radio", "dock"],
+    "chain": [
+      { "m": "device.scanner", "p": { "mode": "digital", "warble": 20 } },
+      { "m": "echo.slapback", "p": { "character": "stadium" } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -28, "p": { "shape": "steady", "distance": "far" } },
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-astronaut-helmet",
+    "name": "Astronaut helmet",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "Your voice inside a sealed space suit helmet, close and boxy.",
+    "tags": ["astronaut", "helmet", "close", "boxy"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "space-suit" } },
+      { "m": "tone.character", "p": { "shape": "boxy", "amount": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-mission-control",
+    "name": "Mission control",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "Ground control talking to the crew in orbit, with a beep tone at the start and end.",
+    "tags": ["mission", "radio", "beeps", "control"],
+    "chain": [
+      { "m": "tone.compress", "p": { "threshold": -30, "ratio": 4 } },
+      { "m": "device.spaceradio", "p": { "band": "orbit" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-talking-from-the-moon",
+    "name": "Talking from the moon",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "An astronaut speaking from the dusty surface of the moon, beeps and hiss and all.",
+    "tags": ["moon", "astronaut", "radio", "hiss"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "space-suit", "mix": 60 } },
+      { "m": "device.spaceradio", "p": { "hiss": 50, "echo": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-spacewalk-on-a-tether",
+    "name": "Spacewalk on a tether",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "An astronaut slowly drifting round your head on a tether outside the station.",
+    "tags": ["astronaut", "circling", "radio", "3d"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "space-suit", "mix": 50 } },
+      { "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "start" } },
+      { "m": "stereo.orbit", "p": { "period": 12, "distance": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-last-message-from-orbit",
+    "name": "Last message from orbit",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "A fragile transmission from a failing capsule, breaking up into silence.",
+    "tags": ["orbit", "radio", "breaking", "sad"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "deep", "dropouts": 45, "hiss": 60 } },
+      { "m": "spec.dropout", "p": { "loss": 30, "conceal": "silence", "burst": 200 } },
+      { "m": "space.reverb", "p": { "decay": 4, "damping": 70, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-deep-space-probe",
+    "name": "Deep space probe report",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "A lonely robot probe beaming its report home from beyond the outer planets.",
+    "tags": ["probe", "robot", "radio", "far"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 130, "smooth": 80 } },
+      { "m": "lofi.saturate", "p": { "drive": 10 } },
+      { "m": "device.spaceradio", "p": { "band": "deep", "beeps": "end" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-red-planet-rover",
+    "name": "Red planet rover",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "A little six-wheeled robot reporting back from a dusty red desert.",
+    "tags": ["rover", "robot", "desert", "radio"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": 3, "formant": 2 } },
+      { "m": "synth.lpc", "p": { "chip": "arcade", "mix": 60 } },
+      { "m": "device.spaceradio", "p": { "band": "deep", "beeps": "start", "hiss": 20 } }
+    ],
+    "bed": { "b": "desert-wind", "level": -24, "p": { "strength": 35, "dunes": 40 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-launch-countdown",
+    "name": "Launch countdown",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "A launch director calling the final countdown as the rocket roars to life.",
+    "tags": ["launch", "rocket", "countdown", "loud"],
+    "chain": [
+      { "m": "tone.broadcast", "p": { "style": "sports" } },
+      { "m": "device.spaceradio", "p": { "beeps": "none", "hiss": 20 } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -14, "duck": 8 },
+    "seed": 1
+  },
+  {
+    "id": "scifi-moon-bounce-echo",
+    "name": "Moon bounce echo",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "Every word comes back a moment later, bounced off the moon and home again.",
+    "tags": ["moon", "echo", "radio", "delay"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "echo": 75, "beeps": "end" } },
+      { "m": "echo.delay", "p": { "time": 1300, "feedback": 20, "stereo": "mono", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-out-of-air",
+    "name": "Running out of air",
+    "cat": "scifi",
+    "sub": "Astronauts and mission control",
+    "about": "A breathless astronaut whispering inside a helmet, heart pounding as the air runs low.",
+    "tags": ["astronaut", "whisper", "heartbeat", "tense"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 60 } },
+      { "m": "space.room", "p": { "space": "space-suit" } },
+      { "m": "tone.character", "p": { "shape": "muffled", "amount": 40 } }
+    ],
+    "bed": { "b": "heartbeat", "level": -20, "p": { "rate": 110, "place": "inside", "pattern": "faster" } },
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-glitching-hologram",
+    "name": "Glitching hologram",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "A flickering projected message that skips, stutters and shimmers like a damaged hologram.",
+    "tags": ["hologram", "glitch", "flicker", "thin"],
+    "chain": [
+      { "m": "time.glitch", "p": { "density": 40, "pitch": 20, "roll": 50 } },
+      { "m": "mod.flanger", "p": { "delay": 2, "feedback": 60, "rate": 3, "mix": 40 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 350 } },
+      { "m": "lofi.crush", "p": { "bits": 9, "rate": 16000 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-teleporter-fade-out",
+    "name": "Teleporter fade-out",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "Your voice dissolving into sparkling particles as the teleporter takes you away.",
+    "tags": ["teleport", "sparkle", "fading", "grains"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 30, "density": 120, "spread": 200, "scatter": 300, "mix": 60 } },
+      { "m": "space.shimmer", "p": { "interval": "twooct", "amount": 80, "mix": 55 } },
+      { "m": "stereo.walkaway", "p": { "to": 20, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-beaming-in",
+    "name": "Beaming in",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "A rising shimmer and a backwards swell as you take shape right in front of them.",
+    "tags": ["teleport", "swell", "shimmer", "arriving"],
+    "chain": [
+      { "m": "echo.preverb", "p": { "space": "plate", "length": 1 } },
+      { "m": "space.shimmer", "p": { "amount": 70, "mix": 35 } },
+      { "m": "stereo.walkaway", "p": { "from": 15, "to": 1, "room": "none" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-hologram-guide",
+    "name": "Hologram museum guide",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "A thin, clean, slightly metallic guide voice floating in the air of a big museum hall.",
+    "tags": ["hologram", "thin", "clean", "hall"],
+    "chain": [
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 500, "slope": "gentle" } },
+      { "m": "synth.freqshift", "p": { "shift": 12 } },
+      { "m": "stereo.haas", "p": { "delay": 8 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-flickering-recording",
+    "name": "Flickering recorded message",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "A worn holographic recording that flickers in and out with bursts of tape noise.",
+    "tags": ["hologram", "flicker", "tape", "old"],
+    "chain": [
+      { "m": "mod.gate", "p": { "pattern": "random", "steps": "2", "depth": 70 } },
+      { "m": "device.vhs", "p": { "tracking": 60, "speed": "lp" } },
+      { "m": "synth.freqshift", "p": { "shift": 20, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-teleporter-scramble",
+    "name": "Teleporter scramble",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "A teleport gone wrong, your syllables arriving out of order in a spiral of metal.",
+    "tags": ["teleport", "scrambled", "spiral", "metal"],
+    "chain": [
+      { "m": "time.shuffle", "p": { "unit": "syllables", "amount": 60 } },
+      { "m": "synth.freqshift", "p": { "shift": 150, "feedback": 60, "time": 90 } },
+      { "m": "stereo.width", "p": { "width": 2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-out-of-phase",
+    "name": "Out of phase with reality",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "Half here and half somewhere else, your voice beating slowly against itself.",
+    "tags": ["phase", "beating", "strange", "wide"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": 3, "mix": 50 } },
+      { "m": "mod.flanger", "p": { "feedback": -70, "rate": 0.08 } },
+      { "m": "stereo.haas", "p": { "delay": 22, "lead": "right" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-three-hologram-copies",
+    "name": "Three hologram copies",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "Three slightly out-of-step hologram copies of you speaking side by side.",
+    "tags": ["hologram", "copies", "wide", "double"],
+    "chain": [
+      { "m": "stereo.double", "p": { "copies": 3, "timing": 40, "pitch": 20 } },
+      { "m": "synth.freqshift", "p": { "shift": 8, "mix": 40 } },
+      { "m": "tone.filter", "p": { "type": "highpass", "freq": 250, "slope": "gentle" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-transport-beam",
+    "name": "Inside a transport beam",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "Your words humming and shimmering inside a column of transport energy.",
+    "tags": ["teleport", "hum", "shimmer", "energy"],
+    "chain": [
+      { "m": "synth.am", "p": { "rate": 45, "shape": "triangle", "depth": 65 } },
+      { "m": "spec.blur", "p": { "amount": 50, "time": 400 } },
+      { "m": "space.shimmer", "p": { "interval": "octfifth", "amount": 70 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-interpreter-at-the-portal",
+    "name": "Interpreter at the portal",
+    "cat": "scifi",
+    "sub": "Holograms and teleporters",
+    "about": "Two voices at once, one an octave down and one shifted up, translating through a glowing gate.",
+    "tags": ["portal", "double", "shifted", "translator"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "octave-down", "voices": 1, "timing": 0, "mix": 45 } },
+      { "m": "synth.freqshift", "p": { "shift": 70, "mix": 50 } },
+      { "m": "stereo.haas", "p": { "delay": 12 } },
+      { "m": "space.room", "p": { "space": "small-hall", "mix": 20 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-warp-speed",
+    "name": "Warp speed",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "A voice rising and whooshing past as the ship jumps to warp speed.",
+    "tags": ["warp", "whoosh", "rising", "flyby"],
+    "chain": [
+      { "m": "mod.flanger", "p": { "rate": 0.6, "depth": 100, "feedback": 85, "mix": 60 } },
+      { "m": "pitch.glide", "p": { "from": -3, "to": 6, "curve": "late", "timbre": 50 } },
+      { "m": "stereo.flyby", "p": { "speed": "jet", "closest": 3 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-through-a-wormhole",
+    "name": "Through a wormhole",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Your words spiral round and round as they tumble through a tunnel in space.",
+    "tags": ["wormhole", "spiral", "swirl", "echo"],
+    "chain": [
+      { "m": "synth.freqshift", "p": { "shift": -60, "feedback": 70, "time": 200 } },
+      { "m": "mod.phaser", "p": { "stages": 12, "feedback": 70, "rate": 0.2 } },
+      { "m": "space.reverb", "p": { "decay": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-falling-into-a-black-hole",
+    "name": "Falling into a black hole",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Your voice stretching longer and lower as gravity drags it past the point of no return.",
+    "tags": ["black hole", "slow", "falling", "stretch"],
+    "chain": [
+      { "m": "time.drawl", "p": { "factor": 2, "pitch": "drop", "ramp": "slowing" } },
+      { "m": "spec.blur", "p": { "amount": 45, "time": 800 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 6, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-time-loop-echo",
+    "name": "Caught in a time loop",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Every phrase echoes back again and again, swirling, caught in a loop of time.",
+    "tags": ["loop", "echo", "swirl", "time"],
+    "chain": [
+      { "m": "echo.delay", "p": { "time": 900, "feedback": 75, "damping": 20, "stereo": "wide", "mix": 45 } },
+      { "m": "mod.phaser", "p": { "rate": 0.1, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-time-traveller-warning",
+    "name": "Time traveller's warning",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "An urgent message from the future, warping and slipping as it crosses the years.",
+    "tags": ["time", "warped", "radio", "urgent"],
+    "chain": [
+      { "m": "pitch.wobble", "p": { "depth": 120, "speed": 0.7 } },
+      { "m": "time.tapestop", "p": { "when": "random", "chance": 40, "motion": "both", "stopMs": 500 } },
+      { "m": "device.radio", "p": { "tuning": "off", "static": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-jump-to-hyperspace",
+    "name": "Jump to hyperspace",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Every sentence launches with a revving whoosh like the ship leaping into hyperspace.",
+    "tags": ["hyperspace", "whoosh", "launch", "rising"],
+    "chain": [
+      { "m": "time.tapestop", "p": { "motion": "start", "when": "phrases", "stopMs": 400 } },
+      { "m": "mod.flanger", "p": { "feedback": 90, "rate": 2, "mix": 55 } },
+      { "m": "synth.freqshift", "p": { "shift": 300, "mix": 30 } }
+    ],
+    "bed": { "b": "rocket-launch", "level": -26, "p": { "shape": "steady", "distance": "far" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-parallel-universe-self",
+    "name": "You from a parallel universe",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "You and another you from the next universe over, a little out of tune and out of step.",
+    "tags": ["parallel", "double", "detuned", "strange"],
+    "chain": [
+      { "m": "stereo.double", "p": { "copies": 1, "timing": 45, "pitch": 35, "level": 0 } },
+      { "m": "synth.freqshift", "p": { "shift": -8, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-time-running-backwards",
+    "name": "Time running backwards",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "A traveller caught where time flows the wrong way, every word playing backwards.",
+    "tags": ["backwards", "time", "reverse", "strange"],
+    "chain": [
+      { "m": "time.reversewords", "p": { "unit": "words" } },
+      { "m": "echo.preverb", "p": { "space": "cathedral", "mix": 40 } },
+      { "m": "synth.freqshift", "p": { "shift": -20, "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-time-frozen-still",
+    "name": "Time frozen still",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Moments of your voice hang frozen in the air while the rest of time stands still.",
+    "tags": ["freeze", "time", "hold", "drone"],
+    "chain": [
+      { "m": "spec.freeze", "p": { "hold": 2000, "interval": 1200, "blend": 80, "when": "steady" } },
+      { "m": "space.shimmer", "p": { "interval": "down", "amount": 40, "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-near-light-speed",
+    "name": "Near the speed of light",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "Your voice dragged slow and low near the speed of light, then snapping back to normal.",
+    "tags": ["time", "slow", "light", "whoosh"],
+    "chain": [
+      { "m": "time.drawl", "p": { "pitch": "drop", "ramp": "catching" } },
+      { "m": "mod.flanger", "p": { "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-visitor-from-another-dimension",
+    "name": "Visitor from another dimension",
+    "cat": "scifi",
+    "sub": "Time and space warps",
+    "about": "A voice smeared and swirling as it leaks through a crack between dimensions.",
+    "tags": ["dimension", "smear", "flanger", "strange"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 35, "time": 300, "spread": 40 } },
+      { "m": "mod.flanger", "p": { "rate": 0.3, "depth": 90, "feedback": -80, "delay": 6, "mix": 55 } },
+      { "m": "synth.freqshift", "p": { "shift": -15, "drift": 120, "mix": 50 } },
+      { "m": "space.reverb", "p": { "decay": 3, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-signal-from-deep-space",
+    "name": "Signal from deep space",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A faint voice reaching us after centuries, thinned and smeared by the noise between stars.",
+    "tags": ["signal", "faint", "radio", "far"],
+    "chain": [
+      { "m": "spec.thin", "p": { "threshold": -25, "smooth": 70 } },
+      { "m": "device.shortwave", "p": { "mode": "am", "fading": 80, "speed": 0.1, "warble": 40, "interference": "pulse" } },
+      { "m": "space.reverb", "p": { "decay": 5 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-first-contact-translator",
+    "name": "First-contact translator",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "An alien speaks and a machine translator speaks over it, both at once.",
+    "tags": ["alien", "translator", "robot", "layered"],
+    "chain": [
+      { "m": "spec.robot", "p": { "pitch": 150, "mix": 50 } },
+      { "m": "synth.freqshift", "p": { "shift": -120, "mix": 50 } },
+      { "m": "tone.character", "p": { "shape": "presence" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-pulsar-beacon",
+    "name": "Pulsar beacon",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "Your words pulsing on and off like the beat of a spinning star.",
+    "tags": ["pulse", "star", "beacon", "space"],
+    "chain": [
+      { "m": "synth.am", "p": { "rate": 11, "shape": "pulse", "depth": 90, "jitter": 0 } },
+      { "m": "space.reverb", "p": { "size": 90, "decay": 4, "mix": 35 } },
+      { "m": "stereo.width", "p": { "width": 1.8 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-alien-radio-broadcast",
+    "name": "Alien radio broadcast",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A broadcast from another world, turned inside out and drifting off the station.",
+    "tags": ["alien", "radio", "inverted", "static"],
+    "chain": [
+      { "m": "spec.invert", "p": { "hz": 1800 } },
+      { "m": "device.radio", "p": { "tuning": "off" } }
+    ],
+    "bed": { "b": "radio-static", "level": -26, "p": { "band": "shortwave" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-numbers-from-the-void",
+    "name": "Numbers from the void",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A flat, mysterious voice reading numbers on a lonely frequency from beyond the moon.",
+    "tags": ["numbers", "radio", "flat", "mystery"],
+    "chain": [
+      { "m": "pitch.flatten", "p": { "amount": 90 } },
+      { "m": "device.shortwave", "p": { "mode": "am", "interference": "teletype", "warble": 35 } },
+      { "m": "space.reverb", "p": { "decay": 2.5, "mix": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-cosmic-static-whisper",
+    "name": "Cosmic static whisper",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A breathy whisper carried on the hiss and crackle of the cosmos.",
+    "tags": ["whisper", "static", "space", "eerie"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "size": "large", "brightness": 70 } },
+      { "m": "space.reverb", "p": { "size": 80, "decay": 5, "mix": 40 } }
+    ],
+    "bed": { "b": "radio-static", "level": -22, "p": { "intensity": 70, "stations": 20 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-satellite-downlink",
+    "name": "Satellite downlink",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A crunchy digital voice beamed down from a satellite, chirping as the link locks.",
+    "tags": ["satellite", "digital", "chirp", "radio"],
+    "chain": [
+      { "m": "lofi.adpcm", "p": { "rate": 16000, "bits": 3 } },
+      { "m": "device.scanner", "p": { "mode": "digital", "tail": 20, "harsh": 30 } },
+      { "m": "echo.slapback", "p": { "time": 250, "level": 30, "character": "clean" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-encrypted-alien-code",
+    "name": "Encrypted alien code",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "Scrambled, inverted and chopped: a message coded so no human ear can crack it.",
+    "tags": ["code", "scrambled", "inverted", "chopped"],
+    "chain": [
+      { "m": "time.shuffle", "p": { "unit": "slices", "sliceMs": 150, "amount": 80, "reverse": 50 } },
+      { "m": "spec.invert", "p": { "mix": 60 } },
+      { "m": "mod.gate", "p": { "pattern": "random", "steps": "8", "depth": 80 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-radio-telescope",
+    "name": "Caught by a radio telescope",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A smeared, wavering voice pulled out of the sky by a giant dish, an eerie whine beneath it.",
+    "tags": ["signal", "smear", "eerie", "far"],
+    "chain": [
+      { "m": "spec.blur", "p": { "amount": 55, "time": 900 } },
+      { "m": "synth.freqshift", "p": { "shift": -35, "drift": 60 } },
+      { "m": "tone.filter", "p": { "type": "bandpass", "freq": 1100, "slope": "gentle", "resonance": 20 } }
+    ],
+    "bed": { "b": "eerie-whine", "level": -26, "p": { "style": "siren", "pitch": "low" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-unknown-language-machine",
+    "name": "Machine of an unknown language",
+    "cat": "scifi",
+    "sub": "Signals from deep space",
+    "about": "A machine rebuilding your syllables into a high buzzing language nobody on Earth has heard.",
+    "tags": ["machine", "language", "vocoder", "scrambled"],
+    "chain": [
+      { "m": "time.shuffle", "p": { "unit": "syllables", "amount": 45 } },
+      { "m": "synth.vocoder", "p": { "carrier": "pulse", "chord": "single", "register": "high", "bands": 16 } },
+      { "m": "spec.freeze", "p": { "hold": 300, "interval": 900, "blend": 30 } },
+      { "m": "space.room", "p": { "space": "plate", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-android-science-officer",
+    "name": "Android science officer",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A precise, unhurried artificial officer reporting from the science station on the bridge.",
+    "tags": ["android", "precise", "bridge", "calm"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "speed": 5 } },
+      { "m": "pitch.flatten", "p": { "amount": 50 } },
+      { "m": "synth.ringmod", "p": { "freq": 1000, "mix": 20 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -24, "p": { "beeps": 70, "hum": 40 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-clone-army",
+    "name": "Clone army",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "Rows of identical helmeted soldiers saying every word in perfect, chilling unison.",
+    "tags": ["clone", "army", "unison", "crowd"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 40 } },
+      { "m": "stereo.crowd", "p": { "people": 10, "pitchSpread": 0.5, "timbreSpread": 0.5, "timing": 30, "loose": 10, "room": "stadium", "you": 20 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-clone-twins",
+    "name": "Clone twins",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "Two perfect copies of you, one in each ear, a hair apart in pitch.",
+    "tags": ["clone", "twins", "stereo", "split"],
+    "chain": [
+      { "m": "stereo.split", "p": { "leftPitch": 0.5, "leftTimbre": 0, "rightPitch": -0.5, "rightTimbre": 0, "apart": 100 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-mind-linked-collective",
+    "name": "Mind-linked collective",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A group mind of many linked voices speaking as one from all around you.",
+    "tags": ["collective", "unison", "wide", "strange"],
+    "chain": [
+      { "m": "pitch.harmony", "p": { "chord": "unison", "voices": 4, "detune": 30, "timing": 10, "spread": 100, "mix": 70 } },
+      { "m": "synth.freqshift", "p": { "shift": -10, "mix": 40 } },
+      { "m": "space.reverb", "p": { "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-bounty-hunter-helmet",
+    "name": "Bounty hunter's helmet",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A gruff hunter speaking through the speaker grille of a battered armored helmet.",
+    "tags": ["helmet", "gruff", "speaker", "armor"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "space.room", "p": { "space": "helmet", "mix": 60 } },
+      { "m": "lofi.speaker", "p": { "size": "megaphone", "push": 3 } },
+      { "m": "lofi.drive", "p": { "character": "warm", "drive": 6 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-medical-android",
+    "name": "Ship's medical android",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A soothing synthetic doctor in the ship's medical bay, monitors bleeping nearby.",
+    "tags": ["android", "doctor", "calm", "hospital"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "scale": "major", "speed": 60 } },
+      { "m": "synth.ringmod", "p": { "freq": 700, "mix": 10 } },
+      { "m": "space.room", "p": { "space": "office", "mix": 20 } }
+    ],
+    "bed": { "b": "hospital", "level": -24, "p": { "heartRate": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-engineered-super-soldier",
+    "name": "Engineered super soldier",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A lab-grown warrior with an unnaturally deep, powerful voice.",
+    "tags": ["soldier", "deep", "powerful", "lab"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 60 } },
+      { "m": "pitch.subharmonic", "p": { "sub": 40, "rough": 20 } },
+      { "m": "lofi.drive", "p": { "character": "warm", "drive": 8 } },
+      { "m": "tone.compress", "p": { "threshold": -28, "ratio": 4 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-voice-from-the-cloning-tank",
+    "name": "Voice from the cloning tank",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A half-grown clone speaking from inside a bubbling glass tank of fluid.",
+    "tags": ["clone", "bubbles", "glass", "muffled"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "formant": 2 } },
+      { "m": "mod.underwater", "p": { "depth": 50, "bubbles": 80 } },
+      { "m": "space.room", "p": { "space": "glass-jar", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-machine-oracle",
+    "name": "Machine oracle in the temple",
+    "cat": "scifi",
+    "sub": "Androids and clones",
+    "about": "A thinking machine answering in a sung open chord that rings round a stone temple.",
+    "tags": ["oracle", "vocoder", "choir", "temple"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "choir", "chord": "sus", "mix": 55 } },
+      { "m": "pitch.harmony", "p": { "chord": "fifth-up", "voices": 1, "mix": 25 } },
+      { "m": "space.room", "p": { "space": "church", "mix": 40 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-starfighter-dogfight",
+    "name": "Starfighter pilot in a dogfight",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A pilot shouting over the radio while swinging hard from side to side.",
+    "tags": ["pilot", "radio", "battle", "moving"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "overdrive", "drive": 12 } },
+      { "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "end", "hiss": 50 } },
+      { "m": "mod.autopan", "p": { "rate": 1.2, "shape": "random" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-battle-cruiser-commander",
+    "name": "Battle cruiser commander",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A deep, steady commander's voice filling a giant flagship as the battle begins.",
+    "tags": ["commander", "deep", "starship", "alert"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1.5 } },
+      { "m": "tone.broadcast", "p": { "style": "late" } },
+      { "m": "space.room", "p": { "space": "concert-hall", "mix": 20 } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -20, "p": { "size": "flagship", "alert": "soft" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-shields-failing",
+    "name": "Shields failing",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A damaged ship's intercom breaking up and stuttering as the shields flicker and fail.",
+    "tags": ["battle", "broken", "intercom", "alarm"],
+    "chain": [
+      { "m": "device.intercom", "p": { "style": "office" } },
+      { "m": "spec.dropout", "p": { "loss": 35, "conceal": "repeat" } },
+      { "m": "mod.tremolo", "p": { "rate": 13, "depth": 60, "shape": "random" } }
+    ],
+    "bed": { "b": "spaceship-bridge", "level": -22, "p": { "alert": "siren" } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-ion-storm-interference",
+    "name": "Ion storm interference",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A crackling transmission mangled by the charged clouds of an ion storm.",
+    "tags": ["storm", "radio", "crackle", "interference"],
+    "chain": [
+      { "m": "device.shortwave", "p": { "detune": 120, "noise": 60, "interference": "pulse" } },
+      { "m": "synth.freqshift", "p": { "shift": 10, "drift": 80 } }
+    ],
+    "bed": { "b": "radio-static", "level": -24, "p": { "crackle": 90 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-asteroid-miner",
+    "name": "Asteroid miner on the radio",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A rough-voiced miner calling in from a rock tumbling through the asteroid belt.",
+    "tags": ["miner", "radio", "drilling", "rough"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": -1 } },
+      { "m": "device.walkie", "p": { "band": "field", "signal": 70 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 20 } }
+    ],
+    "bed": { "b": "construction", "level": -26, "p": { "jackhammer": 70, "saw": 0, "hammering": 20, "distance": 25 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-space-pirate-radio",
+    "name": "Space pirate radio",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A rowdy outlaw broadcasting on a stolen channel through a crackling overdriven mic.",
+    "tags": ["pirate", "radio", "crackle", "rowdy"],
+    "chain": [
+      { "m": "device.cb", "p": { "echo": 50, "roger": "tones" } },
+      { "m": "lofi.drive", "p": { "character": "battery", "drive": 10 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-boarding-party",
+    "name": "Boarding party in the corridor",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "Armored boarders storming toward you down a metal corridor, radios crackling.",
+    "tags": ["helmet", "radio", "approaching", "corridor"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "helmet", "mix": 40 } },
+      { "m": "device.walkie", "p": { "band": "digital", "squelch": 90 } },
+      { "m": "stereo.walkaway", "p": { "from": 15, "to": 2, "room": "tunnel", "facing": "toward" } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-alien-warlord",
+    "name": "Alien warlord",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A brutal alien commander roaring orders to an arena full of cheering troops.",
+    "tags": ["alien", "warlord", "growl", "crowd"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -5, "formant": -3 } },
+      { "m": "pitch.subharmonic", "p": { "rough": 60 } },
+      { "m": "synth.ringmod", "p": { "freq": 50, "mix": 30 } },
+      { "m": "space.room", "p": { "space": "arena", "mix": 35 } }
+    ],
+    "bed": { "b": "stadium-crowd", "level": -24, "p": { "excitement": 80, "chants": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-orders-from-a-distant-battle",
+    "name": "Orders from a distant battle",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A commander yelling over a crackling field radio while explosions boom far away.",
+    "tags": ["battle", "radio", "shouting", "booms"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "overdrive", "drive": 14 } },
+      { "m": "device.walkie", "p": { "band": "field", "signal": 65, "clip": 60 } },
+      { "m": "echo.canyon", "p": { "distance": 180, "count": 2, "place": "valley", "mix": 25 } }
+    ],
+    "bed": { "b": "storm", "level": -20, "duck": 4, "p": { "intensity": 10, "thunder": 10, "distance": 3500, "wind": 15 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-laser-gunner-on-the-comm",
+    "name": "Laser gunner on the comm",
+    "cat": "scifi",
+    "sub": "Space battles and crews",
+    "about": "A gunner shouting through a zapping, sweeping comm line as the cannons fire.",
+    "tags": ["laser", "zap", "intercom", "battle"],
+    "chain": [
+      { "m": "synth.ringmod", "p": { "freq": 900, "wobbleRate": 6, "wobbleDepth": 18, "mix": 35 } },
+      { "m": "device.intercom", "p": { "style": "office", "distortion": 50 } },
+      { "m": "mod.flanger", "p": { "rate": 1.5, "feedback": 70, "delay": 1, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-desert-planet-trader",
+    "name": "Desert planet trader",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A dusty trader haggling in a scorching wind on a desert world with two suns.",
+    "tags": ["desert", "wind", "alien", "trader"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -1, "formant": 2 } },
+      { "m": "synth.freqshift", "p": { "shift": -25, "mix": 60 } },
+      { "m": "space.room", "p": { "space": "field" } }
+    ],
+    "bed": { "b": "desert-wind", "level": -18, "p": { "strength": 65, "dunes": 50 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-ice-planet-outpost",
+    "name": "Ice planet outpost",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A shivering voice on a frozen world, words glinting like ice in a howling blizzard.",
+    "tags": ["ice", "blizzard", "shiver", "crystal"],
+    "chain": [
+      { "m": "pitch.jitter", "p": { "direction": "both", "tremble": 70, "rate": 0.5 } },
+      { "m": "spec.crystal", "p": { "peaks": 24, "sustain": 600, "mix": 40 } }
+    ],
+    "bed": { "b": "blizzard", "level": -18 },
+    "seed": 1
+  },
+  {
+    "id": "scifi-jungle-moon-explorer",
+    "name": "Jungle moon explorer",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "An explorer radioing the ship from a steaming alien jungle full of strange calls.",
+    "tags": ["jungle", "explorer", "radio", "night"],
+    "chain": [
+      { "m": "space.room", "p": { "space": "space-suit", "mix": 40 } },
+      { "m": "device.spaceradio", "p": { "band": "orbit", "beeps": "start" } }
+    ],
+    "bed": { "b": "rainforest-night", "level": -18, "p": { "intensity": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-ocean-world-diver",
+    "name": "Ocean world diver",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A diver in a helmet speaking from the floor of an endless alien ocean.",
+    "tags": ["ocean", "underwater", "diver", "helmet"],
+    "chain": [
+      { "m": "mod.underwater", "p": { "depth": 45 } },
+      { "m": "space.room", "p": { "space": "space-suit", "mix": 40 } },
+      { "m": "synth.freqshift", "p": { "shift": -15, "mix": 50 } }
+    ],
+    "bed": { "b": "underwater", "level": -20, "p": { "depth": 70 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-volcanic-world",
+    "name": "Volcanic world",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A voice shouting across rivers of lava on a planet that never stops burning.",
+    "tags": ["volcano", "fire", "echo", "hot"],
+    "chain": [
+      { "m": "lofi.drive", "p": { "character": "warm", "drive": 14 } },
+      { "m": "echo.canyon", "p": { "distance": 250, "place": "gorge" } }
+    ],
+    "bed": { "b": "blaze", "level": -20, "p": { "size": 90 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-storm-on-an-alien-moon",
+    "name": "Storm on an alien moon",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A weak radio call from a far moon where thunder never stops rolling.",
+    "tags": ["storm", "radio", "thunder", "far"],
+    "chain": [
+      { "m": "device.walkie", "p": { "band": "field", "signal": 55 } },
+      { "m": "space.distance", "p": { "distance": 20 } }
+    ],
+    "bed": { "b": "storm", "level": -16, "duck": 6, "p": { "thunder": 8, "wind": 80 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-crystal-caves",
+    "name": "Crystal caves of a far moon",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "Words chiming off giant crystals deep in a dripping cave on a distant moon.",
+    "tags": ["crystal", "cave", "drips", "ringing"],
+    "chain": [
+      { "m": "spec.crystal", "p": { "peaks": 8, "sustain": 2000, "sparkle": 70, "mix": 50 } },
+      { "m": "space.room", "p": { "space": "cave", "mix": 45 } }
+    ],
+    "bed": { "b": "cave-drips", "level": -20, "p": { "drips": 7 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-abandoned-moon-base",
+    "name": "Abandoned moon base",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A lone survivor's radio voice echoing through an empty base on a dead grey moon.",
+    "tags": ["moon", "empty", "echo", "lonely"],
+    "chain": [
+      { "m": "device.spaceradio", "p": { "band": "deep", "beeps": "none", "dropouts": 20 } },
+      { "m": "space.room", "p": { "space": "parking-garage", "mix": 45 } }
+    ],
+    "bed": { "b": "wind", "level": -26, "p": { "strength": 20, "whistle": 60 } },
+    "seed": 1
+  },
+  {
+    "id": "scifi-singer-in-a-glowing-ocean",
+    "name": "Singer in a glowing ocean",
+    "cat": "scifi",
+    "sub": "Planets and worlds",
+    "about": "A shining sea creature singing your words in key, every note leaving a twinkling trail.",
+    "tags": ["ocean", "singing", "sparkle", "glow"],
+    "chain": [
+      { "m": "pitch.correct", "p": { "key": "D", "scale": "pentatonic", "speed": 30 } },
+      { "m": "spec.crystal", "p": { "peaks": 10, "sustain": 1500, "sparkle": 70, "mix": 40 } },
+      { "m": "space.shimmer", "p": { "interval": "twooct", "amount": 50, "decay": 3, "mix": 35 } }
+    ],
+    "bed": { "b": "underwater", "level": -26, "p": { "depth": 60, "reef": 60, "diver": 0 } },
+    "seed": 1
+  },
+
+  {
+    "id": "scifi-voice-of-a-burning-star",
+    "name": "Voice of a burning star",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A living star speaking in roaring flame from one end of the sky to the other.",
+    "tags": ["star", "fire", "huge", "cosmic"],
+    "chain": [
+      { "m": "spec.morph", "p": { "carrier": "fire", "clarity": 70 } },
+      { "m": "pitch.octaver", "p": { "down1": 60, "up1": 30 } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 8, "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-ancient-cosmic-entity",
+    "name": "Ancient cosmic entity",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "Something older than the galaxy, speaking in layered octaves across endless space.",
+    "tags": ["cosmic", "octaves", "huge", "ancient"],
+    "chain": [
+      { "m": "pitch.octaver", "p": { "down1": 80, "down2": 50, "up1": 30 } },
+      { "m": "space.shimmer", "p": { "interval": "downup", "decay": 12, "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-nebula-spirit",
+    "name": "Nebula spirit",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A drifting cloud of glowing gas that breathes your words in sparkling whispers.",
+    "tags": ["nebula", "whisper", "sparkle", "cosmic"],
+    "chain": [
+      { "m": "spec.whisper", "p": { "amount": 80, "size": "large" } },
+      { "m": "synth.granular", "p": { "grain": 120, "density": 30, "spread": 400, "scatter": 500, "mix": 50 } },
+      { "m": "space.shimmer", "p": { "interval": "octfifth", "mix": 45 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-dark-matter-whisper",
+    "name": "Dark matter whisper",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "An unseen presence whispering from the dark between galaxies, words trailing backwards.",
+    "tags": ["dark", "whisper", "backwards", "eerie"],
+    "chain": [
+      { "m": "spec.thin", "p": { "keep": "quiet", "threshold": -30 } },
+      { "m": "echo.reverse", "p": { "length": 800, "mix": 55 } },
+      { "m": "pitch.voice", "p": { "semitones": -4, "formant": -2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-mind-the-size-of-a-galaxy",
+    "name": "Mind the size of a galaxy",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A boundless intelligence humming your words on a vast choir chord that fills the universe.",
+    "tags": ["cosmic", "choir", "vocoder", "huge"],
+    "chain": [
+      { "m": "synth.vocoder", "p": { "carrier": "choir", "chord": "stack", "register": "low" } },
+      { "m": "space.reverb", "p": { "size": 100, "decay": 12, "mix": 50 } },
+      { "m": "stereo.width", "p": { "width": 2.2 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-echo-from-the-edge",
+    "name": "Echo from the edge of space",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "Your voice calling out to the edge of the universe and echoing back changed.",
+    "tags": ["echo", "far", "cosmic", "shifted"],
+    "chain": [
+      { "m": "echo.canyon", "p": { "distance": 600, "count": 8, "place": "valley" } },
+      { "m": "synth.freqshift", "p": { "shift": -35, "mix": 50 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-being-of-pure-energy",
+    "name": "Being of pure energy",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A crackling, humming creature of pure light, buzzing with energy as it speaks.",
+    "tags": ["energy", "hum", "buzz", "cosmic"],
+    "chain": [
+      { "m": "synth.am", "p": { "rate": 24, "shape": "triangle", "depth": 75 } },
+      { "m": "spec.shift", "p": { "hz": -150 } },
+      { "m": "space.shimmer", "p": { "interval": "fifth", "mix": 35 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-glowing-radioactive-being",
+    "name": "Glowing radioactive being",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A creature fizzing with radiation, its voice crackling and spitting like a hot wire.",
+    "tags": ["radiation", "fizz", "crackle", "cosmic"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -2, "formant": -1 } },
+      { "m": "lofi.drive", "p": { "character": "rectifier", "drive": 16, "mix": 55 } },
+      { "m": "synth.am", "p": { "rate": 420, "shape": "random", "depth": 45, "jitter": 90 } },
+      { "m": "space.reverb", "p": { "decay": 2.2, "mix": 25 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-guardian-of-the-portal",
+    "name": "Guardian of the portal",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A deep, ancient gatekeeper whose words shimmer downward through a vast stone hall.",
+    "tags": ["guardian", "deep", "shimmer", "hall"],
+    "chain": [
+      { "m": "pitch.voice", "p": { "semitones": -7, "formant": -4 } },
+      { "m": "spec.comb", "p": { "base": 55, "ring": 55, "mix": 45 } },
+      { "m": "space.shimmer", "p": { "interval": "down", "decay": 4 } },
+      { "m": "space.room", "p": { "space": "large-hall", "mix": 30 } }
+    ],
+    "seed": 1
+  },
+  {
+    "id": "scifi-swarm-mind-of-fragments",
+    "name": "Swarm mind of fragments",
+    "cat": "scifi",
+    "sub": "Cosmic beings",
+    "about": "A thinking cloud of a million tiny pieces, each one carrying a scrap of your words.",
+    "tags": ["swarm", "grains", "wide", "cosmic"],
+    "chain": [
+      { "m": "synth.granular", "p": { "grain": 25, "density": 300, "pitch": 5, "spread": 700, "scatter": 900, "reverse": 30, "width": 100 } },
+      { "m": "synth.freqshift", "p": { "shift": -30, "mix": 40 } },
+      { "m": "stereo.width", "p": { "width": 2 } }
+    ],
+    "seed": 1
+  }
+]
