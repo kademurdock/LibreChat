@@ -390,7 +390,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       if(!r.ok){ say('Could not suggest right now.', true); return; }
       var hasDraft=!!drafts[r.data.engine] || r.data.engine===state.engine;
       if(!setEngine(r.data.engine))return;
-      if(!hasDraft){if((state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'))document.getElementById('script').value=t;else{document.getElementById('text').value=t;setInput('brief');}}
+      if(!hasDraft){if((state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace'))document.getElementById('script').value=t;else{document.getElementById('text').value=t;state.scriptTyped=false;setInput('brief');}}
       say(r.data.reason + (r.data.sure ? '' : ' Change it if that is not what you meant.'));
     };
 
@@ -415,7 +415,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.values=Object.assign({},draft.options||{});
       var urls=state.values.audio_urls || (state.values.reference_voice_url?[state.values.reference_voice_url]:[]);
       state.clips=urls.map(function(url,i){return sourceClips.find(function(c){return c.url===url;})||{url:url,name:'Copied reference '+(i+1)};});
-      document.getElementById('trackTitle').value=draft.title||'';document.getElementById('text').value=draft.sourceText||'';
+      document.getElementById('trackTitle').value=draft.title||'';document.getElementById('text').value=draft.sourceText||'';state.scriptTyped=false;
       document.getElementById('script').value=draft.script||'';document.getElementById('readback').textContent='';document.getElementById('mood').value='';
       state.input=draft.sourceText?'brief':'words';setMode('easy');setInput(state.input);invalidateQuote();showCode('');
       if(state.values.lyrics||state.clips.length) reveal('settingsDrawer'); else document.getElementById('settingsDrawer').open=false;
@@ -449,7 +449,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         if(state.engine)saveDraft();
         var d=drafts[e]||{};state.engine=e;
         state.mode=d.mode||'easy';state.input=d.input||'words';state.values=Object.assign({},d.values||{});state.clips=(d.clips||[]).slice();state.importError=d.importError||'';state.projectId=d.projectId||null;state.voiceSeed=d.voiceSeed;state.rerollVoice=!!d.rerollVoice;state.lastXml=d.lastXml||'';
-        document.getElementById('trackTitle').value=d.title||'';document.getElementById('text').value=d.text||'';document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
+        document.getElementById('trackTitle').value=d.title||'';document.getElementById('text').value=d.text||'';state.scriptTyped=false;document.getElementById('script').value=d.script||'';document.getElementById('mood').value=d.mood||'';document.getElementById('readback').textContent=d.readback||'';
       }
       state.engine = e;
       showDraftTransfer();
@@ -1036,7 +1036,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     function changeWriting(value){
       var box=document.getElementById('script');
       writingUndo={engine:state.engine,text:box.value,lyrics:writingLyrics};writingLyrics=undefined;
-      box.value=value;invalidateQuote();state.lastXml=null;showCode(null);
+      box.value=value;state.scriptTyped=false;invalidateQuote();state.lastXml=null;showCode(null);
       document.getElementById('btnUndoWriting').hidden=false;box.focus();
     }
     /* Sep 25 2026: a Lyria draft is split the same way as a YuE2 one, so its
@@ -1076,7 +1076,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
     }
     document.getElementById('btnUndoWriting').onclick=function(){
       if(busy() || !writingUndo || writingUndo.engine!==state.engine)return;
-      document.getElementById('script').value=writingUndo.text;if(writingUndo.idea!==undefined){document.getElementById('text').value=writingUndo.idea;setInput(writingUndo.input||'words');}if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}if(writingUndo.voice!==undefined){state.values.voice_description=writingUndo.voice;state.deskVoice=writingUndo.deskVoice;renderSettings();}if(writingUndo.title!==undefined&&document.getElementById('trackTitle').value===writingUndo.generatedTitle)document.getElementById('trackTitle').value=writingUndo.title;writingUndo=null;
+      document.getElementById('script').value=writingUndo.text;state.scriptTyped=false;if(writingUndo.idea!==undefined){document.getElementById('text').value=writingUndo.idea;setInput(writingUndo.input||'words');}if(writingUndo.lyrics!==undefined){state.values.lyrics=writingUndo.lyrics;renderSettings();}if(writingUndo.voice!==undefined){state.values.voice_description=writingUndo.voice;state.deskVoice=writingUndo.deskVoice;renderSettings();}if(writingUndo.title!==undefined&&document.getElementById('trackTitle').value===writingUndo.generatedTitle)document.getElementById('trackTitle').value=writingUndo.title;writingUndo=null;
       this.hidden=true;invalidateQuote();document.getElementById('script').focus();say('Previous writing restored.');
     };
     document.getElementById('btnInspire').onclick=function(){
@@ -1089,7 +1089,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
         : state.engine==='seed' ? 'A short scene at '+place+'. Two people discover '+turn+'. Include natural dialogue and the sounds around them.'
         : 'Write a short, vivid first-person story about '+place+' and '+turn+'. Give it a strong opening and a satisfying ending.';
       var song=(state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace');
-      if(!song){writingUndo={engine:state.engine,text:document.getElementById('script').value,idea:document.getElementById('text').value,input:state.input};document.getElementById('text').value=idea;setInput('brief');reveal('writingDrawer');document.getElementById('btnUndoWriting').hidden=false;invalidateQuote();document.getElementById('text').focus();say('New idea in the writing desk. Your performance script is kept. Choose Write a script from this to draft it; Undo restores the previous idea.');return;}
+      if(!song){writingUndo={engine:state.engine,text:document.getElementById('script').value,idea:document.getElementById('text').value,input:state.input};document.getElementById('text').value=idea;state.scriptTyped=false;setInput('brief');reveal('writingDrawer');document.getElementById('btnUndoWriting').hidden=false;invalidateQuote();document.getElementById('text').focus();say('New idea in the writing desk. Your performance script is kept. Choose Write a script from this to draft it; Undo restores the previous idea.');return;}
       /* Part 228: for songs the writer invents the idea from sparks drawn on the
        * server. The list above is only what she gets if the writer cannot be reached. */
       var btn=this, label=btn.textContent, engine=state.engine, box=document.getElementById('script'), original=box.value;
@@ -1144,6 +1144,16 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       }
       return {ok:false,data:{error:'The writer is taking far too long. Your idea is kept; try again.'}};
     }
+    /* Nov 18 2026. Kade typed a new idea in the Script box and pressed Help write this, twice, and both times got
+     * a story about an old theatre: an earlier Surprise me had left its sample idea in the writing desk box, and
+     * that box always won. Now the box she typed in last wins. The desk box is still used when she has not typed
+     * in the Script box since the idea was put there (another take on the same idea), and she is told which idea
+     * is being written when both boxes hold something. Songs always send the editor, as before. */
+    function deskIdea(o){
+      var desk=o.input==='brief'&&!o.song&&!!o.idea;
+      if(desk&&!(o.scriptTyped&&o.script.length>=3))return {text:o.idea,from:'desk',other:!!o.script&&o.script!==o.idea};
+      return {text:o.script||o.idea,from:o.script?'script':'desk',other:false};
+    }
     document.getElementById('btnDraft').onclick=async function(){
       if(busy())return;
       /* Part 219: one press. Coming back to the page picks the waiting draft up by
@@ -1151,7 +1161,8 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var resume=this.getAttribute('data-resume')==='1';this.removeAttribute('data-resume');
       var box=document.getElementById('script'), original=box.value, originalTitle=document.getElementById('trackTitle').value, titleRevision=state.titleRevision, keptTitle=pendingDraft(), titleEdited=!!(keptTitle&&!keptTitle.legacy&&keptTitle.titleEdited);
       var idea=document.getElementById('text').value.trim();
-      var text=state.input==='brief'&&state.engine!=='lyria'&&state.engine!=='yue2'&&state.engine!=='ace'&&idea?idea:original.trim()||idea;
+      var picked=deskIdea({input:state.input,song:state.engine==='lyria'||state.engine==='yue2'||state.engine==='ace',idea:idea,script:original.trim(),scriptTyped:!!state.scriptTyped});
+      var text=picked.text;
       if(!resume&&text.length<3){say('Write an idea first, or choose Surprise me.',true);box.focus();return;}
       /* What the writer is given, apart from the words and title: compared when the draft lands, so only a real change is mentioned. */
       var deskSettings=function(){var d=forDesk(collect());delete d.title;delete d.text;delete d.lyrics;return JSON.stringify(d);};
@@ -1163,7 +1174,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       state.writing=true;box.readOnly=true;this.disabled=true;
       showWritingThink();
       document.getElementById('btnInspire').disabled=true;updateRenderControls();
-      say(resume ? 'Your song is still being written. The draft will appear here by itself when it is ready.' : deep ? 'Writing your song. The draft will appear here when it is ready. You can leave and come back; a notice arrives when it is ready, and this page picks it up on its own.' : 'Writing a draft from your idea.');
+      say(resume ? 'Your song is still being written. The draft will appear here by itself when it is ready.' : deep ? 'Writing your song. The draft will appear here when it is ready. You can leave and come back; a notice arrives when it is ready, and this page picks it up on its own.' : picked.from==='desk'&&picked.other ? 'Writing a draft from the idea in the writing desk box, which begins: '+text.slice(0,70)+'. The script box is not being used.' : 'Writing a draft from your idea.');
       try {
         var r=null, waiting=deep?draftJob().split('|')[0]:'';
         if(waiting){r=await waitDraft(waiting);if(!r.ok&&r.data&&/gone/i.test(r.data.error||'')&&!resume)r=null;}
@@ -1198,7 +1209,9 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       var button=document.getElementById('btnDraft');button.setAttribute('data-resume','1');button.click();
     },800);
 
-    document.getElementById('script').addEventListener('input', function(){ state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
+    /* Nov 18 2026: which box she typed in last (see deskIdea). Only real typing, pasting or dictation counts. */
+    document.getElementById('text').addEventListener('input', function(){ state.scriptTyped=false; });
+    document.getElementById('script').addEventListener('input', function(){ state.scriptTyped=true; state.pendingRender=null; document.getElementById('btnRender').textContent=renderLabel(); });
     /* Sep 25 2026: a song pasted whole from ChatGPT (Lyrics Box, Tag Box,
      * Negative Tag Box) is sorted the moment it lands: the Tag Box becomes the
      * Music direction, the Lyrics Box goes to the lyrics box, and the negative
@@ -1470,7 +1483,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
           if(!setEngine(p.engine)) return;
           state.projectId = p.id; setMode(p.mode === 'advanced' ? 'advanced' : 'easy');
           document.getElementById('trackTitle').value = p.title || '';
-          document.getElementById('text').value = p.sourceText || '';
+          document.getElementById('text').value = p.sourceText || ''; state.scriptTyped=false;
           document.getElementById('script').value = deskScript(p);
           state.lastXml = p.script || ''; showCode(state.lastXml);
           document.getElementById('readback').textContent = p.readback || '';
@@ -1515,7 +1528,7 @@ const soundBoothHtml = `<!doctype html><html lang="en"><head><title>Sound Booth 
       document.getElementById('trackTitle').value=starter?starter.title:'';
       document.getElementById('mood').value='';
       setInput('words');
-      document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';
+      state.scriptTyped=false;document.getElementById('text').value='';document.getElementById('script').value=starter?starter.script:'';
       document.getElementById('readback').textContent='';state.lastXml='';showCode('');invalidateQuote();renderSettings();applyWorkflow();
       say(starter?'Starting '+starter.title+'. The starting point is ready to edit. Nothing has been generated.':'New blank draft.');
       focusWork();

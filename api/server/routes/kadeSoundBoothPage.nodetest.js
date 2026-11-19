@@ -381,3 +381,26 @@ test('the page script opens sections and drawers only through the reveal helper'
   assert.doesNotMatch(main, /closest\('details/);
   assert.doesNotMatch(main, /getElementById\('(secVoice|secEdit|secBooth|recentDrawer)'\)\.open/);
 });
+
+/* Nov 18 2026: a sample idea left in the writing desk box by Surprise me was sent in place of the idea she
+ * then typed in the Script box, twice. The box she typed in last is the one the desk gets. */
+test('Help write this sends the box she typed in last, not a leftover writing desk idea', () => {
+  const ctx = {};
+  vm.runInNewContext(pageFunction('deskIdea') + '\nthis.deskIdea=deskIdea;', ctx);
+  const sample = 'A short scene at an old theatre before opening night.';
+  const hers = 'A read-along cassette for kids that is really about weed.';
+  assert.equal(ctx.deskIdea({ input: 'brief', song: false, idea: sample, script: hers, scriptTyped: true }).text, hers);
+  const again = ctx.deskIdea({ input: 'brief', song: false, idea: sample, script: 'the draft the desk wrote', scriptTyped: false });
+  assert.equal(again.text, sample);
+  assert.equal(again.other, true);
+  assert.equal(ctx.deskIdea({ input: 'brief', song: false, idea: sample, script: '', scriptTyped: false }).other, false);
+  assert.equal(ctx.deskIdea({ input: 'brief', song: false, idea: sample, script: 'ab', scriptTyped: true }).text, sample);
+  assert.equal(ctx.deskIdea({ input: 'words', song: false, idea: sample, script: hers, scriptTyped: false }).text, hers);
+  assert.equal(ctx.deskIdea({ input: 'brief', song: true, idea: sample, script: hers, scriptTyped: false }).text, hers);
+  assert.equal(ctx.deskIdea({ input: 'words', song: false, idea: sample, script: '', scriptTyped: false }).text, sample);
+  const main = scripts.find((s) => s.includes('function deskIdea('));
+  assert.match(main, /getElementById\('script'\)\.addEventListener\('input', function\(\)\{ state\.scriptTyped=true;/);
+  assert.match(main, /getElementById\('text'\)\.addEventListener\('input', function\(\)\{ state\.scriptTyped=false;/);
+  assert.match(main, /getElementById\('text'\)\.value=idea;state\.scriptTyped=false;/);
+  assert.match(main, /The script box is not being used\./);
+});
