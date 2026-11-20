@@ -6,6 +6,7 @@ import type { Request, Router } from 'express';
 import type { Hooks, Input, InputBody, Output, Provider } from '../audio/jobs';
 import { createAudioRouter } from '../audio/jobs';
 import { yueFallbackUsdPerSecond, yueGpuRates } from './yue';
+import { talkingLabel } from './talkingVoice';
 
 /* ----------------------------------------------------------------------------
  * SING IT IN MY VOICE (Sep 27 2026)
@@ -483,7 +484,11 @@ export type MyVoiceWorkerInput = {
   mode: 'song' | 'vocal';
   audio_url?: string;
   audio_key?: string;
-  model_key: string;
+  /** RVC (the default engine): the voice model. Absent for engine "seedvc", which sings from reference_key instead. */
+  model_key?: string;
+  /** Nov 20 2026: "seedvc" sings a talking voice from its reference recording (music/talkingVoice.ts). */
+  engine?: 'seedvc';
+  reference_key?: string;
   model_sha256?: string;
   index_key?: string;
   index_sha256?: string;
@@ -511,8 +516,14 @@ export type MyVoiceJob = {
   voice_asked?: string;
   voice_id?: string;
   voice_name?: string;
-  model?: Pick<MyVoiceModel, 'model_key' | 'model_sha256' | 'index_key' | 'index_sha256' | 'range'>;
+  /** Nov 20 2026: a talking (platform) voice, "Voice N", sung through engine seedvc; it wins over voice_asked. */
+  talking?: string;
+  model?: MyVoiceJobModel;
 };
+/** The voice a job sings with: an RVC model, or (engine seedvc) a talking voice's reference recording. */
+export type MyVoiceJobModel =
+  | Pick<MyVoiceModel, 'model_key' | 'model_sha256' | 'index_key' | 'index_sha256' | 'range'>
+  | { engine: 'seedvc'; reference_key: string; label: string };
 
 /** The body of a "Sing it in my voice" render -> the job input. The voice model is added later, by the owner check. */
 export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.env): Input {
@@ -534,9 +545,13 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
     for (const [key, value] of Object.entries(preset.fills))
       if (filled[key] == null || filled[key] === '' || filled[key] === plain[key]) filled[key] = value;
   }
+  /* A platform voice number (a talking voice) wins over the Voice choice (RVC voices). */
+  const talking =
+    talkingLabel((body as Record<string, unknown>).talking_voice);
   const voice: MyVoiceJob = {
     source,
     pitch: pitchChoice(body.pitch, body.pitch_mode),
+    ...(talking ? { talking } : {}),
     ...(preset ? { preset: preset.key } : {}),
     ...(typeof body.voice === 'string' && body.voice.trim()
       ? { voice_asked: body.voice.trim().slice(0, 80) }
@@ -604,10 +619,32 @@ export function myVoicePrepare(
   find: (user: string) => Promise<MyVoiceModel | null>,
   seconds?: (user: string, url: string) => Promise<number | undefined>,
   voices?: (user: string) => Promise<MyVoiceChoice[]>,
+  talking?: (label: string) => Promise<string>,
 ): (user: string, input: Input) => Promise<Input> {
   return async (user, input) => {
     const own = await find(user);
     if (!own || !input.voice) throw new Error('That engine is not available.');
+    const length =
+      seconds && input.reference_voice_url
+        ? await seconds(user, input.reference_voice_url)
+        : undefined;
+    const withLength = typeof length === 'number' && length > 0 ? { seconds: length } : {};
+    /* Nov 20 2026: a talking voice sings from its reference recording (rendered once by the voice proxy), not a model. */
+    const label = input.voice.talking;
+    if (label) {
+      if (!talking) throw new Error('Talking voices cannot sing yet on this server.');
+      const reference_key = await talking(label);
+      return {
+        ...input,
+        voice: {
+          ...input.voice,
+          ...withLength,
+          voice_id: label,
+          voice_name: `${label} (talking voice)`,
+          model: { engine: 'seedvc', reference_key, label },
+        },
+      };
+    }
     /* The voice she chose, among her own and the ones she made in the voice lab; every one of them sits in her own
      * folder (checkMyVoiceModel), so a name can never reach somebody else's voice. No choice is her own voice. */
     let model = own;
@@ -620,16 +657,12 @@ export function myVoicePrepare(
       if (chosen.model.user !== user) throw new Error('That voice is not in your voice list.');
       model = chosen.model;
     }
-    const length =
-      seconds && input.reference_voice_url
-        ? await seconds(user, input.reference_voice_url)
-        : undefined;
     const { model_key, model_sha256, index_key, index_sha256, range } = model;
     return {
       ...input,
       voice: {
         ...input.voice,
-        ...(typeof length === 'number' && length > 0 ? { seconds: length } : {}),
+        ...withLength,
         ...(chosen ? { voice_id: chosen.id, voice_name: chosen.name } : {}),
         model: { model_key, model_sha256, index_key, index_sha256, range },
       },
@@ -667,15 +700,16 @@ function workerOptions(options: Omit<MyVoiceOptions, 'vocal_fx'>): MyVoiceWorker
 }
 function withModel(
   base: Omit<MyVoiceWorkerInput, 'model_key' | 'options'>,
-  model: NonNullable<MyVoiceJob['model']>,
+  model: MyVoiceJobModel,
   options: MyVoiceOptions,
 ): MyVoiceWorkerInput {
   const { vocal_fx, ...chain } = options;
-  const out: MyVoiceWorkerInput = {
-    ...base,
-    model_key: model.model_key,
-    options: workerOptions(chain),
-  };
+  const out: MyVoiceWorkerInput = { ...base, options: workerOptions(chain) };
+  if ('engine' in model) {
+    /* engine seedvc: the reference recording instead of a model; the worker guesses the singing range from it */
+    out.engine = 'seedvc';
+    out.reference_key = model.reference_key;
+  } else out.model_key = model.model_key;
   if (vocal_fx && vocal_fx !== 'none') out.vocal_fx = vocal_fx;
   /* The music moves with the voice only when the key really changes: a fitted key, or semitones that are not whole octaves. */
   if (
@@ -684,6 +718,7 @@ function withModel(
     (base.pitch === 'fit' || (typeof base.pitch === 'number' && base.pitch % 12 !== 0))
   )
     out.transpose_song = true;
+  if ('engine' in model) return out;
   if (model.model_sha256) out.model_sha256 = model.model_sha256;
   if (model.index_key) out.index_key = model.index_key;
   if (model.index_sha256) out.index_sha256 = model.index_sha256;
@@ -727,6 +762,8 @@ export type MyVoiceProjectOptions = {
   /** Nov 19 2026: the worker rides, EQs and masters the swap toward the original song (worker feature auto-mix, on by
    * default there); only an explicit off is sent. */
   auto_mix?: boolean;
+  /** Nov 20 2026: a platform voice number sung as a talking voice (engine seedvc). */
+  talking_voice?: number;
 };
 function labelOf(list: ReadonlyArray<{ key: string; label: string }>, key: string | undefined): string {
   return (list.find((e) => e.key === key) || list[0]).label;
@@ -758,7 +795,8 @@ export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
   if (typeof voice?.pitch === 'number') out.pitch = voice.pitch;
   const preset = myVoicePresets.find((e) => e.key === voice?.preset);
   if (preset) out.preset = preset.label;
-  if (voice?.voice_name) out.voice = voice.voice_name;
+  if (voice?.talking) out.talking_voice = Number(voice.talking.replace(/\D/g, ''));
+  else if (voice?.voice_name) out.voice = voice.voice_name;
   return out;
 }
 /** A library row's reason line. */
@@ -1016,7 +1054,10 @@ export function myVoiceGuideEngine(
   voices: MyVoiceChoice[] = [],
 ): MyVoiceGuideEngine {
   const d = myVoiceDefaults(env);
-  const voiceNames = ['My voice', ...voices.map((v) => v.name).filter((n) => words(n) !== 'my voice')];
+  const voiceNames = [
+    'My voice',
+    ...voices.map((v) => v.name).filter((n) => words(n) !== 'my voice'),
+  ];
   const extractor = myVoiceExtractors.find((e) => e.key === d.extractor) || myVoiceExtractors[0];
   const effect = myVoiceEffects.find((e) => e.key === d.vocal_fx) || myVoiceEffects[0];
   return {
@@ -1080,6 +1121,15 @@ export function myVoiceGuideEngine(
             },
           ]
         : []),
+      {
+        key: 'talking_voice',
+        label: 'Talking voice to sing it (voice number)',
+        hint: 'Leave empty to sing in your own voice. Or type a platform voice number, like 801 for Voice 801: a voice heard only speaking sings it instead, through a different engine (Seed-VC) that needs no training. Your own clones work too, by their numbers.',
+        kind: 'number',
+        min: 1,
+        max: 5000,
+        step: 1,
+      },
       {
         key: 'preset',
         label: 'Sound preset',
@@ -1349,6 +1399,8 @@ export type MyVoiceRouterHooks = Hooks & {
   seconds?: (user: string, url: string) => Promise<number | undefined>;
   /** The voices the account made in the voice lab (music/voiceLab.ts), ready ones only. */
   voices?: (user: string) => Promise<MyVoiceChoice[]>;
+  /** Nov 20 2026: a talking voice's reference recording key, rendered when missing (music/talkingVoice.ts). */
+  talking?: (label: string) => Promise<string>;
 };
 
 /** The "Sing it in my voice" engine: the booth's job lane (audio/jobs.ts) behind an owner gate. For an account with no voice
@@ -1366,7 +1418,7 @@ export function createMyVoiceRouter(hooks: MyVoiceRouterHooks): Router {
   });
   router.use(
     createAudioRouter(
-      { ...hooks, prepare: myVoicePrepare(hooks.find, hooks.seconds, hooks.voices) },
+      { ...hooks, prepare: myVoicePrepare(hooks.find, hooks.seconds, hooks.voices, hooks.talking) },
       {
         engine: myVoiceEngine,
         prefix: 'voice_',

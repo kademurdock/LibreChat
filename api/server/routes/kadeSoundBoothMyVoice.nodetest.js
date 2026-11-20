@@ -557,6 +557,7 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
     [
       'reference_voice_url',
       'voice_source',
+      'talking_voice', // Nov 20 2026
       'preset',
       'vocal_fx',
       'pitch',
@@ -579,8 +580,8 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
   );
   assert.deepEqual(
     engine.settings.filter((s) => !s.advanced).map((s) => s.key),
-    ['reference_voice_url', 'voice_source', 'preset', 'vocal_fx'],
-    'the recording, what is in it, the preset and the vocal effect stay in view; the rest waits in More settings',
+    ['reference_voice_url', 'voice_source', 'talking_voice', 'preset', 'vocal_fx'],
+    'the recording, what is in it, a talking voice, the preset and the vocal effect stay in view; the rest waits in More settings',
   );
   assert.equal(engine.settings.find((s) => s.key === 'soft_s').default, false);
   assert.equal(engine.settings.find((s) => s.key === 'dereverb').default, false);
@@ -761,4 +762,85 @@ test('the upload engine on the page: one sentence when a take is sent, focus tha
   );
   /* A version already in her voice is not offered to be sung in her voice again. */
   assert.match(script, /\(ue && !t\.voiceOf && \(state\.guide\.engines\[ue\]\.takesFrom/);
+});
+
+test('talking voices (Nov 20 2026): a platform voice sings through Seed-VC from a reference the proxy renders once a week', async () => {
+  const talk = require('../../../packages/api/src/music/talkingVoice.ts');
+  assert.equal(talk.talkingLabel('801'), 'Voice 801');
+  assert.equal(talk.talkingLabel(12), 'Voice 12');
+  assert.equal(talk.talkingLabel('Voice 653'), 'Voice 653');
+  assert.equal(talk.talkingLabel(''), undefined);
+  assert.equal(talk.talkingLabel(null), undefined);
+  for (const bad of ['abc', 0, '12345', '8.5', 'Voice -1']) assert.throws(() => talk.talkingLabel(bad), /voice number/);
+  assert.equal(talk.talkingKey('Voice 801'), 'voice-refs/inworld/voice-801.wav');
+
+  /* the reference: rendered when missing, reused while fresh, rendered again once it is a week old; a non-WAV answer is refused */
+  const NOW = Date.parse('2026-11-20T12:00:00Z');
+  const store = new Map();
+  const spoke = [];
+  let answer = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(200000)]);
+  const hooks = {
+    head: async (key) => store.get(key) || null,
+    put: async (key, body, type) => {
+      assert.equal(type, 'audio/wav');
+      store.set(key, new Date(NOW));
+    },
+    speak: async (label, text) => {
+      spoke.push(label);
+      assert.ok(text.length > 300);
+      return answer;
+    },
+  };
+  assert.equal(await talk.talkingReference('Voice 801', hooks, NOW), 'voice-refs/inworld/voice-801.wav');
+  assert.equal(await talk.talkingReference('Voice 801', hooks, NOW + 86400000), 'voice-refs/inworld/voice-801.wav');
+  assert.deepEqual(spoke, ['Voice 801'], 'one render while it is fresh');
+  await talk.talkingReference('Voice 801', hooks, NOW + 8 * 86400000);
+  assert.deepEqual(spoke, ['Voice 801', 'Voice 801'], 'rendered again after a week');
+  answer = Buffer.from('{"error":"no such voice"}');
+  await assert.rejects(talk.talkingReference('Voice 4999', hooks, NOW), /did not give a usable speech sample/);
+
+  /* the job: a number wins over Voice; a named talking voice comes from the Voice choice; the worker gets engine seedvc */
+  const url = 'https://assets.test/audios/u/song.mp3';
+  const asked = [];
+  const prepare = voice.myVoicePrepare(
+    async (user) => (user === OWNER ? voice.parseMyVoiceModels(ON.MY_VOICE_MODELS)[OWNER] : null),
+    async () => 60,
+    async () => [],
+    async (label) => {
+      asked.push(label);
+      return talk.talkingKey(label);
+    },
+  );
+  await assert.rejects(prepare(OTHER, voice.myVoiceInput({ reference_voice_url: url, talking_voice: 801 }, ON)), /not available/);
+  const ready = await prepare(
+    OWNER,
+    voice.myVoiceInput({ reference_voice_url: url, talking_voice: '801', voice: 'My voice' }, ON),
+  );
+  assert.deepEqual(asked, ['Voice 801']);
+  assert.equal(ready.voice.voice_name, 'Voice 801 (talking voice)');
+  const sent = voice.myVoiceWorkerInput(ready);
+  assert.equal(sent.engine, 'seedvc');
+  assert.equal(sent.reference_key, 'voice-refs/inworld/voice-801.wav');
+  for (const field of ['model_key', 'model_sha256', 'index_key', 'index_sha256', 'voice_range'])
+    assert.equal(field in sent, false, `${field} is not sent for a talking voice`);
+  assert.equal(voice.myVoiceProjectOptions(ready).talking_voice, 801);
+  await assert.rejects(
+    voice.myVoicePrepare(async () => voice.parseMyVoiceModels(ON.MY_VOICE_MODELS)[OWNER])(
+      OWNER,
+      voice.myVoiceInput({ reference_voice_url: url, talking_voice: 801 }, ON),
+    ),
+    /cannot sing yet/,
+  );
+  /* an RVC job is the request it always was */
+  const rvc = voice.myVoiceWorkerInput(await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url }, ON)));
+  assert.equal(rvc.engine, undefined);
+  assert.equal(rvc.model_key, ENTRY.model_key);
+
+  /* the screen: one number field in view, after what is in the file; no voice is named */
+  const engine = voice.myVoiceGuideEngine(ON, []);
+  const keys = engine.settings.map((s) => s.key);
+  assert.equal(keys.indexOf('talking_voice'), keys.indexOf('voice_source') + 1);
+  const field = engine.settings.find((s) => s.key === 'talking_voice');
+  assert.equal(field.kind, 'number');
+  assert.equal(field.advanced, undefined);
 });

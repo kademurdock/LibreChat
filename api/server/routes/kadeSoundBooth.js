@@ -98,6 +98,7 @@ const {
   myVoiceEffectLinks,
   myVoiceStemLinks,
   createVoiceLab,
+  talkingReference,
   initializeS3,
   myVoiceProjectOptions,
   myVoiceProjectWhy,
@@ -336,6 +337,31 @@ function effectsRackOn() {
   try { require.resolve('./kadeVoiceChanger'); return true; } catch (_) { return false; }
 }
 const myVoiceChoices = user => (voiceLab ? voiceLab.voices(String(user || '')).catch(() => []) : Promise.resolve([]));
+/* Nov 20 2026 — talking voices sing (worker engine seedvc, packages/api music/talkingVoice.ts). A platform voice's reference
+ * recording is that voice reading a fixed sample through the voice proxy, kept at voice-refs/inworld/<label>.wav. */
+const talkingVoiceReference = typeof talkingReference !== 'function' ? undefined : label => talkingReference(label, {
+  head: async key => {
+    const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+    try {
+      const head = await voiceLabStorage().send(new HeadObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key }));
+      return head.LastModified ? new Date(head.LastModified) : null;
+    } catch (_) { return null; }
+  },
+  put: async (key, body, contentType) => {
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await voiceLabStorage().send(new PutObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+  },
+  speak: async (voice, input) => {
+    const base = (process.env.KADE_TTS_PROXY_URL || 'https://inworld-tts-proxy-production.up.railway.app').replace(/\/$/, '');
+    const secret = String(process.env.KADE_SPEECH_SECRET || '').split(',')[0].trim();
+    const response = await axios.post(`${base}/v1/audio/speech`, { input, voice, model: 'tts-1', delivery: 'STABLE', response_format: 'wav' }, {
+      headers: { 'Content-Type': 'application/json', 'x-kade-caller': 'fork-sound-booth-talking-voice', ...(secret ? { 'x-proxy-secret': secret } : {}) },
+      responseType: 'arraybuffer', timeout: 120000, maxRedirects: 0, maxContentLength: 32 * 1024 * 1024,
+    });
+    if (!String(response.headers['content-type'] || '').startsWith('audio/')) throw new Error('not audio');
+    return Buffer.from(response.data);
+  },
+});
 /* A version in her voice is named after its project with this ending, so it never reads exactly like the take it came from.
  * Renaming the project (PATCH /projects/:id) keeps the ending on it. */
 const voiceVersionTitle = (title) => `${title} (in my voice)`.slice(0, 120);
@@ -616,6 +642,7 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
   user: req => String(req.user.id),
   find: myVoiceOwner,
   voices: myVoiceChoices,
+  talking: talkingVoiceReference,
   seconds: (user, url) => musicReferenceSeconds(user, url),
   validateReference: (user, url) => validateMusicReference(user, url, musicReferenceHooks),
   project: async (user, input, sourceText) => {
@@ -641,7 +668,8 @@ if (MY_VOICE_READY) router.use(createMyVoiceRouter({
     const title = project?.title || job.input.title;
     const out = job.output || {};
     const asset = await KadeAsset.findOneAndUpdate({ user: job.user, service: 'runpod_myvoice', 'metadata.jobId': job.id }, {
-      $setOnInsert: { user: job.user, service: 'runpod_myvoice', kind: 'audio', url: out.url, model: 'RVC v2 voice model',
+      $setOnInsert: { user: job.user, service: 'runpod_myvoice', kind: 'audio', url: out.url,
+        model: job.input.voice && job.input.voice.talking ? 'Seed-VC talking voice' : 'RVC v2 voice model',
         prompt: job.input.style, description: title, costUSD: job.costUSD || 0,
         metadata: { title, jobId: job.id, projectId: job.projectId, via: 'sound-booth', wavUrl: out.wav_url, vocalUrl: out.vocal_url,
           vocalWavUrl: out.vocal_wav_url, seconds: Math.round(out.duration_s || 0), gpu: out.gpu, takeNote: myVoiceTakeNote(out, job.input),

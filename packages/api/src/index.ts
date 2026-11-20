@@ -260,6 +260,8 @@ export {
   myVoiceProjectWhy,
 } from './music/myVoice';
 export type { MyVoiceModel, MyVoiceFollowUp, MyVoiceChoice } from './music/myVoice';
+export { talkingReference, talkingKey, talkingLabel } from './music/talkingVoice';
+export type { TalkingHooks } from './music/talkingVoice';
 export {
   createVoiceLab,
   voiceLabEnabled,
