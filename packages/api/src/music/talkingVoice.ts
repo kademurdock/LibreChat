@@ -13,13 +13,13 @@
  */
 
 /** What a reference voice reads: plain, varied, unemotional sentences (Seed-VC uses the first 25 seconds). */
-export const talkingText =
+export const talkingText: string =
   'So I finally got the garden cleaned up this weekend, and honestly it took way longer than I thought it would. ' +
   'There were weeds in places I did not even know existed. By the time I was done, my hands were sore, but it looks really good now. ' +
   'You know what is funny? Every time I go to the store with a list, I come home with everything except the one thing I needed. ' +
   'Yesterday it was milk. I bought cheese, crackers, three kinds of fruit, and a candle that smells like a beach, but no milk.';
 
-export const REFERENCE_DAYS = 7;
+export const REFERENCE_DAYS: number = 7;
 const MAX_VOICE_NUMBER = 5000;
 
 export type TalkingHooks = {
