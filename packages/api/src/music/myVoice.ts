@@ -311,6 +311,9 @@ export type MyVoiceOptions = {
   formant?: number;
   f0_method?: string;
   transpose_song?: boolean;
+  /** Nov 19 2026: the worker rides, EQs and masters the swap toward the original song (worker feature auto-mix, on by
+   * default there); only an explicit off is sent. */
+  auto_mix?: boolean;
 };
 /* The round 2 chain (Sep 27 2026, voice-persona RUNBOOK section 17), measured with Whisper against the lyrics on the three
  * songs with the most backing singers: HyperACE v2 vocals and the frazer & becruily lead split with no dereverb took the lead
@@ -334,6 +337,7 @@ const DEFAULTS: MyVoiceOptions = {
   formant: 0,
   f0_method: 'rmvpe',
   transpose_song: true,
+  auto_mix: true,
 };
 const RANGES = {
   index_rate: [0, 1],
@@ -362,7 +366,7 @@ export function myVoiceDefaults(env: NodeJS.ProcessEnv = process.env): MyVoiceOp
     (LEAD_MODELS as readonly string[]).includes(said.lead_model)
   )
     out.lead_model = said.lead_model;
-  for (const flag of ['lead_split', 'dereverb', 'soft_s', 'transpose_song'] as const)
+  for (const flag of ['lead_split', 'dereverb', 'soft_s', 'transpose_song', 'auto_mix'] as const)
     if (typeof said[flag] === 'boolean') out[flag] = said[flag] as boolean;
   if (typeof said.backing === 'string' && myVoiceBackings.some((e) => e.key === said.backing))
     out.backing = said.backing;
@@ -581,6 +585,7 @@ export function myVoiceInput(body: InputBody, env: NodeJS.ProcessEnv = process.e
         defaults.transpose_song !== false,
         'Move the music with the voice',
       ),
+      auto_mix: flagChoice(body.auto_mix, defaults.auto_mix !== false, 'Mix and master it automatically'),
     },
   };
   const title = body.title?.trim() || 'Sung in my voice';
@@ -640,6 +645,7 @@ function workerOptions(options: Omit<MyVoiceOptions, 'vocal_fx'>): MyVoiceWorker
     formant,
     f0_method,
     transpose_song: _transpose,
+    auto_mix,
     ...chain
   } = options;
   const out: MyVoiceWorkerInput['options'] = {
@@ -656,6 +662,7 @@ function workerOptions(options: Omit<MyVoiceOptions, 'vocal_fx'>): MyVoiceWorker
   if (typeof denoise === 'number' && denoise > 0) out.denoise = denoise;
   if (backing && backing !== 'keep' && options.lead_split) out.backing = backing;
   if (typeof formant === 'number' && formant !== 0) out.formant = formant;
+  if (auto_mix === false) out.auto_mix = false;
   return out;
 }
 function withModel(
@@ -717,6 +724,9 @@ export type MyVoiceProjectOptions = {
   formant?: number;
   f0_method?: string;
   transpose_song?: boolean;
+  /** Nov 19 2026: the worker rides, EQs and masters the swap toward the original song (worker feature auto-mix, on by
+   * default there); only an explicit off is sent. */
+  auto_mix?: boolean;
 };
 function labelOf(list: ReadonlyArray<{ key: string; label: string }>, key: string | undefined): string {
   return (list.find((e) => e.key === key) || list[0]).label;
@@ -742,6 +752,7 @@ export function myVoiceProjectOptions(input: Input): MyVoiceProjectOptions {
     formant: options.formant ?? 0,
     f0_method: labelOf(myVoicePitchMethods, options.f0_method),
     transpose_song: options.transpose_song !== false,
+    auto_mix: options.auto_mix !== false,
   };
   if (input.reference_voice_url) out.reference_voice_url = input.reference_voice_url;
   if (typeof voice?.pitch === 'number') out.pitch = voice.pitch;
@@ -1115,6 +1126,14 @@ export function myVoiceGuideEngine(
         hint: 'On: when the key changes by anything but whole octaves, the band and the backing singers are moved the same amount, so the song stays in tune. Off: only the lead voice moves.',
         kind: 'toggle',
         default: d.transpose_song !== false,
+        advanced: true,
+      },
+      {
+        key: 'auto_mix',
+        label: 'Mix and master it automatically',
+        hint: 'On: your voice follows the original singer\'s loudness line by line, goes quiet between lines, and the finished song is evened out to sound like the original record, so it is not muddy, dull or up and down in volume. Off: the plain remix.',
+        kind: 'toggle',
+        default: d.auto_mix !== false,
         advanced: true,
       },
       {

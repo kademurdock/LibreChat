@@ -91,6 +91,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
       formant: 0,
       f0_method: 'rmvpe',
       transpose_song: true,
+      auto_mix: true,
     },
   });
   assert.equal(job.title, 'Sung in my voice');
@@ -130,6 +131,7 @@ test('a render body becomes a voice job; her choices are read in the words the s
       formant: 0,
       f0_method: 'rmvpe',
       transpose_song: true,
+      auto_mix: true,
     },
   });
   assert.equal(
@@ -199,6 +201,7 @@ test('MY_VOICE_DEFAULTS moves the defaults after her listening; nonsense in it i
     formant: 0,
     f0_method: 'rmvpe',
     transpose_song: true,
+    auto_mix: true,
   });
   /* Round 1's chain, if her listening prefers it: one setting on Railway. */
   const round1 = {
@@ -322,6 +325,7 @@ test('the owner check adds her model and the recording length; the worker gets e
     formant: 0,
     f0_method: 'Accurate',
     transpose_song: true,
+    auto_mix: true,
     reference_voice_url: url,
     pitch: 12,
   });
@@ -330,6 +334,20 @@ test('the owner check adds her model and the recording length; the worker gets e
     voice.myVoiceProjectWhy({ voice_source: 'Just a vocal' }),
     'Sung in my voice — a vocal on its own',
   );
+});
+
+test('mix and master automatically: on by default and never sent; only an explicit off reaches the worker', async () => {
+  const url = 'https://assets.test/audios/u/song.mp3';
+  const on = voice.myVoiceInput({ reference_voice_url: url }, ON).voice;
+  assert.equal(on.options.auto_mix, true);
+  const off = voice.myVoiceInput({ reference_voice_url: url, auto_mix: 'off' }, ON).voice;
+  assert.equal(off.options.auto_mix, false);
+  assert.throws(() => voice.myVoiceInput({ reference_voice_url: url, auto_mix: 'maybe' }, ON), /Mix and master it automatically/);
+  const prepare = voice.myVoicePrepare(async () => voice.parseMyVoiceModels(ON.MY_VOICE_MODELS)[OWNER]);
+  const sentOn = voice.myVoiceWorkerInput(await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url }, ON)));
+  const sentOff = voice.myVoiceWorkerInput(await prepare(OWNER, voice.myVoiceInput({ reference_voice_url: url, auto_mix: false }, ON)));
+  assert.equal('auto_mix' in sentOn.options, false, 'on is the worker default: the request is exactly as before');
+  assert.equal(sentOff.options.auto_mix, false);
 });
 
 test('vocal effects: a main choice in her words; None sends the worker nothing new, an effect is one top-level field', async () => {
@@ -544,6 +562,7 @@ test('the guide gains the engine and the YuE2 choice for an owner, and not a wor
       'pitch',
       'pitch_mode',
       'transpose_song',
+      'auto_mix',
       'formant',
       'backing',
       'f0_method',

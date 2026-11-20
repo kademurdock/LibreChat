@@ -274,6 +274,7 @@ export type InputBody = {
   formant?: number;
   f0_method?: string;
   transpose_song?: boolean | string;
+  auto_mix?: boolean | string;
 };
 /** Each finished take's note, said once when every finished take has the same one. Said once for
  * several takes, a note about "this take" (a YuE2 take cut at its length limit) speaks of each take. */
