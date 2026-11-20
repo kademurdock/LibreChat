@@ -35,8 +35,9 @@ const OPEN_VOICES_HTML = `
         </div>
       </div>
       <div id="ovSpeakBox" hidden>
+        <p class="hint" id="ovSpeakNote" hidden></p>
         <label class="field" for="ovVoice">Saved voice</label>
-        <select id="ovVoice" aria-describedby="ovVoiceHint"></select>
+        <select id="ovVoice" aria-describedby="ovVoiceHint ovSpeakNote"></select>
         <p class="hint" id="ovVoiceHint">Your saved voices, newest first. Or choose An imported clip and import one below.</p>
         <button type="button" class="act quiet" id="ovDownloadVoice" hidden>Download this voice</button>
         <button type="button" class="act quiet" id="ovForget" hidden>Remove this voice from my list</button>
@@ -220,6 +221,9 @@ const OPEN_VOICES_SCRIPT = `
       var turbo = cb && v && v.value === 'turbo';
       $('ovDescWrap').hidden = builtinOn() || cb || db;
       $('ovDesignNote').hidden = !(cb || db); $('ovDesignNote').textContent = (cb || db) && e.designNote ? e.designNote : '';
+      /* Nov 20 2026: DramaBox takes only a clip's general sound; Speak with a voice says so, and names Chatterbox. */
+      var speakNote = ov.mode === 'speak' && e && e.speakNote ? e.speakNote : '';
+      $('ovSpeakNote').hidden = !speakNote; $('ovSpeakNote').textContent = speakNote;
       $('ovStyleWrap').hidden = cb || db;
       $('ovMingDesign').hidden = !(m && ov.mode === 'design');
       $('ovMingSpeak').hidden = !(m && ov.mode === 'speak');
@@ -301,7 +305,7 @@ const OPEN_VOICES_SCRIPT = `
     /* What switching mode or engine shows, said after the first sentence. */
     function mingShown(){
       if(isCb()) return ov.mode === 'design' ? ' Chatterbox uses its own built-in voice here.' : '';
-      if(isDb()) return ov.mode === 'design' ? ' DramaBox picks the voice from your scene.' : ' Write the scene in the Scene box.';
+      if(isDb()) return ov.mode === 'design' ? ' DramaBox picks the voice from your scene.' : ' Write the scene in the Scene box.' + (cur().speakNote ? ' ' + cur().speakNote : '');
       if(!isMing()) return '';
       return ov.mode === 'design' ? ' You can also pick a built-in voice.' : ' Emotion, speed, pitch, volume, language and sound tags are shown.';
     }
@@ -525,7 +529,9 @@ const OPEN_VOICES_SCRIPT = `
       var count = Math.max(1, Math.min(4, Number($('ovCount').value) || 1));
       ov.queue = count > 1 ? { body: body, total: count, made: 0 } : null;
       setBusy(true); $('ovStop').focus();
-      await startTake(body, count > 1 ? 'Starting take 1 of ' + count + '…' : 'Starting a take…');
+      /* Nov 20 2026: her clip goes only with Speak with a voice; a Design take is Chatterbox's own voice. */
+      var builtinNote = isCb() && ov.mode === 'design' && ov.clip ? 'This take uses the built-in Chatterbox voice, not your clip. To use the voice in your clip, choose Speak with a voice. ' : '';
+      await startTake(body, builtinNote + (count > 1 ? 'Starting take 1 of ' + count + '…' : 'Starting a take…'));
     };
     async function startTake(body, first){
       if(first) say(first);

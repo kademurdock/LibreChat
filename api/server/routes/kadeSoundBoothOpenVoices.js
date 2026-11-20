@@ -36,6 +36,16 @@
  * A clip's typed words go only to VoxCPM2 and Ming (the other two never read them). In /health the
  * two new engines are listed under openVoices.moreEngines, not openVoices.engines: an iPhone build
  * that shows every listed engine with a description box would only be refused.
+ *
+ * Nov 20 2026, her words: "it never clones the reference voice on chatterbox when I try. The voice
+ * never sounds remotely the same as the ref I give." The logs: every Chatterbox take she ever made
+ * was Design a voice (its built-in voice), and every clip she gave went to DramaBox. Measured on her
+ * own clip (ECAPA speaker likeness, same person about 0.9, a stranger about 0.06): Chatterbox Turbo
+ * and Original copy it at 0.83; DramaBox at 0.20 with the first 10 s of the clip, 0.35 with 20 s, no
+ * matter what the scene says (upstream trains DramaBox to take only the clip's general sound). So a
+ * DramaBox clip now sends 20 seconds (DRAMABOX_CONTROLS.referenceSeconds), Speak with a voice on
+ * DramaBox says plainly that Chatterbox makes the close copy (speakNote), and a Chatterbox Design
+ * take made while a clip is imported says it used the built-in voice.
  * -------------------------------------------------------------------------- */
 const express = require('express');
 const writer = require('./kadeSoundBoothOpenVoicesWriter');
@@ -53,6 +63,7 @@ const ENGINES = {
   dramabox: { id: 'dramabox', label: 'DramaBox', maxDescription: 0, maxText: 4000, more: true,
     about: 'Write a scene. Words in quotes are spoken, the rest is how they are acted. English only.',
     designNote: 'DramaBox picks the voice from your scene. Describe the speaker in the scene, outside the quotes.',
+    speakNote: 'DramaBox takes only the general sound of a clip, so its take will not sound much like the clip. For a close copy of a voice, choose Chatterbox.',
     textLabel: 'Scene',
     textHint: 'Words inside double quotes are spoken. Everything else is how they are acted, and is never said. For example: An old sailor, tired but kind, leans on the rail. "Storm\'s coming." He laughs softly. "Always is."', // "Up to N characters." is added below, from maxText (Nov 17 2026)
     coldNote: 'The first DramaBox take after a quiet spell can take several minutes while it loads. After that, takes come back much faster.' },
@@ -89,7 +100,9 @@ const CHATTERBOX_CONTROLS = {
   tagNote: 'Puts the tag where your cursor was in Words to say. Sound tags work only with Turbo.',
   turboClipMinS: 5,
 };
-const DRAMABOX_CONTROLS = { duration: [3, 45], clipMinS: 3 };
+/* referenceSeconds: how much of a clip DramaBox hears (bridge and worker allow 3-30, worker default 10;
+ * a shorter clip is used whole). 20 s raised likeness to her clip from 0.20 to 0.35 (Nov 20 2026). */
+const DRAMABOX_CONTROLS = { duration: [3, 45], clipMinS: 3, referenceSeconds: 20 };
 /* Nov 16 2026, her yes: the strength and quality knobs the workers already read, as menus.
  * VoxCPM2 (voxcpm_contract.py): inference_timesteps 4-50, usual 10 (its quickest); cfg_value 0.5-5,
  * usual 2. DramaBox (dramabox_contract.py): cfg_scale 1-10, usual 2.5. The page sends `steps` and
@@ -370,6 +383,7 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
 function engineList(ready) {
   return Object.values(ENGINES).filter((e) => ready[e.id]).map((e) => ({ id: e.id, label: e.label, about: e.about, maxDescription: e.maxDescription,
     maxText: e.maxText, textLabel: e.textLabel, textHint: e.textHint, coldNote: e.coldNote, ...(e.designNote ? { designNote: e.designNote } : {}),
+    ...(e.speakNote ? { speakNote: e.speakNote } : {}),
     ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}),
     ...(e.id === 'chatterbox' ? { controls: CHATTERBOX_CONTROLS } : {}), ...(e.id === 'dramabox' ? { controls: DRAMABOX_CONTROLS } : {}),
     ...(ENGINE_SETTINGS[e.id] ? { settings: ENGINE_SETTINGS[e.id] } : {}) }));
@@ -429,6 +443,8 @@ function checkTake(b = {}, ready = {}) {
     const own = scene ? dramaboxRule(b, text) : chatterboxRule(b, text);
     if (own.error) return own;
     Object.assign(body, own.fields);
+    /* Nov 20 2026: DramaBox hears 20 s of the clip, not its own 10 (see the header). */
+    if (scene && mode === 'speak') body.reference_seconds = DRAMABOX_CONTROLS.referenceSeconds;
     const seed = seedOf(b);
     if (seed.error) return seed;
     if (seed.seed !== undefined) body.seed = seed.seed;

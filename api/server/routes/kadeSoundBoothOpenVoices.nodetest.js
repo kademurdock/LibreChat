@@ -548,6 +548,9 @@ test('readiness: Chatterbox and DramaBox only when the bridge says each is confi
   assert.match(db.textHint, /"Storm's coming\."/);
   assert.equal(db.maxText, 4000);
   assert.match(db.coldNote, /several minutes/);
+  assert.match(db.speakNote, /only the general sound of a clip.*For a close copy of a voice, choose Chatterbox\.$/);
+  assert.equal(db.controls.referenceSeconds, 20);
+  assert.equal('speakNote' in cb, false, 'Chatterbox copies a clip closely; it needs no warning');
   assert.equal(list.find((e) => e.id === 'ming').maxText, 2500);
 });
 
@@ -608,6 +611,16 @@ test('checkTake DramaBox: the scene, quotes checked, an optional length; no desc
   assert.equal(ov.checkTake({ engine: 'dramabox', mode: 'speak', text: SCENE, style: 'calm', clipUrl: 'x' }, ALL).field, 'style');
 });
 
+/* Nov 20 2026: on her own clip DramaBox's likeness went from 0.20 (its own 10 s) to 0.35 with 20 s. The bridge
+ * refuses reference_seconds on a design take, so only Speak with a voice sends it. */
+test('checkTake DramaBox: Speak with a voice sends 20 seconds of the clip; Design a voice sends none; Chatterbox never', () => {
+  const speak = ov.checkTake({ engine: 'dramabox', mode: 'speak', text: SCENE, clipUrl: 'x' }, ALL);
+  assert.deepEqual(speak.body, { engine: 'dramabox', mode: 'clone', text: SCENE, reference_seconds: 20 });
+  assert.equal('reference_seconds' in ov.checkTake({ engine: 'dramabox', mode: 'design', text: SCENE }, ALL).body, false);
+  assert.equal('reference_seconds' in ov.checkTake({ engine: 'chatterbox', mode: 'speak', text: 'Hi', clipUrl: 'x' }, ALL).body, false);
+  assert.equal(ov.checkTake({ engine: 'dramabox', mode: 'speak', text: SCENE, clipUrl: 'x', reference_seconds: '3' }, ALL).body.reference_seconds, 20, 'not taken from the page');
+});
+
 test('over the route: Chatterbox and DramaBox clips go without words, too-short clips are refused before GPU time, the version comes back', async (t) => {
   const rows = [
     { _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/voxcpm/a.mp3`, metadata: { savedVoice: { name: 'Short', words: 'Hello there.', seconds: 4 } } },
@@ -635,7 +648,7 @@ test('over the route: Chatterbox and DramaBox clips go without words, too-short 
   const long = await call('/open-voices/take', { engine: 'dramabox', mode: 'speak', voiceId: '7b0000000000000000000002', text: SCENE, duration: '20' });
   assert.equal(long.status, 200, 'a long clip is fine: DramaBox uses its first seconds, and no words go');
   assert.match(long.body.coldNote, /first DramaBox take after a quiet spell can take several minutes/);
-  assert.deepEqual(starts().at(-1).body, { engine: 'dramabox', mode: 'clone', text: SCENE, duration: 20, secret: 'test-only', userId: USER, reference_voice_url: `${B2}/voxcpm/b.mp3?X-Amz-Signature=fresh` });
+  assert.deepEqual(starts().at(-1).body, { engine: 'dramabox', mode: 'clone', text: SCENE, duration: 20, reference_seconds: 20, secret: 'test-only', userId: USER, reference_voice_url: `${B2}/voxcpm/b.mp3?X-Amz-Signature=fresh` });
   const clipWords = await call('/open-voices/take', { engine: 'chatterbox', mode: 'speak', clipUrl: clip, clipWords: 'Too long for words.', clipSeconds: 45, text: 'Hi' });
   assert.equal(clipWords.status, 200, 'the thirty-second words rule is VoxCPM2 and Ming\'s only');
   assert.equal('prompt_text' in starts().at(-1).body, false);
@@ -747,13 +760,48 @@ test('the panel by DOM: DramaBox turns Words to say into the Scene, hides the de
   answer = { error: 'Scene length must be from 3 to 45 seconds.', field: 'duration' };
   await $('ovMake').onclick();
   assert.equal(w.document.activeElement, $('ovDuration'));
+  assert.equal($('ovSpeakNote').hidden, true, 'the clip note is for Speak with a voice');
   $('ovModeSpeak').onclick();
-  assert.match($('status').textContent, /Write the scene in the Scene box\.$/);
+  assert.match($('status').textContent, /Write the scene in the Scene box\. DramaBox takes only the general sound of a clip, so its take will not sound much like the clip\. For a close copy of a voice, choose Chatterbox\.$/);
+  assert.equal($('ovSpeakNote').hidden, false);
+  assert.match($('ovSpeakNote').textContent, /^DramaBox takes only the general sound of a clip/);
+  assert.match($('ovVoice').getAttribute('aria-describedby'), /\bovSpeakNote\b/, 'the note is read with Saved voice');
   assert.equal($('ovStyleWrap').hidden, true);
+  $('ovEngine').value = 'chatterbox'; $('ovEngine').onchange();
+  assert.deepEqual([$('ovSpeakNote').hidden, $('ovSpeakNote').textContent], [true, ''], 'Chatterbox copies the clip closely: no note');
   $('ovEngine').value = 'voxcpm'; $('ovEngine').onchange();
   assert.equal($('ovTextLabel').textContent, 'Words to say');
   assert.equal($('ovText').maxLength, 5000);
   assert.equal($('ovDbBox').hidden, true);
+  p.close();
+});
+
+/* Nov 20 2026: every Chatterbox take she made was Design a voice, so none used her clip. */
+test('the panel by DOM: a Chatterbox Design take made while a clip is imported says it used the built-in voice', async () => {
+  const p = panel(ov.engineList(ALL), () => ({ ok: true, jobId: 'ov_abc123def', coldLikely: false }));
+  const { $, w, sent } = p;
+  await p.ready();
+  const fetchJson = w.fetch;
+  w.fetch = async (url, o) => (String(url).endsWith('/sound-booth/reference')
+    ? { ok: true, status: 200, json: async () => ({ url: `${B2}/audios/${USER}/soundbooth-ref-abc.mp3`, seconds: 12, name: 'Amber.mp3' }) }
+    : fetchJson(url, o));
+  $('ovModeSpeak').onclick();
+  $('ovVoice').value = 'clip'; $('ovVoice').onchange();
+  Object.defineProperty($('ovClip'), 'files', { value: [new w.File(['x'], 'Amber.mp3', { type: 'audio/mpeg' })] });
+  await $('ovClip').onchange();
+  assert.match($('status').textContent, /^Clip imported, 12 seconds\./);
+  $('ovModeDesign').onclick();
+  $('ovEngine').value = 'chatterbox'; $('ovEngine').onchange();
+  $('ovText').value = 'Hello there.';
+  const said = [];
+  const watch = new w.MutationObserver(() => said.push($('status').textContent));
+  watch.observe($('status'), { childList: true, characterData: true, subtree: true });
+  await $('ovMake').onclick();
+  watch.disconnect();
+  assert.equal(sent.at(-1).body.mode, 'design');
+  assert.ok(said.some((s) => s.startsWith('This take uses the built-in Chatterbox voice, not your clip. To use the voice in your clip, choose Speak with a voice. Starting a take')), said.join(' | '));
+  $('ovModeSpeak').onclick();
+  await $('ovStop').onclick();
   p.close();
 });
 
