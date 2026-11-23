@@ -74,6 +74,11 @@ function engineShape(b) {
     }
     return { name: `Chatterbox ${version === 'turbo' ? 'Turbo' : version === 'original' ? 'Original' : 'Multilingual'}`, maxText: 5000, voiceLine: false, rules };
   }
+  if (engine === 'qwen') {
+    /* Nov 22 2026: Qwen designs from one take of at most 1,500 characters; a kept voice speaks up to 5,000. */
+    const lang = typeof b.languageName === 'string' && b.languageName ? `Write the words in ${b.languageName}.` : 'Write in the language they ask for, or English.';
+    return { name: 'Qwen', maxText: design ? 1500 : 5000, voiceLine: design, voiceMax: 1000, rules: [...PLAIN_RULES, lang] };
+  }
   if (engine === 'ming') {
     const rules = [...PLAIN_RULES, 'Ming reads English and Chinese best. Write in the language they ask for, or English.'];
     return { name: 'Ming', maxText: 2500, voiceLine: design && !b.builtin, voiceMax: 600, rules };
@@ -142,7 +147,7 @@ function parseWriterReply(raw, req) {
     text = text.replace(/\[([^\[\]]{1,40})\]/g, (m, inner) => (CB_TAGS.includes(`[${inner.trim().toLowerCase()}]`) ? `[${inner.trim().toLowerCase()}]` : ''))
       .replace(/ {2,}/g, ' ').trim();
   }
-  if (engine === 'voxcpm' || (engine === 'ming' && req.how === 'write')) text = text.replace(/\*([^*\n]+)\*/g, '$1').replace(/\[[^\]\n]{1,40}\]/g, '').replace(/ {2,}/g, ' ').trim();
+  if (engine === 'voxcpm' || engine === 'qwen' || (engine === 'ming' && req.how === 'write')) text = text.replace(/\*([^*\n]+)\*/g, '$1').replace(/\[[^\]\n]{1,40}\]/g, '').replace(/ {2,}/g, ' ').trim();
   const max = req.shape.maxText;
   /* Nov 17 2026: a cut is said (the route adds "Cut to the 2,500 characters Ming takes."), never silent. */
   const cut = text.length > max;

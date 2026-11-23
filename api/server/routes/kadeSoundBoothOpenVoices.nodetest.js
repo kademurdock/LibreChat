@@ -245,10 +245,10 @@ test('readiness: a bridge that answers with an HTTP error offers nothing; one th
   const refuse = (status) => ({ get: async () => { const e = new Error(String(status)); e.response = { status }; throw e; } });
   for (const status of [403, 404, 500]) {
     const read = ov.createReadiness({ http: refuse(status), bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-    assert.deepEqual(await read(), { voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false }, String(status));
+    assert.deepEqual(await read(), { voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false }, String(status));
   }
   const timeout = ov.createReadiness({ http: { get: async () => { const e = new Error('timeout of 4000ms exceeded'); e.code = 'ECONNABORTED'; throw e; } }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-  assert.deepEqual(await timeout(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false });
+  assert.deepEqual(await timeout(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false });
 });
 
 test('/health never waits long on the bridge: the last answer, or nothing yet, and the cache fills behind it', async () => {
@@ -272,14 +272,14 @@ test('readiness: from the bridge health, cached; Ming hidden when the bridge can
   let clock = 0;
   const http = { get: async () => { n++; if (n === 2) throw new Error('down'); return { data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true } } } }; } };
   const read = ov.createReadiness({ http, bridgeBase: () => 'https://bridge.test', secret: () => 's', now: () => clock });
-  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false, chatterbox: false, dramabox: false }, 'a bridge that does not say controls: true');
-  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false, chatterbox: false, dramabox: false });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false, chatterbox: false, dramabox: false, qwen: false }, 'a bridge that does not say controls: true');
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: false, chatterbox: false, dramabox: false, qwen: false });
   assert.equal(n, 1);
   clock += 61000;
-  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false });
+  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false });
   let asked = 0;
   const silent = ov.createReadiness({ http: { get: async () => { asked++; return { data: {} }; } }, bridgeBase: () => 'https://bridge.test', secret: () => '' });
-  assert.deepEqual(await silent(), { voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false });
+  assert.deepEqual(await silent(), { voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false });
   assert.equal(asked, 0, 'no bridge secret, no call');
   assert.deepEqual((await ov.healthBlock(async () => ({ voxcpm: true, ming: false }))).engines.map((e) => e.id), ['voxcpm']);
 });
@@ -459,7 +459,7 @@ test('Ming controls wait for a bridge that reads them: not listed, not forwarded
   assert.equal(ov.checkTake({ engine: 'ming', mode: 'design', text: 'Hi' }, old).error, 'Describe the voice first.', 'no built-in voice offered');
   assert.deepEqual(ov.checkTake({ ...speak, emotion: '', speed: '' }, old).body, { engine: 'ming', mode: 'clone', text: 'Hi' }, 'empty controls still pass');
   const read = ov.createReadiness({ http: { get: async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: true, controls: true } } } }) }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: true, chatterbox: false, dramabox: false });
+  assert.deepEqual(await read(), { voxcpm: true, ming: true, mingControls: true, chatterbox: false, dramabox: false, qwen: false });
 });
 
 test('every Ming refusal names the control to change', () => {
@@ -531,9 +531,9 @@ const SCENE = 'An old sailor leans on the rail. "Storm\'s coming." He laughs sof
 
 test('readiness: Chatterbox and DramaBox only when the bridge says each is configured', async () => {
   const read = ov.createReadiness({ http: { get: async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true }, ming: { configured: false }, chatterbox: { configured: true }, dramabox: { configured: false } } } }) }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false, chatterbox: true, dramabox: false });
+  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false, chatterbox: true, dramabox: false, qwen: false });
   const old = ov.createReadiness({ http: { get: async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true } } } }) }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
-  assert.deepEqual(await old(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false }, 'a bridge without them never lists them');
+  assert.deepEqual(await old(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false }, 'a bridge without them never lists them');
   assert.deepEqual(ov.engineList({ voxcpm: true }).map((e) => e.id), ['voxcpm']);
   const list = ov.engineList(ALL);
   assert.deepEqual(list.map((e) => e.id), ['voxcpm', 'ming', 'chatterbox', 'dramabox']);
@@ -864,4 +864,122 @@ test('in the booth page, a refusal opens a closed section for its field and does
   assert.equal(d.activeElement, d.getElementById('secVoice-btn'), 'a field Open voices hides is skipped');
   assert.equal(d.getElementById('secVoice-btn').getAttribute('aria-expanded'), 'false', 'and its section stays closed');
   w.close();
+});
+
+/* ---------- Qwen (Nov 22 2026; bridge open-voices.js QWEN, worker qwentts_contract.py) ---------- */
+const WITH_QWEN = { ...ALL, qwen: true };
+
+test('readiness and lists: Qwen only when the bridge says it is configured, and /health lists it apart', async () => {
+  const read = ov.createReadiness({ http: { get: async () => ({ data: { enabled: true, engines: { voxcpm: { configured: true }, qwen: { configured: true } } } }) }, bridgeBase: () => 'https://bridge.test', secret: () => 's' });
+  assert.deepEqual(await read(), { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: true });
+  const list = ov.engineList(WITH_QWEN);
+  assert.deepEqual(list.map((e) => e.id), ['voxcpm', 'ming', 'chatterbox', 'dramabox', 'qwen']);
+  const q = list.find((e) => e.id === 'qwen');
+  assert.equal(q.maxDescription, 1000);
+  assert.equal(q.maxText, 5000);
+  assert.equal(q.maxDesignText, 1500);
+  assert.match(q.textHint, /^Up to 1,500 characters when designing a voice, and 5,000 when speaking with one\./);
+  assert.match(q.speakNote, /saved voice made with Qwen/);
+  assert.equal(q.controls.languages.length, 10);
+  assert.equal(q.controls.varietyOptions.filter((o) => o.value === '').length, 1, 'one "the usual" choice');
+  for (const o of q.controls.varietyOptions.filter((x) => x.value)) assert.ok(Number(o.value) >= 0.1 && Number(o.value) <= 2, o.label);
+  assert.equal(q.settings, undefined);
+  const h = await ov.healthBlock(async () => WITH_QWEN);
+  assert.deepEqual(h.engines.map((e) => e.id), ['voxcpm', 'ming']);
+  assert.deepEqual(h.moreEngines.map((e) => e.id), ['chatterbox', 'dramabox', 'qwen']);
+});
+
+test('checkTake Qwen: a description and at most 1,500 characters to design; Language and Variety; no style; each refusal names its field', () => {
+  const take = (b) => ov.checkTake({ engine: 'qwen', mode: 'design', text: 'Hi there.', description: 'A warm low voice.', ...b }, WITH_QWEN);
+  assert.deepEqual(take({}).body, { engine: 'qwen', mode: 'design', text: 'Hi there.', description: 'A warm low voice.' });
+  assert.deepEqual(take({ qwen_language: 'English', qwen_variety: '0.75', seed: '9' }).body,
+    { engine: 'qwen', mode: 'design', text: 'Hi there.', description: 'A warm low voice.', language: 'English', temperature: 0.75, seed: 9 });
+  assert.deepEqual(take({ qwen_language: '', qwen_variety: '' }).body, { engine: 'qwen', mode: 'design', text: 'Hi there.', description: 'A warm low voice.' });
+  const field = (b) => { const r = take(b); return [r.field, r.error]; };
+  assert.deepEqual(field({ description: '' }), ['description', 'Describe the voice first.']);
+  assert.equal(field({ description: 'x'.repeat(1001) })[0], 'description');
+  assert.deepEqual(field({ text: 'x'.repeat(1501) }), ['text', 'Qwen designs a voice from at most 1,500 characters. Keep a take, then speak longer words with the kept voice.']);
+  assert.equal(field({ qwen_language: 'Klingon' })[0], 'qwen_language');
+  assert.equal(field({ qwen_variety: '5' })[0], 'qwen_variety');
+  assert.equal(field({ steps: '20' })[0], 'steps', 'no Quality menu for Qwen');
+  assert.equal(field({ emotion: 'happy' })[0], 'emotion', 'Ming controls stay Ming\'s');
+  const speak = { engine: 'qwen', mode: 'speak', text: 'x'.repeat(4000), voiceId: '7b0000000000000000000001' };
+  assert.equal(ov.checkTake(speak, WITH_QWEN).error, undefined, 'a kept voice speaks up to 5,000 characters');
+  assert.equal(ov.checkTake({ ...speak, style: 'calm' }, WITH_QWEN).field, 'style');
+  assert.equal(ov.checkTake({ engine: 'qwen', mode: 'design', text: 'Hi', description: 'd' }, ALL).field, 'engine', 'off while the bridge does not run it');
+});
+
+test('over the route: a kept Qwen voice speaks with its clip and its words; a long clip goes without the words', async (t) => {
+  const rows = [
+    { _id: '7b0000000000000000000001', user: USER, kind: 'audio', url: `${B2}/qwen-tts/a.mp3`, metadata: { savedVoice: { name: 'Storyteller', engine: 'qwen', words: 'Sit down a spell.', seconds: 3.2 } } },
+    { _id: '7b0000000000000000000002', user: USER, kind: 'audio', url: `${B2}/voxcpm/b.mp3`, metadata: { savedVoice: { name: 'Long', words: 'All of it.', seconds: 45 } } },
+  ];
+  const bridge = {
+    get: async () => ({ data: { state: 'done', engine: 'qwen', mode: 'clone', seed: 5, result: { url: `${B2}/qwen-tts/t.mp3`, seconds: 2, seed: 5 } } }),
+    post: async (url, body) => ({ data: { ok: true, jobId: 'ov_abc123def', seed: body.seed || 77, coldLikely: true } }),
+  };
+  const { call, http } = await boot(t, { rows, ready: WITH_QWEN, bridge });
+  const starts = () => http.calls.filter((c) => c.url.endsWith('/start'));
+  const kept = await call('/open-voices/take', { engine: 'qwen', mode: 'speak', voiceId: '7b0000000000000000000001', text: 'A brand new line.', qwen_language: 'English' });
+  assert.equal(kept.status, 200);
+  assert.match(kept.body.coldNote, /first Qwen take/);
+  assert.deepEqual(starts().at(-1).body, { engine: 'qwen', mode: 'clone', text: 'A brand new line.', language: 'English', secret: 'test-only', userId: USER,
+    reference_voice_url: `${B2}/qwen-tts/a.mp3?X-Amz-Signature=fresh`, prompt_text: 'Sit down a spell.' });
+  const long = await call('/open-voices/take', { engine: 'qwen', mode: 'speak', voiceId: '7b0000000000000000000002', text: 'Hi' });
+  assert.equal(long.status, 200);
+  assert.equal('prompt_text' in starts().at(-1).body, false, 'words only cover a clip of thirty seconds or less');
+  const design = await call('/open-voices/take', { engine: 'qwen', mode: 'design', description: 'An old storyteller.', text: 'Sit down a spell.', qwen_variety: '1.1' });
+  assert.equal(design.status, 200);
+  assert.deepEqual(starts().at(-1).body, { engine: 'qwen', mode: 'design', text: 'Sit down a spell.', description: 'An old storyteller.', temperature: 1.1, secret: 'test-only', userId: USER });
+});
+
+test('the panel by DOM: Qwen shows a description, its Language and Variety, no style, and a shorter limit to design', async () => {
+  let answer = { error: 'Pick a language from the list, or Auto.', field: 'qwen_language' };
+  const p = panel(ov.engineList(WITH_QWEN), () => answer);
+  const { $, w, sent } = p;
+  await p.ready();
+  assert.deepEqual([...$('ovEngine').options].map((o) => o.textContent), ['VoxCPM2', 'Ming', 'Chatterbox', 'DramaBox', 'Qwen']);
+  assert.equal($('ovQwBox').hidden, true, 'hidden until Qwen is picked');
+  $('ovEngine').value = 'qwen'; $('ovEngine').onchange();
+  assert.equal($('status').textContent, 'Qwen picked. Language and Variety are shown.');
+  assert.match($('ovEngineHint').textContent, /^Open voice model from Alibaba\./);
+  assert.deepEqual([$('ovQwBox').hidden, $('ovDescWrap').hidden, $('ovCbBox').hidden, $('ovDbBox').hidden, $('ovTagsBox').hidden, $('ovTuneBox').hidden], [false, false, true, true, true, true]);
+  assert.equal($('ovQwLanguage').options[0].textContent, 'Auto, found from the words');
+  assert.equal($('ovQwLanguage').options.length, 11);
+  assert.equal($('ovQwVariety').value, '', 'the usual');
+  assert.equal($('ovText').maxLength, 1500, 'Design a voice takes at most 1,500 characters');
+  for (const id of ['ovQwLanguage', 'ovQwVariety']) {
+    assert.ok(w.document.querySelector(`label[for="${id}"]`), `${id} has a label`);
+    assert.ok($(($(id).getAttribute('aria-describedby') || '')).textContent.trim(), `${id} has a hint`);
+  }
+  $('ovDescription').value = 'An old storyteller, slow and gravelly.';
+  $('ovText').value = 'Sit down a spell.';
+  $('ovQwLanguage').value = 'English'; $('ovQwVariety').value = '0.75';
+  await $('ovMake').onclick();
+  assert.deepEqual(sent.at(-1).body, { engine: 'qwen', mode: 'design', text: 'Sit down a spell.', seed: '', qwen_language: 'English', qwen_variety: '0.75', description: 'An old storyteller, slow and gravelly.' });
+  assert.equal(w.document.activeElement, $('ovQwLanguage'), 'a refusal moves focus to Language');
+  $('ovModeSpeak').onclick();
+  assert.match($('status').textContent, /Language and Variety are shown\. Qwen copies a voice most closely from a saved voice made with Qwen/);
+  assert.equal($('ovStyleWrap').hidden, true, 'no style for Qwen');
+  assert.equal($('ovText').maxLength, 5000, 'a kept voice speaks up to 5,000');
+  $('ovStyle').value = 'kept, not sent';
+  $('ovVoice').value = '7b0000000000000000000001';
+  answer = { error: 'Variety must be a number from 0.1 to 2. Pick one from the list.', field: 'qwen_variety' };
+  await $('ovMake').onclick();
+  assert.equal('style' in sent.at(-1).body, false);
+  assert.equal(sent.at(-1).body.voiceId, '7b0000000000000000000001');
+  assert.equal(w.document.activeElement, $('ovQwVariety'));
+  $('ovEngine').value = 'voxcpm'; $('ovEngine').onchange();
+  assert.deepEqual([$('ovQwBox').hidden, $('ovStyleWrap').hidden], [true, false]);
+  p.close();
+});
+
+test('the writer writes plain words for Qwen, with a voice line in Design a voice', () => {
+  const writerMod = require('./kadeSoundBoothOpenVoicesWriter');
+  const shape = writerMod.engineShape({ engine: 'qwen', mode: 'design' });
+  assert.deepEqual([shape.name, shape.maxText, shape.voiceLine, shape.voiceMax], ['Qwen', 1500, true, 1000]);
+  assert.equal(writerMod.engineShape({ engine: 'qwen', mode: 'speak' }).maxText, 5000);
+  assert.match(writerMod.engineShape({ engine: 'qwen', mode: 'design', languageName: 'French' }).rules.at(-1), /Write the words in French\./);
+  const got = writerMod.parseWriterReply('VOICE: An old storyteller.\nWORDS:\nWell [laughs] now, *sit* down.', { engine: 'qwen', how: 'write', shape, askVoice: true });
+  assert.equal(got.text, 'Well now, sit down.', 'Qwen would read brackets and asterisks aloud');
 });

@@ -46,6 +46,14 @@
  * DramaBox clip now sends 20 seconds (DRAMABOX_CONTROLS.referenceSeconds), Speak with a voice on
  * DramaBox says plainly that Chatterbox makes the close copy (speakNote), and a Chatterbox Design
  * take made while a clip is imported says it used the built-in voice.
+ *
+ * Nov 22 2026, her words: "I do want qwen for voice design for now on the booth at least". QWEN joins
+ * (bridge open-voices.js; worker qwentts_contract.py on our own RunPod endpoint, QWEN_TTS_ENDPOINT_ID
+ * on the bridge). Design a voice = a description and at most 1,500 characters (Qwen3-TTS VoiceDesign);
+ * Speak with a voice = a saved voice or clip with its words (Qwen3-TTS Base, which copies the clip
+ * closely when it has the clip's exact words, so a kept Qwen take speaks on in the same voice). No
+ * style. Its own Language and Variety menus (QWEN_CONTROLS), sent as qwen_language / qwen_variety and
+ * passed on as the worker's language / temperature. Listed in /health under moreEngines (`newer`).
  * -------------------------------------------------------------------------- */
 const express = require('express');
 const writer = require('./kadeSoundBoothOpenVoicesWriter');
@@ -67,11 +75,48 @@ const ENGINES = {
     textLabel: 'Scene',
     textHint: 'Words inside double quotes are spoken. Everything else is how they are acted, and is never said. For example: An old sailor, tired but kind, leans on the rail. "Storm\'s coming." He laughs softly. "Always is."', // "Up to N characters." is added below, from maxText (Nov 17 2026)
     coldNote: 'The first DramaBox take after a quiet spell can take several minutes while it loads. After that, takes come back much faster.' },
+  qwen: { id: 'qwen', label: 'Qwen', maxDescription: 1000, maxText: 5000, maxDesignText: 1500, newer: true,
+    about: 'Open voice model from Alibaba. Designs a voice from a description, and a kept take speaks anything in that same voice.',
+    speakNote: 'Qwen copies a voice most closely from a saved voice made with Qwen, or from a clip of thirty seconds or less with its words typed in. Without the words it takes only the general sound.',
+    coldNote: 'The first Qwen take after a quiet spell can take a few minutes while the voice engine starts. After that, takes come back in seconds.' },
 };
 for (const e of Object.values(ENGINES)) {
   e.textLabel = e.textLabel || 'Words to say';
   e.textHint = e.textHint ? `${e.textHint} Up to ${e.maxText.toLocaleString('en-US')} characters.` : `Up to ${e.maxText.toLocaleString('en-US')} characters. ${WORDS_HINT}`;
   e.coldNote = e.coldNote || COLD_NOTE;
+}
+ENGINES.qwen.textHint = `Up to ${ENGINES.qwen.maxDesignText.toLocaleString('en-US')} characters when designing a voice, and ${ENGINES.qwen.maxText.toLocaleString('en-US')} when speaking with one. ${WORDS_HINT}`;
+
+/* Qwen's menus (worker qwentts_contract.py; the bridge checks the same rules). Language names are
+ * the models' own (codec_language_id); empty = Auto, found from the words. Variety is the sampling
+ * temperature, usual 0.9 (the models' generation_config.json), 0.1 to 2. */
+const QWEN_CONTROLS = {
+  languages: ['English', 'Chinese', 'Japanese', 'Korean', 'German', 'French', 'Russian', 'Portuguese', 'Spanish', 'Italian'].map((l) => ({ value: l, label: l })),
+  variety: [0.1, 2],
+  varietyOptions: [{ value: '0.6', label: 'Steadier, more even' }, { value: '0.75', label: 'A little steadier' }, { value: '', label: 'The usual' },
+    { value: '1.1', label: 'Livelier' }, { value: '1.3', label: 'Wilder, less predictable' }],
+  languageHint: 'The language of the words to say. Auto works it out from the words.',
+  varietyHint: 'How much each take varies in delivery. Steadier is calmer and more even; livelier has more swing, and can slip.',
+};
+/* Qwen's own fields -> { fields } or { error, field }. */
+function qwenRule(b, mode, text) {
+  const no = (error, field) => ({ error, field });
+  const fields = {};
+  if (mode === 'design' && text.length > ENGINES.qwen.maxDesignText) {
+    return no(`Qwen designs a voice from at most ${ENGINES.qwen.maxDesignText.toLocaleString('en-US')} characters. Keep a take, then speak longer words with the kept voice.`, 'text');
+  }
+  if (isSet(b.qwen_language)) {
+    const lang = QWEN_CONTROLS.languages.find((l) => l.value.toLowerCase() === String(b.qwen_language).trim().toLowerCase());
+    if (!lang) return no('Pick a language from the list, or Auto.', 'qwen_language');
+    fields.language = lang.value;
+  }
+  if (isSet(b.qwen_variety)) {
+    const t = numberOf(b.qwen_variety);
+    const [lo, hi] = QWEN_CONTROLS.variety;
+    if (!Number.isFinite(t) || t < lo || t > hi) return no(`Variety must be a number from ${lo} to ${hi}. Pick one from the list.`, 'qwen_variety');
+    fields.temperature = t;
+  }
+  return { fields };
 }
 
 /* Chatterbox's controls (worker chatterbox_contract.py; the bridge checks the same rules). Each
@@ -344,7 +389,7 @@ const isJobId = (v) => typeof v === 'string' && /^ov_[a-z0-9]{6,40}$/i.test(v);
 /* mingControls: the bridge reads Ming's extra controls (its health says ming.controls). Until it does,
  * the controls are neither offered nor forwarded, so a fork deployed before its bridge never sends a
  * control the bridge would silently drop on paid GPU time. */
-const NOTHING = Object.freeze({ voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false });
+const NOTHING = Object.freeze({ voxcpm: false, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false });
 
 /* Which engines the bridge can run. Read from its health (cached, one call in flight at a time).
  * When the bridge cannot be reached (a network error or a timeout) VoxCPM2, which has a default
@@ -354,14 +399,14 @@ function createReadiness({ http, bridgeBase, secret, now = () => Date.now() }) {
   let cached = null;
   let inflight = null;
   async function ask() {
-    let value = { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false };
+    let value = { voxcpm: true, ming: false, mingControls: false, chatterbox: false, dramabox: false, qwen: false };
     try {
       const r = await http.get(`${bridgeBase()}/audio/open-voices/health`, { params: { secret: secret() }, timeout: 4000 });
       const d = (r && r.data) || {};
       const e = d.engines || {};
       const ming = !!(d.enabled && e.ming && e.ming.configured);
       const on = (k) => !!(d.enabled && e[k] && e[k].configured);
-      value = { voxcpm: on('voxcpm'), ming, mingControls: ming && e.ming.controls === true, chatterbox: on('chatterbox'), dramabox: on('dramabox') };
+      value = { voxcpm: on('voxcpm'), ming, mingControls: ming && e.ming.controls === true, chatterbox: on('chatterbox'), dramabox: on('dramabox'), qwen: on('qwen') };
     } catch (err) {
       if (err && err.response) value = { ...NOTHING };
     }
@@ -386,6 +431,7 @@ function engineList(ready) {
     ...(e.speakNote ? { speakNote: e.speakNote } : {}),
     ...(e.id === 'ming' && ready.mingControls ? { controls: MING_CONTROLS } : {}),
     ...(e.id === 'chatterbox' ? { controls: CHATTERBOX_CONTROLS } : {}), ...(e.id === 'dramabox' ? { controls: DRAMABOX_CONTROLS } : {}),
+    ...(e.id === 'qwen' ? { controls: QWEN_CONTROLS, maxDesignText: e.maxDesignText } : {}),
     ...(ENGINE_SETTINGS[e.id] ? { settings: ENGINE_SETTINGS[e.id] } : {}) }));
 }
 
@@ -449,6 +495,12 @@ function checkTake(b = {}, ready = {}) {
     if (seed.error) return seed;
     if (seed.seed !== undefined) body.seed = seed.seed;
     return { body };
+  }
+  if (engine === 'qwen') {
+    if (mode === 'speak' && oneLine(b.style)) return { error: 'Qwen takes no style. Put how it sounds in the voice description when you design it.', field: 'style' };
+    const own = qwenRule(b, mode, text);
+    if (own.error) return own;
+    Object.assign(body, own.fields);
   }
   const controlsReady = engine === 'ming' && !!ready.mingControls;
   if (Object.keys(ming.fields).length && !controlsReady) {
@@ -538,7 +590,8 @@ function createOpenVoicesRouter(deps) {
     if (typeof deps.write !== 'function') return res.status(503).json({ error: 'The writer is not available here.' });
     const ready = await readiness();
     if (!ENGINES[b.engine] || !ready[b.engine]) return res.status(400).json({ error: 'Pick a voice engine first.', field: 'engine' });
-    const language = typeof b.language_id === 'string' ? CB_LANGUAGES[b.language_id] : '';
+    const language = typeof b.language_id === 'string' ? CB_LANGUAGES[b.language_id]
+      : b.engine === 'qwen' && typeof b.qwen_language === 'string' ? ((QWEN_CONTROLS.languages.find((l) => l.value === b.qwen_language) || {}).label || '') : '';
     const builtin = b.engine === 'ming' && b.mode !== 'speak' && typeof b.voice === 'string' && b.voice
       ? (MING_CONTROLS.voices.find((v) => v.value === b.voice) || {}) : null;
     const ask = writer.writerRequest({ ...b, languageName: language || '', builtin: !!builtin, builtinName: builtin && builtin.label });
@@ -707,9 +760,10 @@ async function healthBlock(readiness, waitMs = 300) {
     const ready = await Promise.race([live, late]);
     clearTimeout(timer);
     const list = engineList(ready);
-    return { engines: list.filter((e) => !ENGINES[e.id].more), moreEngines: list.filter((e) => ENGINES[e.id].more), coldNote: COLD_NOTE };
+    const later = (e) => !!(ENGINES[e.id].more || ENGINES[e.id].newer);
+    return { engines: list.filter((e) => !later(e)), moreEngines: list.filter(later), coldNote: COLD_NOTE };
   } catch (_) { return { engines: [], moreEngines: [], coldNote: COLD_NOTE }; }
 }
 
-module.exports = { createOpenVoicesRouter, createReadiness, checkTake, settingsRule, ENGINE_SETTINGS, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, clipFloor,
-  MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, MAX_STYLE, MAX_NAME, MAX_CLIP_WORDS, PROMPT_CLIP_MAX_S, STILL_MAKING };
+module.exports = { createOpenVoicesRouter, createReadiness, checkTake, settingsRule, ENGINE_SETTINGS, mingRules, mingRule, soundTags, chatterboxRule, dramaboxRule, qwenRule, clipFloor,
+  MING_CONTROLS, CHATTERBOX_CONTROLS, DRAMABOX_CONTROLS, QWEN_CONTROLS, promptWordsFor, voiceView, engineList, healthBlock, ENGINES, COLD_NOTE, MAX_TEXT, MAX_STYLE, MAX_NAME, MAX_CLIP_WORDS, PROMPT_CLIP_MAX_S, STILL_MAKING };
