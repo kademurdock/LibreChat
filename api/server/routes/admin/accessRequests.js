@@ -562,6 +562,8 @@ router.post('/:id/approve', async (req, res) => {
       fetch(bridgeSignupUrl, {
         method: 'POST',
         headers: bridgeHeaders,
+        // The bridge secret must never follow a redirect to another host.
+        redirect: 'error',
         body: JSON.stringify({
           name,
           phone,

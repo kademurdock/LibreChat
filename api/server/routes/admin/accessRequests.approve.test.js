@@ -1035,6 +1035,8 @@ describe('the call that tells the bridge about the phone', () => {
     expect(call).toBeTruthy();
     expect(call[1].headers['x-bridge-secret']).toBe('test-only-bridge-secret');
     expect(JSON.parse(call[1].body).phone).toBe('4175550199');
+    // The bridge secret never follows a redirect to another host.
+    expect(call[1].redirect).toBe('error');
   });
 
   test('with no bridge secret set, the header is left out instead of sending "undefined"', async () => {

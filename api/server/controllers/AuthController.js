@@ -95,7 +95,15 @@ const registrationController = async (req, res) => {
     }
     res.status(status).send({ message });
     // Fire-and-forget: register phone with the bridge if the user provided one
-    if ((status === 200 || status === 201) && req.body.phoneNumber && req.body.name) {
+    /* Nov 26 2026 (lockdown review): only when an account was really made. registerUser answers
+     * 200 for an email that already has an account (so it never says which emails exist), and
+     * that used to hand any typed phone number and name to the bridge without making anything. */
+    if (
+      (status === 200 || status === 201) &&
+      response.createdUserId &&
+      req.body.phoneNumber &&
+      req.body.name
+    ) {
       const bridgeSignupUrl = process.env.BRIDGE_SIGNUP_URL || 'https://kade-ai-bridge-production.up.railway.app/signup';
       /* Nov 26 2026 (lockdown): the bridge's /signup now takes only posts that carry the bridge
        * secret, so this server-to-server call sends it. Without BRIDGE_SECRET the header is left out. */
@@ -106,6 +114,8 @@ const registrationController = async (req, res) => {
       fetch(bridgeSignupUrl, {
         method: 'POST',
         headers: bridgeHeaders,
+        // The bridge secret must never follow a redirect to another host.
+        redirect: 'error',
         body: JSON.stringify({
           name: req.body.name,
           phone: req.body.phoneNumber,

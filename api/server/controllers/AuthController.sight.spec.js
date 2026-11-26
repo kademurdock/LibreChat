@@ -122,4 +122,19 @@ describe('the call that tells the bridge about the phone', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect('x-bridge-secret' in global.fetch.mock.calls[0][1].headers).toBe(false);
   });
+
+  test('it never follows a redirect with the secret', async () => {
+    process.env.BRIDGE_SECRET = 'test-only-bridge-secret';
+    registerUser.mockResolvedValue({ status: 200, message: 'ok', createdUserId: 'u-new' });
+    await registrationController({ body: body({ phoneNumber: '4175550199' }) }, fakeRes());
+    expect(global.fetch.mock.calls[0][1].redirect).toBe('error');
+  });
+
+  test('an email that already has an account sends nothing to the bridge', async () => {
+    process.env.BRIDGE_SECRET = 'test-only-bridge-secret';
+    // registerUser answers 200 without createdUserId for an email already in use.
+    registerUser.mockResolvedValue({ status: 200, message: 'ok' });
+    await registrationController({ body: body({ phoneNumber: '4175550199' }) }, fakeRes());
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });

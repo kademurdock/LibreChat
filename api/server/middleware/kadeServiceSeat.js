@@ -21,10 +21,23 @@
 const crypto = require('crypto');
 
 const HEADER = 'x-kade-service';
+/* Nov 26 2026 (Part 461 review fix): which service it is. Not a secret: the
+ * bridge sends 'bridge' and the inworld proxy sends 'inworld-proxy'. It only
+ * counts on a request whose X-Kade-Service matched, and it keeps each
+ * service's failed sign-ins in a count of its own (loginEmailLimiter.js), so
+ * one service holding a stale password cannot lock another out. */
+const NAME_HEADER = 'x-kade-service-name';
 const MIN_SECRET_LENGTH = 24;
 const FLAG = Symbol.for('kade.serviceSeat');
+const NAME_FLAG = Symbol.for('kade.serviceSeatName');
 
 let warnedBad = false;
+/* One-time log lines, so the logs show whether the seat is really working
+ * before TRUST_PROXY=2 goes on. None of them ever holds the value. */
+let saidStartup = false;
+let saidUnsetButSent = false;
+let saidMismatch = false;
+const recognisedNames = new Set();
 
 /** The secret, or '' when the feature is off (unset, too short to be safe, or holding a comma). */
 function serviceSecret(env = process.env) {
@@ -71,11 +84,20 @@ function headerMatches(req, env = process.env) {
 function scrubHeader(req) {
   if (!req || !req.headers) return;
   delete req.headers[HEADER];
+  delete req.headers[NAME_HEADER];
   if (Array.isArray(req.rawHeaders)) {
     for (let i = req.rawHeaders.length - 2; i >= 0; i -= 2) {
-      if (String(req.rawHeaders[i]).toLowerCase() === HEADER) req.rawHeaders.splice(i, 2);
+      const name = String(req.rawHeaders[i]).toLowerCase();
+      if (name === HEADER || name === NAME_HEADER) req.rawHeaders.splice(i, 2);
     }
   }
+}
+
+/** The service's name from X-Kade-Service-Name: lower case letters, digits and dashes, at most 32. 'unnamed' otherwise. */
+function cleanServiceName(value) {
+  if (typeof value !== 'string') return 'unnamed';
+  const name = value.trim().toLowerCase();
+  return /^[a-z0-9-]{1,32}$/.test(name) ? name : 'unnamed';
 }
 
 /**
@@ -91,11 +113,63 @@ function isKadeService(req) {
   return headerMatches(req, process.env);
 }
 
+/**
+ * Which service a request is from, for keeping counts apart. Only for a
+ * request that is a service; '' for everyone else.
+ */
+function kadeServiceName(req) {
+  if (!isKadeService(req)) return '';
+  if (Object.prototype.hasOwnProperty.call(req, NAME_FLAG)) return req[NAME_FLAG];
+  return cleanServiceName(req.headers ? req.headers[NAME_HEADER] : undefined);
+}
+
+/* The one-time lines. The first recognised request from each service name is
+ * the sign to look for before switching TRUST_PROXY to 2. */
+function noteOutcome(req, ok, name) {
+  if (ok) {
+    if (!recognisedNames.has(name) && recognisedNames.size < 20) {
+      recognisedNames.add(name);
+      // eslint-disable-next-line no-console
+      console.info(`[kadeServiceSeat] first service request recognised from "${name}"`);
+    }
+    return;
+  }
+  const sent = req && req.headers && req.headers[HEADER] !== undefined;
+  if (!sent) return;
+  if (!serviceSecret(process.env)) {
+    if (!saidUnsetButSent) {
+      saidUnsetButSent = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[kadeServiceSeat] a request carried X-Kade-Service, but the service seat is off on the site (KADE_SERVICE_LIMIT_SECRET unset or refused)',
+      );
+    }
+  } else if (!saidMismatch) {
+    saidMismatch = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[kadeServiceSeat] a request carried X-Kade-Service that did not match KADE_SERVICE_LIMIT_SECRET (a stranger, or a service holding a different value)',
+    );
+  }
+}
+
 /** App-level middleware: decide once, remember it on the request, remove the header. */
 function kadeServiceSeat() {
+  if (!saidStartup) {
+    saidStartup = true;
+    // eslint-disable-next-line no-console
+    console.info(
+      serviceSecret(process.env)
+        ? '[kadeServiceSeat] service seat is on'
+        : '[kadeServiceSeat] service seat is off (KADE_SERVICE_LIMIT_SECRET unset or refused): services are counted by address like everyone else',
+    );
+  }
   return function kadeServiceSeatMiddleware(req, _res, next) {
     const ok = headerMatches(req, process.env);
+    const name = ok ? cleanServiceName(req.headers[NAME_HEADER]) : '';
     Object.defineProperty(req, FLAG, { value: ok, enumerable: false, configurable: true });
+    Object.defineProperty(req, NAME_FLAG, { value: name, enumerable: false, configurable: true });
+    noteOutcome(req, ok, name);
     scrubHeader(req);
     next();
   };
@@ -103,8 +177,11 @@ function kadeServiceSeat() {
 
 module.exports = {
   HEADER,
+  NAME_HEADER,
   MIN_SECRET_LENGTH,
+  cleanServiceName,
   isKadeService,
+  kadeServiceName,
   kadeServiceSeat,
   serviceSecret,
   sameSecret,

@@ -356,6 +356,7 @@ async function signIns(app, attempts) {
     for (const a of attempts) {
       const headers = { 'x-forwarded-for': `${a.from || RAILWAY_EGRESS}, ${EDGE}`, 'content-type': 'application/json' };
       if (a.service) headers['x-kade-service'] = SECRET;
+      if (a.serviceName) headers['x-kade-service-name'] = a.serviceName;
       out.push(
         await new Promise((resolve, reject) => {
           const r = http.request({ host: '127.0.0.1', port, path: '/go', method: 'POST', headers }, (res) => {
@@ -373,9 +374,12 @@ async function signIns(app, attempts) {
   return out;
 }
 
-function loadEmailLimiter(maxFailures) {
+function loadEmailLimiter(maxFailures, spreadMax = 0) {
   process.env.LOGIN_EMAIL_MAX = String(maxFailures);
-  return loadWith('./limiters/loginEmailLimiter', { '@librechat/api': { limiterCache: () => undefined } });
+  process.env.LOGIN_EMAIL_SPREAD_MAX = String(spreadMax);
+  return loadWith('./limiters/loginEmailLimiter', {
+    '@librechat/api': { limiterCache: () => undefined, removePorts },
+  });
 }
 
 test('loginEmailLimiter: failed sign-ins through the service seat are still capped per email', async () => {
@@ -386,31 +390,56 @@ test('loginEmailLimiter: failed sign-ins through the service seat are still capp
   assert.deepEqual(out, [404, 404, 404, 429, 429]);
 });
 
-test('loginEmailLimiter: one email is counted however it is typed, and from any address', async () => {
+test('loginEmailLimiter: one email is counted however it is typed, per address', async () => {
   const limiter = loadEmailLimiter(2);
   const out = await signIns(loginApp(limiter), [
     { email: 'kade@example.com', password: 'x', from: '198.51.100.1' },
-    { email: '  KADE@example.COM ', password: 'x', from: '198.51.100.2' },
-    { email: 'kade@example.com', password: 'x', from: '198.51.100.3' },
+    { email: '  KADE@example.COM ', password: 'x', from: '198.51.100.1' },
+    { email: 'kade@example.com', password: 'x', from: '198.51.100.1' },
+    // Another address has its own count for the same email.
+    { email: 'kade@example.com', password: 'x', from: '198.51.100.2' },
     // A different email has its own count.
-    { email: 'someone@example.com', password: 'x', from: '198.51.100.3' },
+    { email: 'someone@example.com', password: 'x', from: '198.51.100.1' },
     // A phone number is counted the same in every format.
     { email: '417-555-0100', password: 'x' },
     { email: '(417) 555 0100', password: 'x' },
     { email: '14175550100', password: 'x' },
   ]);
-  assert.deepEqual(out, [404, 404, 429, 404, 404, 404, 429]);
+  assert.deepEqual(out, [404, 404, 429, 404, 404, 404, 404, 429]);
+});
+
+test('loginEmailLimiter: a stranger failing on purpose cannot lock Kade out from her own address', async () => {
+  const limiter = loadEmailLimiter(3, 100);
+  const stranger = { email: 'Kade@Example.com', password: 'guess', from: '198.51.100.1' };
+  const out = await signIns(loginApp(limiter), [
+    ...Array.from({ length: 12 }, () => stranger),
+    { email: 'kade@example.com', password: 'right', from: '203.0.113.9' },
+  ]);
+  assert.deepEqual(out, [404, 404, 404, ...Array(9).fill(429), 200]);
+});
+
+test('loginEmailLimiter: guesses spread over many addresses still stop at the backstop', async () => {
+  const limiter = loadEmailLimiter(3, 5);
+  const out = await signIns(
+    loginApp(limiter),
+    Array.from({ length: 7 }, (_, i) => ({ email: 'kade@example.com', password: 'x', from: `198.51.100.${i + 1}` })),
+  );
+  assert.deepEqual(out, [404, 404, 404, 404, 404, 429, 429]);
+  // Services do not count toward the backstop and are not stopped by it.
+  const svc = await signIns(loginApp(limiter), [{ email: 'kade@example.com', password: 'right', service: true }]);
+  assert.deepEqual(svc, [200]);
 });
 
 test('loginEmailLimiter: correct sign-ins never add up, so the bridge can sign in all day', async () => {
-  const limiter = loadEmailLimiter(2);
+  const limiter = loadEmailLimiter(2, 2);
   const ok = { email: 'bridge@example.com', password: 'right', service: true };
-  const out = await signIns(loginApp(limiter), Array.from({ length: 8 }, () => ok));
-  assert.deepEqual(out, Array(8).fill(200));
+  const people = { email: 'kade@example.com', password: 'right', from: '203.0.113.9' };
+  const out = await signIns(loginApp(limiter), [...Array.from({ length: 8 }, () => ok), ...Array.from({ length: 8 }, () => people)]);
+  assert.deepEqual(out, Array(16).fill(200));
 });
 
 test('loginEmailLimiter: strangers failing on purpose cannot lock the service out of an account', async () => {
-  const limiter = loadEmailLimiter(2);
+  const limiter = loadEmailLimiter(2, 2);
   const stranger = { email: 'kade@example.com', password: 'x', from: '203.0.113.50' };
   const out = await signIns(loginApp(limiter), [
     stranger,
@@ -421,15 +450,44 @@ test('loginEmailLimiter: strangers failing on purpose cannot lock the service ou
   assert.deepEqual(out, [404, 404, 429, 200]);
 });
 
+test('loginEmailLimiter: one service with a stale password cannot lock another service out', async () => {
+  const limiter = loadEmailLimiter(2);
+  const stale = { email: 'kade@example.com', password: 'old', service: true, serviceName: 'inworld-proxy' };
+  const out = await signIns(loginApp(limiter), [
+    stale,
+    stale,
+    stale,
+    { email: 'kade@example.com', password: 'right', service: true, serviceName: 'bridge' },
+  ]);
+  assert.deepEqual(out, [404, 404, 429, 200]);
+});
+
 test('loginEmailLimiter: the account name is kept only as a hash', () => {
   const limiter = loadEmailLimiter(2);
-  const key = limiter.loginNameKey({ headers: {}, body: { email: 'Kade@Example.com' } });
-  assert.match(key, /^web:[0-9a-f]{64}$/);
+  const key = limiter.loginNameKey({ headers: {}, ip: '198.51.100.1', body: { email: 'Kade@Example.com' } });
+  assert.match(key, /^web:[0-9a-f]{64}:198\.51\.100\.1$/);
   assert.equal(key.toLowerCase().includes('kade'), false);
-  const req = { headers: { 'x-kade-service': SECRET }, rawHeaders: [], body: { email: 'kade@example.com' } };
+  assert.match(limiter.loginSpreadKey({ body: { email: 'kade@example.com' } }), /^spread:[0-9a-f]{64}$/);
+  const req = {
+    headers: { 'x-kade-service': SECRET, 'x-kade-service-name': 'Bridge' },
+    rawHeaders: [],
+    body: { email: 'kade@example.com' },
+  };
   seat.kadeServiceSeat()(req, {}, () => {});
-  assert.match(limiter.loginNameKey(req), /^service:[0-9a-f]{64}$/);
+  assert.match(limiter.loginNameKey(req), /^service:bridge:[0-9a-f]{64}$/);
+  assert.equal('x-kade-service-name' in req.headers, false);
   assert.equal(limiter.loginName({ body: {} }), '');
+});
+
+test('the service name only counts for a real service, and only in a safe shape', () => {
+  assert.equal(seat.cleanServiceName('inworld-proxy'), 'inworld-proxy');
+  assert.equal(seat.cleanServiceName('  BRIDGE '), 'bridge');
+  assert.equal(seat.cleanServiceName('a b'), 'unnamed');
+  assert.equal(seat.cleanServiceName('x'.repeat(33)), 'unnamed');
+  assert.equal(seat.cleanServiceName(undefined), 'unnamed');
+  const stranger = { headers: { 'x-kade-service-name': 'bridge' }, rawHeaders: [] };
+  seat.kadeServiceSeat()(stranger, {}, () => {});
+  assert.equal(seat.kadeServiceName(stranger), '');
 });
 
 test('doorbell: services share one hourly count; everyone else keeps 3 an hour per address', () => {
