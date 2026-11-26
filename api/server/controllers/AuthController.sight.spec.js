@@ -95,3 +95,31 @@ test('a failure saving it never fails the signup', async () => {
   await registrationController({ body: body({ sight: 'sighted' }) }, res);
   expect(res.status).toHaveBeenCalledWith(200);
 });
+
+/* Nov 26 2026 (lockdown). The bridge's /signup now refuses posts without the bridge secret, so the
+ * call a new signup makes to it has to carry the x-bridge-secret header. */
+describe('the call that tells the bridge about the phone', () => {
+  const savedSecret = process.env.BRIDGE_SECRET;
+  afterEach(() => {
+    if (savedSecret === undefined) delete process.env.BRIDGE_SECRET;
+    else process.env.BRIDGE_SECRET = savedSecret;
+  });
+
+  test('it sends the bridge secret in the header', async () => {
+    process.env.BRIDGE_SECRET = 'test-only-bridge-secret';
+    registerUser.mockResolvedValue({ status: 200, message: 'ok', createdUserId: 'u-new' });
+    await registrationController({ body: body({ phoneNumber: '4175550199' }) }, fakeRes());
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(opts.headers['x-bridge-secret']).toBe('test-only-bridge-secret');
+    expect(JSON.parse(opts.body).phone).toBe('4175550199');
+  });
+
+  test('with no bridge secret set, the header is left out instead of sending "undefined"', async () => {
+    delete process.env.BRIDGE_SECRET;
+    registerUser.mockResolvedValue({ status: 200, message: 'ok', createdUserId: 'u-new' });
+    await registrationController({ body: body({ phoneNumber: '4175550199' }) }, fakeRes());
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect('x-bridge-secret' in global.fetch.mock.calls[0][1].headers).toBe(false);
+  });
+});

@@ -553,9 +553,15 @@ router.post('/:id/approve', async (req, res) => {
     if (phone) {
       const bridgeSignupUrl =
         process.env.BRIDGE_SIGNUP_URL || 'https://kade-ai-bridge-production.up.railway.app/signup';
+      /* Nov 26 2026 (lockdown): the bridge's /signup now takes only posts that carry the bridge
+       * secret, so this call sends it. Without BRIDGE_SECRET the header is left out. */
+      const bridgeHeaders = { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' };
+      if (process.env.BRIDGE_SECRET) {
+        bridgeHeaders['x-bridge-secret'] = process.env.BRIDGE_SECRET;
+      }
       fetch(bridgeSignupUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        headers: bridgeHeaders,
         body: JSON.stringify({
           name,
           phone,

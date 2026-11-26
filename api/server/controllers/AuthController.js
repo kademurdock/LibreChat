@@ -97,9 +97,15 @@ const registrationController = async (req, res) => {
     // Fire-and-forget: register phone with the bridge if the user provided one
     if ((status === 200 || status === 201) && req.body.phoneNumber && req.body.name) {
       const bridgeSignupUrl = process.env.BRIDGE_SIGNUP_URL || 'https://kade-ai-bridge-production.up.railway.app/signup';
+      /* Nov 26 2026 (lockdown): the bridge's /signup now takes only posts that carry the bridge
+       * secret, so this server-to-server call sends it. Without BRIDGE_SECRET the header is left out. */
+      const bridgeHeaders = { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' };
+      if (process.env.BRIDGE_SECRET) {
+        bridgeHeaders['x-bridge-secret'] = process.env.BRIDGE_SECRET;
+      }
       fetch(bridgeSignupUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        headers: bridgeHeaders,
         body: JSON.stringify({
           name: req.body.name,
           phone: req.body.phoneNumber,

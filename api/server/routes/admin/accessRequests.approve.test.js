@@ -1001,3 +1001,47 @@ describe('deny', () => {
     );
   });
 });
+
+/* Nov 26 2026 (lockdown). The bridge's /signup now refuses posts without the bridge secret, so the
+ * call approve() makes to it has to carry the x-bridge-secret header. */
+describe('the call that tells the bridge about the phone', () => {
+  let fetchSpy;
+  const savedSecret = process.env.BRIDGE_SECRET;
+  beforeEach(() => {
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true });
+  });
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    if (savedSecret === undefined) delete process.env.BRIDGE_SECRET;
+    else process.env.BRIDGE_SECRET = savedSecret;
+  });
+  const bridgeCall = () =>
+    fetchSpy.mock.calls.find(([url]) => String(url) === process.env.BRIDGE_SIGNUP_URL);
+  const approvePhoneOnly = async (userId) => {
+    mockFindById.mockReturnValue(leanReturning(doorRequest('4175550199')));
+    mockFindUser
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: userId });
+    mockRegisterUser.mockResolvedValue({ status: 200, createdUserId: userId });
+    const res = await approve({ audience: 'adult' });
+    expect(res.status).toBe(200);
+  };
+
+  test('it sends the bridge secret in the header', async () => {
+    process.env.BRIDGE_SECRET = 'test-only-bridge-secret';
+    await approvePhoneOnly('new-user-bs1');
+    const call = bridgeCall();
+    expect(call).toBeTruthy();
+    expect(call[1].headers['x-bridge-secret']).toBe('test-only-bridge-secret');
+    expect(JSON.parse(call[1].body).phone).toBe('4175550199');
+  });
+
+  test('with no bridge secret set, the header is left out instead of sending "undefined"', async () => {
+    delete process.env.BRIDGE_SECRET;
+    await approvePhoneOnly('new-user-bs2');
+    const call = bridgeCall();
+    expect(call).toBeTruthy();
+    expect('x-bridge-secret' in call[1].headers).toBe(false);
+  });
+});
