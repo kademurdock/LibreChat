@@ -45,6 +45,7 @@ router.post(
   '/login',
   middleware.logHeaders,
   middleware.loginLimiter,
+  middleware.loginEmailLimiter,
   middleware.checkBan,
   ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth,
   setBalanceConfig,

@@ -14,14 +14,31 @@ const router = express.Router();
  * length caps, and the request only ever RINGS Kade — nothing self-serves.
  */
 const recent = new Map(); // ip -> [timestamps]
-function ipAllowed(ip) {
+function ipAllowed(ip, perHour = 3) {
   const now = Date.now();
   const hits = (recent.get(ip) || []).filter((t) => now - t < 60 * 60 * 1000);
-  if (hits.length >= 3) return false;
+  if (hits.length >= perHour) return false;
   hits.push(now);
   recent.set(ip, hits);
   if (recent.size > 5000) recent.clear(); // never let the map become a leak
   return true;
+}
+
+/* Nov 26 2026 (Part 461, review fix): the bridge files every phone caller's
+ * knock from its one Railway address. It is not held to 3 an hour, but it is
+ * not unlimited either: all of Kade's services share ONE count, by default
+ * 20 knocks an hour (KADE_SERVICE_KNOCKS_PER_HOUR). The bridge has its own
+ * smaller caps per caller number and per hour in front of this. */
+const SERVICE_KNOCK_KEY = 'kade-service';
+function serviceKnocksPerHour(env = process.env) {
+  const n = Number(env.KADE_SERVICE_KNOCKS_PER_HOUR);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 20;
+}
+
+/** Is this knock within its hourly allowance? Services share one count; everyone else is counted by address. */
+function knockAllowed(req, ip) {
+  if (isKadeService(req)) return ipAllowed(SERVICE_KNOCK_KEY, serviceKnocksPerHour());
+  return ipAllowed(ip);
 }
 
 /* Nov 26 2026 (Part 460): the first X-Forwarded-For entry is whatever the
@@ -42,10 +59,9 @@ router.post('/', async (req, res) => {
     /* Honeypot: real people never see this field; bots autofill it. */
     if (b.website) return res.json({ ok: true });
     const ip = knockAddress(req);
-    /* Nov 26 2026 (Part 461): the bridge files a phone caller's knock from its
-     * one Railway address, so its knocks are not counted against that address.
-     * The bridge's own call limits stand in front of it. */
-    if (!isKadeService(req) && !ipAllowed(ip)) {
+    /* Nov 26 2026 (Part 461): a service (the bridge filing a phone caller's
+     * knock) has its own shared hourly count; see knockAllowed above. */
+    if (!knockAllowed(req, ip)) {
       return res.status(429).json({ error: 'Easy now — that door was just knocked on. Try again in a bit.' });
     }
     const name = String(b.name || '').trim().slice(0, 80);
@@ -125,3 +141,4 @@ router.post('/', async (req, res) => {
 
 module.exports = router;
 module.exports.knockAddress = knockAddress;
+module.exports.knockAllowed = knockAllowed;

@@ -96,6 +96,7 @@ jest.mock('~/strategies', () => ({
 jest.mock('~/server/middleware', () => ({
   logHeaders: jest.fn((req, res, next) => next()),
   loginLimiter: jest.fn((req, res, next) => next()),
+  loginEmailLimiter: jest.fn((req, res, next) => next()),
   checkBan: jest.fn((req, res, next) => next()),
   requireLocalAuth: jest.fn((req, res, next) => next()),
   requireJwtAuth: jest.fn((req, res, next) => next()),

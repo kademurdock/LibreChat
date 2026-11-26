@@ -289,3 +289,166 @@ test('banViolation: a service account is banned, its shared address is not', asy
   assert.equal(service.has('u1'), true);
   assert.equal(service.has(RAILWAY_EGRESS), false);
 });
+
+/* ---------- review fixes: a repeated header, the per-name sign-in count, the doorbell ---------- */
+
+test('two copies of the header arrive joined with a comma and do not count', async () => {
+  process.env.LOGIN_MAX = '2';
+  const loginLimiter = loadWith('./limiters/loginLimiter', limiterStubs());
+  const app = appWith(loginLimiter);
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const port = server.address().port;
+  const statuses = [];
+  try {
+    for (let i = 0; i < 3; i++) {
+      statuses.push(
+        await new Promise((resolve, reject) => {
+          const r = http.request(
+            {
+              host: '127.0.0.1',
+              port,
+              path: '/go',
+              method: 'POST',
+              // An array value makes Node send the header twice.
+              headers: { 'x-forwarded-for': `${RAILWAY_EGRESS}, ${EDGE}`, 'x-kade-service': [SECRET, SECRET] },
+            },
+            (res) => {
+              res.resume();
+              res.on('end', () => resolve(res.statusCode));
+            },
+          );
+          r.on('error', reject);
+          r.end('{}');
+        }),
+      );
+    }
+  } finally {
+    server.close();
+  }
+  assert.deepEqual(statuses, [200, 200, 429]);
+  assert.equal(seat.isKadeService(reqOf({ 'x-kade-service': `${SECRET}, ${SECRET}` })), false);
+});
+
+test('a secret with a comma in it turns the seat off', () => {
+  process.env.KADE_SERVICE_LIMIT_SECRET = 'abc,defghijklmnopqrstuvwxyz0123';
+  assert.equal(seat.isKadeService(reqOf({ 'x-kade-service': 'abc,defghijklmnopqrstuvwxyz0123' })), false);
+});
+
+/* A stand-in sign-in route: the password "right" signs in, anything else fails with 404 like the real one. */
+function loginApp(limiter) {
+  const app = express();
+  app.set('trust proxy', 2);
+  app.use(seat.kadeServiceSeat());
+  app.use(express.json());
+  app.post('/go', limiter, (req, res) =>
+    req.body.password === 'right' ? res.json({ token: 't' }) : res.status(404).json({ message: 'no match' }),
+  );
+  return app;
+}
+
+async function signIns(app, attempts) {
+  const server = app.listen(0);
+  await new Promise((r) => server.once('listening', r));
+  const port = server.address().port;
+  const out = [];
+  try {
+    for (const a of attempts) {
+      const headers = { 'x-forwarded-for': `${a.from || RAILWAY_EGRESS}, ${EDGE}`, 'content-type': 'application/json' };
+      if (a.service) headers['x-kade-service'] = SECRET;
+      out.push(
+        await new Promise((resolve, reject) => {
+          const r = http.request({ host: '127.0.0.1', port, path: '/go', method: 'POST', headers }, (res) => {
+            res.resume();
+            res.on('end', () => resolve(res.statusCode));
+          });
+          r.on('error', reject);
+          r.end(JSON.stringify({ email: a.email, password: a.password }));
+        }),
+      );
+    }
+  } finally {
+    server.close();
+  }
+  return out;
+}
+
+function loadEmailLimiter(maxFailures) {
+  process.env.LOGIN_EMAIL_MAX = String(maxFailures);
+  return loadWith('./limiters/loginEmailLimiter', { '@librechat/api': { limiterCache: () => undefined } });
+}
+
+test('loginEmailLimiter: failed sign-ins through the service seat are still capped per email', async () => {
+  const limiter = loadEmailLimiter(3);
+  const wrong = { email: 'Kade@Example.com', password: 'guess', service: true };
+  const out = await signIns(loginApp(limiter), [wrong, wrong, wrong, wrong, { ...wrong, password: 'right' }]);
+  // Three failures, then even the right password waits out the window.
+  assert.deepEqual(out, [404, 404, 404, 429, 429]);
+});
+
+test('loginEmailLimiter: one email is counted however it is typed, and from any address', async () => {
+  const limiter = loadEmailLimiter(2);
+  const out = await signIns(loginApp(limiter), [
+    { email: 'kade@example.com', password: 'x', from: '198.51.100.1' },
+    { email: '  KADE@example.COM ', password: 'x', from: '198.51.100.2' },
+    { email: 'kade@example.com', password: 'x', from: '198.51.100.3' },
+    // A different email has its own count.
+    { email: 'someone@example.com', password: 'x', from: '198.51.100.3' },
+    // A phone number is counted the same in every format.
+    { email: '417-555-0100', password: 'x' },
+    { email: '(417) 555 0100', password: 'x' },
+    { email: '14175550100', password: 'x' },
+  ]);
+  assert.deepEqual(out, [404, 404, 429, 404, 404, 404, 429]);
+});
+
+test('loginEmailLimiter: correct sign-ins never add up, so the bridge can sign in all day', async () => {
+  const limiter = loadEmailLimiter(2);
+  const ok = { email: 'bridge@example.com', password: 'right', service: true };
+  const out = await signIns(loginApp(limiter), Array.from({ length: 8 }, () => ok));
+  assert.deepEqual(out, Array(8).fill(200));
+});
+
+test('loginEmailLimiter: strangers failing on purpose cannot lock the service out of an account', async () => {
+  const limiter = loadEmailLimiter(2);
+  const stranger = { email: 'kade@example.com', password: 'x', from: '203.0.113.50' };
+  const out = await signIns(loginApp(limiter), [
+    stranger,
+    stranger,
+    stranger,
+    { email: 'kade@example.com', password: 'right', service: true },
+  ]);
+  assert.deepEqual(out, [404, 404, 429, 200]);
+});
+
+test('loginEmailLimiter: the account name is kept only as a hash', () => {
+  const limiter = loadEmailLimiter(2);
+  const key = limiter.loginNameKey({ headers: {}, body: { email: 'Kade@Example.com' } });
+  assert.match(key, /^web:[0-9a-f]{64}$/);
+  assert.equal(key.toLowerCase().includes('kade'), false);
+  const req = { headers: { 'x-kade-service': SECRET }, rawHeaders: [], body: { email: 'kade@example.com' } };
+  seat.kadeServiceSeat()(req, {}, () => {});
+  assert.match(limiter.loginNameKey(req), /^service:[0-9a-f]{64}$/);
+  assert.equal(limiter.loginName({ body: {} }), '');
+});
+
+test('doorbell: services share one hourly count; everyone else keeps 3 an hour per address', () => {
+  process.env.KADE_SERVICE_KNOCKS_PER_HOUR = '5';
+  const { knockAllowed } = loadWith('../routes/accessRequest', {
+    '@librechat/data-schemas': { logger: { warn() {}, error() {}, info() {} } },
+    '~/models/kadeAccessRequest': { KadeAccessRequest: {} },
+    '~/models/kadeSight': { parseSightChoice: () => null },
+  });
+  const serviceReq = () => {
+    const req = { headers: { 'x-kade-service': SECRET }, rawHeaders: [] };
+    seat.kadeServiceSeat()(req, {}, () => {});
+    return req;
+  };
+  const service = Array.from({ length: 7 }, () => knockAllowed(serviceReq(), RAILWAY_EGRESS));
+  assert.deepEqual(service, [true, true, true, true, true, false, false]);
+  const plain = Array.from({ length: 4 }, () => knockAllowed({ headers: {} }, '198.51.100.7'));
+  assert.deepEqual(plain, [true, true, true, false]);
+  // The services' count is separate from the address it comes from.
+  const sameAddress = Array.from({ length: 4 }, () => knockAllowed({ headers: {} }, RAILWAY_EGRESS));
+  assert.deepEqual(sameAddress, [true, true, true, false]);
+});

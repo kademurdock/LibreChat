@@ -7,8 +7,12 @@
  * so every per-address limit and address ban would add them up and refuse
  * them. A request that carries the header X-Kade-Service with the value of
  * KADE_SERVICE_LIMIT_SECRET skips ONLY the per-address limits and the
- * address bans. It still has to sign in. Per-account limits and account bans
- * still apply. With the variable unset, nothing is skipped.
+ * address bans. It still has to sign in. Account bans still apply, and so do
+ * the limits counted per account: the failed sign-in count per email or phone
+ * (loginEmailLimiter, which has a separate bucket for services), and the
+ * signed-in limits (messages, 2FA, uploads and the rest). The doorbell gives
+ * services one shared hourly count instead of the per-address one. With the
+ * variable unset, nothing is skipped.
  *
  * The header is read once, near the top of the app, and then removed from the
  * request, so no later logger, error report or forwarded request can carry it.
@@ -20,21 +24,21 @@ const HEADER = 'x-kade-service';
 const MIN_SECRET_LENGTH = 24;
 const FLAG = Symbol.for('kade.serviceSeat');
 
-let warnedShort = false;
+let warnedBad = false;
 
-/** The secret, or '' when the feature is off (unset, or too short to be safe). */
+/** The secret, or '' when the feature is off (unset, too short to be safe, or holding a comma). */
 function serviceSecret(env = process.env) {
   const raw = env.KADE_SERVICE_LIMIT_SECRET;
   if (typeof raw !== 'string') return '';
   const secret = raw.trim();
   if (!secret) return '';
-  if (secret.length < MIN_SECRET_LENGTH) {
-    if (!warnedShort) {
-      warnedShort = true;
-      // The length rule only. Never the value.
+  if (secret.length < MIN_SECRET_LENGTH || secret.includes(',')) {
+    if (!warnedBad) {
+      warnedBad = true;
+      // The rule only. Never the value.
       // eslint-disable-next-line no-console
       console.warn(
-        `[kadeServiceSeat] KADE_SERVICE_LIMIT_SECRET is shorter than ${MIN_SECRET_LENGTH} characters, so the service seat is off`,
+        `[kadeServiceSeat] KADE_SERVICE_LIMIT_SECRET must be at least ${MIN_SECRET_LENGTH} characters with no comma, so the service seat is off`,
       );
     }
     return '';
@@ -55,8 +59,11 @@ function headerMatches(req, env = process.env) {
   const secret = serviceSecret(env);
   if (!secret) return false;
   const value = req && req.headers ? req.headers[HEADER] : undefined;
-  // Two copies of the header is not a service: refuse rather than guess.
+  // Node joins a repeated header into one value with commas ("a, b"). The
+  // secret never has a comma, so a joined value is refused outright. An array
+  // (only possible when a test builds the request by hand) is refused too.
   if (Array.isArray(value)) return false;
+  if (typeof value === 'string' && value.includes(',')) return false;
   return sameSecret(value, secret);
 }
 

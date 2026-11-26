@@ -72,6 +72,7 @@ router.post(
   '/login/local',
   middleware.logHeaders,
   middleware.loginLimiter,
+  middleware.loginEmailLimiter,
   middleware.checkBan,
   middleware.requireLocalAuth,
   tenantContextMiddleware,
