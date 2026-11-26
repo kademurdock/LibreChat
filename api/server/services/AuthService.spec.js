@@ -71,6 +71,11 @@ jest.mock('~/strategies/validators', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
+const mockResetCap = { take: jest.fn(), release: jest.fn() };
+jest.mock('~/server/services/kadeResetCap', () => ({
+  resetCap: () => mockResetCap,
+  capIsOn: () => true,
+}));
 
 const {
   checkEmailConfig,
@@ -578,6 +583,8 @@ describe('verifyEmail public response handling', () => {
 describe('requestPasswordReset', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResetCap.take.mockResolvedValue({ ok: true, id: 'claim-1' });
+    mockResetCap.release.mockResolvedValue(undefined);
     checkEmailConfig.mockReturnValue(true);
     isEmailDomainAllowed.mockReturnValue(true);
     getAppConfig.mockResolvedValue({
@@ -604,10 +611,9 @@ describe('requestPasswordReset', () => {
 
   it('sends the reset link only to the stored address and returns no credential to the requester', async () => {
     findUser.mockResolvedValue({ _id: 'user-reset', email: 'user@example.com' });
-    const result = await requestPasswordReset({
-      body: { email: 'user@example.com' },
-      ip: '127.0.0.1',
-    });
+    const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+    await req.kadeResetJob;
     expect(result.link).toBeUndefined();
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -642,6 +648,7 @@ describe('requestPasswordReset', () => {
 
     const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
     await requestPasswordReset(req);
+    await req.kadeResetJob;
 
     expect(resolveAppConfigForUser).toHaveBeenCalledWith(getAppConfig, user);
   });
@@ -651,6 +658,7 @@ describe('requestPasswordReset', () => {
 
     const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
     await requestPasswordReset(req);
+    await req.kadeResetJob;
 
     expect(resolveAppConfigForUser).not.toHaveBeenCalled();
   });
@@ -667,6 +675,7 @@ describe('requestPasswordReset', () => {
 
     const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
     const result = await requestPasswordReset(req);
+    await req.kadeResetJob;
 
     expect(result).not.toBeInstanceOf(Error);
     expect(result.message).toContain('If an account with that email exists');
@@ -678,6 +687,7 @@ describe('requestPasswordReset', () => {
 
     const req = { body: { email: 'user@example.com' }, ip: '127.0.0.1' };
     await requestPasswordReset(req);
+    await req.kadeResetJob;
 
     expect(deleteTokens).toHaveBeenCalledWith({
       userId: user._id,
@@ -695,6 +705,77 @@ describe('requestPasswordReset', () => {
         type: 'password_reset',
       }),
     );
+  });
+
+  /* Nov 26 2026 (Part 460): the caller cannot tell a real account from a
+   * missing one or a capped one, and does not wait for the email. */
+  const GENERIC = {
+    message: 'If an account with that email exists, a password reset link has been sent to it.',
+  };
+
+  it('answers the same for a real account, a missing one and a capped one', async () => {
+    findUser.mockResolvedValueOnce({ _id: 'user-real', email: 'real@example.com' });
+    const realReq = { body: { email: 'real@example.com' }, ip: '127.0.0.1' };
+    const real = await requestPasswordReset(realReq);
+    await realReq.kadeResetJob;
+
+    findUser.mockResolvedValueOnce(null);
+    const missingReq = { body: { email: 'missing@example.com' }, ip: '127.0.0.1' };
+    const missing = await requestPasswordReset(missingReq);
+    await missingReq.kadeResetJob;
+
+    findUser.mockResolvedValueOnce({ _id: 'user-real', email: 'real@example.com' });
+    mockResetCap.take.mockResolvedValueOnce({ ok: false, reason: 'fifteen-minutes' });
+    const cappedReq = { body: { email: 'real@example.com' }, ip: '127.0.0.1' };
+    const capped = await requestPasswordReset(cappedReq);
+    await cappedReq.kadeResetJob;
+
+    expect(JSON.stringify(real)).toBe(JSON.stringify(GENERIC));
+    expect(JSON.stringify(missing)).toBe(JSON.stringify(GENERIC));
+    expect(JSON.stringify(capped)).toBe(JSON.stringify(GENERIC));
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers before the account is looked up or the email is sent', async () => {
+    let releaseLookup;
+    findUser.mockReturnValueOnce(new Promise((resolve) => (releaseLookup = resolve)));
+    const req = { body: { email: 'slow@example.com' }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+    expect(result).toEqual(GENERIC);
+    expect(sendEmail).not.toHaveBeenCalled();
+    releaseLookup({ _id: 'user-slow', email: 'slow@example.com' });
+    await req.kadeResetJob;
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('a capped request sends nothing and leaves the existing link alone', async () => {
+    findUser.mockResolvedValue({ _id: 'user-capped', email: 'capped@example.com' });
+    mockResetCap.take.mockResolvedValueOnce({ ok: false, reason: 'day' });
+    const req = { body: { email: 'capped@example.com' }, ip: '127.0.0.1' };
+    await requestPasswordReset(req);
+    await req.kadeResetJob;
+    expect(mockResetCap.take).toHaveBeenCalledWith('user-capped');
+    expect(deleteTokens).not.toHaveBeenCalled();
+    expect(createToken).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('a send that fails gives its place back and still answers the same', async () => {
+    findUser.mockResolvedValue({ _id: 'user-fail', email: 'fail@example.com' });
+    sendEmail.mockRejectedValueOnce(new Error('mail down'));
+    const req = { body: { email: 'fail@example.com' }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+    await req.kadeResetJob;
+    expect(result).toEqual(GENERIC);
+    expect(mockResetCap.release).toHaveBeenCalledWith('claim-1');
+  });
+
+  it('a non-string email never reaches the database', async () => {
+    const req = { body: { email: { $ne: null } }, ip: '127.0.0.1' };
+    const result = await requestPasswordReset(req);
+    await req.kadeResetJob;
+    expect(result).toEqual(GENERIC);
+    expect(findUser).not.toHaveBeenCalled();
   });
 });
 

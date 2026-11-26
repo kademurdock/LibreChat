@@ -103,13 +103,15 @@ describe('signing in', () => {
     expect(mockFindUser).toHaveBeenCalledWith({ email: 'destiny@example.com' }, '+password');
   });
 
-  test('a phone nobody uses is told so in words about phones', async () => {
+  /* Nov 26 2026 (Part 460): the words still talk about phones, but they no
+   * longer say whether an account exists; see localStrategy.uniform.test.js. */
+  test('a phone nobody uses gets words about phones that do not say whether it exists', async () => {
     mockFindUser.mockResolvedValue(null);
 
     const { user, info } = await login('417-771-9958');
 
     expect(user).toBe(false);
-    expect(info.message).toBe('No account uses that phone number.');
+    expect(info.message).toBe('That phone number and password do not match an account.');
   });
 
   test('the wrong password is still the wrong password', async () => {
@@ -124,7 +126,7 @@ describe('signing in', () => {
     const { user, info } = await login('417-771-9958');
 
     expect(user).toBe(false);
-    expect(info.message).toBe('Incorrect password.');
+    expect(info.message).toBe('That phone number and password do not match an account.');
   });
 
   test('a typed identifier that is neither never reaches the database', async () => {

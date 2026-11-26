@@ -43,71 +43,27 @@ const kadeReadPageJsonSchema = {
  * changes its answer between the check and the connect. If the helpers cannot be loaded the
  * fetch is refused, not allowed. KADE_READ_PAGE_SSRF=0 puts back the old unchecked fetch. */
 const MAX_REDIRECT_HOPS = 5;
+/* Nov 26 2026 (Part 460): the checks themselves now live in ../util/kadePublicFetch.js, shared
+ * with the news tool. This tool keeps its five hops and its switch. */
+const publicFetch = require('../util/kadePublicFetch');
+const { PRIVATE_REFUSAL, PrivateTargetError } = publicFetch;
 function ssrfGuardOn(env = process.env) {
   return String((env && env.KADE_READ_PAGE_SSRF) ?? '').trim() !== '0';
 }
 function ssrfHelpers() {
-  try {
-    const api = require('@librechat/api');
-    if (typeof api.isSSRFTarget === 'function' && typeof api.resolveHostnameSSRF === 'function') {
-      return api;
-    }
-  } catch (_) {
-    /* fall through: refused below */
-  }
-  return null;
+  return publicFetch.loadSsrfHelpers();
 }
 /** True when this address must not be fetched from the server. Fails closed. */
 async function isPrivateTarget(rawUrl) {
-  let u;
-  try {
-    u = new URL(String(rawUrl));
-  } catch (_) {
-    return true;
-  }
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
-  const host = u.hostname
-    .replace(/^\[|\]$/g, '')
-    .toLowerCase()
-    .replace(/\.+$/, '');
-  if (!host) return true;
-  if (host === 'railway.internal' || host.endsWith('.railway.internal')) return true;
-  const helpers = ssrfHelpers();
-  if (!helpers) return true;
-  if (helpers.isSSRFTarget(host)) return true;
-  try {
-    return (await helpers.resolveHostnameSSRF(host)) === true;
-  } catch (_) {
-    return true;
-  }
+  return publicFetch.isPrivateTarget(rawUrl, { helpers: ssrfHelpers() });
 }
-const PRIVATE_REFUSAL =
-  "I can't read that address: it points inside a private network, not to a public web page.";
-class PrivateTargetError extends Error {}
 /** GET with every hop checked. Throws PrivateTargetError when a hop is private. */
 async function fetchPublicPage(url, options) {
-  const helpers = ssrfHelpers();
-  const agents =
-    helpers && typeof helpers.createSSRFSafeAgents === 'function'
-      ? helpers.createSSRFSafeAgents()
-      : {};
-  let current = String(url);
-  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    if (await isPrivateTarget(current)) {
-      throw new PrivateTargetError(PRIVATE_REFUSAL);
-    }
-    const r = await axios.get(current, {
-      ...options,
-      ...agents,
-      maxRedirects: 0,
-      validateStatus: (status) => status >= 200 && status < 400,
-    });
-    if (r.status < 300) return r;
-    const location = r.headers && (r.headers.location || r.headers.Location);
-    if (!location) throw new Error(`Request failed with status code ${r.status}`);
-    current = new URL(String(location), current).toString();
-  }
-  throw new Error('too many redirects');
+  return publicFetch.fetchPublic(url, options, {
+    get: (u, o) => axios.get(u, o),
+    helpers: ssrfHelpers(),
+    maxHops: MAX_REDIRECT_HOPS,
+  });
 }
 
 function stripHtml(html) {

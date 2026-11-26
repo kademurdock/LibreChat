@@ -256,6 +256,9 @@ async function organizeText(text, style) {
         ],
         temperature: 0.3,
         max_tokens: 2000,
+        /* Nov 26 2026 (Part 460): a person's own dictated words, so only hosts that keep
+         * nothing and never train on it (on gpt-4o-mini that day: Azure). */
+        provider: { zdr: true, data_collection: "deny" },
       }),
       signal: AbortSignal.timeout(waitMs),
     });

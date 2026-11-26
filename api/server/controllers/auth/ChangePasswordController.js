@@ -8,10 +8,50 @@
  * new one. The session stays signed in; nothing is emailed.
  * -------------------------------------------------------------------------- */
 const bcrypt = require('bcryptjs');
+const cookies = require('cookie');
 const { logger } = require('@librechat/data-schemas');
 const { comparePassword } = require('@librechat/api');
-const { findUser, updateUser } = require('~/models');
+const { findUser, updateUser, findSession, deleteAllUserSessions } = require('~/models');
 const { isReviewSeat } = require('~/server/services/kadeFunding');
+
+/* Nov 26 2026 (Part 460): a changed password ends every other sign-in.
+ * Someone who knew the old password could otherwise stay signed in for as long
+ * as their refresh token lasts. The device making the change keeps its own
+ * session, found by its refresh cookie (the website, the iPhone app and the
+ * Android app all send it); with no cookie, every session ends and that device
+ * signs in again with the new password. A failure here never undoes the
+ * change; it is logged. Returns how many sessions ended, or null if unknown. */
+async function endOtherSessions(req, userId) {
+  let currentSessionId = null;
+  try {
+    const parsed = req.headers && req.headers.cookie ? cookies.parse(req.headers.cookie) : {};
+    if (parsed.refreshToken) {
+      const current = await findSession({
+        userId: String(userId),
+        refreshToken: parsed.refreshToken,
+      });
+      if (current && current._id) {
+        currentSessionId = String(current._id);
+      }
+    }
+  } catch {
+    logger.warn(`[changePassword] could not tell which session is this one [ID: ${userId}]`);
+  }
+  try {
+    const result = await deleteAllUserSessions(
+      { userId: String(userId) },
+      currentSessionId ? { excludeCurrentSession: true, currentSessionId } : {},
+    );
+    const ended = (result && result.deletedCount) || 0;
+    logger.info(
+      `[changePassword] ended ${ended} other session(s), kept this one: ${currentSessionId ? 'yes' : 'no'} [ID: ${userId}]`,
+    );
+    return ended;
+  } catch (err) {
+    logger.error(`[changePassword] sessions not ended [ID: ${userId}]: ${err && err.message}`);
+    return null;
+  }
+}
 
 const changePasswordController = async (req, res) => {
   const userId = req.user && (req.user.id || req.user._id);
@@ -57,7 +97,8 @@ const changePasswordController = async (req, res) => {
     }
     await updateUser(userId, { password: bcrypt.hashSync(newPassword, 10) });
     logger.info(`[changePassword] password changed [ID: ${userId}] [IP: ${req.ip}]`);
-    return res.status(200).json({ ok: true, message: 'Password changed.' });
+    const signedOut = await endOtherSessions(req, userId);
+    return res.status(200).json({ ok: true, message: 'Password changed.', signedOut });
   } catch (err) {
     logger.error(`[changePassword] failed [ID: ${userId}]: ${err && err.message}`);
     return res.status(500).json({ message: 'The password could not be changed. Nothing changed.' });

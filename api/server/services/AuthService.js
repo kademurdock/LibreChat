@@ -39,6 +39,7 @@ const {
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
+const { resetCap, capIsOn } = require('~/server/services/kadeResetCap');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -414,6 +415,10 @@ const registerUser = async (user, additionalData = {}) => {
   }
 };
 
+const GENERIC_RESET_REPLY = Object.freeze({
+  message: 'If an account with that email exists, a password reset link has been sent to it.',
+});
+
 /**
  * Request password reset.
  *
@@ -448,6 +453,31 @@ const requestPasswordReset = async (req) => {
     return error;
   }
 
+  /* Nov 26 2026 (Part 460): the answer goes back now, before the account is
+   * even looked up. Whether the account exists, is over its reset cap, or gets
+   * an email, the caller sees the same words, the same status and the same
+   * wait. The lookup and the email carry on without the caller. The job is
+   * left on the request so tests can wait for it. */
+  const ip = req.ip;
+  const job = deliverPasswordReset(email, ip, baseConfig).catch((err) => {
+    logger.error(
+      `[requestPasswordReset] background send failed [IP: ${ip}]: ${err && err.message}`,
+    );
+  });
+  req.kadeResetJob = job;
+  return { ...GENERIC_RESET_REPLY };
+};
+
+/**
+ * The part of a reset request that runs after the caller has their answer:
+ * look the account up, check the per-account cap, then make and email a link.
+ * Returns what happened, for logs and tests only.
+ * @returns {Promise<'no-account' | 'tenant-blocked' | 'capped' | 'sent'>}
+ */
+const deliverPasswordReset = async (email, ip, baseConfig) => {
+  if (typeof email !== 'string' || !email.trim()) {
+    return 'no-account';
+  }
   const user = await findUser({ email }, 'email _id role tenantId');
   let appConfig = baseConfig;
   if (user?.tenantId) {
@@ -460,57 +490,71 @@ const requestPasswordReset = async (req) => {
 
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
     logger.warn(
-      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
+      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${ip}]`,
     );
-    return {
-      message: 'If an account with that email exists, a password reset link has been sent to it.',
-    };
+    return 'tenant-blocked';
   }
 
   logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
 
   if (!user) {
-    logger.warn(`[requestPasswordReset] [No user found] [Email: ${email}] [IP: ${req.ip}]`);
-    return {
-      message: 'If an account with that email exists, a password reset link has been sent to it.',
-    };
+    logger.warn(`[requestPasswordReset] [No user found] [Email: ${email}] [IP: ${ip}]`);
+    return 'no-account';
   }
 
-  await Promise.all([
-    deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
-    deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
-  ]);
+  /* Nov 26 2026 (Part 460): one email per account every 15 minutes, three a
+   * day (kadeResetCap.js). Checked before the old link is touched, so a flood
+   * of requests cannot keep cancelling a link the person is about to use. */
+  let claim = null;
+  if (capIsOn()) {
+    claim = await resetCap().take(user._id);
+    if (!claim.ok) {
+      logger.warn(
+        `[requestPasswordReset] Cap held (${claim.reason}), nothing sent. [ID: ${user._id}] [IP: ${ip}]`,
+      );
+      return 'capped';
+    }
+  }
 
-  const [resetToken, hash] = createTokenHash();
+  try {
+    await Promise.all([
+      deleteTokens({ userId: user._id, type: AuthTokenTypes.PASSWORD_RESET }),
+      deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
+    ]);
 
-  await createToken({
-    userId: user._id,
-    type: AuthTokenTypes.PASSWORD_RESET,
-    token: hash,
-    createdAt: Date.now(),
-    expiresIn: 900,
-  });
+    const [resetToken, hash] = createTokenHash();
 
-  const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
+    await createToken({
+      userId: user._id,
+      type: AuthTokenTypes.PASSWORD_RESET,
+      token: hash,
+      createdAt: Date.now(),
+      expiresIn: 900,
+    });
 
-  await sendEmail({
-    email: user.email,
-    subject: 'Password Reset Request',
-    payload: {
-      appName: process.env.APP_TITLE || 'LibreChat',
-      name: user.name || user.username || user.email,
-      link: link,
-      year: new Date().getFullYear(),
-    },
-    template: 'requestPasswordReset.handlebars',
-  });
+    const link = `${domains.client}/reset-password?token=${resetToken}&userId=${user._id}`;
+
+    await sendEmail({
+      email: user.email,
+      subject: 'Password Reset Request',
+      payload: {
+        appName: process.env.APP_TITLE || 'LibreChat',
+        name: user.name || user.username || user.email,
+        link: link,
+        year: new Date().getFullYear(),
+      },
+      template: 'requestPasswordReset.handlebars',
+    });
+  } catch (err) {
+    if (claim) {
+      await resetCap().release(claim.id);
+    }
+    throw err;
+  }
   logger.info(
-    `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
+    `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${ip}]`,
   );
-
-  return {
-    message: 'If an account with that email exists, a password reset link has been sent to it.',
-  };
+  return 'sent';
 };
 
 /**

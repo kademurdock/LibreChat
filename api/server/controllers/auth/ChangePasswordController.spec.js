@@ -6,15 +6,20 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   comparePassword: jest.fn(async (user, candidate, { compare }) => compare(candidate, user.password)),
 }));
-jest.mock('~/models', () => ({ findUser: jest.fn(), updateUser: jest.fn() }));
+jest.mock('~/models', () => ({
+  findUser: jest.fn(),
+  updateUser: jest.fn(),
+  findSession: jest.fn(),
+  deleteAllUserSessions: jest.fn(),
+}));
 jest.mock('~/server/services/kadeFunding', () => ({ isReviewSeat: jest.fn((u) => !!u && u.id === 'review') }));
 
-const { findUser, updateUser } = require('~/models');
+const { findUser, updateUser, findSession, deleteAllUserSessions } = require('~/models');
 const { changePasswordController } = require('./ChangePasswordController');
 
-function run(body, user = { id: 'u1' }) {
+function run(body, user = { id: 'u1' }, headers = {}) {
   const res = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
-  return changePasswordController({ user, body, ip: '1.2.3.4' }, res).then(() => res);
+  return changePasswordController({ user, body, ip: '1.2.3.4', headers }, res).then(() => res);
 }
 
 describe('changePasswordController', () => {
@@ -23,6 +28,8 @@ describe('changePasswordController', () => {
     jest.clearAllMocks();
     findUser.mockResolvedValue({ _id: 'u1', password: stored });
     updateUser.mockResolvedValue({});
+    findSession.mockResolvedValue(null);
+    deleteAllUserSessions.mockResolvedValue({ deletedCount: 0 });
   });
 
   it('changes the password when the current one matches', async () => {
@@ -63,5 +70,47 @@ describe('changePasswordController', () => {
     const res = await run({ currentPassword: 'old-password-1', newPassword: 'new-password-2' });
     expect(res.status).toHaveBeenCalledWith(400);
     expect(updateUser).not.toHaveBeenCalled();
+  });
+  /* Nov 26 2026 (Part 460): a changed password ends every other sign-in. */
+  describe('sessions after a change', () => {
+    const body = { currentPassword: 'old-password-1', newPassword: 'new-password-2' };
+
+    it('ends every other session and keeps the one making the change', async () => {
+      findSession.mockResolvedValue({ _id: 'session-here' });
+      deleteAllUserSessions.mockResolvedValue({ deletedCount: 3 });
+      const res = await run(body, { id: 'u1' }, { cookie: 'refreshToken=this-device; token_provider=librechat' });
+      expect(findSession).toHaveBeenCalledWith({ userId: 'u1', refreshToken: 'this-device' });
+      expect(deleteAllUserSessions).toHaveBeenCalledWith(
+        { userId: 'u1' },
+        { excludeCurrentSession: true, currentSessionId: 'session-here' },
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ ok: true, message: 'Password changed.', signedOut: 3 });
+    });
+
+    it('with no refresh cookie, every session ends', async () => {
+      await run(body);
+      expect(findSession).not.toHaveBeenCalled();
+      expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'u1' }, {});
+    });
+
+    it('a cookie that matches no session ends every session', async () => {
+      findSession.mockResolvedValue(null);
+      await run(body, { id: 'u1' }, { cookie: 'refreshToken=stale' });
+      expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'u1' }, {});
+    });
+
+    it('if the sessions cannot be ended, the change still stands and says so in the log only', async () => {
+      deleteAllUserSessions.mockRejectedValue(new Error('db down'));
+      const res = await run(body);
+      expect(updateUser).toHaveBeenCalledTimes(1);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ ok: true, message: 'Password changed.', signedOut: null });
+    });
+
+    it('a refused change ends nothing', async () => {
+      await run({ currentPassword: 'guess', newPassword: 'new-password-2' });
+      expect(deleteAllUserSessions).not.toHaveBeenCalled();
+    });
   });
 });

@@ -10,6 +10,40 @@ const { loginSchema } = require('./validators');
 // Unix timestamp for 2024-06-07 15:20:18 Eastern Time
 const verificationEnabledTimestamp = 1717788018;
 
+/* Nov 26 2026 (Part 460): an unknown account and a wrong password now look
+ * the same from outside: the same status (404, which the iPhone and Android
+ * apps already read as "wrong email or password"), the same words, and about
+ * the same wait. Before, "Email does not exist." told anyone which addresses
+ * have accounts here, and a missing account answered faster because no
+ * password was checked. Now a missing account still runs one bcrypt check
+ * against a stand-in hash of the same cost (10) that real passwords use.
+ * The words still follow what was typed (a phone or an email), never whether
+ * an account was found. */
+const DUMMY_HASH_COST = 10;
+let dummyHashPromise = null;
+function dummyHash() {
+  if (!dummyHashPromise) {
+    dummyHashPromise = bcrypt.hash(`no-account-${Math.random()}`, DUMMY_HASH_COST);
+  }
+  return dummyHashPromise;
+}
+
+function loginFailedMessage(kind) {
+  return kind === 'phone'
+    ? 'That phone number and password do not match an account.'
+    : 'That email and password do not match an account.';
+}
+
+/** Spends about as long as a real password check, then reports no match. */
+async function compareAgainstNothing(password) {
+  try {
+    await bcrypt.compare(String(password ?? ''), await dummyHash());
+  } catch (_) {
+    /* the time is what matters here, not the answer */
+  }
+  return false;
+}
+
 async function validateLoginRequest(req) {
   const { error } = loginSchema.safeParse(req.body);
   return error ? errorsToString(error.errors) : null;
@@ -34,25 +68,26 @@ async function passportLogin(req, email, password, done) {
       id.kind === 'phone'
         ? await findUser({ kadePhone: id.phone }, '+password')
         : await findUser({ email: String(email).trim() }, '+password');
-    const noSuchAccount =
-      id.kind === 'phone' ? 'No account uses that phone number.' : 'Email does not exist.';
+    const failed = loginFailedMessage(id.kind);
     if (!user) {
+      await compareAgainstNothing(password);
       logError('Passport Local Strategy - User Not Found', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: noSuchAccount });
+      return done(null, false, { message: failed });
     }
 
     if (!user.password) {
+      await compareAgainstNothing(password);
       logError('Passport Local Strategy - User has no password', { email });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: noSuchAccount });
+      return done(null, false, { message: failed });
     }
 
     const isMatch = await comparePassword(user, password, { compare: bcrypt.compare });
     if (!isMatch) {
       logError('Passport Local Strategy - Password does not match', { isMatch });
       logger.error(`[Login] [Login failed] [Username: ${email}] [Request-IP: ${req.ip}]`);
-      return done(null, false, { message: 'Incorrect password.' });
+      return done(null, false, { message: failed });
     }
 
     const emailEnabled = checkEmailConfig();
@@ -90,8 +125,12 @@ function logError(title, parameters) {
   logger.error(title, { parameters: entries });
 }
 
-module.exports = () =>
-  new PassportLocalStrategy(
+const createLocalStrategy = () => {
+  // Made once at startup, so even the first failed sign-in takes the usual time.
+  dummyHash().catch(() => {
+    dummyHashPromise = null;
+  });
+  return new PassportLocalStrategy(
     {
       usernameField: 'email',
       passwordField: 'password',
@@ -100,3 +139,8 @@ module.exports = () =>
     },
     passportLogin,
   );
+};
+
+module.exports = createLocalStrategy;
+module.exports.loginFailedMessage = loginFailedMessage;
+module.exports.dummyHash = dummyHash;

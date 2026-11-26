@@ -55,6 +55,9 @@ test('query instructions stay out of documents and every response must have the 
     assert.equal(seen[1].body.input, 'my concert');
     assert.equal(seen[0].body.dimensions, 32);
     assert.equal(seen[0].body.provider.max_price.prompt, 0.02);
+    // Nov 26 2026 (Part 460): memories go only to hosts that keep nothing and never train.
+    assert.equal(seen[0].body.provider.zdr, true);
+    assert.equal(seen[0].body.provider.data_collection, 'deny');
     await assert.rejects(requestMemoryEmbedding({ ...lane, dimensions: 64 }, 'x'), /invalid vector/);
   } finally { axios.defaults.adapter = original; }
 });

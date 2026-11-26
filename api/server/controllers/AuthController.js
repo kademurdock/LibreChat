@@ -203,7 +203,16 @@ const resetPasswordController = async (req, res) => {
     if (resetPasswordService instanceof Error) {
       return res.status(400).json(resetPasswordService);
     } else {
-      await deleteAllUserSessions({ userId: req.body.userId });
+      /* Every session ends after a reset. Nov 26 2026 (Part 460): a failure to
+       * end them is logged, not reported as a failed reset, because the new
+       * password is already saved by then. */
+      try {
+        await deleteAllUserSessions({ userId: req.body.userId });
+      } catch (sessionErr) {
+        logger.error(
+          `[resetPasswordController] password reset but sessions not ended [ID: ${req.body.userId}]: ${sessionErr && sessionErr.message}`,
+        );
+      }
       return res.status(200).json(resetPasswordService);
     }
   } catch (e) {

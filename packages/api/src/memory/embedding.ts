@@ -193,8 +193,11 @@ export async function requestMemoryEmbedding(
           input,
           dimensions: lane.dimensions,
           encoding_format: 'float',
+          /* Nov 26 2026 (Part 460): memories are personal, so on OpenRouter only hosts that
+           * keep nothing and never train are asked (qwen3-embedding-8b that day: DeepInfra
+           * and Nebius, both $0.01 per million). Other lanes call their provider directly. */
           ...(lane.url.startsWith(`${openRouter}/`)
-            ? { provider: { max_price: { prompt: 0.02 } } }
+            ? { provider: { max_price: { prompt: 0.02 }, zdr: true, data_collection: 'deny' } }
             : {}),
         }
       : {

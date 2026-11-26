@@ -2,6 +2,7 @@ const axios = require('axios');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { logger } = require('@librechat/data-schemas');
 const toolCache = require('../util/kadeToolCache');
+const publicFetch = require('../util/kadePublicFetch');
 
 /**
  * KadeNews — free RSS morning news briefing (July 2 2026, Kade's ask).
@@ -114,13 +115,35 @@ function parseFeed(xml, limit) {
   return items;
 }
 
+/* Nov 26 2026 (Part 460): a custom feed_url was used to probe *.railway.internal and
+ * 127.0.0.1:9229 from inside our network; the only check was "starts with http". Every feed,
+ * the built-in ones too, now goes through the shared guard (../util/kadePublicFetch.js): private,
+ * loopback, link-local, CGNAT and inside names are refused, every DNS answer is checked, and at
+ * most 3 redirects are followed by hand, each one checked again. KADE_NEWS_SSRF=0 puts back the
+ * old unchecked fetch. */
+const NEWS_REDIRECT_HOPS = 3;
+const NEWS_PRIVATE_REFUSAL =
+  "That feed address points inside a private network, not to a public feed, so it was not read.";
+function newsGuardOn(env = process.env) {
+  return String((env && env.KADE_NEWS_SSRF) ?? '').trim() !== '0';
+}
+
 async function fetchFeed(url) {
-  const resp = await axios.get(url, {
+  const options = {
     timeout: 12000,
     responseType: 'text',
     // Some outlets block default library UAs.
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KadeAI-NewsReader/1.0)', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' },
     maxContentLength: 3 * 1024 * 1024,
+  };
+  if (!newsGuardOn()) {
+    const resp = await axios.get(url, options);
+    return resp.data;
+  }
+  const resp = await publicFetch.fetchPublic(url, options, {
+    get: (u, o) => axios.get(u, o),
+    maxHops: NEWS_REDIRECT_HOPS,
+    refusal: NEWS_PRIVATE_REFUSAL,
   });
   return resp.data;
 }
@@ -167,7 +190,21 @@ class KadeNews extends Tool {
     try {
       if (feed_url) {
         if (!/^https?:\/\//i.test(feed_url)) return 'feed_url must be a full http(s) URL.';
-        const items = (await feedItems(this.req, feed_url)).slice(0, perCat);
+        if (newsGuardOn() && (await publicFetch.isPrivateTarget(feed_url))) {
+          logger.warn('[KadeNews] refused a private feed address');
+          return NEWS_PRIVATE_REFUSAL;
+        }
+        let fetched;
+        try {
+          fetched = await feedItems(this.req, feed_url);
+        } catch (err) {
+          if (err instanceof publicFetch.PrivateTargetError) {
+            logger.warn('[KadeNews] refused a feed that redirects to a private address');
+            return NEWS_PRIVATE_REFUSAL;
+          }
+          throw err;
+        }
+        const items = fetched.slice(0, perCat);
         if (!items.length) return `That feed (${feed_url}) returned no readable stories — it may not be an RSS/Atom feed.`;
         return [`Latest from ${feed_url}:`, ...items.map((i) => `- ${i.title}${i.age ? ` (${i.age})` : ''}${i.summary ? ` — ${i.summary}` : ''}`)].join('\n');
       }
