@@ -214,6 +214,7 @@ const startServer = async () => {
   });
 
   /* Middleware */
+  app.use(require('./kadeBlockedIps').kadeBlockedIps());
   app.use(metricsMiddleware);
   app.use(noIndex);
   app.use(express.json({ limit: '3mb' }));
