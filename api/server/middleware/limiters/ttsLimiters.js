@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
 const { limiterCache, removePorts } = require('@librechat/api');
+const { isKadeService } = require('../kadeServiceSeat');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -68,7 +69,8 @@ const createTTSLimiters = () => {
     max: ttsIpMax,
     handler: createTTSHandler(),
     keyGenerator: removePorts,
-    skip: skipAdmin,
+    /* Nov 26 2026: Kade's own services share one address; they skip the per-address count only. */
+    skip: (req) => skipAdmin(req) || isKadeService(req),
     store: limiterCache('tts_ip_limiter'),
   };
 

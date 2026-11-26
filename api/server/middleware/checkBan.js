@@ -5,6 +5,7 @@ const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, keyvMongo, removePorts } = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 const denyRequest = require('./denyRequest');
+const { isKadeService } = require('./kadeServiceSeat');
 const { findUser } = require('~/models');
 
 const banCache = new Keyv({ store: keyvMongo, namespace: ViolationTypes.BAN, ttl: 0 });
@@ -60,6 +61,10 @@ const checkBan = async (req, res, next = () => {}) => {
     }
 
     req.ip = removePorts(req);
+    /* Nov 26 2026 (Part 461): one of Kade's own services shares one address with
+     * everything else it does, so an address ban is not checked for it. The
+     * account it signs in as is still checked below. */
+    const banIp = isKadeService(req) ? null : req.ip;
     let userId = req.user?.id ?? req.user?._id ?? null;
 
     if (!userId && req?.body?.email) {
@@ -67,12 +72,12 @@ const checkBan = async (req, res, next = () => {}) => {
       userId = user?._id ? user._id.toString() : userId;
     }
 
-    if (!userId && !req.ip) {
+    if (!userId && !banIp) {
       return next();
     }
 
     const useRedis = isEnabled(process.env.USE_REDIS);
-    const ipKey = getBanCacheKey('ip', req.ip, useRedis);
+    const ipKey = getBanCacheKey('ip', banIp, useRedis);
     const userKey = getBanCacheKey('user', userId, useRedis);
 
     const [cachedIPBan, cachedUserBan] = await Promise.all([
@@ -93,7 +98,7 @@ const checkBan = async (req, res, next = () => {}) => {
     }
 
     const [ipBan, userBan] = await Promise.all([
-      req.ip ? banLogs.get(req.ip) : undefined,
+      banIp ? banLogs.get(banIp) : undefined,
       userId ? banLogs.get(userId) : undefined,
     ]);
 
@@ -114,7 +119,7 @@ const checkBan = async (req, res, next = () => {}) => {
     if (timeLeft <= 0) {
       const cleanups = [];
       if (ipBan) {
-        cleanups.push(banLogs.delete(req.ip));
+        cleanups.push(banLogs.delete(banIp));
       }
       if (userBan) {
         cleanups.push(banLogs.delete(userId));

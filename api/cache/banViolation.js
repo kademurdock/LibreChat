@@ -3,6 +3,7 @@ const { ViolationTypes } = require('librechat-data-provider');
 const { isEnabled, math, removePorts } = require('@librechat/api');
 const { deleteAllUserSessions } = require('~/models');
 const getLogStores = require('./getLogStores');
+const { isKadeService } = require('../server/middleware/kadeServiceSeat');
 
 const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
 const interval = math(BAN_INTERVAL, 20);
@@ -95,7 +96,10 @@ const banViolation = async (req, res, errorMessage) => {
 
   const expiresAt = Date.now() + duration;
   await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
-  if (req.ip) {
+  /* Nov 26 2026 (Part 461): the account above is banned as usual, but the address
+   * of one of Kade's own services is not, because every account it serves
+   * shares that address. */
+  if (req.ip && !isKadeService(req)) {
     await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
   }
 

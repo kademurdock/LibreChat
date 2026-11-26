@@ -370,3 +370,14 @@ An outside address signed in to Kade's admin account with her real password, sen
 6. **The access-request doorbell keys its 3-an-hour limit on `req.ip` once `TRUST_PROXY` is 2 or more** (`api/server/routes/accessRequest.js`); before that it reads the first X-Forwarded-For entry as it always did.
 
 Tests: `kadeResetCap.nodetest.js`, `AuthService.spec.js`, `localStrategy.uniform.test.js`, `phoneLogin.test.js`, `ChangePasswordController.spec.js`, `AuthController.resetSessions.spec.js`, `KadeNews.ssrf.nodetest.js`, `kadePublicFetch.nodetest.js`, `KadeReadPage.ssrf.nodetest.js`, `kadeReadingRoomSort.nodetest.js`, `embedding.test.mjs`, and `kadeTrustProxy.nodetest.js` (shows TRUST_PROXY=2 makes req.ip the real client on Railway; no variable is changed by this branch). **Revert:** `git revert <sha>` on `kade`.
+
+## Part 461 (Nov 26 2026): the service seat, so TRUST_PROXY=2 can be switched on
+
+With `TRUST_PROXY=2`, `req.ip` is the real caller instead of Railway's edge. Kade's own services (the bridge, and the inworld proxy, which also carries the Canary probe and the battery's App Review seat) call the site over the public domain from one Railway address each, so the per-address limits and address bans would add all their sign-ins and turns together and refuse them, which breaks phone calls.
+
+1. **One helper** (`api/server/middleware/kadeServiceSeat.js`): a request whose `X-Kade-Service` header equals `KADE_SERVICE_LIMIT_SECRET` (compared in constant time after hashing; off when the variable is unset or shorter than 24 characters; two copies of the header never count) is a service. The app-level middleware, mounted first in `api/server/index.js`, decides once, keeps the answer on the request where no dump can see it, and removes the header from `req.headers` and `req.rawHeaders`, so no logger or forwarded request after it can carry it.
+2. **What a service skips**: the per-address limiters only: login, register, reset password, verify email, the 2FA address limiter, message (address), fork, import, upload, speech to text and text to speech (address). The address part of `checkBan`, writing the address in `banViolation`, and the access-request doorbell's 3-an-hour count (the bridge files phone callers' knocks).
+3. **What a service does not skip**: signing in, every per-account limiter (message, 2FA, fork, import, upload, speech, tool call, prompt usage, the Kade routes' account limits), account bans, `kadeBlockedIps`.
+4. **Not changed**: the phone-reset form's per-address limit (no service calls it).
+
+Tests: `api/server/middleware/kadeServiceSeat.nodetest.js` (real express-rate-limit login and message limiters behind `trust proxy` 2, checkBan and banViolation), plus `checkBan.test.js`, `banViolation.spec.js`, `twoFactorTempLimiter.test.js` and the auth, oauth, access-request and fork limiter route tests.

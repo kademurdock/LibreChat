@@ -214,6 +214,10 @@ const startServer = async () => {
   });
 
   /* Middleware */
+  /* Nov 26 2026 (Part 461): first of all, note whether this is one of Kade's own
+   * services (X-Kade-Service) and take that header off the request, so nothing
+   * after this line can log it. Blocked addresses below still apply to it. */
+  app.use(require('./middleware/kadeServiceSeat').kadeServiceSeat());
   app.use(require('./kadeBlockedIps').kadeBlockedIps());
   app.use(metricsMiddleware);
   app.use(noIndex);

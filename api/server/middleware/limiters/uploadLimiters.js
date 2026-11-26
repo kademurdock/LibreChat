@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
 const { limiterCache, removePorts } = require('@librechat/api');
+const { isKadeService } = require('../kadeServiceSeat');
 const logViolation = require('~/cache/logViolation');
 
 const getEnvironmentVariables = () => {
@@ -61,6 +62,8 @@ const createFileLimiters = () => {
     max: fileUploadIpMax,
     handler: createFileUploadHandler(),
     keyGenerator: removePorts,
+    /* Kade's own services share one address; they skip the per-address count only. */
+    skip: isKadeService,
     store: limiterCache('file_upload_ip_limiter'),
   };
 

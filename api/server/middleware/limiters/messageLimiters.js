@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
 const { limiterCache, removePorts } = require('@librechat/api');
+const { isKadeService } = require('../kadeServiceSeat');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation } = require('~/cache');
 
@@ -51,6 +52,8 @@ const ipLimiterOptions = {
   max: ipMax,
   handler: createHandler(),
   keyGenerator: removePorts,
+  /* Kade's own services share one address; they skip the per-address count only. */
+  skip: isKadeService,
   store: limiterCache('message_ip_limiter'),
 };
 

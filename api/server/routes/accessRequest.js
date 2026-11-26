@@ -3,6 +3,7 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { KadeAccessRequest } = require('~/models/kadeAccessRequest');
 const { parseSightChoice } = require('~/models/kadeSight');
+const { isKadeService } = require('../middleware/kadeServiceSeat');
 
 const router = express.Router();
 
@@ -41,7 +42,10 @@ router.post('/', async (req, res) => {
     /* Honeypot: real people never see this field; bots autofill it. */
     if (b.website) return res.json({ ok: true });
     const ip = knockAddress(req);
-    if (!ipAllowed(ip)) {
+    /* Nov 26 2026 (Part 461): the bridge files a phone caller's knock from its
+     * one Railway address, so its knocks are not counted against that address.
+     * The bridge's own call limits stand in front of it. */
+    if (!isKadeService(req) && !ipAllowed(ip)) {
       return res.status(429).json({ error: 'Easy now — that door was just knocked on. Try again in a bit.' });
     }
     const name = String(b.name || '').trim().slice(0, 80);
