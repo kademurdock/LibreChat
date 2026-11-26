@@ -23,12 +23,24 @@ function ipAllowed(ip) {
   return true;
 }
 
+/* Nov 26 2026 (Part 460): the first X-Forwarded-For entry is whatever the
+ * caller typed, so a new made-up value each time walked past the 3-an-hour
+ * limit and was stored as the knocker's address. Once TRUST_PROXY is 2 or more,
+ * Express works out the real address from the entries Railway itself added, so
+ * req.ip is used. Under the old setting of 1, req.ip is only Railway's edge
+ * (shared by every visitor on it), so the old reading stays until the variable
+ * is raised. */
+function knockAddress(req) {
+  if ((Number(process.env.TRUST_PROXY) || 1) >= 2) return String(req.ip || '').trim();
+  return String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+}
+
 router.post('/', async (req, res) => {
   try {
     const b = req.body || {};
     /* Honeypot: real people never see this field; bots autofill it. */
     if (b.website) return res.json({ ok: true });
-    const ip = String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+    const ip = knockAddress(req);
     if (!ipAllowed(ip)) {
       return res.status(429).json({ error: 'Easy now — that door was just knocked on. Try again in a bit.' });
     }
@@ -108,3 +120,4 @@ router.post('/', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.knockAddress = knockAddress;

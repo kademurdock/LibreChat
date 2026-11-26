@@ -51,11 +51,7 @@ const OUT_USD_PER_M = () => Number(process.env.KADE_LIBRARY_SORT_OUT_USD_PER_M |
  * tokens a second), but nobody waits on the sorter. DeepInfra next, then any
  * other host; `data_collection: 'deny'` still keeps out every host that trains
  * on what it is sent. MiMo Pro stays: Flash missed adult flags (Oct 16 2026). */
-/* Nov 26 2026 (Part 460): GMICloud is out and only zero-retention hosts are asked
- * (zdr: true). That day OpenRouter listed two for MiMo Pro: DeepInfra ($0.387 / $0.783
- * per million) and PrimaLabs ($2.64 / $5.28), which is used only if DeepInfra fails;
- * the daily cap above still holds. */
-const PROVIDER = () => ({ data_collection: 'deny', zdr: true, order: ['DeepInfra'], allow_fallbacks: true });
+const PROVIDER = () => ({ data_collection: 'deny', order: ['GMICloud', 'DeepInfra'], allow_fallbacks: true });
 
 async function spentToday() {
   try {
